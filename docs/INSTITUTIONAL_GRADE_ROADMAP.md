@@ -12,6 +12,25 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **IND-1 + IND-2 Dual capital-gains regime + speculative/non-speculative set-off (DONE)** — pure
+>   `lib/analytics/capital-gains.ts` (32 tests): date-based STCG/LTCG rates (pre/post 23-Jul-2024 cutover:
+>   15%/10%/₹1L → 20%/12.5%/₹1.25L), LTCG grandfathering formula for pre-31-Jan-2018 lots (cost = max(actual,
+>   min(FMV@31Jan2018, sellValue)) — no FMV-entry UI yet, so it correctly no-ops to actual cost unless a caller
+>   supplies `fmv31Jan2018`), and full sections-70/71/72-74 set-off + carry-forward: STCL→STCG→LTCG,
+>   LTCL→LTCG-only, speculative (intraday) loss isolated to speculative gains only (4yr carry), non-speculative
+>   (F&O) loss offsets ANY same-year gain incl. capital gains (8yr carry, business-income-only once carried).
+>   `aggregateTradesByFy()` computes a **gain-weighted** rate per FY (not just FY-end rate) so a straddling year
+>   like FY2024-25 taxes each trade at ITS OWN date's rate — flagged as an approximation in the UI since set-off
+>   nets in ₹ after the per-trade rate is already baked in. All bucketing uses **`netPnl`** (post-charge),
+>   matching `taxByFy`'s existing convention — do NOT swap in `grossPnl`, that was a real bug caught during
+>   verification (see below). `computeTaxTimeline()` chains FYs; carry-forward lots are cloned before mutation
+>   inside `computeFySetOff`'s `absorb()` (an earlier shared-reference bug corrupted a prior FY's already-returned
+>   result — fixed by `.map(l => ({...l}))` before absorbing). Wired into `app/reports/tax/page.tsx` as a second
+>   "Capital-gains tax & set-off" table below the existing raw scaffold, informational-only disclaimer, extensive
+>   caveat text (rate schedule, straddling-FY approximation, set-off summary, business-income slab-rate caveat,
+>   conditional grandfathering warning when a pre-2018 lot exists). Verified against real data: engine output for
+>   FY2026-27 (speculative loss carry ₹82,088 + non-speculative loss carry ₹112,997 = ₹1,95,085) now matches the
+>   scaffold table's net-realised figure exactly.
 > - **P1.1 Quant performance analytics** — `lib/analytics/performance.ts` (Sharpe/Sortino/Calmar/CAGR/
 >   volatility/max-DD/monthly returns, on running equity) + `tests/performance.test.ts` (8) +
 >   screen `app/reports/performance/page.tsx` + nav "Performance" (Analytics group). XIRR/TWR &
@@ -637,8 +656,10 @@ All of the above stay offline-first (bhavcopy/AIS are downloaded files; feeds op
 existing pipeline (classify → charges-from-`charge_config` → ledger → analytics). New statutory rates
 (physical-settlement STT, new CG rates) go in `charge_config` / a dated rate table, never hard-coded.
 
-— End of handoff. Current tag: **v1.11.0** (installer) — Corporate actions (split/bonus/dividend, migration
-`0010`) now shipped. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
+— End of handoff. Current tag: **v1.11.0** (installer). Since that tag: IND-1 + IND-2 dual capital-gains
+regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`, 32 tests) built,
+tested, and browser-verified against real trade data — not yet version-bumped/rebuilt/committed. Corporate
+actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
 for `trades.implied_vol`). v1.9.0 installer = F&O structured trade entry + short (sell-to-open) support + real
 Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data foundation (instruments master
 + price_history + sector concentration; migration `0008`). v1.7.0 = P1.1
