@@ -12,6 +12,23 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **IND-6 Dividend & TDS tracker (DONE)** — pure `lib/analytics/dividend-tds.ts` (10 tests): Section 194 —
+>   10% TDS once a company's aggregate FY dividend to the shareholder crosses ₹5,000; `computeEventTds()` taxes
+>   the whole payment that crosses the threshold (and every payment after), the common real-world convention since
+>   payers estimate annual dividend up front rather than prorating a single payment. `annotateDividendTds()` /
+>   `summariseByCompanyFy()` run a running per-symbol-per-FY total. New `ledger_entries.symbol` column (migration
+>   `0011`, nullable — only dividend/dividend_tds rows set it) lets TDS aggregate correctly per company without
+>   depending on the linked trade's raw (possibly alias'd) symbol string. New `LedgerType` value `dividend_tds`
+>   (sign −1) added to `lib/analytics/ledger.ts`; `otherPaise` now includes it. Wired into
+>   `lib/corporate-actions-apply.ts`'s dividend branch: seeds the running FY total from prior `dividend` ledger
+>   rows for that symbol, posts a second `dividend_tds` ledger entry per position once threshold crosses. New
+>   "Dividend income & TDS" card on `app/reports/tax/page.tsx` (gross/TDS/net per company+FY). Verified end-to-end
+>   against real data: applied a test dividend (₹5/share × 1800 qty = ₹9,000 gross) on a real open position,
+>   confirmed ₹900 TDS posted (FY aggregate crossed ₹5,000) and the tax-summary card showed gross ₹9,000 / TDS ₹900
+>   / net ₹8,100 correctly — then reverted the ledger/corporate-action rows to restore the original empty state.
+>   Only dividends recorded via this app's own Corporate Actions are counted — same-company dividends received
+>   through a different, untracked demat won't be seen, so this can understate real aggregate TDS liability
+>   (flagged in the UI caveat).
 > - **IND-1 + IND-2 Dual capital-gains regime + speculative/non-speculative set-off (DONE)** — pure
 >   `lib/analytics/capital-gains.ts` (32 tests): date-based STCG/LTCG rates (pre/post 23-Jul-2024 cutover:
 >   15%/10%/₹1L → 20%/12.5%/₹1.25L), LTCG grandfathering formula for pre-31-Jan-2018 lots (cost = max(actual,
@@ -602,8 +619,7 @@ Most are unique to India and high-value for an active Indian trader. Build-ready
 - **IND-5 AIS / Form 26AS / TIS reconciliation** *(L)*. Import the IT-dept AIS/TIS (the pre-filled
   statement) and reconcile against journal trades + dividend TDS; flag mismatches before filing.
   Nothing on the market does this well — strong differentiator.
-- **IND-6 Dividend & TDS tracker** *(S)*. Post-2020 dividends are taxable in the investor's hands;
-  **10% TDS above ₹5,000/company/yr**. Track dividend income + TDS as ledger entries (links P0.2).
+- **IND-6 Dividend & TDS tracker (DONE — see top of doc)**.
 
 ### 8B. F&O & market microstructure (SEBI/exchange rules)
 - **IND-7 Physical-settlement / expiry obligation tracker** *(M)* ← real money-trap. Indian **stock
@@ -656,10 +672,11 @@ All of the above stay offline-first (bhavcopy/AIS are downloaded files; feeds op
 existing pipeline (classify → charges-from-`charge_config` → ledger → analytics). New statutory rates
 (physical-settlement STT, new CG rates) go in `charge_config` / a dated rate table, never hard-coded.
 
-— End of handoff. Current tag: **v1.11.0** (installer). Since that tag: IND-1 + IND-2 dual capital-gains
-regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`, 32 tests) built,
-tested, and browser-verified against real trade data — not yet version-bumped/rebuilt/committed. Corporate
-actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
+— End of handoff. Current tag: **v1.11.0** (installer). **v1.12.0** shipped (installer + commit) with IND-1 + IND-2
+dual capital-gains regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`,
+32 tests). Since v1.12.0: IND-6 dividend & TDS tracker (`lib/analytics/dividend-tds.ts`, 10 tests; migration
+`0011` adds `ledger_entries.symbol`) built, tested, and browser-verified against real data — not yet
+version-bumped/rebuilt/committed. Corporate actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
 for `trades.implied_vol`). v1.9.0 installer = F&O structured trade entry + short (sell-to-open) support + real
 Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data foundation (instruments master
 + price_history + sector concentration; migration `0008`). v1.7.0 = P1.1

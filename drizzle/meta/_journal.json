@@ -78,6 +78,13 @@
       "when": 1782925557567,
       "tag": "0010_far_wolfsbane",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1782929340047,
+      "tag": "0011_white_jasper_sitwell",
+      "breakpoints": true
     }
   ]
 }

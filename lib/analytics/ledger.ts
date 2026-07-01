@@ -13,6 +13,7 @@ export type LedgerType =
   | "mtf_interest"
   | "interest"
   | "dividend"
+  | "dividend_tds"
   | "adjustment";
 
 export const LEDGER_TYPES: LedgerType[] = [
@@ -23,6 +24,7 @@ export const LEDGER_TYPES: LedgerType[] = [
   "mtf_interest",
   "interest",
   "dividend",
+  "dividend_tds",
   "adjustment",
 ];
 
@@ -35,6 +37,7 @@ export const TYPE_SIGN: Record<LedgerType, 1 | -1> = {
   mtf_interest: -1,
   interest: 1,
   dividend: 1,
+  dividend_tds: -1,
   adjustment: 1, // adjustments can be ±; caller passes the real sign
 };
 
@@ -46,6 +49,7 @@ export const TYPE_LABEL: Record<LedgerType, string> = {
   mtf_interest: "MTF interest",
   interest: "Interest",
   dividend: "Dividend",
+  dividend_tds: "Dividend TDS",
   adjustment: "Adjustment",
 };
 
@@ -103,7 +107,7 @@ export function summariseLedger(
       withdrawalsPaise: by("withdrawal"),
       chargesPaise: by("charge") + by("mtf_interest"),
       realisedPnlPaise: by("realised_pnl"),
-      otherPaise: by("interest") + by("dividend") + by("adjustment"),
+      otherPaise: by("interest") + by("dividend") + by("dividend_tds") + by("adjustment"),
       flowsPaise: flows,
       availablePaise: opening + flows,
       count: es.length,

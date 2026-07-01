@@ -33,7 +33,8 @@ export default function CorporateActionsPage() {
           EQUITY holding (options/futures don&apos;t pay dividends; a short seller owes rather than receives one — not
           modelled here). Each event can only be applied once (locked after apply); applying doesn&apos;t retroactively
           touch already-closed trades. Post-2020 dividends are taxable in your hands with 10% TDS above ₹5,000/company/
-          year — that threshold isn&apos;t auto-tracked yet, just posted as gross income.
+          FY (section 194) — each dividend posts a matching TDS ledger entry once that company&apos;s FY aggregate
+          crosses the threshold; see the Dividend &amp; TDS card on Tax Summary for the per-company breakdown.
         </p>
       </div>
     </>

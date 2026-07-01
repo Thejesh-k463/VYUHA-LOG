@@ -5,7 +5,7 @@ import { desc } from "drizzle-orm";
 import type { LedgerEntryInput, LedgerType } from "@/lib/analytics/ledger";
 
 /** All ledger entries (latest first). Amounts are signed paise. */
-export function getLedgerEntries(): LedgerEntryInput[] {
+export function getLedgerEntries(): (LedgerEntryInput & { symbol: string | null })[] {
   return db
     .select()
     .from(ledgerEntries)
@@ -19,5 +19,6 @@ export function getLedgerEntries(): LedgerEntryInput[] {
       amountPaise: r.amountPaise,
       note: r.note,
       refTradeId: r.refTradeId,
+      symbol: r.symbol,
     }));
 }

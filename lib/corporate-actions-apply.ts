@@ -3,10 +3,21 @@ import { db } from "@/lib/db";
 import { trades as tradesTable, corporateActions, ledgerEntries } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { splitBonusMultiplier, adjustForSplitOrBonus, dividendIncome } from "@/lib/analytics/corporate-actions";
+import { computeEventTds } from "@/lib/analytics/dividend-tds";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
+import { getSettings } from "@/lib/queries/settings";
 import { toPaise } from "@/lib/money";
 import { recordAudit } from "@/lib/audit";
+
+// IND-6 — same FY-string convention used by lib/analytics/tax.ts and capital-gains.ts.
+function fyOf(dateStr: string, fyStartMonth: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const start = m >= fyStartMonth ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
 
 export interface ApplyResult {
   ok: boolean;
@@ -118,7 +129,22 @@ export function applyCorporateAction(id: number): ApplyResult {
   const perShare = action.dividendPerShare ?? 0;
   if (perShare <= 0) return { ok: false, message: "Invalid dividend amount — nothing to post." };
   const eligible = matching.filter((t) => t.instrumentType === "equity" && t.buyQty >= t.sellQty);
+
+  // IND-6 — Section 194 TDS: 10% once this company's aggregate dividend to the
+  // shareholder crosses ₹5,000 in the FY. Seed the running total from any
+  // dividend already posted for this symbol this FY (earlier corporate actions).
+  const fyStartMonth = getSettings()?.fyStartMonth ?? 4;
+  const fy = fyOf(action.exDate, fyStartMonth);
+  const priorDividends = db
+    .select()
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.symbol, action.symbol))
+    .all()
+    .filter((e) => e.type === "dividend" && fyOf(e.date, fyStartMonth) === fy);
+  let cumulative = priorDividends.reduce((s, e) => s + e.amountPaise, 0) / 100;
+
   let posted = 0;
+  let tdsPosted = 0;
   db.transaction((tx) => {
     for (const t of eligible) {
       const qty = t.buyQty - t.sellQty || t.buyQty;
@@ -131,6 +157,7 @@ export function applyCorporateAction(id: number): ApplyResult {
           bucket: t.bucket,
           type: "dividend",
           amountPaise: toPaise(income),
+          symbol: action.symbol,
           note: `${t.symbol} dividend @ ₹${perShare}/share × ${qty} qty`,
           refTradeId: t.id,
           source: "corporate_action",
@@ -145,6 +172,33 @@ export function applyCorporateAction(id: number): ApplyResult {
         after: { symbol: t.symbol, qty, perShare, income },
       });
       posted++;
+
+      const { tds } = computeEventTds(cumulative, income);
+      cumulative += income;
+      if (tds > 0) {
+        const tdsIns = tx
+          .insert(ledgerEntries)
+          .values({
+            date: action.exDate,
+            bucket: t.bucket,
+            type: "dividend_tds",
+            amountPaise: -toPaise(tds),
+            symbol: action.symbol,
+            note: `${t.symbol} TDS @10% on dividend (FY ${fy} aggregate crossed ₹5,000)`,
+            refTradeId: t.id,
+            source: "corporate_action",
+          })
+          .returning({ id: ledgerEntries.id })
+          .get();
+        recordAudit({
+          entity: "ledger",
+          entityId: tdsIns?.id ?? null,
+          action: "create",
+          summary: `${t.symbol} dividend TDS ₹${tds} posted (FY ${fy})`,
+          after: { symbol: t.symbol, fy, tds },
+        });
+        tdsPosted++;
+      }
     }
     tx.update(corporateActions).set({ appliedAt: sql`(datetime('now'))` }).where(eq(corporateActions.id, id)).run();
   });
@@ -157,7 +211,7 @@ export function applyCorporateAction(id: number): ApplyResult {
   });
   return {
     ok: true,
-    message: `Posted ${posted} dividend ledger entr${posted === 1 ? "y" : "ies"}${matching.length > eligible.length ? ` (${matching.length - eligible.length} non-equity/short position${matching.length - eligible.length === 1 ? "" : "s"} skipped)` : ""}.`,
-    ledgerPosted: posted,
+    message: `Posted ${posted} dividend ledger entr${posted === 1 ? "y" : "ies"}${tdsPosted > 0 ? ` (${tdsPosted} with TDS deducted — FY ${fy} aggregate crossed ₹5,000)` : ""}${matching.length > eligible.length ? ` (${matching.length - eligible.length} non-equity/short position${matching.length - eligible.length === 1 ? "" : "s"} skipped)` : ""}.`,
+    ledgerPosted: posted + tdsPosted,
   };
 }

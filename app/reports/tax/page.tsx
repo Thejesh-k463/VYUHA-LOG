@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
+import { getLedgerEntries } from "@/lib/queries/ledger";
 import { taxByFy } from "@/lib/analytics/tax";
 import {
   aggregateTradesByFy,
@@ -12,10 +13,20 @@ import {
   GRANDFATHER_DATE,
   type CapitalGainsTrade,
 } from "@/lib/analytics/capital-gains";
+import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
 import { inr } from "@/lib/format";
 import { Info } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+function fyOf(dateStr: string, fyStartMonth: number, fallback: string): string {
+  if (!dateStr) return fallback;
+  const d = new Date(dateStr + "T00:00:00");
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const start = m >= fyStartMonth ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
 
 const COLS = [
   { key: "fy", label: "FY" }, { key: "trades", label: "Trades" },
@@ -53,6 +64,19 @@ export default function TaxReportPage() {
   const currentFy = `${todayFyStart}-${String((todayFyStart + 1) % 100).padStart(2, "0")}`;
   const byFy = aggregateTradesByFy(cgTrades, fyStartMonth, currentFy);
   const timeline = computeTaxTimeline(byFy);
+
+  // IND-6 — dividend & TDS: group "dividend" ledger entries (posted by corporate
+  // actions) by company + FY and estimate the 10%-above-₹5,000 TDS per section 194.
+  const ledgerEntries = getLedgerEntries();
+  const dividendEvents: DividendEvent[] = ledgerEntries
+    .filter((e) => e.type === "dividend" && e.symbol)
+    .map((e) => ({
+      symbol: e.symbol!,
+      fy: fyOf(e.date, fyStartMonth, currentFy),
+      date: e.date,
+      grossAmount: e.amountPaise / 100,
+    }));
+  const dividendRows = summariseByCompanyFy(dividendEvents);
 
   return (
     <>
@@ -157,6 +181,43 @@ export default function TaxReportPage() {
           </CardContent>
         </Card>
 
+        <Card className="p-0">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Dividend income &amp; TDS (informational)</CardTitle>
+            <Badge variant="secondary">10% above ₹{TDS_THRESHOLD.toLocaleString("en-IN")}/company/FY</Badge>
+          </CardHeader>
+          <CardContent className="p-0">
+            {dividendRows.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">No dividend ledger entries yet — post one via a Corporate Action.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-y border-border text-left text-muted-foreground">
+                      <th className="px-2.5 py-2 font-medium">FY</th>
+                      <th className="px-2.5 py-2 font-medium">Company</th>
+                      <th className="px-2.5 py-2 text-right font-medium">Gross dividend</th>
+                      <th className="px-2.5 py-2 text-right font-medium">TDS (est.)</th>
+                      <th className="px-2.5 py-2 text-right font-medium">Net credited</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dividendRows.map((r) => (
+                      <tr key={`${r.fy}-${r.symbol}`} className="border-b border-border/40">
+                        <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
+                        <td className="px-2.5 py-1.5">{r.symbol}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums text-profit">{inr(r.grossTotal, { decimals: 0 })}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{r.thresholdCrossed ? inr(r.tdsTotal, { decimals: 0 }) : "—"}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums font-medium">{inr(r.netTotal, { decimals: 0 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <p className="text-[11px] text-muted-foreground">
           <strong>Rates by sell date:</strong> before {RATE_CUTOVER_DATE} — STCG 15%, LTCG 10%, ₹1L annual LTCG
           exemption; on/after — STCG 20%, LTCG 12.5%, ₹1.25L exemption. A financial year straddling the cutover uses
@@ -167,7 +228,10 @@ export default function TaxReportPage() {
           forward up to 4 years; a non-speculative (F&amp;O) loss can offset any other gain in the same year
           (including capital gains) but once carried forward (up to 8 years) only against future business income.{" "}
           <strong>Speculative/F&amp;O columns</strong> are business income taxed at your income-tax slab rate — not
-          computed here, since that depends on your total income.
+          computed here, since that depends on your total income. <strong>Dividend TDS</strong> is an estimate — the
+          10% deduction applies once the company&apos;s aggregate FY dividend to you crosses ₹5,000, per section 194;
+          only dividends recorded here via a Corporate Action are counted, so it may understate real TDS if you also
+          hold that company through a different demat/broker not tracked in this journal.
           {hasPreGrandfatherLot && (
             <> <strong className="text-warning">Note:</strong> at least one holding was bought before {GRANDFATHER_DATE} —
             LTCG grandfathering (cost = higher of actual cost or 31-Jan-2018 fair value) isn&apos;t applied without that

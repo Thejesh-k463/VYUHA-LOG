@@ -376,9 +376,10 @@ export const ledgerEntries = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     date: text("date").notNull(), // ISO date
     bucket: text("bucket").notNull().default(""), // equity | active | ""
-    type: text("type").notNull(), // deposit | withdrawal | charge | realised_pnl | mtf_interest | interest | adjustment
+    type: text("type").notNull(), // deposit | withdrawal | charge | realised_pnl | mtf_interest | interest | dividend | dividend_tds | adjustment
     amountPaise: integer("amount_paise").notNull().default(0), // signed
     refTradeId: integer("ref_trade_id"),
+    symbol: text("symbol"), // canonical ticker — set on dividend/dividend_tds entries for per-company TDS aggregation
     note: text("note"),
     source: text("source").notNull().default("manual"),
     createdAt: text("created_at").notNull().default(now),
