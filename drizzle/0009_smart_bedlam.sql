@@ -1,0 +1,1 @@
+ALTER TABLE `trades` ADD `implied_vol` real;

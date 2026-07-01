@@ -1,0 +1,1 @@
+ALTER TABLE `trades` ADD `trailing_sl` real;

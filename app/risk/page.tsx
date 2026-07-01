@@ -1,0 +1,194 @@
+import { PageHeader } from "@/components/layout/page-header";
+import { RiskCockpitClient } from "@/components/risk/risk-cockpit-client";
+import { ExpiryObligations } from "@/components/risk/expiry-obligations";
+import { MtmForm } from "@/components/trackers/mtm-form";
+import { BhavcopyMtm } from "@/components/trackers/bhavcopy-mtm";
+import { LimitCheck } from "@/components/risk/limit-check";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getTrades } from "@/lib/queries/trades";
+import { getMtmMap, getSpotMap } from "@/lib/queries/mtm";
+import { getSettings } from "@/lib/queries/settings";
+import { getSectorMap } from "@/lib/queries/instruments";
+import { getAliasMap } from "@/lib/queries/aliases";
+import { resolveTicker } from "@/lib/analytics/aliases";
+import { loadRatesMap } from "@/lib/engine/rates-db";
+import type { ExposureInput } from "@/lib/analytics/exposure";
+import {
+  computeSettlement,
+  DEFAULT_SETTLEMENT_RATES,
+  type SettlementInput,
+} from "@/lib/analytics/settlement";
+import { portfolioGreeks, type PositionGreeksInput, type OptionType } from "@/lib/analytics/greeks";
+import { GreeksPanel } from "@/components/risk/greeks-panel";
+
+export const dynamic = "force-dynamic";
+
+const DERIVATIVE_SEGMENTS = new Set([
+  "stock_option",
+  "index_option",
+  "future",
+  "commodity_future",
+  "commodity_option",
+]);
+
+/** Statutory equity-delivery STT, read from charge_config (not hard-coded). */
+function deliverySttFromConfig(): number {
+  for (const r of loadRatesMap().values()) {
+    if (r.segment === "eq_delivery" && r.sttPct > 0) return r.sttPct;
+  }
+  return DEFAULT_SETTLEMENT_RATES.deliverySttPct;
+}
+
+function daysBetween(a: string | null, b: string): number | null {
+  if (!a) return null;
+  const d1 = new Date(a + "T00:00:00").getTime();
+  const d2 = new Date(b + "T00:00:00").getTime();
+  if (Number.isNaN(d1) || Number.isNaN(d2)) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+
+export default function RiskPage() {
+  const today = new Date().toISOString().slice(0, 10);
+  const trades = getTrades();
+  const mtm = getMtmMap();
+  const spot = getSpotMap();
+  const settings = getSettings();
+  const equityCapital = settings?.equityCapital ?? 1300000;
+  const activeCapital = settings?.activeCapital ?? 400000;
+  const sectorMap = getSectorMap();
+  const aliasMap = getAliasMap();
+  const sectorFor = (symbol: string): string | null => {
+    const up = symbol.toUpperCase();
+    return sectorMap.get(up) ?? sectorMap.get(resolveTicker(up, aliasMap)) ?? null;
+  };
+
+  const inputs: ExposureInput[] = trades
+    .filter((t) => t.isOpen)
+    .map((t) => {
+      // Short (sell-to-open, e.g. a written CE/PE) has the open leg on sellQty with
+      // buyQty still 0 — same convention as /strategies and the settlement engine.
+      const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+      const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
+      const entry = side === "long" ? t.avgBuyPrice : t.avgSellPrice;
+      const mtmPrice =
+        mtm.get(t.symbol.toUpperCase()) ??
+        mtm.get(t.tradingsymbol.toUpperCase()) ??
+        t.closingPrice ??
+        entry;
+      return {
+        id: t.id,
+        symbol: t.symbol,
+        tradingsymbol: t.tradingsymbol,
+        broker: t.broker,
+        bucket: t.bucket,
+        segment: t.segment,
+        exchange: t.exchange,
+        optionType: t.optionType,
+        strike: t.strike,
+        expiry: t.expiry,
+        qty,
+        entry,
+        mtm: mtmPrice,
+        originalSl: t.slPlanned,
+        trailingSl: t.trailingSl,
+        target: t.targetPlanned,
+        daysHeld: daysBetween(side === "long" ? t.buyDate : t.sellDate, today),
+        dte: t.expiry ? daysBetween(today, t.expiry) : null,
+        sector: sectorFor(t.symbol),
+        side,
+        impliedVol: t.impliedVol,
+        spot: t.instrumentType === "option" ? spot.get(t.symbol.toUpperCase()) ?? null : null,
+      };
+    });
+
+  // Option Greeks (P1.2 slice) — Black-Scholes off the underlying spot; only priceable
+  // when a spot is on record (from bhavcopy/manual MTM) and the contract has an expiry.
+  const greeksInputs: PositionGreeksInput[] = inputs
+    .filter((p) => p.optionType === "CE" || p.optionType === "PE")
+    .map((p) => ({
+      id: p.id,
+      symbol: p.symbol,
+      spot: p.spot ?? null,
+      strike: p.strike ?? 0,
+      dte: p.dte,
+      optionType: p.optionType as OptionType,
+      ivPct: p.impliedVol ?? null,
+      qty: p.qty,
+      side: p.side ?? "long",
+    }));
+  const greeks = portfolioGreeks(greeksInputs);
+
+  // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
+  const settlementInputs: SettlementInput[] = trades
+    .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
+    .map((t) => {
+      const netQty = Math.abs(t.buyQty - t.sellQty) || t.buyQty;
+      const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
+      // futures: settlement uses the futures price (its MTM); options: underlying spot.
+      const refPrice =
+        t.instrumentType === "option"
+          ? spot.get(t.symbol.toUpperCase()) ?? null
+          : mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
+      return {
+        id: t.id,
+        symbol: t.symbol,
+        tradingsymbol: t.tradingsymbol,
+        segment: t.segment,
+        optionType: t.optionType,
+        strike: t.strike,
+        expiry: t.expiry,
+        netQty,
+        side,
+        refPrice,
+      };
+    });
+  const settlement = computeSettlement(
+    settlementInputs,
+    { ...DEFAULT_SETTLEMENT_RATES, deliverySttPct: deliverySttFromConfig() },
+    today,
+  );
+
+  return (
+    <>
+      <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
+      <div className="space-y-5 p-6">
+        <RiskCockpitClient
+          inputs={inputs}
+          capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
+        />
+        <ExpiryObligations summary={settlement} />
+        {greeks.count > 0 && <GreeksPanel greeks={greeks} />}
+        <Card>
+          <CardHeader>
+            <CardTitle>Pre-trade limits check</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              What-if: test a prospective order against your per-trade cap, daily-loss stop, max-open, max-trades and
+              concentration limits (from Settings → Risk) before you place it.
+            </p>
+            <LimitCheck />
+          </CardContent>
+        </Card>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bulk update — MTM price &amp; stops</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <MtmForm />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Auto-MTM from bhavcopy</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BhavcopyMtm />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}

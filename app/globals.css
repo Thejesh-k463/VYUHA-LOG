@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/*
+ * Vyuha — dark trading-terminal theme (default).
+ * Tailwind v4: tokens declared in @theme generate utilities (bg-card, text-loss…).
+ */
+@theme {
+  --color-background: #0a0e14;
+  --color-surface: #0e141d;
+  --color-card: #111a26;
+  --color-card-hover: #16212f;
+  --color-border: #1f2b3a;
+  --color-input: #16212f;
+  --color-foreground: #e6edf3;
+  --color-muted: #7d8b9a;
+  --color-muted-foreground: #8a98a7;
+  --color-primary: #2dd4bf;
+  --color-primary-foreground: #04110f;
+  --color-accent: #2f81f7;
+  --color-accent-foreground: #ffffff;
+  --color-profit: #16c784;
+  --color-loss: #f6465d;
+  --color-warning: #f0b90b;
+  --color-ring: #2dd4bf;
+
+  --radius: 0.5rem;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-feature-settings: "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 35%, transparent);
+  }
+
+  /* Light theme — redefines the tokens so every utility picks up light values. */
+  html.theme-light {
+    color-scheme: light;
+    --color-background: #f4f6f9;
+    --color-surface: #ffffff;
+    --color-card: #ffffff;
+    --color-card-hover: #eef1f5;
+    --color-border: #d7dee6;
+    --color-input: #ffffff;
+    --color-foreground: #14181f;
+    --color-muted: #5b6675;
+    --color-muted-foreground: #5b6675;
+    --color-primary: #0d9488;
+    --color-primary-foreground: #ffffff;
+    --color-accent: #1f6feb;
+    --color-accent-foreground: #ffffff;
+    --color-profit: #15803d;
+    --color-loss: #dc2626;
+    --color-warning: #b45309;
+    --color-ring: #0d9488;
+  }
+
+  /* Colorblind-safe palette: swap red/green for orange/blue. */
+  .cb-safe {
+    --color-profit: #3b82f6;
+    --color-loss: #f59e0b;
+  }
+  html.theme-light.cb-safe {
+    --color-profit: #2563eb;
+    --color-loss: #ea580c;
+  }
+
+  /* Thin terminal scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+}
