@@ -109,6 +109,27 @@ Read sections 1–2 before writing any code.
 >   boundary case); a fresh 31-day BANKNIFTY CE showed Delta +18, Gamma +0.0030, Theta −693/day, Vega +1,751 —
 >   all correctly signed for a long call — and portfolio totals summed the two positions correctly.
 >   REMAINING for the rest of P1.2: VaR/CVaR, margin/SPAN tracking, beta-weighted exposure, stress scenarios.
+> - **Corporate actions — split/bonus/dividend (DONE — IND-13 V1 slice)** — closes a real correctness gap: an
+>   unhandled split/bonus on a held stock silently corrupts qty and avg cost basis for every downstream
+>   calculation (exposure, P&L, risk), the same class of bug as the earlier short-position issue. Pure
+>   `lib/analytics/corporate-actions.ts` (17 tests): `splitBonusMultiplier` (split "A:B" → B/A; bonus "A:B" →
+>   (A+B)/A), `adjustForSplitOrBonus` (scales qty up + avg cost/SL/TSL/target down by the same factor —
+>   invested value AND ₹ stop-distance both provably preserved), `dividendIncome`, and a bulk-paste parser.
+>   New `corporate_actions` table (migration `0010`: symbol, type, ex-date, ratio or ₹/share, `appliedAt` lock).
+>   `lib/corporate-actions-apply.ts` applies an event to every currently-open matching position (resolved via
+>   the existing alias map) in one transaction, direction-aware (adjusts whichever leg — buy or sell — is the
+>   open one, so it works for a short option leg too) + audits every mutated trade; dividend is scoped to open
+>   LONG EQUITY holdings only (options/futures don't pay dividends; a genuine short seller owes rather than
+>   receives one — not modelled) and posts one `ledger_entries` row per matching position with a new
+>   **`dividend`** ledger type (extends `LedgerType`/`TYPE_SIGN`/`TYPE_LABEL` in `lib/analytics/ledger.ts`).
+>   Manager UI + nav entry at `/corporate-actions` (Journal group). Each event is a one-shot: `appliedAt` locks
+>   it against double-application. VERIFIED against REAL held positions: applied a 1:1 bonus to the actual
+>   ANGEL ONE LIMITED holding — buyQty 1500→3000, avgBuyPrice ₹352.82→₹176.41, buyValue unchanged at
+>   ₹5,29,230 to the rupee, and a pre-set SL/target (₹320/₹400) correctly scaled to ₹160/₹200; applied a ₹5/share
+>   dividend to the real ADANI TOTAL GAS LIMITED holding (500 shares) — posted a ₹2,500 ledger entry, exact.
+>   Test mutations were reverted afterward (real position restored to its true original values). REMAINING for
+>   full IND-13: rights entitlements, buybacks, OFS (out of scope here — a future primary-market extension
+>   alongside `/ipos`); dividend TDS (10% above ₹5,000/company/FY) is flagged in the UI copy but not auto-tracked.
 > - **Instruments master populated with real sector data (DONE — closes a P1.3 follow-up)** — the 9 real held
 >   symbols' sectors were hand-typed guesses when P1.3 shipped; one was WRONG (NAUKRI tagged "IT" — it's actually
 >   Info Edge, an online-classifieds business, "Consumer Discretionary"). Re-populated `instruments` (macro_sector
@@ -616,9 +637,10 @@ All of the above stay offline-first (bhavcopy/AIS are downloaded files; feeds op
 existing pipeline (classify → charges-from-`charge_config` → ledger → analytics). New statutory rates
 (physical-settlement STT, new CG rates) go in `charge_config` / a dated rate table, never hard-coded.
 
-— End of handoff. Current tag: **v1.10.0** (installer) — Option Greeks (Black-Scholes delta/gamma/theta/vega,
-migration `0009` for `trades.implied_vol`) now shipped. v1.9.0 installer = F&O structured trade entry + short
-(sell-to-open) support + real Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data
-foundation (instruments master + price_history + sector concentration; migration `0008`). v1.7.0 = P1.1
+— End of handoff. Current tag: **v1.11.0** (installer) — Corporate actions (split/bonus/dividend, migration
+`0010`) now shipped. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
+for `trades.implied_vol`). v1.9.0 installer = F&O structured trade entry + short (sell-to-open) support + real
+Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data foundation (instruments master
++ price_history + sector concentration; migration `0008`). v1.7.0 = P1.1
 finish (TWR + benchmark α/β) + P1.4 pre-trade limits. 1.6.0
 was a no-feature version-sync-only bump. Version synced across all 4 files via `npm run bump-version`.

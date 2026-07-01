@@ -12,6 +12,7 @@ export type LedgerType =
   | "realised_pnl"
   | "mtf_interest"
   | "interest"
+  | "dividend"
   | "adjustment";
 
 export const LEDGER_TYPES: LedgerType[] = [
@@ -21,6 +22,7 @@ export const LEDGER_TYPES: LedgerType[] = [
   "realised_pnl",
   "mtf_interest",
   "interest",
+  "dividend",
   "adjustment",
 ];
 
@@ -32,6 +34,7 @@ export const TYPE_SIGN: Record<LedgerType, 1 | -1> = {
   realised_pnl: 1, // may still be negative (a realised loss) — caller passes the real sign
   mtf_interest: -1,
   interest: 1,
+  dividend: 1,
   adjustment: 1, // adjustments can be ±; caller passes the real sign
 };
 
@@ -42,6 +45,7 @@ export const TYPE_LABEL: Record<LedgerType, string> = {
   realised_pnl: "Realised P&L",
   mtf_interest: "MTF interest",
   interest: "Interest",
+  dividend: "Dividend",
   adjustment: "Adjustment",
 };
 
@@ -66,7 +70,7 @@ export interface BucketLedger {
   withdrawalsPaise: number; // negative
   chargesPaise: number; // negative (charges + mtf_interest)
   realisedPnlPaise: number;
-  otherPaise: number; // interest + adjustment
+  otherPaise: number; // interest + dividend + adjustment
   flowsPaise: number; // Σ all entries
   availablePaise: number; // opening + flows
   count: number;
@@ -99,7 +103,7 @@ export function summariseLedger(
       withdrawalsPaise: by("withdrawal"),
       chargesPaise: by("charge") + by("mtf_interest"),
       realisedPnlPaise: by("realised_pnl"),
-      otherPaise: by("interest") + by("adjustment"),
+      otherPaise: by("interest") + by("dividend") + by("adjustment"),
       flowsPaise: flows,
       availablePaise: opening + flows,
       count: es.length,

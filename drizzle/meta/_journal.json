@@ -71,6 +71,13 @@
       "when": 1782905105124,
       "tag": "0009_smart_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1782925557567,
+      "tag": "0010_far_wolfsbane",
+      "breakpoints": true
     }
   ]
 }

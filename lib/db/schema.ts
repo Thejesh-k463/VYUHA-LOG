@@ -490,6 +490,30 @@ export const priceHistory = sqliteTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// corporate_actions — split/bonus/dividend events (IND-13, V1 slice). Applying
+// a split/bonus scales open positions' qty + every price level (avg cost, SL,
+// TSL, target) so invested value and ₹ stop-distance are preserved; applying a
+// dividend posts a ledger entry per currently-open matching position.
+// appliedAt is set once, preventing double-application of the same event.
+// ---------------------------------------------------------------------------
+export const corporateActions = sqliteTable(
+  "corporate_actions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    symbol: text("symbol").notNull(), // canonical ticker (upper-cased)
+    type: text("type").notNull(), // split | bonus | dividend
+    exDate: text("ex_date").notNull(), // ISO date
+    fromUnits: real("from_units"), // split/bonus ratio "from" side (e.g. 1 in "1:5")
+    toUnits: real("to_units"), // split/bonus ratio "to" side (e.g. 5 in "1:5")
+    dividendPerShare: real("dividend_per_share"), // ₹ per share (dividend only)
+    note: text("note"),
+    appliedAt: text("applied_at"), // ISO datetime; null = not yet applied
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [index("corporate_actions_symbol_idx").on(t.symbol), index("corporate_actions_ex_date_idx").on(t.exDate)],
+);
+
 // Type exports
 export type Trade = typeof trades.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
@@ -517,3 +541,5 @@ export type Instrument = typeof instruments.$inferSelect;
 export type NewInstrument = typeof instruments.$inferInsert;
 export type PriceHistoryRow = typeof priceHistory.$inferSelect;
 export type NewPriceHistoryRow = typeof priceHistory.$inferInsert;
+export type CorporateAction = typeof corporateActions.$inferSelect;
+export type NewCorporateAction = typeof corporateActions.$inferInsert;

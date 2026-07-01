@@ -12,7 +12,8 @@ export type AuditEntity =
   | "settings"
   | "capital"
   | "ledger"
-  | "restriction";
+  | "restriction"
+  | "corporate_action";
 
 export interface AuditInput {
   entity: AuditEntity;
