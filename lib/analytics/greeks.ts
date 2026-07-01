@@ -101,6 +101,8 @@ export function blackScholes(
   };
 }
 
+export type IvSource = "position" | "market" | "default";
+
 export interface PositionGreeksInput {
   id: number;
   symbol: string;
@@ -108,7 +110,8 @@ export interface PositionGreeksInput {
   strike: number;
   dte: number | null; // null = no expiry on record
   optionType: OptionType;
-  ivPct: number | null; // null = use DEFAULT_IV_PCT
+  ivPct: number | null; // per-position IV the user entered; null = fall back
+  marketIvPct?: number | null; // IND-12 — latest India VIX close, used when no per-position IV is set
   qty: number; // total units (lots × lot size)
   side: Side;
 }
@@ -116,8 +119,9 @@ export interface PositionGreeksInput {
 export interface PositionGreeks {
   id: number;
   symbol: string;
-  ivPct: number; // the IV actually used (input or default)
-  ivIsDefault: boolean;
+  ivPct: number; // the IV actually used (position, market, or flat default)
+  ivIsDefault: boolean; // true whenever NOT the user's own per-position IV (market or flat)
+  ivSource: IvSource;
   perUnit: BlackScholesResult;
   // Position-level (scaled by qty and signed for side — short flips the raw Greeks).
   delta: number;
@@ -126,17 +130,29 @@ export interface PositionGreeks {
   vega: number;
 }
 
+/**
+ * Three-tier IV fallback: the position's own entered IV, else the latest market-wide
+ * IV proxy (India VIX), else the flat DEFAULT_IV_PCT. Exported standalone so the exact
+ * chain is independently testable.
+ */
+export function resolveIvSource(ivPct: number | null, marketIvPct: number | null | undefined): { ivPct: number; source: IvSource } {
+  if (ivPct != null && ivPct > 0) return { ivPct, source: "position" };
+  if (marketIvPct != null && marketIvPct > 0) return { ivPct: marketIvPct, source: "market" };
+  return { ivPct: DEFAULT_IV_PCT, source: "default" };
+}
+
 /** Position Greeks for one open option leg. Returns null if it can't be priced (no spot/dte). */
 export function positionGreeks(p: PositionGreeksInput): PositionGreeks | null {
   if (p.spot == null || p.dte == null || p.qty <= 0) return null;
-  const ivPct = p.ivPct != null && p.ivPct > 0 ? p.ivPct : DEFAULT_IV_PCT;
+  const { ivPct, source } = resolveIvSource(p.ivPct, p.marketIvPct);
   const perUnit = blackScholes(p.spot, p.strike, p.dte, p.optionType, ivPct);
   const sign = p.side === "long" ? 1 : -1;
   return {
     id: p.id,
     symbol: p.symbol,
     ivPct,
-    ivIsDefault: p.ivPct == null || p.ivPct <= 0,
+    ivIsDefault: source !== "position",
+    ivSource: source,
     perUnit,
     delta: r2(perUnit.delta * p.qty * sign),
     gamma: r4(perUnit.gamma * p.qty * sign),

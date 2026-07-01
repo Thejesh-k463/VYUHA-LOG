@@ -20,6 +20,9 @@ import {
 } from "@/lib/analytics/settlement";
 import { portfolioGreeks, type PositionGreeksInput, type OptionType } from "@/lib/analytics/greeks";
 import { GreeksPanel } from "@/components/risk/greeks-panel";
+import { getLatestVixClose, VIX_SYMBOL } from "@/lib/queries/vix";
+import { getBenchmarkMeta } from "@/lib/queries/benchmark";
+import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +106,10 @@ export default function RiskPage() {
 
   // Option Greeks (P1.2 slice) — Black-Scholes off the underlying spot; only priceable
   // when a spot is on record (from bhavcopy/manual MTM) and the contract has an expiry.
+  // IND-12 — when a position has no per-position IV, fall back to the latest India VIX
+  // close (a real market-wide vol read) before the flat 20% estimate.
+  const latestVix = getLatestVixClose();
+  const vixMeta = getBenchmarkMeta(VIX_SYMBOL);
   const greeksInputs: PositionGreeksInput[] = inputs
     .filter((p) => p.optionType === "CE" || p.optionType === "PE")
     .map((p) => ({
@@ -113,6 +120,7 @@ export default function RiskPage() {
       dte: p.dte,
       optionType: p.optionType as OptionType,
       ivPct: p.impliedVol ?? null,
+      marketIvPct: latestVix,
       qty: p.qty,
       side: p.side ?? "long",
     }));
@@ -157,7 +165,23 @@ export default function RiskPage() {
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
         <ExpiryObligations summary={settlement} />
-        {greeks.count > 0 && <GreeksPanel greeks={greeks} />}
+        {greeks.count > 0 && (
+          <>
+            <GreeksPanel greeks={greeks} latestVix={latestVix} />
+            <Card>
+              <CardHeader>
+                <CardTitle>India VIX (Greeks IV fallback)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BenchmarkPanel
+                  symbol={VIX_SYMBOL}
+                  meta={vixMeta}
+                  purpose="Used as the IV fallback for the Greeks above when a position has no per-position implied vol set."
+                />
+              </CardContent>
+            </Card>
+          </>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Pre-trade limits check</CardTitle>

@@ -14,12 +14,15 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 
 const signed = (v: number) => (v >= 0 ? "+" : "");
 
-export function GreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
+export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; latestVix?: number | null }) {
   return (
     <Card className="p-0">
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Option Greeks</CardTitle>
-        <Badge variant="secondary">{greeks.count} option{greeks.count === 1 ? "" : "s"} priced</Badge>
+        <div className="flex items-center gap-2">
+          {latestVix != null && <Badge variant="outline">India VIX {latestVix}</Badge>}
+          <Badge variant="secondary">{greeks.count} option{greeks.count === 1 ? "" : "s"} priced</Badge>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -54,7 +57,9 @@ export function GreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
                 <tr key={g.id} className="border-b border-border/40">
                   <td className="px-2.5 py-1.5 font-medium">{g.symbol}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                    {g.ivPct}%{g.ivIsDefault && <span className="ml-1 text-[10px] text-warning">est.</span>}
+                    {g.ivPct}%
+                    {g.ivSource === "market" && <span className="ml-1 text-[10px] text-warning">VIX</span>}
+                    {g.ivSource === "default" && <span className="ml-1 text-[10px] text-warning">est.</span>}
                   </td>
                   <td className={`px-2 py-1.5 text-right tabular-nums ${g.delta >= 0 ? "text-profit" : "text-loss"}`}>{signed(g.delta)}{num(g.delta, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{num(g.gamma, 4)}</td>
@@ -69,9 +74,11 @@ export function GreeksPanel({ greeks }: { greeks: PortfolioGreeks }) {
         <p className="text-[11px] text-muted-foreground">
           Black-Scholes estimates from the underlying spot (bhavcopy/manual MTM) — Indian index options are
           European-style (exact), stock options are American-style (Black-Scholes is the standard retail
-          approximation, ignoring early-exercise value). No live IV feed exists yet, so IV is either what you set
-          on a position (Portfolio Risk → edit a position → &ldquo;Implied vol %&rdquo;) or a flat 20% estimate
-          (marked &ldquo;est.&rdquo;) — set the real IV per position for accuracy.
+          approximation, ignoring early-exercise value). IV falls back in three tiers: what you set on a position
+          (Portfolio Risk → edit a position → &ldquo;Implied vol %&rdquo;), else the latest India VIX close
+          (marked &ldquo;VIX&rdquo; — paste it below), else a flat 20% estimate (marked &ldquo;est.&rdquo;) if no
+          VIX is loaded either. India VIX is a NIFTY-index vol proxy, not the real IV of a specific stock option —
+          set the real per-position IV for accuracy where it matters.
           {greeks.skipped > 0 && ` ${greeks.skipped} option${greeks.skipped === 1 ? "" : "s"} skipped — no underlying spot on record.`}
         </p>
       </CardContent>

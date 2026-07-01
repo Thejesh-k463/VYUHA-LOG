@@ -5,17 +5,21 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
-const PLACEHOLDER = `One close per line:  DATE, CLOSE
+function placeholderFor(symbol: string): string {
+  return `One close per line:  DATE, CLOSE
 30-Jun-2026, 24,000.50
 01-Jul-2026, 24,120.75
-(NSE "NIFTY 50" historical CSV pastes directly)`;
+(NSE "${symbol === "INDIAVIX" ? "India VIX" : "NIFTY 50"}" historical CSV pastes directly)`;
+}
 
 export function BenchmarkPanel({
   symbol,
   meta,
+  purpose = "Alpha/beta regress daily portfolio returns against this index.",
 }: {
   symbol: string;
   meta: { count: number; first: string | null; last: string | null };
+  purpose?: string;
 }) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -43,14 +47,14 @@ export function BenchmarkPanel({
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         {meta.count > 0
-          ? `${meta.count} ${symbol} closes loaded (${meta.first} → ${meta.last}). Alpha/beta regress daily portfolio returns against this index.`
-          : `Paste the ${symbol} daily closes to compute alpha/beta vs the market. Offline — no feed required.`}
+          ? `${meta.count} ${symbol} closes loaded (${meta.first} → ${meta.last}). ${purpose}`
+          : `Paste the ${symbol} daily closes. ${purpose} Offline — no feed required.`}
       </p>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
-        placeholder={PLACEHOLDER}
+        placeholder={placeholderFor(symbol)}
         className="w-full rounded-md border border-border bg-input p-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
       <div className="flex flex-wrap items-center gap-3">

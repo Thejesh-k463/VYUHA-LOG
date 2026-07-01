@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { blackScholes, positionGreeks, portfolioGreeks, DEFAULT_IV_PCT } from "@/lib/analytics/greeks";
+import { blackScholes, positionGreeks, portfolioGreeks, resolveIvSource, DEFAULT_IV_PCT } from "@/lib/analytics/greeks";
 
 describe("blackScholes — put-call parity (C - P = S - K·e^-rT, holds for any inputs)", () => {
   it("holds for an ATM 30d option", () => {
@@ -105,11 +105,47 @@ describe("positionGreeks", () => {
     const g = positionGreeks({ ...base, ivPct: null, side: "long" })!;
     expect(g.ivPct).toBe(DEFAULT_IV_PCT);
     expect(g.ivIsDefault).toBe(true);
+    expect(g.ivSource).toBe("default");
+  });
+
+  it("IND-12 — falls back to the market IV (India VIX) before the flat default", () => {
+    const g = positionGreeks({ ...base, ivPct: null, marketIvPct: 13.24, side: "long" })!;
+    expect(g.ivPct).toBe(13.24);
+    expect(g.ivIsDefault).toBe(true); // still "not the user's own" — market fallback also flagged
+    expect(g.ivSource).toBe("market");
+  });
+
+  it("IND-12 — the position's own IV always wins over the market IV", () => {
+    const g = positionGreeks({ ...base, ivPct: 22, marketIvPct: 13.24, side: "long" })!;
+    expect(g.ivPct).toBe(22);
+    expect(g.ivIsDefault).toBe(false);
+    expect(g.ivSource).toBe("position");
   });
 
   it("returns null when spot or dte is unavailable (can't be priced)", () => {
     expect(positionGreeks({ ...base, spot: null, side: "long" })).toBeNull();
     expect(positionGreeks({ ...base, dte: null, side: "long" })).toBeNull();
+  });
+});
+
+describe("resolveIvSource — IND-12 three-tier IV fallback", () => {
+  it("prefers the position's own IV", () => {
+    expect(resolveIvSource(22, 13.24)).toEqual({ ivPct: 22, source: "position" });
+  });
+
+  it("falls back to market IV when position IV is null", () => {
+    expect(resolveIvSource(null, 13.24)).toEqual({ ivPct: 13.24, source: "market" });
+  });
+
+  it("falls back to market IV when position IV is zero or negative", () => {
+    expect(resolveIvSource(0, 13.24)).toEqual({ ivPct: 13.24, source: "market" });
+    expect(resolveIvSource(-5, 13.24)).toEqual({ ivPct: 13.24, source: "market" });
+  });
+
+  it("falls back to the flat default when neither position nor market IV is available", () => {
+    expect(resolveIvSource(null, null)).toEqual({ ivPct: DEFAULT_IV_PCT, source: "default" });
+    expect(resolveIvSource(null, undefined)).toEqual({ ivPct: DEFAULT_IV_PCT, source: "default" });
+    expect(resolveIvSource(null, 0)).toEqual({ ivPct: DEFAULT_IV_PCT, source: "default" });
   });
 });
 

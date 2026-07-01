@@ -12,6 +12,23 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **IND-12 India VIX ingest → Greeks IV fallback (DONE, the cheap slice)** — reuses the EXISTING generic
+>   `benchmarkPrices` table/route/`BenchmarkPanel` component verbatim (it was already a plain symbol/date/close
+>   series with a CSV-paste UI) under a new symbol `"INDIAVIX"` — zero schema migration. `lib/queries/vix.ts`
+>   exports `VIX_SYMBOL` + `getLatestVixClose()`. `lib/analytics/greeks.ts` gained a three-tier IV fallback via
+>   the new pure `resolveIvSource(positionIv, marketIvPct)` (7 new tests): a position's own entered IV wins, else
+>   the latest India VIX close, else the flat `DEFAULT_IV_PCT` (20%) as the final safety net. `PositionGreeks`
+>   now carries `ivSource: "position" | "market" | "default"` (kept `ivIsDefault` for back-compat — true for both
+>   "market" and "default"). Wired into `app/risk/page.tsx`: `getLatestVixClose()` feeds `marketIvPct` into every
+>   `PositionGreeksInput`; a new "India VIX (Greeks IV fallback)" card (reusing `BenchmarkPanel` with a new
+>   `purpose` prop so its copy isn't stuck saying "alpha/beta" outside the Performance page) sits next to
+>   `GreeksPanel`, which now also shows an "India VIX 13.24" badge and tags per-position IV as "VIX" vs "est."
+>   depending on which tier fired. Verified against real data: loaded 30 real India VIX closes (2026-05-22 →
+>   2026-07-01, fetched live) via the existing `/api/benchmark` loader, temporarily added a real TCS spot price to
+>   get one position priceable, confirmed the "India VIX 13.24" badge and "VIX" IV tag rendered correctly, then
+>   reverted the temporary spot (kept the VIX history — it's real, reusable market data, same call as keeping the
+>   Tapetide-sourced sector data from P1.3). NSE/BSE bhavcopy auto-MTM (the other half of IND-12) already shipped
+>   earlier as P1.3 — see below.
 > - **IND-6 Dividend & TDS tracker (DONE)** — pure `lib/analytics/dividend-tds.ts` (10 tests): Section 194 —
 >   10% TDS once a company's aggregate FY dividend to the shareholder crosses ₹5,000; `computeEventTds()` taxes
 >   the whole payment that crosses the threshold (and every payment after), the common real-world convention since
@@ -642,10 +659,7 @@ Most are unique to India and high-value for an active Indian trader. Build-ready
   Maintain an expiry calendar + lot-size master (NSE revised lot sizes; ≥₹15L contract-value rule).
 
 ### 8C. Products & data (Indian)
-- **IND-12 Free EOD via NSE/BSE bhavcopy + India VIX** *(M, implements P1.3 cheaply)*. India offers
-  **free daily bhavcopy** (NSE/BSE) — use it as the default `PriceSource` adapter for auto-MTM and
-  `price_history`, plus **India VIX** for option context. No paid feed needed; stays offline-friendly
-  (download + cache).
+- **IND-12 Free EOD via NSE/BSE bhavcopy + India VIX (DONE — see top of doc + P1.3 below)**.
 - **IND-13 Corporate actions: bonus / split / rights (RE) / buyback / OFS** *(L)*. Beyond IPOs:
   track **rights entitlements**, **buybacks** (tender/open-market, tax treatment), and **OFS**.
   Auto-adjust qty/avg for bonus/split. Extends the `/ipos` module into a full **primary-market &
@@ -672,11 +686,14 @@ All of the above stay offline-first (bhavcopy/AIS are downloaded files; feeds op
 existing pipeline (classify → charges-from-`charge_config` → ledger → analytics). New statutory rates
 (physical-settlement STT, new CG rates) go in `charge_config` / a dated rate table, never hard-coded.
 
-— End of handoff. Current tag: **v1.11.0** (installer). **v1.12.0** shipped (installer + commit) with IND-1 + IND-2
-dual capital-gains regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`,
-32 tests). Since v1.12.0: IND-6 dividend & TDS tracker (`lib/analytics/dividend-tds.ts`, 10 tests; migration
-`0011` adds `ledger_entries.symbol`) built, tested, and browser-verified against real data — not yet
-version-bumped/rebuilt/committed. Corporate actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0. v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
+— End of handoff. Current tag: **v1.11.0** (installer). **v1.12.0** shipped with IND-1 + IND-2 dual capital-gains
+regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`, 32 tests).
+**v1.13.0** shipped with IND-6 dividend & TDS tracker (`lib/analytics/dividend-tds.ts`, 10 tests; migration
+`0011` adds `ledger_entries.symbol`). Since v1.13.0: IND-12 India VIX ingest → Greeks IV fallback
+(`lib/queries/vix.ts`, `resolveIvSource()` in `lib/analytics/greeks.ts`, 7 new tests; zero migration — reuses
+`benchmarkPrices`) built, tested, and browser-verified against real data (30 real VIX closes loaded) — not yet
+version-bumped/rebuilt/committed. Corporate actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0.
+v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
 for `trades.implied_vol`). v1.9.0 installer = F&O structured trade entry + short (sell-to-open) support + real
 Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data foundation (instruments master
 + price_history + sector concentration; migration `0008`). v1.7.0 = P1.1
