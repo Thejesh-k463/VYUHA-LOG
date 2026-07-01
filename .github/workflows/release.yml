@@ -39,6 +39,17 @@ jobs:
           npm run typecheck
           npm test
 
+      # tauri-action has no generic "run this before building" input — beforeBuildCommand
+      # is a tauri.conf.json build-config field, not an action input, and passing it under
+      # `with:` is silently ignored (no error). So desktop-dist is assembled as explicit
+      # steps here, exactly matching the proven-working local `npm run desktop:build`
+      # sequence (next build && build-desktop.mjs && tauri build), before tauri-action runs.
+      - name: Build Next.js (standalone)
+        run: npm run build
+
+      - name: Assemble desktop bundle (desktop-dist + seed template DB)
+        run: node scripts/build-desktop.mjs
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,7 +59,3 @@ jobs:
           releaseBody: "See docs/INSTITUTIONAL_GRADE_ROADMAP.md for what changed. Unsigned installer — Windows SmartScreen may warn on first run until code signing is configured (see workflow comments)."
           releaseDraft: true
           prerelease: false
-          # Assembles desktop-dist (standalone Next server + seed template DB) before
-          # `tauri build` packages the Rust sidecar + NSIS installer.
-          args: ""
-          beforeBuildCommand: "npm run build && node scripts/build-desktop.mjs"
