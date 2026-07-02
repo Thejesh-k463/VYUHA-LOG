@@ -12,6 +12,24 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **IND-9 Peak-margin & short-margin penalty tracker (DONE)** — no feed exists for SEBI's intraday
+>   peak-margin snapshots (brokers bill the shortfall penalty separately, visible only on the contract note), so
+>   this is a manually-logged leak, same pattern as dividend TDS. New `LedgerType` value `"margin_penalty"` (sign
+>   −1) in `lib/analytics/ledger.ts`, folded into `chargesPaise` (alongside `charge`/`mtf_interest` — it's the same
+>   kind of broker-billed cost, not "other"). New pure `lib/analytics/margin-penalty.ts`
+>   (`marginPenaltyByMonth`/`marginPenaltyTotal`, 7 tests) rolls up `margin_penalty` ledger entries by calendar
+>   month. New "Peak-margin penalty leak" card on `app/reports/charges/page.tsx`, sourced from
+>   `getLedgerEntries()` (not from trades — this isn't a per-trade charge). User logs a penalty via the existing
+>   Cash & Ledger form (already generic over `LEDGER_TYPES`, so needed zero form changes) with type "Margin
+>   Penalty".
+>   **Bug found and fixed during verification**: `app/api/ledger/route.ts`'s `FIXED_SIGN` map (which forces
+>   cost-type entries negative regardless of how the user types the magnitude) was missing BOTH `margin_penalty`
+>   AND the pre-existing `dividend_tds` (a gap from the IND-6 work, not just this feature) — a user entering a
+>   plain positive number for either would have had it ADDED to their cash total instead of subtracted, silently
+>   corrupting the ledger balance. Fixed by adding `dividend_tds: -1, margin_penalty: -1` to `FIXED_SIGN`. Caught
+>   via a real add-entry browser test (entered 350, got `amountPaise: +35000` before the fix, `-35000` after) —
+>   if you touch `FIXED_SIGN` again, every cost-type `LedgerType` must be listed there, not just the ones a
+>   feature happens to touch.
 > - **IND-12 India VIX ingest → Greeks IV fallback (DONE, the cheap slice)** — reuses the EXISTING generic
 >   `benchmarkPrices` table/route/`BenchmarkPanel` component verbatim (it was already a plain symbol/date/close
 >   series with a CSV-paste UI) under a new symbol `"INDIAVIX"` — zero schema migration. `lib/queries/vix.ts`
@@ -647,9 +665,7 @@ Most are unique to India and high-value for an active Indian trader. Build-ready
   Position Limit** it enters **F&O ban** (only position-reduction allowed). Ingest the daily ban list
   (NSE publishes it) and alert if you hold/▲ a banned name. Also surface **ASM/GSM surveillance** and
   **circuit/price-band** flags for held scrips.
-- **IND-9 Peak-margin & short-margin penalty tracker** *(M)*. SEBI **peak-margin** snapshots cause
-  broker **penalties** on shortfall. Track per-day margin shortfall + penalty as a ledger leak; show
-  a "margin penalty" leak card (extends the Charges/MTF-leak report).
+- **IND-9 Peak-margin & short-margin penalty tracker (DONE — see top of doc)**.
 - **IND-10 Option strategy recognition + payoff diagrams** *(L)* ← Indian retail is options-heavy.
   Group multi-leg option trades (same underlying/expiry) into **straddle/strangle/spread/iron
   condor/butterfly**; compute combined premium, **max profit/loss, breakevens, payoff curve**, and
@@ -686,13 +702,15 @@ All of the above stay offline-first (bhavcopy/AIS are downloaded files; feeds op
 existing pipeline (classify → charges-from-`charge_config` → ledger → analytics). New statutory rates
 (physical-settlement STT, new CG rates) go in `charge_config` / a dated rate table, never hard-coded.
 
-— End of handoff. Current tag: **v1.11.0** (installer). **v1.12.0** shipped with IND-1 + IND-2 dual capital-gains
-regime + speculative/non-speculative set-off/carry-forward (`lib/analytics/capital-gains.ts`, 32 tests).
-**v1.13.0** shipped with IND-6 dividend & TDS tracker (`lib/analytics/dividend-tds.ts`, 10 tests; migration
-`0011` adds `ledger_entries.symbol`). Since v1.13.0: IND-12 India VIX ingest → Greeks IV fallback
-(`lib/queries/vix.ts`, `resolveIvSource()` in `lib/analytics/greeks.ts`, 7 new tests; zero migration — reuses
-`benchmarkPrices`) built, tested, and browser-verified against real data (30 real VIX closes loaded) — not yet
-version-bumped/rebuilt/committed. Corporate actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0.
+— End of handoff. Current tag: **v1.14.0** (installer + release). Shipped in order: **v1.12.0** IND-1 + IND-2 dual
+capital-gains regime + set-off/carry-forward (`lib/analytics/capital-gains.ts`, 32 tests); **v1.13.0** IND-6
+dividend & TDS tracker (`lib/analytics/dividend-tds.ts`, 10 tests; migration `0011` adds `ledger_entries.symbol`);
+**v1.14.0** IND-12 India VIX ingest → Greeks IV fallback (`lib/queries/vix.ts`, `resolveIvSource()` in
+`lib/analytics/greeks.ts`, 7 tests; zero migration — reuses `benchmarkPrices`), tagged and pushed (triggers
+`release.yml`). Since v1.14.0: IND-9 peak-margin penalty tracker (`lib/analytics/margin-penalty.ts`, 7 tests;
+new `margin_penalty` ledger type) built, tested, and browser-verified — including a real sign-bug fix in
+`app/api/ledger/route.ts`'s `FIXED_SIGN` map (see above) — not yet version-bumped/rebuilt/committed. Corporate
+actions (split/bonus/dividend, migration `0010`) shipped in v1.11.0.
 v1.10.0 installer = Option Greeks (Black-Scholes delta/gamma/theta/vega, migration `0009`
 for `trades.implied_vol`). v1.9.0 installer = F&O structured trade entry + short (sell-to-open) support + real
 Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data foundation (instruments master

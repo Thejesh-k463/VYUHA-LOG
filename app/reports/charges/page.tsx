@@ -1,9 +1,12 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
+import { getLedgerEntries } from "@/lib/queries/ledger";
 import { chargesBySegment, chargesByMonth, chargesTotals, type ChargeRow } from "@/lib/analytics/charges-report";
+import { marginPenaltyByMonth, marginPenaltyTotal, type MarginPenaltyEntry } from "@/lib/analytics/margin-penalty";
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 
@@ -24,11 +27,27 @@ const COLS = [
   { key: "breakevenPct", label: "Break-even %" },
 ];
 
+const MARGIN_PENALTY_COLS = [
+  { key: "month", label: "Month" },
+  { key: "count", label: "Entries" },
+  { key: "total", label: "Penalty" },
+];
+
 export default function ChargesReportPage() {
   const trades = getTrades();
   const bySeg = chargesBySegment(trades);
   const byMonth = chargesByMonth(trades);
   const totals = chargesTotals(trades);
+
+  // IND-9 — peak-margin / short-margin penalties: no live feed exists (SEBI's
+  // peak-margin snapshots aren't reported anywhere machine-readable), so these
+  // are logged manually via Cash & Ledger (type "Margin Penalty") from the
+  // broker's contract note, then rolled up here as another leak alongside charges.
+  const marginPenaltyEntries: MarginPenaltyEntry[] = getLedgerEntries()
+    .filter((e) => e.type === "margin_penalty")
+    .map((e) => ({ date: e.date, amount: e.amountPaise / 100 }));
+  const marginPenaltyRows = marginPenaltyByMonth(marginPenaltyEntries);
+  const marginPenaltyGrandTotal = marginPenaltyTotal(marginPenaltyEntries);
 
   return (
     <>
@@ -43,6 +62,57 @@ export default function ChargesReportPage() {
 
         <ChargeTable title="By segment" rows={bySeg} totals={totals} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-charges-by-segment" />
         <ChargeTable title="By month" rows={byMonth} totals={totals} labelFor={(k) => k} exportName="vyuha-charges-by-month" />
+
+        <Card className="p-0">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Peak-margin penalty leak</CardTitle>
+            <div className="flex items-center gap-2">
+              {marginPenaltyGrandTotal > 0 && <Badge variant="secondary">{inr(marginPenaltyGrandTotal, { decimals: 0 })} total</Badge>}
+              {marginPenaltyRows.length > 0 && (
+                <ExportButtons filename="vyuha-margin-penalty" columns={MARGIN_PENALTY_COLS} rows={marginPenaltyRows} />
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {marginPenaltyRows.length === 0 ? (
+              <p className="p-4 text-xs text-muted-foreground">
+                No margin-penalty entries logged yet. When your broker bills a peak-margin or short-margin shortfall
+                penalty (check your contract note), log it via Cash &amp; Ledger with type &ldquo;Margin
+                Penalty&rdquo; — it&apos;ll show up here as a leak, same as brokerage and STT.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-y border-border text-left text-muted-foreground">
+                      <th className="px-2.5 py-2 font-medium">Month</th>
+                      <th className="px-2.5 py-2 text-right font-medium">Entries</th>
+                      <th className="px-2.5 py-2 text-right font-medium">Penalty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marginPenaltyRows.map((r) => (
+                      <tr key={r.month} className="border-b border-border/40">
+                        <td className="px-2.5 py-1.5 font-medium">{r.month}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
+                        <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{inr(r.total, { decimals: 0 })}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-border bg-card-hover/30 font-medium">
+                      <td className="px-2.5 py-2">Total</td>
+                      <td className="px-2.5 py-2 text-right tabular-nums">{marginPenaltyEntries.length}</td>
+                      <td className="px-2.5 py-2 text-right tabular-nums text-warning">{inr(marginPenaltyGrandTotal, { decimals: 0 })}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="p-4 pt-2 text-[11px] text-muted-foreground">
+              No feed reports SEBI peak-margin snapshots — brokers bill the penalty separately from brokerage/STT,
+              visible on your contract note. Logged manually, not counted in the charges tables above.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </>
   );

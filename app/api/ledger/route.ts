@@ -17,6 +17,8 @@ const FIXED_SIGN: Partial<Record<LedgerType, 1 | -1>> = {
   withdrawal: -1,
   charge: -1,
   mtf_interest: -1,
+  dividend_tds: -1,
+  margin_penalty: -1,
 };
 
 function revalidate() {
