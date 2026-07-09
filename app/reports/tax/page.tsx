@@ -16,6 +16,7 @@ import {
 import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
 import { inr } from "@/lib/format";
 import { Info } from "lucide-react";
+import { LicenseBanner } from "@/components/system/license-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export default function TaxReportPage() {
     <>
       <PageHeader title="Tax Summary (informational)" description="Per financial year — scaffold only." />
       <div className="space-y-5 p-6">
+        <LicenseBanner />
         <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-warning/90">
           <Info className="size-4 shrink-0" />
           <div>

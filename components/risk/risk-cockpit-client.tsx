@@ -17,7 +17,18 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { inr, inrCompact, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
+import { ExportButtons } from "@/components/ui/export-button";
 import { ChevronDown, SlidersHorizontal, CheckCircle2, AlertCircle, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
+
+const POSITION_EXPORT_COLS = [
+  { key: "symbol", label: "Symbol" }, { key: "bucket", label: "Bucket" }, { key: "segment", label: "Segment" },
+  { key: "side", label: "Side" }, { key: "qty", label: "Qty" }, { key: "entry", label: "Entry" },
+  { key: "mtm", label: "MTM" }, { key: "invested", label: "Invested" }, { key: "currentValue", label: "Current value" },
+  { key: "unrealised", label: "Unrealised" }, { key: "returnPct", label: "Return %" }, { key: "allocPct", label: "Alloc %" },
+  { key: "stop", label: "Stop" }, { key: "target", label: "Target" }, { key: "openRiskAmt", label: "Open risk" },
+  { key: "initialRiskAmt", label: "Initial risk" }, { key: "rr", label: "R:R" }, { key: "sector", label: "Sector" },
+  { key: "dte", label: "DTE" },
+];
 
 const RISK_STYLE: Record<RiskLevel, { label: string; text: string; dot: string; ring: string }> = {
   low: { label: "Low Risk", text: "text-profit", dot: "bg-profit", ring: "ring-profit/30" },
@@ -120,6 +131,20 @@ export function RiskCockpitClient({
           </div>
         ) : (
           <div className="px-2 pb-3">
+            <div className="flex justify-end px-3 pt-1">
+              <ExportButtons
+                filename="vyuha-open-positions"
+                columns={POSITION_EXPORT_COLS}
+                rows={e.positions.map((p) => ({
+                  symbol: p.symbol, bucket: p.bucket, segment: p.segment, side: p.side ?? "long",
+                  qty: p.qty, entry: p.entry, mtm: p.mtm, invested: p.invested, currentValue: p.currentValue,
+                  unrealised: p.unrealised, returnPct: p.returnPct, allocPct: p.allocPct,
+                  stop: p.effectiveStop ?? "", target: p.target ?? "",
+                  openRiskAmt: p.openRiskAmt ?? "", initialRiskAmt: p.initialRiskAmt ?? "",
+                  rr: p.rr ?? "", sector: p.sector ?? "", dte: p.dte ?? "",
+                }))}
+              />
+            </div>
             {/* column header */}
             <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <div>Stock</div>

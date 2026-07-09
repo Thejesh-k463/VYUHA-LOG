@@ -68,6 +68,55 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
   );
 }
 
+export interface UnderwaterPoint {
+  date: string;
+  ddPct: number; // drawdown as a NEGATIVE percentage (0 at highs)
+}
+
+/** Underwater curve — how deep below the running peak the equity sat, day by day. */
+export function UnderwaterCurve({ data }: { data: UnderwaterPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="uw" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-loss)" stopOpacity={0.05} />
+            <stop offset="100%" stopColor="var(--color-loss)" stopOpacity={0.45} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={40} />
+        <YAxis tick={axis} tickLine={false} axisLine={false} width={44} tickFormatter={(v) => `${v}%`} />
+        <Tooltip content={<ChartTooltip fmt={(v: number) => `${v.toFixed(2)}%`} />} />
+        <ReferenceLine y={0} stroke="var(--color-border)" />
+        <Area isAnimationActive={false} type="monotone" dataKey="ddPct" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1.5} fill="url(#uw)" />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+export interface CapitalPoint {
+  date: string;
+  equity: number | null;
+  active: number | null;
+}
+
+/** Capital checkpoints over time (from capital_snapshots) — stepped, per bucket. */
+export function CapitalGrowth({ data }: { data: CapitalPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={40} />
+        <YAxis tick={axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => inrCompact(v)} />
+        <Tooltip content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />} />
+        <Area isAnimationActive={false} type="stepAfter" dataKey="equity" name="Equity" connectNulls stroke="var(--color-primary)" strokeWidth={2} fill="var(--color-primary)" fillOpacity={0.08} dot={{ r: 3 }} />
+        <Area isAnimationActive={false} type="stepAfter" dataKey="active" name="Active" connectNulls stroke="var(--color-profit)" strokeWidth={2} fill="var(--color-profit)" fillOpacity={0.08} dot={{ r: 3 }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function SegmentBars({ data, labelFor }: { data: GroupStat[]; labelFor: (k: string) => string }) {
   const rows = data.map((d) => ({ ...d, label: labelFor(d.key) }));
   return (

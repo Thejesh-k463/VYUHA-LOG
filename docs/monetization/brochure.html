@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Vyuha — Trader's Toolkit (One-Pager)</title>
+<!--
+  ONE-PAGE BROCHURE → PDF
+  Export: open in Chrome/Edge → Ctrl+P → Destination "Save as PDF"
+    → Paper A4 → Margins "None" → Background graphics ON → Save.
+  Edit the [[ ]] placeholders (prices, indicator names, links, QR) before exporting.
+-->
+<style>
+  @page{size:A4;margin:0}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  :root{
+    --bg:#0a0e14; --panel:#141c28; --panel2:#0f1721; --line:#26344733;
+    --text:#eef3f9; --muted:#93a4ba; --dim:#6b7b90;
+    --profit:#2fe0ac; --accent:#4cc4ff; --violet:#a78bfa; --gold:#f6c667; --rose:#ff7a8a;
+  }
+  /* On screen: a centered A4 "sheet" on a neutral desk. In print: edge-to-edge A4. */
+  html{background:#05080c}
+  body{
+    margin:0;background:#05080c;min-height:100vh;
+    display:flex;justify-content:center;align-items:flex-start;padding:28px 20px;
+  }
+  .page{
+    width:210mm;min-height:297mm;padding:13mm 13mm 10mm;overflow:hidden;
+    border-radius:8px;box-shadow:0 30px 90px #000000cc, 0 0 0 1px #ffffff08;
+    color:var(--text);
+    font:12px/1.5 "Segoe UI",Inter,-apple-system,sans-serif;
+    background:
+      radial-gradient(560px 300px at 88% -4%, #1c5a6b55, transparent),
+      radial-gradient(520px 320px at -8% 12%, #29406e44, transparent),
+      radial-gradient(700px 500px at 60% 120%, #123a4a33, transparent),
+      linear-gradient(180deg,#0a0e14,#0b1119);
+  }
+  @media print{
+    html,body{background:none}
+    body{display:block;padding:0;min-height:0}
+    .page{width:210mm;min-height:297mm;border-radius:0;box-shadow:none;margin:0}
+  }
+  .accent{color:var(--profit)} .cyan{color:var(--accent)}
+  .grad{background:linear-gradient(115deg,var(--profit),var(--accent) 60%,var(--violet));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;
+    letter-spacing:.3px;padding:5px 11px;border-radius:999px;background:#0e2a38;
+    color:var(--accent);border:1px solid #1d4a5f}
+
+  /* Header */
+  .head{display:flex;align-items:center;justify-content:space-between}
+  .logo{display:flex;align-items:center;gap:11px;font-weight:800;font-size:21px;letter-spacing:1px}
+  .mark{width:36px;height:36px;border-radius:10px;
+    background:linear-gradient(135deg,var(--profit),var(--accent));
+    display:grid;place-items:center;color:#04121a;font-weight:900;font-size:19px;
+    box-shadow:0 6px 20px #2fe0ac44}
+
+  /* Hero */
+  .hero{margin-top:15px;display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:center}
+  .hero h1{font-size:29px;line-height:1.1;font-weight:800;letter-spacing:-.5px}
+  .hero p.sub{margin-top:9px;color:var(--muted);font-size:12.5px;max-width:96mm}
+  .ticks{margin-top:13px;display:flex;flex-wrap:wrap;gap:8px 16px}
+  .tick{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text)}
+  .tick i{width:7px;height:7px;border-radius:99px;background:var(--profit);box-shadow:0 0 8px var(--profit)}
+  .tick.c i{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .tick.v i{background:var(--violet);box-shadow:0 0 8px var(--violet)}
+
+  /* App-preview card */
+  .preview{background:linear-gradient(180deg,#111a26,#0c141d);border:1px solid #223247;
+    border-radius:15px;padding:12px 13px;box-shadow:0 20px 50px #00000055, inset 0 1px 0 #ffffff08}
+  .preview .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+  .preview .top b{font-size:11px} .preview .top .pill{padding:3px 8px;font-size:8.5px}
+  .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px}
+  .kpi{background:#0c1620;border:1px solid #1e2c3d;border-radius:8px;padding:6px 7px}
+  .kpi span{display:block;font-size:7.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+  .kpi b{font-size:12px} .kpi.g b{color:var(--profit)} .kpi.r b{color:var(--rose)} .kpi.a b{color:var(--accent)}
+  .chartbox{background:#0b141d;border:1px solid #1c2a3a;border-radius:9px;padding:6px}
+
+  /* Stat strip */
+  .stats{margin-top:15px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .stat{background:linear-gradient(180deg,#101927,#0d151e);border:1px solid var(--line);
+    border-radius:11px;padding:10px 12px}
+  .stat b{display:block;font-size:19px;font-weight:800;line-height:1}
+  .stat span{font-size:9.5px;color:var(--muted);display:block;margin-top:4px}
+
+  /* Features */
+  .features{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .feat{position:relative;background:linear-gradient(180deg,#131c29,#0f1720);border:1px solid var(--line);
+    border-radius:12px;padding:11px 13px 11px 14px;overflow:hidden}
+  .feat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+  .feat.t1::before{background:linear-gradient(var(--profit),#1c9f77)}
+  .feat.t2::before{background:linear-gradient(var(--accent),#2b7fb0)}
+  .feat.t3::before{background:linear-gradient(var(--violet),#7a5cd0)}
+  .feat.t4::before{background:linear-gradient(var(--gold),#c99a34)}
+  .feat h3{font-size:12.5px;display:flex;align-items:center;gap:8px}
+  .ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:14px;flex:0 0 auto}
+  .feat.t1 .ic{background:#0f2c24;color:var(--profit)}
+  .feat.t2 .ic{background:#0e2637;color:var(--accent)}
+  .feat.t3 .ic{background:#1e1938;color:var(--violet)}
+  .feat.t4 .ic{background:#2c2413;color:var(--gold)}
+  .feat p{font-size:10px;color:var(--muted);margin-top:5px;padding-left:0}
+
+  /* Indicators band */
+  .band{margin-top:12px;background:
+      radial-gradient(300px 120px at 92% 20%, #7a5cd033, transparent),
+      linear-gradient(115deg,#10283a,#0d1a26);
+    border:1px solid #23415a;border-radius:13px;padding:12px 15px;
+    display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .band .l .t{font-size:13.5px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .band .l p{font-size:10.5px;color:var(--muted);margin-top:5px;max-width:120mm}
+  .band .l p b{color:var(--text)}
+
+  /* Pricing */
+  .pricing{margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .plan{background:linear-gradient(180deg,#131c28,#0e1620);border:1px solid var(--line);
+    border-radius:12px;padding:12px 12px;position:relative;min-width:0}
+  .plan.hot{border-color:var(--profit);
+    background:linear-gradient(180deg,#0f2620,#0d1a1a);
+    box-shadow:0 0 0 1px var(--profit),0 14px 40px #2fe0ac22}
+  .plan .tag{position:absolute;top:-9px;left:13px;background:linear-gradient(135deg,var(--profit),var(--accent));
+    color:#052018;font-size:8.5px;font-weight:800;letter-spacing:.4px;padding:3px 9px;border-radius:999px}
+  .plan h4{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+  .plan .p{font-size:19px;font-weight:800;margin-top:5px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;overflow-wrap:anywhere}
+  .plan .p small{font-size:10px;color:var(--muted);font-weight:500}
+  .plan .p .s{font-size:11px;color:var(--dim);text-decoration:line-through;font-weight:600}
+  .plan.hot .p{color:var(--profit)}
+  .plan ul{list-style:none;margin-top:9px;display:grid;gap:4px}
+  .plan li{font-size:9.7px;color:var(--muted);padding-left:14px;position:relative}
+  .plan li::before{content:"✓";position:absolute;left:0;color:var(--profit);font-weight:800}
+
+  /* Footer CTA */
+  .foot{margin-top:13px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .cta{display:flex;align-items:center;gap:9px;background:linear-gradient(135deg,var(--profit),#1fb389);
+    color:#042019;font-weight:800;font-size:13px;padding:12px 20px;border-radius:11px;
+    box-shadow:0 10px 26px #2fe0ac44}
+  .cta .arrow{font-size:16px}
+  .foot .right{display:flex;align-items:center;gap:12px}
+  .qr{width:64px;height:64px;border:1px dashed #34455a;border-radius:9px;display:grid;place-items:center;
+    color:var(--dim);font-size:7.5px;text-align:center;background:#0a141d;line-height:1.3}
+  .contact{font-size:10.5px;color:var(--muted);text-align:right}
+  .contact b{color:var(--text)}
+  .disc{margin-top:11px;font-size:8.3px;color:#69788c;border-top:1px solid var(--line);padding-top:8px;line-height:1.45}
+</style>
+</head>
+<body>
+ <div class="page">
+
+  <div class="head">
+    <div class="logo"><span class="mark">व</span> VYUHA</div>
+    <span class="pill">🔒 100% LOCAL &amp; OFFLINE &nbsp;·&nbsp; TRADER'S TOOLKIT</span>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div>
+      <h1>Your entire trading desk —<br><span class="grad">private, and built for India.</span></h1>
+      <p class="sub">A local-first trading journal + risk &amp; tax back-office, paired with two pro
+        TradingView indicators. Your trades never leave your PC.</p>
+      <div class="ticks">
+        <div class="tick"><i></i> Pay once · own it</div>
+        <div class="tick c"><i></i> UPI &amp; cards (Razorpay)</div>
+        <div class="tick v"><i></i> Lifetime updates</div>
+      </div>
+    </div>
+
+    <!-- faux app preview -->
+    <div class="preview">
+      <div class="top"><b>Dashboard</b><span class="pill">LIVE · OFFLINE</span></div>
+      <div class="kpis">
+        <div class="kpi g"><span>Net P&amp;L</span><b>+₹2.4L</b></div>
+        <div class="kpi a"><span>Win rate</span><b>58%</b></div>
+        <div class="kpi r"><span>Max DD</span><b>₹22k</b></div>
+      </div>
+      <div class="chartbox">
+        <svg viewBox="0 0 260 70" width="100%" height="58" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="eq" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2fe0ac" stop-opacity="0.45"/>
+              <stop offset="1" stop-color="#2fe0ac" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polyline points="0,58 26,52 52,55 78,44 104,47 130,36 156,30 182,33 208,20 234,14 260,8"
+            fill="none" stroke="#2fe0ac" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+          <polygon points="0,58 26,52 52,55 78,44 104,47 130,36 156,30 182,33 208,20 234,14 260,8 260,70 0,70"
+            fill="url(#eq)"/>
+          <circle cx="260" cy="8" r="3" fill="#2fe0ac"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAT STRIP -->
+  <div class="stats">
+    <div class="stat"><b class="accent">100%</b><span>Local &amp; offline — no cloud, no account</span></div>
+    <div class="stat"><b class="cyan">4+</b><span>Broker imports: Zerodha, Dhan, Groww, PDF</span></div>
+    <div class="stat"><b style="color:var(--violet)">2</b><span>Pro TradingView indicators bundled</span></div>
+    <div class="stat"><b style="color:var(--gold)">1×</b><span>Payment. Lifetime. You own your data</span></div>
+  </div>
+
+  <!-- FEATURES -->
+  <div class="features">
+    <div class="feat t1"><h3><span class="ic">🧾</span> India tax engine</h3>
+      <p>STCG/LTCG (pre &amp; post 23-Jul-2024), F&amp;O &amp; intraday business income, set-off +
+        carry-forward, dividend TDS, advance tax, tax-loss harvesting.</p></div>
+    <div class="feat t2"><h3><span class="ic">🧮</span> F&amp;O + Greeks</h3>
+      <p>Strikes, expiry, lots, Black-Scholes delta/gamma/theta/vega with India-VIX IV fallback,
+        auto strategy recognition &amp; payoff diagrams.</p></div>
+    <div class="feat t3"><h3><span class="ic">⚖️</span> Risk &amp; limits</h3>
+      <p>Live exposure, open risk at stop, sector concentration, pre-trade limit checks, expiry &amp;
+        physical-settlement warnings, F&amp;O-ban alerts.</p></div>
+    <div class="feat t4"><h3><span class="ic">💸</span> Cost &amp; leak control</h3>
+      <p>Charges &amp; MTF leak, peak-margin penalty tracker, and "the same trades on another broker
+        would cost ₹X" — see exactly where money leaks.</p></div>
+  </div>
+
+  <!-- INDICATORS -->
+  <div class="band">
+    <div class="l">
+      <div class="t">📈 Two pro TradingView indicators — in the box</div>
+      <p><b>[[IND1]]</b> · [one-line] &nbsp;•&nbsp; <b>[[IND2]]</b> · [one-line] — invite-only, source
+        hidden, granted to your TradingView username. Lifetime access.</p>
+    </div>
+    <svg viewBox="0 0 120 54" width="118" height="52">
+      <defs><linearGradient id="pf" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#ff7a8a"/><stop offset="1" stop-color="#2fe0ac"/></linearGradient></defs>
+      <line x1="6" y1="40" x2="114" y2="40" stroke="#2a3a4d" stroke-width="1" stroke-dasharray="2 2"/>
+      <polyline points="6,50 46,50 74,18 114,6" fill="none" stroke="url(#pf)" stroke-width="2.6"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="46" cy="50" r="2.6" fill="#4cc4ff"/>
+    </svg>
+  </div>
+
+  <!-- PRICING -->
+  <div class="pricing">
+    <div class="plan hot"><span class="tag">BEST VALUE · FIRST 100</span>
+      <h4>Trader's Toolkit</h4>
+      <div class="p">₹[[PRICE_BUNDLE]] <small>once</small> <span class="s">₹[[PRICE_LIST]]</span></div>
+      <ul><li>Full Vyuha app (lifetime)</li><li>[[IND1]] + [[IND2]] indicators</li>
+        <li>Lifetime updates &amp; access</li><li>Priority support</li></ul>
+    </div>
+    <div class="plan"><h4>Journal only</h4>
+      <div class="p">₹[[PRICE_APP]] <small>once</small></div>
+      <ul><li>Full desktop app</li><li>Lifetime updates</li><li>Fully offline</li></ul>
+    </div>
+    <div class="plan"><h4>Indicators only</h4>
+      <div class="p">₹[[PRICE_IND]] <small>once</small></div>
+      <ul><li>[[IND1]] + [[IND2]]</li><li>Invite-only</li><li>Lifetime access</li></ul>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div class="foot">
+    <div class="cta"><span class="arrow">→</span> Get the Toolkit &nbsp;·&nbsp; [[LANDING_URL]]</div>
+    <div class="right">
+      <div class="qr">[ QR to landing / Razorpay ]</div>
+      <div class="contact">Pay via <b>UPI / cards</b> · Razorpay<br>Support: <b>[[WHATSAPP]]</b><br>Windows 10/11 · 64-bit</div>
+    </div>
+  </div>
+
+  <div class="disc"><b>Disclaimer:</b> For educational and informational purposes only. Not
+    investment advice and not a buy/sell recommendation. Tax figures are informational — verify with
+    a qualified professional. Past performance does not guarantee future results. Trading carries
+    risk of loss. Not a SEBI-registered research analyst service.</div>
+
+ </div><!-- /.page -->
+</body>
+</html>

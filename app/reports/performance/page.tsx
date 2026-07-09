@@ -2,7 +2,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { EquityCurve } from "@/components/dashboard/charts";
+import { EquityCurve, UnderwaterCurve } from "@/components/dashboard/charts";
+import { monteCarloEquity } from "@/lib/analytics/monte-carlo";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
@@ -92,6 +93,13 @@ export default function PerformancePage() {
   const portfolioReturns: ReturnByDate[] = p.series.map((s) => ({ date: s.date, ret: s.ret }));
   const bench = computeBenchmark(portfolioReturns, benchCloses, RISK_FREE);
 
+  // Underwater curve — the per-day drawdown series already computed by computePerformance.
+  const underwater = p.series.map((s) => ({ date: s.date, ddPct: Math.round(s.drawdown * 10000) / 100 }));
+
+  // Monte Carlo — bootstrap the portfolio's own daily returns 2,000× over a 1y horizon.
+  // Ruin = the path EVER touching −50% from today's equity. Needs ≥20 trading days.
+  const mc = monteCarloEquity(p.series.map((s) => s.ret), p.endEquity);
+
   // monthly matrix: year -> month -> retPct, + geometric year total
   const years = [...new Set(p.monthly.map((m) => m.year))].sort();
   const byYM = new Map(p.monthly.map((m) => [`${m.year}-${m.month}`, m.retPct]));
@@ -131,6 +139,45 @@ export default function PerformancePage() {
                 <Badge variant="secondary">Max DD -{p.maxDrawdownPct}%</Badge>
               </CardHeader>
               <CardContent>{curve.length > 0 ? <EquityCurve data={curve} /> : null}</CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle>Underwater curve</CardTitle>
+                <Badge variant="secondary">time below the running peak</Badge>
+              </CardHeader>
+              <CardContent>
+                <UnderwaterCurve data={underwater} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle>Monte Carlo — 1y forward</CardTitle>
+                {mc && <Badge variant="secondary">{mc.paths.toLocaleString("en-IN")} paths · resampling {mc.sampleDays} real days</Badge>}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {mc ? (
+                  <>
+                    <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+                      <KpiCard label="Risk of ruin" value={`${mc.riskOfRuinPct}%`} valueClassName={mc.riskOfRuinPct > 10 ? "text-loss" : mc.riskOfRuinPct > 2 ? "text-warning" : "text-profit"} sub="ever −50% from today" />
+                      <KpiCard label="P(ending down)" value={`${mc.probLossPct}%`} valueClassName={mc.probLossPct > 50 ? "text-loss" : ""} sub="terminal < today's equity" />
+                      <KpiCard label="Median outcome" value={inr(mc.terminal.p50, { decimals: 0 })} valueClassName={cls(mc.terminal.p50 - mc.startEquity)} sub={`from ${inr(mc.startEquity, { decimals: 0 })}`} />
+                      <KpiCard label="Bad year (p5)" value={inr(mc.terminal.p5, { decimals: 0 })} valueClassName="text-loss" sub="5th percentile" />
+                      <KpiCard label="Good year (p95)" value={inr(mc.terminal.p95, { decimals: 0 })} valueClassName="text-profit" sub="95th percentile" />
+                    </section>
+                    <p className="text-[11px] text-muted-foreground">
+                      Bootstrap of your OWN daily returns (no normality assumed): each simulated day replays a random
+                      real day, {mc.horizonDays} days forward, {mc.paths.toLocaleString("en-IN")} times. Interquartile
+                      range {inr(mc.terminal.p25, { decimals: 0 })} – {inr(mc.terminal.p75, { decimals: 0 })}. Assumes
+                      you keep trading exactly like the sampled history — regime changes, position-size changes and
+                      luck are not modelled. Informational only.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Needs at least 20 trading days of realised history to resample.</p>
+                )}
+              </CardContent>
             </Card>
 
             <Card className="p-0">

@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `license_key` text;

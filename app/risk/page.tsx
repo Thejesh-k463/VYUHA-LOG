@@ -23,6 +23,7 @@ import { GreeksPanel } from "@/components/risk/greeks-panel";
 import { getLatestVixClose, VIX_SYMBOL } from "@/lib/queries/vix";
 import { getBenchmarkMeta } from "@/lib/queries/benchmark";
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
+import { LicenseBanner } from "@/components/system/license-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,7 @@ export default function RiskPage() {
     <>
       <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
       <div className="space-y-5 p-6">
+        <LicenseBanner />
         <RiskCockpitClient
           inputs={inputs}
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}

@@ -12,6 +12,50 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **Quick-wins bundle (DONE)** — four small high-value items from §6:
+>   (1) **Monte Carlo risk-of-ruin** — pure `lib/analytics/monte-carlo.ts` (7 tests): bootstrap-resamples the
+>   portfolio's OWN daily returns (no normality assumption) over 252 days × 2,000 paths with a seeded
+>   `mulberry32` PRNG (deterministic UI); risk of ruin = P(path EVER touches −50% from today) — a path-min
+>   statistic, not terminal-only; refuses <20 sample days. Panel on `/reports/performance` (ruin %, P(ending
+>   down), median/p5/p95 terminal). Verified on real history: risk of ruin 0.2%.
+>   (2) **Underwater curve** — new `UnderwaterCurve` in `components/dashboard/charts.tsx` fed by the per-day
+>   `drawdown` already in `PerformanceStats.series` (no engine change), card on `/reports/performance`.
+>   (3) **Capital growth chart** — `getCapitalHistory()` in `lib/queries/capital.ts` (per-bucket snapshot
+>   checkpoints + today's live values appended) → `CapitalGrowth` stepped chart on `/settings`.
+>   (4) **CSV/XLSX exports** — `ExportButtons` added to the IPO applications table (flattened IpoComputed incl.
+>   board/category/discount/tax) and the Risk cockpit open-positions list (`vyuha-open-positions`, 19 cols).
+> - **License gate — offline Ed25519 key activation (DONE, "banner" mode)** — monetization §4. `lib/license.ts`
+>   (7 tests): key format `VYUHA-<b64url(payload)>.<b64url(sig)>`, payload `{email, sku, issued}`, Ed25519
+>   signature verified OFFLINE against the vendor PUBLIC key baked into the file (node:crypto, no server call).
+>   Vendor tooling: `scripts/license-keygen.mjs` (one-time; writes `license-private.pem` — GITIGNORED via
+>   `*.pem`, NEVER commit; patches the public key into lib/license.ts) + `scripts/license-issue.mjs <email>
+>   [toolkit|app|indicators]` (mints a key per sale — the Razorpay fulfilment step). Migration `0013` adds
+>   `settings.license_key`; `lib/queries/license.ts#getLicenseStatus()` RE-VERIFIES the stored key on every
+>   read (DB-tampered key ⇒ unlicensed). Route `app/api/license` (activate/deactivate, audited);
+>   `components/settings/license-card.tsx` on Settings (paste key → "Licensed to <email> · sku · issued");
+>   `components/system/license-banner.tsx` on the three Pro screens (/reports/tax, /risk,
+>   /reports/broker-compare). **ENFORCEMENT = "banner"** (informational) — flip `LICENSE_ENFORCEMENT` to
+>   "block" in lib/license.ts when selling starts (that's where a hard gate goes). VERIFIED live: malformed
+>   + tampered-payload keys rejected, real key activates, banner disappears when licensed. The dev machine's
+>   own copy is activated to the owner's email. If `license-private.pem` is lost, keys can't be minted;
+>   if leaked, anyone can mint — back it up privately, rotate via keygen only knowing it invalidates old keys.
+> - **IPO v2 — allotment→exit P&L statement + tax + SME/category (DONE)** — extends `lib/analytics/ipo.ts`
+>   (16 tests) + migration `0012` adding `ipos.board` (mainboard|sme), `ipos.category`
+>   (retail|shni|bhni|employee|shareholder), `ipos.discount_per_share`, `ipos.allotment_date`. Grounded in a
+>   REAL live mainboard IPO (Kusumgar, BSE): categories carry per-share discounts (its employee discount is
+>   ₹39/sh) — so discount lowers the COST BASIS everywhere (application, invested, P&L); SME IPOs (NSE
+>   Emerge/BSE SME) trade in lot multiples post-listing (surfaced as a badge/hint, not enforced). New
+>   `ipoTaxEstimate()` reuses `classifyTerm`/`capitalGainsRatesFor` from `capital-gains.ts` — holding period
+>   from ALLOTMENT date (fallback listing→applied), STCG/LTCG at the exit-date regime, loss → "set-off"
+>   flag instead of tax; LTCG FY-exemption deliberately NOT netted (FY-level, not per-IPO — caveated in UI).
+>   `refundAmount` (application − invested) now explicit. UI (`components/ipo/ipo-client.tsx`): form gains
+>   Board/Category/Discount/Allotment-date; table gains SME badge, discounted-cost strikethrough, "Tax est."
+>   column (₹ + STCG/LTCG tag, "loss" for losses); per-row **P&L statement dialog** (FileText icon):
+>   application → discount → allotment/refund → listing → exit → charges → tax → post-tax net; KPI
+>   "Realised net" sub shows "est. tax ₹X → post-tax ₹Y" (new `estTax`/`postTaxNet` in `IpoSummary`).
+>   VERIFIED live against hand-checked math (Kusumgar 419/lot 35: listing gain 1,260; net 1,751; STCG 350;
+>   post-tax 1,401), then the test row deleted. NOTE: IPO exits are NOT in `trades`, so they don't feed
+>   `/reports/tax` aggregation — known gap, listed as future work.
 > - **IND-9 Peak-margin & short-margin penalty tracker (DONE)** — no feed exists for SEBI's intraday
 >   peak-margin snapshots (brokers bill the shortfall penalty separately, visible only on the contract note), so
 >   this is a manually-logged leak, same pattern as dividend TDS. New `LedgerType` value `"margin_penalty"` (sign

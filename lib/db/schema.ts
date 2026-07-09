@@ -317,6 +317,7 @@ export const settings = sqliteTable("settings", {
   // Cumulative realised P&L already compounded into the bucket capitals (so the
   // "add realised P&L to capital" action never double-counts).
   pnlRolledIn: real("pnl_rolled_in").notNull().default(0),
+  licenseKey: text("license_key"), // verified offline against the vendor public key (lib/license.ts)
   updatedAt: text("updated_at").notNull().default(now),
 });
 
@@ -328,7 +329,10 @@ export const ipos = sqliteTable("ipos", {
   name: text("name").notNull(),
   broker: text("broker"),
   exchange: text("exchange").notNull().default("NSE"),
-  appliedPrice: real("applied_price").notNull().default(0), // per share (cut-off)
+  board: text("board").notNull().default("mainboard"), // mainboard | sme (NSE Emerge / BSE SME)
+  category: text("category"), // retail | shni | bhni | employee | shareholder
+  discountPerShare: real("discount_per_share").notNull().default(0), // employee/shareholder/retail discount
+  appliedPrice: real("applied_price").notNull().default(0), // per share (cut-off / issue price)
   lotSize: integer("lot_size").notNull().default(1),
   lotsApplied: integer("lots_applied").notNull().default(1),
   allotted: integer("allotted", { mode: "boolean" }).notNull().default(false),
@@ -336,6 +340,7 @@ export const ipos = sqliteTable("ipos", {
   listingPrice: real("listing_price"),
   exitPrice: real("exit_price"),
   appliedDate: text("applied_date"),
+  allotmentDate: text("allotment_date"), // acquisition date — starts the tax holding period
   listingDate: text("listing_date"),
   exitDate: text("exit_date"),
   notes: text("notes"),

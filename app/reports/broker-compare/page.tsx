@@ -7,6 +7,7 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compare";
 import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { inr } from "@/lib/format";
+import { LicenseBanner } from "@/components/system/license-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default function BrokerComparePage() {
         actions={<Badge variant="secondary">{report.tradeCount} trades</Badge>}
       />
       <div className="space-y-5 p-6">
+        <LicenseBanner />
         {report.tradeCount === 0 ? (
           <Card><CardContent className="p-6 text-sm text-muted-foreground">No trades to compare yet.</CardContent></Card>
         ) : (
