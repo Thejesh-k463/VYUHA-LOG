@@ -18,7 +18,8 @@ import {
   type Segment,
 } from "@/lib/domain/constants";
 import type { Trade } from "@/lib/db/schema";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
+import { Plus, Pencil, Trash2, NotebookPen } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -29,11 +30,21 @@ function daysBetween(a: string, b: string): number | null {
   return Math.round((d2 - d1) / 86400000);
 }
 
-export function TradesClient({ trades }: { trades: Trade[] }) {
+export function TradesClient({ trades, playbooks = [] }: { trades: Trade[]; playbooks?: PlaybookOption[] }) {
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [addOpen, setAddOpen] = React.useState(false);
   const [addOpenTrade, setAddOpenTrade] = React.useState(false);
   const [editing, setEditing] = React.useState<Trade | null>(null);
+  const [journaling, setJournaling] = React.useState<Trade | null>(null);
+
+  // Command-palette deep link: /trades?add=manual | open — open the dialog once, then clean the URL.
+  React.useEffect(() => {
+    const add = new URLSearchParams(window.location.search).get("add");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (add === "manual") setAddOpen(true);
+    else if (add === "open") setAddOpenTrade(true);
+    if (add) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [search, setSearch] = React.useState("");
   const [broker, setBroker] = React.useState("");
   const [segment, setSegment] = React.useState("");
@@ -110,6 +121,15 @@ export function TradesClient({ trades }: { trades: Trade[] }) {
       id: "actions", header: "",
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className={`size-7 ${(row.original.mistakeTags?.length || row.original.playbookId != null || row.original.emotionTag) ? "text-accent" : ""}`}
+            onClick={() => setJournaling(row.original)}
+            title="Journal — playbook, emotion, mistakes"
+          >
+            <NotebookPen className="size-3.5" />
+          </Button>
           <Button size="icon" variant="ghost" className="size-7" onClick={() => setEditing(row.original)} title="Re-tag / override">
             <Pencil className="size-3.5" />
           </Button>
@@ -175,6 +195,16 @@ export function TradesClient({ trades }: { trades: Trade[] }) {
       </Card>
 
       {/* Override dialog */}
+      <Dialog open={!!journaling} onOpenChange={(o) => !o && setJournaling(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Trade journal — {journaling?.symbol}</DialogTitle>
+            <DialogDescription>Playbook, emotion and mistakes feed the Discipline page rollups.</DialogDescription>
+          </DialogHeader>
+          {journaling && <JournalDialog trade={journaling} playbooks={playbooks} onDone={() => setJournaling(null)} />}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>

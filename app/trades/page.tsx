@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { getTrades, getTradeStats } from "@/lib/queries/trades";
+import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default function TradesPage() {
           <KpiCard label="Total charges" value={inr(stats.charges, { decimals: 0 })} valueClassName="text-warning" />
           <KpiCard label="Charges / gross" value={`${chargePct.toFixed(1)}%`} sub="charge leak" />
         </section>
-        <TradesClient trades={trades} />
+        <TradesClient trades={trades} playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived }))} />
       </div>
     </>
   );

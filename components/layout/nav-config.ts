@@ -28,6 +28,8 @@ import {
   FileText,
   Upload,
   Settings,
+  BookOpen,
+  Printer,
 } from "lucide-react";
 
 export type NavItem = {
@@ -48,11 +50,13 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/surveillance", label: "Surveillance", icon: ShieldAlert, group: "Risk" },
   { href: "/calculator", label: "Trade Calculator", icon: Calculator, group: "Risk" },
   { href: "/trades", label: "Trades", icon: ListOrdered, group: "Journal" },
+  { href: "/playbooks", label: "Playbooks", icon: BookOpen, group: "Journal" },
   { href: "/ipos", label: "IPOs", icon: Rocket, group: "Journal" },
   { href: "/import", label: "Import", icon: Upload, group: "Journal" },
   { href: "/cash", label: "Cash & Ledger", icon: Banknote, group: "Journal" },
   { href: "/corporate-actions", label: "Corporate Actions", icon: Split, group: "Journal" },
   { href: "/reports/performance", label: "Performance", icon: LineChart, group: "Analytics" },
+  { href: "/reports/monthly", label: "Report (PDF)", icon: Printer, group: "Analytics" },
   { href: "/reports/charges", label: "Charges & MTF Leak", icon: Receipt, group: "Analytics" },
   { href: "/reports/broker-compare", label: "Broker Costs", icon: Scale, group: "Analytics" },
   { href: "/reports/advance-tax", label: "Advance Tax", icon: Landmark, group: "Analytics" },

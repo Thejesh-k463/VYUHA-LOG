@@ -11,10 +11,11 @@ name: Release
 # the signing step: add it under Settings → Secrets and variables → Actions.
 # The release stays a DRAFT — updates only reach users once you press Publish.
 #
-# NOT YET WIRED (needs secrets/decisions only a maintainer can provide):
-#   - Code signing: add WINDOWS_CERTIFICATE (base64 .pfx) + WINDOWS_CERTIFICATE_PASSWORD
-#     secrets (or switch to Azure Trusted Signing) and pass them to tauri-action's env.
-#     Until then this produces the same UNSIGNED installer as a local build.
+# CODE SIGNING (prepared, dormant until secrets exist — see docs/CODE_SIGNING.md):
+# when the four AZURE_* secrets are configured, the workflow installs
+# trusted-signing-cli and builds with src-tauri/tauri.signed.conf.json overlaid,
+# which signs the exe + installer via Azure Trusted Signing. With no secrets the
+# extra steps skip and the installer ships unsigned exactly as before.
 
 on:
   push:
@@ -51,14 +52,27 @@ jobs:
       # steps left LOCAL `tauri build` shipping a stale desktop-dist (the v1.12–v1.20
       # local installers bug). The conf field is the one mechanism both paths share —
       # do NOT reintroduce explicit build steps here or a stale bundle can ship again.
+      - name: Install trusted-signing-cli (only when code-signing secrets exist)
+        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        run: cargo install trusted-signing-cli --locked
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Azure Trusted Signing (no-ops while the secrets are empty)
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+          AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
+          # Overlay the signCommand config only when signing is configured.
+          args: ${{ secrets.AZURE_CLIENT_ID != '' && '--config src-tauri/tauri.signed.conf.json' || '' }}
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"
-          releaseBody: "See docs/INSTITUTIONAL_GRADE_ROADMAP.md for what changed. Unsigned installer — Windows SmartScreen may warn on first run until code signing is configured (see workflow comments)."
+          releaseBody: "See docs/INSTITUTIONAL_GRADE_ROADMAP.md for what changed."
           releaseDraft: true
           prerelease: false

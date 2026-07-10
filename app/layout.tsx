@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
+import { CommandPalette } from "@/components/system/command-palette";
 import { getSettings } from "@/lib/queries/settings";
 import { cn } from "@/lib/utils";
 
@@ -36,10 +37,13 @@ export default function RootLayout({
             'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
         }}
       >
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+        <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
+          <div className="contents print:hidden">
+            <Sidebar />
+          </div>
+          <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
         </div>
+        <CommandPalette />
       </body>
     </html>
   );

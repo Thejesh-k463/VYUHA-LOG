@@ -75,6 +75,8 @@ export const trades = sqliteTable(
     // Journal
     setupTag: text("setup_tag"),
     notes: text("notes"),
+    playbookId: integer("playbook_id"), // links to playbooks.id (P2.4 behavioral journaling)
+    emotionTag: text("emotion_tag"), // one of EMOTION_TAGS in lib/analytics/behavior.ts
     slPlanned: real("sl_planned"), // original stop-loss
     trailingSl: real("trailing_sl"), // trailing stop-loss (TSL)
     targetPlanned: real("target_planned"),
@@ -521,8 +523,25 @@ export const corporateActions = sqliteTable(
   (t) => [index("corporate_actions_symbol_idx").on(t.symbol), index("corporate_actions_ex_date_idx").on(t.exDate)],
 );
 
+// ---------------------------------------------------------------------------
+// playbooks — named setups with rule checklists (P2.4 behavioral journaling).
+// Trades link via trades.playbook_id; per-playbook expectancy rolls up on the
+// Discipline page. Archiving hides a playbook from pickers without orphaning
+// the trades already tagged with it.
+// ---------------------------------------------------------------------------
+export const playbooks = sqliteTable("playbooks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  rules: text("rules", { mode: "json" }).$type<string[]>().notNull().default([]),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull().default(now),
+  updatedAt: text("updated_at").notNull().default(now),
+});
+
 // Type exports
 export type Trade = typeof trades.$inferSelect;
+export type Playbook = typeof playbooks.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
 export type Position = typeof positions.$inferSelect;
 export type ChargeConfigRow = typeof chargeConfig.$inferSelect;

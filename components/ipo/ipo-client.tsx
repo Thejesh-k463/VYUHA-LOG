@@ -43,6 +43,15 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
   const [editing, setEditing] = React.useState<IpoComputed | null>(null);
   const [statement, setStatement] = React.useState<IpoComputed | null>(null);
 
+  // Command-palette deep link: /ipos?add=1 — open the dialog once, then clean the URL.
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("add")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAddOpen(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
   async function del(id: number) {
     if (!confirm("Delete this IPO entry?")) return;
     await fetch(`/api/ipos?id=${id}`, { method: "DELETE" });

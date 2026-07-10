@@ -12,6 +12,36 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **P2.4 Behavioral journaling (DONE)** — migration `0015`: `playbooks` table (name unique, description,
+>   rules json, archived) + `trades.playbook_id` + `trades.emotion_tag` (the dormant `mistake_tags` json column
+>   finally lights up). Pure `lib/analytics/behavior.ts` (8 tests): canonical MISTAKE_TAGS (10) + EMOTION_TAGS (8)
+>   with labels; `playbookStats` (per-playbook win-rate/net/expectancy/avgR + "Untagged" bucket; unknown/deleted
+>   playbook ids fall back to Untagged), `mistakeReport` (per-tag net worst-first; a multi-tag trade counts ONCE
+>   in the headline but under each tag in perTag; honest framing — reports the net of mistake-tagged trades and
+>   the clean-vs-mistake EXPECTANCY GAP, no counterfactual claims), `emotionReport`. APIs: `/api/playbooks`
+>   (add/update/archive/delete; unique-name error surfaced; delete → trades fall back to Untagged) and
+>   `/api/trades/journal` (playbook/emotion/mistakes/notes; unknown tags filtered server-side; audited with
+>   before/after). UI: `/playbooks` manager (nav Journal, rules one-per-line), journal (NotebookPen) button per
+>   trade row → dialog (accent-tinted when journaled); Discipline page gains "Playbook expectancy",
+>   "Cost of mistakes" (headline ₹ + expectancy-gap sentence) and "Trading by emotion" cards. VERIFIED live
+>   end-to-end, then test data restored EXACTLY from the audit log's before-state.
+> - **Command palette (DONE)** — `components/system/command-palette.tsx` mounted in the root layout: Ctrl/Cmd+K
+>   overlay, ranked filter (label-prefix > label > group > keywords) over every NAV screen + a per-screen keyword
+>   map (what a trader TYPES: "var", "stcg", "gmp"…) + action commands (Add trade/open trade/IPO/playbook) that
+>   deep-link via `?add=` params — trades/ipos/playbooks clients open their dialog once on mount from
+>   `window.location.search` (NOT useSearchParams — avoids the Suspense-boundary hazard) then clean the URL with
+>   replaceState. ArrowUp/Down + Enter + Esc; state resets on CLOSE (no setState-in-effect lint traps).
+> - **P2.6 Monthly PDF report (DONE)** — `/reports/monthly` (nav "Report (PDF)"): print-styled brand header,
+>   scorecard (net/return/win-rate/maxDD/Sharpe/CAGR/charges/discipline), equity curve, monthly-returns matrix,
+>   top playbooks + mistake economics, disclaimer. `PrintButton` → window.print → "Save as PDF". Root layout is
+>   print-aware: sidebar wrapped in `contents print:hidden`, scroll containers `print:overflow-visible` —
+>   Recharts SVG prints fine.
+> - **Code signing (PREPARED, dormant — docs/CODE_SIGNING.md)** — release.yml auto-activates Azure Trusted
+>   Signing when the six `AZURE_*` repo secrets exist: installs trusted-signing-cli and overlays
+>   `src-tauri/tauri.signed.conf.json` (Windows `signCommand`) via tauri-action `args`. No secrets → identical
+>   unsigned build as today. Secrets contexts are step-level only (job-level `if` can't see secrets). The doc
+>   compares Azure TS vs OV/EV cloud certs (Azure individual identity-validation may not cover India — Certum/
+>   SSL.com OV is the fallback; the overlay mechanism is vendor-agnostic, swap the signCommand).
 > - **⚠️ INCIDENT + PIPELINE FIX (v1.21.0) — stale-bundle installers.** The v1.12–v1.20 LOCALLY-built
 >   installers shipped a desktop-dist frozen at v1.11 (Jul-1 BUILD_ID): `npm run tauri build` only rebuilds the
 >   Rust shell and re-bundles the EXISTING `desktop-dist` — it never rebuilt the Next app. The version numbers
