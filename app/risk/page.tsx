@@ -21,9 +21,21 @@ import {
 import { portfolioGreeks, type PositionGreeksInput, type OptionType } from "@/lib/analytics/greeks";
 import { GreeksPanel } from "@/components/risk/greeks-panel";
 import { getLatestVixClose, VIX_SYMBOL } from "@/lib/queries/vix";
-import { getBenchmarkMeta } from "@/lib/queries/benchmark";
+import { getBenchmarkMeta, getBenchmarkCloses, DEFAULT_BENCHMARK } from "@/lib/queries/benchmark";
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
 import { LicenseBanner } from "@/components/system/license-banner";
+import {
+  computePortfolioVar,
+  symbolBeta,
+  betaWeightedExposure,
+  stressScenarios,
+  closesToReturnSeries,
+  type VarPosition,
+  type BetaPosition,
+  type StressPosition,
+} from "@/lib/risk/portfolio";
+import { getReturnsMap } from "@/lib/queries/price-history";
+import { VarPanel } from "@/components/risk/var-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -127,6 +139,48 @@ export default function RiskPage() {
     }));
   const greeks = portfolioGreeks(greeksInputs);
 
+  // P1.2 — VaR / beta-weighted exposure / stress tests off delta-equivalent exposures.
+  // Options enter at positionDelta × spot (Greeks above); equity/futures at qty × mtm,
+  // signed by side. Symbols resolve to canonical tickers for the price-history lookup.
+  const greeksById = new Map(greeks.positions.map((g) => [g.id, g]));
+  const sideSign = (p: (typeof inputs)[number]) => (p.side === "short" ? -1 : 1);
+  const exposures = inputs
+    .map((p) => {
+      const ticker = resolveTicker(p.symbol.toUpperCase(), aliasMap);
+      const isOption = p.optionType === "CE" || p.optionType === "PE";
+      const g = greeksById.get(p.id);
+      let exposure: number | null = null;
+      if (isOption) exposure = g && p.spot != null ? g.delta * p.spot : null; // delta already qty-scaled & side-signed
+      else exposure = p.qty * p.mtm * sideSign(p);
+      return exposure == null ? null : { p, ticker, exposure, g };
+    })
+    .filter((x): x is NonNullable<typeof x> => x != null);
+
+  const returnsMap = getReturnsMap(exposures.map((e) => e.ticker));
+  const niftyReturns = closesToReturnSeries(getBenchmarkCloses(DEFAULT_BENCHMARK));
+  const betaFor = (ticker: string): number | null => {
+    const rets = returnsMap.get(ticker);
+    if (!rets || niftyReturns.length === 0) return null;
+    return symbolBeta(rets, niftyReturns)?.beta ?? null;
+  };
+
+  const varPositions: VarPosition[] = exposures.map((e) => ({ id: e.p.id, symbol: e.ticker, exposure: e.exposure }));
+  const varResult = computePortfolioVar(varPositions, returnsMap);
+
+  const betaPositions: BetaPosition[] = exposures.map((e) => ({ id: e.p.id, symbol: e.ticker, exposure: e.exposure, beta: betaFor(e.ticker) }));
+  const betaExp = exposures.length > 0 ? betaWeightedExposure(betaPositions) : null;
+
+  const stressPositions: StressPosition[] = exposures.map((e) => ({
+    id: e.p.id,
+    symbol: e.ticker,
+    exposure: e.exposure,
+    beta: betaFor(e.ticker) ?? 1,
+    gamma: e.g?.gamma ?? null,
+    vega: e.g?.vega ?? null,
+    spot: e.p.spot ?? null,
+  }));
+  const stress = exposures.length > 0 ? stressScenarios(stressPositions) : null;
+
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
   const settlementInputs: SettlementInput[] = trades
     .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
@@ -167,6 +221,9 @@ export default function RiskPage() {
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
         <ExpiryObligations summary={settlement} />
+        {exposures.length > 0 && (
+          <VarPanel varResult={varResult} betaExp={betaExp} stress={stress} niftyDays={niftyReturns.length} />
+        )}
         {greeks.count > 0 && (
           <>
             <GreeksPanel greeks={greeks} latestVix={latestVix} />

@@ -1,0 +1,1 @@
+ALTER TABLE `trades` ADD `fmv_31jan2018` real;

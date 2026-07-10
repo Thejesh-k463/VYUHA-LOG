@@ -12,6 +12,60 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **⚠️ INCIDENT + PIPELINE FIX (v1.21.0) — stale-bundle installers.** The v1.12–v1.20 LOCALLY-built
+>   installers shipped a desktop-dist frozen at v1.11 (Jul-1 BUILD_ID): `npm run tauri build` only rebuilds the
+>   Rust shell and re-bundles the EXISTING `desktop-dist` — it never rebuilt the Next app. The version numbers
+>   looked right (they come from the shell) while every web-side feature since v1.11 was missing. CI releases
+>   were unaffected (release.yml ran the full sequence explicitly). FIXED THREE WAYS: (1) tauri.conf.json
+>   `build.beforeBuildCommand: "npm run build && npm run desktop:bundle"` — `tauri build` now ALWAYS refreshes
+>   the bundle, locally and in CI; (2) release.yml's explicit build steps removed (redundant — the conf field is
+>   the single source of truth; do not reintroduce them); (3) `scripts/desktop-server.mjs` now writes a
+>   pre-migration backup of the user DB to `<dataDir>/backups/pre-migrate-<ts>.sqlite` (keeps newest 10) before
+>   applying migrations — closes the long-standing parity gap with lib/db/migrate.ts. v1.21.0 was rebuilt with
+>   the full pipeline and the bundle VERIFIED by grepping feature markers (IPO v2, capital-gains, dividend TDS,
+>   VIX, Monte Carlo, VaR, grandfathering, license, v1.21) + migrations 0012–0014 present. LESSON: after every
+>   installer build, verify `desktop-dist/.next/BUILD_ID` is fresh and grep a marker for the newest feature.
+> - **Auto-updater (DONE — P2.5 completion, minus code signing)** — `tauri-plugin-updater` + `tauri-plugin-dialog`
+>   (Rust-side ONLY: the webview navigates away to the local Next server, so Tauri IPC is unavailable to the web
+>   app — the whole check→dialog→install flow lives in `src-tauri/src/lib.rs#check_for_updates`, spawned at setup,
+>   never blocking startup; offline/unreachable endpoint silently skips). Endpoint = the latest PUBLISHED GitHub
+>   release's `latest.json` (`releases/latest/download/latest.json` — DRAFTS don't count, so updates ship only on
+>   Publish). `bundle.createUpdaterArtifacts: true` + updater `pubkey` in tauri.conf.json; keypair via
+>   `tauri signer generate` → `updater-private.key` (GITIGNORED, no password — back it up; lost = can't sign
+>   updates, leaked = anyone can). release.yml passes `TAURI_SIGNING_PRIVATE_KEY` from the repo secret —
+>   **the maintainer must add that secret (contents of updater-private.key) or tagged releases FAIL at signing.**
+>   Local builds now also need `TAURI_SIGNING_PRIVATE_KEY="$(cat updater-private.key)"` exported. Verified via
+>   `cargo check` (full bundle blocked at the time by the running desktop app locking target/release). NOTE: the
+>   first updater-capable installer must be installed MANUALLY; auto-update kicks in from the version after it.
+> - **Tax polish pack (DONE)** — three gaps in the flagship tax stack closed:
+>   (1) **Exited IPOs now feed /reports/tax** — mapped as eq_delivery TaxTrade/CapitalGainsTrade rows
+>   (acquisition = allotment date, fallback listing→applied) into BOTH the raw scaffold and the set-off engine;
+>   verified: scaffold STCG moved exactly +net of a test exited IPO (₹28,134 → ₹29,885), then reverted.
+>   (2) **FMV-entry UI for LTCG grandfathering** — migration `0014` adds `trades.fmv_31jan2018` (per-SHARE);
+>   the tax page converts to totals (×buyQty) before `classifyGain`; conditional "LTCG grandfathering" card
+>   (components/reports/fmv-editor.tsx, only when pre-2018 closed equity lots exist) posts to
+>   `app/api/trades/fmv` (validated, audited).
+>   (3) **ITR-schedule-shaped export** — per-trade CSV/XLSX on the capital-gains card: scrip, acquisition/sale
+>   dates, cost, consideration, net gain, ST/LT term, head (STCG 111A / LTCG 112A / speculative / non-spec
+>   business), grandfathered taxable gain. Includes IPO rows tagged "(IPO)".
+> - **P1.2 Portfolio risk v2 — VaR/CVaR + beta-weighted exposure + stress tests (DONE)** — pure
+>   `lib/risk/portfolio.ts` (13 tests). DELTA-NORMAL model: each position enters as its delta-equivalent ₹
+>   exposure to the underlying (equity/futures: qty × mtm, side-signed; options: positionDelta × spot from the
+>   Greeks engine — already qty-scaled & side-signed). `computePortfolioVar` nets exposures per symbol (hedged
+>   books net to zero), builds the portfolio 1-day P&L over the COMMON date grid of covered symbols' return
+>   histories → historical VaR95/99 (interpolated quantile, 0-clamped), CVaR95 (tail mean), parametric z·σ
+>   (sample std, n−1). HONESTY RULES for sparse local data: symbols with <30 overlapping days are UNCOVERED
+>   (excluded + reported, never assumed); every result carries daysUsed/coveragePct for a confidence badge.
+>   `symbolBeta` (OLS vs NIFTY; `varB < 1e-12 → null` — exact-zero check fails on float noise from a constant
+>   bench), `betaWeightedExposure` (β=1 fallback flagged, withBetaPct), `stressScenarios` (ΔP ≈ β·Δm·exposure +
+>   ½Γ(ΔS)² + V·ΔIV; six defaults incl. "Crash: −5% & IV +20"). Query `getReturnsMap` in
+>   `lib/queries/price-history.ts`; NIFTY returns from the existing `benchmarkPrices` slot; panel
+>   `components/risk/var-panel.tsx` on `/risk` (KPIs + beta row + stress table + degraded empty states).
+>   VERIFIED on REAL data: 66 real daily closes each for ATGL/ANGELONE/TCS loaded into price_history (source
+>   "tapetide", KEPT — real market data) + real TCS spot 2057.5; page showed VaR95 ₹23,263 < CVaR95 ₹30,641 <
+>   VaR99 ₹34,613 over 65 days, 92.09% covered with BHARATCOAL correctly flagged uncovered (no such listing),
+>   β=1 fallback noted (no NIFTY series loaded — paste NSE's NIFTY CSV on /reports/performance to light up
+>   real betas AND the dormant alpha/beta feature).
 > - **Quick-wins bundle (DONE)** — four small high-value items from §6:
 >   (1) **Monte Carlo risk-of-ruin** — pure `lib/analytics/monte-carlo.ts` (7 tests): bootstrap-resamples the
 >   portfolio's OWN daily returns (no normality assumption) over 252 days × 2,000 paths with a seeded

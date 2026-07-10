@@ -80,6 +80,7 @@ export const trades = sqliteTable(
     targetPlanned: real("target_planned"),
     riskAmount: real("risk_amount"),
     impliedVol: real("implied_vol"), // user-entered IV %, e.g. 20 for 20% (option Greeks)
+    fmv31Jan2018: real("fmv_31jan2018"), // per-share FMV on 31-Jan-2018 (LTCG grandfathering; pre-2018 lots only)
     rMultiple: real("r_multiple"),
     ruleViolations: text("rule_violations", { mode: "json" }).$type<string[]>(),
     mistakeTags: text("mistake_tags", { mode: "json" }).$type<string[]>(),

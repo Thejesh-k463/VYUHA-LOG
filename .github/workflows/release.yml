@@ -4,13 +4,17 @@ name: Release
 # keep them in sync with `npm run bump-version <version>`) to build the Windows
 # installer and attach it to a DRAFT GitHub Release for review before publishing.
 #
+# AUTO-UPDATE (wired): tauri-plugin-updater checks the latest PUBLISHED release's
+# latest.json on startup. This workflow signs the updater artifacts with the vendor
+# keypair — REQUIRES the repo secret TAURI_SIGNING_PRIVATE_KEY (contents of the local
+# `updater-private.key`, which is gitignored). Without the secret, the build fails at
+# the signing step: add it under Settings → Secrets and variables → Actions.
+# The release stays a DRAFT — updates only reach users once you press Publish.
+#
 # NOT YET WIRED (needs secrets/decisions only a maintainer can provide):
 #   - Code signing: add WINDOWS_CERTIFICATE (base64 .pfx) + WINDOWS_CERTIFICATE_PASSWORD
 #     secrets (or switch to Azure Trusted Signing) and pass them to tauri-action's env.
 #     Until then this produces the same UNSIGNED installer as a local build.
-#   - Auto-update: requires adding @tauri-apps/plugin-updater + a signing keypair
-#     (`tauri signer generate`) + an `updater` block in tauri.conf.json, and hosting
-#     latest.json somewhere the app checks. Separate follow-up, not part of this workflow.
 
 on:
   push:
@@ -39,20 +43,19 @@ jobs:
           npm run typecheck
           npm test
 
-      # tauri-action has no generic "run this before building" input — beforeBuildCommand
-      # is a tauri.conf.json build-config field, not an action input, and passing it under
-      # `with:` is silently ignored (no error). So desktop-dist is assembled as explicit
-      # steps here, exactly matching the proven-working local `npm run desktop:build`
-      # sequence (next build && build-desktop.mjs && tauri build), before tauri-action runs.
-      - name: Build Next.js (standalone)
-        run: npm run build
-
-      - name: Assemble desktop bundle (desktop-dist + seed template DB)
-        run: node scripts/build-desktop.mjs
-
+      # The Next.js standalone build + desktop-dist assembly run via
+      # `build.beforeBuildCommand` in tauri.conf.json ("npm run build && npm run
+      # desktop:bundle"), which `tauri build` executes — locally AND here. History:
+      # passing beforeBuildCommand as a tauri-action `with:` input is silently ignored
+      # (that caused the original broken release), and building only via explicit CI
+      # steps left LOCAL `tauri build` shipping a stale desktop-dist (the v1.12–v1.20
+      # local installers bug). The conf field is the one mechanism both paths share —
+      # do NOT reintroduce explicit build steps here or a stale bundle can ship again.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"

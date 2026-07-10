@@ -1,10 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Vyuha",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "identifier": "in.vyuha.tradejournal",
   "build": {
-    "frontendDist": "./loading"
+    "frontendDist": "./loading",
+    "beforeBuildCommand": "npm run build && npm run desktop:bundle"
   },
   "app": {
     "windows": [
@@ -23,9 +24,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGRkFGMUI0OTFFQUQyRjAKUldUdzB1cVJ0UEg2ajFzRGEwUGZyVFBzMDMyd2owZ3NTcXBuUnR2eEhsSlVLNFBSTFlOV2dXS3MK",
+      "endpoints": [
+        "https://github.com/Thejesh-k463/VYUHA-LOG/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

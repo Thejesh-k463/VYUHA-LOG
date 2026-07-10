@@ -21,9 +21,25 @@ if (!fs.existsSync(dbPath) && fs.existsSync(seedTemplate)) {
 }
 
 // Apply pending migrations (idempotent; safe on every launch, incl. app updates).
+// A pre-migration backup of the user DB is written first — parity with the dev
+// migrate path (lib/db/migrate.ts), so a bad upgrade can never eat the journal.
 const migrationsDir = path.join(here, "drizzle");
 if (fs.existsSync(migrationsDir)) {
   try {
+    if (fs.existsSync(dbPath)) {
+      const backupsDir = path.join(dataDir, "backups");
+      fs.mkdirSync(backupsDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      fs.copyFileSync(dbPath, path.join(backupsDir, `pre-migrate-${stamp}.sqlite`));
+      // Keep only the newest 10 pre-migrate backups.
+      const old = fs
+        .readdirSync(backupsDir)
+        .filter((f) => f.startsWith("pre-migrate-") && f.endsWith(".sqlite"))
+        .sort()
+        .slice(0, -10);
+      for (const f of old) fs.rmSync(path.join(backupsDir, f), { force: true });
+      console.log("[vyuha] pre-migration backup →", backupsDir);
+    }
     const { default: Database } = await import("better-sqlite3");
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");

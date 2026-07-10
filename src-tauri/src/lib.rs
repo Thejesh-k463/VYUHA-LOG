@@ -15,11 +15,77 @@ struct ServerProcess(Mutex<Option<Child>>);
 
 const PORT: u16 = 3000;
 
+/// Startup update check (runs in the background; never blocks the journal).
+/// The webview navigates away to the local Next server, so Tauri IPC is not
+/// available to the web app — the whole flow stays in Rust with native dialogs.
+/// Endpoint = the latest PUBLISHED GitHub release's latest.json (drafts don't count).
+fn check_for_updates(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+        use tauri_plugin_updater::UpdaterExt;
+
+        let updater = match handle.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("[vyuha] updater unavailable: {e}");
+                return;
+            }
+        };
+        // Offline or endpoint unreachable → silently skip (offline-first app).
+        let update = match updater.check().await {
+            Ok(Some(u)) => u,
+            Ok(None) => return,
+            Err(e) => {
+                eprintln!("[vyuha] update check skipped: {e}");
+                return;
+            }
+        };
+
+        let version = update.version.clone();
+        let confirmed = handle
+            .dialog()
+            .message(format!(
+                "Vyuha {version} is available (you have {}).\n\nDownload and install now? \
+                 Your journal data is kept — a backup is taken automatically before any \
+                 database migration.",
+                handle.package_info().version
+            ))
+            .title("Update available")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Update now".into(),
+                "Later".into(),
+            ))
+            .blocking_show();
+        if !confirmed {
+            return;
+        }
+
+        match update.download_and_install(|_, _| {}, || {}).await {
+            // On Windows the installer takes over and the app exits by itself;
+            // restart() is the cross-platform fallback for other targets.
+            Ok(()) => handle.restart(),
+            Err(e) => {
+                handle
+                    .dialog()
+                    .message(format!(
+                        "The update could not be installed automatically ({e}). \
+                         Please download the latest installer from the releases page."
+                    ))
+                    .title("Update failed")
+                    .blocking_show();
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerProcess(Mutex::new(None)))
         .setup(|app| {
+            check_for_updates(app.handle().clone());
             let server_dir = app.path().resource_dir()?.join("server");
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir).ok();

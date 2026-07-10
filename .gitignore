@@ -54,3 +54,6 @@ next-env.d.ts
 /desktop-dist/
 /src-tauri/target/
 /src-tauri/gen/
+
+# tauri updater signing key (vendor secret — never commit)
+updater-private.key

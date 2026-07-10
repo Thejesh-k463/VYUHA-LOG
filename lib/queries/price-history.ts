@@ -24,6 +24,23 @@ export function getCloseHistory(symbol: string): { date: string; close: number }
     .all();
 }
 
+/** Per-symbol daily-return series for a set of tickers (P1.2 VaR/beta inputs). */
+export function getReturnsMap(symbols: string[]): Map<string, { date: string; ret: number }[]> {
+  const out = new Map<string, { date: string; ret: number }[]>();
+  for (const raw of symbols) {
+    const sym = raw.toUpperCase();
+    if (out.has(sym)) continue;
+    const closes = getCloseHistory(sym);
+    if (closes.length < 2) continue;
+    const rets: { date: string; ret: number }[] = [];
+    for (let i = 1; i < closes.length; i++) {
+      if (closes[i - 1].close > 0) rets.push({ date: closes[i].date, ret: closes[i].close / closes[i - 1].close - 1 });
+    }
+    out.set(sym, rets);
+  }
+  return out;
+}
+
 /** Coverage summary for the UI status line. */
 export function getPriceHistoryMeta(): { symbols: number; rows: number; lastDate: string | null } {
   const rows = db.select({ symbol: priceHistory.symbol, date: priceHistory.date }).from(priceHistory).all();
