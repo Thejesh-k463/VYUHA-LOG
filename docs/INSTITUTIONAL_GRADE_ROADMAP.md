@@ -62,7 +62,9 @@ Read sections 1–2 before writing any code.
 > - **Code signing (PREPARED, dormant — docs/CODE_SIGNING.md)** — release.yml auto-activates Azure Trusted
 >   Signing when the six `AZURE_*` repo secrets exist: installs trusted-signing-cli and overlays
 >   `src-tauri/tauri.signed.conf.json` (Windows `signCommand`) via tauri-action `args`. No secrets → identical
->   unsigned build as today. Secrets contexts are step-level only (job-level `if` can't see secrets). The doc
+>   unsigned build as today. CORRECTION (v1.40.0): `secrets` is not allowed in `if:` at ANY level — it's a
+>   workflow-file validation error (run fails with zero jobs). The probe now maps `secrets.AZURE_CLIENT_ID` into
+>   job env `HAS_CODE_SIGNING` and every gate checks the env instead. The doc
 >   compares Azure TS vs OV/EV cloud certs (Azure individual identity-validation may not cover India — Certum/
 >   SSL.com OV is the fallback; the overlay mechanism is vendor-agnostic, swap the signCommand).
 > - **⚠️ INCIDENT + PIPELINE FIX (v1.21.0) — stale-bundle installers.** The v1.12–v1.20 LOCALLY-built

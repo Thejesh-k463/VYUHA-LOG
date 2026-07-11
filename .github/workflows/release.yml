@@ -26,6 +26,12 @@ jobs:
   build-release:
     name: Build & publish Windows installer
     runs-on: windows-latest
+    # The `secrets` context is NOT allowed inside `if:` expressions (any level) —
+    # "Unrecognized named-value: 'secrets'" is a workflow-file validation error
+    # that fails the run with zero jobs. Map the probe into env here (env MAY
+    # read secrets) and gate steps on env instead.
+    env:
+      HAS_CODE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +59,7 @@ jobs:
       # local installers bug). The conf field is the one mechanism both paths share —
       # do NOT reintroduce explicit build steps here or a stale bundle can ship again.
       - name: Install trusted-signing-cli (only when code-signing secrets exist)
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.HAS_CODE_SIGNING == 'true' }}
         run: cargo install trusted-signing-cli --locked
 
       - uses: tauri-apps/tauri-action@v0
@@ -70,7 +76,7 @@ jobs:
           AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
           # Overlay the signCommand config only when signing is configured.
-          args: ${{ secrets.AZURE_CLIENT_ID != '' && '--config src-tauri/tauri.signed.conf.json' || '' }}
+          args: ${{ env.HAS_CODE_SIGNING == 'true' && '--config src-tauri/tauri.signed.conf.json' || '' }}
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"
           releaseBody: "See docs/INSTITUTIONAL_GRADE_ROADMAP.md for what changed."
