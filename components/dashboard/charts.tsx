@@ -111,7 +111,7 @@ export function CapitalGrowth({ data }: { data: CapitalPoint[] }) {
         <YAxis tick={axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => inrCompact(v)} />
         <Tooltip content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />} />
         <Area isAnimationActive={false} type="stepAfter" dataKey="equity" name="Equity" connectNulls stroke="var(--color-primary)" strokeWidth={2} fill="var(--color-primary)" fillOpacity={0.08} dot={{ r: 3 }} />
-        <Area isAnimationActive={false} type="stepAfter" dataKey="active" name="Active" connectNulls stroke="var(--color-profit)" strokeWidth={2} fill="var(--color-profit)" fillOpacity={0.08} dot={{ r: 3 }} />
+        <Area isAnimationActive={false} type="stepAfter" dataKey="active" name="Trade F&O" connectNulls stroke="var(--color-profit)" strokeWidth={2} fill="var(--color-profit)" fillOpacity={0.08} dot={{ r: 3 }} />
       </ComposedChart>
     </ResponsiveContainer>
   );

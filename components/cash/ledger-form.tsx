@@ -52,7 +52,7 @@ export function LedgerForm() {
           <Label className="text-xs">Bucket</Label>
           <select value={bucket} onChange={(e) => setBucket(e.target.value)} className={selectCls}>
             <option value="equity">Equity</option>
-            <option value="active">Active</option>
+            <option value="active">Trade F&O</option>
           </select>
         </div>
         <div className="space-y-1">

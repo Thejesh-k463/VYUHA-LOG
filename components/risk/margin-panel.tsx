@@ -60,7 +60,9 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
           {summary.byBucket.map((b) => (
             <div key={b.bucket} className="rounded-md border border-border p-3">
               <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium uppercase text-muted-foreground">{b.bucket}</span>
+                <span className="font-medium uppercase text-muted-foreground">
+                  {b.bucket === "active" ? "Trade F&O" : b.bucket}
+                </span>
                 <span className="tabular-nums">
                   {inr(b.margin, { decimals: 0 })} / {inr(b.capital, { decimals: 0 })}
                 </span>

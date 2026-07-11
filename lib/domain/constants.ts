@@ -32,9 +32,15 @@ export const BROKER_LABELS: Record<Broker, string> = {
   groww: "Groww",
 };
 
+// Display names only — the DB/API bucket value stays "active" everywhere.
 export const BUCKET_LABELS: Record<Bucket, string> = {
   equity: "Equity (₹13L)",
-  active: "Active (₹4L)",
+  active: "Trade F&O (₹4L)",
+};
+
+export const BUCKET_SHORT_LABELS: Record<Bucket, string> = {
+  equity: "Equity",
+  active: "Trade F&O",
 };
 
 export const SEGMENT_LABELS: Record<Segment, string> = {

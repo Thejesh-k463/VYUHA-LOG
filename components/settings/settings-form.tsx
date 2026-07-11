@@ -72,7 +72,7 @@ export function SettingsForm({ current }: { current: Settings }) {
           <Field label="Equity bucket capital (₹)">
             <Input type="number" step="1" value={equityCapital} onChange={(e) => setEquity(e.target.value)} />
           </Field>
-          <Field label="Active bucket capital (₹)">
+          <Field label="Trade F&O bucket capital (₹)">
             <Input type="number" step="1" value={activeCapital} onChange={(e) => setActive(e.target.value)} />
           </Field>
         </CardContent>

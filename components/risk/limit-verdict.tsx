@@ -6,7 +6,7 @@ import type { LimitResult, LimitStatus } from "@/lib/risk/limits";
 const META: Record<LimitStatus, { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
   pass: { label: "Cleared", cls: "text-profit border-profit/40 bg-profit/10", Icon: CheckCircle2 },
   warn: { label: "Warning", cls: "text-warning border-warning/40 bg-warning/10", Icon: AlertTriangle },
-  block: { label: "Blocked", cls: "text-loss border-loss/40 bg-loss/10", Icon: ShieldX },
+  block: { label: "Limit breached (you can override)", cls: "text-loss border-loss/40 bg-loss/10", Icon: ShieldX },
 };
 
 const dot: Record<LimitStatus, string> = {

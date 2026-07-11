@@ -60,7 +60,7 @@ export default function TargetActivePage() {
 
   return (
     <>
-      <PageHeader title="Target Tracker — Active" description="Daily max-loss cockpit, trade counters, per-segment limits, lot sizing." />
+      <PageHeader title="Target Tracker — Trade F&O" description="Daily max-loss cockpit, trade counters, per-segment limits, lot sizing." />
       <div className="space-y-5 p-6">
         <TargetActiveClient
           daily={daily}

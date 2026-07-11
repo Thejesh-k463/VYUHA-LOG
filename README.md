@@ -103,7 +103,8 @@ verified under Node; only the final Rust compile requires the toolchain above.
 
 - **Total ₹17,00,000**, split into two buckets:
   - **Bucket A — EQUITY ₹13,00,000** — Equity Delivery + MTF.
-  - **Bucket B — ACTIVE ₹4,00,000** — Index/Stock options + Intraday + Commodity.
+  - **Bucket B — TRADE F&O ₹4,00,000** — Index/Stock options + Intraday + Commodity
+    (displayed as "Trade F&O" across the app; the internal bucket id remains `active`).
 - Go-live date defaults to **19 Jun 2026**; the journal starts **empty**.
 - All risk math is computed against **bucket** capital, not total. An opening
   capital snapshot is stored per bucket on go-live and kept in sync when you edit

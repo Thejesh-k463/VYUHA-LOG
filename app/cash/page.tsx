@@ -21,7 +21,7 @@ const COLS = [
   { key: "note", label: "Note" },
 ] as const;
 
-const BUCKET_LABEL: Record<string, string> = { equity: "Equity (₹13L)", active: "Active (₹4L)", "": "Unassigned" };
+const BUCKET_LABEL: Record<string, string> = { equity: "Equity (₹13L)", active: "Trade F&O (₹4L)", "": "Unassigned" };
 
 function BucketCard({ b }: { b: BucketLedger }) {
   const grew = b.availablePaise >= b.openingPaise;

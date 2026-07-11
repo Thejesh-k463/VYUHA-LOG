@@ -355,9 +355,14 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
       {open && limit && <LimitVerdict result={limit} />}
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending || blocked}>{pending ? "Saving…" : open ? "Add open trade" : "Add trade"}</Button>
+        {/* Limits are advisory — the trader always has final say. A breach flips
+            the button to an explicit override (recorded in rule_violations and
+            on the Discipline scorecard) but never disables saving. */}
+        <Button type="submit" disabled={pending} variant={blocked ? "destructive" : "default"}>
+          {pending ? "Saving…" : blocked ? "Override & add anyway" : open ? "Add open trade" : "Add trade"}
+        </Button>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        {blocked && <span className="text-xs text-loss">Resolve the blocking limit above, or adjust your risk settings.</span>}
+        {blocked && <span className="text-xs text-loss">Limit breached — you stay in control; saving records the breach on your Discipline scorecard.</span>}
         {state.message && (
           <span className={`flex items-center gap-1.5 text-sm ${state.ok ? "text-profit" : "text-loss"}`}>
             {state.ok ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}

@@ -4,6 +4,19 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v1.50.0
+- **Pre-trade limits are now advisory — the trader always has final say.** A breached
+  limit no longer disables the Add-trade button: the verdict reads "Limit breached
+  (you can override)" and the button flips to a red "Override & add anyway". Overridden
+  breaches are still recorded in `rule_violations` and surface on the Discipline
+  scorecard's breach tile — control stays with the user, accountability stays in the
+  journal.
+- **"Active" bucket renamed to "Trade F&O" everywhere in the UI** — nav ("Trade F&O
+  Tracker", "Targets — Trade F&O"), page titles, dashboard/trades bucket filters, risk
+  cockpit scope toggle, margin gauge, capital settings, cash ledger, capital-growth
+  chart. Display-only: the internal bucket id stays `active` (DB rows, APIs and
+  overrides are untouched). New `BUCKET_SHORT_LABELS` in `lib/domain/constants.ts`.
+
 ## v1.40.0
 - **P0.1 paise migration FINISHED** — all 17 ₹-amount columns on `trades` (values, P&L,
   full charge breakdown, risk amount) now stored as INTEGER paise (migrations `0016`/`0017`,

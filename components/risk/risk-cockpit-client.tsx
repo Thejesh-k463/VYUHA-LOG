@@ -91,11 +91,11 @@ export function RiskCockpitClient({
                 <button
                   key={s}
                   onClick={() => setScope(s)}
-                  className={`rounded-md px-3 py-1 capitalize transition-colors ${
+                  className={`rounded-md px-3 py-1 transition-colors ${
                     scope === s ? "bg-primary/15 font-medium text-primary" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {s}
+                  {s === "all" ? "All" : s === "equity" ? "Equity" : "Trade F&O"}
                 </button>
               ))}
             </div>

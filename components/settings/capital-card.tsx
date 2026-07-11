@@ -68,7 +68,7 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Credit to</div>
                 <Select value={bucket} onChange={(e) => setBucket(e.target.value as "equity" | "active")} className="h-9 w-32">
                   <option value="equity">Equity bucket</option>
-                  <option value="active">Active bucket</option>
+                  <option value="active">Trade F&O bucket</option>
                 </Select>
               </div>
               <Button type="button" onClick={compound} disabled={pending || !canCompound}>

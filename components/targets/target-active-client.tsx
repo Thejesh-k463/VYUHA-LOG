@@ -127,7 +127,7 @@ export function TargetActiveClient({
           </div>
           {undatedActive > 0 && (
             <p className="mt-3 text-[11px] text-muted-foreground">
-              Note: {undatedActive} active-bucket trades (e.g. Dhan options) have no date in the P&L file and aren&apos;t attributed to a day. Add a tradebook import or manual dates for full daily counters.
+              Note: {undatedActive} Trade F&O-bucket trades (e.g. Dhan options) have no date in the P&L file and aren&apos;t attributed to a day. Add a tradebook import or manual dates for full daily counters.
             </p>
           )}
         </CardContent>
