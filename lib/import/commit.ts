@@ -19,6 +19,14 @@ import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
+import { getMarginRates } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+
+/** eq_mtf own-margin % from margin_config (the same rate the /risk margin gauge
+ * uses), falling back to the seeded default if the row is somehow missing. */
+function mtfOwnMarginPct(): number {
+  return getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+}
 
 function normalizeDate(s: string | null): string | null {
   if (!s) return null;
@@ -379,6 +387,24 @@ export function commitManualTrade(
   const buyOrderCount = t.buyQty > 0 ? fields.buyOrders ?? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? fields.sellOrders ?? defaults.sellOrders : 0;
   const r = findRates(rates, t.broker, cls.segment, cls.exchange);
+
+  // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short option/future)
+  // row has buyQty=0 and must still be OPEN, not silently marked closed.
+  const isOpen = t.buyQty !== t.sellQty;
+
+  // MTF: fundedAmount is the BROKER-FINANCED principal (own-margin share excluded),
+  // never the full position value — an explicit, correct entry always wins; else
+  // auto-estimate from margin_config's eq_mtf %. daysHeld is forced to 0 for a
+  // freshly-opened position — interest can't have accrued before the daily
+  // accrual job runs from T+1 (see lib/jobs/mtf-accrual.ts).
+  const isMtf = cls.segment === "eq_mtf";
+  const effectiveFundedAmount = isMtf
+    ? fields.fundedAmount && fields.fundedAmount > 0
+      ? fields.fundedAmount
+      : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct())
+    : null;
+  const effectiveDaysHeld = isOpen ? 0 : fields.daysHeld ?? 0;
+
   const charges = computeCharges(
     {
       segment: cls.segment,
@@ -388,17 +414,11 @@ export function commitManualTrade(
       sellQty: t.sellQty,
       buyOrderCount,
       sellOrderCount,
-      mtf:
-        cls.segment === "eq_mtf" && fields.fundedAmount
-          ? { fundedAmount: fields.fundedAmount, daysHeld: fields.daysHeld ?? 0, pledgeScrips: 1 }
-          : null,
+      mtf: isMtf ? { fundedAmount: effectiveFundedAmount!, daysHeld: effectiveDaysHeld, pledgeScrips: 1 } : null,
     },
     r,
   );
   const netPnl = Math.round((t.grossPnl - charges.total) * 100) / 100;
-  // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short option/future)
-  // row has buyQty=0 and must still be OPEN, not silently marked closed.
-  const isOpen = t.buyQty !== t.sellQty;
   // Short-open (sell-to-open, e.g. writing a CE/PE): the entry leg is the SELL side.
   const isShortOpen = isOpen && t.sellQty > t.buyQty;
   const entryPrice = isShortOpen ? t.avgSellPrice : t.avgBuyPrice;
@@ -459,6 +479,7 @@ export function commitManualTrade(
       gst: charges.gst,
       dpCharges: charges.dpCharges,
       mtfInterest: charges.mtfInterest,
+      mtfFundedAmount: effectiveFundedAmount,
       pledgeCharges: charges.pledgeCharges,
       sourceFile: "manual",
       dedupHash: dedup,
@@ -529,13 +550,18 @@ export function closePosition(
 
   // MTF interest over the holding period (buy → exit), if this is an MTF position.
   // MTF is equity-only (never a short-open segment), so buyDate is always the entry.
+  // Reuse the fundedAmount locked in at entry (explicit or auto-estimated) — NEVER
+  // recompute from the full buyValue, which would assume 100% broker financing and
+  // overstate interest (a real bug fixed here: it previously did exactly that).
   let mtf: { fundedAmount: number; daysHeld: number; pledgeScrips: number } | null = null;
+  let mtfFundedAmount: number | null = t.mtfFundedAmount;
   if (t.segment === "eq_mtf") {
-    const funded = t.buyValue;
+    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct());
     const days = t.buyDate
       ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(t.buyDate).getTime()) / 86400000) - 1)
       : 0;
     mtf = { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 };
+    mtfFundedAmount = funded;
   }
 
   const charges = computeCharges(
@@ -584,6 +610,7 @@ export function closePosition(
       gst: charges.gst,
       dpCharges: charges.dpCharges,
       mtfInterest: charges.mtfInterest,
+      mtfFundedAmount,
       pledgeCharges: charges.pledgeCharges,
       updatedAt: sql`(datetime('now'))`,
     })

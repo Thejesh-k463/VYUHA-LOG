@@ -30,7 +30,15 @@ function daysBetween(a: string, b: string): number | null {
   return Math.round((d2 - d1) / 86400000);
 }
 
-export function TradesClient({ trades, playbooks = [] }: { trades: Trade[]; playbooks?: PlaybookOption[] }) {
+export function TradesClient({
+  trades,
+  playbooks = [],
+  mtfOwnMarginPct,
+}: {
+  trades: Trade[];
+  playbooks?: PlaybookOption[];
+  mtfOwnMarginPct?: number;
+}) {
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [addOpen, setAddOpen] = React.useState(false);
   const [addOpenTrade, setAddOpenTrade] = React.useState(false);
@@ -172,7 +180,7 @@ export function TradesClient({ trades, playbooks = [] }: { trades: Trade[]; play
                 <DialogTitle>Add open trade</DialogTitle>
                 <DialogDescription>A running position (no exit yet) with SL / TSL / target — appears in Portfolio Risk.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} />
+              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfOwnMarginPct={mtfOwnMarginPct} />
             </DialogContent>
           </Dialog>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -184,7 +192,7 @@ export function TradesClient({ trades, playbooks = [] }: { trades: Trade[]; play
                 <DialogTitle>Add trade</DialogTitle>
                 <DialogDescription>Auto-classified with a live charge preview as you type.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm onDone={() => setAddOpen(false)} />
+              <ManualTradeForm onDone={() => setAddOpen(false)} mtfOwnMarginPct={mtfOwnMarginPct} />
             </DialogContent>
           </Dialog>
         </div>

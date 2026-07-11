@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateMargin, type MarginPositionInput } from "../lib/risk/margin";
+import { estimateMargin, defaultMtfFundedAmount, type MarginPositionInput } from "../lib/risk/margin";
 
 const rates = new Map<string, number>([
   ["index_option", 12],
@@ -94,5 +94,27 @@ describe("estimateMargin", () => {
     const equity = s.byBucket.find((b) => b.bucket === "equity")!;
     expect(equity.utilisationPct).toBe(10);
     expect(s.totalMargin).toBe(346000);
+  });
+});
+
+describe("defaultMtfFundedAmount", () => {
+  it("funds the position value minus the trader's own margin share", () => {
+    // 716 × 310.45 = 222,282.20; at 25% own margin, broker funds 75%.
+    expect(defaultMtfFundedAmount(222282.2, 25)).toBeCloseTo(166711.65, 2);
+  });
+
+  it("never treats the FULL position as broker-funded when a margin % is configured", () => {
+    const funded = defaultMtfFundedAmount(100000, 25);
+    expect(funded).toBeLessThan(100000);
+    expect(funded).toBe(75000);
+  });
+
+  it("clamps an out-of-range margin % into [0,100]", () => {
+    expect(defaultMtfFundedAmount(100000, -10)).toBe(100000); // clamped to 0% own margin
+    expect(defaultMtfFundedAmount(100000, 150)).toBe(0); // clamped to 100% own margin
+  });
+
+  it("treats non-finite margin % as 0 (fully financed) rather than throwing", () => {
+    expect(defaultMtfFundedAmount(100000, NaN)).toBe(100000);
   });
 });

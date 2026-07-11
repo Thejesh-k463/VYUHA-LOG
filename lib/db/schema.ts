@@ -112,6 +112,11 @@ export const trades = sqliteTable(
     gst: moneyPaise("gst_paise").notNull().default(0),
     dpCharges: moneyPaise("dp_charges_paise").notNull().default(0),
     mtfInterest: moneyPaise("mtf_interest_paise").notNull().default(0),
+    // Broker-financed principal for an eq_mtf position (own-margin share excluded) —
+    // set once at entry (explicit or auto-estimated from margin_config's eq_mtf %)
+    // and reused by the daily accrual job + close-position recompute, so interest
+    // is never silently recomputed off the FULL position value. Null = not MTF.
+    mtfFundedAmount: moneyPaise("mtf_funded_amount_paise"),
     pledgeCharges: moneyPaise("pledge_charges_paise").notNull().default(0),
 
     // Provenance / dedup

@@ -12,6 +12,26 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **v2.0.0 — MTF interest correctness fix + open-trade preview fix.** A real money bug: MTF
+>   interest at trade-create, daily accrual (`lib/jobs/mtf-accrual.ts`), close-position
+>   (`lib/import/commit.ts#closePosition`), and the Trade Calculator's default all assumed the
+>   FULL position value was broker-financed (`const funded = t.buyValue`), when only the
+>   leveraged portion should accrue interest. Fixed via `defaultMtfFundedAmount()` in
+>   `lib/risk/margin.ts` (reuses the existing `margin_config.eq_mtf` own-margin %, same rate
+>   the /risk margin gauge already uses) + a new persisted `trades.mtf_funded_amount_paise`
+>   column (migration `0021`) set once at entry and REUSED (never recomputed from buyValue) by
+>   accrual/close. `/api/charges/preview` now applies the identical default so the live preview
+>   never understates what gets saved (it previously silently omitted MTF interest AND the
+>   pledge charge whenever the "MTF funded" field was left blank — a second real gap). Also
+>   fixed: the open-trade charge preview showed realized Gross/Net (always ₹0 gross pre-exit),
+>   reading as a loss even when price had risen — now splits "Entry cost so far" (charges only)
+>   from a separate "Unrealized P&L (at current price)" line fed by the existing Current-price
+>   (MTM) field, never merged into the cost figure; closed-trade preview untouched. Removed the
+>   nonsensical "Days held (MTF)" field from the OPEN form (interest can't accrue on day zero).
+>   VERIFIED live + via DB inspection: a ₹1L test MTF position correctly funded at ₹75,000 (not
+>   ₹1,00,000) with interest computed on that figure; a real MTF trade's preview now matches its
+>   saved charges paisa-for-paisa (test trades cleaned up after verification, 252 real trades
+>   untouched). 4 new tests for `defaultMtfFundedAmount`.
 > - **v1.40.0 bundle (P0.1 FINISH + margin + IND-5 + P2.1 Kite + attachments + MAE/MFE + breach tile + bundled Node)** —
 >   (1) **P0.1 steps 2–4 DONE in one shot**: the 17 ₹-AMOUNT columns on `trades` are INTEGER paise at rest
 >   (migrations `0016` add+copy ×100, `0017` drop REAL). KEY TRICK: a Drizzle `customType` (`moneyPaise` in

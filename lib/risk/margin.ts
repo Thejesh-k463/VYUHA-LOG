@@ -10,6 +10,22 @@
 
 export type MarginRates = Map<string, number>; // segment → pct (e.g. 12 = 12%)
 
+// Fallback own-margin % for MTF when margin_config has no eq_mtf row (should not
+// happen post-seed, but keeps callers safe). Matches the seeded default.
+export const DEFAULT_MTF_OWN_MARGIN_PCT = 25;
+
+/**
+ * MTF's broker-financed principal = position value MINUS the trader's own margin
+ * (the eq_mtf `margin_pct` from margin_config is the OWN-funds share, same number
+ * the /risk margin gauge already uses). Interest accrues only on this financed
+ * portion, never on the full position value — treating the whole value as
+ * broker-funded overstates MTF interest by roughly 1/(1-ownMarginPct/100)×.
+ */
+export function defaultMtfFundedAmount(positionValue: number, ownMarginPct: number): number {
+  const pct = Number.isFinite(ownMarginPct) ? Math.min(100, Math.max(0, ownMarginPct)) : 0;
+  return Math.max(0, r2(positionValue * (1 - pct / 100)));
+}
+
 export interface MarginPositionInput {
   id: number;
   symbol: string;

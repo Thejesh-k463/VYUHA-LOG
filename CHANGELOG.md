@@ -4,6 +4,31 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.0.0
+- **Fixed: MTF interest overcharged everywhere (real money bug).** Trade creation, the
+  daily accrual job, position-close, and the Trade Calculator's default all treated an
+  MTF position as 100% broker-financed — interest should only accrue on the leveraged
+  portion your broker actually lends, not the full position value. New
+  `defaultMtfFundedAmount()` (`lib/risk/margin.ts`, 4 tests) derives the funded amount
+  from the existing configurable own-margin % (Settings → Margin, same rate the /risk
+  margin gauge uses); a new `trades.mtf_funded_amount_paise` column persists it per
+  trade at entry so the accrual job and close-position recompute reuse the correct
+  figure instead of silently resetting to the full buy value. The live charge preview
+  now applies the identical default, so what you see before saving matches what's
+  saved (it previously skipped MTF interest AND the pledge charge whenever "MTF
+  funded" was left blank). Verified live: a ₹1L test MTF position correctly funded at
+  ₹75,000, not ₹1,00,000 — roughly 25% less interest than the old bug charged.
+- **Fixed: open-trade preview showed a false loss when price was up.** The "Add open
+  trade" panel only ever displayed realized P&L (always ₹0 gross pre-exit), so a
+  position up in price still read as a net loss from entry charges alone. Now shows
+  "Entry cost so far" (charges only) and, when a current price is entered, a separate
+  "Unrealized P&L (at current price)" line — clearly not merged into the cost figure.
+  Closed-trade preview is unchanged.
+- Removed the "Days held (MTF)" field from the open-trade form (interest can't have
+  accrued on day zero); kept for closed manual entries where an elapsed holding period
+  is meaningful. Trade Calculator's "Funded ₹ (0 = full)" relabeled to "0 = auto @
+  {margin}%".
+
 ## v1.50.0
 - **Pre-trade limits are now advisory — the trader always has final say.** A breached
   limit no longer disables the Add-trade button: the verdict reads "Limit breached

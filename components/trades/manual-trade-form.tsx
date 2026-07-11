@@ -11,11 +11,12 @@ import { inr } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, type Segment } from "@/lib/domain/constants";
 import { LimitVerdict } from "@/components/risk/limit-verdict";
 import type { LimitResult } from "@/lib/risk/limits";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
-  breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; total: number };
+  breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
   grossPnl: number;
   netPnl: number;
 }
@@ -37,7 +38,15 @@ function daysBetween(a: string, b: string): number | null {
   return Math.round((d2 - d1) / 86400000);
 }
 
-export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => void; mode?: "open" | "closed" }) {
+export function ManualTradeForm({
+  onDone,
+  mode = "closed",
+  mtfOwnMarginPct = DEFAULT_MTF_OWN_MARGIN_PCT,
+}: {
+  onDone?: () => void;
+  mode?: "open" | "closed";
+  mtfOwnMarginPct?: number;
+}) {
   const open = mode === "open";
   const [state, formAction, pending] = useActionState<ActionState, FormData>(createManualTrade, { ok: false, message: "" });
 
@@ -53,6 +62,8 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
   const [avgSellPrice, setSellPrice] = useState("");
   const [currentPrice, setCurrentPrice] = useState("");
   const [sl, setSl] = useState("");
+  const [fundedAmount, setFundedAmount] = useState("");
+  const [daysHeld, setDaysHeld] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [limit, setLimit] = useState<LimitResult | null>(null);
 
@@ -128,13 +139,19 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
             exchange: exchange || null,
             buyValue: bq * bp, sellValue: sq * sp, buyQty: bq, sellQty: sq,
             grossPnl: sq > 0 && bq > 0 ? sq * sp - bq * bp : 0,
+            // MTF-only (ignored server-side unless the classified segment is
+            // eq_mtf); daysHeld is forced 0 for an open position — interest
+            // can't have accrued before the daily accrual job runs from T+1.
+            fundedAmount: Number(fundedAmount) > 0 ? Number(fundedAmount) : null,
+            daysHeld: open ? 0 : Number(daysHeld) || 0,
+            isOpen: open,
           }),
         });
         if (res.ok) setPreview(await res.json());
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice]);
+  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, fundedAmount, daysHeld, open]);
 
   // Pre-trade limits check (open trades only) — block/warn before saving (P1.4).
   useEffect(() => {
@@ -170,6 +187,25 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
   const blocked = open && limit?.status === "block";
   const dte = kind === "fno" && expiry ? daysBetween(new Date().toISOString().slice(0, 10), expiry) : null;
   const fnoQty = (Number(lots) || 0) * (Number(lotSize) || 0);
+
+  // MTF: the broker-financed principal, auto-estimated from the configured
+  // own-margin % — shown as a placeholder so a blank field never means "use the
+  // full position value" (that would overstate interest; see lib/risk/margin.ts).
+  const positionValue = (Number(buyQty) || 0) * (Number(avgBuyPrice) || 0);
+  const mtfDefaultFunded = positionValue > 0 ? defaultMtfFundedAmount(positionValue, mtfOwnMarginPct) : 0;
+
+  // Unrealized P&L for an OPEN position at the entered current price — informational
+  // only, never merged into the entry-charges figure below (that reported bug: a
+  // rising price showing as a "loss" because the preview only ever showed realized
+  // gross, which is always ₹0 before any exit leg exists).
+  const entryPriceNum = Number(avgBuyPrice) || 0;
+  const currentPriceNum = Number(currentPrice) || 0;
+  const openQty = Number(buyQty) || 0;
+  const openSide = kind === "fno" && direction === "sell" ? -1 : 1; // short gains when price falls
+  const unrealizedPnl =
+    open && currentPriceNum > 0 && entryPriceNum > 0 && openQty > 0
+      ? Math.round((currentPriceNum - entryPriceNum) * openQty * openSide * 100) / 100
+      : null;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -318,8 +354,25 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>
         {!isEquity ? null : (
           <>
-            <Field label="MTF funded (₹)"><Input name="fundedAmount" type="number" step="any" /></Field>
-            <Field label="Days held (MTF)"><Input name="daysHeld" type="number" step="any" /></Field>
+            <Field label="MTF funded by broker (₹)">
+              <Input
+                name="fundedAmount"
+                type="number"
+                step="any"
+                value={fundedAmount}
+                onChange={(e) => setFundedAmount(e.target.value)}
+                placeholder={mtfDefaultFunded > 0 ? `≈ ${Math.round(mtfDefaultFunded).toLocaleString("en-IN")} auto @ ${mtfOwnMarginPct}% margin` : "auto-estimated"}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                The amount your broker lends, not the full position value — leave blank to auto-estimate from the
+                configured {mtfOwnMarginPct}% own-margin rate (Settings → Margin).
+              </p>
+            </Field>
+            {!open && (
+              <Field label="Days held so far (MTF)">
+                <Input name="daysHeld" type="number" step="any" value={daysHeld} onChange={(e) => setDaysHeld(e.target.value)} />
+              </Field>
+            )}
           </>
         )}
         <Field label="Notes" className="col-span-2 sm:col-span-4"><Input name="notes" placeholder="optional" /></Field>
@@ -342,12 +395,38 @@ export function ManualTradeForm({ onDone, mode = "closed" }: { onDone?: () => vo
             <Cell k="GST" v={preview.breakdown.gst} />
             <Cell k="DP" v={preview.breakdown.dpCharges} />
             {preview.breakdown.mtfInterest > 0 && <Cell k="MTF int." v={preview.breakdown.mtfInterest} />}
+            {preview.breakdown.pledgeCharges > 0 && <Cell k="Pledge" v={preview.breakdown.pledgeCharges} />}
             <Cell k="Total charges" v={preview.breakdown.total} strong />
           </div>
-          <div className="mt-2 flex gap-6 border-t border-border pt-2">
-            <span className="text-muted-foreground">Gross: <span className="font-medium text-foreground">{inr(preview.grossPnl)}</span></span>
-            <span className="text-muted-foreground">Net: <span className={`font-semibold ${preview.netPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(preview.netPnl)}</span></span>
-          </div>
+          {open ? (
+            <>
+              {/* Open trades have no exit leg yet, so "Gross/Net" would always read
+                  ₹0 / a charges-only loss — misleading when the position is actually
+                  up. Show entry-side cost plainly, and unrealized P&L (at the entered
+                  current price) as a clearly separate, informational figure. */}
+              <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2">
+                <span className="text-muted-foreground">
+                  Entry cost so far: <span className="font-semibold text-loss">{inr(preview.netPnl)}</span>
+                </span>
+                {unrealizedPnl != null && (
+                  <span className="text-muted-foreground">
+                    Unrealized P&L (at current price):{" "}
+                    <span className={`font-semibold ${unrealizedPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(unrealizedPnl)}</span>
+                  </span>
+                )}
+              </div>
+              {unrealizedPnl != null && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Before exit charges — not part of the entry cost above; the position isn&apos;t closed yet.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="mt-2 flex gap-6 border-t border-border pt-2">
+              <span className="text-muted-foreground">Gross: <span className="font-medium text-foreground">{inr(preview.grossPnl)}</span></span>
+              <span className="text-muted-foreground">Net: <span className={`font-semibold ${preview.netPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(preview.netPnl)}</span></span>
+            </div>
+          )}
         </div>
       )}
 

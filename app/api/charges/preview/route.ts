@@ -5,6 +5,8 @@ import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
+import { getMarginRates } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 export const runtime = "nodejs";
 
@@ -23,6 +25,7 @@ const Body = z.object({
   fundedAmount: z.number().nonnegative().nullish(),
   daysHeld: z.number().nonnegative().nullish(),
   grossPnl: z.number().nullish(),
+  isOpen: z.boolean().nullish(),
 });
 
 export async function POST(req: Request) {
@@ -48,6 +51,17 @@ export async function POST(req: Request) {
   let breakdown;
   try {
     const r = findRates(rates, v.broker, cls.segment, cls.exchange);
+    // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
+    // understates what actually gets saved: an explicit fundedAmount wins, else
+    // auto-estimate from margin_config's eq_mtf %; daysHeld forced to 0 for an
+    // open position (interest hasn't accrued yet — see lib/jobs/mtf-accrual.ts).
+    const isMtf = cls.segment === "eq_mtf";
+    const fundedAmount = isMtf
+      ? v.fundedAmount && v.fundedAmount > 0
+        ? v.fundedAmount
+        : defaultMtfFundedAmount(v.buyValue, getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT)
+      : null;
+    const daysHeld = v.isOpen ? 0 : v.daysHeld ?? 0;
     breakdown = computeCharges(
       {
         segment: cls.segment,
@@ -57,10 +71,7 @@ export async function POST(req: Request) {
         sellQty: v.sellQty,
         buyOrderCount: v.buyOrders,
         sellOrderCount: v.sellOrders,
-        mtf:
-          cls.segment === "eq_mtf" && v.fundedAmount
-            ? { fundedAmount: v.fundedAmount, daysHeld: v.daysHeld ?? 0, pledgeScrips: 1 }
-            : null,
+        mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
       },
       r,
     );

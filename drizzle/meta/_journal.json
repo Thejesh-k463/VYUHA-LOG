@@ -148,6 +148,13 @@
       "when": 1783778172494,
       "tag": "0020_broker-connections",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1783797950339,
+      "tag": "0021_mtf-funded-amount",
+      "breakpoints": true
     }
   ]
 }

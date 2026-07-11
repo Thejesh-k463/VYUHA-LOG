@@ -1,0 +1,1 @@
+ALTER TABLE `trades` ADD `mtf_funded_amount_paise` integer;

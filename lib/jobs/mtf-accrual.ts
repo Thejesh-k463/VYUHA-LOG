@@ -6,6 +6,8 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
+import { getMarginRates } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -26,22 +28,29 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
   if (open.length === 0) return { updated: 0, totalAccrued: 0 };
 
   const rates = loadRatesMap();
+  const ownMarginPct = getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   let updated = 0;
   let totalAccrued = 0;
 
   for (const t of open) {
     if (!t.buyDate) continue;
-    const funded = t.buyValue; // MTF funded ≈ position cost
+    // Broker-financed principal — reuse what was locked in at entry (or a prior
+    // accrual run); only fall back to the margin-based estimate for trades that
+    // predate the mtf_funded_amount_paise column. NEVER the full position value:
+    // that assumes 100% broker financing and overstates interest (the bug fixed
+    // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
+    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, ownMarginPct);
     const days = Math.max(0, Math.floor((new Date(today + "T00:00:00").getTime() - new Date(t.buyDate + "T00:00:00").getTime()) / 86400000) - 1); // from T+1
     const r = findRates(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange);
     const rate = mtfRateFor(funded, r);
     const interest = r2((funded * rate * days) / 365);
-    if (interest === t.mtfInterest) continue;
+    const fundedChanged = t.mtfFundedAmount == null || t.mtfFundedAmount <= 0;
+    if (interest === t.mtfInterest && !fundedChanged) continue;
 
     const newCharges = r2(t.chargesTotal - t.mtfInterest + interest);
     const newNet = r2(t.grossPnl - newCharges);
     db.update(trades)
-      .set({ mtfInterest: interest, chargesTotal: newCharges, netPnl: newNet })
+      .set({ mtfInterest: interest, mtfFundedAmount: funded, chargesTotal: newCharges, netPnl: newNet })
       .where(eq(trades.id, t.id))
       .run();
     updated++;
