@@ -36,6 +36,57 @@ function isoWeek(dateStr: string): { label: string; monday: string } {
   return { label, monday: monday.toISOString().slice(0, 10) };
 }
 
+// --- Entry-time limit breaches (P1.4 follow-up) -----------------------------
+// Trades saved despite a warn/block from the pre-trade limits engine carry the
+// breached checks in rule_violations as "Label: message" strings. This rolls
+// them up so the scorecard shows what overriding the guardrails actually cost.
+
+export interface BreachTrade {
+  ruleViolations: string[] | null;
+  netPnl: number;
+  isOpen: boolean;
+}
+
+export interface BreachRuleStat {
+  rule: string; // the check label, e.g. "Per-trade risk"
+  trades: number; // trades entered with this breach
+  closedNet: number; // net P&L of the CLOSED trades among them
+}
+
+export interface BreachReport {
+  breachedTrades: number; // trades entered with ≥1 breach
+  totalBreaches: number;
+  openBreached: number; // still-open breached trades
+  closedNet: number; // net P&L of closed breached trades
+  perRule: BreachRuleStat[]; // worst closedNet first
+}
+
+export function breachReport(trades: BreachTrade[]): BreachReport {
+  const breached = trades.filter((t) => t.ruleViolations && t.ruleViolations.length > 0);
+  const perRule = new Map<string, { trades: number; closedNet: number }>();
+  let totalBreaches = 0;
+  for (const t of breached) {
+    for (const v of t.ruleViolations!) {
+      totalBreaches += 1;
+      const rule = v.includes(":") ? v.slice(0, v.indexOf(":")).trim() : v.trim();
+      const s = perRule.get(rule) ?? { trades: 0, closedNet: 0 };
+      s.trades += 1;
+      if (!t.isOpen) s.closedNet = r2(s.closedNet + t.netPnl);
+      perRule.set(rule, s);
+    }
+  }
+  const closed = breached.filter((t) => !t.isOpen);
+  return {
+    breachedTrades: breached.length,
+    totalBreaches,
+    openBreached: breached.length - closed.length,
+    closedNet: r2(closed.reduce((s, t) => s + t.netPnl, 0)),
+    perRule: [...perRule.entries()]
+      .map(([rule, s]) => ({ rule, ...s }))
+      .sort((a, b) => a.closedNet - b.closedNet),
+  };
+}
+
 export function disciplineByWeek(
   trades: DisciplineTrade[],
   perTradeCap: number,

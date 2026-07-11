@@ -6,7 +6,7 @@ import { SebiRealityCard } from "@/components/reports/sebi-reality-card";
 import { getTrades } from "@/lib/queries/trades";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
-import { disciplineByWeek } from "@/lib/analytics/discipline";
+import { breachReport, disciplineByWeek } from "@/lib/analytics/discipline";
 import { computeFnoReality } from "@/lib/analytics/sebi-reality";
 import { playbookStats, mistakeReport, emotionReport } from "@/lib/analytics/behavior";
 import { getPlaybooks } from "@/lib/queries/playbooks";
@@ -42,6 +42,7 @@ export default function DisciplineReportPage() {
     id: t.id, isOpen: t.isOpen, netPnl: t.netPnl, rMultiple: t.rMultiple,
     playbookId: t.playbookId, emotionTag: t.emotionTag, mistakeTags: t.mistakeTags,
   }));
+  const breaches = breachReport(trades);
   const pbStats = playbookStats(behaviorTrades, getPlaybooks().map((p) => ({ id: p.id, name: p.name })));
   const mistakes = mistakeReport(behaviorTrades);
   const emotions = emotionReport(behaviorTrades);
@@ -59,6 +60,54 @@ export default function DisciplineReportPage() {
         </section>
 
         <SebiRealityCard reality={fnoReality} />
+
+        <Card className="p-0">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Entry-time limit breaches</CardTitle>
+            {breaches.breachedTrades > 0 && (
+              <span className={`text-sm font-semibold tabular-nums ${pnlCls(breaches.closedNet)}`}>
+                {inr(breaches.closedNet, { decimals: 0 })} on {breaches.breachedTrades} breached trade{breaches.breachedTrades === 1 ? "" : "s"}
+              </span>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            {breaches.breachedTrades === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                No trades were entered past a pre-trade limit warning or block. When you save a trade despite the
+                limits engine flagging it, the breached rules land here with what they cost.
+              </p>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-y border-border text-left text-muted-foreground">
+                        <th className="px-2.5 py-2 font-medium">Rule breached at entry</th>
+                        <th className="px-2 py-2 text-right font-medium">Trades</th>
+                        <th className="px-2.5 py-2 text-right font-medium">Closed net P&L</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {breaches.perRule.map((b) => (
+                        <tr key={b.rule} className="border-b border-border/40">
+                          <td className="px-2.5 py-1.5 font-medium">{b.rule}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{b.trades}</td>
+                          <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(b.closedNet)}`}>{inr(b.closedNet, { decimals: 0 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {breaches.openBreached > 0 && (
+                  <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                    {breaches.openBreached} breached trade{breaches.openBreached === 1 ? " is" : "s are"} still open —
+                    closed net above excludes {breaches.openBreached === 1 ? "it" : "them"}.
+                  </p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Card className="p-0">

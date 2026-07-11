@@ -30,6 +30,7 @@ import {
   Settings,
   BookOpen,
   Printer,
+  FileSearch,
 } from "lucide-react";
 
 export type NavItem = {
@@ -65,6 +66,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/reports/edge", label: "Edge / Setups", icon: TrendingUp, group: "Analytics" },
   { href: "/reports/discipline", label: "Discipline", icon: ShieldCheck, group: "Analytics" },
   { href: "/reports/tax", label: "Tax Summary", icon: FileText, group: "Analytics" },
+  { href: "/reports/ais", label: "AIS Reconcile", icon: FileSearch, group: "Analytics" },
   { href: "/audit", label: "Audit Log", icon: History, group: "System" },
   { href: "/backup", label: "Backup & Restore", icon: Database, group: "System" },
   { href: "/aliases", label: "Symbol Aliases", icon: Tags, group: "System" },

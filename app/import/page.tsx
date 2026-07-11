@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { ImportClient } from "@/components/import/import-client";
+import { BrokerConnect } from "@/components/import/broker-connect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getImportBatches } from "@/lib/queries/trades";
@@ -19,6 +20,8 @@ export default function ImportPage() {
       />
       <div className="space-y-6 p-6">
         <ImportClient />
+
+        <BrokerConnect />
 
         <Card>
           <CardHeader className="flex-row items-center justify-between">

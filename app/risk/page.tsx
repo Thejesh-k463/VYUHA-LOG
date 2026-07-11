@@ -36,6 +36,9 @@ import {
 } from "@/lib/risk/portfolio";
 import { getReturnsMap } from "@/lib/queries/price-history";
 import { VarPanel } from "@/components/risk/var-panel";
+import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
+import { getMarginConfig, getMarginRates } from "@/lib/queries/margin";
+import { MarginPanel } from "@/components/risk/margin-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -181,6 +184,26 @@ export default function RiskPage() {
   }));
   const stress = exposures.length > 0 ? stressScenarios(stressPositions) : null;
 
+  // P1.2 margin slice — estimated margin blocked per position vs bucket capital.
+  const marginInputs: MarginPositionInput[] = inputs.map((p) => ({
+    id: p.id,
+    symbol: p.symbol,
+    bucket: p.bucket,
+    segment: p.segment,
+    side: p.side ?? "long",
+    qty: p.qty,
+    entry: p.entry,
+    mtm: p.mtm,
+    strike: p.strike ?? null,
+    optionType: p.optionType ?? null,
+    spot: p.spot ?? null,
+  }));
+  const marginSummary = estimateMargin(marginInputs, getMarginRates(), {
+    equity: equityCapital,
+    active: activeCapital,
+  });
+  const marginRates = getMarginConfig().map((r) => ({ segment: r.segment, marginPct: r.marginPct }));
+
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
   const settlementInputs: SettlementInput[] = trades
     .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
@@ -221,6 +244,7 @@ export default function RiskPage() {
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
         <ExpiryObligations summary={settlement} />
+        <MarginPanel summary={marginSummary} rates={marginRates} />
         {exposures.length > 0 && (
           <VarPanel varResult={varResult} betaExp={betaExp} stress={stress} niftyDays={niftyReturns.length} />
         )}

@@ -67,6 +67,10 @@ export function BackupPanel() {
           {msg.text}
         </span>
       )}
+      <p className="text-[11px] text-muted-foreground">
+        Chart-screenshot attachments are image files in the app data folder (data/attachments) — copy that folder
+        separately; the JSON backup covers tables only.
+      </p>
     </div>
   );
 }

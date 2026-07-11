@@ -113,6 +113,41 @@
       "when": 1783650350085,
       "tag": "0015_glamorous_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1783769067161,
+      "tag": "0016_paise-columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1783769131880,
+      "tag": "0017_drop-real-money",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1783769425322,
+      "tag": "0018_margin-config",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1783769726189,
+      "tag": "0019_trade-attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1783778172494,
+      "tag": "0020_broker-connections",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  customType,
   index,
   integer,
   real,
@@ -9,11 +10,25 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 /**
+ * ₹ amount stored as INTEGER paise at rest (P0.1 — exact money, no float drift),
+ * exposed as rupees (number) at runtime so call sites keep working unchanged.
+ * Per-unit PRICE columns (avg prices, SL/TSL/target, strike, FMV) stay REAL —
+ * they are levels/quotients, not money amounts.
+ */
+const moneyPaise = customType<{ data: number; driverData: number }>({
+  dataType: () => "integer",
+  toDriver: (rupees) => Math.round(rupees * 100),
+  fromDriver: (paise) => paise / 100,
+});
+
+/**
  * Vyuha schema — single-user local trade journal.
  *
  * Conventions:
- *  - Money is stored as REAL (rupees, with paise as decimals). The pure charges
- *    engine is responsible for statutory rounding (STT/CTT/stamp to nearest rupee).
+ *  - ₹ AMOUNT columns are stored as INTEGER paise (P0.1) via the `moneyPaise`
+ *    custom type below, exposed as rupees at runtime. Per-unit PRICE/level
+ *    columns stay REAL. The pure charges engine computes natively in paise and
+ *    applies statutory rounding (STT/CTT/stamp to nearest rupee).
  *  - Dates are stored as ISO strings (YYYY-MM-DD); timestamps as ISO datetime.
  *  - Booleans use integer({ mode: "boolean" }).
  *  - JSON columns use text({ mode: "json" }).
@@ -48,10 +63,10 @@ export const trades = sqliteTable(
     // Quantities / prices
     buyQty: real("buy_qty").notNull().default(0),
     avgBuyPrice: real("avg_buy_price").notNull().default(0),
-    buyValue: real("buy_value").notNull().default(0),
+    buyValue: moneyPaise("buy_value_paise").notNull().default(0),
     sellQty: real("sell_qty").notNull().default(0),
     avgSellPrice: real("avg_sell_price").notNull().default(0),
-    sellValue: real("sell_value").notNull().default(0),
+    sellValue: moneyPaise("sell_value_paise").notNull().default(0),
     closingPrice: real("closing_price"), // for open MTM
 
     // Dates / times
@@ -61,10 +76,10 @@ export const trades = sqliteTable(
     exitTime: text("exit_time"),
 
     // P&L
-    grossPnl: real("gross_pnl").notNull().default(0),
-    chargesTotal: real("charges_total").notNull().default(0),
-    netPnl: real("net_pnl").notNull().default(0),
-    unrealisedPnl: real("unrealised_pnl").notNull().default(0),
+    grossPnl: moneyPaise("gross_pnl_paise").notNull().default(0),
+    chargesTotal: moneyPaise("charges_total_paise").notNull().default(0),
+    netPnl: moneyPaise("net_pnl_paise").notNull().default(0),
+    unrealisedPnl: moneyPaise("unrealised_pnl_paise").notNull().default(0),
     realisedPct: real("realised_pct"),
     isOpen: integer("is_open", { mode: "boolean" }).notNull().default(false),
 
@@ -80,7 +95,7 @@ export const trades = sqliteTable(
     slPlanned: real("sl_planned"), // original stop-loss
     trailingSl: real("trailing_sl"), // trailing stop-loss (TSL)
     targetPlanned: real("target_planned"),
-    riskAmount: real("risk_amount"),
+    riskAmount: moneyPaise("risk_amount_paise"),
     impliedVol: real("implied_vol"), // user-entered IV %, e.g. 20 for 20% (option Greeks)
     fmv31Jan2018: real("fmv_31jan2018"), // per-share FMV on 31-Jan-2018 (LTCG grandfathering; pre-2018 lots only)
     rMultiple: real("r_multiple"),
@@ -88,16 +103,16 @@ export const trades = sqliteTable(
     mistakeTags: text("mistake_tags", { mode: "json" }).$type<string[]>(),
 
     // Charges breakdown
-    brokerage: real("brokerage").notNull().default(0),
-    sttCtt: real("stt_ctt").notNull().default(0),
-    exchangeTxn: real("exchange_txn").notNull().default(0),
-    sebi: real("sebi").notNull().default(0),
-    stampDuty: real("stamp_duty").notNull().default(0),
-    ipft: real("ipft").notNull().default(0),
-    gst: real("gst").notNull().default(0),
-    dpCharges: real("dp_charges").notNull().default(0),
-    mtfInterest: real("mtf_interest").notNull().default(0),
-    pledgeCharges: real("pledge_charges").notNull().default(0),
+    brokerage: moneyPaise("brokerage_paise").notNull().default(0),
+    sttCtt: moneyPaise("stt_ctt_paise").notNull().default(0),
+    exchangeTxn: moneyPaise("exchange_txn_paise").notNull().default(0),
+    sebi: moneyPaise("sebi_paise").notNull().default(0),
+    stampDuty: moneyPaise("stamp_duty_paise").notNull().default(0),
+    ipft: moneyPaise("ipft_paise").notNull().default(0),
+    gst: moneyPaise("gst_paise").notNull().default(0),
+    dpCharges: moneyPaise("dp_charges_paise").notNull().default(0),
+    mtfInterest: moneyPaise("mtf_interest_paise").notNull().default(0),
+    pledgeCharges: moneyPaise("pledge_charges_paise").notNull().default(0),
 
     // Provenance / dedup
     sourceFile: text("source_file"),
@@ -539,6 +554,61 @@ export const playbooks = sqliteTable("playbooks", {
   updatedAt: text("updated_at").notNull().default(now),
 });
 
+// ---------------------------------------------------------------------------
+// margin_config — editable margin-rate approximation table (P1.2 margin slice).
+// One row per segment: % of notional blocked as margin (SPAN+exposure approx
+// for derivatives; leverage haircut for intraday/MTF; 100% for delivery).
+// The margin gauge on /risk is an ESTIMATE — brokers' real SPAN files differ.
+// ---------------------------------------------------------------------------
+export const marginConfig = sqliteTable(
+  "margin_config",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    segment: text("segment").notNull(),
+    marginPct: real("margin_pct").notNull(), // e.g. 12 = 12% of notional
+    note: text("note"),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("margin_config_segment_uq").on(t.segment)],
+);
+
+// ---------------------------------------------------------------------------
+// trade_attachments — chart screenshots / images attached to a trade (P2.4).
+// Bytes live on disk under <data-dir>/attachments/ (NOT in the DB and NOT in
+// the JSON backup — the backup screen states this); rows here are the index.
+// ---------------------------------------------------------------------------
+export const tradeAttachments = sqliteTable(
+  "trade_attachments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tradeId: integer("trade_id").notNull(),
+    fileName: text("file_name").notNull(), // original upload name (display)
+    storedName: text("stored_name").notNull(), // random name on disk
+    mime: text("mime").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [index("trade_attachments_trade_idx").on(t.tradeId)],
+);
+
+// ---------------------------------------------------------------------------
+// broker_connections — API credentials for broker auto-import (P2.1). Stored
+// PLAINTEXT in the local single-user DB (stated in the UI); Kite access tokens
+// expire daily and must be re-pasted. One row per broker.
+// ---------------------------------------------------------------------------
+export const brokerConnections = sqliteTable(
+  "broker_connections",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    broker: text("broker").notNull(), // zerodha | dhan | groww
+    apiKey: text("api_key").notNull(),
+    accessToken: text("access_token").notNull(),
+    lastPullAt: text("last_pull_at"), // ISO datetime of the last successful pull
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("broker_connections_broker_uq").on(t.broker)],
+);
+
 // Type exports
 export type Trade = typeof trades.$inferSelect;
 export type Playbook = typeof playbooks.$inferSelect;
@@ -569,3 +639,6 @@ export type PriceHistoryRow = typeof priceHistory.$inferSelect;
 export type NewPriceHistoryRow = typeof priceHistory.$inferInsert;
 export type CorporateAction = typeof corporateActions.$inferSelect;
 export type NewCorporateAction = typeof corporateActions.$inferInsert;
+export type MarginConfigRow = typeof marginConfig.$inferSelect;
+export type TradeAttachment = typeof tradeAttachments.$inferSelect;
+export type BrokerConnection = typeof brokerConnections.$inferSelect;

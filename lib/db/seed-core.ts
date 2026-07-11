@@ -1,5 +1,5 @@
 import { db } from "./index";
-import { capitalSnapshots, chargeConfig, riskConfig, settings } from "./schema";
+import { capitalSnapshots, chargeConfig, marginConfig, riskConfig, settings } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
 
 const GO_LIVE = "2026-06-19";
@@ -75,6 +75,23 @@ export function seedDatabase(log = false): SeedReport {
     report.riskAdded += db.insert(riskConfig).values(row).onConflictDoNothing().run().changes;
   }
   say(`✓ risk_config: ${report.riskAdded} added`);
+
+  // Margin-rate approximations (% of notional) for the /risk margin gauge —
+  // editable there; these are typical SPAN+exposure ballparks, not statutory.
+  const marginRows = [
+    { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },
+    { segment: "eq_mtf", marginPct: 25, note: "own-funds portion" },
+    { segment: "eq_intraday", marginPct: 20, note: "5x intraday leverage" },
+    { segment: "index_option", marginPct: 12, note: "short-option SPAN approx" },
+    { segment: "stock_option", marginPct: 20, note: "short-option SPAN approx" },
+    { segment: "future", marginPct: 15, note: "SPAN+exposure approx" },
+    { segment: "commodity_future", marginPct: 10, note: "SPAN+exposure approx" },
+    { segment: "commodity_option", marginPct: 12, note: "short-option SPAN approx" },
+  ] as const;
+  for (const row of marginRows) {
+    db.insert(marginConfig).values(row).onConflictDoNothing().run();
+  }
+  say("✓ margin_config seeded");
 
   return report;
 }

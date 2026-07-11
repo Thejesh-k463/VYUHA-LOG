@@ -41,6 +41,25 @@ export function getReturnsMap(symbols: string[]): Map<string, { date: string; re
   return out;
 }
 
+/** Date-sorted OHLC bars per symbol (ascending) for a set of tickers (MAE/MFE). */
+export function getBarsMap(
+  symbols: string[],
+): Map<string, { date: string; high: number | null; low: number | null; close: number }[]> {
+  const out = new Map<string, { date: string; high: number | null; low: number | null; close: number }[]>();
+  for (const raw of symbols) {
+    const sym = raw.toUpperCase();
+    if (out.has(sym)) continue;
+    const bars = db
+      .select({ date: priceHistory.date, high: priceHistory.high, low: priceHistory.low, close: priceHistory.close })
+      .from(priceHistory)
+      .where(eq(priceHistory.symbol, sym))
+      .orderBy(asc(priceHistory.date))
+      .all();
+    if (bars.length > 0) out.set(sym, bars);
+  }
+  return out;
+}
+
 /** Coverage summary for the UI status line. */
 export function getPriceHistoryMeta(): { symbols: number; rows: number; lastDate: string | null } {
   const rows = db.select({ symbol: priceHistory.symbol, date: priceHistory.date }).from(priceHistory).all();

@@ -12,6 +12,29 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **v1.40.0 bundle (P0.1 FINISH + margin + IND-5 + P2.1 Kite + attachments + MAE/MFE + breach tile + bundled Node)** —
+>   (1) **P0.1 steps 2–4 DONE in one shot**: the 17 ₹-AMOUNT columns on `trades` are INTEGER paise at rest
+>   (migrations `0016` add+copy ×100, `0017` drop REAL). KEY TRICK: a Drizzle `customType` (`moneyPaise` in
+>   schema.ts) stores paise but exposes rupees, so ZERO call sites changed; per-unit PRICES (avg prices, SL/TSL/
+>   target, strike, fmv) deliberately stay REAL (they're levels/quotients — rounding an avg price to the paisa
+>   would corrupt qty×price recomputations). Conversion verified sum-identical to the paisa on all 252 real
+>   trades; null risk_amount round-trips; 0.1+0.2 stores as exactly 30 paise. Two-pass drizzle-kit generate
+>   (add-only, then drop-only) avoids the interactive rename prompt. (2) **Margin gauge** `lib/risk/margin.ts` +
+>   `margin_config` (0018, seeded ballparks) + panel on /risk — long options count premium PAID, not a rate.
+>   (3) **IND-5 AIS/26AS** — `lib/analytics/ais.ts` paste-parser+reconciler (tab, then comma+SPACE, then comma
+>   splitting keeps ₹12,50,000 grouping intact), journal side = CA dividends+TDS ledger rows, delivery/MTF trades
+>   and IPO allotments/exits per FY; /reports/ais + stateless /api/ais; verified live against the real journal.
+>   (4) **P2.1 Kite slice** — `lib/import/api/kite.ts` implements the ApiImportSource seam (TODAY's executions
+>   only — Kite has no historical tradebook API), reuses previewParsedFile/commitParsedFile verbatim;
+>   `broker_connections` (0020) stores creds plaintext-local. NOT live-verified (needs a real Kite app + daily
+>   token) — normalizer unit-tested. (5) **Attachments** — `trade_attachments` (0019) + bytes under
+>   `<data-dir>/attachments/` (path-confined), upload/gallery in the journal dialog; VERIFIED live end-to-end
+>   (upload→list→stream→delete). NOT in the JSON backup (stated on both screens). (6) **MAE/MFE** on
+>   /reports/edge from price_history EOD bars (2 real trades covered at build time). (7) **Breach tile** on
+>   /reports/discipline from `rule_violations`. (8) **Bundled Node**: build-desktop.mjs copies process.execPath
+>   → desktop-dist/node/; lib.rs prefers it over system node (cargo check green; REBUILD THE INSTALLER to ship).
+>   LINT TRAP (again): fetch-on-mount effects must use `.then()` chains, not `void asyncFn()` — the
+>   react-compiler set-state-in-effect rule flags the latter. 383 unit tests + typecheck + prod build green.
 > - **P2.4 Behavioral journaling (DONE)** — migration `0015`: `playbooks` table (name unique, description,
 >   rules json, archived) + `trades.playbook_id` + `trades.emotion_tag` (the dormant `mistake_tags` json column
 >   finally lights up). Pure `lib/analytics/behavior.ts` (8 tests): canonical MISTAKE_TAGS (10) + EMOTION_TAGS (8)

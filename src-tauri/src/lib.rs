@@ -91,7 +91,17 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).ok();
 
             let entry = server_dir.join("desktop-server.mjs");
-            let child = Command::new("node")
+            // Prefer the Node runtime bundled with the installer (zero-dependency
+            // distribution); fall back to system `node` for older bundles.
+            let bundled_node = server_dir
+                .join("node")
+                .join(if cfg!(windows) { "node.exe" } else { "node" });
+            let node_cmd: std::path::PathBuf = if bundled_node.exists() {
+                bundled_node
+            } else {
+                std::path::PathBuf::from("node")
+            };
+            let child = Command::new(&node_cmd)
                 .arg(&entry)
                 .current_dir(&server_dir)
                 .env("VYUHA_DATA_DIR", &data_dir)
@@ -99,7 +109,10 @@ pub fn run() {
                 .env("HOSTNAME", "127.0.0.1")
                 .spawn()
                 .map_err(|e| {
-                    format!("Failed to start the Vyuha server via Node.js ({e}). Is Node.js installed and on PATH?")
+                    format!(
+                        "Failed to start the Vyuha server via {} ({e}). Is Node.js installed and on PATH?",
+                        node_cmd.display()
+                    )
                 })?;
             app.state::<ServerProcess>().0.lock().unwrap().replace(child);
 

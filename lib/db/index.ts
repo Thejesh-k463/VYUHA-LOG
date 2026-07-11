@@ -29,3 +29,7 @@ if (process.env.NODE_ENV !== "production") {
 
 export const db = drizzle(sqlite, { schema });
 export { schema, sqlite };
+
+// Attachments live next to the DB file (project data/ in dev, OS app-data on
+// desktop via VYUHA_DB_PATH) so they survive reinstalls with the journal.
+export const attachmentsDir = path.join(path.dirname(dbPath), "attachments");

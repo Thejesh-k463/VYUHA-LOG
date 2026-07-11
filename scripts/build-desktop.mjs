@@ -45,4 +45,21 @@ execFileSync("npx", ["tsx", "lib/db/seed.ts"], { stdio: "inherit", shell: true, 
 // drop wal sidecars so the template is a single file
 for (const s of ["-wal", "-shm"]) fs.rmSync(seedPath + s, { force: true });
 
+// 5. bundled Node runtime — zero-dependency installer (the shell prefers this
+// over system `node`). We ship the exact Node binary that built the bundle
+// (same platform/arch as the installer target). Node is MIT-licensed; ship its
+// LICENSE alongside. Skip gracefully if the running Node isn't a plain file
+// (e.g. a shim), falling back to the system-node requirement.
+try {
+  const nodeDir = path.join(dist, "node");
+  fs.mkdirSync(nodeDir, { recursive: true });
+  const exeName = process.platform === "win32" ? "node.exe" : "node";
+  fs.copyFileSync(process.execPath, path.join(nodeDir, exeName));
+  const nodeLicense = path.join(path.dirname(process.execPath), "LICENSE");
+  if (fs.existsSync(nodeLicense)) fs.copyFileSync(nodeLicense, path.join(nodeDir, "LICENSE"));
+  console.log(`• bundled Node ${process.version} → node/${exeName}`);
+} catch (e) {
+  console.warn("! could not bundle the Node runtime — installer will need system Node:", e.message);
+}
+
 console.log("✓ desktop bundle ready at", dist);
