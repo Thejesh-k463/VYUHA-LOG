@@ -31,7 +31,14 @@ export function TrackerClient({
   bucketCapital: number;
 }) {
   const [seg, setSeg] = React.useState("");
-  const data = React.useMemo(() => (seg ? positions.filter((p) => p.segment === seg) : positions), [positions, seg]);
+  const [funding, setFunding] = React.useState<"" | "user" | "broker">("");
+  const data = React.useMemo(() => {
+    let list = positions;
+    if (seg) list = list.filter((p) => p.segment === seg);
+    if (funding === "user") list = list.filter((p) => p.fundedAmount <= 0);
+    if (funding === "broker") list = list.filter((p) => p.fundedAmount > 0);
+    return list;
+  }, [positions, seg, funding]);
 
   const deployed = positions.reduce((s, p) => s + p.invested, 0);
   const available = bucketCapital - deployed;
@@ -107,7 +114,13 @@ export function TrackerClient({
         { accessorKey: "dte", header: "DTE", meta: { align: "right" }, cell: ({ getValue }) => (getValue() as number | null) ?? "—" },
       );
     }
-    base.push({ accessorKey: "rMultiple", header: "R", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : <span className={pnl(v)}>{v.toFixed(2)}</span>; } });
+    base.push(
+      { accessorKey: "rMultiple", header: "Current R", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : <span className={pnl(v)}>{v.toFixed(2)}</span>; } },
+      {
+        accessorKey: "targetRR", header: "Target R:R", meta: { align: "right" },
+        cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : `1:${v.toFixed(2)}`; },
+      },
+    );
     return base;
   }, [variant]);
 
@@ -119,7 +132,7 @@ export function TrackerClient({
     { key: "daysHeld", label: "Days" }, { key: "dte", label: "DTE" },
     { key: "ownCapital", label: "Own capital" }, { key: "fundedAmount", label: "MTF funded" },
     { key: "accruedInterest", label: "MTF int." }, { key: "roiOnCapitalPct", label: "ROI on capital %" },
-    { key: "breakevenPrice", label: "Breakeven" },
+    { key: "breakevenPrice", label: "Breakeven" }, { key: "targetRR", label: "Target R:R" },
   ];
 
   return (
@@ -183,6 +196,13 @@ export function TrackerClient({
               <option value="">All segments</option>
               {segments.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s as Segment]}</option>)}
             </Select>
+            {variant === "equity" && (
+              <Select value={funding} onChange={(e) => setFunding(e.target.value as "" | "user" | "broker")} className="h-7 w-44 text-xs">
+                <option value="">All funding</option>
+                <option value="user">User-funded only</option>
+                <option value="broker">Broker-funded (MTF)</option>
+              </Select>
+            )}
           </div>
           <ExportButtons filename={`vyuha-${variant}-positions`} columns={exportCols} rows={data} />
         </div>

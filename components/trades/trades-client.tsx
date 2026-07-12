@@ -21,6 +21,7 @@ import {
 } from "@/lib/domain/constants";
 import type { Trade } from "@/lib/db/schema";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
+import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -35,11 +36,13 @@ function daysBetween(a: string, b: string): number | null {
 export function TradesClient({
   trades,
   playbooks = [],
-  mtfOwnMarginPct,
+  mtfMarginByBroker = {},
 }: {
   trades: Trade[];
   playbooks?: PlaybookOption[];
-  mtfOwnMarginPct?: number;
+  /** eq_mtf own-margin % per broker (real leverage varies — Dhan/Groww ~25%,
+   * Zerodha ~20%) — components look up the currently-selected/trade's broker. */
+  mtfMarginByBroker?: Record<string, number>;
 }) {
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -121,6 +124,16 @@ export function TradesClient({
     { accessorKey: "netPnl", header: "Net", meta: { align: "right" }, cell: ({ getValue }) => <span className={`font-medium ${pnlClass(getValue() as number)}`}>{num(getValue() as number, 0)}</span> },
     { accessorKey: "rMultiple", header: "R", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : <span className={pnlClass(v)}>{v.toFixed(2)}R</span>; } },
     {
+      id: "targetRR", header: "Target R:R", meta: { align: "right" },
+      cell: ({ row }) => {
+        const t = row.original;
+        const isShort = t.sellQty > t.buyQty;
+        const entry = isShort ? t.avgSellPrice : t.avgBuyPrice;
+        const v = plannedRewardRisk(entry, t.slPlanned, t.targetPlanned);
+        return v == null ? "—" : `1:${v.toFixed(2)}`;
+      },
+    },
+    {
       id: "status", header: "Status",
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
@@ -192,7 +205,7 @@ export function TradesClient({
                 <DialogTitle>Add open trade</DialogTitle>
                 <DialogDescription>A running position (no exit yet) with SL / TSL / target — appears in Portfolio Risk.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfOwnMarginPct={mtfOwnMarginPct} />
+              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfMarginByBroker={mtfMarginByBroker} />
             </DialogContent>
           </Dialog>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -204,7 +217,7 @@ export function TradesClient({
                 <DialogTitle>Add trade</DialogTitle>
                 <DialogDescription>Auto-classified with a live charge preview as you type.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm onDone={() => setAddOpen(false)} mtfOwnMarginPct={mtfOwnMarginPct} />
+              <ManualTradeForm onDone={() => setAddOpen(false)} mtfMarginByBroker={mtfMarginByBroker} />
             </DialogContent>
           </Dialog>
         </div>
@@ -241,7 +254,7 @@ export function TradesClient({
             <DialogTitle>Edit trade — {fullEditing?.symbol}</DialogTitle>
             <DialogDescription>Quantities, prices, dates, SL/TSL/target, risk, MTF own-capital, tags and notes — any time.</DialogDescription>
           </DialogHeader>
-          {fullEditing && <EditTradeDialog trade={fullEditing} onDone={() => setFullEditing(null)} />}
+          {fullEditing && <EditTradeDialog trade={fullEditing} onDone={() => setFullEditing(null)} mtfMarginByBroker={mtfMarginByBroker} />}
         </DialogContent>
       </Dialog>
 

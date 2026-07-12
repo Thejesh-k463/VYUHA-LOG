@@ -3,8 +3,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { getTrades, getTradeStats } from "@/lib/queries/trades";
 import { getPlaybooks } from "@/lib/queries/playbooks";
-import { getMarginRates } from "@/lib/queries/margin";
-import { DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { inr } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,7 @@ export default function TradesPage() {
         <TradesClient
           trades={trades}
           playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived }))}
-          mtfOwnMarginPct={getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT}
+          mtfMarginByBroker={getMtfMarginByBroker()}
         />
       </div>
     </>

@@ -7,7 +7,7 @@ import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getMarginRates } from "@/lib/queries/margin";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { defaultMtfFundedAmount, marginKey, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -28,7 +28,7 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
   if (open.length === 0) return { updated: 0, totalAccrued: 0 };
 
   const rates = loadRatesMap();
-  const ownMarginPct = getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+  const marginRates = getMarginRates(); // one query; per-broker eq_mtf own-margin %
   let updated = 0;
   let totalAccrued = 0;
 
@@ -39,6 +39,8 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
     // predate the mtf_funded_amount_paise column. NEVER the full position value:
     // that assumes 100% broker financing and overstates interest (the bug fixed
     // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
+    // Own-margin % is looked up per THIS trade's broker — real leverage varies.
+    const ownMarginPct = marginRates.get(marginKey(t.broker, "eq_mtf")) ?? DEFAULT_MTF_OWN_MARGIN_PCT;
     const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, ownMarginPct);
     // T+1 settlement start through the day before sale proceeds settle = exactly
     // (today − buyDate) calendar days for a still-open position — confirmed

@@ -13,6 +13,7 @@ import { inr } from "@/lib/format";
 import type { MarginSummary } from "@/lib/risk/margin";
 
 interface RateRow {
+  broker: string;
   segment: string;
   marginPct: number;
 }
@@ -23,21 +24,24 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const save = async (segment: string) => {
-    const raw = edits[segment];
+  const rowKey = (r: RateRow) => `${r.broker}|${r.segment}`;
+
+  const save = async (r: RateRow) => {
+    const key = rowKey(r);
+    const raw = edits[key];
     if (raw == null || raw === "") return;
-    setBusy(segment);
+    setBusy(key);
     setMsg(null);
     try {
       const res = await fetch("/api/margin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segment, marginPct: Number(raw) }),
+        body: JSON.stringify({ broker: r.broker, segment: r.segment, marginPct: Number(raw) }),
       });
       const data = await res.json();
       setMsg(data.message ?? (res.ok ? "Saved." : "Failed."));
       if (res.ok) {
-        setEdits((e) => ({ ...e, [segment]: "" }));
+        setEdits((e) => ({ ...e, [key]: "" }));
         router.refresh();
       }
     } catch {
@@ -113,28 +117,33 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
             Margin rates (% of notional, editable approximation)
           </summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {rates.map((r) => (
-              <div key={r.segment} className="flex items-center gap-2 text-xs">
-                <span className="w-36 shrink-0">{r.segment}</span>
-                <Input
-                  className="h-7 w-20 text-right text-xs"
-                  inputMode="decimal"
-                  placeholder={String(r.marginPct)}
-                  value={edits[r.segment] ?? ""}
-                  onChange={(e) => setEdits((s) => ({ ...s, [r.segment]: e.target.value }))}
-                />
-                <span className="text-muted-foreground">%</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 text-xs"
-                  disabled={busy === r.segment || !edits[r.segment]}
-                  onClick={() => save(r.segment)}
-                >
-                  {busy === r.segment ? "…" : "Save"}
-                </Button>
-              </div>
-            ))}
+            {rates.map((r) => {
+              const key = rowKey(r);
+              return (
+                <div key={key} className="flex items-center gap-2 text-xs">
+                  <span className="w-40 shrink-0">
+                    <span className="text-muted-foreground">{r.broker}</span> · {r.segment}
+                  </span>
+                  <Input
+                    className="h-7 w-20 text-right text-xs"
+                    inputMode="decimal"
+                    placeholder={String(r.marginPct)}
+                    value={edits[key] ?? ""}
+                    onChange={(e) => setEdits((s) => ({ ...s, [key]: e.target.value }))}
+                  />
+                  <span className="text-muted-foreground">%</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    disabled={busy === key || !edits[key]}
+                    onClick={() => save(r)}
+                  >
+                    {busy === key ? "…" : "Save"}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
           {msg && <p className="mt-2 text-[11px] text-muted-foreground">{msg}</p>}
         </details>

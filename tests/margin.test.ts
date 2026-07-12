@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { estimateMargin, defaultMtfFundedAmount, type MarginPositionInput } from "../lib/risk/margin";
+import { estimateMargin, defaultMtfFundedAmount, marginKey, type MarginPositionInput } from "../lib/risk/margin";
 
 const rates = new Map<string, number>([
-  ["index_option", 12],
-  ["stock_option", 20],
-  ["future", 15],
-  ["eq_intraday", 20],
-  ["eq_mtf", 25],
-  ["eq_delivery", 100],
+  [marginKey("dhan", "index_option"), 12],
+  [marginKey("dhan", "stock_option"), 20],
+  [marginKey("dhan", "future"), 15],
+  [marginKey("dhan", "eq_intraday"), 20],
+  [marginKey("dhan", "eq_mtf"), 25],
+  [marginKey("dhan", "eq_delivery"), 100],
+  [marginKey("zerodha", "eq_mtf"), 20], // deliberately different, to prove broker-awareness
 ]);
 const capitals = { equity: 1_300_000, active: 400_000 };
 
@@ -15,6 +16,7 @@ const pos = (over: Partial<MarginPositionInput>): MarginPositionInput => ({
   id: 1,
   symbol: "X",
   bucket: "active",
+  broker: "dhan",
   segment: "index_option",
   side: "long",
   qty: 75,
@@ -69,14 +71,30 @@ describe("estimateMargin", () => {
     expect(del.margin).toBe(10000);
   });
 
-  it("unknown segment falls back to 100% and is reported", () => {
+  it("unknown broker+segment falls back to 100% and is reported", () => {
     const s = estimateMargin(
       [pos({ segment: "commodity_future", optionType: null, qty: 10, entry: 700, mtm: 700 })],
       rates,
       capitals,
     );
     expect(s.positions[0].margin).toBe(7000);
-    expect(s.missingRateSegments).toEqual(["commodity_future"]);
+    expect(s.missingRateSegments).toEqual(["dhan|commodity_future"]);
+  });
+
+  it("uses the position's OWN broker's rate, not a flat global one", () => {
+    const s = estimateMargin(
+      [
+        pos({ id: 1, broker: "dhan", bucket: "equity", segment: "eq_mtf", optionType: null, qty: 100, entry: 500, mtm: 550 }),
+        pos({ id: 2, broker: "zerodha", bucket: "equity", segment: "eq_mtf", optionType: null, qty: 100, entry: 500, mtm: 550 }),
+      ],
+      rates,
+      capitals,
+    );
+    const dhan = s.positions.find((p) => p.id === 1)!;
+    const zerodha = s.positions.find((p) => p.id === 2)!;
+    expect(dhan.margin).toBe(0.25 * 100 * 500); // dhan eq_mtf = 25%
+    expect(zerodha.margin).toBe(0.2 * 100 * 500); // zerodha eq_mtf = 20%
+    expect(dhan.margin).not.toBe(zerodha.margin);
   });
 
   it("aggregates per bucket with utilisation vs capital", () => {

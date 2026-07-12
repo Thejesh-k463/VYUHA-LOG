@@ -8,7 +8,13 @@
 //   - MTF / delivery equity: rate% × qty × entry (own-funds portion; delivery = 100%).
 // This is an ESTIMATE for the utilisation gauge — real broker SPAN files differ.
 
-export type MarginRates = Map<string, number>; // segment → pct (e.g. 12 = 12%)
+export type MarginRates = Map<string, number>; // "broker|segment" → pct (e.g. 12 = 12%)
+
+/** Lookup key for MarginRates — matches the broker|segment convention already
+ * used for charge_config (lib/engine/rates-db.ts). */
+export function marginKey(broker: string, segment: string): string {
+  return `${broker}|${segment}`;
+}
 
 // Fallback own-margin % for MTF when margin_config has no eq_mtf row (should not
 // happen post-seed, but keeps callers safe). Matches the seeded default.
@@ -30,6 +36,7 @@ export interface MarginPositionInput {
   id: number;
   symbol: string;
   bucket: string; // equity | active
+  broker: string;
   segment: string;
   side: "long" | "short";
   qty: number;
@@ -86,9 +93,9 @@ export function estimateMargin(
       basis = `premium paid ${inrFmt(margin)}`;
       rateUsed = null;
     } else {
-      const configured = rates.get(p.segment);
+      const configured = rates.get(marginKey(p.broker, p.segment));
       const pct = configured ?? 100;
-      if (configured == null) missing.add(p.segment);
+      if (configured == null) missing.add(`${p.broker}|${p.segment}`);
       rateUsed = pct;
       if (isOption) {
         const ref = p.spot ?? p.strike ?? p.entry;

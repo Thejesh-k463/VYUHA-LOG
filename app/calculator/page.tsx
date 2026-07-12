@@ -2,14 +2,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { TradeCalculator } from "@/components/calculator/trade-calculator";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { getMarginRates } from "@/lib/queries/margin";
-import { DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { getMtfMarginByBroker } from "@/lib/queries/margin";
 
 export const dynamic = "force-dynamic";
 
 export default function CalculatorPage() {
   const rates = Object.fromEntries(loadRatesMap());
-  const mtfOwnMarginPct = getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+  const mtfMarginByBroker = getMtfMarginByBroker();
   return (
     <>
       <PageHeader
@@ -18,7 +17,7 @@ export default function CalculatorPage() {
         actions={<Badge variant="secondary">pre-trade</Badge>}
       />
       <div className="p-6">
-        <TradeCalculator rates={rates} mtfOwnMarginPct={mtfOwnMarginPct} />
+        <TradeCalculator rates={rates} mtfMarginByBroker={mtfMarginByBroker} />
       </div>
     </>
   );

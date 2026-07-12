@@ -4076,7 +4076,7 @@ dependencies = [
 
 [[package]]
 name = "vyuha"
-version = "2.50.0"
+version = "2.60.0"
 dependencies = [
  "serde",
  "serde_json",

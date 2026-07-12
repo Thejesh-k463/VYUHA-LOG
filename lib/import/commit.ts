@@ -19,13 +19,13 @@ import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
-import { getMarginRates } from "@/lib/queries/margin";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { getMarginPct } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 
-/** eq_mtf own-margin % from margin_config (the same rate the /risk margin gauge
- * uses), falling back to the seeded default if the row is somehow missing. */
-function mtfOwnMarginPct(): number {
-  return getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+/** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
+ * leverage varies by broker), falling back to the seeded default if missing. */
+function mtfOwnMarginPct(broker: string): number {
+  return getMarginPct(broker, "eq_mtf");
 }
 
 function normalizeDate(s: string | null): string | null {
@@ -406,7 +406,7 @@ export function commitManualTrade(
   const effectiveFundedAmount = isMtf
     ? fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0
       ? Math.max(0, Math.round((t.buyValue - fields.ownCapitalUsed) * 100) / 100)
-      : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct())
+      : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker))
     : null;
   const effectiveDaysHeld = isOpen ? 0 : fields.daysHeld ?? 0;
 
@@ -561,7 +561,7 @@ export function closePosition(
   let mtf: { fundedAmount: number; daysHeld: number; pledgeScrips: number } | null = null;
   let mtfFundedAmount: number | null = t.mtfFundedAmount;
   if (t.segment === "eq_mtf") {
-    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct());
+    const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker));
     // Interest accrues from T+1 settlement (day after buy) through the day
     // BEFORE sale proceeds settle — which works out to exactly (sellDate −
     // buyDate) calendar days, confirmed against Dhan's own MTF documentation.
@@ -699,7 +699,7 @@ export function updateManualTrade(
     if (fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0) {
       fundedAmount = Math.max(0, Math.round((buyValue - fields.ownCapitalUsed) * 100) / 100);
     } else {
-      fundedAmount = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(buyValue, mtfOwnMarginPct());
+      fundedAmount = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(buyValue, mtfOwnMarginPct(t.broker));
     }
   }
   // Same T+1-through-day-before-settlement convention as close/accrual; open

@@ -4,6 +4,39 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.60.0
+- **Fixed: Edit-trade dialog showed a false loss for open MTF positions.** The
+  dialog never wired up the current-price field to the P&L preview, so a
+  position up in price could still show "Net: -₹X" (only realized gross, always
+  ₹0 pre-exit). It now shows entry cost so far and unrealized P&L (at current
+  price) as separate, clearly-labeled figures for any still-open position.
+- **New: Current R and Target R:R shown side by side.** Current R stays live
+  (unrealised P&L ÷ risk amount, tracks the position as it moves); Target R:R is
+  new — the static planned reward:risk from entry/SL/target, computed once at
+  entry. Both appear on the trades table, trackers, and edit/add trade dialogs.
+- **MTF own-margin % is now broker-specific, not one flat global rate.**
+  `margin_config` gained a `broker` column (Dhan/Groww 25%, Zerodha 20%, per
+  each broker's own MTF documentation) — threaded through position tracking,
+  the accrual job, close/edit/create trade flows, the Trade Calculator, the
+  broker-cost comparison report, and the /risk margin-rate editor (now one row
+  per broker × segment, independently editable).
+- **New: funding-type filter on the equity tracker** — All / User-funded only /
+  Broker-funded (MTF) — to separate self-funded delivery positions from
+  leveraged MTF ones at a glance.
+- **New: Risk Amount auto-computes from the SL you set** (`|entry − SL| × qty`)
+  in both the Add-trade and Edit-trade forms, while still allowing a manual
+  override.
+- **New: preset playbooks library** — 10 globally-recognized trading setups
+  (Opening Range Breakout, VWAP reversion, trend-following, breakout-pullback,
+  mean-reversion, gap-and-go, momentum, options theta-decay, earnings play,
+  multi-day swing) selectable from the New Playbook dialog to pre-fill the form;
+  edit anything before saving. The from-scratch custom-playbook flow is
+  unchanged.
+- Verified live end-to-end (broker-specific margin math, the false-loss fix,
+  auto risk-amount, funding filter, preset playbooks) against a disposable test
+  trade and playbook, cleaned up afterward. 393 unit tests, typecheck, lint all
+  green.
+
 ## v2.50.0
 - **Fixed: capital figures frozen at the original ₹13L/₹4L defaults.** Page titles,
   Cash & Ledger, and bucket-filter dropdowns had "(₹13L)"/"(₹4L)" hardcoded into

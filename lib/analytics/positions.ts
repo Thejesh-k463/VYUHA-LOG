@@ -1,5 +1,6 @@
 import type { Trade } from "@/lib/db/schema";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { plannedRewardRisk } from "@/lib/risk/calculators";
 
 export interface OpenPosition {
   id: number;
@@ -26,7 +27,9 @@ export interface OpenPosition {
   ownCapital: number; // MTF only: invested − fundedAmount (what you actually put in)
   accruedInterest: number;
   riskAmount: number | null;
-  rMultiple: number | null; // live: unrealised ÷ riskAmount (was a frozen creation-time value)
+  rMultiple: number | null; // "Current R" — live: unrealised ÷ riskAmount (was a frozen creation-time value)
+  targetRR: number | null; // "Target R:R" — planned reward:risk at entry (original SL + target), static
+
   roiOnCapitalPct: number | null; // MTF only: unrealised ÷ ownCapital × 100 (leveraged return)
   interestPctOfProfit: number | null; // MTF only: accrued interest ÷ |unrealised| × 100
   /** MTF only: sell price needed to cover round-trip charges + interest so far.
@@ -48,6 +51,7 @@ export function deriveOpenPositions(
   trades: Trade[],
   mtm: Map<string, number>,
   today: string,
+  mtfMarginByBroker: Record<string, number> = {},
 ): OpenPosition[] {
   return trades
     .filter((t) => t.isOpen)
@@ -67,7 +71,11 @@ export function deriveOpenPositions(
       // never the full invested value, which assumes 100% broker financing).
       // Fallback only covers a row that predates both the column and its first
       // accrual pass.
-      const fundedAmount = isMtf ? (t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(invested, DEFAULT_MTF_OWN_MARGIN_PCT)) : 0;
+      const fundedAmount = isMtf
+        ? t.mtfFundedAmount && t.mtfFundedAmount > 0
+          ? t.mtfFundedAmount
+          : defaultMtfFundedAmount(invested, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT)
+        : 0;
       const ownCapital = isMtf ? Math.round((invested - fundedAmount) * 100) / 100 : 0;
       const riskAmount = t.riskAmount;
       return {
@@ -99,6 +107,7 @@ export function deriveOpenPositions(
         // as it moves, not freeze at "−entry charges ÷ risk" from the moment
         // it was opened.
         rMultiple: riskAmount && riskAmount > 0 ? Math.round((unrealised / riskAmount) * 100) / 100 : null,
+        targetRR: plannedRewardRisk(avgPrice, t.slPlanned, t.targetPlanned),
         roiOnCapitalPct: isMtf && ownCapital > 0 ? Math.round((unrealised / ownCapital) * 10000) / 100 : null,
         interestPctOfProfit: isMtf && unrealised !== 0 ? Math.round((t.mtfInterest / Math.abs(unrealised)) * 10000) / 100 : null,
         breakevenPrice: null,

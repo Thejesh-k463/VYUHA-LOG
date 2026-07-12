@@ -10,6 +10,7 @@ import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
+import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export default function TargetEquityPage() {
   const globalRisk = risk.find((r) => r.scope === "global");
   const equityCapital = settings?.equityCapital ?? 1300000;
 
-  const positions = deriveOpenPositions(trades, mtm, today).filter((p) => p.bucket === "equity");
+  const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker()).filter((p) => p.bucket === "equity");
   const top = positions.reduce<{ symbol: string; pct: number } | null>((best, p) => {
     const pct = equityCapital > 0 ? (p.invested / equityCapital) * 100 : 0;
     return best == null || pct > best.pct ? { symbol: p.symbol, pct } : best;

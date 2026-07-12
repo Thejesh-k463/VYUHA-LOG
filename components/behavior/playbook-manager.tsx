@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/select";
 import type { Playbook } from "@/lib/db/schema";
+import { PRESET_PLAYBOOKS } from "@/lib/domain/preset-playbooks";
 import { Plus, Pencil, Trash2, Archive, ArchiveRestore, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function PlaybookManager({ rows }: { rows: Playbook[] }) {
@@ -133,9 +135,33 @@ function PlaybookForm({
   const [description, setDescription] = React.useState(existing?.description ?? "");
   const [rules, setRules] = React.useState((existing?.rules ?? []).join("\n"));
   const [pending, setPending] = React.useState(false);
+  const [preset, setPreset] = React.useState("");
+
+  const applyPreset = (presetName: string) => {
+    setPreset(presetName);
+    const p = PRESET_PLAYBOOKS.find((x) => x.name === presetName);
+    if (!p) return; // "Custom (blank)" — leave whatever's already typed
+    setName(p.name);
+    setDescription(p.description);
+    setRules(p.rules.join("\n"));
+  };
 
   return (
     <div className="space-y-3">
+      {!existing && (
+        <div className="space-y-1">
+          <Label>Start from a preset (optional)</Label>
+          <Select value={preset} onChange={(e) => applyPreset(e.target.value)} className="h-8 w-full text-xs">
+            <option value="">Custom (blank)</option>
+            {PRESET_PLAYBOOKS.map((p) => (
+              <option key={p.name} value={p.name}>{p.name}</option>
+            ))}
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Picks a globally-recognized setup to start from — edit anything below before saving.
+          </p>
+        </div>
+      )}
       <div className="space-y-1">
         <Label>Name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Breakout retest" />

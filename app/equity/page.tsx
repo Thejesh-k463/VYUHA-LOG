@@ -8,6 +8,7 @@ import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { computeTradeCalc } from "@/lib/analytics/trade-calc";
+import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default function EquityTrackerPage() {
   const settings = getSettings();
 
   const rates = loadRatesMap();
-  const positions = deriveOpenPositions(trades, mtm, today)
+  const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker())
     .filter((p) => p.bucket === "equity")
     .map((p) => {
       if (!p.isMtf || p.qty <= 0) return p;

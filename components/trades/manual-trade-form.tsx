@@ -12,6 +12,7 @@ import { BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, type Segme
 import { LimitVerdict } from "@/components/risk/limit-verdict";
 import type { LimitResult } from "@/lib/risk/limits";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 interface PreviewResp {
@@ -41,17 +42,20 @@ function daysBetween(a: string, b: string): number | null {
 export function ManualTradeForm({
   onDone,
   mode = "closed",
-  mtfOwnMarginPct = DEFAULT_MTF_OWN_MARGIN_PCT,
+  mtfMarginByBroker = {},
 }: {
   onDone?: () => void;
   mode?: "open" | "closed";
-  mtfOwnMarginPct?: number;
+  /** eq_mtf own-margin % per broker (real leverage varies by broker) — looked
+   * up against whichever broker is currently selected in this form. */
+  mtfMarginByBroker?: Record<string, number>;
 }) {
   const open = mode === "open";
   const [state, formAction, pending] = useActionState<ActionState, FormData>(createManualTrade, { ok: false, message: "" });
 
   const [kind, setKind] = useState<"equity" | "fno">("equity");
   const [broker, setBroker] = useState("dhan");
+  const mtfOwnMarginPct = mtfMarginByBroker[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   const [tradingsymbol, setSymbol] = useState("");
   const [productHint, setProductHint] = useState("");
   const [segment, setSegment] = useState("");
@@ -62,6 +66,9 @@ export function ManualTradeForm({
   const [avgSellPrice, setSellPrice] = useState("");
   const [currentPrice, setCurrentPrice] = useState("");
   const [sl, setSl] = useState("");
+  const [target, setTarget] = useState("");
+  const [riskAmount, setRiskAmount] = useState("");
+  const [riskTouched, setRiskTouched] = useState(false);
   const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [daysHeld, setDaysHeld] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
@@ -116,6 +123,23 @@ export function ManualTradeForm({
       setSellPrice("");
     }
   }, [kind, underlying, contractType, expiry, strike, optType, lots, lotSize, entryPremium, exitPremium, open]);
+
+  // Auto-compute risk amount from the SL the user set — |entry − SL| × qty —
+  // instead of leaving it a manual field with just a placeholder hint. Typing
+  // a value here overrides the auto-fill (riskTouched); clearing it back to
+  // blank resumes auto-computing, matching the MTF own-capital field's pattern.
+  useEffect(() => {
+    if (riskTouched) return;
+    const entryNum = Number(avgBuyPrice) || 0;
+    const qtyNum = Number(buyQty) || 0;
+    const slNum = Number(sl);
+    if (sl !== "" && entryNum > 0 && qtyNum > 0 && Number.isFinite(slNum)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRiskAmount(String(Math.round(Math.abs(entryNum - slNum) * qtyNum * 100) / 100));
+    } else {
+      setRiskAmount("");
+    }
+  }, [sl, avgBuyPrice, buyQty, riskTouched]);
 
   // Debounced live charge preview
   useEffect(() => {
@@ -214,6 +238,14 @@ export function ManualTradeForm({
     open && currentPriceNum > 0 && entryPriceNum > 0 && openQty > 0
       ? Math.round((currentPriceNum - entryPriceNum) * openQty * openSide * 100) / 100
       : null;
+
+  // Target R:R — the planned "risk 1 to make X" ratio from entry/SL/target,
+  // static (doesn't move with price); Current R — this trade's LIVE R-multiple
+  // if using the entered current price, using the same riskAmount that will be
+  // saved. Distinct concepts: one is the plan, the other is where you are now.
+  const liveTargetRR = plannedRewardRisk(entryPriceNum, sl !== "" ? Number(sl) : null, target !== "" ? Number(target) : null);
+  const riskAmountNum = Number(riskAmount) || 0;
+  const liveCurrentR = open && unrealizedPnl != null && riskAmountNum > 0 ? Math.round((unrealizedPnl / riskAmountNum) * 100) / 100 : null;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -357,8 +389,17 @@ export function ManualTradeForm({
         {!open && <Field label={kind === "fno" ? "Exit date" : "Sell date"}><Input name="sellDate" type="date" /></Field>}
         <Field label="SL (original)"><Input name="slPlanned" type="number" step="any" value={sl} onChange={(e) => setSl(e.target.value)} /></Field>
         <Field label="Trailing SL"><Input name="trailingSl" type="number" step="any" /></Field>
-        <Field label="Target"><Input name="targetPlanned" type="number" step="any" /></Field>
-        <Field label="Risk amount (₹)"><Input name="riskAmount" type="number" step="any" placeholder="from SL, else 9500" /></Field>
+        <Field label="Target"><Input name="targetPlanned" type="number" step="any" value={target} onChange={(e) => setTarget(e.target.value)} /></Field>
+        <Field label="Risk amount (₹)">
+          <Input
+            name="riskAmount"
+            type="number"
+            step="any"
+            value={riskAmount}
+            onChange={(e) => { setRiskAmount(e.target.value); setRiskTouched(e.target.value !== ""); }}
+            placeholder="from SL, else 9500"
+          />
+        </Field>
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>
         {!isEquity ? null : (
           <>
@@ -434,6 +475,20 @@ export function ManualTradeForm({
             <div className="mt-2 flex gap-6 border-t border-border pt-2">
               <span className="text-muted-foreground">Gross: <span className="font-medium text-foreground">{inr(preview.grossPnl)}</span></span>
               <span className="text-muted-foreground">Net: <span className={`font-semibold ${preview.netPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(preview.netPnl)}</span></span>
+            </div>
+          )}
+          {(liveTargetRR != null || liveCurrentR != null) && (
+            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[11px]">
+              {liveCurrentR != null && (
+                <span className="text-muted-foreground">
+                  Current R: <span className={`font-semibold ${liveCurrentR >= 0 ? "text-profit" : "text-loss"}`}>{liveCurrentR.toFixed(2)}</span>
+                </span>
+              )}
+              {liveTargetRR != null && (
+                <span className="text-muted-foreground">
+                  Target R:R: <span className="font-semibold text-foreground">1:{liveTargetRR.toFixed(2)}</span>
+                </span>
+              )}
             </div>
           )}
         </div>

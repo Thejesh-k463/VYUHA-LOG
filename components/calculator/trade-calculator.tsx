@@ -34,13 +34,14 @@ const num = (v: string) => {
 
 export function TradeCalculator({
   rates,
-  mtfOwnMarginPct = DEFAULT_MTF_OWN_MARGIN_PCT,
+  mtfMarginByBroker = {},
 }: {
   rates: Record<string, ChargeRates>;
-  mtfOwnMarginPct?: number;
+  mtfMarginByBroker?: Record<string, number>;
 }) {
   const [mode, setMode] = useState<"equity" | "fno">("equity");
   const [broker, setBroker] = useState("dhan");
+  const mtfOwnMarginPct = mtfMarginByBroker[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   const [product, setProduct] = useState("eq_delivery");
   const [instrument, setInstrument] = useState("index_option");
   const [exchange, setExchange] = useState("NSE");
@@ -82,7 +83,6 @@ export function TradeCalculator({
       },
       rateCard,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rateCard, segment, side, entry, sl, target, qty, ownCapital, holdDays, numTrades, mtfOwnMarginPct]);
 
   const breakdown = result

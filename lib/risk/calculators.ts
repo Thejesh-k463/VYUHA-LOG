@@ -3,6 +3,21 @@
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * Planned reward:risk ratio at entry — "risking 1 to make X" — using the
+ * ORIGINAL stop and target (not the trailing SL, which tightens as a trade
+ * moves and would understate the risk actually taken at entry). Distinct from
+ * the LIVE R-multiple (unrealised P&L ÷ risk amount, which changes every
+ * tick); this is the static plan made before the trade was placed.
+ */
+export function plannedRewardRisk(entry: number, sl: number | null, target: number | null): number | null {
+  if (sl == null || target == null || !(entry > 0)) return null;
+  const risk = Math.abs(entry - sl);
+  const reward = Math.abs(target - entry);
+  if (risk <= 0) return null;
+  return r2(reward / risk);
+}
+
 export interface PositionSizeInput {
   entry: number;
   stop: number;

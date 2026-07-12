@@ -5,8 +5,8 @@ import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
-import { getMarginRates } from "@/lib/queries/margin";
-import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { getMarginPct } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 
 export const runtime = "nodejs";
 
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     const fundedAmount = isMtf
       ? v.ownCapitalUsed != null && v.ownCapitalUsed >= 0
         ? Math.max(0, Math.round((v.buyValue - v.ownCapitalUsed) * 100) / 100)
-        : defaultMtfFundedAmount(v.buyValue, getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT)
+        : defaultMtfFundedAmount(v.buyValue, getMarginPct(v.broker, "eq_mtf"))
       : null;
     const daysHeld = v.isOpen ? 0 : v.daysHeld ?? 0;
     breakdown = computeCharges(

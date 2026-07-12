@@ -188,6 +188,7 @@ export default function RiskPage() {
   const marginInputs: MarginPositionInput[] = inputs.map((p) => ({
     id: p.id,
     symbol: p.symbol,
+    broker: p.broker,
     bucket: p.bucket,
     segment: p.segment,
     side: p.side ?? "long",
@@ -202,7 +203,7 @@ export default function RiskPage() {
     equity: equityCapital,
     active: activeCapital,
   });
-  const marginRates = getMarginConfig().map((r) => ({ segment: r.segment, marginPct: r.marginPct }));
+  const marginRates = getMarginConfig().map((r) => ({ broker: r.broker, segment: r.segment, marginPct: r.marginPct }));
 
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
   const settlementInputs: SettlementInput[] = trades

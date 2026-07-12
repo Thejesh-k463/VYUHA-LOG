@@ -50,6 +50,34 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.60.0 — false-loss edit-dialog fix + Current R/Target R:R + broker-specific MTF margin +
+>   auto risk-amount + preset playbooks.** FIXED: `EditTradeDialog` never wired its current-price
+>   field into the P&L preview, so an open MTF position up in price could still show a net loss
+>   (only realized gross, always ₹0 pre-exit) — now shows entry cost and unrealized P&L (at
+>   current price) as separate figures. NEW: `lib/risk/calculators.ts#plannedRewardRisk` — a
+>   static, entry-time reward:risk ratio ("Target R:R") shown alongside the existing live
+>   "Current R" everywhere (trades table, trackers, add/edit dialogs). CHANGED: `margin_config`
+>   gained a `broker` column (unique index now `(broker, segment)`, migration
+>   `0022_margin-broker-specific.sql`) — MTF own-margin % is no longer one flat global rate;
+>   seeded Dhan/Groww 25%, Zerodha 20% per each broker's own MTF docs. Threaded via
+>   `marginKey(broker, segment)` through `estimateMargin`, `lib/queries/margin.ts` (new
+>   `getMarginPct`/`getMtfMarginByBroker`), `commit.ts`, `mtf-accrual.ts`, the charges-preview
+>   route, `manual-trade-form.tsx`, `edit-trade-dialog.tsx`, `trade-calculator.tsx`,
+>   `broker-compare/page.tsx` (uses each trade's OWN broker for the funded-amount fallback, not
+>   one global rate), and `/api/margin` + `margin-panel.tsx` (rate editor is now one row per
+>   broker × segment). NEW: funding-type filter (All / User-funded / Broker-funded MTF) on the
+>   equity tracker (`tracker-client.tsx`); Risk Amount auto-computes from `|entry − SL| × qty` in
+>   both add/edit trade forms (manual override still works, clearing resumes auto); preset
+>   playbooks library (`lib/domain/preset-playbooks.ts`, 10 setups: ORB, VWAP reversion,
+>   trend-following, breakout-pullback, mean-reversion, gap-and-go, momentum, options theta-decay,
+>   earnings play, multi-day swing) selectable in the New Playbook dialog to pre-fill the existing
+>   form — the from-scratch custom flow is untouched. VERIFIED end-to-end live: created a
+>   disposable MTF test trade (Dhan, entry 200/SL 190/target 230) confirming risk-amount
+>   auto-fill (1000), Target R:R (1:3.00), broker-specific own-capital estimate (≈5,000 @ 25%),
+>   and the false-loss fix (current price 210 → correctly +₹1,000 unrealized, Current R 1.00);
+>   confirmed Zerodha vs Dhan give different auto-estimated margin in the Trade Calculator and the
+>   /risk margin-rate editor; created and deleted a test playbook from a preset. Then deleted both
+>   test artifacts (252 real trades + playbooks untouched). 393 unit tests, typecheck, lint green.
 > - **v2.0.0 — MTF interest correctness fix + open-trade preview fix.** A real money bug: MTF
 >   interest at trade-create, daily accrual (`lib/jobs/mtf-accrual.ts`), close-position
 >   (`lib/import/commit.ts#closePosition`), and the Trade Calculator's default all assumed the

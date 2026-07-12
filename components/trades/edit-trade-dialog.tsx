@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { DialogClose } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
-import { defaultMtfFundedAmount } from "@/lib/risk/margin";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import type { Trade } from "@/lib/db/schema";
 
@@ -29,7 +30,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 /** Full editor for any trade, open or closed — quantities, prices, dates, SL/TSL/
  * target, risk, MTF own-capital, tags/notes. Symbol/broker/segment/exchange stay
  * fixed here (use the Re-tag dialog for reclassification). */
-export function EditTradeDialog({ trade, onDone }: { trade: Trade; onDone: () => void }) {
+export function EditTradeDialog({
+  trade,
+  onDone,
+  mtfMarginByBroker = {},
+}: {
+  trade: Trade;
+  onDone: () => void;
+  mtfMarginByBroker?: Record<string, number>;
+}) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(updateTradeAction, { ok: false, message: "" });
   const isMtf = trade.segment === "eq_mtf";
 
@@ -43,10 +52,27 @@ export function EditTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =>
   const [trailingSl, setTrailingSl] = useState(trade.trailingSl != null ? String(trade.trailingSl) : "");
   const [targetPlanned, setTargetPlanned] = useState(trade.targetPlanned != null ? String(trade.targetPlanned) : "");
   const [riskAmount, setRiskAmount] = useState(trade.riskAmount != null ? String(trade.riskAmount) : "");
+  // Only treat risk as "manually touched" (exempt from SL auto-recompute) if
+  // the STORED value doesn't match what SL-derivation would already produce —
+  // otherwise opening Edit would silently overwrite a genuinely custom risk
+  // amount the instant the dialog mounts, before the user has touched anything.
+  const [riskTouched, setRiskTouched] = useState(() => {
+    const origEntry = trade.sellQty > trade.buyQty ? trade.avgSellPrice : trade.avgBuyPrice;
+    const origQty = trade.sellQty > trade.buyQty ? trade.sellQty : trade.buyQty;
+    if (trade.riskAmount == null || trade.slPlanned == null || !(origEntry > 0) || !(origQty > 0)) return trade.riskAmount != null;
+    const derived = Math.round(Math.abs(origEntry - trade.slPlanned) * origQty * 100) / 100;
+    return Math.abs(trade.riskAmount - derived) > 0.5;
+  });
   const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [setupTag, setSetupTag] = useState(trade.setupTag ?? "");
   const [notes, setNotes] = useState(trade.notes ?? "");
+  const [currentPrice, setCurrentPrice] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
+
+  // MTF is long-only in India (you fund a purchase, never a short), but this
+  // dialog is generic across segments — direction is read off the ORIGINAL
+  // trade (stable for the dialog's lifetime), same convention as CloseTradeDialog.
+  const isShort = trade.sellQty > trade.buyQty;
 
   useEffect(() => {
     if (state.ok) onDone();
@@ -57,8 +83,42 @@ export function EditTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =>
   // doesn't retroactively re-derive it, it just changes what's left as "own
   // capital". Mirrors updateManualTrade's own fallback exactly (never the
   // generic margin-% guess) so the preview never drifts from what gets saved.
-  const currentFundedGuess = trade.mtfFundedAmount ?? (positionValue > 0 ? defaultMtfFundedAmount(positionValue, 25) : 0);
+  const brokerMtfPct = mtfMarginByBroker[trade.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+  const currentFundedGuess = trade.mtfFundedAmount ?? (positionValue > 0 ? defaultMtfFundedAmount(positionValue, brokerMtfPct) : 0);
   const currentOwnCapitalGuess = Math.max(0, Math.round((positionValue - currentFundedGuess) * 100) / 100);
+
+  // Unrealized P&L at the entered current price — informational only, never
+  // merged into the entry-cost figure below. This was the reported bug: a
+  // position up in price still showed a "loss" because the preview only ever
+  // computed realized gross (always ₹0 pre-exit).
+  const isOpenNow = (Number(buyQty) || 0) !== (Number(sellQty) || 0);
+  const entryPrice = isShort ? Number(avgSellPrice) || 0 : Number(avgBuyPrice) || 0;
+  const openQty = isShort ? Number(sellQty) || 0 : Number(buyQty) || 0;
+  const currentPriceNum = Number(currentPrice) || 0;
+  const unrealizedPnl =
+    isOpenNow && currentPriceNum > 0 && entryPrice > 0 && openQty > 0
+      ? Math.round((isShort ? entryPrice - currentPriceNum : currentPriceNum - entryPrice) * openQty * 100) / 100
+      : null;
+
+  // Target R:R (planned, static, from entry/SL/target) and Current R (live —
+  // this trade's unrealized P&L ÷ risk amount, if open).
+  const liveTargetRR = plannedRewardRisk(entryPrice, slPlanned !== "" ? Number(slPlanned) : null, targetPlanned !== "" ? Number(targetPlanned) : null);
+  const riskAmountNum = Number(riskAmount) || 0;
+  const liveCurrentR = isOpenNow && unrealizedPnl != null && riskAmountNum > 0 ? Math.round((unrealizedPnl / riskAmountNum) * 100) / 100 : null;
+
+  // Auto-compute risk amount from SL — |entry − SL| × qty — unless the user
+  // has touched the field (or it started out as a genuinely custom value; see
+  // the riskTouched initializer above).
+  useEffect(() => {
+    if (riskTouched) return;
+    const slNum = Number(slPlanned);
+    if (slPlanned !== "" && entryPrice > 0 && openQty > 0 && Number.isFinite(slNum)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRiskAmount(String(Math.round(Math.abs(entryPrice - slNum) * openQty * 100) / 100));
+    } else {
+      setRiskAmount("");
+    }
+  }, [slPlanned, entryPrice, openQty, riskTouched]);
 
   // Live recomputed preview as fields change — same engine, same MTF defaulting
   // as the create/close paths, so what you see matches what gets saved.
@@ -113,11 +173,21 @@ export function EditTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =>
         <Field label="Sell qty"><Input name="sellQty" type="number" step="any" value={sellQty} onChange={(e) => setSellQty(e.target.value)} /></Field>
         <Field label="Avg sell price"><Input name="avgSellPrice" type="number" step="any" value={avgSellPrice} onChange={(e) => setAvgSellPrice(e.target.value)} /></Field>
         <Field label="Sell date (blank = open)"><Input name="sellDate" type="date" value={sellDate} onChange={(e) => setSellDate(e.target.value)} /></Field>
-        <Field label="Current price (MTM)"><Input name="currentPrice" type="number" step="any" placeholder="if still open" /></Field>
+        <Field label="Current price (MTM)">
+          <Input name="currentPrice" type="number" step="any" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} placeholder="if still open" />
+        </Field>
         <Field label="SL (original)"><Input name="slPlanned" type="number" step="any" value={slPlanned} onChange={(e) => setSlPlanned(e.target.value)} /></Field>
         <Field label="Trailing SL"><Input name="trailingSl" type="number" step="any" value={trailingSl} onChange={(e) => setTrailingSl(e.target.value)} /></Field>
         <Field label="Target"><Input name="targetPlanned" type="number" step="any" value={targetPlanned} onChange={(e) => setTargetPlanned(e.target.value)} /></Field>
-        <Field label="Risk amount (₹)"><Input name="riskAmount" type="number" step="any" value={riskAmount} onChange={(e) => setRiskAmount(e.target.value)} /></Field>
+        <Field label="Risk amount (₹)">
+          <Input
+            name="riskAmount"
+            type="number"
+            step="any"
+            value={riskAmount}
+            onChange={(e) => { setRiskAmount(e.target.value); setRiskTouched(e.target.value !== ""); }}
+          />
+        </Field>
         {isMtf && (
           <Field label="Own capital used (₹)">
             <Input
@@ -144,10 +214,45 @@ export function EditTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =>
             {preview.breakdown.mtfInterest > 0 && <span className="text-muted-foreground">MTF int. <span className="tabular-nums text-foreground">{inr(preview.breakdown.mtfInterest)}</span></span>}
             {preview.breakdown.pledgeCharges > 0 && <span className="text-muted-foreground">Pledge <span className="tabular-nums text-foreground">{inr(preview.breakdown.pledgeCharges)}</span></span>}
           </div>
-          <div className="mt-2 flex gap-6 border-t border-border pt-2">
-            <span className="text-muted-foreground">Gross: <span className="font-medium text-foreground">{inr(preview.grossPnl)}</span></span>
-            <span className="text-muted-foreground">Net: <span className={`font-semibold ${preview.netPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(preview.netPnl)}</span></span>
-          </div>
+          {isOpenNow ? (
+            <>
+              <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2">
+                <span className="text-muted-foreground">
+                  Entry cost so far: <span className="font-semibold text-loss">{inr(preview.netPnl)}</span>
+                </span>
+                {unrealizedPnl != null && (
+                  <span className="text-muted-foreground">
+                    Unrealized P&L (at current price):{" "}
+                    <span className={`font-semibold ${unrealizedPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(unrealizedPnl)}</span>
+                  </span>
+                )}
+              </div>
+              {unrealizedPnl != null && (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Before exit charges — not part of the entry cost above; the position isn&apos;t closed yet.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="mt-2 flex gap-6 border-t border-border pt-2">
+              <span className="text-muted-foreground">Gross: <span className="font-medium text-foreground">{inr(preview.grossPnl)}</span></span>
+              <span className="text-muted-foreground">Net: <span className={`font-semibold ${preview.netPnl >= 0 ? "text-profit" : "text-loss"}`}>{inr(preview.netPnl)}</span></span>
+            </div>
+          )}
+          {(liveTargetRR != null || liveCurrentR != null) && (
+            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[11px]">
+              {liveCurrentR != null && (
+                <span className="text-muted-foreground">
+                  Current R: <span className={`font-semibold ${liveCurrentR >= 0 ? "text-profit" : "text-loss"}`}>{liveCurrentR.toFixed(2)}</span>
+                </span>
+              )}
+              {liveTargetRR != null && (
+                <span className="text-muted-foreground">
+                  Target R:R: <span className="font-semibold text-foreground">1:{liveTargetRR.toFixed(2)}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

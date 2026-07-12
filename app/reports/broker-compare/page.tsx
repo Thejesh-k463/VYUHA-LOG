@@ -8,7 +8,7 @@ import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compar
 import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { inr } from "@/lib/format";
 import { LicenseBanner } from "@/components/system/license-banner";
-import { getMarginRates } from "@/lib/queries/margin";
+import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export default function BrokerComparePage() {
   const today = new Date().toISOString().slice(0, 10);
   const trades = getTrades();
   const ratesMap = loadRatesMap();
-  const mtfOwnMarginPct = getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+  const mtfMarginByBroker = getMtfMarginByBroker();
 
   const compareTrades: CompareTrade[] = trades.map((t) => ({
     segment: t.segment,
@@ -43,7 +43,10 @@ export default function BrokerComparePage() {
             // (that assumes 100% broker financing and overstates every broker's
             // MTF interest equally, which would still rank them correctly but
             // report an inflated absolute cost).
-            fundedAmount: t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct),
+            fundedAmount:
+              t.mtfFundedAmount && t.mtfFundedAmount > 0
+                ? t.mtfFundedAmount
+                : defaultMtfFundedAmount(t.buyValue, mtfMarginByBroker[t.broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT),
             daysHeld: heldDays(t.buyDate, t.sellDate, today),
             pledgeScrips: 1,
           }

@@ -561,20 +561,25 @@ export const playbooks = sqliteTable("playbooks", {
 
 // ---------------------------------------------------------------------------
 // margin_config — editable margin-rate approximation table (P1.2 margin slice).
-// One row per segment: % of notional blocked as margin (SPAN+exposure approx
-// for derivatives; leverage haircut for intraday/MTF; 100% for delivery).
-// The margin gauge on /risk is an ESTIMATE — brokers' real SPAN files differ.
+// One row per BROKER × segment: % of notional blocked as margin (SPAN+exposure
+// approx for derivatives; leverage haircut for intraday/MTF; 100% for delivery).
+// Broker-specific because real leverage varies by broker (Dhan/Groww ~4x = 25%
+// own-margin, Zerodha up to 5x = 20%) — a single flat rate across brokers
+// understated/overstated funded-amount depending which broker you're on.
+// The margin gauge on /risk is still an ESTIMATE — brokers' real SPAN files
+// (and per-STOCK VaR margin) differ further.
 // ---------------------------------------------------------------------------
 export const marginConfig = sqliteTable(
   "margin_config",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    broker: text("broker").notNull(),
     segment: text("segment").notNull(),
     marginPct: real("margin_pct").notNull(), // e.g. 12 = 12% of notional
     note: text("note"),
     updatedAt: text("updated_at").notNull().default(now),
   },
-  (t) => [uniqueIndex("margin_config_segment_uq").on(t.segment)],
+  (t) => [uniqueIndex("margin_config_broker_segment_uq").on(t.broker, t.segment)],
 );
 
 // ---------------------------------------------------------------------------

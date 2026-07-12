@@ -6,6 +6,7 @@ import {
   counter,
   mtfBreakeven,
   concentrationPct,
+  plannedRewardRisk,
 } from "@/lib/risk/calculators";
 
 describe("positionSize", () => {
@@ -78,5 +79,30 @@ describe("mtfBreakeven", () => {
 describe("concentrationPct", () => {
   it("position vs bucket capital", () => {
     expect(concentrationPct(260000, 1300000)).toBe(20);
+  });
+});
+
+describe("plannedRewardRisk", () => {
+  it("computes risking-1-to-make-X for a long", () => {
+    // entry 100, SL 95 (risk 5), target 115 (reward 15) -> 1:3
+    expect(plannedRewardRisk(100, 95, 115)).toBe(3);
+  });
+
+  it("computes risking-1-to-make-X for a short (SL/target above/below entry)", () => {
+    // entry 100, SL 105 (risk 5), target 85 (reward 15) -> 1:3
+    expect(plannedRewardRisk(100, 105, 85)).toBe(3);
+  });
+
+  it("returns null when SL or target is missing", () => {
+    expect(plannedRewardRisk(100, null, 115)).toBeNull();
+    expect(plannedRewardRisk(100, 95, null)).toBeNull();
+  });
+
+  it("returns null when SL equals entry (zero risk, undefined ratio)", () => {
+    expect(plannedRewardRisk(100, 100, 115)).toBeNull();
+  });
+
+  it("returns null for a non-positive entry", () => {
+    expect(plannedRewardRisk(0, 95, 115)).toBeNull();
   });
 });
