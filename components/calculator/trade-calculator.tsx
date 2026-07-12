@@ -52,7 +52,7 @@ export function TradeCalculator({
   const [entry, setEntry] = useState("100");
   const [sl, setSl] = useState("90");
   const [target, setTarget] = useState("130");
-  const [funded, setFunded] = useState("0");
+  const [ownCapital, setOwnCapital] = useState("0");
   const [holdDays, setHoldDays] = useState("30");
   const [numTrades, setNumTrades] = useState("1");
 
@@ -63,10 +63,12 @@ export function TradeCalculator({
 
   const result = useMemo(() => {
     if (!rateCard || qty <= 0 || num(entry) <= 0) return null;
-    // 0 (unset) auto-estimates the broker-financed principal from the configured
-    // own-margin % — treating the FULL position as financed overstates interest
-    // (see lib/risk/margin.ts#defaultMtfFundedAmount).
-    const fundedAmount = num(funded) > 0 ? num(funded) : defaultMtfFundedAmount(num(entry) * qty, mtfOwnMarginPct);
+    // Own capital (what YOU put in) is the primary input; funded = position value
+    // − that. 0 (unset) auto-estimates own capital from the configured own-margin
+    // % — treating the FULL position as broker-financed overstates interest (see
+    // lib/risk/margin.ts#defaultMtfFundedAmount).
+    const positionValue = num(entry) * qty;
+    const fundedAmount = num(ownCapital) > 0 ? Math.max(0, positionValue - num(ownCapital)) : defaultMtfFundedAmount(positionValue, mtfOwnMarginPct);
     return computeTradeCalc(
       {
         segment: segment as ChargeRates["segment"],
@@ -81,7 +83,7 @@ export function TradeCalculator({
       rateCard,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rateCard, segment, side, entry, sl, target, qty, funded, holdDays, numTrades, mtfOwnMarginPct]);
+  }, [rateCard, segment, side, entry, sl, target, qty, ownCapital, holdDays, numTrades, mtfOwnMarginPct]);
 
   const breakdown = result
     ? ([
@@ -172,8 +174,8 @@ export function TradeCalculator({
 
           {segment === "eq_mtf" && (
             <div className="grid grid-cols-2 gap-2">
-              <Field label={`Funded ₹ (0 = auto @ ${mtfOwnMarginPct}% margin)`}>
-                <Input type="number" value={funded} onChange={(e) => setFunded(e.target.value)} className="h-8 tabular-nums" />
+              <Field label={`Own capital ₹ (0 = auto @ ${mtfOwnMarginPct}% margin)`}>
+                <Input type="number" value={ownCapital} onChange={(e) => setOwnCapital(e.target.value)} className="h-8 tabular-nums" />
               </Field>
               <Field label="Holding days"><Input type="number" value={holdDays} onChange={(e) => setHoldDays(e.target.value)} className="h-8 tabular-nums" /></Field>
             </div>
@@ -185,7 +187,7 @@ export function TradeCalculator({
           <p className="text-[10px] text-muted-foreground">
             {mode === "fno" ? `Quantity = ${num(lots)} lot × ${num(lotSize)} = ${qty}. ` : ""}
             Charges use {broker} {effExchange} {segment} rates from charge config.
-            {segment === "eq_mtf" ? ` Funded ₹ is the broker-lent amount, not the full position value — 0 estimates it at your configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).` : ""}
+            {segment === "eq_mtf" ? ` Own capital ₹ is what YOU put in — the broker funds the rest; 0 auto-estimates it at your configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).` : ""}
           </p>
         </CardContent>
       </Card>

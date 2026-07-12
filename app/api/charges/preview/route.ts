@@ -22,7 +22,7 @@ const Body = z.object({
   sellQty: z.number().nonnegative(),
   buyOrders: z.number().int().min(0).default(1),
   sellOrders: z.number().int().min(0).default(1),
-  fundedAmount: z.number().nonnegative().nullish(),
+  ownCapitalUsed: z.number().nonnegative().nullish(),
   daysHeld: z.number().nonnegative().nullish(),
   grossPnl: z.number().nullish(),
   isOpen: z.boolean().nullish(),
@@ -52,13 +52,14 @@ export async function POST(req: Request) {
   try {
     const r = findRates(rates, v.broker, cls.segment, cls.exchange);
     // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
-    // understates what actually gets saved: an explicit fundedAmount wins, else
-    // auto-estimate from margin_config's eq_mtf %; daysHeld forced to 0 for an
+    // understates what actually gets saved: ownCapitalUsed (what YOU put in) is
+    // the primary input, funded = buyValue − ownCapitalUsed; no explicit entry →
+    // auto-estimate from margin_config's eq_mtf %. daysHeld forced to 0 for an
     // open position (interest hasn't accrued yet — see lib/jobs/mtf-accrual.ts).
     const isMtf = cls.segment === "eq_mtf";
     const fundedAmount = isMtf
-      ? v.fundedAmount && v.fundedAmount > 0
-        ? v.fundedAmount
+      ? v.ownCapitalUsed != null && v.ownCapitalUsed >= 0
+        ? Math.max(0, Math.round((v.buyValue - v.ownCapitalUsed) * 100) / 100)
         : defaultMtfFundedAmount(v.buyValue, getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT)
       : null;
     const daysHeld = v.isOpen ? 0 : v.daysHeld ?? 0;

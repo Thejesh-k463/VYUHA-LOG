@@ -62,7 +62,7 @@ export function ManualTradeForm({
   const [avgSellPrice, setSellPrice] = useState("");
   const [currentPrice, setCurrentPrice] = useState("");
   const [sl, setSl] = useState("");
-  const [fundedAmount, setFundedAmount] = useState("");
+  const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [daysHeld, setDaysHeld] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [limit, setLimit] = useState<LimitResult | null>(null);
@@ -142,7 +142,7 @@ export function ManualTradeForm({
             // MTF-only (ignored server-side unless the classified segment is
             // eq_mtf); daysHeld is forced 0 for an open position — interest
             // can't have accrued before the daily accrual job runs from T+1.
-            fundedAmount: Number(fundedAmount) > 0 ? Number(fundedAmount) : null,
+            ownCapitalUsed: Number(ownCapitalUsed) >= 0 && ownCapitalUsed !== "" ? Number(ownCapitalUsed) : null,
             daysHeld: open ? 0 : Number(daysHeld) || 0,
             isOpen: open,
           }),
@@ -151,7 +151,7 @@ export function ManualTradeForm({
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, fundedAmount, daysHeld, open]);
+  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open]);
 
   // Pre-trade limits check (open trades only) — block/warn before saving (P1.4).
   useEffect(() => {
@@ -188,11 +188,19 @@ export function ManualTradeForm({
   const dte = kind === "fno" && expiry ? daysBetween(new Date().toISOString().slice(0, 10), expiry) : null;
   const fnoQty = (Number(lots) || 0) * (Number(lotSize) || 0);
 
-  // MTF: the broker-financed principal, auto-estimated from the configured
-  // own-margin % — shown as a placeholder so a blank field never means "use the
-  // full position value" (that would overstate interest; see lib/risk/margin.ts).
+  // MTF: "own capital used" (what YOU actually put in) is the primary input —
+  // funded amount (what interest accrues on) is derived as buyValue − that,
+  // never the full position value. Placeholder shows the auto-estimate from
+  // the configured own-margin % when the field is left blank.
   const positionValue = (Number(buyQty) || 0) * (Number(avgBuyPrice) || 0);
+  const mtfDefaultOwnCapital = positionValue > 0 ? Math.round((positionValue - defaultMtfFundedAmount(positionValue, mtfOwnMarginPct)) * 100) / 100 : 0;
   const mtfDefaultFunded = positionValue > 0 ? defaultMtfFundedAmount(positionValue, mtfOwnMarginPct) : 0;
+  const mtfEffectiveFunded =
+    ownCapitalUsed !== "" && Number(ownCapitalUsed) >= 0
+      ? Math.max(0, Math.round((positionValue - Number(ownCapitalUsed)) * 100) / 100)
+      : mtfDefaultFunded;
+  const mtfEffectiveOwnCapital = Math.max(0, Math.round((positionValue - mtfEffectiveFunded) * 100) / 100);
+  const mtfLeverage = mtfEffectiveOwnCapital > 0 ? positionValue / mtfEffectiveOwnCapital : null;
 
   // Unrealized P&L for an OPEN position at the entered current price — informational
   // only, never merged into the entry-charges figure below (that reported bug: a
@@ -354,18 +362,19 @@ export function ManualTradeForm({
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>
         {!isEquity ? null : (
           <>
-            <Field label="MTF funded by broker (₹)">
+            <Field label="Own capital used (₹)">
               <Input
-                name="fundedAmount"
+                name="ownCapitalUsed"
                 type="number"
                 step="any"
-                value={fundedAmount}
-                onChange={(e) => setFundedAmount(e.target.value)}
-                placeholder={mtfDefaultFunded > 0 ? `≈ ${Math.round(mtfDefaultFunded).toLocaleString("en-IN")} auto @ ${mtfOwnMarginPct}% margin` : "auto-estimated"}
+                value={ownCapitalUsed}
+                onChange={(e) => setOwnCapitalUsed(e.target.value)}
+                placeholder={mtfDefaultOwnCapital > 0 ? `≈ ${Math.round(mtfDefaultOwnCapital).toLocaleString("en-IN")} auto @ ${mtfOwnMarginPct}% margin` : "auto-estimated"}
               />
               <p className="text-[10px] text-muted-foreground">
-                The amount your broker lends, not the full position value — leave blank to auto-estimate from the
-                configured {mtfOwnMarginPct}% own-margin rate (Settings → Margin).
+                {positionValue > 0
+                  ? `The broker funds the rest: ≈ ₹${Math.round(mtfEffectiveFunded).toLocaleString("en-IN")}${mtfLeverage != null ? ` (${mtfLeverage.toFixed(2)}x leverage)` : ""}. Leave blank to auto-estimate at the configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).`
+                  : `How much of your own money went in, not the full trade value — leave blank to auto-estimate from the configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).`}
               </p>
             </Field>
             {!open && (

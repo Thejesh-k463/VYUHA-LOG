@@ -74,8 +74,32 @@ export function TrackerClient({
     if (variant === "equity") {
       base.push(
         { accessorKey: "daysHeld", header: "Days", meta: { align: "right" }, cell: ({ getValue }) => (getValue() as number | null) ?? "—" },
+        { accessorKey: "ownCapital", header: "Own capital", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
         { accessorKey: "fundedAmount", header: "MTF funded", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
         { accessorKey: "accruedInterest", header: "MTF int.", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? num(v, 0) : "—"; } },
+        {
+          accessorKey: "roiOnCapitalPct", header: "ROI on capital", meta: { align: "right" },
+          cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : <span className={pnl(v)}>{v.toFixed(2)}%</span>; },
+        },
+        {
+          accessorKey: "breakevenPrice", header: "Breakeven", meta: { align: "right" },
+          cell: ({ getValue }) => { const v = getValue() as number | null; return v == null ? "—" : num(v, 2); },
+        },
+        {
+          id: "mtfWarning", header: "",
+          cell: ({ row }) => {
+            const p = row.original;
+            // Matches the reference sheet's flag exactly: interest has eaten
+            // your ENTIRE paper gain — a losing position doesn't need this
+            // (of course a loss got worse; nothing new to flag).
+            if (!p.isMtf || p.unrealised <= 0 || p.accruedInterest < p.unrealised) return null;
+            return (
+              <span className="rounded bg-loss/15 px-1.5 py-0.5 text-[9px] font-medium text-loss" title="MTF interest has eaten this position's entire unrealised gain">
+                ⚠ interest &gt; profit
+              </span>
+            );
+          },
+        },
       );
     } else {
       base.push(
@@ -93,6 +117,9 @@ export function TrackerClient({
     { key: "avgPrice", label: "Avg" }, { key: "mtmPrice", label: "MTM" },
     { key: "invested", label: "Invested" }, { key: "unrealised", label: "Unrealised" },
     { key: "daysHeld", label: "Days" }, { key: "dte", label: "DTE" },
+    { key: "ownCapital", label: "Own capital" }, { key: "fundedAmount", label: "MTF funded" },
+    { key: "accruedInterest", label: "MTF int." }, { key: "roiOnCapitalPct", label: "ROI on capital %" },
+    { key: "breakevenPrice", label: "Breakeven" },
   ];
 
   return (

@@ -11,6 +11,8 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { ManualTradeForm } from "./manual-trade-form";
+import { CloseTradeDialog } from "./close-trade-dialog";
+import { EditTradeDialog } from "./edit-trade-dialog";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
 import { inr, num } from "@/lib/format";
 import {
@@ -19,7 +21,7 @@ import {
 } from "@/lib/domain/constants";
 import type { Trade } from "@/lib/db/schema";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
-import { Plus, Pencil, Trash2, NotebookPen } from "lucide-react";
+import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -44,6 +46,8 @@ export function TradesClient({
   const [addOpenTrade, setAddOpenTrade] = React.useState(false);
   const [editing, setEditing] = React.useState<Trade | null>(null);
   const [journaling, setJournaling] = React.useState<Trade | null>(null);
+  const [closingTrade, setClosingTrade] = React.useState<Trade | null>(null);
+  const [fullEditing, setFullEditing] = React.useState<Trade | null>(null);
 
   // Command-palette deep link: /trades?add=manual | open — open the dialog once, then clean the URL.
   React.useEffect(() => {
@@ -138,6 +142,14 @@ export function TradesClient({
           >
             <NotebookPen className="size-3.5" />
           </Button>
+          {row.original.isOpen && (
+            <Button size="icon" variant="ghost" className="size-7 text-warning" onClick={() => setClosingTrade(row.original)} title="Close position">
+              <LogOut className="size-3.5" />
+            </Button>
+          )}
+          <Button size="icon" variant="ghost" className="size-7" onClick={() => setFullEditing(row.original)} title="Edit trade — qty/prices/dates/SL/target/risk">
+            <SquarePen className="size-3.5" />
+          </Button>
           <Button size="icon" variant="ghost" className="size-7" onClick={() => setEditing(row.original)} title="Re-tag / override">
             <Pencil className="size-3.5" />
           </Button>
@@ -210,6 +222,26 @@ export function TradesClient({
             <DialogDescription>Playbook, emotion and mistakes feed the Discipline page rollups.</DialogDescription>
           </DialogHeader>
           {journaling && <JournalDialog trade={journaling} playbooks={playbooks} onDone={() => setJournaling(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!closingTrade} onOpenChange={(o) => !o && setClosingTrade(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Close position — {closingTrade?.symbol}</DialogTitle>
+            <DialogDescription>Exit price + date; charges and MTF interest recompute for the exact holding period.</DialogDescription>
+          </DialogHeader>
+          {closingTrade && <CloseTradeDialog trade={closingTrade} onDone={() => setClosingTrade(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!fullEditing} onOpenChange={(o) => !o && setFullEditing(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit trade — {fullEditing?.symbol}</DialogTitle>
+            <DialogDescription>Quantities, prices, dates, SL/TSL/target, risk, MTF own-capital, tags and notes — any time.</DialogDescription>
+          </DialogHeader>
+          {fullEditing && <EditTradeDialog trade={fullEditing} onDone={() => setFullEditing(null)} />}
         </DialogContent>
       </Dialog>
 

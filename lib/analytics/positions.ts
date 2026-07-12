@@ -1,4 +1,5 @@
 import type { Trade } from "@/lib/db/schema";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 export interface OpenPosition {
   id: number;
@@ -22,8 +23,16 @@ export interface OpenPosition {
   dte: number | null; // days to expiry (derivatives)
   isMtf: boolean;
   fundedAmount: number;
+  ownCapital: number; // MTF only: invested − fundedAmount (what you actually put in)
   accruedInterest: number;
-  rMultiple: number | null;
+  riskAmount: number | null;
+  rMultiple: number | null; // live: unrealised ÷ riskAmount (was a frozen creation-time value)
+  roiOnCapitalPct: number | null; // MTF only: unrealised ÷ ownCapital × 100 (leveraged return)
+  interestPctOfProfit: number | null; // MTF only: accrued interest ÷ |unrealised| × 100
+  /** MTF only: sell price needed to cover round-trip charges + interest so far.
+   * Left null here (this module stays rate-free) — a page with access to
+   * charge_config rates fills it in via lib/analytics/trade-calc.ts. */
+  breakevenPrice: number | null;
 }
 
 function daysBetween(a: string | null, b: string): number | null {
@@ -53,6 +62,14 @@ export function deriveOpenPositions(
         avgPrice;
       const currentValue = qty * mtmPrice;
       const unrealised = Math.round((currentValue - invested) * 100) / 100;
+      const isMtf = t.segment === "eq_mtf";
+      // Reuse the persisted funded amount (set at entry, reused by accrual/close —
+      // never the full invested value, which assumes 100% broker financing).
+      // Fallback only covers a row that predates both the column and its first
+      // accrual pass.
+      const fundedAmount = isMtf ? (t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(invested, DEFAULT_MTF_OWN_MARGIN_PCT)) : 0;
+      const ownCapital = isMtf ? Math.round((invested - fundedAmount) * 100) / 100 : 0;
+      const riskAmount = t.riskAmount;
       return {
         id: t.id,
         broker: t.broker,
@@ -73,10 +90,18 @@ export function deriveOpenPositions(
         unrealisedPct: invested > 0 ? Math.round((unrealised / invested) * 10000) / 100 : 0,
         daysHeld: daysBetween(t.buyDate, today),
         dte: t.expiry ? daysBetween(today, t.expiry) : null,
-        isMtf: t.segment === "eq_mtf",
-        fundedAmount: t.segment === "eq_mtf" ? Math.round(invested * 100) / 100 : 0,
+        isMtf,
+        fundedAmount: Math.round(fundedAmount * 100) / 100,
+        ownCapital,
         accruedInterest: t.mtfInterest,
-        rMultiple: t.rMultiple,
+        riskAmount,
+        // Live, not the frozen creation-time value: R should track the position
+        // as it moves, not freeze at "−entry charges ÷ risk" from the moment
+        // it was opened.
+        rMultiple: riskAmount && riskAmount > 0 ? Math.round((unrealised / riskAmount) * 100) / 100 : null,
+        roiOnCapitalPct: isMtf && ownCapital > 0 ? Math.round((unrealised / ownCapital) * 10000) / 100 : null,
+        interestPctOfProfit: isMtf && unrealised !== 0 ? Math.round((t.mtfInterest / Math.abs(unrealised)) * 10000) / 100 : null,
+        breakevenPrice: null,
       };
     });
 }

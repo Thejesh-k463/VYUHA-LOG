@@ -68,6 +68,7 @@ export default function TargetEquityPage() {
       <div className="space-y-5 p-6">
         <TargetEquityClient
           defaultRisk={globalRisk?.perTradeMaxLoss ?? 9500}
+          equityCapital={equityCapital}
           openCount={positions.length}
           maxOpen={equityRisk?.maxOpen ?? 6}
           topConcentration={top}

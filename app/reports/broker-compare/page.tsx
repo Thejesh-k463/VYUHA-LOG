@@ -8,19 +8,24 @@ import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compar
 import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { inr } from "@/lib/format";
 import { LicenseBanner } from "@/components/system/license-banner";
+import { getMarginRates } from "@/lib/queries/margin";
+import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 
 export const dynamic = "force-dynamic";
 
+// T+1 settlement start through the day before sale proceeds settle = exactly
+// (end − buyDate) calendar days — confirmed against Dhan's MTF documentation.
 function heldDays(buyDate: string | null, sellDate: string | null, today: string): number {
   if (!buyDate) return 0;
   const end = sellDate ?? today;
-  return Math.max(0, Math.floor((new Date(end).getTime() - new Date(buyDate).getTime()) / 86400000) - 1);
+  return Math.max(0, Math.floor((new Date(end).getTime() - new Date(buyDate).getTime()) / 86400000));
 }
 
 export default function BrokerComparePage() {
   const today = new Date().toISOString().slice(0, 10);
   const trades = getTrades();
   const ratesMap = loadRatesMap();
+  const mtfOwnMarginPct = getMarginRates().get("eq_mtf") ?? DEFAULT_MTF_OWN_MARGIN_PCT;
 
   const compareTrades: CompareTrade[] = trades.map((t) => ({
     segment: t.segment,
@@ -33,7 +38,15 @@ export default function BrokerComparePage() {
     sellOrderCount: t.sellOrderCount,
     mtf:
       t.segment === "eq_mtf" && t.buyValue > 0
-        ? { fundedAmount: t.buyValue, daysHeld: heldDays(t.buyDate, t.sellDate, today), pledgeScrips: 1 }
+        ? {
+            // Re-price on the PERSISTED funded amount, never the full buy value
+            // (that assumes 100% broker financing and overstates every broker's
+            // MTF interest equally, which would still rank them correctly but
+            // report an inflated absolute cost).
+            fundedAmount: t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct),
+            daysHeld: heldDays(t.buyDate, t.sellDate, today),
+            pledgeScrips: 1,
+          }
         : null,
     actualCharges: t.chargesTotal,
   }));

@@ -12,6 +12,44 @@ and (3) a prioritized, build-ready roadmap with design + acceptance criteria.
 Read sections 1–2 before writing any code.
 
 > **Built since this doc was written (do NOT rebuild):**
+> - **v2.50.0 — close/edit-trade features + capital-label bugs + R-multiple/MTF-tracker bugs +
+>   MTF day-count fix + own-capital-primary MTF model + new MTF analytics.** Grounded against a
+>   real user-maintained MTF trade log (own capital / funded / leverage / interest / ROI-on-
+>   capital / breakeven / interest-vs-profit warning columns, cross-checked formula-by-formula)
+>   plus Dhan/Zerodha/Groww's own MTF documentation. FIXES: (1) `BUCKET_LABELS` had "(₹13L)"/
+>   "(₹4L)" hardcoded — removed; also a second hardcoded-capital bug in the Targets→Equity
+>   position-size calc (`components/targets/calculators.tsx`) now takes `equityCapital` as a
+>   prop. (2) `lib/analytics/positions.ts#deriveOpenPositions` computed R-multiple ONCE at
+>   creation and never again — now live (`unrealised ÷ riskAmount`); also independently had its
+>   OWN "MTF funded = full invested value" bug (separate from the v2.0.0 backend fix) — now
+>   reads `t.mtfFundedAmount`. (3) MTF interest day-count had an extra "-1" in THREE places
+>   (`closePosition`, `mtf-accrual.ts`, `app/reports/broker-compare/page.tsx`) — confirmed via
+>   Dhan's own docs that interest runs T+1-through-day-before-settlement = exactly
+>   `sellDate − buyDate`, no adjustment. (4) Zerodha's seeded pledge fee was ₹20; real is ₹15+GST
+>   (zerodha.com/calculators/mtf-calculator) — every OTHER rate (Dhan tiers, Zerodha/Groww annual
+>   %, STT/stamp/exchange/SEBI/DP) already reconciled exactly against the user's real log.
+>   CHANGED: MTF's primary input is now "Own capital used (₹)" (funded = buyValue − that),
+>   matching how a real trade log is kept — replaces "Funded amount" in both
+>   `manual-trade-form.tsx` and the Trade Calculator; `lib/import/commit.ts`'s
+>   `ManualJournalFields.ownCapitalUsed` replaces `fundedAmount`. NEW: `closeTradeAction` +
+>   `CloseTradeDialog` (any segment, live preview via the existing `/api/charges/preview`);
+>   `updateManualTrade` + `updateTradeAction` + `EditTradeDialog` — full field editor for ANY
+>   trade (open/closed), reusing the same charges engine so edits never drift from a fresh
+>   entry (classification — broker/symbol/segment/exchange — stays fixed; use the existing
+>   re-tag dialog for that). New `OpenPosition` fields `ownCapital`/`roiOnCapitalPct`/
+>   `interestPctOfProfit`/`riskAmount`/`breakevenPrice` (breakeven computed at the page level via
+>   `lib/analytics/trade-calc.ts#computeTradeCalc` since `positions.ts` stays rate-free) surfaced
+>   as new tracker columns + a "⚠ interest > profit" badge when accrued interest ≥ an open
+>   position's unrealised gain. GOTCHA CAUGHT DURING VERIFICATION: the new Edit dialog's live
+>   preview initially diverged from the actual save (sent `ownCapitalUsed: null` when blank,
+>   triggering the generic 25%-margin guess in `/api/charges/preview` instead of the trade's
+>   REAL persisted funded amount) — fixed by computing the effective own-capital client-side
+>   from `trade.mtfFundedAmount` before sending. VERIFIED end-to-end live: created a real MTF
+>   test position (own capital 30,000 explicit), confirmed tracker showed funded ₹70,000/R 1.00/
+>   interest ₹527 (exact formula match), closed it (preview matched saved charges to the rupee),
+>   edited the closed trade's exit price (preview/save now match after the fix above), and a
+>   second test position engineered interest > unrealised gain to confirm the warning badge
+>   fires — then deleted both test trades (252 real trades + original settings untouched).
 > - **v2.0.0 — MTF interest correctness fix + open-trade preview fix.** A real money bug: MTF
 >   interest at trade-create, daily accrual (`lib/jobs/mtf-accrual.ts`), close-position
 >   (`lib/import/commit.ts#closePosition`), and the Trade Calculator's default all assumed the

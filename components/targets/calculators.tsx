@@ -17,7 +17,7 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
   );
 }
 
-export function PositionSizeCalc({ defaultRisk }: { defaultRisk: number }) {
+export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: number; equityCapital: number }) {
   const [mode, setMode] = React.useState<"sl" | "points">("sl");
   const [entry, setEntry] = React.useState("100");
   const [stop, setStop] = React.useState("95");
@@ -50,7 +50,9 @@ export function PositionSizeCalc({ defaultRisk }: { defaultRisk: number }) {
           <Stat label="Capital req." value={inr(res.capitalRequired, { decimals: 0 })} />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          0.73% rule: ₹{defaultRisk.toLocaleString("en-IN")} max loss ≈ {((defaultRisk / 1300000) * 100).toFixed(2)}% of the ₹13L equity bucket.
+          {equityCapital > 0
+            ? `₹${defaultRisk.toLocaleString("en-IN")} max loss ≈ ${((defaultRisk / equityCapital) * 100).toFixed(2)}% of the ₹${equityCapital.toLocaleString("en-IN")} equity bucket.`
+            : "Set your equity bucket capital in Settings to see this as a % of capital."}
         </p>
       </CardContent>
     </Card>

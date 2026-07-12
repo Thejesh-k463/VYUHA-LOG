@@ -5,6 +5,10 @@ import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
+import { loadRatesMap } from "@/lib/engine/rates-db";
+import { findRates } from "@/lib/engine/rates";
+import { computeTradeCalc } from "@/lib/analytics/trade-calc";
+import type { Broker, Exchange } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +19,33 @@ export default function EquityTrackerPage() {
   const mtm = getMtmMap();
   const settings = getSettings();
 
-  const positions = deriveOpenPositions(trades, mtm, today).filter((p) => p.bucket === "equity");
+  const rates = loadRatesMap();
+  const positions = deriveOpenPositions(trades, mtm, today)
+    .filter((p) => p.bucket === "equity")
+    .map((p) => {
+      if (!p.isMtf || p.qty <= 0) return p;
+      // Breakeven sell price: what you'd need to cover round-trip charges +
+      // interest accrued so far — needs charge_config rates, which the pure
+      // positions.ts module deliberately doesn't touch.
+      try {
+        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange);
+        const calc = computeTradeCalc(
+          {
+            segment: "eq_mtf",
+            side: "long",
+            entry: p.avgPrice,
+            sl: p.avgPrice,
+            target: p.mtmPrice,
+            qty: p.qty,
+            mtf: { fundedAmount: p.fundedAmount, daysHeld: p.daysHeld ?? 0 },
+          },
+          r,
+        );
+        return { ...p, breakevenPrice: calc.breakevenPrice };
+      } catch {
+        return p; // no rate card for this broker/exchange combo — leave null
+      }
+    });
   const closed = trades
     .filter((t) => !t.isOpen && t.bucket === "equity")
     .slice(0, 60)
@@ -23,7 +53,7 @@ export default function EquityTrackerPage() {
 
   return (
     <>
-      <PageHeader title="Position Tracker — Equity (₹13L)" description="Delivery + MTF holdings, MTM, MTF interest & break-even." />
+      <PageHeader title="Position Tracker — Equity" description="Delivery + MTF holdings, MTM, MTF interest & break-even." />
       <div className="space-y-5 p-6">
         <TrackerClient variant="equity" positions={positions} closed={closed} bucketCapital={settings?.equityCapital ?? 1300000} />
       </div>

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { commitManualTrade, applyOverride } from "@/lib/import/commit";
+import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
 import { SEGMENTS, EXCHANGES, SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
 import { classify } from "@/lib/engine/classify";
 import { evaluateLimits } from "@/lib/risk/limits";
@@ -139,7 +139,7 @@ export async function createManualTrade(
       trailingSl: num(formData.get("trailingSl")) || null,
       targetPlanned: num(formData.get("targetPlanned")) || null,
       riskAmount: num(formData.get("riskAmount")) || null,
-      fundedAmount: num(formData.get("fundedAmount")) || null,
+      ownCapitalUsed: num(formData.get("ownCapitalUsed")) || null,
       daysHeld: num(formData.get("daysHeld")) || null,
       currentPrice: num(formData.get("currentPrice")) || null,
       lotSize: num(formData.get("lotSize")) || null,
@@ -178,4 +178,53 @@ export async function deleteTrade(formData: FormData): Promise<void> {
   db.delete(trades).where(eq(trades.id, id)).run();
   revalidatePath("/trades");
   revalidatePath("/");
+}
+
+function revalidateAfterTradeChange() {
+  for (const p of ["/trades", "/risk", "/equity", "/active", "/", "/reports/broker-compare"]) revalidatePath(p);
+}
+
+/** Close an open position at an exit price/date — any segment (equity/MTF/options/futures). */
+export async function closeTradeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  const exitPrice = num(formData.get("exitPrice"));
+  const exitDate = str(formData.get("exitDate"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+  if (!(exitPrice > 0)) return { ok: false, message: "Enter a valid exit price." };
+  const res = closePosition(id, exitPrice, exitDate);
+  if (res.ok) revalidateAfterTradeChange();
+  return res;
+}
+
+/**
+ * Edit any trade (open or closed), any time — qty/prices/dates/SL-TSL-target/
+ * risk/MTF own-capital/notes. The form is always pre-filled with the trade's
+ * current values, so every field round-trips its existing value unless the
+ * user changes it — blank always means "clear this", matching the create
+ * form's own blank-means-null convention (num() || null).
+ */
+export async function updateTradeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+
+  const fields: UpdateTradeFields = {
+    buyQty: num(formData.get("buyQty")),
+    avgBuyPrice: num(formData.get("avgBuyPrice")),
+    buyDate: str(formData.get("buyDate")),
+    sellQty: num(formData.get("sellQty")),
+    avgSellPrice: num(formData.get("avgSellPrice")),
+    sellDate: str(formData.get("sellDate")),
+    slPlanned: num(formData.get("slPlanned")) || null,
+    trailingSl: num(formData.get("trailingSl")) || null,
+    targetPlanned: num(formData.get("targetPlanned")) || null,
+    riskAmount: num(formData.get("riskAmount")) || null,
+    ownCapitalUsed: num(formData.get("ownCapitalUsed")) || null,
+    setupTag: str(formData.get("setupTag")),
+    notes: str(formData.get("notes")),
+    currentPrice: num(formData.get("currentPrice")) || null,
+  };
+
+  const res = updateManualTrade(id, fields);
+  if (res.ok) revalidateAfterTradeChange();
+  return res;
 }

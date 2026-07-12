@@ -181,10 +181,10 @@ function mtfFor(broker: Broker): {
       };
     case "zerodha":
       return {
-        mtfInterestAnnual: 0.146,
+        mtfInterestAnnual: 0.146, // 0.04%/day per Zerodha's own MTF calculator
         mtfTiers: null,
-        pledgeCharge: 20,
-        unpledgeCharge: 20,
+        pledgeCharge: 15, // ₹15 + GST per ISIN per pledge request (zerodha.com/calculators/mtf-calculator)
+        unpledgeCharge: 15, // ₹15 + GST per unpledge request
       };
     case "groww":
       return {

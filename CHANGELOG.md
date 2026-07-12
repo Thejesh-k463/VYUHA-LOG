@@ -4,6 +4,51 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.50.0
+- **Fixed: capital figures frozen at the original ₹13L/₹4L defaults.** Page titles,
+  Cash & Ledger, and bucket-filter dropdowns had "(₹13L)"/"(₹4L)" hardcoded into
+  `BUCKET_LABELS` — changing capital in Settings never touched them (now removed;
+  live capital already shows correctly elsewhere on each page). A second instance of
+  the same bug: the Targets → Equity position-size calculator divided by a
+  hardcoded 1,300,000 instead of live `equityCapital` — now threaded through as a
+  prop from the server page.
+- **Fixed: R-multiple frozen at trade creation for open positions.** The tracker
+  showed a value computed once when a trade was opened (net entry-cost ÷ risk),
+  never updated as the position moved — a position up 1.43% could show a negative
+  R. `lib/analytics/positions.ts#deriveOpenPositions` now computes R live as
+  unrealised P&L ÷ risk amount.
+- **Fixed: a second "MTF funded = full position value" bug**, this time in the
+  position-tracker's own display logic (`positions.ts`), independent of the
+  backend fix from v2.0.0 — it was silently ignoring the persisted funded amount
+  and recomputing the (wrong) full-value figure for display.
+- **Fixed: MTF interest day-count undercounted by one day, in three places** —
+  close-trade, the daily accrual job, and broker-cost comparison all subtracted an
+  extra day. Confirmed against Dhan's own MTF documentation: interest runs from
+  T+1 settlement through the day before sale proceeds settle, i.e. exactly
+  (sellDate − buyDate) calendar days — no "-1".
+- **Corrected Zerodha's seeded pledge/unpledge fee** from ₹20 to the real ₹15+GST
+  per Zerodha's own MTF calculator page. Every other rate (Dhan's interest tiers,
+  Zerodha/Groww annual rates, STT/stamp/exchange/SEBI/DP) already reconciled
+  exactly against a real user-supplied MTF trade log.
+- **MTF input model switched to "Own capital used" as primary** (matching how a
+  real MTF trade log is kept — you know what cash you put in; the broker-financed
+  amount and leverage are derived), replacing the old "funded amount" field in
+  both the trade form and the Trade Calculator.
+- **New: close any open trade** — a "Close position" action with a live
+  recomputed charges/P&L preview before confirming, for any segment (equity,
+  MTF, options, futures).
+- **New: edit any trade, any time** — a full editor (qty, prices, dates, SL/TSL/
+  target, risk, MTF own-capital, tags, notes) for open or closed trades, reusing
+  the same charges engine so edits never drift from what a fresh entry would
+  compute.
+- **New MTF analytics on the position tracker**: own capital deployed, ROI on
+  capital % (the leveraged return your own cash actually earned), breakeven sell
+  price, and a warning badge when accrued interest has eaten the entire unrealised
+  gain — modeled directly on a real trader-maintained MTF log.
+- Verified live end-to-end against real test positions (created, tracked, closed,
+  edited, then removed) plus the existing 252-trade journal, which is untouched.
+  387 unit tests, typecheck, lint and production build all green.
+
 ## v2.0.0
 - **Fixed: MTF interest overcharged everywhere (real money bug).** Trade creation, the
   daily accrual job, position-close, and the Trade Calculator's default all treated an

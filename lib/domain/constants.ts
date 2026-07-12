@@ -33,12 +33,10 @@ export const BROKER_LABELS: Record<Broker, string> = {
 };
 
 // Display names only — the DB/API bucket value stays "active" everywhere.
+// Deliberately NO ₹ amount here: capital is user-editable in Settings, so a
+// baked-in figure goes stale the moment someone changes it. Pages that need
+// the live number read it from settings and render it themselves.
 export const BUCKET_LABELS: Record<Bucket, string> = {
-  equity: "Equity (₹13L)",
-  active: "Trade F&O (₹4L)",
-};
-
-export const BUCKET_SHORT_LABELS: Record<Bucket, string> = {
   equity: "Equity",
   active: "Trade F&O",
 };

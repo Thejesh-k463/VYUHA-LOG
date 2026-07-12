@@ -341,7 +341,10 @@ export interface ManualJournalFields {
   trailingSl?: number | null;
   targetPlanned?: number | null;
   riskAmount?: number | null;
-  fundedAmount?: number | null;
+  /** MTF only: how much of YOUR OWN money went into this trade — the primary,
+   * verifiable input (it's what actually left your account). fundedAmount
+   * (broker-financed principal) is derived as buyValue − ownCapitalUsed. */
+  ownCapitalUsed?: number | null;
   daysHeld?: number | null;
   buyOrders?: number;
   sellOrders?: number;
@@ -392,15 +395,17 @@ export function commitManualTrade(
   // row has buyQty=0 and must still be OPEN, not silently marked closed.
   const isOpen = t.buyQty !== t.sellQty;
 
-  // MTF: fundedAmount is the BROKER-FINANCED principal (own-margin share excluded),
-  // never the full position value — an explicit, correct entry always wins; else
-  // auto-estimate from margin_config's eq_mtf %. daysHeld is forced to 0 for a
-  // freshly-opened position — interest can't have accrued before the daily
-  // accrual job runs from T+1 (see lib/jobs/mtf-accrual.ts).
+  // MTF: ownCapitalUsed (what YOU actually put in) is the primary, verifiable
+  // input; fundedAmount (the broker-financed principal, which is what interest
+  // accrues on) is derived as buyValue − ownCapitalUsed — never the full
+  // position value. No explicit own-capital entry → auto-estimate from
+  // margin_config's eq_mtf %. daysHeld is forced to 0 for a freshly-opened
+  // position — interest can't have accrued before the daily accrual job runs
+  // from T+1 (see lib/jobs/mtf-accrual.ts).
   const isMtf = cls.segment === "eq_mtf";
   const effectiveFundedAmount = isMtf
-    ? fields.fundedAmount && fields.fundedAmount > 0
-      ? fields.fundedAmount
+    ? fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0
+      ? Math.max(0, Math.round((t.buyValue - fields.ownCapitalUsed) * 100) / 100)
       : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct())
     : null;
   const effectiveDaysHeld = isOpen ? 0 : fields.daysHeld ?? 0;
@@ -557,8 +562,12 @@ export function closePosition(
   let mtfFundedAmount: number | null = t.mtfFundedAmount;
   if (t.segment === "eq_mtf") {
     const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct());
+    // Interest accrues from T+1 settlement (day after buy) through the day
+    // BEFORE sale proceeds settle — which works out to exactly (sellDate −
+    // buyDate) calendar days, confirmed against Dhan's own MTF documentation.
+    // No extra "-1": that undercounted every position by one day of interest.
     const days = t.buyDate
-      ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(t.buyDate).getTime()) / 86400000) - 1)
+      ? Math.max(0, Math.floor((new Date(exitDateIso).getTime() - new Date(t.buyDate).getTime()) / 86400000))
       : 0;
     mtf = { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 };
     mtfFundedAmount = funded;
@@ -627,6 +636,154 @@ export function closePosition(
   });
 
   return { ok: true, message: "Position closed." };
+}
+
+export interface UpdateTradeFields {
+  buyQty?: number;
+  avgBuyPrice?: number;
+  buyDate?: string | null;
+  sellQty?: number;
+  avgSellPrice?: number;
+  sellDate?: string | null;
+  slPlanned?: number | null;
+  trailingSl?: number | null;
+  targetPlanned?: number | null;
+  riskAmount?: number | null;
+  /** MTF only; omit/undefined = keep the persisted funded amount unchanged. */
+  ownCapitalUsed?: number | null;
+  setupTag?: string | null;
+  notes?: string | null;
+  currentPrice?: number | null; // MTM for a still-open position
+}
+
+/**
+ * Edit any trade (open or closed) at any time — quantities, prices, dates, SL/
+ * TSL/target, risk, MTF own-capital, tags/notes. Recomputes classification-
+ * unchanged charges/P&L/R the exact same way commitManualTrade/closePosition
+ * do (same engine, same MTF funded/day-count rules), so an edit never drifts
+ * from what a fresh entry would compute. Filling in sell qty/price on an open
+ * row closes it via the same path — the create/close/edit forms share one
+ * mental model. Only symbol/broker/segment/exchange (identity) are NOT
+ * editable here — use the existing re-tag override for reclassification.
+ */
+export function updateManualTrade(
+  tradeId: number,
+  fields: UpdateTradeFields,
+): { ok: boolean; message: string } {
+  const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
+  if (!t) return { ok: false, message: "Trade not found" };
+
+  const { rates, defaults } = loadContext();
+  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange);
+
+  const buyQty = fields.buyQty ?? t.buyQty;
+  const avgBuyPrice = fields.avgBuyPrice ?? t.avgBuyPrice;
+  const buyDate = fields.buyDate !== undefined ? normalizeDate(fields.buyDate) : t.buyDate;
+  const sellQty = fields.sellQty ?? t.sellQty;
+  const avgSellPrice = fields.avgSellPrice ?? t.avgSellPrice;
+  const sellDate = fields.sellDate !== undefined ? normalizeDate(fields.sellDate) : t.sellDate;
+
+  if (buyQty <= 0 && sellQty <= 0) return { ok: false, message: "At least one side (buy or sell) needs a positive quantity." };
+
+  const buyValue = Math.round(buyQty * avgBuyPrice * 100) / 100;
+  const sellValue = Math.round(sellQty * avgSellPrice * 100) / 100;
+  const isOpen = buyQty !== sellQty;
+  const buyOrderCount = buyQty > 0 ? t.buyOrderCount || defaults.buyOrders : 0;
+  const sellOrderCount = sellQty > 0 ? t.sellOrderCount || defaults.sellOrders : 0;
+
+  // MTF: an explicit edit to ownCapitalUsed always wins; otherwise keep the
+  // persisted funded amount; only estimate if the trade somehow has none yet.
+  const isMtf = t.segment === "eq_mtf";
+  let fundedAmount: number | null = null;
+  if (isMtf) {
+    if (fields.ownCapitalUsed != null && fields.ownCapitalUsed >= 0) {
+      fundedAmount = Math.max(0, Math.round((buyValue - fields.ownCapitalUsed) * 100) / 100);
+    } else {
+      fundedAmount = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(buyValue, mtfOwnMarginPct());
+    }
+  }
+  // Same T+1-through-day-before-settlement convention as close/accrual; open
+  // trades accrue nothing here — the daily job takes over from the next run.
+  const daysHeld = isMtf && !isOpen && buyDate && sellDate
+    ? Math.max(0, Math.floor((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000))
+    : 0;
+
+  const charges = computeCharges(
+    {
+      segment: t.segment as Segment,
+      buyValue,
+      sellValue,
+      buyQty,
+      sellQty,
+      buyOrderCount,
+      sellOrderCount,
+      mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
+    },
+    r,
+  );
+  const grossPnl = !isOpen ? Math.round((sellValue - buyValue) * 100) / 100 : 0;
+  const netPnl = Math.round((grossPnl - charges.total) * 100) / 100;
+  const realisedPct = buyValue > 0 && !isOpen ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
+  const riskAmount = fields.riskAmount !== undefined ? fields.riskAmount : t.riskAmount;
+  const rMultiple = riskAmount && riskAmount > 0 ? Math.round((netPnl / riskAmount) * 100) / 100 : null;
+
+  db.update(tradesTable)
+    .set({
+      buyQty,
+      avgBuyPrice,
+      buyValue,
+      buyDate,
+      buyOrderCount,
+      sellQty,
+      avgSellPrice,
+      sellValue,
+      sellDate,
+      sellOrderCount,
+      isOpen,
+      unrealisedPnl: isOpen ? t.unrealisedPnl : 0,
+      grossPnl,
+      chargesTotal: charges.total,
+      netPnl,
+      realisedPct,
+      riskAmount,
+      rMultiple,
+      slPlanned: fields.slPlanned !== undefined ? fields.slPlanned : t.slPlanned,
+      trailingSl: fields.trailingSl !== undefined ? fields.trailingSl : t.trailingSl,
+      targetPlanned: fields.targetPlanned !== undefined ? fields.targetPlanned : t.targetPlanned,
+      setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
+      notes: fields.notes !== undefined ? fields.notes : t.notes,
+      brokerage: charges.brokerage,
+      sttCtt: charges.sttCtt,
+      exchangeTxn: charges.exchangeTxn,
+      sebi: charges.sebi,
+      stampDuty: charges.stampDuty,
+      ipft: charges.ipft,
+      gst: charges.gst,
+      dpCharges: charges.dpCharges,
+      mtfInterest: charges.mtfInterest,
+      mtfFundedAmount: fundedAmount,
+      pledgeCharges: charges.pledgeCharges,
+      updatedAt: sql`(datetime('now'))`,
+    })
+    .where(eq(tradesTable.id, tradeId))
+    .run();
+
+  if (fields.currentPrice != null && fields.currentPrice > 0) {
+    db.insert(mtmPrices)
+      .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: fields.currentPrice, asOfDate: new Date().toISOString().slice(0, 10) })
+      .run();
+  }
+
+  recordAudit({
+    entity: "trade",
+    entityId: tradeId,
+    action: "update",
+    summary: `${t.symbol} edited · ${isOpen ? "open" : "closed"} · net ${netPnl}`,
+    before: { buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, sellQty: t.sellQty, avgSellPrice: t.avgSellPrice, netPnl: t.netPnl, isOpen: t.isOpen },
+    after: { buyQty, avgBuyPrice, sellQty, avgSellPrice, netPnl, isOpen },
+  });
+
+  return { ok: true, message: "Trade updated." };
 }
 
 /**

@@ -40,7 +40,10 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
     // that assumes 100% broker financing and overstates interest (the bug fixed
     // here — see also closePosition/commitManualTrade in lib/import/commit.ts).
     const funded = t.mtfFundedAmount && t.mtfFundedAmount > 0 ? t.mtfFundedAmount : defaultMtfFundedAmount(t.buyValue, ownMarginPct);
-    const days = Math.max(0, Math.floor((new Date(today + "T00:00:00").getTime() - new Date(t.buyDate + "T00:00:00").getTime()) / 86400000) - 1); // from T+1
+    // T+1 settlement start through the day before sale proceeds settle = exactly
+    // (today − buyDate) calendar days for a still-open position — confirmed
+    // against Dhan's MTF docs. No extra "-1": that undercounted by one day.
+    const days = Math.max(0, Math.floor((new Date(today + "T00:00:00").getTime() - new Date(t.buyDate + "T00:00:00").getTime()) / 86400000));
     const r = findRates(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange);
     const rate = mtfRateFor(funded, r);
     const interest = r2((funded * rate * days) / 365);

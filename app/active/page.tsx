@@ -21,7 +21,7 @@ export default function ActiveTrackerPage() {
 
   return (
     <>
-      <PageHeader title="Position Tracker — Trade F&O (₹4L)" description="Index/stock options, intraday equity, commodities." />
+      <PageHeader title="Position Tracker — Trade F&O" description="Index/stock options, intraday equity, commodities." />
       <div className="space-y-5 p-6">
         <TrackerClient variant="active" positions={positions} closed={closed} bucketCapital={settings?.activeCapital ?? 400000} />
       </div>

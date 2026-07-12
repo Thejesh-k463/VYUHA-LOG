@@ -18,6 +18,7 @@ export interface MtfSummary {
 
 export function TargetEquityClient({
   defaultRisk,
+  equityCapital,
   openCount,
   maxOpen,
   topConcentration,
@@ -28,6 +29,7 @@ export function TargetEquityClient({
   mtf,
 }: {
   defaultRisk: number;
+  equityCapital: number;
   openCount: number;
   maxOpen: number;
   topConcentration: { symbol: string; pct: number } | null;
@@ -41,7 +43,7 @@ export function TargetEquityClient({
 
   return (
     <div className="space-y-5">
-      <PositionSizeCalc defaultRisk={defaultRisk} />
+      <PositionSizeCalc defaultRisk={defaultRisk} equityCapital={equityCapital} />
 
       <section className="grid gap-3 sm:grid-cols-3">
         <Meter label="Max open positions" used={openCount} limit={maxOpen} />
@@ -53,7 +55,7 @@ export function TargetEquityClient({
           </div>
           <div className="text-[10px] text-muted-foreground">{topConcentration?.symbol ?? "no open positions"} · limit {concentrationLimit}%</div>
         </Card>
-        <KpiCard label="Per-trade max loss" value={inr(defaultRisk, { decimals: 0 })} sub={`${((defaultRisk / 1300000) * 100).toFixed(2)}% of bucket`} />
+        <KpiCard label="Per-trade max loss" value={inr(defaultRisk, { decimals: 0 })} sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
       </section>
 
       <Card>
