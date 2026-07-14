@@ -85,7 +85,12 @@ export interface PlaybookStat {
   net: number;
   expectancy: number; // avg net ₹ per trade
   avgR: number | null; // mean R-multiple where recorded
+  profitFactor: number | null; // Σ wins / |Σ losses|; null when no losses yet (undefined, not ∞-good)
+  smallSample: boolean; // < 20 closed trades — read the numbers with caution
 }
+
+/** Closed trades needed before the stats stop being mostly noise. */
+export const MIN_SAMPLE = 20;
 
 /** Closed-trade expectancy per playbook, plus an "Untagged" bucket. Sorted by net desc. */
 export function playbookStats(trades: BehaviorTrade[], playbooks: PlaybookInfo[]): PlaybookStat[] {
@@ -103,6 +108,8 @@ export function playbookStats(trades: BehaviorTrade[], playbooks: PlaybookInfo[]
     const wins = g.filter((t) => t.netPnl > 0).length;
     const net = g.reduce((s, t) => s + t.netPnl, 0);
     const rs = g.filter((t) => t.rMultiple != null).map((t) => t.rMultiple!);
+    const grossWin = g.filter((t) => t.netPnl > 0).reduce((s, t) => s + t.netPnl, 0);
+    const grossLoss = Math.abs(g.filter((t) => t.netPnl < 0).reduce((s, t) => s + t.netPnl, 0));
     stats.push({
       playbookId: id,
       name: id == null ? "Untagged" : nameById.get(id)!,
@@ -112,9 +119,64 @@ export function playbookStats(trades: BehaviorTrade[], playbooks: PlaybookInfo[]
       net: r2(net),
       expectancy: r2(net / g.length),
       avgR: rs.length ? r2(rs.reduce((s, x) => s + x, 0) / rs.length) : null,
+      profitFactor: grossLoss > 0 ? r2(grossWin / grossLoss) : null,
+      smallSample: g.length < MIN_SAMPLE,
     });
   }
   return stats.sort((a, b) => b.net - a.net);
+}
+
+// ---------------------------------------------------------------------------
+// Playbook rule economics — which broken rule costs the most
+// ---------------------------------------------------------------------------
+// Rule violations from the journal checklist are stored in trades.rule_violations
+// with this prefix, alongside the pre-trade limit-engine breaches ("Label: msg").
+// The prefix keeps the two populations separable in one column.
+
+export const PLAYBOOK_RULE_PREFIX = "Playbook: ";
+
+export interface RuleViolationTrade {
+  ruleViolations: string[] | null;
+  netPnl: number;
+  isOpen: boolean;
+}
+
+export interface RuleCostStat {
+  rule: string; // the full rule text, e.g. "Wait for the retest"
+  trades: number; // trades that broke this rule
+  closedTrades: number;
+  closedNet: number; // Σ net P&L of CLOSED trades that broke it
+  avgNet: number | null; // closedNet / closedTrades
+}
+
+/** Per-rule cost of broken playbook rules, worst (most negative closedNet) first.
+ *  Honest framing: this is the P&L of trades that broke the rule, not proof the
+ *  break CAUSED the loss — counterfactuals aren't observable. */
+export function playbookRuleCost(trades: RuleViolationTrade[]): RuleCostStat[] {
+  const perRule = new Map<string, { trades: number; closedTrades: number; closedNet: number }>();
+  for (const t of trades) {
+    for (const v of t.ruleViolations ?? []) {
+      if (!v.startsWith(PLAYBOOK_RULE_PREFIX)) continue;
+      const rule = v.slice(PLAYBOOK_RULE_PREFIX.length).trim();
+      if (!rule) continue;
+      const s = perRule.get(rule) ?? { trades: 0, closedTrades: 0, closedNet: 0 };
+      s.trades += 1;
+      if (!t.isOpen) {
+        s.closedTrades += 1;
+        s.closedNet = r2(s.closedNet + t.netPnl);
+      }
+      perRule.set(rule, s);
+    }
+  }
+  return [...perRule.entries()]
+    .map(([rule, s]) => ({
+      rule,
+      trades: s.trades,
+      closedTrades: s.closedTrades,
+      closedNet: s.closedNet,
+      avgNet: s.closedTrades > 0 ? r2(s.closedNet / s.closedTrades) : null,
+    }))
+    .sort((a, b) => a.closedNet - b.closedNet);
 }
 
 // ---------------------------------------------------------------------------

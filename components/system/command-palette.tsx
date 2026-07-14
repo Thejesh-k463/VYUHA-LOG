@@ -26,6 +26,7 @@ const KEYWORDS: Record<string, string> = {
   "/reports/edge": "setups expectancy win rate",
   "/reports/discipline": "score mistakes emotions playbook expectancy sebi",
   "/reports/tax": "stcg ltcg capital gains itr tds dividend grandfathering fmv set-off carry forward",
+  "/reports/itr": "itr-3 44ab 44ad audit turnover speculative non-speculative business income ca guidance note",
   "/audit": "log history changes",
   "/backup": "restore export snapshot",
   "/aliases": "symbol ticker mapping",

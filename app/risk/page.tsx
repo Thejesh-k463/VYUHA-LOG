@@ -39,6 +39,8 @@ import { VarPanel } from "@/components/risk/var-panel";
 import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
 import { getMarginConfig, getMarginRates } from "@/lib/queries/margin";
 import { MarginPanel } from "@/components/risk/margin-panel";
+import { BreachBanner } from "@/components/risk/breach-banner";
+import { scanBreaches } from "@/lib/jobs/auto-mtm";
 
 export const dynamic = "force-dynamic";
 
@@ -240,6 +242,7 @@ export default function RiskPage() {
       <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
       <div className="space-y-5 p-6">
         <LicenseBanner />
+        <BreachBanner breaches={scanBreaches()} />
         <RiskCockpitClient
           inputs={inputs}
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}

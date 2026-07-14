@@ -10,10 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import type { Playbook } from "@/lib/db/schema";
+import type { PlaybookStat } from "@/lib/analytics/behavior";
 import { PRESET_PLAYBOOKS, presetCategories } from "@/lib/domain/preset-playbooks";
+import { inr } from "@/lib/format";
 import { Plus, Pencil, Trash2, Archive, ArchiveRestore, CheckCircle2, AlertCircle } from "lucide-react";
 
-export function PlaybookManager({ rows }: { rows: Playbook[] }) {
+export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?: Record<number, PlaybookStat> }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Playbook | null>(null);
@@ -100,6 +102,7 @@ export function PlaybookManager({ rows }: { rows: Playbook[] }) {
                 ) : (
                   <p className="text-xs text-muted-foreground">No rules written yet.</p>
                 )}
+                <PlaybookStatsRow stat={stats[p.id]} />
               </CardContent>
             </Card>
           ))}
@@ -120,6 +123,37 @@ export function PlaybookManager({ rows }: { rows: Playbook[] }) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** T1.3 — the setup's real, closed-trade results on the same card as its rules.
+ *  Numbers stay honest: a small-sample badge until 20 closed trades, and no
+ *  stats at all pretends nothing — it says so. */
+function PlaybookStatsRow({ stat }: { stat?: PlaybookStat }) {
+  const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+  if (!stat || stat.trades === 0) {
+    return (
+      <p className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+        No closed trades tagged to this playbook yet — expectancy shows up here once results exist.
+      </p>
+    );
+  }
+  return (
+    <div className="border-t border-border/60 pt-2">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[11px] sm:grid-cols-5">
+        <span className="text-muted-foreground">Trades <span className="font-medium tabular-nums text-foreground">{stat.trades}</span></span>
+        <span className="text-muted-foreground">Win <span className="font-medium tabular-nums text-foreground">{stat.winRatePct}%</span></span>
+        <span className="text-muted-foreground">Net <span className={`font-medium tabular-nums ${pnl(stat.net)}`}>{inr(stat.net, { decimals: 0 })}</span></span>
+        <span className="text-muted-foreground">Expectancy <span className={`font-medium tabular-nums ${pnl(stat.expectancy)}`}>{inr(stat.expectancy, { decimals: 0 })}</span></span>
+        <span className="text-muted-foreground">PF <span className="font-medium tabular-nums text-foreground">{stat.profitFactor ?? "—"}</span>{stat.avgR != null ? <> · <span className="font-medium tabular-nums text-foreground">{stat.avgR}R</span></> : null}</span>
+      </div>
+      {stat.smallSample && (
+        <p className="mt-1 text-[10px] text-warning">
+          ⚠ Only {stat.trades} closed trade{stat.trades === 1 ? "" : "s"} — below ~20, these numbers are
+          mostly noise. Don&apos;t size up (or abandon the setup) on this sample.
+        </p>
+      )}
     </div>
   );
 }

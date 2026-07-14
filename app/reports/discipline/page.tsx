@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { breachReport, disciplineByWeek } from "@/lib/analytics/discipline";
 import { computeFnoReality } from "@/lib/analytics/sebi-reality";
-import { playbookStats, mistakeReport, emotionReport } from "@/lib/analytics/behavior";
+import { playbookStats, mistakeReport, emotionReport, playbookRuleCost, PLAYBOOK_RULE_PREFIX } from "@/lib/analytics/behavior";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr } from "@/lib/format";
 import Link from "next/link";
@@ -42,7 +42,15 @@ export default function DisciplineReportPage() {
     id: t.id, isOpen: t.isOpen, netPnl: t.netPnl, rMultiple: t.rMultiple,
     playbookId: t.playbookId, emotionTag: t.emotionTag, mistakeTags: t.mistakeTags,
   }));
-  const breaches = breachReport(trades);
+  // Same column, two populations: entry-time limit breaches keep their own
+  // table; journal rule-checklist violations ("Playbook: …") get theirs below.
+  const breaches = breachReport(
+    trades.map((t) => ({
+      ...t,
+      ruleViolations: (t.ruleViolations ?? []).filter((v) => !v.startsWith(PLAYBOOK_RULE_PREFIX)),
+    })),
+  );
+  const ruleCosts = playbookRuleCost(trades);
   const pbStats = playbookStats(behaviorTrades, getPlaybooks().map((p) => ({ id: p.id, name: p.name })));
   const mistakes = mistakeReport(behaviorTrades);
   const emotions = emotionReport(behaviorTrades);
@@ -104,6 +112,55 @@ export default function DisciplineReportPage() {
                     closed net above excludes {breaches.openBreached === 1 ? "it" : "them"}.
                   </p>
                 )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="p-0">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Playbook rules — what breaking each one costs</CardTitle>
+            {ruleCosts.length > 0 && (
+              <span className={`text-sm font-semibold tabular-nums ${pnlCls(ruleCosts.reduce((s, r) => s + r.closedNet, 0))}`}>
+                {inr(ruleCosts.reduce((s, r) => s + r.closedNet, 0), { decimals: 0 })} across {ruleCosts.length} rule{ruleCosts.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            {ruleCosts.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                No playbook rules marked broken yet. When you journal a trade (📓) with a playbook attached,
+                its rules appear as a checklist — anything you untick lands here with what it cost you.
+              </p>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-y border-border text-left text-muted-foreground">
+                        <th className="px-2.5 py-2 font-medium">Rule broken</th>
+                        <th className="px-2 py-2 text-right font-medium">Trades</th>
+                        <th className="px-2 py-2 text-right font-medium">Closed net P&L</th>
+                        <th className="px-2.5 py-2 text-right font-medium">Avg / trade</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ruleCosts.map((r) => (
+                        <tr key={r.rule} className="border-b border-border/40">
+                          <td className="px-2.5 py-1.5 font-medium">{r.rule}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{r.trades}</td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(r.closedNet)}`}>{inr(r.closedNet, { decimals: 0 })}</td>
+                          <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(r.avgNet ?? 0)}`}>{r.avgNet == null ? "—" : inr(r.avgNet, { decimals: 0 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                  Honest framing: this is the P&L of trades where you admitted breaking the rule — not proof
+                  the break caused the loss. But a rule that keeps sitting at the top of this table is telling
+                  you something.
+                </p>
               </>
             )}
           </CardContent>

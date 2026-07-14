@@ -24,6 +24,7 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [fyStartMonth, setFy] = useState(String(current.fyStartMonth));
   const [defaultBuyOrders, setBuyOrders] = useState(String(current.defaultBuyOrders));
   const [defaultSellOrders, setSellOrders] = useState(String(current.defaultSellOrders));
+  const [autoMtm, setAutoMtm] = useState(current.autoMtmEnabled);
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -48,6 +49,7 @@ export function SettingsForm({ current }: { current: Settings }) {
           type: "settings",
           goLiveDate, equityCapital, activeCapital, theme, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
+          autoMtmEnabled: autoMtm,
         }),
       });
       const json = await res.json();
@@ -109,6 +111,30 @@ export function SettingsForm({ current }: { current: Settings }) {
             </div>
             <Switch checked={colorblind} onCheckedChange={(v) => applyColorblind(Boolean(v))} />
           </div>
+          <div className="flex items-center justify-between rounded-md border border-border bg-card-hover/40 px-3 py-2 sm:col-span-2">
+            <div>
+              <div className="text-sm font-medium">Auto-MTM from NSE bhavcopy (EOD)</div>
+              <div className="text-xs text-muted-foreground">
+                Once per trading day (after ~7pm IST), fetch the NSE EOD file and mark open equity
+                positions to close. <span className="text-warning">Overwrites the MTM price for symbols
+                found in the file</span> — manual marks for anything else stay untouched. Needs internet;
+                skips silently offline. Every run is recorded in the Audit Log.
+              </div>
+            </div>
+            <Switch checked={autoMtm} onCheckedChange={(v) => setAutoMtm(Boolean(v))} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>App updates</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground">
+          The desktop app checks for a new signed release once at launch. Nothing ever installs on its
+          own: you get a dialog with <span className="text-foreground">Update now</span> /{" "}
+          <span className="text-foreground">Later</span>, and your journal database is backed up
+          automatically before any migration. Offline launches skip the check silently.
         </CardContent>
       </Card>
 

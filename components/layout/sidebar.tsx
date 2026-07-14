@@ -59,7 +59,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">
-        Local · Offline · v2.70
+        Local · Offline · v2.75
       </div>
     </aside>
   );

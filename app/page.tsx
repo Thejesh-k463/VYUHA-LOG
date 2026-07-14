@@ -1,6 +1,9 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { DashboardClient, type DashTrade } from "@/components/dashboard/dashboard-client";
+import { AutoMtmRunner } from "@/components/system/auto-mtm-runner";
+import { BreachBanner } from "@/components/risk/breach-banner";
+import { scanBreaches } from "@/lib/jobs/auto-mtm";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
 
@@ -42,6 +45,8 @@ export default function DashboardPage() {
         }
       />
       <div className="space-y-5 p-6">
+        <AutoMtmRunner />
+        <BreachBanner breaches={scanBreaches()} />
         <DashboardClient
           trades={dash}
           monthlyBase={risk?.monthlyTargetBase ?? 425000}

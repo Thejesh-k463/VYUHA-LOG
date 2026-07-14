@@ -341,6 +341,10 @@ export const settings = sqliteTable("settings", {
   // "add realised P&L to capital" action never double-counts).
   pnlRolledIn: real("pnl_rolled_in").notNull().default(0),
   licenseKey: text("license_key"), // verified offline against the vendor public key (lib/license.ts)
+  // T3.8 — opt-in EOD bhavcopy auto-MTM (off by default: the user decides when
+  // the app is allowed to fetch from NSE and overwrite matched MTM prices).
+  autoMtmEnabled: integer("auto_mtm_enabled", { mode: "boolean" }).notNull().default(false),
+  lastAutoMtmDate: text("last_auto_mtm_date"), // bhavcopy date last applied (once-per-day guard)
   updatedAt: text("updated_at").notNull().default(now),
 });
 

@@ -46,6 +46,7 @@ const SettingsSchema = z.object({
   defaultBuyOrders: z.coerce.number().int().min(1).max(50),
   defaultSellOrders: z.coerce.number().int().min(1).max(50),
   colorblindSafe: z.coerce.boolean(),
+  autoMtmEnabled: z.coerce.boolean(),
 });
 
 /**
@@ -127,6 +128,7 @@ export async function POST(req: Request) {
       defaultBuyOrders: v.defaultBuyOrders,
       defaultSellOrders: v.defaultSellOrders,
       colorblindSafe: v.colorblindSafe,
+      autoMtmEnabled: v.autoMtmEnabled,
     };
     if (existing) {
       db.update(settings).set({ ...values, updatedAt: now }).where(eq(settings.id, existing.id)).run();

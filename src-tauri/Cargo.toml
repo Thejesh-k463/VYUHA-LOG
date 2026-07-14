@@ -1,6 +1,6 @@
 [package]
 name = "vyuha"
-version = "2.70.0"
+version = "2.75.0"
 description = "Vyuha — local trade journal"
 edition = "2021"
 rust-version = "1.77.2"

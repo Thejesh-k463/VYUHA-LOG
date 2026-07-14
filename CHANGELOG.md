@@ -4,6 +4,50 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.75.0
+User-control release: seven upgrades, every one warns and cautions instead of
+acting — the trader keeps the final say on everything.
+
+- **Playbook rule-checklist enforcement.** Journaling a trade with a playbook
+  attached now shows its rules as a "tick what you actually followed"
+  checklist; unticked rules persist as violations (validated server-side
+  against the playbook's real rules, merged non-destructively with the
+  pre-trade limits engine's entry breaches). New Discipline table: **"Playbook
+  rules — what breaking each one costs"** (worst rule first, closed net ₹,
+  avg/trade) with honest correlation-≠-causation framing.
+- **Per-playbook expectancy cards.** Each playbook card shows Trades / Win% /
+  Net / Expectancy / Profit Factor / Avg R from closed tagged trades, with a
+  ⚠ small-sample warning under 20 trades and an honest empty state.
+- **Auto-updater surfaced.** The launch-time update check (native Update
+  now/Later dialog, signed releases, offline-silent) now has an "App updates"
+  card in Settings documenting the consent contract: nothing ever installs on
+  its own, and the DB is backed up before any migration.
+- **MAE/MFE stop-tuning report** (Edge page). MAE/MFE now normalizes to R via
+  each trade's recorded risk; the new card shows winners' heat distribution
+  (≥0.5R / ≥0.8R) and losers running past 1.1R (flagged as behavioral, not
+  placement). Every suggestion is hedged; small samples get an explicit
+  "mostly noise" warning; footer says descriptive-not-prescriptive.
+- **EOD bhavcopy auto-MTM (opt-in).** New Settings toggle — OFF by default —
+  lets the app fetch NSE's EOD file once per trading day (after ~7pm IST) and
+  mark open equity positions to close via the existing audited pipeline.
+  Warns that matched MTM prices get overwritten; skips silently offline;
+  walks back weekdays past holidays. Migration 0023 adds the settings columns.
+- **SL/TSL/target breach alerts.** New pure detector (long/short aware, TSL
+  supersedes SL) feeding caution banners on Dashboard and Portfolio Risk:
+  "check a live quote and review your exit plan" — marks are EOD/manual, and
+  the banner never places or closes anything. Desktop notifications are
+  strictly opt-in per device.
+- **ITR Pack (India)** — new report: per-FY head segregation (speculative
+  intraday / non-speculative F&O / STCG-LTCG), ICAI Guidance Note (8th ed.)
+  turnover, and a 44AB audit verdict with layered cautions (44AD's 5-year
+  lock, loss carry-forward deadline, "have a CA confirm" on every verdict).
+  CSV/XLSX export for the CA.
+
+Verified live end-to-end (rule checklist → per-rule cost table, expectancy
+cards, stop-tuning card, breach banner via a temporary SL, auto-MTM refusing
+to run while disabled, ITR pack against the real 252-trade book) with all
+test data reverted. 433 unit tests (+30), typecheck, lint all green.
+
 ## v2.70.0
 - **Preset playbooks expanded to a categorized global library — 25 setups
   across 7 trading ecosystems** (was 10, flat): Intraday & Momentum (ORB, VWAP,

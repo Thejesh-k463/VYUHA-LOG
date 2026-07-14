@@ -6,7 +6,7 @@ import { getTrades } from "@/lib/queries/trades";
 import { bySegment, bySetup, type GroupStat } from "@/lib/analytics/metrics";
 import { num, inr } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
-import { computeMaeMfe, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
+import { computeMaeMfe, stopTuningReport, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
 import { getBarsMap } from "@/lib/queries/price-history";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
@@ -43,9 +43,11 @@ export default function EdgeReportPage() {
         exitDate: side === "long" ? t.sellDate : t.buyDate,
         netPnl: t.netPnl,
         isOpen: t.isOpen,
+        riskAmount: t.riskAmount,
       };
     });
   const maeReport = computeMaeMfe(maeInputs, getBarsMap(maeInputs.map((i) => i.ticker)));
+  const tuning = stopTuningReport(maeReport.rows);
 
   return (
     <>
@@ -54,8 +56,54 @@ export default function EdgeReportPage() {
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
         <MaeMfeCard report={maeReport} />
+        <StopTuningCard tuning={tuning} />
       </div>
     </>
+  );
+}
+
+/** T2.6 — R-normalized read on stop placement vs the heat trades actually took.
+ *  Descriptive of THIS sample only; every suggestion is hedged on purpose. */
+function StopTuningCard({ tuning }: { tuning: ReturnType<typeof stopTuningReport> }) {
+  if (tuning.sampled === 0) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Stop tuning (MAE in R)</CardTitle></CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Needs closed trades that have BOTH price-history coverage and a recorded risk amount (set an SL
+          when adding trades — risk auto-computes). Nothing qualifies yet.
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-0">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>Stop tuning (MAE in R)</CardTitle>
+        <Badge variant="outline">{tuning.sampled} trades · {tuning.winners}W / {tuning.losers}L</Badge>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-4">
+          <KpiCard label="Winners' avg heat" value={tuning.avgWinnerMaeR != null ? `${tuning.avgWinnerMaeR}R` : "—"} sub={`median ${tuning.medianWinnerMaeR ?? "—"}R`} />
+          <KpiCard label="Winners with ≥0.5R heat" value={tuning.winnersHeatOver50Pct != null ? `${tuning.winnersHeatOver50Pct}%` : "—"} sub="took real pain first" />
+          <KpiCard label="Winners with ≥0.8R heat" value={tuning.winnersHeatOver80Pct != null ? `${tuning.winnersHeatOver80Pct}%` : "—"} sub="near-stopouts that paid" />
+          <KpiCard label="Losers past 1.1R" value={tuning.losersBeyond1RPct != null ? `${tuning.losersBeyond1RPct}%` : "—"} sub="stops honored late / moved" />
+        </div>
+        <div className="space-y-1.5 px-4 pb-3">
+          {tuning.suggestions.map((s, i) => (
+            <p key={i} className="text-xs">
+              <span className="mr-1.5 text-warning">▸</span>
+              {s}
+            </p>
+          ))}
+        </div>
+        <p className="border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground">
+          Descriptive, not prescriptive: these numbers describe YOUR past sample at EOD granularity. Moving
+          a stop changes which trades survive — never retro-fit a stop to this table without forward-testing
+          the change small.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -50,6 +50,35 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.75.0 — user-control batch: rule-checklist enforcement, playbook expectancy cards,
+>   stop tuning, opt-in auto-MTM, breach alerts, ITR pack.** Design rule for the whole batch:
+>   the user keeps ultimate control; features warn/caution, never act. NEW pure modules (all
+>   unit-tested): `lib/analytics/behavior.ts` gained `profitFactor`/`smallSample` on
+>   `PlaybookStat` + `PLAYBOOK_RULE_PREFIX` ("Playbook: ") + `playbookRuleCost()`;
+>   `lib/analytics/mae-mfe.ts` gained `riskAmount`→`maeR`/`mfeR` + `stopTuningReport()`;
+>   `lib/risk/alerts.ts` (`detectBreaches` — long/short aware, TSL supersedes SL, stops sort
+>   before targets); `lib/domain/trading-day.ts` (IST bhavcopy-date helpers);
+>   `lib/analytics/itr.ts` (`itrPackByFy` + `auditVerdict` — Guidance Note 8th-ed turnover =
+>   Σ|per-trade P&L| with NO premium add-on, unlike the older `taxByFy` method; heads:
+>   eq_intraday=speculative, F&O=non-speculative, delivery/MTF=CG). WIRING: journal dialog
+>   renders the selected playbook's rules as a followed/broken checklist → `/api/trades/journal`
+>   validates against the playbook's actual rules and MERGES with entry-time limit breaches
+>   (discipline page filters the prefix back OUT of `breachReport` input — same column, two
+>   populations); playbook cards get a `PlaybookStatsRow`; Edge page threads `riskAmount` into
+>   MAE inputs + `StopTuningCard`; migration `0023_auto-mtm-settings.sql` adds
+>   `settings.auto_mtm_enabled` (default OFF) + `last_auto_mtm_date`; `lib/jobs/auto-mtm.ts`
+>   fetches NSE `sec_bhavdata_full_<DDMMYYYY>.csv` (browser UA + Referer or NSE 403s, 15s
+>   timeout, holiday walk-back, once-per-date guard) → existing `applyBhavcopyMtm`;
+>   `/api/mtm/auto` fired by `AutoMtmRunner` (sessionStorage once-per-session) on the dashboard;
+>   `scanBreaches()` (same isShort convention as positions.ts) feeds `BreachBanner` on Dashboard
+>   + Portfolio Risk with per-device opt-in Notifications; `/reports/itr` page + nav + command
+>   palette. The Rust auto-updater (consent dialog) was found ALREADY fully wired from the
+>   sidecar phase — only a Settings "App updates" card documenting the contract was added.
+>   VERIFIED live: broke a rule via the checklist → Discipline showed -₹3,302 against that exact
+>   rule text; temporary SL 43 on an open position (mark 42.55) → banner fired, then reverted;
+>   auto-MTM API refused to run while disabled; ITR pack matched the real book (FY 2026-27
+>   business turnover ₹4.73L → audit-unlikely + loss caution). 433 tests (+30 across 3 new + 2
+>   extended files), typecheck, lint green; all test data reverted (252 trades, 0 playbooks).
 > - **v2.70.0 — preset playbooks expanded to a categorized global library.**
 >   `lib/domain/preset-playbooks.ts` grew from 10 flat presets to 25 across 7 ecosystem
 >   categories (Intraday & Momentum, Breakout & Trend, Positional/Growth — CANSLIM/Minervini

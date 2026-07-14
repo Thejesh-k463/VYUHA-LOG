@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { playbookStats, mistakeReport, emotionReport, type BehaviorTrade } from "@/lib/analytics/behavior";
+import {
+  playbookStats,
+  mistakeReport,
+  emotionReport,
+  playbookRuleCost,
+  PLAYBOOK_RULE_PREFIX,
+  type BehaviorTrade,
+} from "@/lib/analytics/behavior";
 
 function trade(p: Partial<BehaviorTrade>): BehaviorTrade {
   return { id: 1, isOpen: false, netPnl: 0, rMultiple: null, playbookId: null, emotionTag: null, mistakeTags: null, ...p };
@@ -48,6 +55,49 @@ describe("playbookStats", () => {
     ];
     const stats = playbookStats(trades, PLAYBOOKS);
     expect(stats[0].name).toBe("Pullback");
+  });
+
+  it("profit factor = gross wins / |gross losses|; null with no losses; smallSample under 20", () => {
+    const trades = [
+      trade({ id: 1, playbookId: 1, netPnl: 1000 }),
+      trade({ id: 2, playbookId: 1, netPnl: 500 }),
+      trade({ id: 3, playbookId: 1, netPnl: -600 }),
+      trade({ id: 4, playbookId: 2, netPnl: 300 }), // wins only → PF undefined
+    ];
+    const stats = playbookStats(trades, PLAYBOOKS);
+    const breakout = stats.find((s) => s.name === "Breakout")!;
+    expect(breakout.profitFactor).toBe(2.5); // 1500 / 600
+    expect(breakout.smallSample).toBe(true);
+    const pullback = stats.find((s) => s.name === "Pullback")!;
+    expect(pullback.profitFactor).toBeNull();
+  });
+});
+
+describe("playbookRuleCost", () => {
+  const v = (rule: string) => `${PLAYBOOK_RULE_PREFIX}${rule}`;
+
+  it("groups by full rule text, closed net only, worst first", () => {
+    const rows = playbookRuleCost([
+      { ruleViolations: [v("Wait for the retest")], netPnl: -2000, isOpen: false },
+      { ruleViolations: [v("Wait for the retest"), v("Risk ≤ 1%")], netPnl: -1000, isOpen: false },
+      { ruleViolations: [v("Risk ≤ 1%")], netPnl: 500, isOpen: false },
+      { ruleViolations: [v("Wait for the retest")], netPnl: -999, isOpen: true }, // open → counted, not in closedNet
+    ]);
+    expect(rows[0].rule).toBe("Wait for the retest");
+    expect(rows[0].trades).toBe(3);
+    expect(rows[0].closedTrades).toBe(2);
+    expect(rows[0].closedNet).toBe(-3000);
+    expect(rows[0].avgNet).toBe(-1500);
+    const risk = rows.find((r) => r.rule === "Risk ≤ 1%")!;
+    expect(risk.closedNet).toBe(-500);
+  });
+
+  it("ignores non-playbook violations (pre-trade limit breaches keep their own report)", () => {
+    const rows = playbookRuleCost([
+      { ruleViolations: ["Per-trade risk: over cap"], netPnl: -5000, isOpen: false },
+      { ruleViolations: null, netPnl: 100, isOpen: false },
+    ]);
+    expect(rows).toHaveLength(0);
   });
 });
 

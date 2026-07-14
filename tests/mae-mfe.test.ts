@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeMaeMfe, type MaeBar, type MaeTradeInput } from "../lib/analytics/mae-mfe";
+import { computeMaeMfe, stopTuningReport, type MaeBar, type MaeTradeInput, type MaeMfeRow } from "../lib/analytics/mae-mfe";
 
 const bars = new Map<string, MaeBar[]>([
   [
@@ -72,5 +72,56 @@ describe("computeMaeMfe", () => {
     const worst = r.rows.find((x) => x.id === 1)!;
     expect(worst.capturedPct).toBe(0);
     expect(r.avgCapturedPct).toBe(25); // (0 + 50) / 2
+  });
+
+  it("normalizes MAE/MFE to R when a risk amount is recorded", () => {
+    const r = computeMaeMfe([t({ riskAmount: 2000 })], bars);
+    expect(r.rows[0].maeR).toBe(0.5); // 1000 / 2000
+    expect(r.rows[0].mfeR).toBe(1); // 2000 / 2000
+    const noRisk = computeMaeMfe([t({})], bars);
+    expect(noRisk.rows[0].maeR).toBeNull();
+  });
+});
+
+describe("stopTuningReport", () => {
+  const row = (over: Partial<MaeMfeRow>): MaeMfeRow => ({
+    id: 1, symbol: "X", side: "long", qty: 100, entry: 100, exit: 110,
+    entryDate: "2026-07-01", exitDate: "2026-07-04", barsUsed: 4,
+    maeRs: 0, mfeRs: 0, capturedPct: null, edgeRatio: null, netPnl: 0,
+    maeR: null, mfeR: null,
+    ...over,
+  });
+
+  it("splits winners/losers and averages MAE in R", () => {
+    const rep = stopTuningReport([
+      row({ netPnl: 1000, maeR: 0.9 }),
+      row({ netPnl: 1000, maeR: 0.3 }),
+      row({ netPnl: -1000, maeR: 1.0 }),
+      row({ netPnl: -1000, maeR: 1.5 }), // ran past the stop
+      row({ netPnl: 1000, maeR: null }), // no recorded risk → excluded
+    ]);
+    expect(rep.sampled).toBe(4);
+    expect(rep.winners).toBe(2);
+    expect(rep.losers).toBe(2);
+    expect(rep.avgWinnerMaeR).toBe(0.6);
+    expect(rep.winnersHeatOver80Pct).toBe(50);
+    expect(rep.losersBeyond1RPct).toBe(50);
+  });
+
+  it("small samples always carry a noise warning", () => {
+    const rep = stopTuningReport([row({ netPnl: 500, maeR: 0.2 })]);
+    expect(rep.suggestions.some((s) => s.includes("noise"))).toBe(true);
+  });
+
+  it("high winner heat warns against tightening the stop", () => {
+    const rows = Array.from({ length: 40 }, (_, i) => row({ id: i, netPnl: 1000, maeR: 0.9 }));
+    const rep = stopTuningReport(rows);
+    expect(rep.suggestions.some((s) => s.includes("cautious about tightening"))).toBe(true);
+  });
+
+  it("stop slippage on losers is flagged as behavioral, not placement", () => {
+    const rows = Array.from({ length: 40 }, (_, i) => row({ id: i, netPnl: -1000, maeR: 1.6 }));
+    const rep = stopTuningReport(rows);
+    expect(rep.suggestions.some((s) => s.includes("behavioral"))).toBe(true);
   });
 });

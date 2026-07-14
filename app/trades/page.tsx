@@ -26,7 +26,7 @@ export default function TradesPage() {
         </section>
         <TradesClient
           trades={trades}
-          playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived }))}
+          playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived, rules: p.rules }))}
           mtfMarginByBroker={getMtfMarginByBroker()}
         />
       </div>
