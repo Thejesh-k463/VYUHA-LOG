@@ -50,6 +50,18 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.70.0 — preset playbooks expanded to a categorized global library.**
+>   `lib/domain/preset-playbooks.ts` grew from 10 flat presets to 25 across 7 ecosystem
+>   categories (Intraday & Momentum, Breakout & Trend, Positional/Growth — CANSLIM/Minervini
+>   VCP/Wyckoff Spring/Weinstein Stage 2, Mean Reversion — incl. Connors RSI-2, Price
+>   Action/SMC — incl. ICT liquidity sweep + FVG, Options & Events — incl. India expiry-day
+>   theta, Swing & Overnight — incl. India BTST), each with a `category` field and a new
+>   `presetCategories()` helper; the New Playbook picker (`playbook-manager.tsx`) renders them
+>   as `<optgroup>`s. Rules deliberately carry editable metric knobs (risk %, 2×ATR, 16-delta,
+>   stop %) — the pre-fill → edit → save flow and the from-scratch custom flow are unchanged.
+>   `tests/preset-playbooks.test.ts` guards shape (unique names, ≥3 single-line rules, ≥5
+>   categories). Verified live: CANSLIM preset picked, its 7–8% stop rule edited to a custom 5%
+>   pre-save, persisted correctly, test playbook then deleted.
 > - **v2.65.0 — fixed short-position qty/invested/unrealised showing zero on trackers.**
 >   `deriveOpenPositions()` (`lib/analytics/positions.ts`) computed `qty = max(0, buyQty −
 >   sellQty)` and read `avgBuyPrice` unconditionally — for a sell-to-open position (written

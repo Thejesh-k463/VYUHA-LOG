@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import type { Playbook } from "@/lib/db/schema";
-import { PRESET_PLAYBOOKS } from "@/lib/domain/preset-playbooks";
+import { PRESET_PLAYBOOKS, presetCategories } from "@/lib/domain/preset-playbooks";
 import { Plus, Pencil, Trash2, Archive, ArchiveRestore, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function PlaybookManager({ rows }: { rows: Playbook[] }) {
@@ -153,12 +153,18 @@ function PlaybookForm({
           <Label>Start from a preset (optional)</Label>
           <Select value={preset} onChange={(e) => applyPreset(e.target.value)} className="h-8 w-full text-xs">
             <option value="">Custom (blank)</option>
-            {PRESET_PLAYBOOKS.map((p) => (
-              <option key={p.name} value={p.name}>{p.name}</option>
+            {presetCategories().map((cat) => (
+              <optgroup key={cat} label={cat}>
+                {PRESET_PLAYBOOKS.filter((p) => p.category === cat).map((p) => (
+                  <option key={p.name} value={p.name}>{p.name}</option>
+                ))}
+              </optgroup>
             ))}
           </Select>
           <p className="text-[11px] text-muted-foreground">
-            Picks a globally-recognized setup to start from — edit anything below before saving.
+            {PRESET_PLAYBOOKS.length} setups from trading ecosystems worldwide — ORB to Wyckoff to India&apos;s
+            weekly expiry. Every rule and metric below stays editable before saving; tune the numbers to your
+            own risk limits.
           </p>
         </div>
       )}

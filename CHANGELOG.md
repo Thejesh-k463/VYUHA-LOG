@@ -4,6 +4,23 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.70.0
+- **Preset playbooks expanded to a categorized global library — 25 setups
+  across 7 trading ecosystems** (was 10, flat): Intraday & Momentum (ORB, VWAP,
+  Gap-and-Go, Momentum/RS), Breakout & Trend (MA Pullback, Retest,
+  Donchian/Turtle, 52-Week-High, Darvas Box), Positional/Growth (CANSLIM,
+  Minervini VCP, Wyckoff Spring, Weinstein Stage 2), Mean Reversion (Range
+  Fade, Connors RSI-2, Bollinger Reversion), Price Action/SMC (ICT Liquidity
+  Sweep + FVG, Supply & Demand, Pin Bar), Options & Events (Theta Decay, Iron
+  Condor, India Expiry-Day Theta, Earnings/Event), and Swing & Overnight
+  (Multi-Day Swing, India BTST). The New Playbook picker groups them by
+  ecosystem; every rule's metrics (risk %, ATR multiples, deltas, stop %)
+  remain fully editable before saving, and the from-scratch custom flow is
+  unchanged. New `tests/preset-playbooks.test.ts` guards the library's shape
+  (unique names, ≥3 single-line rules each, ≥5 categories). Verified live:
+  picked CANSLIM, edited O'Neil's 7–8% stop rule to a custom 5% before saving,
+  confirmed it persisted, then cleaned up.
+
 ## v2.65.0
 - **Fixed: open short positions (written options, short futures) showed qty=0/
   invested=0/unrealised=0 on the Equity and Trade F&O trackers.**
