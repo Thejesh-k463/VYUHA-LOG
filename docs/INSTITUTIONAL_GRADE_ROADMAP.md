@@ -50,6 +50,21 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.65.0 — fixed short-position qty/invested/unrealised showing zero on trackers.**
+>   `deriveOpenPositions()` (`lib/analytics/positions.ts`) computed `qty = max(0, buyQty −
+>   sellQty)` and read `avgBuyPrice` unconditionally — for a sell-to-open position (written
+>   option, short future: buyQty=0, sellQty=open qty), both evaluated to 0, so the Equity/Trade
+>   F&O trackers showed qty=0/invested=0/unrealised=0 for any open short despite it being
+>   correctly flagged open. Fixed to the same `isShort = sellQty > buyQty` pattern already used
+>   by `app/risk/page.tsx` and `closePosition` in `lib/import/commit.ts`: qty/entry now read off
+>   the sell leg for a short, `unrealised` mirrors direction (short profits when price falls —
+>   `invested − currentValue`), and `daysHeld` measures from `sellDate` (the short's actual open
+>   leg) instead of `buyDate`. MTF is long-only in India, so its own-capital/funded-amount fields
+>   are unaffected by this branch. NEW `tests/positions.test.ts` (7 tests: long math, short
+>   profit-on-fall/loss-on-rise, days-held-from-sell-date, R-multiple sign, MTF untouched).
+>   VERIFIED live: created a disposable open short stock-option (Dhan, 24000 CE, entry 100, MTM
+>   80, qty 75) via the real "Open trade" dialog — `/active` correctly showed invested ₹7,500 /
+>   unrealised +₹1,500 (20%) / Current R 0.16 where it previously showed all zeros — then deleted.
 > - **v2.60.0 — false-loss edit-dialog fix + Current R/Target R:R + broker-specific MTF margin +
 >   auto risk-amount + preset playbooks.** FIXED: `EditTradeDialog` never wired its current-price
 >   field into the P&L preview, so an open MTF position up in price could still show a net loss

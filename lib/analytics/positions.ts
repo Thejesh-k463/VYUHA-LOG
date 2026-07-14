@@ -56,8 +56,13 @@ export function deriveOpenPositions(
   return trades
     .filter((t) => t.isOpen)
     .map((t) => {
-      const qty = Math.max(0, t.buyQty - t.sellQty);
-      const avgPrice = t.avgBuyPrice;
+      // Short (sell-to-open, e.g. a written CE/PE or a short future) has the
+      // open leg on sellQty with buyQty still 0 — same convention used by
+      // exposure.ts/app/risk/page.tsx and closePosition in lib/import/commit.ts.
+      // MTF is long-only in India, so isMtf below is unaffected by this branch.
+      const isShort = t.sellQty > t.buyQty;
+      const qty = Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty);
+      const avgPrice = isShort ? t.avgSellPrice : t.avgBuyPrice;
       const invested = qty * avgPrice;
       const mtmPrice =
         mtm.get(t.symbol.toUpperCase()) ??
@@ -65,7 +70,9 @@ export function deriveOpenPositions(
         t.closingPrice ??
         avgPrice;
       const currentValue = qty * mtmPrice;
-      const unrealised = Math.round((currentValue - invested) * 100) / 100;
+      // Short profits when price falls: P&L = (entry − mtm) × qty, the mirror
+      // of the long case (mtm − entry) × qty.
+      const unrealised = Math.round((isShort ? invested - currentValue : currentValue - invested) * 100) / 100;
       const isMtf = t.segment === "eq_mtf";
       // Reuse the persisted funded amount (set at entry, reused by accrual/close —
       // never the full invested value, which assumes 100% broker financing).
@@ -96,7 +103,7 @@ export function deriveOpenPositions(
         currentValue: Math.round(currentValue * 100) / 100,
         unrealised,
         unrealisedPct: invested > 0 ? Math.round((unrealised / invested) * 10000) / 100 : 0,
-        daysHeld: daysBetween(t.buyDate, today),
+        daysHeld: daysBetween(isShort ? t.sellDate : t.buyDate, today),
         dte: t.expiry ? daysBetween(today, t.expiry) : null,
         isMtf,
         fundedAmount: Math.round(fundedAmount * 100) / 100,

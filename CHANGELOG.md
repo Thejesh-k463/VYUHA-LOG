@@ -4,6 +4,22 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.65.0
+- **Fixed: open short positions (written options, short futures) showed qty=0/
+  invested=0/unrealised=0 on the Equity and Trade F&O trackers.**
+  `deriveOpenPositions()` (`lib/analytics/positions.ts`) computed
+  `qty = max(0, buyQty − sellQty)` and used `avgBuyPrice` unconditionally — for
+  a sell-to-open position (buyQty=0, sellQty=open qty), both evaluated to 0. Now
+  isShort-aware (`sellQty > buyQty`), matching the pattern already used by
+  `/risk` and `closePosition`: qty/entry read off the sell leg, unrealised P&L
+  mirrors direction (profits when price falls), and days-held measures from the
+  sell date (the actual open leg) for a short. MTF is long-only in India, so
+  its own-capital/funded-amount fields are unaffected. New `tests/positions.test.ts`
+  (7 tests: long, short profit/loss, days-held, R-multiple sign, MTF untouched).
+  Verified live: a disposable open short stock-option (entry 100, MTM 80, qty
+  75) correctly showed invested ₹7,500 / unrealised +₹1,500 (20%) where it
+  previously showed all zeros — then removed.
+
 ## v2.60.0
 - **Fixed: Edit-trade dialog showed a false loss for open MTF positions.** The
   dialog never wired up the current-price field to the P&L preview, so a
