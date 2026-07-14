@@ -1,206 +1,193 @@
-# Vyuha — Local Trade Journal (India)
+<div align="center">
+
+# व Vyuha — The Trade Journal That Tells You the Truth
+
+**A fully local, offline-first trade journal + analytics cockpit for Indian retail traders.**
+Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine.
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
+[![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
+[![Tests](https://img.shields.io/badge/tests-433%20passing-2ea44f)](tests)
+[![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
+[![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
-A single-user, **fully local, offline** trade journal + analytics cockpit for an
-active Indian retail trader (Index/Stock options, Intraday equity, Equity
-delivery, Equity MTF, MCX commodities) across **Dhan, Zerodha and Groww**.
+<img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
-No authentication, no cloud, no telemetry. All data lives in a local SQLite file
-(`./data/vyuha.sqlite`).
+*Dhan · Zerodha · Groww — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
 
-> Built with Next.js (App Router) + TypeScript, Tailwind v4, Drizzle ORM over
-> better-sqlite3, Recharts, TanStack Table. Ships as a Tauri desktop app.
-
-## What's new
-
-- **v1.3** — **IPO dashboard** (`/ipos`): record applications, allotment, listing &
-  exit; P&L computed from applied→listing→exit with sell-charge estimate.
-  **Capital compounding**: roll realised P&L (closed trades + exited IPOs) into the
-  bucket capital on demand (double-count-safe via `pnl_rolled_in`); every risk %,
-  allocation and target re-scales automatically. Plus manual capital edit.
-- **v1.2** — **Portfolio Risk** cockpit (`/risk`): initial risk, open P&L, open
-  risk @ SL, allocation, per-position trailing/original SL, target, R:R and a
-  one-click **trail-to-breakeven**. Bulk MTM paste now also sets SL/TSL/target.
-- **v1.1** — light theme, colorblind-safe colours, inline charge/risk editors.
+</div>
 
 ---
 
-## Quick start
+## Why Vyuha?
+
+Most journals tell you your P&L. **Vyuha tells you why.**
+
+- 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
+- 💸 **MTF done right — the only journal that gets it.** Interest accrues on the *broker-funded portion only* (own-margin % is broker-specific: Dhan/Groww ≈25%, Zerodha ≈20%), with the **correct T+1 day-count** verified against Dhan's own docs. See ROI on your own capital, leverage, breakeven price, and a ⚠ flag when interest has eaten your entire paper gain.
+- 📚 **Playbooks that enforce discipline, not just describe it.** 25 preset setups from trading ecosystems worldwide (ORB → Wyckoff → Minervini VCP → India's expiry-day theta), fully editable, plus your own. Tag a trade and its rules become a **followed/broken checklist** — the Discipline page then shows *which broken rule costs you the most ₹*.
+- 🔍 **Honest analytics.** Expectancy cards warn you when the sample is too small to trust. The stop-tuning report says "descriptive, not prescriptive." Mistake economics report the expectancy *gap*, never fake counterfactuals. A SEBI reality-check card compares your F&O book to the published loss statistics.
+- 🔒 **You stay in control — always.** Auto-MTM is opt-in. Update dialogs ask, never install. Breach alerts say *"check a live quote and review your plan"* — the app never places, closes, or changes anything on its own.
+
+---
+
+## ✨ Feature tour
+
+### 📒 Journal every leg, effortlessly
+- **Import** Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, or PDF — auto-detected, de-duplicated, with a **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite API auto-import** for tradebook pulls.
+- **Add / open / close / edit any trade, any time** — with a live charge preview from the same engine that books it, so what you see is exactly what gets saved.
+- **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
+- Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.
+
+### 📚 Playbooks & discipline
+<img src="docs/screenshots/playbooks.png" alt="Playbooks with rule checklists and expectancy" width="900" />
+
+- **25 preset playbooks across 7 global ecosystems** — Intraday & Momentum, Breakout & Trend (Turtle, Darvas, 52-week-high), Positional/Growth (CANSLIM, Minervini SEPA, Wyckoff, Weinstein), Mean Reversion (Connors RSI-2), Price Action/SMC (ICT liquidity sweeps), Options & Events (iron condor, **India weekly expiry theta**), Swing & Overnight (**BTST**). Pick one, tune every metric to your own risk, save.
+- **Rule-checklist enforcement**: journaling a trade shows its playbook's rules — tick what you actually followed. Broken rules land on the Discipline page with their real cost.
+- **Per-playbook expectancy cards**: win rate, net, expectancy, profit factor, avg R — with a small-sample caution until 20 closed trades.
+- **Discipline scorecard**: weekly adherence scores, cost-of-mistakes rollup, trading-by-emotion, entry-time limit breaches, and the per-rule cost table.
+
+### 🛡 Portfolio risk cockpit
+- Live exposure: initial risk, open P&L, **open risk @ SL**, allocation, sector concentration (HHI), one-click trail-to-breakeven.
+- **VaR / CVaR / parametric VaR**, beta-weighted exposure, NIFTY stress scenarios (±3%, ±5%, crash+IV spike).
+- **Option Greeks** (Black-Scholes) with a three-tier IV fallback ending at the real **India VIX**.
+- **Margin estimate** (SPAN approximation) per broker × segment, fully editable rate table.
+- **Physical-settlement radar**: ITM stock options and futures near expiry get delivery-obligation and extra-STT warnings.
+- **Pre-trade limits check** (per-trade cap, daily stop, max-open, concentration) — advisory with override, and overrides are *recorded* so you see what ignoring the guardrails cost.
+- **SL/TSL/target breach alerts** on Dashboard & Risk with opt-in desktop notifications — every alert reminds you the marks are EOD/manual and to verify live.
+
+### 🧮 Know your costs before you trade
+<img src="docs/screenshots/calculator.png" alt="Trade calculator — exact charges, breakeven, reward:risk" width="900" />
+
+- **Trade calculator**: exact round-trip charges, net-at-target, net-at-SL, charge-adjusted reward:risk and breakeven — equity, F&O, or MTF, projected across N trades.
+- **Charges & MTF leak report**: where your gross P&L actually goes.
+- **Broker cost comparison**: your entire history re-priced on every broker's rate card — see who'd have been cheapest.
+
+### 📈 Edge analytics that don't flatter you
+- Expectancy, win rate, avg R by **setup tag** and **segment**.
+- **MAE/MFE excursions** from your own EOD price history, plus a **stop-tuning report** in R: how much heat your winners took, how many losers ran past 1R (late/moved stops — flagged as behavioral, not placement).
+- Equity curve with max drawdown, daily P&L calendar, streaks, monthly target ladder, benchmark ingestion, Monte-Carlo utilities, XIRR.
+
+### 🧾 India-grade tax tooling
+- **Tax Summary**: STCG/LTCG with **31-Jan-2018 grandfathering** (per-share FMV), rate-cutover handling, dividend TDS tracking.
+- **Advance tax** (234B/234C instalments), **tax-loss harvesting** scanner, **AIS/Form 26AS reconciliation**.
+- **ITR Pack**: speculative vs non-speculative vs capital-gains segregation per FY, **ICAI Guidance Note turnover**, and a **44AB/44AD audit-applicability read** with layered cautions — export CSV/XLSX for your CA.
+
+### 🔄 Automation — with your consent, never without it
+- **Opt-in EOD auto-MTM**: once per trading day, fetch NSE's bhavcopy and mark open positions to close. OFF by default; warns that it overwrites matched marks; skips silently offline; every run is audit-logged.
+- **MTF interest accrual** runs idempotently on app open.
+- **Signed auto-updates**: the desktop app checks once at launch and shows *Update now / Later* — nothing ever installs itself, and your DB is **backed up automatically before any migration**.
+
+### 🗃 Operational depth
+IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · light/dark + colorblind-safe themes.
+
+---
+
+## 🔒 Local-first by design
+
+No login. No cloud. No telemetry. No analytics SDKs.
+Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. The desktop app talks to `127.0.0.1` and nothing else (except the two things you explicitly allow: update checks and opt-in bhavcopy fetches).
+
+---
+
+## 🚀 Get it
+
+**Desktop (Windows):** grab `Vyuha_x.y.z_x64-setup.exe` from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled. Your data persists in app-data across updates and reinstalls.
+
+**Run from source:**
 
 ```bash
-cd vyuha
+git clone https://github.com/Thejesh-k463/VYUHA-LOG.git && cd VYUHA-LOG
 npm install
-npm run setup     # = db:migrate + seed  (creates ./data/vyuha.sqlite)
+npm run setup     # migrate + seed → ./data/vyuha.sqlite
 npm run dev       # http://localhost:3000
 ```
 
-That's it — open http://localhost:3000.
+---
 
-### All scripts
+## 🧪 Built like an engine, not a spreadsheet
+
+- **433 unit tests** over pure, DB-free modules: charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE…
+- Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
+- Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
+- Full changelog in [`CHANGELOG.md`](CHANGELOG.md).
+
+<details>
+<summary><b>📜 All npm scripts</b></summary>
 
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | Start the app on localhost:3000 |
 | `npm run build` / `npm run start` | Production build / serve |
-| `npm run db:generate` | Generate a Drizzle migration from `lib/db/schema.ts` |
-| `npm run db:migrate` | Apply migrations to `./data/vyuha.sqlite` |
-| `npm run seed` | Seed `charge_config`, `risk_config`, `settings`, opening capital (idempotent) |
 | `npm run setup` | `db:migrate` + `seed` in one go |
-| `npm run db:studio` | Open Drizzle Studio to inspect the DB |
-| `npm run test` | Run the Vitest unit suite (52 tests: engines, analytics, risk, imports, reports) |
-| `npm run test:e2e` | Run the Playwright happy-path e2e (import Dhan CSV → dashboard) |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run desktop:bundle` | Assemble `desktop-dist/` (standalone server + seeded template DB) |
-| `npm run desktop:build` | Build the native desktop installer (Tauri) — needs Rust |
-| `npm run desktop:icons` | Regenerate the app icon set from `src-tauri/icon-source.png` |
+| `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
+| `npm run db:studio` | Inspect the DB in Drizzle Studio |
+| `npm test` | Vitest unit suite (433 tests) |
+| `npm run test:e2e` | Playwright happy-path e2e |
+| `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
+| `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
+| `npm run desktop:build` | Build the native Windows installer (needs Rust; see below) |
 
-## Desktop app (Tauri)
+</details>
 
-Vyuha ships a **Tauri** desktop shell (`src-tauri/`). Because the app is a
-full-stack Next.js server (server actions + `better-sqlite3`), it can't be a static
-export — instead the desktop shell runs the Next **standalone** server as a Node
-sidecar bound to `127.0.0.1`, then points the native WebView2 window at it.
+<details>
+<summary><b>🖥 How the desktop app works</b></summary>
 
-```
-src-tauri/                 # Rust shell: spawns the Node sidecar, opens the window
-scripts/desktop-server.mjs # sidecar entry: seeds the app-data DB, starts the server
-scripts/build-desktop.mjs  # assembles desktop-dist/ (standalone + seed template DB)
-desktop-dist/              # bundled at build time as a Tauri resource ("server/")
-```
-
-**How it runs:** on launch the Rust shell spawns
-`node desktop-server.mjs` with `VYUHA_DATA_DIR` set to the OS app-data dir
-(e.g. `%APPDATA%/in.vyuha.tradejournal`). On first run the launcher copies the
-bundled **seeded template** (`vyuha.seed.sqlite`, empty journal) there; subsequent
-runs reuse it. The shell waits for the port, then loads the app; closing the window
-stops the sidecar. Your data persists in app-data across reinstalls.
-
-**Build the installer:**
+Vyuha is a full-stack Next.js server (server actions + better-sqlite3), so it can't be a static
+export. The Tauri shell spawns the Next **standalone** server as a **bundled-Node sidecar** bound to
+`127.0.0.1`, waits for the port, then points the native WebView2 window at it. On first run the
+launcher copies a seeded template DB (empty journal) into the OS app-data dir
+(`%APPDATA%/in.vyuha.tradejournal`); your data persists there across updates and reinstalls.
 
 ```bash
 # one-time prerequisites (Windows): Rust + WebView2 + MSVC C++ build tools
-#   https://rustup.rs/   (WebView2 ships with Windows 11; MSVC via VS Build Tools)
 npm run desktop:build
-# → installer at src-tauri/target/release/bundle/
+# → signed installer at src-tauri/target/release/bundle/nsis/
 ```
 
-> Node.js must be installed on the target machine (the shell spawns the system
-> `node`). For zero-dependency distribution, bundle a Node binary as a Tauri
-> sidecar (`externalBin`) and point the launcher at it — left as a follow-up.
+Releases are built by CI on tag push (`v*`), signed with the updater keypair, and published as
+**drafts** — updates only reach users when a draft is explicitly published.
 
-The entire runtime path (template seeding → standalone server → serving) is
-verified under Node; only the final Rust compile requires the toolchain above.
+</details>
 
-## Where your data lives
+<details>
+<summary><b>⚙️ Configuration & data</b></summary>
 
-- **Database:** `vyuha/data/vyuha.sqlite` (plus `-wal` / `-shm` sidecar files).
-  This directory is git-ignored — it is never committed.
-- To reset to a clean journal: stop the dev server, delete `vyuha/data/`, then
-  run `npm run setup` again.
+- **Database:** `data/vyuha.sqlite` (git-ignored). Reset: delete `data/`, run `npm run setup`.
+- **Capital model:** two buckets (Equity / Trade F&O), editable in Settings; every risk %, allocation and target computes against bucket capital, with opening snapshots kept in sync.
+- **Nothing statutory is hard-coded:** all charge rates live in `charge_config` (broker × segment × exchange) and margin rates in `margin_config` (broker × segment) — both editable in-app, in Drizzle Studio, or via the seed files.
+- **Known limits:** broker P&L files lack segment/MTF flags and per-trade dates — re-tag those rows once (overrides persist across re-imports). Brokerage/MTF interest can't be derived from scrip-aggregated files; the reconciliation panel surfaces the deltas.
 
-## Capital model (editable in Settings)
+</details>
 
-- **Total ₹17,00,000**, split into two buckets:
-  - **Bucket A — EQUITY ₹13,00,000** — Equity Delivery + MTF.
-  - **Bucket B — TRADE F&O ₹4,00,000** — Index/Stock options + Intraday + Commodity
-    (displayed as "Trade F&O" across the app; the internal bucket id remains `active`).
-- Go-live date defaults to **19 Jun 2026**; the journal starts **empty**.
-- All risk math is computed against **bucket** capital, not total. An opening
-  capital snapshot is stored per bucket on go-live and kept in sync when you edit
-  capital in Settings.
-
-## How rates & rules are configured
-
-Nothing statutory is hard-coded. The charges engine reads only from the
-`charge_config` table (keyed by **broker × segment × exchange**), seeded from the
-FY2026-27 rates in the build brief §5. Risk limits live in `risk_config`
-(global / per-bucket / per-segment), seeded from §6.
-
-- **Settings → Risk rules / Charge rates** has inline editors for every
-  `risk_config` rule and every `charge_config` rate row. You can also use Drizzle
-  Studio (`npm run db:studio`) or edit `lib/db/seed-data.ts` and re-run `npm run seed`.
-- Core Settings (capital, go-live, theme, FY, colorblind-safe colours, default
-  order counts) are editable on the same page.
-
-> Note on options STT: the brief's FY2026-27 rate (0.15% of premium on sell) runs
-> higher than the rate in force when the sample files were generated — visible as a
-> ~5% delta in Dhan reconciliation. Change `sttPct` for the option segments in the
-> charge-rate editor (e.g. to 0.001) if you want to match an earlier period.
-
-## How to import
-
-Go to **Import**, drop a broker file (Dhan P&L CSV, Groww XLSX, Zerodha
-CSV/XLSX, PDF). The app auto-detects the broker/format, shows a preview with a
-charge **reconciliation panel** (computed vs broker-reported), and commits on
-confirm. Re-importing the same file is **de-duplicated** (0 dupes). Or add trades
-by hand in **Trades → Add trade** (auto-classified, live charge preview).
-
-After import, re-tag any rows (MTF / intraday / segment) in **Trades** — those
-overrides persist and re-apply automatically on the next re-import.
-
-## Extensibility seams (for v1-out-of-scope features)
-
-These interfaces let the out-of-scope features drop in later without touching the
-pipeline:
-
-- **`ImportSource`** (`lib/import/types.ts`) — file parsers implement the `"file"`
-  variant; a future **broker-API puller** implements the `"api"` variant
-  (`fetchTrades()`), and the rest of the pipeline (classify → charges → dedup → DB)
-  is unchanged. New file parsers register in `lib/import/detect.ts`.
-- **`PriceSource`** (`lib/seams/price-source.ts`) — v1 ships only manual/EOD MTM
-  (bulk paste in the Position Trackers). A live/EOD feed implements `getQuotes()`
-  and the trackers consume it unchanged.
-- **MTF interest accrual** (`lib/jobs/mtf-accrual.ts`) runs on app open (Equity
-  Tracker render) and recomputes accrued interest for open MTF positions; it is
-  idempotent.
-
-## Project layout
+<details>
+<summary><b>🗂 Project layout</b></summary>
 
 ```
-vyuha/
-  app/                     # App Router pages (dashboard, settings, trackers, reports…)
-  components/
-    ui/                    # shadcn-style primitives (button, card, input…)
-    layout/                # sidebar, page header, nav config
+VYUHA-LOG/
+  app/            # App Router pages (dashboard, risk, trackers, reports…)
+  components/     # UI primitives, layout, feature components
   lib/
-    db/                    # schema.ts, client, migrate, seed, seed-data (rates)
-    domain/                # constants (brokers, segments, underlyings)
-    engine/                # pure classification + charges engines (+ rates)
-    import/                # parsers, detect, dedup, commit pipeline
-    analytics/             # metrics, positions, charges-report, discipline, tax
-    risk/                  # position-size / lot / daily-stop / MTF calculators
-    jobs/                  # MTF interest accrual
-    seams/                 # PriceSource interface
-    queries/               # server-only DB read helpers
-    format.ts, utils.ts    # INR formatting, cn()
-  drizzle/                 # generated SQL migrations
-  tests/, e2e/             # Vitest unit tests + Playwright e2e
-  data/                    # local SQLite (git-ignored)
+    engine/       # PURE classification + charges engines
+    analytics/    # PURE metrics, tax, ITR, MAE/MFE, greeks, VaR…
+    risk/         # PURE calculators, margin, alerts
+    import/       # parsers, detect, dedup, commit pipeline
+    jobs/         # MTF accrual, auto-MTM
+    db/           # Drizzle schema, migrations, seed
+  src-tauri/      # Rust desktop shell
+  tests/          # 433 Vitest unit tests
 ```
+Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
+then wrapped by thin server-only query layers.
 
-## Build phases
+</details>
 
-1. **Foundation** ✅ — scaffold, theme, schema + migrations + seed, editable settings.
-2. **Engines** ✅ — classification + charges engines, fully unit-tested; reconcile to sample files.
-3. **Imports + manual entry** ✅ — Dhan/Groww/Zerodha/PDF parsers, dedup, overrides.
-4. **Trackers + Dashboard** ✅ — position & target trackers, dashboard KPIs/charts/heatmap, exports.
-5. **Upgrades + scaffolds** ✅ — charges/MTF-leak report, edge analytics, discipline scorecard, tax scaffold, MTF accrual, rate/risk editors, PriceSource/ImportSource seams.
+---
 
-## Known limitations
+## ⭐ If Vyuha saves you one bad trade…
 
-- Broker **P&L files lack segment / MTF flag / per-trade dates** — equity rows
-  default to delivery and must be re-tagged (MTF / intraday) until tradebook or
-  auto-import is added. Classification overrides persist across re-imports.
-- **Dhan CSV + Groww XLSX parsers are validated** against real sample files. The
-  **Zerodha and PDF parsers are built to the documented spec but not yet validated**
-  against real samples — Zerodha uses resilient header-mapping (equity solid; F&O
-  symbols may need re-tagging), and PDF extracts text then routes to manual mapping.
-- **Brokerage & MTF interest can't be derived from scrip-aggregated P&L** (order
-  counts / financing days are hidden) — the reconciliation panel surfaces these
-  deltas. Statutory charges (STT, exchange, stamp, SEBI) reconcile within ~5%.
-- Money is stored as floating-point rupees; the charges engine applies statutory
-  rounding (STT/CTT and stamp to the nearest rupee). Reconciliation against
-  broker totals is checked within a small tolerance.
-- No live price feeds / auto-MTM, no broker-API auto-import, no multi-user/auth,
-  no cloud sync, no tax e-filing (interfaces are left as seams).
+…that's worth more than a star — but the star helps others find it. **[Star the repo](https://github.com/Thejesh-k463/VYUHA-LOG/stargazers)** and share it with a trader who still journals in Excel.
+
+> **Disclaimer:** Vyuha is a journaling and analytics tool. Nothing in it is investment, tax, or
+> legal advice. Charge/tax figures are computed from editable, documented rates and reconciled
+> where possible, but your broker's contract notes and your CA remain the source of record.
