@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vyuha — Getting Started</title>
+<style>
+  /* ── Vyuha slide deck · arrow keys / click to advance · Ctrl+P for PDF ── */
+  :root {
+    --bg: #0a0e14; --surface: #0e141d; --card: #111a26; --card2: #16212f;
+    --border: #1f2b3a; --fg: #e6edf3; --mut: #8a98a7;
+    --teal: #2dd4bf; --blue: #2f81f7; --green: #16c784; --red: #f6465d; --amber: #f0b90b;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  .slide {
+    display: none; position: absolute; inset: 0; padding: 4.5vh 6vw;
+    flex-direction: column; gap: 2.2vh;
+    background: radial-gradient(1200px 600px at 50% -12%, #101c26 0%, var(--bg) 60%);
+  }
+  .slide.active { display: flex; animation: fadein .35s ease-out; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+
+  .kicker { color: var(--teal); font-size: 1.5vh; letter-spacing: .3em; text-transform: uppercase; font-weight: 600; }
+  h1 { font-size: 5.4vh; letter-spacing: -0.02em; }
+  h2 { font-size: 4vh; letter-spacing: -0.01em; }
+  .sub { color: var(--mut); font-size: 2vh; max-width: 70vw; }
+  .grow { flex: 1; display: flex; align-items: center; justify-content: center; gap: 2.5vw; min-height: 0; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .logo { width: 9vh; height: 9vh; border-radius: 2.2vh; display: grid; place-items: center;
+    background: linear-gradient(150deg, #2dd4bf, #14b8a6 60%, #0f766e);
+    box-shadow: 0 0 48px -8px rgba(45,212,191,.55); font-size: 4.6vh; font-weight: 700; color: #04110f; }
+
+  .cards { display: flex; gap: 1.6vw; width: 100%; justify-content: center; flex-wrap: wrap; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 1.4vh; padding: 2.6vh 1.8vw;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.35); flex: 1; min-width: 16vw; max-width: 24vw; }
+  .card .ico { font-size: 3.6vh; }
+  .card h3 { font-size: 2.2vh; margin: 1.2vh 0 .6vh; }
+  .card p { color: var(--mut); font-size: 1.7vh; line-height: 1.45; }
+  .hero-card { border-color: color-mix(in oklab, var(--teal) 30%, var(--border));
+    background-image: linear-gradient(160deg, color-mix(in oklab, var(--teal) 9%, transparent), transparent 45%); }
+
+  .shot { max-width: 78vw; max-height: 62vh; border-radius: 1.4vh; border: 1px solid var(--border);
+    box-shadow: 0 24px 64px -20px rgba(0,0,0,.7), 0 0 34px -10px rgba(45,212,191,.25); }
+
+  /* flow diagram */
+  .flow { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; justify-content: center; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: 1.2vh; padding: 2vh 1.6vw; text-align: center; min-width: 13vw; }
+  .step .n { font-family: var(--mono); color: var(--teal); font-size: 1.6vh; }
+  .step .t { font-size: 2vh; font-weight: 600; margin-top: .5vh; }
+  .step .d { color: var(--mut); font-size: 1.55vh; margin-top: .5vh; }
+  .arrow { color: var(--teal); font-size: 3vh; }
+
+  .chip { display: inline-block; border: 1px solid var(--border); background: var(--card2);
+    border-radius: 99px; padding: .7vh 1.2vw; font-size: 1.6vh; color: var(--mut); margin: .3vh; }
+  .chip b { color: var(--fg); }
+  .good { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); } .teal { color: var(--teal); }
+
+  /* mock UI bits */
+  .mock { background: var(--card); border: 1px solid var(--border); border-radius: 1.2vh; padding: 2vh 1.6vw; font-size: 1.8vh; }
+  .mock .row { display: flex; align-items: center; gap: .8vw; }
+  .keybox { font-family: var(--mono); background: #0d1520; border: 1px dashed var(--teal); border-radius: .8vh;
+    padding: 1.2vh 1vw; font-size: 1.6vh; color: var(--teal); word-break: break-all; }
+  .strip { border: 1px solid color-mix(in oklab, var(--blue) 35%, var(--border)); background: color-mix(in oklab, var(--blue) 8%, var(--card));
+    border-radius: 1vh; padding: 1.3vh 1.2vw; font-size: 1.7vh; }
+
+  /* trial timeline */
+  .timeline { width: 64vw; }
+  .tl-bar { height: 1.6vh; border-radius: 99px; background: var(--card2); position: relative; overflow: hidden; }
+  .tl-fill { position: absolute; inset: 0; width: 100%;
+    background: linear-gradient(90deg, var(--teal), color-mix(in oklab, var(--teal) 40%, transparent)); }
+  .tl-marks { display: flex; justify-content: space-between; margin-top: 1vh; font-size: 1.6vh; color: var(--mut); }
+  .tl-marks b { color: var(--fg); }
+
+  /* loop diagram */
+  .loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1vw; width: 80vw; align-items: stretch; }
+
+  footer { display: flex; justify-content: space-between; color: var(--mut); font-size: 1.5vh; }
+  .dots { position: fixed; bottom: 1.6vh; left: 50%; transform: translateX(-50%); display: flex; gap: .8vh; }
+  .dot { width: .9vh; height: .9vh; border-radius: 50%; background: var(--border); cursor: pointer; }
+  .dot.on { background: var(--teal); }
+  .navhint { position: fixed; bottom: 1.4vh; right: 2vw; color: var(--mut); font-size: 1.4vh; }
+
+  @media print {
+    body { overflow: visible; background: #fff; }
+    .slide { display: flex !important; position: relative; page-break-after: always; height: 100vh;
+      background: #0a0e14; }
+    .dots, .navhint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · Title -->
+<section class="slide active">
+  <div class="grow" style="flex-direction: column; gap: 2.4vh;">
+    <div class="logo">व</div>
+    <h1>VYUHA</h1>
+    <div class="sub" style="text-align:center;">The trade journal that tells you the truth.<br/>
+      Local · Offline · Built for Indian markets</div>
+    <div>
+      <span class="chip">Dhan</span><span class="chip">Zerodha</span><span class="chip">Groww</span>
+      <span class="chip">Options · Intraday · Delivery · <b>MTF</b> · MCX</span>
+    </div>
+  </div>
+  <footer><span>Getting-started deck</span><span class="mono">v2.80</span></footer>
+</section>
+
+<!-- 2 · What it is -->
+<section class="slide">
+  <div class="kicker">Why Vyuha</div>
+  <h2>Three promises</h2>
+  <div class="grow">
+    <div class="cards">
+      <div class="card hero-card"><div class="ico">🔒</div><h3>100% local &amp; private</h3>
+        <p>One SQLite file on <em>your</em> disk. No login, no cloud, no telemetry. Copy the file = full backup.</p></div>
+      <div class="card"><div class="ico">🇮🇳</div><h3>Exact Indian charges</h3>
+        <p>STT · exchange · stamp · GST · DP · pledge · <b>MTF interest done right</b> — to the rupee, per broker.</p></div>
+      <div class="card"><div class="ico">🔍</div><h3>Honest analytics</h3>
+        <p>Small samples get warnings. Alerts say “review your plan”, never “exit now”. You stay in control.</p></div>
+    </div>
+  </div>
+  <footer><span>Vyuha</span><span>2 / 12</span></footer>
+</section>
+
+<!-- 3 · Install & first run -->
+<section class="slide">
+  <div class="kicker">Setup · 60 seconds</div>
+  <h2>Install → everything unlocks</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="flow">
+      <div class="step"><div class="n">STEP 1</div><div class="t">⬇ Download</div>
+        <div class="d mono">Vyuha_x.y.z_x64-setup.exe</div><div class="d">GitHub → Releases · Node bundled, zero installs</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">STEP 2</div><div class="t">व Launch</div>
+        <div class="d">Splash → app opens at your Dashboard</div></div>
+      <div class="arrow">→</div>
+      <div class="step" style="border-color: var(--teal);"><div class="n">STEP 3</div><div class="t">✨ Trial starts</div>
+        <div class="d"><b class="teal">14 days of full Pro</b> — automatic, offline, no signup, no card</div></div>
+    </div>
+    <div class="strip" style="margin-top: 2.5vh;">✨ <b>Pro trial — 14 days left.</b> Everything stays unlocked while you evaluate. &nbsp;<span class="teal">Get the Toolkit · Activate a key</span></div>
+    <div class="sub" style="margin-top: 1.6vh; text-align: center;">Your data lives in <span class="mono">%APPDATA%/in.vyuha.tradejournal</span> — it survives updates and reinstalls.</div>
+  </div>
+  <footer><span>Setup</span><span>3 / 12</span></footer>
+</section>
+
+<!-- 4 · Import -->
+<section class="slide">
+  <div class="kicker">First 5 minutes</div>
+  <h2>Get your history in</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="flow">
+      <div class="step"><div class="t">📄 Drop a broker file</div>
+        <div class="d">Dhan CSV · Groww XLSX · Zerodha CSV/XLSX · PDF<br/>or Zerodha Kite API pull</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">🔎 Auto-detected</div>
+        <div class="d">Broker &amp; format recognized,<br/>charges recomputed by the engine</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">⚖ Reconcile panel</div>
+        <div class="d">Computed vs broker-reported,<br/>side by side, before commit</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">✅ Commit</div>
+        <div class="d">Re-imports de-duplicate —<br/>0 doubles, ever</div></div>
+    </div>
+    <div style="margin-top: 2.5vh;">
+      <span class="chip">Tip: re-tag MTF / intraday rows once — <b>overrides persist</b> across re-imports</span>
+      <span class="chip">Manual entry? <b>Trades → Add / Open trade</b> with live charge preview</span>
+    </div>
+  </div>
+  <footer><span>Import</span><span>4 / 12</span></footer>
+</section>
+
+<!-- 5 · Dashboard -->
+<section class="slide">
+  <div class="kicker">Home base</div>
+  <h2>The cockpit</h2>
+  <div class="grow"><img class="shot" src="screenshots/dashboard.png" alt="Dashboard" /></div>
+  <div style="text-align:center;">
+    <span class="chip"><b class="teal">Sparkline + ▲▼ delta</b> on Net P&amp;L</span>
+    <span class="chip"><b>Equity curve</b> with drawdown shading</span>
+    <span class="chip"><b>P&amp;L calendar</b> — deeper color = bigger day</span>
+    <span class="chip"><b class="mono">Ctrl K</b> jumps anywhere</span>
+  </div>
+  <footer><span>Dashboard</span><span>5 / 12</span></footer>
+</section>
+
+<!-- 6 · Journal a trade -->
+<section class="slide">
+  <div class="kicker">The core habit</div>
+  <h2>Journal a trade in 20 seconds</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="flow">
+      <div class="step"><div class="t">1 · Entry + SL + target</div>
+        <div class="d">Risk auto-computes:<br/><span class="mono">|entry − SL| × qty</span></div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">2 · Watch both R's</div>
+        <div class="d"><span class="mono good">Current R 1.00</span> (live)<br/><span class="mono">Target R:R 1:3.00</span> (plan)</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">3 · Close / edit anytime</div>
+        <div class="d">Same engine previews charges —<br/>what you see is what saves</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="t">4 · 📓 Journal it</div>
+        <div class="d">Playbook · emotion · mistakes ·<br/>chart screenshots · notes</div></div>
+    </div>
+    <div class="mock" style="margin-top: 2.5vh; max-width: 60vw; align-self: center;">
+      <div class="row"><span>Playbook rules — tick what you actually followed</span></div>
+      <div class="row" style="margin-top: 1vh;"><span class="good">☑</span> Wait for the retest</div>
+      <div class="row"><span class="good">☑</span> Risk ≤ 1% of capital</div>
+      <div class="row"><span class="bad">☐ No entries after 2:30pm</span> <span class="chip" style="margin-left:auto;">recorded as a violation</span></div>
+    </div>
+  </div>
+  <footer><span>Journal</span><span>6 / 12</span></footer>
+</section>
+
+<!-- 7 · Playbooks loop -->
+<section class="slide">
+  <div class="kicker">Discipline, enforced</div>
+  <h2>The playbook loop</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="loop">
+      <div class="step"><div class="t">📚 Pick a setup</div><div class="d">25 presets — ORB, Wyckoff, Minervini VCP, India expiry theta… or write your own. Every metric editable.</div></div>
+      <div class="step"><div class="t">🎯 Trade &amp; tag</div><div class="d">Tag the trade to its playbook from the 📓 journal button.</div></div>
+      <div class="step"><div class="t">✅ Tick honestly</div><div class="d">Rules become a followed / broken checklist. Nobody sees this but you.</div></div>
+      <div class="step" style="border-color: var(--teal);"><div class="t">💡 See what breaking rules costs</div><div class="d">Discipline page ranks broken rules by ₹ lost · expectancy per playbook with small-sample warnings.</div></div>
+    </div>
+    <div class="sub" style="text-align:center; margin-top: 2vh;">…then adjust the rules, and go again. That loop is the whole product.</div>
+  </div>
+  <footer><span>Playbooks</span><span>7 / 12</span></footer>
+</section>
+
+<!-- 8 · Calculator -->
+<section class="slide">
+  <div class="kicker">Before you click buy</div>
+  <h2>Know the real cost first</h2>
+  <div class="grow"><img class="shot" src="screenshots/calculator.png" alt="Trade calculator" /></div>
+  <div style="text-align:center;">
+    <span class="chip">Round-trip charges <b>to the rupee</b></span>
+    <span class="chip">Net at target · net at SL</span>
+    <span class="chip"><b>Charge-adjusted R:R</b> &amp; breakeven</span>
+    <span class="chip">Equity · F&amp;O · MTF</span>
+  </div>
+  <footer><span>Calculator</span><span>8 / 12</span></footer>
+</section>
+
+<!-- 9 · Risk & alerts -->
+<section class="slide">
+  <div class="kicker">Guardrails, not handcuffs</div>
+  <h2>Risk cockpit &amp; alerts</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="cards">
+      <div class="card"><div class="ico">🛡</div><h3>Portfolio Risk</h3><p>VaR · stress tests · Greeks with India-VIX fallback · margin estimate · physical-settlement radar.</p></div>
+      <div class="card"><div class="ico">🚦</div><h3>Pre-trade limits</h3><p>Per-trade cap, daily stop, max-open, concentration — advisory. Override if you must; overrides are <b>recorded</b>.</p></div>
+      <div class="card"><div class="ico">🔔</div><h3>Breach alerts</h3><p>SL / TSL / target crossings on EOD marks. Desktop notifications are opt-in, per device.</p></div>
+    </div>
+    <div class="mock" style="border-color: color-mix(in oklab, var(--amber) 40%, var(--border)); max-width: 70vw; align-self:center;">
+      ⚠ <b>Stops &amp; targets need review (1)</b><br/>
+      <span class="sub">RELIANCE: mark 1,342 is through your stop 1,350 — check a live quote and review your exit plan.<br/>
+      <em>Marks are EOD/manual — this banner never places or closes anything.</em></span>
+    </div>
+  </div>
+  <footer><span>Risk</span><span>9 / 12</span></footer>
+</section>
+
+<!-- 10 · Tax -->
+<section class="slide">
+  <div class="kicker">January–July superpower</div>
+  <h2>Tax season, pre-packed</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="flow">
+      <div class="step"><div class="t">Your closed trades</div><div class="d">every FY, automatically split</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="d">Intraday equity</div><div class="t">Speculative business</div></div>
+      <div class="step"><div class="d">Options &amp; futures</div><div class="t">Non-speculative (F&amp;O)</div></div>
+      <div class="step"><div class="d">Delivery &amp; MTF</div><div class="t">Capital gains STCG/LTCG</div></div>
+      <div class="arrow">→</div>
+      <div class="step" style="border-color: var(--teal);"><div class="t">🧾 ITR Pack</div>
+        <div class="d">Guidance-Note turnover · 44AB/44AD read · CSV/XLSX for your CA</div></div>
+    </div>
+    <div style="text-align:center; margin-top: 2.2vh;">
+      <span class="chip">+ Advance tax (234B/C)</span><span class="chip">+ Tax-loss harvesting</span>
+      <span class="chip">+ AIS/26AS reconcile</span><span class="chip">+ 31-Jan-2018 grandfathering</span>
+    </div>
+    <div class="sub" style="text-align:center; margin-top:1.4vh;">Preparation aid — always confirm with your CA before filing.</div>
+  </div>
+  <footer><span>Tax</span><span>10 / 12</span></footer>
+</section>
+
+<!-- 11 · Activate Pro -->
+<section class="slide">
+  <div class="kicker">When the trial ends</div>
+  <h2>Activate in 30 seconds — fully offline</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="timeline">
+      <div class="tl-bar"><div class="tl-fill"></div></div>
+      <div class="tl-marks"><span><b>Day 0</b> · install → full Pro</span><span><b>Day 14</b> · trial ends</span><span><b>Free forever</b> · journal, imports, dashboard, playbooks, backups</span></div>
+    </div>
+    <div class="flow" style="margin-top: 3vh;">
+      <div class="step"><div class="n">1</div><div class="t">🛒 Buy the Toolkit</div><div class="d">key arrives by email</div></div>
+      <div class="arrow">→</div>
+      <div class="step" style="min-width: 22vw;"><div class="n">2</div><div class="t">Settings → License</div>
+        <div class="keybox" style="margin-top: 1vh;">VYUHA-eyJlbWFpbCI6InlvdUB0cmFkZXIuaW4i…</div>
+        <div class="d">paste the whole key</div></div>
+      <div class="arrow">→</div>
+      <div class="step" style="border-color: var(--green);"><div class="n">3</div><div class="t"><span class="good">✔ Licensed</span></div>
+        <div class="d">verified on this machine —<br/><b>never sent anywhere</b></div></div>
+    </div>
+    <div class="sub" style="text-align:center; margin-top: 2.2vh;">Pro = Portfolio Risk · Tax Summary · ITR Pack · Broker Costs. Lifetime or annual keys. Your data is <b>never</b> locked either way.</div>
+  </div>
+  <footer><span>Activation</span><span>11 / 12</span></footer>
+</section>
+
+<!-- 12 · Principles / close -->
+<section class="slide">
+  <div class="kicker">The contract</div>
+  <h2>You stay in control</h2>
+  <div class="grow" style="flex-direction: column;">
+    <div class="cards">
+      <div class="card"><div class="ico">📥</div><h3>Auto-MTM is opt-in</h3><p>OFF by default. You flip the switch; every run is audit-logged.</p></div>
+      <div class="card"><div class="ico">⬆</div><h3>Updates ask first</h3><p>Update now / Later — nothing installs itself. DB backed up before any migration.</p></div>
+      <div class="card"><div class="ico">🔔</div><h3>Alerts advise</h3><p>“Check a live quote, review your plan.” The app never trades for you.</p></div>
+      <div class="card"><div class="ico">📤</div><h3>Your data leaves freely</h3><p>CSV/XLSX everywhere, one-file backup, printable PDF report.</p></div>
+    </div>
+    <div class="grow" style="flex: 0; margin-top: 2.5vh; flex-direction: column; gap: 1.2vh;">
+      <div class="logo" style="width: 6.5vh; height: 6.5vh; font-size: 3.2vh; border-radius: 1.6vh;">व</div>
+      <div class="sub" style="text-align:center;">github.com/Thejesh-k463/VYUHA-LOG · <span class="mono">Ctrl K</span> is your friend · happy journaling</div>
+    </div>
+  </div>
+  <footer><span>Vyuha · local · offline · yours</span><span>12 / 12</span></footer>
+</section>
+
+<div class="dots" id="dots"></div>
+<div class="navhint">← → / click to navigate · Ctrl+P → PDF</div>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  const dots = document.getElementById("dots");
+  slides.forEach((_, i) => {
+    const d = document.createElement("div");
+    d.className = "dot" + (i === 0 ? " on" : "");
+    d.onclick = (e) => { e.stopPropagation(); go(i); };
+    dots.appendChild(d);
+  });
+  let cur = 0;
+  function go(i) {
+    cur = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, j) => s.classList.toggle("active", j === cur));
+    [...dots.children].forEach((d, j) => d.classList.toggle("on", j === cur));
+  }
+  addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") go(cur + 1);
+    if (e.key === "ArrowLeft" || e.key === "PageUp") go(cur - 1);
+    if (e.key === "Home") go(0);
+    if (e.key === "End") go(slides.length - 1);
+  });
+  addEventListener("click", () => go(cur + 1));
+</script>
+</body>
+</html>

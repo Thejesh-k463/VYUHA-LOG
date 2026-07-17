@@ -27,16 +27,17 @@ traps, peak-margin leak, broker-cost comparison, SEBI reality-check.
 
 ## 2. The offer & pricing (₹, India retail)
 
-| SKU | What | Price (launch) | Price (list) |
-|---|---|---|---|
-| **Trader's Toolkit** (hero) | App lifetime + both indicators (invite-only) | **₹4,999–7,999** | ₹9,999 |
-| App only | Lifetime license | ₹1,499–2,999 | — |
-| Indicators only | Both, invite-only lifetime | ₹6,000–12,000 | — |
-| (Optional) App annual | If you prefer recurring | ₹499–799/yr | — |
+| SKU | What | Price (launch) | Price (list) | Tooling |
+|---|---|---|---|---|
+| **Trader's Toolkit** (hero) | App lifetime + both indicators (invite-only) | **₹4,999–7,999** | ₹9,999 | `license-issue.mjs <email> toolkit` |
+| App only | Lifetime license | ₹1,499–2,999 | — | `license-issue.mjs <email> app` |
+| Indicators only | Both, invite-only lifetime | ₹6,000–12,000 | — | TradingView invite-only |
+| App annual — **✅ BUILT (v2.80)** | Recurring option; expiry is inside the signed key | ₹499–799/yr | — | `license-issue.mjs <email> app --years 1` |
 
 Launch tactic: cap the launch price to the **first 100 buyers** ("founding traders"), collect
 testimonials + Google reviews, then step to list price. Anchor the bundle against the sum of
-standalone prices so it visibly saves money.
+standalone prices so it visibly saves money. Annual keys expire gracefully in-app (renewal
+notice + grace trial → free) — safe to sell without support overhead.
 
 ## 3. Funnel
 
@@ -46,9 +47,17 @@ Free lead magnet ──▶ WhatsApp + email list ──▶ Content (X / YouTube)
    └─ "Tax-summary-only" free build, OR a free web capital-gains calculator  └─ Razorpay checkout
 ```
 
-- **Lead magnet:** the single highest-converting option is a **free web capital-gains / F&O-tax
-  calculator** (a stripped page of the tax engine) — it ranks for search, is shareable, and
-  demonstrates the exact depth people pay for. Gate the full report behind an email/WhatsApp opt-in.
+- **Lead magnet #1 — the installer itself (✅ BUILT, v2.80):** every fresh install starts a
+  **14-day full-Pro trial** — offline, no signup, no card. The download link IS the funnel now:
+  "try everything free for 14 days, journal stays free forever" converts better than any gated
+  PDF. The in-app trial strip and post-trial upsell panel carry the buy link (`BUY_URL` in
+  `lib/license.ts` — point it at the Razorpay page at launch).
+- **Lead magnet #2:** a **free web capital-gains / F&O-tax calculator** (a stripped page of the
+  tax engine) — ranks for search, shareable, demonstrates the exact depth people pay for. Gate
+  the full report behind an email/WhatsApp opt-in.
+- **Show, don't tell:** `docs/GETTING_STARTED_DECK.html` is a 12-slide visual walkthrough
+  (install → import → journal → playbook loop → activate). Print it to PDF for WhatsApp
+  broadcasts; the same slides double as a YouTube-short storyboard.
 - **List:** WhatsApp (via a Business number / broadcast) converts far better than email in India.
 - **Content:** see `GROWTH_ENGINE_PLAN.md` (compliant — no mass-mention spam).
 - **Checkout:** Razorpay Payment Page or Payment Link → webhook → auto-deliver license + download.
@@ -106,11 +115,21 @@ The offline license gate now exists, including the full tier machinery. Status:
 | 4a. Sales landing page | `docs/monetization/landing-page.html` |
 | 4b. One-page PDF brochure | `docs/monetization/brochure.html` (Print → Save as PDF) |
 | 5. Compliant growth / content-bot plan | `docs/monetization/GROWTH_ENGINE_PLAN.md` |
+| 6. **Getting-started slide deck (v2.80)** — install → import → journal → playbook loop → activate; visual-first, printable to PDF, doubles as demo-video storyboard | `docs/GETTING_STARTED_DECK.html` |
+| 7. Public repo landing page with v2.80 screenshots | `README.md` |
 
 ## 7. Suggested launch sequence (2–4 weeks)
 
-1. **Week 1** — publish the 2 indicators invite-only; stand up the Razorpay Payment Page for
-   "Indicators bundle"; put up the landing page; free calculator lead magnet live.
-2. **Week 2** — add the app license gate (§4); flip the landing page to the full Toolkit bundle.
-3. **Week 3–4** — content engine on your own X/YouTube; founding-trader launch (first 100 @
-   launch price); collect testimonials; iterate copy from checkout drop-off.
+Everything technical is now BUILT — the sequence is pure go-to-market:
+
+1. **Week 1** — publish the 2 indicators invite-only; stand up the Razorpay Payment Page;
+   put up the landing page. **The only code changes left for launch day are two constants in
+   `lib/license.ts`: `BUY_URL` → the Razorpay/landing page, and `LICENSE_ENFORCEMENT` →
+   `"block"`.** (Do NOT flip enforcement before the payment page is live — trial-expired users
+   would hit a dead buy link.)
+2. **Week 2** — publish a GitHub release so the auto-updater ships the gated build; announce
+   the 14-day-trial framing everywhere ("try everything free, journal free forever").
+3. **Week 3–4** — content engine on your own X/YouTube (record the getting-started deck as a
+   2-minute walkthrough); founding-trader launch (first 100 @ launch price); collect
+   testimonials; iterate copy from checkout drop-off. Consider the annual SKU
+   (`--years 1`) as the downsell on exit-intent.
