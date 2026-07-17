@@ -82,8 +82,16 @@ export function CommandPalette() {
         close();
       }
     }
+    // C7 — the sidebar's ⌘K hint chip opens the palette via this event.
+    function onOpenEvent() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("vyuha:command-palette", onOpenEvent);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("vyuha:command-palette", onOpenEvent);
+    };
   }, [close]);
 
   const q = query.trim().toLowerCase();

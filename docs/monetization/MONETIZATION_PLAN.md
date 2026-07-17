@@ -53,25 +53,35 @@ Free lead magnet ──▶ WhatsApp + email list ──▶ Content (X / YouTube)
 - **Content:** see `GROWTH_ENGINE_PLAN.md` (compliant — no mass-mention spam).
 - **Checkout:** Razorpay Payment Page or Payment Link → webhook → auto-deliver license + download.
 
-## 4. Licensing layer — ✅ BUILT (v1.16+)
+## 4. Licensing layer — ✅ BUILT (v1.16+, tiering v2.80)
 
-The offline license gate now exists. How it works and what's left:
+The offline license gate now exists, including the full tier machinery. Status:
 
 1. **Key issuance (vendor side)** — done manually per sale for now:
-   `node scripts/license-issue.mjs <buyer-email> [toolkit|app|indicators]` → prints the
-   `VYUHA-…` key; email it with the download link. The Ed25519 **private key** lives in
-   `license-private.pem` (gitignored) — created once via `scripts/license-keygen.mjs`.
-   **Back it up privately**; lost = can't mint keys, leaked = anyone can mint.
-   *(Future: a Razorpay `payment.captured` webhook that runs the issue script automatically.)*
+   `node scripts/license-issue.mjs <buyer-email> [toolkit|app|indicators] [--years 1 | --expires YYYY-MM-DD]`
+   → prints the `VYUHA-…` key; email it with the download link. No expiry flag = lifetime key;
+   `--years 1` mints the **annual SKU** (expiry is inside the signed payload — can't be edited).
+   The Ed25519 **private key** lives in `license-private.pem` (gitignored) — created once via
+   `scripts/license-keygen.mjs`. **Back it up privately**; lost = can't mint keys, leaked =
+   anyone can mint. *(Future: a Razorpay `payment.captured` webhook that runs the issue script.)*
 2. **Offline validation in-app** — done. Signature verified against the public key baked into
    `lib/license.ts`; the stored key is re-verified on every read. Activation UI at
-   **Settings → License**; shows "Licensed to <email>".
-3. **Enforcement** — currently **"banner" mode**: unlicensed copies see an informational banner
-   on the Pro screens (Tax Summary, Portfolio Risk, Broker Costs) but nothing is blocked.
-   **Before charging, flip `LICENSE_ENFORCEMENT` to `"block"` in `lib/license.ts`** and add the
-   hard gate there. Anti-casual-sharing only, by design — the buyer email shown in-app is the
-   real deterrent.
-4. **Indicator access** — no build needed; TradingView invite-only handles access. See
+   **Settings → License**; shows "Licensed to <email>", expiry state, and trial countdown.
+3. **Trial — ✅ BUILT (v2.80)**: every fresh install gets a **14-day full-Pro trial**, stamped
+   offline on first open (`settings.trial_started_at`; the bundled template DB ships with it
+   NULL so the clock starts at the user's first run, not the installer build). Expired annual
+   keys fall back to any remaining trial days, then to free.
+4. **Enforcement — ✅ BUILT (v2.80)**: every Pro screen sits behind `<ProGate>`
+   (`components/system/pro-gate.tsx`), driven by the `PRO_FEATURES` registry in `lib/license.ts`
+   (Portfolio Risk, Tax Summary, ITR Pack, Broker Costs). Currently **"banner" mode**: trial
+   users see a countdown strip; unlicensed copies see an informational banner; nothing blocked.
+   **To start charging: flip `LICENSE_ENFORCEMENT` to `"block"` in `lib/license.ts` and set
+   `BUY_URL` to the live Razorpay/landing page** — the upsell panel then replaces Pro content
+   after the trial. Product principle enforced in code: the core journal (trades, imports,
+   dashboard, playbooks, backups) is NEVER gated — analytics are the product, the user's data
+   is not. Anti-casual-sharing only, by design — the buyer email shown in-app is the real
+   deterrent.
+5. **Indicator access** — no build needed; TradingView invite-only handles access. See
    `PINE_SCRIPT_INVITE_ONLY.md`.
 
 ## 5. Legal / SEBI posture (read `PINE_SCRIPT_INVITE_ONLY.md` §Disclaimers too)

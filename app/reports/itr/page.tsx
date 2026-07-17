@@ -5,6 +5,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
+import { ProGate } from "@/components/system/pro-gate";
 import { itrPackByFy } from "@/lib/analytics/itr";
 import { inr } from "@/lib/format";
 import { AlertTriangle, Info } from "lucide-react";
@@ -44,6 +45,7 @@ export default function ItrPackPage() {
         actions={<Badge variant="secondary">informational</Badge>}
       />
       <div className="space-y-5 p-6">
+        <ProGate>
         <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4 text-xs">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
           <p>
@@ -100,6 +102,7 @@ export default function ItrPackPage() {
             <ExportButtons filename="vyuha-itr-pack" columns={EXPORT_COLS} rows={exportRows} />
           </div>
         )}
+        </ProGate>
       </div>
     </>
   );

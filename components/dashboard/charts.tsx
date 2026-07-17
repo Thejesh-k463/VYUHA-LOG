@@ -59,10 +59,15 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
         <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={40} />
         <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => inrCompact(v)} />
-        <Tooltip content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />} />
+        {/* C3 — crosshair cursor + draw-in. Recharts only animates on mount, so
+            navigations get the sweep without re-animating on every filter change. */}
+        <Tooltip
+          content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />}
+          cursor={{ stroke: "var(--color-muted)", strokeDasharray: "4 3", strokeWidth: 1 }}
+        />
         <ReferenceLine y={0} stroke="var(--color-border)" />
-        <Area isAnimationActive={false} type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
-        <Area isAnimationActive={false} type="monotone" dataKey="drawdown" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1} fill="var(--color-loss)" fillOpacity={0.12} />
+        <Area animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
+        <Area animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="drawdown" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1} fill="var(--color-loss)" fillOpacity={0.12} />
       </ComposedChart>
     </ResponsiveContainer>
   );

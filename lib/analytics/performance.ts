@@ -108,7 +108,6 @@ export function computePerformance(
   const endEquity = equity;
   const totalReturn = endEquity / startEquity - 1;
 
-  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
   const sd = std(rets);
   const volAnnual = sd * Math.sqrt(TRADING_DAYS);
   const rfDaily = riskFreeAnnual / TRADING_DAYS;

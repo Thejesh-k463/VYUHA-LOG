@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { inr } from "@/lib/format";
 import type { MarginSummary } from "@/lib/risk/margin";
+import { toast } from "@/components/ui/toaster";
 
 interface RateRow {
   broker: string;
@@ -39,7 +40,10 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
         body: JSON.stringify({ broker: r.broker, segment: r.segment, marginPct: Number(raw) }),
       });
       const data = await res.json();
-      setMsg(data.message ?? (res.ok ? "Saved." : "Failed."));
+      const text = data.message ?? (res.ok ? "Saved." : "Failed.");
+      if (res.ok) toast.success(text);
+      else toast.error(text);
+      setMsg(null);
       if (res.ok) {
         setEdits((e) => ({ ...e, [key]: "" }));
         router.refresh();

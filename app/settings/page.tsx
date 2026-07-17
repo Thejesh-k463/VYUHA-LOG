@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { chargeConfig, riskConfig } from "@/lib/db/schema";
 import { getSettings } from "@/lib/queries/settings";
 import { getCapitalSummary, getCapitalHistory } from "@/lib/queries/capital";
-import { getLicenseStatus } from "@/lib/queries/license";
+import { getLicenseStatus, getEntitlement } from "@/lib/queries/license";
 import { CapitalGrowth } from "@/components/dashboard/charts";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default function SettingsPage() {
       <PageHeader title="Settings" description="Capital, go-live, charge rates and risk rules — all editable." />
       <div className="space-y-6 p-6">
         <SettingsForm current={settings} />
-        <LicenseCard status={getLicenseStatus()} />
+        <LicenseCard status={getLicenseStatus()} entitlement={getEntitlement()} />
         <CapitalCard summary={capital} />
         <Card>
           <CardHeader><CardTitle>Capital growth</CardTitle></CardHeader>

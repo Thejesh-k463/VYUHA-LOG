@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { chargeConfig } from "@/lib/db/schema";
 import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
@@ -9,7 +10,7 @@ function key(broker: string, segment: string, exchange: string) {
 }
 
 /** Load all charge_config rows into an in-memory lookup (one query per import). */
-export function loadRatesMap(): Map<string, ChargeRates> {
+export const loadRatesMap = cache((): Map<string, ChargeRates> => {
   const rows = db.select().from(chargeConfig).all();
   const map = new Map<string, ChargeRates>();
   for (const r of rows) {
@@ -38,4 +39,4 @@ export function loadRatesMap(): Map<string, ChargeRates> {
     });
   }
   return map;
-}
+});

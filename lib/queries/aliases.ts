@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { symbolAliases } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
@@ -21,6 +22,6 @@ export function getAliases(): AliasDisplay[] {
 }
 
 /** alias (upper) → ticker (upper). */
-export function getAliasMap(): Map<string, string> {
+export const getAliasMap = cache((): Map<string, string> => {
   return buildAliasMap(getAliases());
-}
+});

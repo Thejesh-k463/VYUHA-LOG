@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `accent_skin` text DEFAULT 'terminal' NOT NULL;

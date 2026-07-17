@@ -50,6 +50,37 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.80.0 — perf pass + monetization v2 + full visual overhaul.** PERF: eight hottest
+>   queries wrapped in React `cache()` (per-request dedupe; killed the import-loop margin-config
+>   N+1); indexes on `trades.is_open` + `trades.playbook_id` (migration 0024); lint to ZERO
+>   problems (`no-unused-vars` now ignores `^_`/rest-siblings via eslint.config.mjs).
+>   MONETIZATION v2: 14-day offline full-Pro trial (`settings.trial_started_at`, lazily stamped
+>   on true first run — the bundled template ships NULL because seed runs after migrations;
+>   migration 0024 backfills existing installs); `lib/license.ts` gained `expires` in the signed
+>   payload + `evaluateEntitlement`/`trialDaysLeft`/`isKeyExpired` + `PRO_FEATURES` registry +
+>   `BUY_URL`; `<ProGate>` (components/system/pro-gate.tsx) wraps /risk, /reports/tax,
+>   /reports/itr, /reports/broker-compare (replaced LicenseBanner) — banner mode informs, block
+>   mode swaps in the upsell panel; core journal NEVER gated by design; `license-issue.mjs`
+>   grew `--years N`/`--expires`; full gate matrix verified live (licensed/trial/banner/block)
+>   with the real key backed up and restored. VISUAL (C1–C10): Inter + JetBrains Mono via
+>   next/font (`.tabular-nums`/tables ride mono app-wide); elevation tokens
+>   (`--shadow-card[-hover]/overlay`, inner top highlight) + `card-hero` and other `@utility`
+>   classes (NOT `@layer components` — must sort with utilities to win over bg-card); real
+>   keyframes for dialog/overlay/fade-up/shimmer (the old `animate-in` classes were dead — no
+>   animation plugin exists); equity-curve draw-in + crosshair; calendar today-ring; KpiCard
+>   sparkline (pure SVG, server-safe) + delta chip + `CountUp` (reduced-motion aware);
+>   `row-hover` on DataTable; `loading.tsx` skeletons on 5 routes; dependency-free toast stack
+>   on a **window CustomEvent bus** (GOTCHA: a module-level listener singleton silently split
+>   across client chunks — module state is NOT shared between chunks; use window events);
+>   sidebar: collapsible rail (localStorage), active-item rail glow, Ctrl-K chip (palette
+>   listens for "vyuha:command-palette" window event), IST market clock (bump-version's
+>   `Offline · v` regex preserved); accent skins terminal/tape/ice (`settings.accent_skin`,
+>   migration 0025, html.skin-* token overrides, live-preview in Settings); `EmptyState`
+>   line-art (skin-aware via currentColor tokens) on DataTable/dashboard/playbooks; branded
+>   Tauri splash (src-tauri/loading/index.html); print-grade PDF via @media print token
+>   override forcing the light palette. VERIFIED: 440 tests, tsc, lint-zero; Playwright shots
+>   dark/light/tape + splash; fresh-context interactivity probe (long-lived dev tabs can hold
+>   stale HMR chunks after module-state edits — always probe in a fresh context).
 > - **v2.75.0 — user-control batch: rule-checklist enforcement, playbook expectancy cards,
 >   stop tuning, opt-in auto-MTM, breach alerts, ITR pack.** Design rule for the whole batch:
 >   the user keeps ultimate control; features warn/caution, never act. NEW pure modules (all

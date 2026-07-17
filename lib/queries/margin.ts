@@ -1,11 +1,12 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { marginConfig, type MarginConfigRow } from "@/lib/db/schema";
 import { marginKey, DEFAULT_MTF_OWN_MARGIN_PCT, type MarginRates } from "@/lib/risk/margin";
 
-export function getMarginConfig(): MarginConfigRow[] {
+export const getMarginConfig = cache((): MarginConfigRow[] => {
   return db.select().from(marginConfig).all().sort((a, b) => a.broker.localeCompare(b.broker) || a.segment.localeCompare(b.segment));
-}
+});
 
 /** All broker×segment margin rates, keyed "broker|segment" (see lib/risk/margin.ts#marginKey). */
 export function getMarginRates(): MarginRates {

@@ -1,16 +1,17 @@
 import "server-only";
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { trades, importBatches } from "@/lib/db/schema";
 import { desc, sql } from "drizzle-orm";
 import type { Trade } from "@/lib/db/schema";
 
-export function getTrades(): Trade[] {
+export const getTrades = cache((): Trade[] => {
   return db
     .select()
     .from(trades)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt))
     .all();
-}
+});
 
 export function getSetupTags(): string[] {
   const rows = db

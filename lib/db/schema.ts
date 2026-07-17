@@ -132,6 +132,10 @@ export const trades = sqliteTable(
     index("trades_segment_idx").on(t.segment),
     index("trades_bucket_idx").on(t.bucket),
     index("trades_sell_date_idx").on(t.sellDate),
+    // Hot paths: every tracker/risk/accrual query filters is_open; the
+    // playbook expectancy/discipline rollups group by playbook_id.
+    index("trades_is_open_idx").on(t.isOpen),
+    index("trades_playbook_idx").on(t.playbookId),
   ],
 );
 
@@ -330,6 +334,7 @@ export const settings = sqliteTable("settings", {
   equityCapital: real("equity_capital").notNull(),
   activeCapital: real("active_capital").notNull(),
   theme: text("theme").notNull().default("dark"),
+  accentSkin: text("accent_skin").notNull().default("terminal"), // terminal | tape | ice (C8)
   baseCurrency: text("base_currency").notNull().default("INR"),
   fyStartMonth: integer("fy_start_month").notNull().default(4), // April
   colorblindSafe: integer("colorblind_safe", { mode: "boolean" })
@@ -345,6 +350,9 @@ export const settings = sqliteTable("settings", {
   // the app is allowed to fetch from NSE and overwrite matched MTM prices).
   autoMtmEnabled: integer("auto_mtm_enabled", { mode: "boolean" }).notNull().default(false),
   lastAutoMtmDate: text("last_auto_mtm_date"), // bhavcopy date last applied (once-per-day guard)
+  // Monetization v2 — offline 14-day full-Pro trial, stamped on first run
+  // (backfilled to migration time for existing installs). See lib/license.ts.
+  trialStartedAt: text("trial_started_at"),
   updatedAt: text("updated_at").notNull().default(now),
 });
 

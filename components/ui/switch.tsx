@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import * as SwitchPrimitive from "@radix-ui/react-checkbox";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**

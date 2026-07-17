@@ -261,8 +261,9 @@ function Attachments({ tradeId }: { tradeId: number }) {
           <div className="mb-2 flex flex-wrap gap-2">
             {items.map((a) => (
               <div key={a.id} className="group relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <a href={`/api/trades/attachments?id=${a.id}`} target="_blank" rel="noreferrer" title={a.fileName}>
+                  {/* Thumbnails come from the local attachments API — next/image adds nothing for localhost blobs. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`/api/trades/attachments?id=${a.id}`}
                     alt={a.fileName}

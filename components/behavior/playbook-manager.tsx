@@ -12,7 +12,9 @@ import { Select } from "@/components/ui/select";
 import type { Playbook } from "@/lib/db/schema";
 import type { PlaybookStat } from "@/lib/analytics/behavior";
 import { PRESET_PLAYBOOKS, presetCategories } from "@/lib/domain/preset-playbooks";
+import { toast } from "@/components/ui/toaster";
 import { inr } from "@/lib/format";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Plus, Pencil, Trash2, Archive, ArchiveRestore, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?: Record<number, PlaybookStat> }) {
@@ -37,7 +39,9 @@ export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "Saved.");
+    else toast.error(data.message ?? "Failed.");
+    setMsg(null);
     if (data.ok) router.refresh();
     return !!data.ok;
   }
@@ -66,10 +70,13 @@ export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?
       </div>
 
       {rows.length === 0 ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">
-          No playbooks yet. A playbook is a named setup — &ldquo;Breakout&rdquo;, &ldquo;Pullback to 20 EMA&rdquo;,
-          &ldquo;Expiry theta&rdquo; — with the rules you promise to follow. Create one, tag your trades, and the
-          Discipline page shows which setups actually make you money.
+        <Card><CardContent className="p-6">
+          <EmptyState
+            variant="playbook"
+            title="No playbooks yet"
+            hint={<>A playbook is a named setup — &ldquo;Breakout&rdquo;, &ldquo;Pullback to 20 EMA&rdquo;, &ldquo;Expiry theta&rdquo; — with the rules you promise to follow. Start from one of the 25 world-class presets or write your own; tag trades and the Discipline page shows which setups actually pay.</>}
+            action={<Button size="sm" onClick={() => setAddOpen(true)}><Plus className="size-4" /> New playbook</Button>}
+          />
         </CardContent></Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">

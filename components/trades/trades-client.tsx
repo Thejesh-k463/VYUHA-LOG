@@ -14,7 +14,7 @@ import { ManualTradeForm } from "./manual-trade-form";
 import { CloseTradeDialog } from "./close-trade-dialog";
 import { EditTradeDialog } from "./edit-trade-dialog";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
-import { inr, num } from "@/lib/format";
+import { num } from "@/lib/format";
 import {
   BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, BUCKETS, BUCKET_LABELS,
   type Segment,

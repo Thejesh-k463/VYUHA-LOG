@@ -23,7 +23,7 @@ import { GreeksPanel } from "@/components/risk/greeks-panel";
 import { getLatestVixClose, VIX_SYMBOL } from "@/lib/queries/vix";
 import { getBenchmarkMeta, getBenchmarkCloses, DEFAULT_BENCHMARK } from "@/lib/queries/benchmark";
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
-import { LicenseBanner } from "@/components/system/license-banner";
+import { ProGate } from "@/components/system/pro-gate";
 import {
   computePortfolioVar,
   symbolBeta,
@@ -241,7 +241,7 @@ export default function RiskPage() {
     <>
       <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
       <div className="space-y-5 p-6">
-        <LicenseBanner />
+        <ProGate>
         <BreachBanner breaches={scanBreaches()} />
         <RiskCockpitClient
           inputs={inputs}
@@ -299,6 +299,7 @@ export default function RiskPage() {
             </CardContent>
           </Card>
         </div>
+        </ProGate>
       </div>
     </>
   );

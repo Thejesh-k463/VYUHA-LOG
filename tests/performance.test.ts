@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePerformance, monthlyReturns, timeWeightedReturn, type DailyPoint } from "@/lib/analytics/performance";
+import { computePerformance, timeWeightedReturn, type DailyPoint } from "@/lib/analytics/performance";
 
 describe("computePerformance", () => {
   const daily: DailyPoint[] = [

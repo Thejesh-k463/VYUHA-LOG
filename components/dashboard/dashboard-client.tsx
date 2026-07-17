@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/kpi-card";
+import { CountUp } from "@/components/ui/count-up";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ExportButtons } from "@/components/ui/export-button";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
@@ -13,7 +15,7 @@ import {
   computeKpis, equityCurve, dailyPnl, bySegment, bySetup,
   type AnalyticsTrade,
 } from "@/lib/analytics/metrics";
-import { inr, inrCompact, num } from "@/lib/format";
+import { inr, inrCompact } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 
 export interface DashTrade extends AnalyticsTrade {
@@ -53,6 +55,29 @@ export function DashboardClient({
   const daily = React.useMemo(() => Object.fromEntries(dailyPnl(filtered)), [filtered]);
   const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
   const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
+
+  // C4 — sparkline (last 30 equity points) + week-over-week net delta.
+  const spark = React.useMemo(() => curve.slice(-30).map((p) => p.cum), [curve]);
+  const weekDelta = React.useMemo(() => {
+    const dates = Object.keys(daily).sort();
+    if (dates.length === 0) return null;
+    const latest = new Date(dates[dates.length - 1] + "T00:00:00");
+    const cutoff = (d: number) => {
+      const x = new Date(latest);
+      x.setDate(x.getDate() - d);
+      return x.toISOString().slice(0, 10);
+    };
+    const wk1 = cutoff(7);
+    const wk2 = cutoff(14);
+    let thisWeek = 0;
+    let lastWeek = 0;
+    for (const [d, v] of Object.entries(daily)) {
+      if (d > wk1) thisWeek += v;
+      else if (d > wk2) lastWeek += v;
+    }
+    const value = Math.round(thisWeek - lastWeek);
+    return { value, label: "vs prior wk", formatted: inrCompact(Math.abs(value)) };
+  }, [daily]);
 
   // monthly ladder (combined)
   const monthly = React.useMemo(() => {
@@ -101,18 +126,25 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs — count-up, sparkline and week-over-week delta (C4) */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Net P&L" value={inr(k.netPnl, { decimals: 0 })} valueClassName={k.netPnl >= 0 ? "text-profit" : "text-loss"} sub={`Gross ${inrCompact(k.grossPnl)}`} />
-        <KpiCard label="Total charges" value={inr(k.charges, { decimals: 0 })} valueClassName="text-warning" sub={`${k.chargePctOfGross}% of gross`} />
-        <KpiCard label="Win rate" value={`${(k.winRate * 100).toFixed(1)}%`} sub={`${k.wins}W / ${k.losses}L`} />
-        <KpiCard label="Profit factor" value={k.profitFactor === Infinity ? "∞" : k.profitFactor.toFixed(2)} sub={`Expectancy ${inrCompact(k.expectancy)}`} />
-        <KpiCard label="Avg R" value={k.avgR == null ? "—" : `${k.avgR.toFixed(2)}R`} sub={`Max DD ${inrCompact(k.maxDrawdown)}`} />
+        <KpiCard
+          label="Net P&L"
+          value={<CountUp value={k.netPnl} />}
+          valueClassName={k.netPnl >= 0 ? "text-profit" : "text-loss"}
+          sub={`Gross ${inrCompact(k.grossPnl)}`}
+          spark={spark}
+          delta={weekDelta ?? undefined}
+        />
+        <KpiCard label="Total charges" value={<CountUp value={k.charges} />} valueClassName="text-warning" sub={`${k.chargePctOfGross}% of gross`} />
+        <KpiCard label="Win rate" value={<CountUp value={k.winRate * 100} decimals={1} format="plain" suffix="%" />} sub={`${k.wins}W / ${k.losses}L`} />
+        <KpiCard label="Profit factor" value={k.profitFactor === Infinity ? "∞" : <CountUp value={k.profitFactor} decimals={2} format="plain" />} sub={`Expectancy ${inrCompact(k.expectancy)}`} />
+        <KpiCard label="Avg R" value={k.avgR == null ? "—" : <CountUp value={k.avgR} decimals={2} format="plain" suffix="R" />} sub={`Max DD ${inrCompact(k.maxDrawdown)}`} />
       </section>
 
       {/* Equity curve + monthly ladder */}
       <section className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 card-hero">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Equity curve {bucket && <span className="text-muted-foreground">· {BUCKET_LABELS[bucket as never]}</span>}</CardTitle>
             <Badge variant="secondary">Max DD {inrCompact(k.maxDrawdown)}</Badge>
@@ -190,5 +222,5 @@ function MonthLadder({ month, net, base, stretch }: { month: string; net: number
 }
 
 function Empty() {
-  return <div className="py-8 text-center text-sm text-muted-foreground">No data for the current filters.</div>;
+  return <EmptyState variant="chart" title="No data for these filters" hint="Widen the date range or clear a filter — closed trades power every chart here." />;
 }

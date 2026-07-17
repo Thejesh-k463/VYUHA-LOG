@@ -28,7 +28,6 @@ const FIELDS: { key: keyof ChargeConfigRow; label: string }[] = [
 
 export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
   const [id, setId] = React.useState<number>(rows[0]?.id ?? 0);
-  const selected = rows.find((r) => r.id === id) ?? rows[0];
   const [vals, setVals] = React.useState<Record<string, string>>(() => initVals(rows[0]));
   const [pending, setPending] = React.useState(false);
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);

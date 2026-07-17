@@ -145,7 +145,6 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     }
     const trades: NormalizedTrade[] = [];
     for (const a of groups.values()) {
-      const gross = a.sellVal - a.buyVal * (a.sellQty / Math.max(a.buyQty, 1));
       trades.push({
         broker: "zerodha",
         tradingsymbol: a.symbol,

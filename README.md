@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-433%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-440%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -28,6 +28,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - 📚 **Playbooks that enforce discipline, not just describe it.** 25 preset setups from trading ecosystems worldwide (ORB → Wyckoff → Minervini VCP → India's expiry-day theta), fully editable, plus your own. Tag a trade and its rules become a **followed/broken checklist** — the Discipline page then shows *which broken rule costs you the most ₹*.
 - 🔍 **Honest analytics.** Expectancy cards warn you when the sample is too small to trust. The stop-tuning report says "descriptive, not prescriptive." Mistake economics report the expectancy *gap*, never fake counterfactuals. A SEBI reality-check card compares your F&O book to the published loss statistics.
 - 🔒 **You stay in control — always.** Auto-MTM is opt-in. Update dialogs ask, never install. Breach alerts say *"check a live quote and review your plan"* — the app never places, closes, or changes anything on its own.
+- 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — in three accent skins (**Terminal teal / Tape amber / Ice blue**), dark or light, with a colorblind-safe mode.
 
 ---
 
@@ -79,7 +80,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Signed auto-updates**: the desktop app checks once at launch and shows *Update now / Later* — nothing ever installs itself, and your DB is **backed up automatically before any migration**.
 
 ### 🗃 Operational depth
-IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · light/dark + colorblind-safe themes.
+IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · collapsible sidebar with live IST market clock · three accent skins + light/dark + colorblind-safe themes · toast notifications · animated, skeleton-loaded UI.
 
 ---
 
@@ -92,7 +93,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 ## 🚀 Get it
 
-**Desktop (Windows):** grab `Vyuha_x.y.z_x64-setup.exe` from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled. Your data persists in app-data across updates and reinstalls.
+**Desktop (Windows):** grab `Vyuha_x.y.z_x64-setup.exe` from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled. Every fresh install starts a **14-day full-Pro trial** (fully offline — no signup, no card), and the core journal is free forever. Your data persists in app-data across updates and reinstalls.
 
 **Run from source:**
 
@@ -107,7 +108,7 @@ npm run dev       # http://localhost:3000
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **433 unit tests** over pure, DB-free modules: charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE…
+- **440 unit tests** over pure, DB-free modules: charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE…
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
 - Full changelog in [`CHANGELOG.md`](CHANGELOG.md).
@@ -122,7 +123,7 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (433 tests) |
+| `npm test` | Vitest unit suite (440 tests) |
 | `npm run test:e2e` | Playwright happy-path e2e |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
@@ -175,7 +176,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 433 Vitest unit tests
+  tests/          # 440 Vitest unit tests
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

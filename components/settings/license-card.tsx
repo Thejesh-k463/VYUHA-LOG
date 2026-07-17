@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, AlertCircle, KeyRound } from "lucide-react";
+import { CheckCircle2, AlertCircle, KeyRound, Sparkles } from "lucide-react";
 import type { LicenseStatus } from "@/lib/queries/license";
-import { SKU_LABELS } from "@/lib/license";
+import { SKU_LABELS, BUY_URL, type Entitlement } from "@/lib/license";
 
-export function LicenseCard({ status }: { status: LicenseStatus }) {
+export function LicenseCard({ status, entitlement }: { status: LicenseStatus; entitlement?: Entitlement }) {
   const router = useRouter();
   const [key, setKey] = React.useState("");
   const [pending, setPending] = React.useState(false);
@@ -38,6 +38,10 @@ export function LicenseCard({ status }: { status: LicenseStatus }) {
         <CardTitle className="flex items-center gap-2"><KeyRound className="size-4" /> License</CardTitle>
         {status.licensed ? (
           <Badge variant="profit">Licensed</Badge>
+        ) : entitlement?.state === "trial" ? (
+          <Badge variant="warning">Pro trial — {entitlement.trialDaysLeft}d left</Badge>
+        ) : entitlement?.state === "expired-key" ? (
+          <Badge variant="warning">Key expired</Badge>
         ) : (
           <Badge variant="secondary">Unlicensed</Badge>
         )}
@@ -63,6 +67,24 @@ export function LicenseCard({ status }: { status: LicenseStatus }) {
           </div>
         ) : (
           <>
+            {entitlement?.state === "trial" && (
+              <p className="flex items-start gap-1.5 rounded-md border border-accent/30 bg-accent/5 p-2 text-xs">
+                <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                <span>
+                  Every Pro screen is unlocked for {entitlement.trialDaysLeft} more day{entitlement.trialDaysLeft === 1 ? "" : "s"} while you
+                  evaluate. Your journal itself is free forever — only advanced analytics need a key after the trial.{" "}
+                  <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get the Toolkit</a>
+                </span>
+              </p>
+            )}
+            {entitlement?.state === "expired-key" && entitlement.payload && (
+              <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+                Your {SKU_LABELS[entitlement.payload.sku] ?? entitlement.payload.sku} key for{" "}
+                <span className="font-medium">{entitlement.payload.email}</span> expired on{" "}
+                {entitlement.payload.expires}. Renew to keep Pro screens after the grace trial.{" "}
+                <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Renew</a>
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Paste the <code className="rounded bg-card-hover px-1 py-0.5">VYUHA-…</code> key from your purchase
               email. Activation is fully offline — the key is verified on this machine and never sent anywhere.

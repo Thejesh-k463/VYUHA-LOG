@@ -30,6 +30,9 @@ export interface LicensePayload {
   email: string;
   sku: LicenseSku | string;
   issued: string; // ISO date
+  /** Optional ISO expiry date (annual SKUs). Absent = lifetime. Signed like
+   *  every other field, so it can't be edited without breaking the signature. */
+  expires?: string;
 }
 
 export interface LicenseCheck {
@@ -76,3 +79,85 @@ export const SKU_LABELS: Record<string, string> = {
   app: "Vyuha app",
   indicators: "Indicators bundle",
 };
+
+// ---------------------------------------------------------------------------
+// Entitlement layer (monetization v2) — signature validity vs. entitlement are
+// two different questions: an annual key stays cryptographically valid after
+// its expiry date, but no longer entitles Pro.
+// ---------------------------------------------------------------------------
+
+/** Full Pro trial for every fresh install — long enough to hit one expiry week
+ *  and one MTF interest cycle, short enough to matter. Offline by design. */
+export const TRIAL_DAYS = 14;
+
+/** Where "Get the Toolkit" buttons point. Swap for the live Razorpay payment
+ *  page / landing page URL at launch (docs/monetization/MONETIZATION_PLAN.md §3). */
+export const BUY_URL = "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
+
+/** The Pro surface. One registry drives the gates, the upsell card's feature
+ *  list, and the docs — add a page here and it's gated everywhere at once.
+ *  Deliberate: the CORE JOURNAL (trades, imports, dashboard, playbooks) is
+ *  never gated — your data and record-keeping are never held hostage. */
+export const PRO_FEATURES: { href: string; label: string }[] = [
+  { href: "/risk", label: "Portfolio Risk cockpit (VaR, Greeks, margin, settlement radar, breach alerts)" },
+  { href: "/reports/tax", label: "Tax Summary (grandfathering, dividend TDS, set-off)" },
+  { href: "/reports/itr", label: "ITR Pack — 44AB/44AD audit read + CA export" },
+  { href: "/reports/broker-compare", label: "Broker cost comparison (whole history re-priced)" },
+];
+
+export type EntitlementState = "licensed" | "trial" | "expired-key" | "unlicensed";
+
+export interface Entitlement {
+  state: EntitlementState;
+  pro: boolean; // licensed OR in trial
+  payload: LicensePayload | null; // set for licensed AND expired-key
+  trialDaysLeft: number; // 0 when over / not applicable
+  reason?: string; // invalid-key reason, when a key exists but fails
+}
+
+const dayMs = 86_400_000;
+
+/** Days of trial remaining (ceil — day 14 still counts). Pure. */
+export function trialDaysLeft(trialStartedAt: string | null, today: Date = new Date()): number {
+  if (!trialStartedAt) return 0;
+  const start = new Date(trialStartedAt).getTime();
+  if (Number.isNaN(start)) return 0;
+  const left = TRIAL_DAYS - (today.getTime() - start) / dayMs;
+  return Math.max(0, Math.ceil(left));
+}
+
+/** Signed expiry check — absent `expires` means lifetime. Pure. */
+export function isKeyExpired(payload: LicensePayload, today: Date = new Date()): boolean {
+  if (!payload.expires) return false;
+  return today.getTime() > new Date(payload.expires + "T23:59:59").getTime();
+}
+
+/**
+ * The one entitlement answer the app uses everywhere. Pure — callers supply
+ * the stored key + trial start; DB access stays in lib/queries/license.ts.
+ */
+export function evaluateEntitlement(
+  storedKey: string | null,
+  trialStartedAt: string | null,
+  today: Date = new Date(),
+  publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
+): Entitlement {
+  if (storedKey) {
+    const check = verifyLicenseKey(storedKey, publicKeyPem);
+    if (check.valid && check.payload) {
+      if (isKeyExpired(check.payload, today)) {
+        // Expired annual key: fall back to trial if any remains, else free.
+        const days = trialDaysLeft(trialStartedAt, today);
+        return { state: "expired-key", pro: days > 0, payload: check.payload, trialDaysLeft: days };
+      }
+      return { state: "licensed", pro: true, payload: check.payload, trialDaysLeft: 0 };
+    }
+    // Invalid key on record → treated as unlicensed (reason surfaced in Settings).
+    const days = trialDaysLeft(trialStartedAt, today);
+    return { state: days > 0 ? "trial" : "unlicensed", pro: days > 0, payload: null, trialDaysLeft: days, reason: check.reason };
+  }
+  const days = trialDaysLeft(trialStartedAt, today);
+  return days > 0
+    ? { state: "trial", pro: true, payload: null, trialDaysLeft: days }
+    : { state: "unlicensed", pro: false, payload: null, trialDaysLeft: 0 };
+}

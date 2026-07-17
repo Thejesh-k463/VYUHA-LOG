@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[];
@@ -30,6 +31,9 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
+  // TanStack Table's API returns unmemoizable functions — React Compiler skips
+  // this component by design; the table manages its own memoization internally.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
@@ -73,13 +77,13 @@ export function DataTable<T>({
         <tbody>
           {table.getRowModel().rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-3 py-8 text-center text-muted-foreground">
-                {emptyMessage}
+              <td colSpan={columns.length}>
+                <EmptyState variant="chart" title="Nothing here yet" hint={emptyMessage} />
               </td>
             </tr>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-b border-border/40 hover:bg-card-hover/40">
+              <tr key={row.id} className="row-hover border-b border-border/40">
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}

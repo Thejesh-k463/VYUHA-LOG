@@ -20,6 +20,7 @@ export function CalendarHeatmap({ daily }: { daily: Record<string, number> }) {
     return <p className="text-sm text-muted-foreground">No closed trades yet.</p>;
   }
   const maxAbs = Math.max(...Object.values(daily).map((v) => Math.abs(v)), 1);
+  const today = new Date().toISOString().slice(0, 10);
 
   // months present (YYYY-MM)
   const months = [...new Set(dates.map((d) => d.slice(0, 7)))].sort();
@@ -44,20 +45,23 @@ export function CalendarHeatmap({ daily }: { daily: Record<string, number> }) {
               {WD.map((w, i) => (
                 <div key={i} className="text-center text-[9px] text-muted-foreground/60">{w}</div>
               ))}
-              {cells.map((c, i) =>
-                c == null ? (
-                  <div key={i} className="size-6" />
-                ) : (
+              {cells.map((c, i) => {
+                if (c == null) return <div key={i} className="size-6" />;
+                const key = `${ym}-${String(c.day).padStart(2, "0")}`;
+                const isToday = key === today;
+                return (
                   <div
                     key={i}
-                    title={c.net != null ? `${ym}-${String(c.day).padStart(2, "0")}: ${inr(c.net)}` : `${ym}-${String(c.day).padStart(2, "0")}: no trades`}
-                    className="flex size-6 items-center justify-center rounded text-[9px] tabular-nums text-foreground/70"
+                    title={c.net != null ? `${key}: ${inr(c.net)}` : `${key}: no trades`}
+                    className={`flex size-6 items-center justify-center rounded-md text-[9px] tabular-nums text-foreground/70 transition-transform duration-100 hover:scale-110 hover:text-foreground ${
+                      isToday ? "ring-1 ring-primary ring-offset-1 ring-offset-card" : ""
+                    }`}
                     style={{ background: c.net == null ? "transparent" : colorFor(c.net, maxAbs), border: c.net == null ? "1px solid var(--color-border)" : "none" }}
                   >
                     {c.day}
                   </div>
-                ),
-              )}
+                );
+              })}
             </div>
           </div>
         );

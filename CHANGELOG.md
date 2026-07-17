@@ -4,6 +4,61 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.80.0
+Three workstreams: performance, monetization v2, and a full visual overhaul.
+
+### Performance & code health
+- **Per-request query deduplication**: the eight hottest server queries
+  (trades, MTM/spot maps, settings, margin config, aliases, playbooks, charge
+  rates) are wrapped in React `cache()` — pages that previously hit the DB 2–4×
+  per render now hit it once, and importing a broker file no longer re-queries
+  margin config per trade (the last N+1).
+- **New indexes** on `trades.is_open` and `trades.playbook_id` (migration 0024).
+- **Lint: 16 warnings → 0 problems** — dead imports/locals removed across 12
+  files; `_`-prefixed/rest-sibling destructures now treated as intentional.
+
+### Monetization v2 (offline, user-first)
+- **14-day full-Pro trial** stamped on the true first run (installer templates
+  ship unstamped; existing installs backfilled). Trial users see everything
+  plus an honest countdown strip.
+- **`<ProGate>`** now drives all four Pro screens (Portfolio Risk, Tax Summary,
+  ITR Pack, Broker Costs) from one `PRO_FEATURES` registry. "banner" mode
+  (current) informs; "block" mode replaces content with an upsell panel after
+  the trial. Enforced product principle: the core journal — trades, imports,
+  dashboard, playbooks, backups — is NEVER gated.
+- **Annual keys**: the license payload takes a signed optional `expires` date;
+  `license-issue.mjs --years 1` mints them; expired keys degrade gracefully
+  (grace trial → free) with a renewal notice. Settings shows tier/trial/expiry.
+
+### Visual overhaul (all 3 cosmetic tiers)
+- **Typography**: Inter UI + JetBrains Mono on every number and table
+  (self-hosted, offline-safe) — the terminal look, app-wide.
+- **Depth**: elevation tokens with inner-highlight cards, hover lift, blurred
+  dialog overlays with real spring keyframes, hero gradient border + glow on
+  the equity curve.
+- **Charts**: draw-in animation + crosshair cursor on the equity curve; the
+  P&L calendar gained rounded magnitude-scaled cells, hover scale and a today
+  ring.
+- **Alive layer**: Net P&L sparkline + week-over-week ▲/▼ delta chip, count-up
+  KPI numbers (reduced-motion aware), row-hover lift on every table, shimmer
+  skeletons on the five heaviest routes, and a dependency-free **toast system**
+  replacing inline "Saved." messages.
+- **Sidebar**: collapsible icon rail (persisted), accent rail + glow on the
+  active item, a "Jump to… Ctrl K" chip wired to the command palette, and a
+  footer **IST clock with market open/closed pulse dot**.
+- **Accent skins**: Terminal (teal) / Tape (amber) / Ice (blue), selectable in
+  Settings with instant preview, persisted (migration 0025), composing with
+  light theme + colorblind mode. P&L semantics untouched by skins.
+- **Illustrated empty states** (skin-aware line art) on every data table, the
+  dashboard charts and the Playbooks page.
+- **Branded splash** (glowing व, ripple halo, shimmer progress, privacy
+  footer) and **print-grade PDF output**: printing forces the light palette,
+  strips elevation, sets page margins and keeps tables from splitting.
+
+440 unit tests, typecheck, lint all green; features verified live in dark,
+light and Tape-skin contexts, including a fresh-context toast/interactivity
+probe.
+
 ## v2.75.0
 User-control release: seven upgrades, every one warns and cautions instead of
 acting — the trader keeps the final say on everything.

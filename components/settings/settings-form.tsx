@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { Settings } from "@/lib/db/schema";
+import { toast } from "@/components/ui/toaster";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 const MONTHS = [
@@ -18,6 +19,7 @@ const MONTHS = [
 export function SettingsForm({ current }: { current: Settings }) {
   const [colorblind, setColorblind] = useState(current.colorblindSafe);
   const [theme, setTheme] = useState(current.theme);
+  const [skin, setSkin] = useState(current.accentSkin ?? "terminal");
   const [goLiveDate, setGoLive] = useState(current.goLiveDate);
   const [equityCapital, setEquity] = useState(String(current.equityCapital));
   const [activeCapital, setActive] = useState(String(current.activeCapital));
@@ -37,6 +39,11 @@ export function SettingsForm({ current }: { current: Settings }) {
     setColorblind(next);
     document.documentElement.classList.toggle("cb-safe", next);
   }
+  function applySkin(next: string) {
+    setSkin(next);
+    document.documentElement.classList.remove("skin-tape", "skin-ice");
+    if (next !== "terminal") document.documentElement.classList.add(`skin-${next}`);
+  }
 
   async function save() {
     setPending(true);
@@ -47,13 +54,16 @@ export function SettingsForm({ current }: { current: Settings }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "settings",
-          goLiveDate, equityCapital, activeCapital, theme, fyStartMonth,
+          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
         }),
       });
       const json = await res.json();
-      setMsg({ ok: !!json.ok, text: json.message ?? (json.ok ? "Saved." : "Failed.") });
+      const text = json.message ?? (json.ok ? "Saved." : "Failed.");
+      if (json.ok) toast.success(text);
+      else toast.error(text);
+      setMsg(null);
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     } finally {
@@ -89,6 +99,13 @@ export function SettingsForm({ current }: { current: Settings }) {
             <Select value={theme} onChange={(e) => applyTheme(e.target.value)}>
               <option value="dark">Dark (terminal)</option>
               <option value="light">Light</option>
+            </Select>
+          </Field>
+          <Field label="Accent skin">
+            <Select value={skin} onChange={(e) => applySkin(e.target.value)}>
+              <option value="terminal">Terminal (teal)</option>
+              <option value="tape">Tape (amber)</option>
+              <option value="ice">Ice (blue)</option>
             </Select>
           </Field>
           <Field label="Financial year starts">

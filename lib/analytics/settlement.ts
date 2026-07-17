@@ -13,10 +13,9 @@
 // Rates: the equity-delivery STT comes from `charge_config` (never hard-coded);
 // the option-exercise STT is a dated statutory default the caller may override.
 
-import { INDEX_UNDERLYINGS, COMMODITY_UNDERLYINGS } from "@/lib/domain/constants";
+import { INDEX_UNDERLYINGS } from "@/lib/domain/constants";
 
 const INDEX_SET = new Set<string>(INDEX_UNDERLYINGS);
-const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const rupee = (n: number) => Math.round(n);
