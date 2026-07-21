@@ -62,6 +62,24 @@ export interface NormalizedTrade {
   productHint: ProductHint;
   exchangeHint: Exchange | null;
   sourceFile: string | null;
+  /**
+   * The individual fills behind this aggregate, when the source file had them
+   * (tradebook exports list every execution; P&L reports are pre-aggregated).
+   *
+   * Preserving them is what lets an imported position show its real entry
+   * ladder instead of a single blended average. Two or more executions on the
+   * opening side make the trade a staged position on commit.
+   */
+  executions?: Execution[] | null;
+}
+
+/** One executed fill from a broker tradebook. */
+export interface Execution {
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  date: string | null;
+  time?: string | null;
 }
 
 /** Subset of charge_config the pure engine needs (broker × segment × exchange). */

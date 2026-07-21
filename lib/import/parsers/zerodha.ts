@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 
@@ -124,6 +124,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     type Acc = {
       symbol: string; isin: string | null; product: string; exch: string; date: string | null;
       buyQty: number; buyVal: number; sellQty: number; sellVal: number;
+      executions: Execution[];
     };
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
@@ -134,13 +135,18 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       const acc = groups.get(key) ?? {
         symbol, isin: cIsin >= 0 ? r[cIsin] || null : null, product,
         exch: cExch >= 0 ? r[cExch] : "", date: cDate >= 0 ? r[cDate] || null : null,
-        buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0,
+        buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0, executions: [],
       };
       const qty = toNum(r[cQty]);
       const price = toNum(r[cPrice]);
       const side = norm(r[cTradeType]);
       if (side.startsWith("b")) { acc.buyQty += qty; acc.buyVal += qty * price; }
       else { acc.sellQty += qty; acc.sellVal += qty * price; }
+      // Keep the fill itself — the staged ladder is rebuilt from these.
+      if (qty > 0) {
+        const rowDate = cDate >= 0 ? r[cDate] || null : acc.date;
+        acc.executions.push({ side: side.startsWith("b") ? "buy" : "sell", qty, price, date: rowDate });
+      }
       groups.set(key, acc);
     }
     const trades: NormalizedTrade[] = [];
@@ -163,6 +169,7 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         productHint: productHint(a.product),
         exchangeHint: exchangeFrom(a.exch),
         sourceFile: ctx.filename,
+        executions: a.executions,
       });
     }
     warnings.push("Zerodha tradebook aggregated per tradingsymbol+product; verify F&O classification.");

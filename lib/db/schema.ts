@@ -102,6 +102,13 @@ export const trades = sqliteTable(
     ruleViolations: text("rule_violations", { mode: "json" }).$type<string[]>(),
     mistakeTags: text("mistake_tags", { mode: "json" }).$type<string[]>(),
 
+    // Staged (scaled) position — S1. When true, this trade's quantities and
+    // prices are DERIVED from its trade_legs rows rather than typed directly:
+    // buy_qty/avg_buy_price/sell_qty/avg_sell_price and the whole charge
+    // breakdown are recomputed from the legs on every mutation. False keeps the
+    // classic single-entry behaviour byte-for-byte, so nothing existing moves.
+    staged: integer("staged", { mode: "boolean" }).notNull().default(false),
+
     // Charges breakdown
     brokerage: moneyPaise("brokerage_paise").notNull().default(0),
     sttCtt: moneyPaise("stt_ctt_paise").notNull().default(0),
@@ -136,6 +143,66 @@ export const trades = sqliteTable(
     // playbook expectancy/discipline rollups group by playbook_id.
     index("trades_is_open_idx").on(t.isOpen),
     index("trades_playbook_idx").on(t.playbookId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// trade_legs — the individual executions behind a staged (scaled) position.
+//
+// One row per fill: kind "entry" adds exposure, kind "exit" removes it. The
+// parent trade row stays the aggregate (so every existing report, tax pack and
+// risk view keeps working untouched) and is recomputed from these rows.
+//
+// Accounting, decided deliberately and relied on by lib/domain/staged.ts:
+//   • PRICING is weighted-average — an exit books against the blended average
+//     of all entry legs open at that moment. This matches the average price
+//     your broker shows, so journal P&L never disagrees with the broker app.
+//   • QUANTITY CONSUMPTION is FIFO — an exit retires the oldest open entry
+//     legs first. Weighted-average pricing alone cannot say WHICH stop is
+//     still live once you scale out; FIFO keeps quantities whole (no
+//     fractional shares) and matches how traders describe it ("booked my
+//     first tranche"). The two rules are independent and both are enforced.
+//   • R is frozen at the FIRST entry's risk for the life of the position, so a
+//     3R stays a 3R whether or not you pyramided.
+//
+// Charges are booked PER LEG (brokerage is per order, STT per execution), with
+// DP charged once per exit DATE rather than once per leg.
+// ---------------------------------------------------------------------------
+export const tradeLegs = sqliteTable(
+  "trade_legs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tradeId: integer("trade_id").notNull(),
+    kind: text("kind").notNull(), // entry | exit
+    /** 1-based order the legs were executed in; ties broken by id. */
+    seq: integer("seq").notNull().default(1),
+
+    tradeDate: text("trade_date").notNull(), // ISO date of this fill
+    tradeTime: text("trade_time"), // HH:MM, when the broker file carries it
+    qty: real("qty").notNull(),
+    price: real("price").notNull(),
+
+    // Entry legs only — each tranche carries its own stop, so you can run a
+    // wide stop on the core and tight stops on the adds. "Apply to all" in the
+    // UI simply writes the same value across every open entry leg.
+    slPlanned: real("sl_planned"),
+    trailingSl: real("trailing_sl"),
+    targetPlanned: real("target_planned"),
+
+    /** Charges attributable to THIS fill (paise). Parent = sum of legs. */
+    chargesTotal: moneyPaise("charges_total_paise").notNull().default(0),
+    /** Realised net P&L for an exit leg (paise); always 0 on entry legs. */
+    netPnl: moneyPaise("net_pnl_paise").notNull().default(0),
+    /** Blended average cost this exit booked against — frozen for audit. */
+    avgCostAtExit: real("avg_cost_at_exit"),
+
+    note: text("note"),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [
+    index("trade_legs_trade_idx").on(t.tradeId),
+    index("trade_legs_order_idx").on(t.tradeId, t.seq),
   ],
 );
 

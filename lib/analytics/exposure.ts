@@ -24,6 +24,17 @@ export interface ExposureInput {
   dte: number | null;
   sector?: string | null; // from the instruments master (P1.3)
   side?: "long" | "short"; // default "long"
+  /**
+   * Per-tranche stops for a STAGED (scaled) position. When present, open risk
+   * and initial risk are summed across the open tranches instead of being
+   * derived from one position-level stop — a position with a wide stop on the
+   * core and a tight stop on the adds is genuinely less exposed than the
+   * widest stop alone implies, and the cockpit should say so.
+   *
+   * `qty` here is the tranche's OPEN quantity; the tranche prices are the
+   * actual fills. Absent (the normal case) nothing changes.
+   */
+  tranches?: Array<{ qty: number; price: number; stop: number | null }> | null;
   impliedVol?: number | null; // user-entered IV % for option Greeks; null = use a flat default
   spot?: number | null; // underlying spot (for options, distinct from mtm which is the premium)
 }
@@ -148,9 +159,43 @@ export function computeExposure(inputs: ExposureInput[], capital: number): Expos
     const unrealised = (p.mtm - p.entry) * p.qty * sign;
     const effectiveStop = p.trailingSl ?? p.originalSl ?? null;
     const hasStop = effectiveStop != null;
-    const openRiskAmt = hasStop ? (p.mtm - (effectiveStop as number)) * p.qty * sign : null;
-    const initialRiskAmt = p.originalSl != null ? (p.entry - p.originalSl) * p.qty * sign : null;
-    const capitalAtRiskAmt = hasStop ? Math.max(0, (p.entry - (effectiveStop as number)) * p.qty * sign) : invested;
+
+    // A staged position carries a stop per tranche. Summing them is the exact
+    // answer; the single-stop path below is the exact answer when there is
+    // only one tranche, so both stay correct.
+    const tr = p.tranches && p.tranches.length > 0 ? p.tranches : null;
+
+    const openRiskAmt = tr
+      ? tr.reduce(
+          (acc, t) =>
+            acc +
+            (t.stop == null
+              ? p.mtm * t.qty // unstopped: the whole position is the risk
+              : Math.max(0, (p.mtm - t.stop) * t.qty * sign)),
+          0,
+        )
+      : hasStop
+        ? (p.mtm - (effectiveStop as number)) * p.qty * sign
+        : null;
+
+    const initialRiskAmt = tr
+      ? tr.reduce((acc, t) => acc + (t.stop == null ? 0 : (t.price - t.stop) * t.qty * sign), 0)
+      : p.originalSl != null
+        ? (p.entry - p.originalSl) * p.qty * sign
+        : null;
+
+    const capitalAtRiskAmt = tr
+      ? tr.reduce(
+          (acc, t) =>
+            acc +
+            (t.stop == null
+              ? t.qty * p.entry
+              : Math.max(0, (p.entry - t.stop) * t.qty * sign)),
+          0,
+        )
+      : hasStop
+        ? Math.max(0, (p.entry - (effectiveStop as number)) * p.qty * sign)
+        : invested;
     const rr =
       p.target != null && p.originalSl != null && (p.entry - p.originalSl) * sign > 0
         ? (p.target - p.entry) / (p.entry - p.originalSl)
@@ -164,7 +209,7 @@ export function computeExposure(inputs: ExposureInput[], capital: number): Expos
       allocPct: r2((invested / cap) * 100),
       runningImpactPct: r2((unrealised / cap) * 100),
       effectiveStop,
-      hasStop,
+      hasStop: tr ? tr.every((t) => t.stop != null) : hasStop,
       openRiskAmt: openRiskAmt == null ? null : r2(openRiskAmt),
       openRiskPct: openRiskAmt == null ? null : r2((openRiskAmt / cap) * 100),
       initialRiskAmt: initialRiskAmt == null ? null : r2(initialRiskAmt),

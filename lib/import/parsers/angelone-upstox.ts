@@ -13,7 +13,7 @@
 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 
@@ -139,6 +139,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       symbol: string; isin: string | null; product: string; exch: string;
       buyDate: string | null; sellDate: string | null;
       buyQty: number; buyVal: number; sellQty: number; sellVal: number;
+      executions: Execution[];
     };
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
@@ -154,6 +155,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         buyDate: null,
         sellDate: null,
         buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0,
+        executions: [],
       };
       const qty = toNum(r[cQty]);
       const price = toNum(r[cPrice]);
@@ -168,6 +170,9 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         acc.sellVal += qty * price;
         if (!acc.sellDate) acc.sellDate = date;
       }
+      // Keep the fill itself, not just its contribution to the average — this
+      // is what the staged-position ladder is rebuilt from.
+      if (qty > 0) acc.executions.push({ side: side.startsWith("b") ? "buy" : "sell", qty, price, date });
       groups.set(key, acc);
     }
     const trades: NormalizedTrade[] = [];
@@ -190,6 +195,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         productHint: productHint(a.product),
         exchangeHint: exchangeFrom(a.exch),
         sourceFile: ctx.filename,
+        executions: a.executions,
       });
     }
     warnings.push(`${label} tradebook aggregated per tradingsymbol+product; verify F&O classification and re-tag MTF rows once (overrides persist).`);

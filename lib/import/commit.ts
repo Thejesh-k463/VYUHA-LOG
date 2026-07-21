@@ -7,13 +7,14 @@ import {
   riskConfig,
   settings as settingsTable,
   mtmPrices,
+  tradeLegs,
 } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import type { ChargeBreakdown, ChargeRates, NormalizedTrade } from "@/lib/engine/types";
+import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
@@ -149,6 +150,49 @@ function loadOverrides(broker: string): Map<string, Override> {
   return map;
 }
 
+
+/**
+ * Order a tradebook's fills for the ladder. Broker exports are not reliably
+ * sorted, and an exit can never precede the entry it closes, so opening-side
+ * fills are placed first within each date and the whole list is date-ordered.
+ * Without a date the file's own order is kept.
+ */
+function orderExecutions(t: NormalizedTrade): Execution[] {
+  const ex = t.executions ?? [];
+  const isShort = t.sellQty > 0 && t.buyQty === 0;
+  const opening = isShort ? "sell" : "buy";
+  return [...ex]
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => {
+      const da = a.e.date ?? "";
+      const db = b.e.date ?? "";
+      if (da !== db) return da < db ? -1 : 1;
+      const oa = a.e.side === opening ? 0 : 1;
+      const ob = b.e.side === opening ? 0 : 1;
+      if (oa !== ob) return oa - ob;
+      return a.i - b.i;
+    })
+    .map((x) => x.e);
+}
+
+/**
+ * A trade becomes a staged position only when a SIDE was actually filled more
+ * than once — that is what scaling in or out means.
+ *
+ * Counting total fills instead would stage every single tradebook row, because
+ * an ordinary round trip is already two executions (one buy, one sell). That
+ * would hang a ladder off every imported trade while telling the trader
+ * nothing they did not already know.
+ */
+function stagedFromExecutions(t: NormalizedTrade): boolean {
+  const ex = t.executions ?? [];
+  if (ex.length < 2) return false;
+  const buys = ex.filter((e) => e.side === "buy").length;
+  const sells = ex.length - buys;
+  return buys > 1 || sells > 1;
+}
+
+
 export interface PreviewRow {
   tradingsymbol: string;
   symbol: string;
@@ -264,7 +308,7 @@ export function commitParsedFile(parsed: ParsedFile, fileName: string): CommitRe
       }
       seenInThisFile.add(b.dedup);
 
-      tx.insert(tradesTable)
+      const inserted = tx.insert(tradesTable)
         .values({
           broker: t.broker,
           bucket: b.classification.bucket,
@@ -309,10 +353,37 @@ export function commitParsedFile(parsed: ParsedFile, fileName: string): CommitRe
           sourceFile: fileName,
           importBatchId: batchId,
           dedupHash: b.dedup,
+          staged: stagedFromExecutions(t),
         })
-        .run();
+        .returning({ id: tradesTable.id })
+        .get();
       added++;
       netPnl += b.netPnl;
+
+      // Preserve the entry ladder from a tradebook export. The parent row keeps
+      // the aggregate the rest of the app reads; the legs give the position its
+      // real shape — three entries at three prices instead of one blended
+      // average. Charges stay as computed on the aggregate here; opening the
+      // staged panel reprices per fill.
+      if (inserted && stagedFromExecutions(t)) {
+        let seq = 1;
+        const isShort = t.sellQty > 0 && t.buyQty === 0;
+        for (const ex of orderExecutions(t)) {
+          const opening = isShort ? ex.side === "sell" : ex.side === "buy";
+          tx.insert(tradeLegs)
+            .values({
+              tradeId: inserted.id,
+              kind: opening ? "entry" : "exit",
+              seq: seq++,
+              tradeDate: normalizeDate(ex.date) ?? normalizeDate(t.buyDate) ?? normalizeDate(t.sellDate) ?? "",
+              tradeTime: ex.time ?? null,
+              qty: ex.qty,
+              price: ex.price,
+              note: "Imported execution",
+            })
+            .run();
+        }
+      }
     }
 
     tx.update(importBatches)

@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ManualTradeForm } from "./manual-trade-form";
 import { CloseTradeDialog } from "./close-trade-dialog";
 import { EditTradeDialog } from "./edit-trade-dialog";
+import { StagedPanel } from "./staged-panel";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
 import { num } from "@/lib/format";
 import {
@@ -22,7 +23,7 @@ import {
 import type { Trade } from "@/lib/db/schema";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
-import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen } from "lucide-react";
+import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen, Layers } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -51,6 +52,7 @@ export function TradesClient({
   const [journaling, setJournaling] = React.useState<Trade | null>(null);
   const [closingTrade, setClosingTrade] = React.useState<Trade | null>(null);
   const [fullEditing, setFullEditing] = React.useState<Trade | null>(null);
+  const [staging, setStaging] = React.useState<Trade | null>(null);
 
   // Command-palette deep link: /trades?add=manual | open — open the dialog once, then clean the URL.
   React.useEffect(() => {
@@ -155,6 +157,15 @@ export function TradesClient({
           >
             <NotebookPen className="size-3.5" />
           </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className={`size-7 ${row.original.staged ? "text-primary" : ""}`}
+            onClick={() => setStaging(row.original)}
+            title={row.original.staged ? "Staged position — entry ladder, partial exits" : "Build in tranches / book a partial exit"}
+          >
+            <Layers className="size-3.5" />
+          </Button>
           {row.original.isOpen && (
             <Button size="icon" variant="ghost" className="size-7 text-warning" onClick={() => setClosingTrade(row.original)} title="Close position">
               <LogOut className="size-3.5" />
@@ -235,6 +246,19 @@ export function TradesClient({
             <DialogDescription>Playbook, emotion and mistakes feed the Discipline page rollups.</DialogDescription>
           </DialogHeader>
           {journaling && <JournalDialog trade={journaling} playbooks={playbooks} onDone={() => setJournaling(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!staging} onOpenChange={(o) => !o && setStaging(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Staged position — {staging?.symbol}</DialogTitle>
+            <DialogDescription>
+              Build the position in tranches with a stop on each, and scale out in parts. Exits price
+              against the blended average; R stays anchored to your first entry.
+            </DialogDescription>
+          </DialogHeader>
+          {staging && <StagedPanel trade={staging} />}
         </DialogContent>
       </Dialog>
 

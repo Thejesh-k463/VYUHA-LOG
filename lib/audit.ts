@@ -18,7 +18,20 @@ export type AuditEntity =
 export interface AuditInput {
   entity: AuditEntity;
   entityId?: number | null;
-  action: "create" | "update" | "delete" | "close" | "override";
+  action:
+    | "create"
+    | "update"
+    | "delete"
+    | "close"
+    | "override"
+    // Staged (scaled) positions — every fill is recorded separately so the
+    // ladder can be reconstructed from the audit trail alone.
+    | "leg_add_entry"
+    | "leg_add_exit"
+    | "leg_edit"
+    | "leg_delete"
+    | "leg_stop_all"
+    | "staged_enable";
   summary?: string | null;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;

@@ -4,6 +4,50 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.85.0
+**Staged positions** — build a position in tranches and scale out of it, the
+way positions are actually managed.
+
+- **Entry ladder with a stop per tranche.** Turn on staged mode from the Trades
+  table and a position becomes a list of fills: add another entry as the trade
+  proves itself, each with its own stop and target, or write one stop across
+  every open tranche in a click. Closed tranches are never rewritten — that
+  would falsify the record of what you did.
+- **Partial exits on any trade.** Book 25/50/100% (or any quantity) and the
+  rest keeps running. No mode switch needed: a plain trade converts to a ladder
+  on the fly, losslessly. Percentage shortcuts round DOWN to a whole unit,
+  because you cannot sell 762.5 shares.
+- **Three accounting rules, chosen deliberately and documented in the code.**
+  *Pricing is weighted-average* — an exit books against the blended cost of
+  everything open, so journal P&L never disagrees with your broker's average
+  price. *Quantity consumption is FIFO* — money is fungible but stops are not,
+  so an exit retires the oldest tranche and the survivor keeps its own stop.
+  *R is frozen at the first entry* — a 3R stays a 3R whether or not you
+  pyramided, so every existing expectancy and playbook report keeps working.
+- **Charges booked per fill.** Brokerage is per order and STT per execution, so
+  each leg is priced on its own — with DP levied once per exit DATE rather than
+  once per leg, and MTF interest accrued per tranche from its own entry date.
+  Scaling into options really does cost ₹20 an order and the journal now says
+  so; under percentage brokerage it is correctly cost-neutral.
+- **Risk cockpit sums real risk.** Open risk, initial risk and capital-at-risk
+  are summed across tranches with individual stops instead of being inferred
+  from one position-level stop — a wide stop on the core and tight stops on the
+  adds is genuinely less exposed, and `/risk` now says so.
+- **Imports rebuild the ladder automatically.** Zerodha, Angel One and Upstox
+  tradebooks list every execution; those fills are now preserved instead of
+  being flattened into one average. A position is staged only when a SIDE was
+  filled more than once — an ordinary buy-then-sell stays an ordinary trade.
+- **Two warnings that earn their place.** *Averaging down* fires when an add is
+  worse than your average (and correctly inverts for shorts). *Open risk above
+  initial risk* fires when an add is not funded by trailing the earlier stops up
+  — which is most of them, and is precisely the thing nobody notices.
+- 83 new unit tests (551 total), including proof that a one-entry ladder prices
+  identically to the classic round-trip across all five brokers.
+- Note on precision: STT and stamp duty round to the nearest rupee, so pricing
+  a trade as two legs instead of one round trip can move its total by up to
+  about ₹2. Measured across every segment on real data the drift was ≤ ₹1.11.
+  The per-leg figure is the more accurate one and is not corrected back.
+
 ## v2.84.0
 Two fixes aimed at discoverability: numbers that explain themselves, and the
 preset playbooks that were hiding inside a dropdown.

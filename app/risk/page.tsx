@@ -12,6 +12,7 @@ import { getSectorMap } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { loadRatesMap } from "@/lib/engine/rates-db";
+import { getStagedView } from "@/lib/queries/staged";
 import type { ExposureInput } from "@/lib/analytics/exposure";
 import {
   computeSettlement,
@@ -85,6 +86,19 @@ export default function RiskPage() {
     return sectorMap.get(up) ?? sectorMap.get(resolveTicker(up, aliasMap)) ?? null;
   };
 
+  // Per-tranche stops for every staged position, resolved in one pass so the
+  // exposure mapping below stays a pure lookup.
+  const trancheMap = new Map<number, Array<{ qty: number; price: number; stop: number | null }>>();
+  for (const t of trades) {
+    if (!t.isOpen || !t.staged) continue;
+    const view = getStagedView(t.id);
+    if (!view) continue;
+    trancheMap.set(
+      t.id,
+      view.position.openTranches.map((tr) => ({ qty: tr.openQty, price: tr.price, stop: tr.effectiveSl })),
+    );
+  }
+
   const inputs: ExposureInput[] = trades
     .filter((t) => t.isOpen)
     .map((t) => {
@@ -121,6 +135,10 @@ export default function RiskPage() {
         side,
         impliedVol: t.impliedVol,
         spot: t.instrumentType === "option" ? spot.get(t.symbol.toUpperCase()) ?? null : null,
+        // Staged positions carry a stop per tranche; handing them to the
+        // exposure engine lets it sum the real risk instead of inferring it
+        // from the single widest stop on the parent row.
+        tranches: t.staged ? (trancheMap.get(t.id) ?? null) : null,
       };
     });
 

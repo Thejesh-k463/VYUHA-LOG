@@ -11,6 +11,13 @@ import { classify } from "@/lib/engine/classify";
 import { evaluateLimits } from "@/lib/risk/limits";
 import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
+import {
+  addLeg,
+  updateLeg,
+  deleteLeg,
+  applyStopToOpenTranches,
+  convertToStaged,
+} from "@/lib/queries/staged";
 
 export type ActionState = { ok: boolean; message: string };
 
@@ -227,4 +234,165 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
   const res = updateManualTrade(id, fields);
   if (res.ok) revalidateAfterTradeChange();
   return res;
+}
+
+// ---------------------------------------------------------------------------
+// Staged (scaled) positions — building a position in tranches and scaling out.
+//
+// Every mutation runs through lib/queries/staged.ts, which validates the
+// PROSPECTIVE ladder before writing anything and then reprices the whole
+// position. A rejected leg never leaves a half-applied trade behind.
+// ---------------------------------------------------------------------------
+
+function tradeDirection(id: number): "long" | "short" {
+  const t = db.select().from(trades).where(eq(trades.id, id)).get();
+  if (!t) return "long";
+  // Legs already exist → the opening side is whichever the first leg used; for
+  // a fresh conversion fall back to the classic sell-first heuristic.
+  return t.sellQty > 0 && t.buyQty === 0 ? "short" : "long";
+}
+
+/** Turn a plain trade into a staged one by seeding the ladder from its own
+ *  numbers. Lossless — a one-entry ladder aggregates back to itself. */
+export async function enableStagedAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+  const res = convertToStaged(id);
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/**
+ * Add another entry to an open position.
+ *
+ * The pre-trade limits check runs on the ADD, not just on the original entry —
+ * scaling in is exactly where position size quietly outgrows the plan, so the
+ * same advisory guardrails apply. Advisory only: it never blocks, matching the
+ * rest of the app.
+ */
+export async function addEntryLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  const qty = num(formData.get("qty"));
+  const price = num(formData.get("price"));
+  const tradeDate = str(formData.get("tradeDate"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+  if (!(qty > 0)) return { ok: false, message: "Enter a quantity greater than zero." };
+  if (!(price > 0)) return { ok: false, message: "Enter a valid price." };
+  if (!tradeDate) return { ok: false, message: "Pick the date of this entry." };
+
+  const t = db.select().from(trades).where(eq(trades.id, id)).get();
+  if (!t) return { ok: false, message: "Trade not found." };
+
+  if (!t.staged) {
+    const conv = convertToStaged(id);
+    if (!conv.ok) return { ok: false, message: conv.message };
+  }
+
+  const res = addLeg({
+    tradeId: id,
+    kind: "entry",
+    tradeDate,
+    tradeTime: str(formData.get("tradeTime")),
+    qty,
+    price,
+    slPlanned: num(formData.get("slPlanned")) || null,
+    trailingSl: num(formData.get("trailingSl")) || null,
+    targetPlanned: num(formData.get("targetPlanned")) || null,
+    note: str(formData.get("note")),
+    direction: tradeDirection(id),
+  });
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/**
+ * Book a partial (or full) exit. Available on ANY trade — a plain single-entry
+ * trade is converted to a staged one on the fly, which is lossless, so
+ * "book half at target and trail the rest" needs no mode switch.
+ */
+export async function addExitLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  const qty = num(formData.get("qty"));
+  const price = num(formData.get("price"));
+  const tradeDate = str(formData.get("tradeDate"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+  if (!(qty > 0)) return { ok: false, message: "Enter a quantity greater than zero." };
+  if (!(price > 0)) return { ok: false, message: "Enter a valid exit price." };
+  if (!tradeDate) return { ok: false, message: "Pick the date of this exit." };
+
+  const t = db.select().from(trades).where(eq(trades.id, id)).get();
+  if (!t) return { ok: false, message: "Trade not found." };
+  if (!t.isOpen) return { ok: false, message: "This position is already closed." };
+
+  if (!t.staged) {
+    const conv = convertToStaged(id);
+    if (!conv.ok) return { ok: false, message: conv.message };
+  }
+
+  const res = addLeg({
+    tradeId: id,
+    kind: "exit",
+    tradeDate,
+    tradeTime: str(formData.get("tradeTime")),
+    qty,
+    price,
+    note: str(formData.get("note")),
+    direction: tradeDirection(id),
+  });
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/** Edit one fill — quantity, price, date, or its own stop. */
+export async function updateLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const legId = Number(formData.get("legId"));
+  const tradeId = Number(formData.get("tradeId"));
+  if (!Number.isFinite(legId)) return { ok: false, message: "Invalid leg." };
+
+  const res = updateLeg(
+    legId,
+    {
+      qty: num(formData.get("qty")) || undefined,
+      price: num(formData.get("price")) || undefined,
+      tradeDate: str(formData.get("tradeDate")) ?? undefined,
+      slPlanned: formData.has("slPlanned") ? num(formData.get("slPlanned")) || null : undefined,
+      trailingSl: formData.has("trailingSl") ? num(formData.get("trailingSl")) || null : undefined,
+      targetPlanned: formData.has("targetPlanned") ? num(formData.get("targetPlanned")) || null : undefined,
+      note: formData.has("note") ? str(formData.get("note")) : undefined,
+    },
+    Number.isFinite(tradeId) ? tradeDirection(tradeId) : undefined,
+  );
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/** Remove a fill. Refused when it would leave the ladder inconsistent. */
+export async function deleteLegAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const legId = Number(formData.get("legId"));
+  const tradeId = Number(formData.get("tradeId"));
+  if (!Number.isFinite(legId)) return { ok: false, message: "Invalid leg." };
+  const res = deleteLeg(legId, Number.isFinite(tradeId) ? tradeDirection(tradeId) : undefined);
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/** Write one stop across every OPEN tranche — the "apply to all" button. */
+export async function applyStopAllAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+
+  const hasSl = formData.has("slPlanned");
+  const hasTsl = formData.has("trailingSl");
+  if (!hasSl && !hasTsl) return { ok: false, message: "Nothing to apply." };
+
+  const res = applyStopToOpenTranches(
+    id,
+    {
+      ...(hasSl ? { slPlanned: num(formData.get("slPlanned")) || null } : {}),
+      ...(hasTsl ? { trailingSl: num(formData.get("trailingSl")) || null } : {}),
+    },
+    tradeDirection(id),
+  );
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
 }

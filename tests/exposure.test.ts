@@ -157,3 +157,89 @@ describe("sectorConcentration", () => {
     expect(empty.slices).toEqual([]);
   });
 });
+
+describe("staged positions — risk summed across tranches", () => {
+  it("sums open risk over tranches instead of using one stop", () => {
+    // 100 @ 100 stopped at 95, plus 100 @ 110 stopped at 108, marked at 112.
+    // (112-95)*100 + (112-108)*100 = 1700 + 400 = 2100.
+    const e = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 112, originalSl: 95, tranches: [
+        { qty: 100, price: 100, stop: 95 },
+        { qty: 100, price: 110, stop: 108 },
+      ] })],
+      100000,
+    );
+    expect(e.positions[0].openRiskAmt).toBe(2100);
+  });
+
+  it("is LESS exposed than the widest stop alone would imply", () => {
+    const tranched = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 112, originalSl: 95, tranches: [
+        { qty: 100, price: 100, stop: 95 },
+        { qty: 100, price: 110, stop: 108 },
+      ] })],
+      100000,
+    );
+    const widestOnly = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 112, originalSl: 95 })],
+      100000,
+    );
+    expect(widestOnly.positions[0].openRiskAmt).toBe(3400); // (112-95)*200
+    expect(tranched.positions[0].openRiskAmt!).toBeLessThan(widestOnly.positions[0].openRiskAmt!);
+  });
+
+  it("sums initial risk from each tranche's own fill price", () => {
+    const e = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 112, originalSl: 95, tranches: [
+        { qty: 100, price: 100, stop: 95 },  // 500
+        { qty: 100, price: 110, stop: 108 }, // 200
+      ] })],
+      100000,
+    );
+    expect(e.positions[0].initialRiskAmt).toBe(700);
+  });
+
+  it("treats an unstopped tranche as fully at risk and marks the position unstopped", () => {
+    const e = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 110, originalSl: 95, tranches: [
+        { qty: 100, price: 100, stop: 95 },
+        { qty: 100, price: 110, stop: null },
+      ] })],
+      100000,
+    );
+    expect(e.positions[0].hasStop).toBe(false);
+    // (110-95)*100 = 1500 stopped, plus 110*100 = 11000 unstopped.
+    expect(e.positions[0].openRiskAmt).toBe(12500);
+  });
+
+  it("handles a short's tranches with stops ABOVE the fills", () => {
+    const e = computeExposure(
+      [pos({ qty: 200, entry: 105, mtm: 100, side: "short", originalSl: 112, tranches: [
+        { qty: 100, price: 100, stop: 105 },
+        { qty: 100, price: 110, stop: 112 },
+      ] })],
+      100000,
+    );
+    // (105-100)*100 + (112-100)*100 = 500 + 1200
+    expect(e.positions[0].openRiskAmt).toBe(1700);
+    expect(e.positions[0].initialRiskAmt).toBe(700); // (105-100)*100 + (112-110)*100
+  });
+
+  it("falls back to the single-stop path when no tranches are supplied", () => {
+    const withNull = computeExposure([pos({ qty: 100, entry: 100, mtm: 110, originalSl: 95, tranches: null })], 100000);
+    const without = computeExposure([pos({ qty: 100, entry: 100, mtm: 110, originalSl: 95 })], 100000);
+    expect(withNull.positions[0].openRiskAmt).toBe(without.positions[0].openRiskAmt);
+    expect(without.positions[0].openRiskAmt).toBe(1500);
+  });
+
+  it("matches the classic path exactly for a one-tranche ladder", () => {
+    const staged = computeExposure(
+      [pos({ qty: 100, entry: 100, mtm: 110, originalSl: 95, tranches: [{ qty: 100, price: 100, stop: 95 }] })],
+      100000,
+    );
+    const classic = computeExposure([pos({ qty: 100, entry: 100, mtm: 110, originalSl: 95 })], 100000);
+    expect(staged.positions[0].openRiskAmt).toBe(classic.positions[0].openRiskAmt);
+    expect(staged.positions[0].initialRiskAmt).toBe(classic.positions[0].initialRiskAmt);
+    expect(staged.positions[0].capitalAtRiskAmt).toBe(classic.positions[0].capitalAtRiskAmt);
+  });
+});
