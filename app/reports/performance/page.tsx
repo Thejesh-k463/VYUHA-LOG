@@ -8,7 +8,9 @@ import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getLedgerEntries } from "@/lib/queries/ledger";
-import { dailyPnl, equityCurve } from "@/lib/analytics/metrics";
+import { dailyPnl, equityCurve, computeKpis } from "@/lib/analytics/metrics";
+import { ShareCard } from "@/components/reports/share-card";
+import type { ShareStats } from "@/lib/analytics/share-card";
 import { computePerformance, timeWeightedReturn, type CashFlowR } from "@/lib/analytics/performance";
 import { xirr, type CashFlow } from "@/lib/analytics/xirr";
 import { computeBenchmark, type ReturnByDate } from "@/lib/analytics/benchmark";
@@ -46,6 +48,22 @@ export default function PerformancePage() {
   const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
   const p = computePerformance(daily, capital, RISK_FREE);
   const curve = equityCurve(trades);
+
+  // T1.4 — stats for the shareable card (same KPI engine as the dashboard).
+  const k = computeKpis(trades);
+  const closedNets = trades.filter((t) => !t.isOpen).map((t) => t.netPnl);
+  const shareStats: ShareStats = {
+    netPnl: k.netPnl,
+    winRatePct: k.winRate * 100,
+    profitFactor: k.profitFactor,
+    avgR: k.avgR,
+    trades: k.closedCount,
+    expectancy: k.expectancy,
+    maxDrawdown: p.maxDrawdownAmt,
+    charges: k.charges,
+    bestTrade: closedNets.length ? Math.max(...closedNets) : 0,
+    worstTrade: closedNets.length ? Math.min(...closedNets) : 0,
+  };
 
   // Money-weighted return (XIRR) — derived from the cash ledger (P0.2) + realised/
   // unrealised trading P&L. All in integer paise (P0.1).
@@ -252,6 +270,8 @@ export default function PerformancePage() {
               size and timing of capital. The <strong>TWR</strong> chains daily P&L returns while neutralising the
               timing of deposits/withdrawals — the manager-skill counterpart to XIRR. Sharpe/Sortino use a {Math.round(RISK_FREE * 100)}% annual risk-free rate; ratios annualise with 252 trading days.
             </p>
+
+            <ShareCard stats={shareStats} capital={capital} />
           </>
         )}
       </div>

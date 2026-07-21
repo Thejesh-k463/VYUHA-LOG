@@ -127,6 +127,38 @@ function brokerageFor(
     }
   }
 
+  // Angel One — ₹20 or 0.1% (whichever lower) on delivery; flat ₹20 elsewhere.
+  if (broker === "angelone") {
+    switch (segment) {
+      case "eq_delivery":
+        return { flat: null, pct: 0.001, cap: 20, floor: 0 };
+      case "eq_mtf":
+      case "eq_intraday":
+      case "future":
+      case "commodity_future":
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return FLAT20;
+    }
+  }
+
+  // Upstox — ₹20 or 0.1% (whichever lower) on delivery/intraday; flat ₹20 elsewhere.
+  if (broker === "upstox") {
+    switch (segment) {
+      case "eq_delivery":
+      case "eq_intraday":
+      case "eq_mtf":
+        return { flat: null, pct: 0.001, cap: 20, floor: 0 };
+      case "future":
+      case "commodity_future":
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return FLAT20;
+    }
+  }
+
   // groww
   switch (segment) {
     case "eq_delivery":
@@ -156,6 +188,10 @@ function dpFor(broker: Broker): {
       return { dpCharge: 12.5, dpGstApplicable: true, dpMinValue: 0 };
     case "groww":
       return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 100 }; // 3.5 + 16.5
+    case "angelone":
+      return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 0 };
+    case "upstox":
+      return { dpCharge: 18.5, dpGstApplicable: true, dpMinValue: 0 };
   }
 }
 
@@ -193,6 +229,20 @@ function mtfFor(broker: Broker): {
         pledgeCharge: 20,
         unpledgeCharge: 20,
       };
+    case "angelone":
+      return {
+        mtfInterestAnnual: 0.1425,
+        mtfTiers: null,
+        pledgeCharge: 20,
+        unpledgeCharge: 20,
+      };
+    case "upstox":
+      return {
+        mtfInterestAnnual: 0.1495,
+        mtfTiers: null,
+        pledgeCharge: 20,
+        unpledgeCharge: 20,
+      };
   }
 }
 
@@ -208,7 +258,7 @@ const COMBOS: { segment: Segment; exchanges: Exchange[] }[] = [
   { segment: "commodity_option", exchanges: ["MCX"] },
 ];
 
-const BROKER_LIST: Broker[] = ["dhan", "zerodha", "groww"];
+const BROKER_LIST: Broker[] = ["dhan", "zerodha", "groww", "angelone", "upstox"];
 
 export function buildChargeConfigSeed(): ChargeSeedRow[] {
   const rows: ChargeSeedRow[] = [];

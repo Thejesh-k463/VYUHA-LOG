@@ -40,6 +40,8 @@ import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
 import { getMarginConfig, getMarginRates } from "@/lib/queries/margin";
 import { MarginPanel } from "@/components/risk/margin-panel";
 import { BreachBanner } from "@/components/risk/breach-banner";
+import { SebiRadarPanel } from "@/components/risk/sebi-radar-panel";
+import { sebiRadar, type RadarPosition } from "@/lib/risk/sebi-radar";
 import { scanBreaches } from "@/lib/jobs/auto-mtm";
 
 export const dynamic = "force-dynamic";
@@ -201,6 +203,21 @@ export default function RiskPage() {
     optionType: p.optionType ?? null,
     spot: p.spot ?? null,
   }));
+  // T1.2 — SEBI rule radar off the same open-position inputs.
+  const radarInputs: RadarPosition[] = inputs.map((p) => ({
+    id: p.id,
+    symbol: p.tradingsymbol || p.symbol,
+    segment: p.segment,
+    side: p.side ?? "long",
+    optionType: p.optionType,
+    expiry: p.expiry,
+    qty: p.qty,
+    entry: p.entry,
+    mtm: p.mtm,
+    exchange: p.exchange,
+  }));
+  const radar = sebiRadar(radarInputs, today);
+
   const marginSummary = estimateMargin(marginInputs, getMarginRates(), {
     equity: equityCapital,
     active: activeCapital,
@@ -247,6 +264,7 @@ export default function RiskPage() {
           inputs={inputs}
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
+        <SebiRadarPanel report={radar} />
         <ExpiryObligations summary={settlement} />
         <MarginPanel summary={marginSummary} rates={marginRates} />
         {exposures.length > 0 && (

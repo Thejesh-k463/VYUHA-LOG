@@ -3,6 +3,7 @@ import { detectDhanCsv, parseDhanCsv } from "./parsers/dhan-csv";
 import { detectGrowwXlsx, parseGrowwXlsx } from "./parsers/groww-xlsx";
 import { detectZerodha, parseZerodha } from "./parsers/zerodha";
 import { detectPdf, parsePdf } from "./parsers/pdf";
+import { detectAngelOne, parseAngelOne, detectUpstox, parseUpstox } from "./parsers/angelone-upstox";
 
 export interface DetectedParser {
   sourceId: string;
@@ -15,6 +16,8 @@ const REGISTRY: DetectedParser[] = [
   { sourceId: "dhan-csv", label: "Dhan P&L (CSV)", confidence: 0, parse: parseDhanCsv },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", confidence: 0, parse: parseGrowwXlsx },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", confidence: 0, parse: parseZerodha },
+  { sourceId: "angelone", label: "Angel One Tradebook / P&L (CSV/XLSX)", confidence: 0, parse: parseAngelOne },
+  { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", confidence: 0, parse: parseUpstox },
   { sourceId: "pdf", label: "Broker P&L (PDF)", confidence: 0, parse: parsePdf },
 ];
 
@@ -22,6 +25,8 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "dhan-csv": detectDhanCsv,
   "groww-xlsx": detectGrowwXlsx,
   zerodha: detectZerodha,
+  angelone: detectAngelOne,
+  upstox: detectUpstox,
   pdf: detectPdf,
 };
 

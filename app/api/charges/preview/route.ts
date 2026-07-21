@@ -4,14 +4,14 @@ import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
+import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { getMarginPct } from "@/lib/queries/margin";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
-  broker: z.enum(["dhan", "zerodha", "groww"]),
+  broker: z.enum(BROKERS),
   tradingsymbol: z.string().min(1),
   productHint: z.enum(["intraday", "delivery", "mtf"]).nullish(),
   segment: z.string().nullish(),

@@ -4,6 +4,44 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.82.0
+Ecosystem-research batch: findings from surveying the global journal market
+(TradeZella/TraderSync/Edgewonk/TradesViz) and India's 2024–2026 F&O regime,
+turned into three shipped features.
+
+- **Angel One + Upstox importers.** Angel One alone is ~15% of India's active
+  trading accounts; both brokers now import end-to-end. One resilient parser
+  handles each broker's *two* export shapes — tradebook (buy/sell column,
+  aggregated into round-trips per tradingsymbol+product) and aggregated P&L
+  report — with candidate-list column resolution plus contains-fallback, so
+  header drift between report versions doesn't break parsing. `₹` symbols and
+  thousands-commas are stripped. Charge cards, DP charges, MTF interest and
+  eq_mtf own-margin seeded for both. Two hardcoded broker enums (charges-preview
+  route, trade actions) now derive from `BROKERS`, so they can never silently
+  reject a newly added broker again.
+- **SEBI Compliance Radar** (`/risk`). Turns your open book + today's date into
+  plain warnings for the post-2024 regime: **+2% expiry-day ELM on short options
+  expiring today**, **no calendar-spread margin benefit on expiry day**, weekly
+  expiry discontinuation (BANKNIFTY/FINNIFTY/MIDCPNIFTY/NIFTYNXT50 are monthly
+  only; NIFTY on NSE and SENSEX on BSE kept weeklies), index position-limit
+  proximity vs the ₹1,500 cr net limit with the intraday random-snapshot
+  warning, and standing reminders on upfront premium collection and the
+  ₹15–20 lakh contract band. Informational only — your broker's RMS remains the
+  source of truth and Vyuha never blocks a trade.
+- **Shareable stat cards** (`/reports/performance`). Privacy-first by
+  construction: defaults to **% of capital**, offers "hide ₹ entirely", and
+  shows real rupees only if explicitly chosen; you pick which of 10 metrics
+  appear. The PNG is drawn on a canvas and saved **locally — nothing is
+  uploaded** — and carries a permanent, non-editable *"self-reported from my own
+  journal · not broker-verified"* watermark, because an offline app must never
+  imply broker verification.
+- Note: options payoff diagrams were already shipped (strategies engine +
+  payoff chart) — verified rather than rebuilt.
+
+468 unit tests (+28), typecheck, lint all green; every feature verified live,
+including a temporarily-shorted expiring option to prove the radar fires and an
+end-to-end PNG export.
+
 ## v2.80.0
 Three workstreams: performance, monetization v2, and a full visual overhaul.
 

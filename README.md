@@ -7,13 +7,13 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-440%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-468%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
-*Dhan · Zerodha · Groww — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
+*Dhan · Zerodha · Groww · Angel One · Upstox — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
 
 </div>
 
@@ -26,6 +26,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
 - 💸 **MTF done right — the only journal that gets it.** Interest accrues on the *broker-funded portion only* (own-margin % is broker-specific: Dhan/Groww ≈25%, Zerodha ≈20%), with the **correct T+1 day-count** verified against Dhan's own docs. See ROI on your own capital, leverage, breakeven price, and a ⚠ flag when interest has eaten your entire paper gain.
 - 📚 **Playbooks that enforce discipline, not just describe it.** 25 preset setups from trading ecosystems worldwide (ORB → Wyckoff → Minervini VCP → India's expiry-day theta), fully editable, plus your own. Tag a trade and its rules become a **followed/broken checklist** — the Discipline page then shows *which broken rule costs you the most ₹*.
+- 🇮🇳 **Knows today's SEBI regime.** A compliance radar reads your open book against the post-2024 F&O rules — the **+2% expiry-day ELM** on short options expiring today, the **loss of calendar-spread margin benefit** on expiry, which indices still have weeklies, and how close your index exposure sits to the ₹1,500 cr limit that's now snapshotted *intraday*. No other journal tracks this.
 - 🔍 **Honest analytics.** Expectancy cards warn you when the sample is too small to trust. The stop-tuning report says "descriptive, not prescriptive." Mistake economics report the expectancy *gap*, never fake counterfactuals. A SEBI reality-check card compares your F&O book to the published loss statistics.
 - 🔒 **You stay in control — always.** Auto-MTM is opt-in. Update dialogs ask, never install. Breach alerts say *"check a live quote and review your plan"* — the app never places, closes, or changes anything on its own.
 - 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — in three accent skins (**Terminal teal / Tape amber / Ice blue**), dark or light, with a colorblind-safe mode.
@@ -35,7 +36,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 ## ✨ Feature tour
 
 ### 📒 Journal every leg, effortlessly
-- **Import** Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, or PDF — auto-detected, de-duplicated, with a **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite API auto-import** for tradebook pulls.
+- **Import** from **five brokers** — Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, **Angel One** and **Upstox** (tradebook *or* aggregated P&L export), plus PDF — auto-detected, de-duplicated, with a **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite API auto-import** for tradebook pulls.
 - **Add / open / close / edit any trade, any time** — with a live charge preview from the same engine that books it, so what you see is exactly what gets saved.
 - **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
 - Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.
@@ -56,6 +57,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Physical-settlement radar**: ITM stock options and futures near expiry get delivery-obligation and extra-STT warnings.
 - **Pre-trade limits check** (per-trade cap, daily stop, max-open, concentration) — advisory with override, and overrides are *recorded* so you see what ignoring the guardrails cost.
 - **SL/TSL/target breach alerts** on Dashboard & Risk with opt-in desktop notifications — every alert reminds you the marks are EOD/manual and to verify live.
+- **SEBI compliance radar** — date- and position-aware reminders for expiry-day margin rules, the weekly-expiry regime and index position limits. Informational only; your broker's RMS stays the source of truth.
 
 ### 🧮 Know your costs before you trade
 <img src="docs/screenshots/calculator.png" alt="Trade calculator — exact charges, breakeven, reward:risk" width="900" />
@@ -68,6 +70,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - Expectancy, win rate, avg R by **setup tag** and **segment**.
 - **MAE/MFE excursions** from your own EOD price history, plus a **stop-tuning report** in R: how much heat your winners took, how many losers ran past 1R (late/moved stops — flagged as behavioral, not placement).
 - Equity curve with max drawdown, daily P&L calendar, streaks, monthly target ladder, benchmark ingestion, Monte-Carlo utilities, XIRR.
+- **Shareable stat cards** — post your numbers without posting your account size: defaults to *% of capital*, can hide ₹ entirely, and the PNG is rendered **on your machine** with a permanent *"self-reported · not broker-verified"* watermark.
 
 ### 🧾 India-grade tax tooling
 - **Tax Summary**: STCG/LTCG with **31-Jan-2018 grandfathering** (per-share FMV), rate-cutover handling, dividend TDS tracking.
@@ -110,7 +113,7 @@ npm run dev       # http://localhost:3000
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **440 unit tests** over pure, DB-free modules: charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE…
+- **468 unit tests** over pure, DB-free modules: charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE…
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
 - Full changelog in [`CHANGELOG.md`](CHANGELOG.md).
@@ -125,7 +128,7 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (440 tests) |
+| `npm test` | Vitest unit suite (468 tests) |
 | `npm run test:e2e` | Playwright happy-path e2e |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
@@ -178,7 +181,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 440 Vitest unit tests
+  tests/          # 468 Vitest unit tests
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

@@ -50,6 +50,31 @@ Read sections 1–2 before writing any code.
 >   edited the closed trade's exit price (preview/save now match after the fix above), and a
 >   second test position engineered interest > unrealised gain to confirm the warning badge
 >   fires — then deleted both test trades (252 real trades + original settings untouched).
+> - **v2.82.0 — ecosystem-research batch: Angel One/Upstox importers, SEBI radar, share cards.**
+>   Driven by a survey of the global journal market and India's 2024–2026 F&O regime. IMPORTERS:
+>   `lib/import/parsers/angelone-upstox.ts` — ONE module, two brokers, each with two export
+>   shapes (tradebook w/ side column → aggregated per tradingsymbol+product; aggregated P&L
+>   report). Columns resolve via candidate list + contains-fallback (header drift between report
+>   versions is the norm); strips ₹/commas; registered in `detect.ts`. `BROKERS` grew to 5 and
+>   seed-data/seed-core carry brokerage+DP+MTF+own-margin for both. GOTCHA FIXED: two zod
+>   `z.enum(["dhan","zerodha","groww"])` literals (charges-preview route, trades/actions) would
+>   have silently rejected new brokers — both now `z.enum(BROKERS)`; never hardcode that list.
+>   RADAR: `lib/risk/sebi-radar.ts` (pure) + `components/risk/sebi-radar-panel.tsx` on /risk —
+>   expiry-day +2% ELM on SHORT options expiring today, no calendar-spread benefit on expiry
+>   day, weekly-expiry discontinuation (only NIFTY@NSE / SENSEX@BSE keep weeklies), index
+>   position-limit proximity (₹1,500cr net / ₹10,000cr gross, intraday random snapshots since
+>   Apr 2025), upfront-premium + ₹15–20L contract-size reminders; levels action/caution/info,
+>   sorted; underlyingOf() tolerates "OPT NIFTY …" tradingsymbols. SHARE CARDS:
+>   `lib/analytics/share-card.ts` + `components/reports/share-card.tsx` on /reports/performance —
+>   privacy modes amounts/percent/r; "r" mode HIDES ₹ metrics rather than inventing an R
+>   denominator, and percent mode returns "—" without a capital base (never fabricate a
+>   denominator); canvas→blob→download, zero network; watermark is permanent and non-editable
+>   ("self-reported · not broker-verified") because an offline app cannot verify with a broker.
+>   NOT BUILT (already existed — verified, not rebuilt): options payoff diagrams, which
+>   `lib/analytics/strategies.ts` + `components/reports/payoff-chart.tsx` have shipped for a
+>   while (6 charts render on /strategies). VERIFIED: 468 tests (+28), tsc, lint-zero; radar
+>   proven by temporarily flipping an open option to short-expiring-today (then restored), and
+>   the PNG export driven end-to-end in a fresh Playwright context.
 > - **v2.80.0 — perf pass + monetization v2 + full visual overhaul.** PERF: eight hottest
 >   queries wrapped in React `cache()` (per-request dedupe; killed the import-loop margin-config
 >   N+1); indexes on `trades.is_open` + `trades.playbook_id` (migration 0024); lint to ZERO

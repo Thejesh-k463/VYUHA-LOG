@@ -85,7 +85,7 @@ export function seedDatabase(log = false): SeedReport {
   // groww.in/blog/mtf-interest-rates). Other segments share one ballpark across
   // brokers for now (no strong per-broker research yet) but the schema
   // supports differentiating any of them later via the same editor.
-  const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = { dhan: 25, zerodha: 20, groww: 25 };
+  const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = { dhan: 25, zerodha: 20, groww: 25, angelone: 25, upstox: 25 };
   const SEGMENT_MARGIN_DEFAULTS = [
     { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },
     { segment: "eq_intraday", marginPct: 20, note: "5x intraday leverage" },

@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
-import { SEGMENTS, EXCHANGES, SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
+import { SEGMENTS, EXCHANGES, SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { classify } from "@/lib/engine/classify";
 import { evaluateLimits } from "@/lib/risk/limits";
 import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
@@ -24,7 +24,7 @@ const str = (v: FormDataEntryValue | null) => {
 };
 
 const ManualSchema = z.object({
-  broker: z.enum(["dhan", "zerodha", "groww"]),
+  broker: z.enum(BROKERS),
   tradingsymbol: z.string().min(1, "Symbol is required"),
   productHint: z.enum(["intraday", "delivery", "mtf"]).nullable(),
   segment: z.string().nullable(),
