@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import { inr, inrCompact, num } from "@/lib/format";
+import type { KpiDetail } from "@/components/kpi-card";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
 import { ChevronDown, SlidersHorizontal, CheckCircle2, AlertCircle, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
@@ -108,10 +109,74 @@ export function RiskCockpitClient({
 
         {/* KPI tiles */}
         <div className="grid grid-cols-2 gap-3 px-6 pb-6 lg:grid-cols-4">
-          <Tile label="Initial Risk" value={`${e.initialRiskPct.toFixed(2)}%`} valueCls="text-primary" />
-          <Tile label="Open P&L" value={`${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`} valueCls={e.openPnlPct >= 0 ? "text-profit" : "text-loss"} />
-          <Tile label="Open Risk @ SL" value={`${e.openRiskPct.toFixed(2)}%`} valueCls="text-warning" highlight />
-          <Tile label="Allocated" value={`${e.allocatedPct.toFixed(2)}%`} valueCls="text-violet-400" />
+          <Tile
+            label="Initial Risk"
+            value={`${e.initialRiskPct.toFixed(2)}%`}
+            valueCls="text-primary"
+            detail={{
+              title: "Initial risk — what you signed up to lose",
+              summary: "Distance from entry to your ORIGINAL stop, as a share of bucket capital.",
+              rows: [
+                { label: "Initial risk", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "of bucket capital" },
+                { label: "Bucket capital", value: inrCompact(e.capital) },
+                { label: "Open positions", value: `${e.count}` },
+                { label: "Positions without a stop", value: `${e.unstoppedCount}`, tone: e.unstoppedCount > 0 ? "loss" : "profit", hint: e.unstoppedCount > 0 ? "their full invested value counts as capital-at-risk" : "every position has a stop" },
+                { label: "Capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? "loss" : "neutral" },
+              ],
+              note: "This is the plan you entered with. Open Risk @ SL shows what's actually still exposed right now.",
+            }}
+          />
+          <Tile
+            label="Open P&L"
+            value={`${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`}
+            valueCls={e.openPnlPct >= 0 ? "text-profit" : "text-loss"}
+            detail={{
+              title: "Open P&L — unrealised, on paper",
+              summary: "Marked against your latest MTM prices, not live quotes.",
+              rows: [
+                { label: "Unrealised P&L", value: inrCompact(e.unrealised), tone: e.unrealised >= 0 ? "profit" : "loss" },
+                { label: "As % of capital", value: `${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`, tone: e.openPnlPct >= 0 ? "profit" : "loss" },
+                { label: "Invested", value: inrCompact(e.invested) },
+                { label: "Return on invested", value: e.invested ? `${((e.unrealised / e.invested) * 100).toFixed(2)}%` : "—" },
+                { label: "Positions in profit", value: `${e.positions.filter((p) => p.unrealised > 0).length} of ${e.count}` },
+              ],
+              note: "Nothing here is banked until you close. Refresh MTM prices to keep it honest.",
+            }}
+          />
+          <Tile
+            label="Open Risk @ SL"
+            value={`${e.openRiskPct.toFixed(2)}%`}
+            valueCls="text-warning"
+            highlight
+            detail={{
+              title: "Open risk @ SL — what you lose from HERE",
+              summary: "From current marks down to your effective stop (trailing SL wins over the original).",
+              rows: [
+                { label: "Open risk @ stop", value: `${e.openRiskPct.toFixed(2)}%`, tone: "loss", hint: "of bucket capital, if every stop hits" },
+                { label: "Initial risk (at entry)", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "compare: lower now means profit is locked in" },
+                { label: "Stopped positions", value: `${e.count - e.unstoppedCount} of ${e.count}` },
+                { label: "Unstopped positions", value: `${e.unstoppedCount}`, tone: e.unstoppedCount > 0 ? "loss" : "profit", hint: e.unstoppedCount > 0 ? "no stop = the whole position is the risk" : undefined },
+                { label: "Total capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? "loss" : "neutral" },
+              ],
+              note: "Trail a stop to breakeven and this number drops — that's the whole point of the trail button on each position.",
+            }}
+          />
+          <Tile
+            label="Allocated"
+            value={`${e.allocatedPct.toFixed(2)}%`}
+            valueCls="text-violet-400"
+            detail={{
+              title: "Allocated — how much capital is working",
+              summary: "Invested value against this bucket's capital.",
+              rows: [
+                { label: "Invested", value: inrCompact(e.invested) },
+                { label: "Bucket capital", value: inrCompact(e.capital) },
+                { label: "Allocated", value: `${e.allocatedPct.toFixed(2)}%` },
+                { label: "Dry powder", value: inrCompact(Math.max(0, e.capital - e.invested)), tone: "profit" },
+                { label: "Largest position", value: e.positions.length ? `${[...e.positions].sort((a, b) => b.allocPct - a.allocPct)[0].symbol} · ${[...e.positions].sort((a, b) => b.allocPct - a.allocPct)[0].allocPct.toFixed(1)}%` : "—", hint: "concentration is the risk that hides inside allocation" },
+              ],
+            }}
+          />
         </div>
       </Card>
 
@@ -255,12 +320,75 @@ function SectorPanel({ s }: { s: SectorConcentration }) {
   );
 }
 
-function Tile({ label, value, valueCls, highlight }: { label: string; value: string; valueCls: string; highlight?: boolean }) {
-  return (
-    <div className={`rounded-xl border bg-background/30 p-4 ${highlight ? "border-warning/50" : "border-border"}`}>
+function Tile({
+  label, value, valueCls, highlight, detail,
+}: {
+  label: string;
+  value: string;
+  valueCls: string;
+  highlight?: boolean;
+  detail?: KpiDetail;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const clickable = !!detail;
+  const tile = (
+    <div
+      className={`rounded-xl border bg-background/30 p-4 ${highlight ? "border-warning/50" : "border-border"} ${
+        clickable
+          ? "cursor-pointer transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-[0_0_26px_-8px_color-mix(in_oklab,var(--color-primary)_55%,transparent)]"
+          : ""
+      }`}
+      {...(clickable
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            title: `${label} — click for the breakdown`,
+            onClick: () => setOpen(true),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpen(true);
+              }
+            },
+          }
+        : {})}
+    >
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-bold tabular-nums ${valueCls}`}>{value}</div>
+      {clickable && <div className="mt-1.5 text-[10px] text-muted-foreground/70">click for breakdown →</div>}
     </div>
+  );
+  if (!clickable) return tile;
+  return (
+    <>
+      {tile}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detail.title}</DialogTitle>
+            {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
+          </DialogHeader>
+          <div className="divide-y divide-border/50">
+            {detail.rows.map((r, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-4 py-2">
+                <div>
+                  <div className="text-xs">{r.label}</div>
+                  {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
+                </div>
+                <div
+                  className={`shrink-0 font-mono text-sm tabular-nums ${
+                    r.tone === "profit" ? "text-profit" : r.tone === "loss" ? "text-loss" : ""
+                  }`}
+                >
+                  {r.value}
+                </div>
+              </div>
+            ))}
+          </div>
+          {detail.note && <p className="text-[11px] text-muted-foreground">{detail.note}</p>}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

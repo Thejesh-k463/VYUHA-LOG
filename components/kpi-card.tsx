@@ -1,5 +1,8 @@
+"use client";
+
 import * as React from "react";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 /** Tiny dependency-free sparkline — pure SVG so it renders in server components. */
@@ -27,6 +30,24 @@ function Sparkline({ points, positive }: { points: number[]; positive: boolean }
   );
 }
 
+/** One line inside a KPI drill-down. Plain strings so the whole detail object
+ *  stays serializable from server components. */
+export interface KpiDetailRow {
+  label: string;
+  value: string;
+  tone?: "profit" | "loss" | "neutral";
+  hint?: string;
+}
+
+/** Attach to a KpiCard to make it clickable — the card then opens a popup that
+ *  explains what the number is actually made of. */
+export interface KpiDetail {
+  title: string;
+  summary?: string;
+  rows: KpiDetailRow[];
+  note?: string;
+}
+
 export interface KpiDelta {
   value: number; // signed change (display sign comes from this)
   label: string; // e.g. "vs last week"
@@ -42,6 +63,7 @@ export function KpiCard({
   icon,
   spark,
   delta,
+  detail,
 }: {
   label: string;
   value: React.ReactNode;
@@ -52,10 +74,35 @@ export function KpiCard({
   spark?: number[];
   /** Optional ▲/▼ change chip under the value. */
   delta?: KpiDelta;
+  /** Optional drill-down — makes the card clickable and glow on hover. */
+  detail?: KpiDetail;
 }) {
   const sparkPositive = spark && spark.length >= 2 ? spark[spark.length - 1] >= spark[0] : true;
-  return (
-    <Card className="p-4">
+  const [open, setOpen] = React.useState(false);
+  const clickable = !!detail;
+
+  const card = (
+    <Card
+      className={cn(
+        "p-4",
+        clickable &&
+          "cursor-pointer transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-[var(--shadow-card-hover),0_0_26px_-8px_color-mix(in_oklab,var(--color-primary)_55%,transparent)] focus-visible:outline-none focus-visible:border-primary/60",
+      )}
+      {...(clickable
+        ? {
+            role: "button" as const,
+            tabIndex: 0,
+            title: `${label} — click for the breakdown`,
+            onClick: () => setOpen(true),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpen(true);
+              }
+            },
+          }
+        : {})}
+    >
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           {label}
@@ -84,6 +131,46 @@ export function KpiCard({
         </div>
       )}
       {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+      {clickable && (
+        <div className="mt-2 text-[10px] text-muted-foreground/70 transition-colors group-hover:text-primary">
+          click for breakdown →
+        </div>
+      )}
     </Card>
+  );
+
+  if (!clickable) return card;
+  return (
+    <>
+      {card}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detail.title}</DialogTitle>
+            {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
+          </DialogHeader>
+          <div className="divide-y divide-border/50">
+            {detail.rows.map((r, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-4 py-2">
+                <div>
+                  <div className="text-xs">{r.label}</div>
+                  {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
+                </div>
+                <div
+                  className={cn(
+                    "shrink-0 font-mono text-sm tabular-nums",
+                    r.tone === "profit" && "text-profit",
+                    r.tone === "loss" && "text-loss",
+                  )}
+                >
+                  {r.value}
+                </div>
+              </div>
+            ))}
+          </div>
+          {detail.note && <p className="text-[11px] text-muted-foreground">{detail.note}</p>}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

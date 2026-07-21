@@ -45,6 +45,14 @@ export function TrackerClient({
   const mtfFunded = positions.reduce((s, p) => s + p.fundedAmount, 0);
   const mtfInterest = positions.reduce((s, p) => s + p.accruedInterest, 0);
 
+  // Drill-down inputs for the KPI popups (click any card).
+  const sortedByInvested = [...positions].sort((a, b) => b.invested - a.invested);
+  const topPosition = sortedByInvested[0] ?? null;
+  const oldest = [...positions].sort((a, b) => (b.daysHeld ?? 0) - (a.daysHeld ?? 0))[0] ?? null;
+  const byUnrealised = [...positions].sort((a, b) => b.unrealised - a.unrealised);
+  const bestPos = byUnrealised[0] ?? null;
+  const worstPos = byUnrealised[byUnrealised.length - 1] ?? null;
+
   const segments = [...new Set(positions.map((p) => p.segment))];
   const segGroups = segments.map((s) => {
     const list = positions.filter((p) => p.segment === s);
@@ -154,11 +162,75 @@ export function TrackerClient({
 
       {/* Summary cards */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Open positions" value={positions.length} />
-        <KpiCard label="Invested" value={inrCompact(deployed)} sub={`${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(0) : 0}% of bucket`} />
-        <KpiCard label="Unrealised P&L" value={inr(unrealised, { decimals: 0 })} valueClassName={pnl(unrealised)} />
+        <KpiCard
+          label="Open positions"
+          value={positions.length}
+          detail={{
+            title: "Open positions — the book right now",
+            summary: "Every position still running in this bucket.",
+            rows: [
+              { label: "Positions open", value: `${positions.length}` },
+              { label: "Winners / losers", value: `${positions.filter((p) => p.unrealised > 0).length} / ${positions.filter((p) => p.unrealised < 0).length}` },
+              { label: "Largest position", value: topPosition ? `${topPosition.symbol} · ${inr(topPosition.invested, { decimals: 0 })}` : "—", hint: topPosition && bucketCapital ? `${((topPosition.invested / bucketCapital) * 100).toFixed(1)}% of bucket capital` : undefined },
+              { label: "Oldest holding", value: oldest ? `${oldest.symbol} · ${oldest.daysHeld ?? 0}d` : "—" },
+              ...(variant === "equity" ? [{ label: "MTF-funded positions", value: `${positions.filter((p) => p.fundedAmount > 0).length}` }] : []),
+            ],
+            note: "Concentration is risk: one position dominating the bucket is the most common way a good month becomes a bad one.",
+          }}
+        />
+        <KpiCard
+          label="Invested"
+          value={inrCompact(deployed)}
+          sub={`${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(0) : 0}% of bucket`}
+          detail={{
+            title: "Capital deployed in this bucket",
+            summary: "How much of the bucket is working, and how much is still dry powder.",
+            rows: [
+              { label: "Bucket capital", value: inr(bucketCapital, { decimals: 0 }) },
+              { label: "Deployed", value: inr(deployed, { decimals: 0 }), hint: `${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(1) : 0}% utilised` },
+              { label: "Available", value: inr(available, { decimals: 0 }), tone: available >= 0 ? "profit" : "loss" },
+              { label: "Current value", value: inr(deployed + unrealised, { decimals: 0 }) },
+              ...(variant === "equity" ? [{ label: "Own capital in MTF", value: inr(positions.reduce((s, p) => s + p.ownCapital, 0), { decimals: 0 }), hint: "your money; the rest is broker-funded" }] : []),
+            ],
+            note: "Capital is editable in Settings — every risk %, target and allocation recomputes from it.",
+          }}
+        />
+        <KpiCard
+          label="Unrealised P&L"
+          value={inr(unrealised, { decimals: 0 })}
+          valueClassName={pnl(unrealised)}
+          detail={{
+            title: "Unrealised P&L — paper money",
+            summary: "Marked against your latest MTM prices, not live quotes.",
+            rows: [
+              { label: "Unrealised P&L", value: inr(unrealised, { decimals: 0 }), tone: unrealised >= 0 ? "profit" : "loss" },
+              { label: "On invested", value: deployed ? `${((unrealised / deployed) * 100).toFixed(2)}%` : "—" },
+              { label: "Best position", value: bestPos ? `${bestPos.symbol} · ${inr(bestPos.unrealised, { decimals: 0 })}` : "—", tone: "profit" },
+              { label: "Worst position", value: worstPos ? `${worstPos.symbol} · ${inr(worstPos.unrealised, { decimals: 0 })}` : "—", tone: "loss" },
+              ...(variant === "equity" ? [{ label: "Less accrued MTF interest", value: `−${inr(mtfInterest, { decimals: 0 })}`, tone: "loss" as const, hint: "financing cost already booked against these positions" }] : []),
+            ],
+            note: "Nothing here is realised until you close. Update MTM prices below to keep it honest.",
+          }}
+        />
         {variant === "equity" ? (
-          <KpiCard label="MTF funded" value={inrCompact(mtfFunded)} sub={`Accrued int. ${inrCompact(mtfInterest)}`} valueClassName="text-warning" />
+          <KpiCard
+            label="MTF funded"
+            value={inrCompact(mtfFunded)}
+            sub={`Accrued int. ${inrCompact(mtfInterest)}`}
+            valueClassName="text-warning"
+            detail={{
+              title: "MTF — what the broker is funding",
+              summary: "Interest accrues only on the broker-funded portion, never on your own capital.",
+              rows: [
+                { label: "Broker-funded", value: inr(mtfFunded, { decimals: 0 }), tone: "loss" },
+                { label: "Your own capital", value: inr(positions.reduce((s, p) => s + p.ownCapital, 0), { decimals: 0 }) },
+                { label: "Effective leverage", value: (() => { const own = positions.reduce((s, p) => s + p.ownCapital, 0); return own > 0 ? `${((own + mtfFunded) / own).toFixed(2)}×` : "—"; })() },
+                { label: "Interest accrued so far", value: `−${inr(mtfInterest, { decimals: 0 })}`, tone: "loss" },
+                { label: "Interest vs unrealised gain", value: unrealised > 0 ? `${((mtfInterest / unrealised) * 100).toFixed(1)}%` : "—", hint: mtfInterest > 0 && unrealised > 0 && mtfInterest >= unrealised ? "interest has eaten the entire paper gain" : "share of your paper gain already spent on financing" },
+              ],
+              note: "MTF interest compounds daily whether the position moves or not — time is a cost here, not a free option.",
+            }}
+          />
         ) : (
           <KpiCard label="Segments live" value={segments.length} sub={segments.map((s) => SEGMENT_LABELS[s as Segment]).slice(0, 2).join(", ")} />
         )}

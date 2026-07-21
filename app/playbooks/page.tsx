@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { PlaybookManager } from "@/components/behavior/playbook-manager";
+import { PresetLibrary } from "@/components/behavior/preset-library";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getTrades } from "@/lib/queries/trades";
 import { playbookStats, type PlaybookStat } from "@/lib/analytics/behavior";
@@ -31,6 +32,7 @@ export default function PlaybooksPage() {
       />
       <div className="space-y-5 p-6">
         <PlaybookManager rows={rows} stats={stats} />
+        <PresetLibrary existingNames={rows.map((r) => r.name)} />
       </div>
     </>
   );

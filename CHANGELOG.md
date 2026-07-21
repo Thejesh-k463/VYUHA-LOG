@@ -4,6 +4,33 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.84.0
+Two fixes aimed at discoverability: numbers that explain themselves, and the
+preset playbooks that were hiding inside a dropdown.
+
+- **Clickable KPI cards with a drill-down popup.** Sixteen cards across the
+  Dashboard, Portfolio Risk, Equity Tracker and Trade F&O Tracker now lift and
+  glow on hover and open a compact breakdown on click (or Enter/Space — the
+  cards are keyboard-focusable `role="button"`s). The popups answer *what is
+  this number made of*, not just what it is: **Net P&L** splits into gross minus
+  every charge with best/worst day and dates; **Open Risk @ SL** puts open risk
+  next to initial risk with the stopped/unstopped count, so trailing a stop
+  visibly moves the number; **MTF funded** shows effective leverage and interest
+  accrued as a share of your paper gain, flagging when financing has eaten the
+  entire unrealised gain; **Unrealised P&L** names your best and worst position.
+  Detail objects are plain serializable strings, so server components can build
+  them without a client boundary.
+- **Preset library on `/playbooks`.** The 25 world-class setups existed since
+  earlier releases but lived inside a `<select>` in the New Playbook dialog —
+  effectively invisible. They now render as a browsable library: filter chips
+  for 7 ecosystems (Intraday & Momentum, Breakout & Trend, Positional/Growth,
+  Mean Reversion, Price Action/SMC, Options & Events, Swing & Overnight), every
+  rule visible on the card, one-click **Add**, `✓ Added` once it's yours, and
+  fully editable afterwards. Deliberately **not** auto-seeded into the DB: 25
+  untraded setups would bury your real playbooks and turn the Discipline page's
+  per-playbook expectancy into 25 rows of noise. Nothing is added until you
+  click. The empty state now points at the library.
+
 ## v2.82.0
 Ecosystem-research batch: findings from surveying the global journal market
 (TradeZella/TraderSync/Edgewonk/TradesViz) and India's 2024–2026 F&O regime,

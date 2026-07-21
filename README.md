@@ -29,6 +29,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - 🇮🇳 **Knows today's SEBI regime.** A compliance radar reads your open book against the post-2024 F&O rules — the **+2% expiry-day ELM** on short options expiring today, the **loss of calendar-spread margin benefit** on expiry, which indices still have weeklies, and how close your index exposure sits to the ₹1,500 cr limit that's now snapshotted *intraday*. No other journal tracks this.
 - 🔍 **Honest analytics.** Expectancy cards warn you when the sample is too small to trust. The stop-tuning report says "descriptive, not prescriptive." Mistake economics report the expectancy *gap*, never fake counterfactuals. A SEBI reality-check card compares your F&O book to the published loss statistics.
 - 🔒 **You stay in control — always.** Auto-MTM is opt-in. Update dialogs ask, never install. Breach alerts say *"check a live quote and review your plan"* — the app never places, closes, or changes anything on its own.
+- 🔬 **Every KPI explains itself.** Click any headline number — Net P&L, Open Risk @ SL, MTF funded, Unrealised P&L — and it opens a breakdown of what it's actually made of: gross minus every charge with your best and worst day, open risk sitting next to initial risk with the unstopped-position count, effective leverage and how much of your paper gain financing has already eaten. Sixteen cards, keyboard-accessible.
 - 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — in three accent skins (**Terminal teal / Tape amber / Ice blue**), dark or light, with a colorblind-safe mode.
 
 ---
@@ -41,10 +42,16 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
 - Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.
 
+### 🔬 Numbers that explain themselves
+<img src="docs/screenshots/kpi-drilldown.png" alt="Net P&L KPI drill-down — gross, charges, best and worst day" width="900" />
+
+- **Every headline KPI is clickable** — 16 cards across Dashboard, Portfolio Risk, Equity Tracker and Trade F&O Tracker. Hover lifts and glows; click (or `Enter`) opens the breakdown.
+- Not a tooltip — a **derivation**: Net P&L splits into gross minus every charge with your best and worst day *and their dates*; Open Risk @ SL sits next to initial risk with the unstopped-position count, so you can see trailing a stop move the number; MTF funded shows effective leverage and how much of your paper gain interest has already eaten.
+
 ### 📚 Playbooks & discipline
 <img src="docs/screenshots/playbooks.png" alt="Playbooks with rule checklists and expectancy" width="900" />
 
-- **25 preset playbooks across 7 global ecosystems** — Intraday & Momentum, Breakout & Trend (Turtle, Darvas, 52-week-high), Positional/Growth (CANSLIM, Minervini SEPA, Wyckoff, Weinstein), Mean Reversion (Connors RSI-2), Price Action/SMC (ICT liquidity sweeps), Options & Events (iron condor, **India weekly expiry theta**), Swing & Overnight (**BTST**). Pick one, tune every metric to your own risk, save.
+- **Browsable preset library — 25 playbooks across 7 global ecosystems** — Intraday & Momentum, Breakout & Trend (Turtle, Darvas, 52-week-high), Positional/Growth (CANSLIM, Minervini SEPA, Wyckoff, Weinstein), Mean Reversion (Connors RSI-2), Price Action/SMC (ICT liquidity sweeps), Options & Events (iron condor, **India weekly expiry theta**), Swing & Overnight (**BTST**). Filter by ecosystem, read every rule on the card, **one-click Add**, then tune every metric to your own risk. Nothing is auto-seeded — 25 untraded setups would bury your real playbooks and turn per-playbook expectancy into noise, so a playbook only becomes yours when you click.
 - **Rule-checklist enforcement**: journaling a trade shows its playbook's rules — tick what you actually followed. Broken rules land on the Discipline page with their real cost.
 - **Per-playbook expectancy cards**: win rate, net, expectancy, profit factor, avg R — with a small-sample caution until 20 closed trades.
 - **Discipline scorecard**: weekly adherence scores, cost-of-mistakes rollup, trading-by-emotion, entry-time limit breaches, and the per-rule cost table.
