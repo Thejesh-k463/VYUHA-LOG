@@ -38,6 +38,7 @@ node scripts/license-issue.mjs buyer@email.com toolkit
 | App only (lifetime) | `node scripts/license-issue.mjs buyer@email.com app` |
 | App annual | `node scripts/license-issue.mjs buyer@email.com app --years 1` |
 | Custom expiry | `node scripts/license-issue.mjs buyer@email.com app --expires 2027-03-31` |
+| Locked to one computer | `… toolkit --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
 
 The **key** goes to stdout (so `… > key.txt` or a pipe works); the **key ID, buyer and ledger
 reminder** go to stderr so they never contaminate the key itself.
@@ -83,6 +84,7 @@ node scripts/license-list.mjs A1B2-C3D4-E5
 | "Signature check failed" | Key edited, or minted with a rotated vendor key | Reissue |
 | "This key has been revoked" | You revoked it | Check the ledger note before reversing |
 | "Key expired" badge | Annual key past `expires` | Sell the renewal; issue a fresh `--years 1` key |
+| "This key is locked to a different computer" | Machine-bound key on a new/reinstalled machine | Ask for the new Machine ID, re-issue with `--machine` |
 | Nothing in the ledger | You have no record of this sale | Verify payment before issuing anything |
 
 ---
@@ -126,28 +128,58 @@ displayed in-app), not cryptographic.
    position *is* journalling. Recommendation: **leave it free** and keep gating analytics
    (Risk cockpit, Tax, ITR, Broker compare) — a trader who can't record what they actually did
    won't stay long enough to buy anything.
-4. **Device binding is not implemented.** One key activates on unlimited machines. See below.
+4. **Machine binding is available but off by default.** See §6 for when it is worth the friction.
 
 ---
 
-## 6. Device binding — the option you don't have yet
+## 6. Machine-bound keys — ✅ BUILT, opt-in per sale
 
-If you want one key = one machine, it needs a machine fingerprint (hostname + OS install ID,
-hashed) stored on activation and compared on later launches.
+A key can be locked to ONE computer. It is **off by default**: omit the flag and the key runs
+anywhere, which is what every key issued before this existed will always do.
 
-**What it buys you:** genuine per-seat control; casual key-sharing stops working.
+### The two-step flow (there is no way around it)
 
-**What it costs you:** every legitimate hardware change becomes a support ticket. New laptop,
-reinstalled Windows, replaced motherboard — all look identical to piracy. For a one-person
-operation selling at ₹1,499–7,999, the support load plausibly exceeds the revenue it protects.
-It also cannot be enforced offline any more strongly than revocation can: the check runs on the
-user's machine, so it is bypassable by the same people who would bypass anything else.
+Binding needs the buyer's Machine ID *before* you can mint the key, so you cannot pre-issue at
+checkout. With email delivery that is barely extra work:
 
-**Recommendation: don't build it yet.** Ship, watch whether sharing actually happens (the buyer's
-email in-app is a real deterrent), and revisit if you see one key ID appear in support from
-several different people. If you do want it, the honest middle ground is a *soft* limit: record
-the fingerprint, allow N activations, and show "activated on 3 machines" in Settings rather than
-blocking — visible accountability without a support queue.
+1. Buyer pays → you email the ZIP.
+2. Buyer installs, opens **Settings → License**, and copies their **Machine ID**
+   (looks like `EB42-FA73-9AD5`, with a Copy button next to it).
+3. Buyer sends you that ID.
+4. You mint the bound key:
+
+```bash
+node scripts/license-issue.mjs buyer@email.com toolkit --machine EB42-FA73-9AD5
+```
+
+The key then refuses to activate on any other computer, with a message telling the buyer to send
+you their new Machine ID. The binding is inside the signed payload, so it cannot be stripped out —
+editing it breaks the signature.
+
+### What the fingerprint is made of
+
+Windows' own `MachineGuid`, which is written once at Windows install and untouched by app
+reinstalls, driver updates, RAM upgrades or renames. Where that cannot be read, it falls back to
+hostname + platform + arch + CPU model.
+
+Deliberately **not** used: total memory (changes on a RAM upgrade), MAC address (changes with
+docks, VPNs, USB adapters), disk serial (changes on a clone). Every one of those would kill a
+paying customer's key for a reason that is not their fault.
+
+**Reinstalling Windows produces a new ID.** That is expected — re-issue the key with the new one.
+
+### When to actually use it
+
+| Situation | Bind? |
+|---|---|
+| Normal sale | **No.** Keep it frictionless; the buyer's email in-app is already a deterrent |
+| A buyer asks for it (corporate/team policy) | Yes |
+| You have caught a key being shared | Yes — revoke the old one, issue bound replacements |
+| High-value bundle to someone you don't know | Your call |
+
+The honest limit is the same as revocation's: the check runs on the user's machine, so it stops
+casual sharing, not a determined attacker. Price accordingly. Binding every sale by default would
+buy you very little and cost you a support ticket every time someone buys a new laptop.
 
 ---
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, AlertCircle, KeyRound, Sparkles } from "lucide-react";
+import { CheckCircle2, AlertCircle, Copy, KeyRound, Sparkles } from "lucide-react";
 import type { LicenseStatus } from "@/lib/queries/license";
 import { SKU_LABELS, BUY_URL, type Entitlement } from "@/lib/license";
 
@@ -62,6 +62,13 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                 <span className="ml-1.5">— quote this for support (it is not your key).</span>
               </p>
             )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              {status.boundTo ? (
+                <>Locked to this computer (<span className="font-mono">{status.boundTo}</span>). Changing computers needs a re-issued key.</>
+              ) : (
+                <>Not locked to a computer — this key works on any machine you own.</>
+              )}
+            </p>
             <Button
               size="sm"
               variant="outline"
@@ -106,6 +113,35 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
             <Button size="sm" disabled={pending || !key.trim()} onClick={() => post({ action: "activate", key })}>
               {pending ? "Activating…" : "Activate"}
             </Button>
+
+            {/* Machine ID lives on the ACTIVATION form, because that is the one
+                moment the buyer needs it: keys can be locked to one computer,
+                and to issue one the seller needs this value first. */}
+            <div className="rounded-md border border-border bg-background/40 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    This computer&apos;s Machine ID
+                  </div>
+                  <div className="mt-0.5 font-mono text-sm">{status.machineId}</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(status.machineId);
+                    setMsg({ ok: true, text: "Machine ID copied." });
+                  }}
+                >
+                  <Copy className="size-3.5" /> Copy
+                </Button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Send this with your order if your key is being locked to one computer. It is a one-way
+                fingerprint — it contains no personal information and never leaves this machine unless you
+                send it.
+              </p>
+            </div>
           </>
         )}
         {msg && (

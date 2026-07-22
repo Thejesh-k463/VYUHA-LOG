@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
 import { parseLicenseKey, verifyLicenseKey, licenseKeyId, REVOKED_KEY_IDS } from "@/lib/license";
+import { deriveMachineId, machineMatches } from "@/lib/machine-id";
 
 // Ephemeral vendor keypair for tests — mirrors scripts/license-{keygen,issue}.mjs exactly.
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -8,6 +9,12 @@ const PUB_PEM = publicKey.export({ type: "spki", format: "pem" }).toString();
 
 function issue(email: string, sku = "toolkit", issued = "2026-07-01"): string {
   const payload = Buffer.from(JSON.stringify({ email, sku, issued }), "utf8");
+  const signature = sign(null, payload, privateKey);
+  return `VYUHA-${payload.toString("base64url")}.${signature.toString("base64url")}`;
+}
+
+function issueBound(email: string, machine: string, sku = "toolkit", issued = "2026-07-01"): string {
+  const payload = Buffer.from(JSON.stringify({ email, sku, issued, machine }), "utf8");
   const signature = sign(null, payload, privateKey);
   return `VYUHA-${payload.toString("base64url")}.${signature.toString("base64url")}`;
 }
@@ -201,5 +208,72 @@ describe("revocation", () => {
     expect(noTrial.pro).toBe(false);
     expect(noTrial.state).toBe("unlicensed");
     expect(noTrial.reason).toMatch(/revoked/i);
+  });
+});
+
+describe("machine binding", () => {
+  it("derives a stable id from the same parts", () => {
+    expect(deriveMachineId(["winguid", "abc-123"])).toBe(deriveMachineId(["winguid", "abc-123"]));
+  });
+
+  it("changes when the machine changes", () => {
+    expect(deriveMachineId(["winguid", "abc-123"])).not.toBe(deriveMachineId(["winguid", "def-456"]));
+  });
+
+  it("has the quotable ABCD-EF12-3456 shape", () => {
+    expect(deriveMachineId(["winguid", "abc-123"])).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+  });
+
+  it("ignores empty parts so a failed probe cannot silently change the id", () => {
+    expect(deriveMachineId(["a", null, undefined, "", "b"])).toBe(deriveMachineId(["a", "b"]));
+  });
+
+  it("degrades to a named constant rather than a hash of nothing", () => {
+    expect(deriveMachineId([null, undefined, ""])).toBe("UNKNOWN-MACHINE");
+  });
+
+  it("an UNBOUND key runs anywhere — the default and every legacy key", () => {
+    expect(machineMatches(undefined, "AAAA-BBBB-CCCC")).toBe(true);
+    expect(machineMatches(null, "AAAA-BBBB-CCCC")).toBe(true);
+  });
+
+  it("a bound key matches only its own machine, case-insensitively", () => {
+    expect(machineMatches("AAAA-BBBB-CCCC", "AAAA-BBBB-CCCC")).toBe(true);
+    expect(machineMatches("aaaa-bbbb-cccc", "AAAA-BBBB-CCCC")).toBe(true);
+    expect(machineMatches("AAAA-BBBB-CCCC", "DDDD-EEEE-FFFF")).toBe(false);
+  });
+
+  it("verifies a bound key on the right machine", () => {
+    const k = issueBound("a@b.com", "AAAA-BBBB-CCCC");
+    expect(verifyLicenseKey(k, PUB_PEM, [], "AAAA-BBBB-CCCC").valid).toBe(true);
+  });
+
+  it("refuses a bound key on a different machine, and says which id to send", () => {
+    const k = issueBound("a@b.com", "AAAA-BBBB-CCCC");
+    const check = verifyLicenseKey(k, PUB_PEM, [], "DDDD-EEEE-FFFF");
+    expect(check.valid).toBe(false);
+    expect(check.reason).toMatch(/locked to a different computer/i);
+    expect(check.reason).toContain("DDDD-EEEE-FFFF"); // the id the buyer must send
+  });
+
+  it("still accepts an unbound key when a machine id is supplied", () => {
+    // Every key sold before binding existed must keep working forever.
+    expect(verifyLicenseKey(issue("a@b.com"), PUB_PEM, [], "DDDD-EEEE-FFFF").valid).toBe(true);
+  });
+
+  it("skips the machine check entirely when no id is supplied", () => {
+    // Server-side callers that don't care (e.g. pure signature validation).
+    expect(verifyLicenseKey(issueBound("a@b.com", "AAAA-BBBB-CCCC"), PUB_PEM, []).valid).toBe(true);
+  });
+
+  it("cannot be stripped: editing the payload breaks the signature", () => {
+    const k = issueBound("a@b.com", "AAAA-BBBB-CCCC");
+    const body = k.slice("VYUHA-".length).split(".")[0];
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    delete payload.machine;
+    const forged = `VYUHA-${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${k.split(".")[1]}`;
+    const check = verifyLicenseKey(forged, PUB_PEM, [], "DDDD-EEEE-FFFF");
+    expect(check.valid).toBe(false);
+    expect(check.reason).toMatch(/signature check failed/i);
   });
 });

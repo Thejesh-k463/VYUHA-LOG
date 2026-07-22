@@ -108,7 +108,11 @@ the same SKU on the same day get completely different keys.
 3. **Key IDs — ✅ BUILT (v2.86)**: every key has a short derived ID (`A1B2-C3D4-E5`,
    `sha256(key)` truncated). It shows in the buyer's **Settings → License** and in your ledger,
    so support threads quote the ID instead of pasting the key — which is a credential.
-4. **Revocation — ✅ BUILT (v2.86)**: `node scripts/license-revoke.mjs <KEY-ID> "refunded"` adds
+4. **Machine-bound keys — ✅ BUILT (v2.86), opt-in per sale**: `--machine ABCD-EF12-3456` locks a
+   key to one computer. Off by default. Binding needs the buyer's Machine ID first (they copy it
+   from Settings → License), so it is a two-step delivery — which fits the email-a-ZIP model
+   well. Full guidance on when it is worth the friction in `LICENSE_OPERATIONS.md` §6.
+5. **Revocation — ✅ BUILT (v2.86)**: `node scripts/license-revoke.mjs <KEY-ID> "refunded"` adds
    the ID to `REVOKED_KEY_IDS` in `lib/license.ts`; that key then refuses to activate.
    **Read the limit honestly:** this is a *build-time* list in an offline app. A revoked key keeps
    working on machines already running an older build and only dies once the user installs a build

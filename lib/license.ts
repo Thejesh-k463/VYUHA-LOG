@@ -15,6 +15,7 @@
 //   "block":            Pro screens render the upsell panel instead of content.
 
 import { verify as edVerify, createHash } from "node:crypto";
+import { machineMatches } from "@/lib/machine-id";
 
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
@@ -33,6 +34,11 @@ export interface LicensePayload {
   /** Optional ISO expiry date (annual SKUs). Absent = lifetime. Signed like
    *  every other field, so it can't be edited without breaking the signature. */
   expires?: string;
+  /** Optional machine binding. Present = this key only activates on the machine
+   *  whose ID this is; absent = runs anywhere (the default, and what every key
+   *  issued before binding existed will always be). Signed, so it cannot be
+   *  stripped out without breaking the key. */
+  machine?: string;
 }
 
 export interface LicenseCheck {
@@ -94,6 +100,7 @@ export function verifyLicenseKey(
   key: string,
   publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
   revokedIds: readonly string[] = REVOKED_KEY_IDS,
+  currentMachineId?: string,
 ): LicenseCheck {
   const parsed = parseLicenseKey(key);
   if (!parsed) return { valid: false, reason: "Malformed key — paste the full VYUHA-… key from your purchase email." };
@@ -105,6 +112,14 @@ export function verifyLicenseKey(
   try {
     const ok = edVerify(null, parsed.payloadRaw, publicKeyPem, parsed.signature);
     if (!ok) return { valid: false, reason: "Signature check failed — the key was altered or issued for a different build." };
+    // Machine binding is checked AFTER the signature: the bound id is part of
+    // the signed payload, so it is only trustworthy once the signature holds.
+    if (currentMachineId && !machineMatches(parsed.payload.machine, currentMachineId)) {
+      return {
+        valid: false,
+        reason: `This key is locked to a different computer. Send your Machine ID (${currentMachineId}) to support to have it re-issued.`,
+      };
+    }
     return { valid: true, payload: parsed.payload };
   } catch {
     return { valid: false, reason: "Signature check failed — the key was altered or issued for a different build." };
@@ -179,9 +194,10 @@ export function evaluateEntitlement(
   today: Date = new Date(),
   publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
   revokedIds: readonly string[] = REVOKED_KEY_IDS,
+  currentMachineId?: string,
 ): Entitlement {
   if (storedKey) {
-    const check = verifyLicenseKey(storedKey, publicKeyPem, revokedIds);
+    const check = verifyLicenseKey(storedKey, publicKeyPem, revokedIds, currentMachineId);
     if (check.valid && check.payload) {
       if (isKeyExpired(check.payload, today)) {
         // Expired annual key: fall back to trial if any remains, else free.
