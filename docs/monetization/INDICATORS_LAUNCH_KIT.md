@@ -10,42 +10,30 @@ Scripts covered:
 
 ---
 
-## 0. Fix these THREE things before you publish anything
+## 0. Fix these before you publish
 
-### 0.1 🚨 The copyright header on SA-PRO
+*Status 2026-07-22 — §0.1 resolved by the owner. **§0.2 and §0.3 are still open.** §0.2 is visible
+to anyone who loads the indicator on an NSE chart, so fix that one first.* anything
 
-Line 2 of the Stage Analysis file reads:
+### 0.1 ✅ RESOLVED — the copyright header on SA-PRO
 
+The Stage script previously carried a **Mozilla Public License 2.0** header and a `© TheWrap` line,
+both inserted automatically by TradingView's Pine Editor and easy to inherit when starting from
+someone else's code. MPL-2.0 is a **source-disclosure** licence, which would have conflicted
+directly with publishing the script invite-only with hidden source.
+
+**Removed by the owner on 2026-07-22.** The file now opens with a plain
+`// Stage Analysis TradingView Indicator` comment.
+
+**One thing still worth doing:** the script now has *no* copyright line at all, and RS-PRO never had
+one. Add your own to both, so authorship is positively stated rather than merely unclaimed:
+
+```pine
+// © Thejesh K — Vyuha Stage Analysis PRO
+// All rights reserved. Redistribution or resale prohibited.
 ```
-// © TheWrap - Stage Analysis TradingView Indicator
-```
 
-…under a **Mozilla Public License 2.0** header (line 1).
-
-**If `TheWrap` is your own TradingView username, ignore this** — just update it to the handle you
-will publish under, so buyers see a consistent brand.
-
-**If it is not you, stop and resolve it first.** Two separate problems:
-
-1. **MPL-2.0 is a source-disclosure licence.** If this file is a modified copy of someone else's
-   MPL-covered script, MPL 2.0 requires you to make the source of that file available under MPL 2.0.
-   Publishing it **invite-only with hidden source** — the entire point of this exercise — would
-   conflict with that. You cannot both honour MPL-2.0 and hide the code.
-2. **Bundling it with a paid product** compounds it into a copyright question, not just a licence
-   technicality.
-
-TradingView's Pine Editor inserts that MPL header and `© <username>` line automatically into every
-new script, which is why it is easy to inherit by accident when starting from someone else's code.
-
-**What to do:** if the logic is yours, replace the header with your own copyright and drop MPL (or
-keep whatever licence you intend). If any of it came from another author's published script, either
-get their permission in writing, publish that script open-source under MPL as required, or rewrite
-the borrowed parts. RS-PRO has no licence header at all — add one to both.
-
-*I'm flagging a risk, not giving legal advice. If you're unsure of the provenance, an hour with a
-professional is cheaper than a takedown after you have paying customers.*
-
-### 0.2 The benchmark default is wrong for Indian stocks
+### 0.2 ⚠ STILL OPEN — the benchmark default is wrong for Indian stocks
 
 `SA-PRO` line 47:
 

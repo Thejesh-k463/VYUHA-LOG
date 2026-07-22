@@ -20,7 +20,7 @@ import { machineMatches } from "@/lib/machine-id";
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
 
-export const LICENSE_ENFORCEMENT: LicenseEnforcement = "banner"; //block
+export const LICENSE_ENFORCEMENT: LicenseEnforcement = "block";
 
 /** Vendor Ed25519 PUBLIC key (safe to ship). Regenerate via scripts/license-keygen.mjs. */
 export const LICENSE_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
@@ -152,7 +152,10 @@ export const TRIAL_DAYS = 14;
  * personally by email after a WhatsApp conversation — see
  * docs/monetization/LICENSE_OPERATIONS.md.
  */
-export const WHATSAPP_NUMBER = "";
+// Typed as `string`, not inferred as a literal: the guard tests compare it
+// against "" and TypeScript would otherwise narrow it to a single literal type
+// and reject the comparison as impossible.
+export const WHATSAPP_NUMBER: string = "917393673714";
 
 /** Pre-filled first message, so a buyer never has to work out what to type. */
 const BUY_MESSAGE = "Hi, I'd like to buy the Vyuha Trader's Toolkit";

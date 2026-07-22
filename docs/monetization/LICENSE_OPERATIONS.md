@@ -116,19 +116,26 @@ displayed in-app), not cryptographic.
 
 ---
 
-## 5. Open decisions before you flip enforcement
+## 5. Enforcement — ✅ LIVE (set 2026-07-22)
 
-1. **`LICENSE_ENFORCEMENT` is still `"banner"`.** Nothing is actually gated today. Flip it to
-   `"block"` in `lib/license.ts` **only after the payment page is live** — otherwise
-   trial-expired users hit a dead buy link.
-2. **`BUY_URL` still points at the GitHub releases page.** Point it at Razorpay/your landing page
-   in the same change.
-3. **Staged positions (v2.85) are currently free.** They are arguably the strongest paid hook in
-   the product, but `PRO_FEATURES` deliberately never gates the core journal, and a staged
-   position *is* journalling. Recommendation: **leave it free** and keep gating analytics
-   (Risk cockpit, Tax, ITR, Broker compare) — a trader who can't record what they actually did
-   won't stay long enough to buy anything.
+1. **`LICENSE_ENFORCEMENT` is now `"block"`.** When a 14-day trial ends without a key, the Pro
+   screens (Risk cockpit, Tax Summary, ITR Pack, Broker Compare) render the upsell panel instead of
+   their content. The core journal — trades, imports, dashboard, playbooks, backups — is still never
+   gated: a trader who can't record what they actually did won't stay long enough to buy anything.
+2. **`BUY_URL` points at WhatsApp** — `917393673714`, with a pre-filled message, derived from
+   `WHATSAPP_NUMBER` in `lib/license.ts`. A test fails the build if enforcement is `"block"` while
+   that number is empty, so the two cannot drift apart and strand a trial-expired user.
+3. **Staged positions stay free.** They are journalling, and `PRO_FEATURES` deliberately never gates
+   the record of what you actually did.
 4. **Machine binding is available but off by default.** See §6 for when it is worth the friction.
+
+**To reverse it** — if you decide to go back to soft-selling — set `LICENSE_ENFORCEMENT` to
+`"banner"` in `lib/license.ts`, rebuild and ship. Keys already issued are unaffected either way.
+
+**What a trial-expired, unlicensed user now sees:** every Pro page shows the upsell panel with a
+"Get the Trader's Toolkit" button that opens WhatsApp to your business number with the message
+pre-filled. Test this path yourself before you send the first ZIP — it is now the entire top of
+your funnel.
 
 ---
 
