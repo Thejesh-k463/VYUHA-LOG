@@ -163,7 +163,7 @@ export function Sidebar() {
       </nav>
 
       <div className={cn("flex flex-col gap-1 border-t border-border py-2 text-[10px] text-muted-foreground", collapsed ? "items-center px-1" : "px-4")}>
-        {!collapsed && <span>Local · Offline · v2.86</span>}
+        {!collapsed && <span>Local · Offline · v2.87</span>}
         <MarketClock />
       </div>
     </aside>

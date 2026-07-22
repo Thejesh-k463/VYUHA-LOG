@@ -4,6 +4,27 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.87.0
+**The first paid build.** No new features — this is the release that turns the
+licence gate on.
+
+- **`LICENSE_ENFORCEMENT` → `"block"`.** When a 14-day trial ends without a key,
+  the four Pro screens (Portfolio Risk, Tax Summary, ITR Pack, Broker Compare)
+  render the upsell panel instead of their content. The **core journal is still
+  never gated** — trades, imports, dashboard, playbooks and backups keep working
+  forever, and your data never leaves the machine either way.
+- **`WHATSAPP_NUMBER` set**, so `BUY_URL` now opens WhatsApp with a pre-filled
+  message. Every in-app upsell and all eight landing-page buy buttons derive
+  from that one constant.
+- Verified by simulating an expired unlicensed install against a snapshot of a
+  real settings row: `/risk`, `/reports/tax` and `/reports/itr` all render the
+  upsell with the correct `wa.me` link and no Pro content, while `/trades` is
+  untouched. Snapshot restored and confirmed byte-identical afterwards.
+
+Superseded **v2.86.0**, which was tagged *before* the enforcement flip and
+therefore still shipped ungated with the fallback buy link. Publish this one
+instead.
+
 ## v2.86.0
 Vendor control over licence keys, and the sales assets to actually sell with.
 No changes to the journal itself — this release is about the business around it.
