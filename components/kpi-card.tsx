@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,9 @@ export interface KpiDetailRow {
   value: string;
   tone?: "profit" | "loss" | "neutral";
   hint?: string;
+  /** Makes the row clickable — e.g. a "worst day" row linking to that day's
+   *  trades. Turns the popup from an explanation into a place to go next. */
+  href?: string;
 }
 
 /** Attach to a KpiCard to make it clickable — the card then opens a popup that
@@ -46,6 +50,9 @@ export interface KpiDetail {
   summary?: string;
   rows: KpiDetailRow[];
   note?: string;
+  /** Optional call-to-action at the foot of the popup. */
+  footerHref?: string;
+  footerLabel?: string;
 }
 
 export interface KpiDelta {
@@ -150,25 +157,51 @@ export function KpiCard({
             {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
           </DialogHeader>
           <div className="divide-y divide-border/50">
-            {detail.rows.map((r, i) => (
-              <div key={i} className="flex items-baseline justify-between gap-4 py-2">
-                <div>
-                  <div className="text-xs">{r.label}</div>
-                  {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
-                </div>
-                <div
-                  className={cn(
-                    "shrink-0 font-mono text-sm tabular-nums",
-                    r.tone === "profit" && "text-profit",
-                    r.tone === "loss" && "text-loss",
-                  )}
+            {detail.rows.map((r, i) => {
+              const body = (
+                <>
+                  <div>
+                    <div className={cn("text-xs", r.href && "text-accent underline-offset-2 group-hover/row:underline")}>
+                      {r.label}
+                      {r.href && <span className="ml-1 text-[10px]">→</span>}
+                    </div>
+                    {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
+                  </div>
+                  <div
+                    className={cn(
+                      "shrink-0 font-mono text-sm tabular-nums",
+                      r.tone === "profit" && "text-profit",
+                      r.tone === "loss" && "text-loss",
+                    )}
+                  >
+                    {r.value}
+                  </div>
+                </>
+              );
+              return r.href ? (
+                <Link
+                  key={i}
+                  href={r.href}
+                  className="group/row flex items-baseline justify-between gap-4 py-2 transition-colors hover:bg-card-hover/60"
+                  onClick={() => setOpen(false)}
                 >
-                  {r.value}
-                </div>
-              </div>
-            ))}
+                  {body}
+                </Link>
+              ) : (
+                <div key={i} className="flex items-baseline justify-between gap-4 py-2">{body}</div>
+              );
+            })}
           </div>
           {detail.note && <p className="text-[11px] text-muted-foreground">{detail.note}</p>}
+          {detail.footerHref && (
+            <Link
+              href={detail.footerHref}
+              onClick={() => setOpen(false)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary"
+            >
+              {detail.footerLabel ?? "Show me the trades"} →
+            </Link>
+          )}
         </DialogContent>
       </Dialog>
     </>

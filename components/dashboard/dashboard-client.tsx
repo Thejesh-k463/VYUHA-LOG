@@ -175,11 +175,23 @@ export function DashboardClient({
               { label: "Gross P&L", value: inr(k.grossPnl, { decimals: 0 }), tone: k.grossPnl >= 0 ? "profit" : "loss" },
               { label: "Total charges", value: `−${inr(k.charges, { decimals: 0 })}`, tone: "loss", hint: "brokerage, STT, GST, DP, MTF interest…" },
               { label: "Net P&L", value: inr(k.netPnl, { decimals: 0 }), tone: k.netPnl >= 0 ? "profit" : "loss" },
-              { label: "Best day", value: inr(dayStats.best, { decimals: 0 }), tone: "profit", hint: dayStats.bestDate ?? undefined },
-              { label: "Worst day", value: inr(dayStats.worst, { decimals: 0 }), tone: "loss", hint: dayStats.worstDate ?? undefined },
+              // The date rows deep-link to that day's trades — the popup stops
+              // being a dead end and becomes somewhere to go next.
+              {
+                label: "Best day", value: inr(dayStats.best, { decimals: 0 }), tone: "profit",
+                hint: dayStats.bestDate ?? undefined,
+                href: dayStats.bestDate ? `/trades?from=${dayStats.bestDate}&to=${dayStats.bestDate}` : undefined,
+              },
+              {
+                label: "Worst day", value: inr(dayStats.worst, { decimals: 0 }), tone: "loss",
+                hint: dayStats.worstDate ?? undefined,
+                href: dayStats.worstDate ? `/trades?from=${dayStats.worstDate}&to=${dayStats.worstDate}` : undefined,
+              },
               { label: "Closed / open", value: `${k.closedCount} / ${k.openCount}` },
             ],
             note: "Open positions contribute unrealised P&L on the trackers, not here — this is realised money only.",
+            footerHref: "/trades",
+            footerLabel: "Show me every trade",
           }}
         />
         <KpiCard

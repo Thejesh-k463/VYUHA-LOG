@@ -1,11 +1,13 @@
 import { test, expect } from "@playwright/test";
 import path from "node:path";
+import { gotoImportReady } from "./helpers";
 
 const DHAN = path.join(process.cwd(), "tests", "fixtures", "dhan-pnl.csv");
 
 test("import Dhan CSV → dashboard reflects the imported P&L", async ({ page }) => {
-  // Import
-  await page.goto("/import");
+  // Import. gotoImportReady waits for hydration — handing a file to a
+  // not-yet-interactive page silently drops it and looks like a parser bug.
+  await gotoImportReady(page);
   await page.locator('input[type="file"]').setInputFiles(DHAN);
 
   // Auto-detected preview

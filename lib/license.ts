@@ -182,6 +182,7 @@ export const PRO_FEATURES: { href: string; label: string }[] = [
   { href: "/reports/tax", label: "Tax Summary (grandfathering, dividend TDS, set-off)" },
   { href: "/reports/itr", label: "ITR Pack — 44AB/44AD audit read + CA export" },
   { href: "/reports/broker-compare", label: "Broker cost comparison (whole history re-priced)" },
+  { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },
 ];
 
 export type EntitlementState = "licensed" | "trial" | "expired-key" | "unlicensed";

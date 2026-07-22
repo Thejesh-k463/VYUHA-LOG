@@ -54,18 +54,38 @@ export function TradesClient({
   const [fullEditing, setFullEditing] = React.useState<Trade | null>(null);
   const [staging, setStaging] = React.useState<Trade | null>(null);
 
-  // Command-palette deep link: /trades?add=manual | open — open the dialog once, then clean the URL.
-  React.useEffect(() => {
-    const add = new URLSearchParams(window.location.search).get("add");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (add === "manual") setAddOpen(true);
-    else if (add === "open") setAddOpenTrade(true);
-    if (add) window.history.replaceState(null, "", window.location.pathname);
-  }, []);
   const [search, setSearch] = React.useState("");
   const [broker, setBroker] = React.useState("");
   const [segment, setSegment] = React.useState("");
   const [bucket, setBucket] = React.useState("");
+  // Date window, set by deep links from the KPI drill-downs (e.g. "worst day").
+  const [from, setFrom] = React.useState("");
+  const [to, setTo] = React.useState("");
+
+  // Deep links. Two kinds:
+  //   ?add=manual|open              — command palette, opens a dialog
+  //   ?symbol=&from=&to=&segment=   — KPI drill-downs, pre-filters the table
+  // The query string is cleaned afterwards so a refresh does not re-apply it
+  // and the URL stays shareable rather than sticky.
+  React.useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const add = q.get("add");
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (add === "manual") setAddOpen(true);
+    else if (add === "open") setAddOpenTrade(true);
+
+    const sym = q.get("symbol");
+    if (sym) setSearch(sym);
+    const f = q.get("from");
+    if (f) setFrom(f);
+    const t = q.get("to");
+    if (t) setTo(t);
+    const seg = q.get("segment");
+    if (seg) setSegment(seg);
+    /* eslint-enable react-hooks/set-state-in-effect */
+
+    if ([...q.keys()].length > 0) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const data = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -73,10 +93,23 @@ export function TradesClient({
       if (broker && t.broker !== broker) return false;
       if (segment && t.segment !== segment) return false;
       if (bucket && t.bucket !== bucket) return false;
+      // Date window matches the trade's EFFECTIVE date: the exit for a closed
+      // trade, the entry for one still open.
+      //
+      // This deliberately mirrors lib/analytics/metrics.ts#dailyPnl, which
+      // buckets realised P&L on sellDate. Matching either leg instead would
+      // pull in positions opened that day but closed later, and the trades
+      // shown would not add up to the daily figure the user just clicked.
+      if (from || to) {
+        const d = t.sellDate ?? t.buyDate;
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+      }
       if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [trades, search, broker, segment, bucket]);
+  }, [trades, search, broker, segment, bucket, from, to]);
 
   const columns = React.useMemo<ColumnDef<Trade, unknown>[]>(() => [
     {

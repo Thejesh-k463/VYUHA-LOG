@@ -63,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/reports/advance-tax", label: "Advance Tax", icon: Landmark, group: "Analytics" },
   { href: "/reports/harvest", label: "Tax Harvest", icon: Scissors, group: "Analytics" },
   { href: "/reports/expiry", label: "Expiry Analytics", icon: CalendarClock, group: "Analytics" },
+  { href: "/reports/rom", label: "Return on Margin", icon: Gauge, group: "Analytics" },
   { href: "/reports/edge", label: "Edge / Setups", icon: TrendingUp, group: "Analytics" },
   { href: "/reports/discipline", label: "Discipline", icon: ShieldCheck, group: "Analytics" },
   { href: "/reports/tax", label: "Tax Summary", icon: FileText, group: "Analytics" },

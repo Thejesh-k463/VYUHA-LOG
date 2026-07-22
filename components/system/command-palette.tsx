@@ -23,6 +23,7 @@ const KEYWORDS: Record<string, string> = {
   "/reports/advance-tax": "234b 234c instalment june september december march",
   "/reports/harvest": "tax loss harvesting ltcg stcg march",
   "/reports/expiry": "expiry weekly thursday theta",
+  "/reports/rom": "return on margin capital efficiency rom blocked",
   "/reports/edge": "setups expectancy win rate",
   "/reports/discipline": "score mistakes emotions playbook expectancy sebi",
   "/reports/tax": "stcg ltcg capital gains itr tds dividend grandfathering fmv set-off carry forward",

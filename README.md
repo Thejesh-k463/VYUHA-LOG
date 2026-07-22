@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-576%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-612%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -52,10 +52,20 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Imports rebuild the ladder for you.** Zerodha, Angel One and Upstox tradebooks list every execution — those fills are preserved, so a scaled position arrives with its real shape. An ordinary buy-then-sell stays an ordinary trade.
 - **Two warnings worth having:** *averaging down* (adding below your average — inverted correctly for shorts), and *open risk now exceeds your initial risk* — which fires on any add you didn't fund by trailing the earlier stops up.
 
+### 📐 Return on Margin — what your capital actually earned
+<img src="docs/screenshots/rom-report.png" alt="Return on Margin — capital blocked per segment, ROM per day, capital-efficient trades" width="900" />
+
+- Every Indian F&O journal reports P&L against **turnover** or **notional**. Both are close to meaningless: a long option and a short strangle can carry identical notional while tying up wildly different capital. **ROM measures against what was actually blocked.**
+- The denominator is **instrument-aware**, because the market is — **long options** cost the premium and block no SPAN margin; **short options** block against the *underlying* (a ₹10,000 credit can tie up ₹1.5 lakh); **futures/intraday** block a percentage of contract value; **MTF** blocks only your own capital; **delivery** blocks the lot.
+- **ROM/day is weighted by capital-days**, so ₹1L held ten days counts as ten times the commitment of ₹1L held one — and a scalper and a swing trader finally become comparable.
+- Grouped by segment and playbook, so you can see that your F&O book returns *x*%/day on margin while delivery returns *y*% on capital. **No other Indian journal does this.**
+- Annualised figures are **clamped and marked** — a book losing 10%/day extrapolates to −3,887%, which is arithmetically true and impossible. Honest beats impressive.
+
 ### 🔬 Numbers that explain themselves
 <img src="docs/screenshots/kpi-drilldown.png" alt="Net P&L KPI drill-down — gross, charges, best and worst day" width="900" />
 
 - **Every headline KPI is clickable** — 16 cards across Dashboard, Portfolio Risk, Equity Tracker and Trade F&O Tracker. Hover lifts and glows; click (or `Enter`) opens the breakdown.
+- **And the breakdown goes somewhere.** Best/worst-day rows deep-link to `/trades` filtered to that date, and the rows shown **add up exactly** to the figure you clicked — an e2e test asserts the reconciliation, because a link showing roughly-related trades is worse than no link.
 - Not a tooltip — a **derivation**: Net P&L splits into gross minus every charge with your best and worst day *and their dates*; Open Risk @ SL sits next to initial risk with the unstopped-position count, so you can see trailing a stop move the number; MTF funded shows effective leverage and how much of your paper gain interest has already eaten.
 
 ### 📚 Playbooks & discipline
@@ -171,8 +181,8 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (576 tests) |
-| `npm run test:e2e` | Playwright happy-path e2e |
+| `npm test` | Vitest unit suite (612 tests) |
+| `npm run test:e2e` | Playwright e2e — import, staged positions, ROM report, KPI drill-down |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

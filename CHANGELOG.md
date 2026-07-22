@@ -4,6 +4,64 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.88.0
+**Return on Margin** — the metric that answers what your capital actually
+earned, not what your turnover did.
+
+- **New Pro report at `/reports/rom`.** Every Indian F&O journal reports P&L
+  against turnover or notional, and both are close to meaningless: a long option
+  and a short strangle can carry identical notional while tying up wildly
+  different capital. ROM measures against **capital actually blocked**.
+- **The denominator is instrument-aware**, because the market is:
+  **long options** cost the premium and block no SPAN margin; **short options**
+  block margin against the *underlying* notional (which is why a ₹10,000 credit
+  can tie up ₹1.5 lakh); **futures and intraday** block a percentage of contract
+  value; **MTF** blocks only your own capital; **delivery** blocks the lot.
+  The rule was extracted out of the live margin cockpit into a shared
+  `capitalBlocked()` so the two views can never drift apart.
+- **Three time framings, each for a reason.** Raw ROM is unambiguous but treats
+  a one-day and a thirty-day 2% identically. ROM/day fixes that, weighted by
+  **capital-days** — ₹1L held ten days is ten times the commitment of ₹1L held
+  one, and a naive average would say otherwise. Annualisation appears only in
+  the rollups, never per trade.
+- **Annualised figures are clamped, and say so.** A book of one-day option
+  trades losing 10%/day extrapolates to −3,887% — arithmetically correct and
+  impossible, since you cannot lose more than your capital. The display floors
+  at −100% and caps at +1,000%, marks clamped values with `*`, and keeps the
+  uncapped number in the CSV/XLSX export.
+- Groups by segment and by playbook, flags segments where no margin rate is
+  configured (which *understates* ROM), and skips trades whose capital cannot be
+  established rather than reporting an infinite return.
+
+**KPI drill-downs now go somewhere.** The Net P&L popup's best/worst-day rows
+deep-link to `/trades` filtered to that date, and a footer links to the full
+journal. `/trades` gained `?symbol=`, `?from=`, `?to=` and `?segment=` support.
+
+- The date filter matches a trade's **effective date** — exit for a closed
+  trade, entry for an open one — deliberately mirroring how `dailyPnl` buckets
+  realised P&L. An earlier version matched *either* leg and pulled in positions
+  opened that day but closed later, so the filtered rows did not add up to the
+  figure that had just been clicked. They now reconcile exactly, and an e2e test
+  asserts the sum.
+
+**End-to-end coverage went from one flow to four**: import, staged positions
+(enable → add tranche → partial exit), the ROM report, and the drill-down
+reconciliation. A new dated Zerodha tradebook fixture also puts a second
+importer under e2e — the Dhan fixture is an aggregated P&L report with no
+per-trade dates, so it can never produce a daily P&L to drill into.
+
+- Fixed a latent race in the existing import spec while doing this: handing a
+  file to a not-yet-hydrated page silently drops it, and the failure presents as
+  "broker not detected", which sends you hunting in the parser.
+
+**Indicator (SA-PRO v2.1.0)** — beta thresholds now span 0.05–3.0 on *both*
+inputs. The previous build capped Low at 1.0 and floored High at 1.0, which
+structurally forced "Normal" to straddle 1.0 and made the band unusable against
+a peer benchmark where the whole universe can sit below it. An inverted band is
+now ordered defensively rather than mislabelling every stock.
+
+36 new unit tests (612 total), plus 3 new end-to-end flows.
+
 ## v2.87.0
 **The first paid build.** No new features — this is the release that turns the
 licence gate on.

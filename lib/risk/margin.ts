@@ -74,6 +74,77 @@ export interface MarginSummary {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const inrFmt = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
+/** What one position ties up, and why. */
+export interface CapitalBlocked {
+  margin: number;
+  /** Human-readable derivation, e.g. "12% × notional ₹5,40,000 (short CE)". */
+  basis: string;
+  /** Percentage applied, or null where the premium-paid rule was used. */
+  rateUsed: number | null;
+  /** "broker|segment" when no rate was configured and 100% was assumed. */
+  missingRate: string | null;
+}
+
+/**
+ * The capital a position actually ties up — the single source of truth for both
+ * the live margin view and the Return-on-Margin report.
+ *
+ * The rules differ by instrument because the market does:
+ *
+ *   • LONG OPTIONS block no SPAN margin at all — you pay the premium and that
+ *     is the whole exposure. Treating them as "notional × margin %" would
+ *     invent a requirement that never existed and crush their measured return.
+ *   • SHORT OPTIONS block margin against the UNDERLYING notional, not the
+ *     premium, which is why a ₹2,000 credit can tie up ₹1.5 lakh.
+ *   • MTF and delivery block a percentage of the invested value (for MTF that
+ *     percentage IS your own capital, the rest being broker-funded).
+ *   • Futures and intraday equity block a percentage of contract value.
+ *
+ * Extracted so ROM and the margin cockpit can never drift apart.
+ */
+export function capitalBlocked(p: MarginPositionInput, rates: MarginRates): CapitalBlocked {
+  const isOption = p.optionType === "CE" || p.optionType === "PE";
+
+  if (isOption && p.side === "long") {
+    const margin = p.qty * p.entry;
+    return { margin, basis: `premium paid ${inrFmt(margin)}`, rateUsed: null, missingRate: null };
+  }
+
+  const configured = rates.get(marginKey(p.broker, p.segment));
+  const pct = configured ?? 100;
+  const missingRate = configured == null ? `${p.broker}|${p.segment}` : null;
+
+  if (isOption) {
+    const ref = p.spot ?? p.strike ?? p.entry;
+    const notional = p.qty * ref;
+    return {
+      margin: (pct / 100) * notional,
+      basis: `${pct}% × notional ${inrFmt(notional)} (short ${p.optionType})`,
+      rateUsed: pct,
+      missingRate,
+    };
+  }
+
+  if (p.segment === "eq_mtf" || p.segment === "eq_delivery") {
+    const value = p.qty * p.entry;
+    return {
+      margin: (pct / 100) * value,
+      basis: `${pct}% × invested ${inrFmt(value)}`,
+      rateUsed: pct,
+      missingRate,
+    };
+  }
+
+  // Futures (index/stock/commodity) and intraday equity: contract value.
+  const value = p.qty * p.mtm;
+  return {
+    margin: (pct / 100) * value,
+    basis: `${pct}% × value ${inrFmt(value)}`,
+    rateUsed: pct,
+    missingRate,
+  };
+}
+
 export function estimateMargin(
   positions: MarginPositionInput[],
   rates: MarginRates,
@@ -83,36 +154,8 @@ export function estimateMargin(
   const missing = new Set<string>();
 
   for (const p of positions) {
-    const isOption = p.optionType === "CE" || p.optionType === "PE";
-    let margin: number;
-    let basis: string;
-    let rateUsed: number | null;
-
-    if (isOption && p.side === "long") {
-      margin = p.qty * p.entry;
-      basis = `premium paid ${inrFmt(margin)}`;
-      rateUsed = null;
-    } else {
-      const configured = rates.get(marginKey(p.broker, p.segment));
-      const pct = configured ?? 100;
-      if (configured == null) missing.add(`${p.broker}|${p.segment}`);
-      rateUsed = pct;
-      if (isOption) {
-        const ref = p.spot ?? p.strike ?? p.entry;
-        const notional = p.qty * ref;
-        margin = (pct / 100) * notional;
-        basis = `${pct}% × notional ${inrFmt(notional)} (short ${p.optionType})`;
-      } else if (p.segment === "eq_mtf" || p.segment === "eq_delivery") {
-        const value = p.qty * p.entry;
-        margin = (pct / 100) * value;
-        basis = `${pct}% × invested ${inrFmt(value)}`;
-      } else {
-        // futures (index/stock/commodity) + intraday equity: current contract value
-        const value = p.qty * p.mtm;
-        margin = (pct / 100) * value;
-        basis = `${pct}% × value ${inrFmt(value)}`;
-      }
-    }
+    const { margin, basis, rateUsed, missingRate } = capitalBlocked(p, rates);
+    if (missingRate) missing.add(missingRate);
 
     out.push({
       id: p.id,
