@@ -165,6 +165,7 @@ the same SKU on the same day get completely different keys.
 | 7. Public repo landing page with current screenshots | `README.md` |
 | 8. **Vendor licence tooling (v2.86)** — issue / list / revoke | `scripts/license-{issue,list,revoke}.mjs` |
 | 9. **Licence operations runbook (v2.86)** — sale → delivery → refund → renewal | `docs/monetization/LICENSE_OPERATIONS.md` |
+| 10. **Indicators launch kit** — analysis of both Pine scripts, sales copy, paste-ready TradingView descriptions, invite-only publishing steps | `docs/monetization/INDICATORS_LAUNCH_KIT.md` |
 
 ## 7. Suggested launch sequence (2–4 weeks)
 

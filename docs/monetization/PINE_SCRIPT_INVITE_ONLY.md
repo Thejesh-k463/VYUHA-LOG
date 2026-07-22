@@ -1,5 +1,10 @@
 # Selling Your 2 Pine Script Indicators (Invite-Only, Source Hidden)
 
+> **See also `INDICATORS_LAUNCH_KIT.md`** — script-by-script analysis of SA-PRO and RS-PRO,
+> paste-ready TradingView descriptions, sales copy, and three things that must be fixed in the
+> Pine source before publishing (a copyright-header problem, a wrong benchmark default, and a
+> timeframe caveat). This file covers the general mechanics; that one covers your actual scripts.
+
 **Goal:** monetize two TradingView indicators while keeping the Pine source **hidden** and
 controlling **who** can use them. You confirmed you have a **paid TradingView plan** — invite-only
 publishing is available to you.

@@ -20,7 +20,7 @@ import { machineMatches } from "@/lib/machine-id";
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
 
-export const LICENSE_ENFORCEMENT: LicenseEnforcement = "banner";
+export const LICENSE_ENFORCEMENT: LicenseEnforcement = "banner"; //block
 
 /** Vendor Ed25519 PUBLIC key (safe to ship). Regenerate via scripts/license-keygen.mjs. */
 export const LICENSE_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
