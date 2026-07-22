@@ -171,9 +171,10 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (468 tests) |
+| `npm test` | Vitest unit suite (576 tests) |
 | `npm run test:e2e` | Playwright happy-path e2e |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
+| **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
 | `npm run desktop:build` | Build the native Windows installer (needs Rust; see below) |
 

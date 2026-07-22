@@ -1,8 +1,13 @@
 # Vyuha — Institutional-Grade Roadmap & Build Handoff
 
-**Status:** v1.3.0 · single-user, local-first, offline · Next.js 16 (App Router) + TS,
+**Status:** **v2.87.0** · single-user, local-first, offline · Next.js 16 (App Router) + TS,
 Tailwind v4, Drizzle ORM / better-sqlite3, Recharts, TanStack Table, packaged as a
 Tauri desktop app.
+
+> ⚠ **The narrative below is HISTORY, newest-first, and stops being current partway down.**
+> For the live picture — what is shipped, the architectural invariants worth protecting, the limits
+> accepted deliberately, and the ranked list of work not yet done — jump to
+> **[Current state — v2.87.0](#current-state--v2870)** at the bottom of this file.
 
 **Purpose of this doc:** a self-contained handoff so a *fresh* session (no chat
 history) can take Vyuha from "excellent retail journal" to "institutional grade."
@@ -1071,17 +1076,19 @@ was a no-feature version-sync-only bump. Version synced across all 4 files via `
 
 ---
 
-# Current state — v2.85.0 (2026-07-22)
+# Current state — v2.87.0 (2026-07-22)
 
 The handoff notes above are historical (they stop at v1.14.0). This section is the live summary;
 per-release detail lives in `CHANGELOG.md`.
 
-**Tag: v2.85.0 · 551 tests · 5 brokers · 31 routes · 44 pure modules · 26 migrations**
+**Tag: v2.87.0 · 576 tests · 5 brokers · 32 routes · 27 API routes · 55 pure modules · 27 migrations · ~30k LOC**
 
 ## Shipped since the notes above
 
 | Version | What landed |
 |---|---|
+| **v2.87** | **First paid build** — licence enforcement ON, WhatsApp buy flow live |
+| **v2.86** | Vendor licence control: sales ledger, key IDs, revocation, opt-in machine binding; landing page rebuilt |
 | **v2.85** | **Staged positions** — tranched entries with a stop each, partial exits, per-leg R, per-fill charges, per-tranche risk in the cockpit, importer-rebuilt entry ladders |
 | **v2.84** | Clickable KPI drill-downs (16 cards); browsable 25-setup preset playbook library |
 | **v2.82** | Angel One + Upstox importers; SEBI Compliance Radar; shareable stat cards |
