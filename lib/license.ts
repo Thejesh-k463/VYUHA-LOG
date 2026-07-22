@@ -142,9 +142,33 @@ export const SKU_LABELS: Record<string, string> = {
  *  and one MTF interest cycle, short enough to matter. Offline by design. */
 export const TRIAL_DAYS = 14;
 
-/** Where "Get the Toolkit" buttons point. Swap for the live Razorpay payment
- *  page / landing page URL at launch (docs/monetization/MONETIZATION_PLAN.md §3). */
-export const BUY_URL = "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
+/**
+ * Your WhatsApp number in international format, DIGITS ONLY — e.g. "919876543210".
+ *
+ * This is the single place to set it. Empty string = not configured yet, and
+ * BUY_URL falls back to the public releases page so no button is ever dead.
+ *
+ * Delivery model (2026-07): the installer ZIP and licence key are sent
+ * personally by email after a WhatsApp conversation — see
+ * docs/monetization/LICENSE_OPERATIONS.md.
+ */
+export const WHATSAPP_NUMBER = "";
+
+/** Pre-filled first message, so a buyer never has to work out what to type. */
+const BUY_MESSAGE = "Hi, I'd like to buy the Vyuha Trader's Toolkit";
+
+/**
+ * Where every "Get the Toolkit" / "Renew" button points.
+ *
+ * Derived, never hand-edited: set WHATSAPP_NUMBER above and this follows. The
+ * fallback matters — in "block" enforcement this link is the ONLY route a
+ * trial-expired user has, so it must never be a placeholder. A test in
+ * tests/license.test.ts fails the build if enforcement is "block" while the
+ * number is still unset.
+ */
+export const BUY_URL = WHATSAPP_NUMBER
+  ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(BUY_MESSAGE)}`
+  : "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
 
 /** The Pro surface. One registry drives the gates, the upsell card's feature
  *  list, and the docs — add a page here and it's gated everywhere at once.

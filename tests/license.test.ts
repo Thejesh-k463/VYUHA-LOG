@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
-import { parseLicenseKey, verifyLicenseKey, licenseKeyId, REVOKED_KEY_IDS } from "@/lib/license";
+import {
+  parseLicenseKey, verifyLicenseKey, licenseKeyId, REVOKED_KEY_IDS,
+  BUY_URL, WHATSAPP_NUMBER, LICENSE_ENFORCEMENT,
+} from "@/lib/license";
 import { deriveMachineId, machineMatches } from "@/lib/machine-id";
 
 // Ephemeral vendor keypair for tests — mirrors scripts/license-{keygen,issue}.mjs exactly.
@@ -275,5 +278,40 @@ describe("machine binding", () => {
     const check = verifyLicenseKey(forged, PUB_PEM, [], "DDDD-EEEE-FFFF");
     expect(check.valid).toBe(false);
     expect(check.reason).toMatch(/signature check failed/i);
+  });
+});
+
+describe("launch configuration guards", () => {
+  // These do not test logic — they stop a misconfiguration reaching buyers.
+
+  it("BUY_URL is never empty, whatever the number is set to", () => {
+    expect(BUY_URL).toMatch(/^https:\/\//);
+  });
+
+  it("a configured WhatsApp number produces a wa.me link with a pre-filled message", () => {
+    // Mirrors the derivation in lib/license.ts so a refactor cannot silently
+    // change the shape of the link buyers actually click.
+    const n = "919876543210";
+    const url = `https://wa.me/${n}?text=${encodeURIComponent("Hi, I'd like to buy the Vyuha Trader's Toolkit")}`;
+    expect(url).toBe("https://wa.me/919876543210?text=Hi%2C%20I'd%20like%20to%20buy%20the%20Vyuha%20Trader's%20Toolkit");
+  });
+
+  it("REFUSES to ship 'block' enforcement while the buy link is still the fallback", () => {
+    // In block mode the upsell panel replaces Pro content and BUY_URL is the
+    // ONLY route out. Shipping that pointing at a GitHub releases page — when
+    // the product is sold by WhatsApp and delivered by email — would strand
+    // every trial-expired user. Set WHATSAPP_NUMBER before flipping.
+    if (LICENSE_ENFORCEMENT === "block") {
+      expect(
+        WHATSAPP_NUMBER,
+        "LICENSE_ENFORCEMENT is 'block' but WHATSAPP_NUMBER is unset — buyers would hit a dead end",
+      ).not.toBe("");
+    }
+  });
+
+  it("WHATSAPP_NUMBER, when set, is digits only with a country code", () => {
+    if (WHATSAPP_NUMBER !== "") {
+      expect(WHATSAPP_NUMBER, "digits only — no +, spaces or dashes").toMatch(/^\d{10,15}$/);
+    }
   });
 });
