@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-551%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-576%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -101,6 +101,30 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 
 ### 🗃 Operational depth
 IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · collapsible sidebar with live IST market clock · three accent skins + light/dark + colorblind-safe themes · toast notifications · animated, skeleton-loaded UI.
+
+---
+
+## 🔑 Licensing (for the maintainer)
+
+Vyuha ships with an **offline licence gate** — an Ed25519 signature verified on the user's own
+machine, with no server call, ever. Every fresh install begins a **14-day full-Pro trial**; the core
+journal is free forever.
+
+Vendor tooling lives in `scripts/`:
+
+```bash
+node scripts/license-issue.mjs buyer@email.com toolkit          # mint a key (also records it)
+node scripts/license-issue.mjs buyer@email.com app --years 1    # annual SKU
+node scripts/license-issue.mjs buyer@email.com toolkit --machine ABCD-EF12-3456   # lock to one PC
+node scripts/license-list.mjs --expiring 30                     # renewals due
+node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"         # stop a leaked/refunded key
+```
+
+Each key embeds the buyer's email in its signed payload, so no two are alike, and the app shows
+"Licensed to &lt;email&gt;". Keys can optionally be **bound to one computer** via a Windows
+`MachineGuid`-derived fingerprint. Revocation is a build-time list — honest about being a slow tool
+rather than a kill switch, because a kill switch would mean phoning home. Full procedures:
+[`docs/monetization/LICENSE_OPERATIONS.md`](docs/monetization/LICENSE_OPERATIONS.md).
 
 ---
 

@@ -3,7 +3,7 @@ import { cache } from "react";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { getMachineId } from "@/lib/machine-id";
+import { getMachineId } from "@/lib/machine-id.server";
 import {
   verifyLicenseKey,
   licenseKeyId,

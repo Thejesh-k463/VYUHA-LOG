@@ -1,11 +1,15 @@
 /**
- * Machine fingerprint for optionally binding a licence key to one computer.
+ * Machine fingerprint helpers that are safe to bundle for the browser.
  *
- * ── Why this is deliberately conservative ─────────────────────────────────
+ * The actual probing of this computer lives in `machine-id.server.ts`, because
+ * it needs `node:child_process` to read the Windows registry — and pulling that
+ * into a client chunk breaks the production build. `lib/license.ts` is imported
+ * by the Settings client component, so anything it touches must stay clean.
+ *
+ * ── Why the fingerprint is deliberately conservative ──────────────────────
  * If this value ever changes on a machine that did not change, a paying
  * customer's key stops working and you get a support ticket you cannot easily
- * disprove. So the inputs are chosen for STABILITY first and uniqueness
- * second:
+ * disprove. So the inputs are chosen for STABILITY first, uniqueness second:
  *
  *   • Windows: the OS `MachineGuid` — written once at Windows install and
  *     untouched by app reinstalls, driver changes, RAM upgrades or renames.
@@ -14,71 +18,23 @@
  *     with docks, VPNs and USB adapters), NOT disk serial (changes on clone).
  *
  * A machine ID is a *coarse* identifier. Reinstalling Windows produces a new
- * one — that is expected, and is exactly the case your re-issue procedure in
- * LICENSE_OPERATIONS.md covers.
+ * one — expected, and covered by the re-issue procedure in
+ * docs/monetization/LICENSE_OPERATIONS.md.
  *
  * PRIVACY: the raw values never leave the machine and are never stored. Only
- * the hash is shown, and the user chooses to send it to you. It contains no
- * personal data and cannot be reversed into a hostname.
+ * the hash is shown, and the user chooses to send it. It contains no personal
+ * data and cannot be reversed into a hostname.
  */
 
 import { createHash } from "node:crypto";
-import os from "node:os";
-import { execFileSync } from "node:child_process";
 
-/** Turn raw identity parts into the short quotable ID. Pure — the whole
- *  point is that this is testable without touching the real machine. */
+/** Turn raw identity parts into the short quotable ID. Pure — the whole point
+ *  is that this is testable without touching the real machine. */
 export function deriveMachineId(parts: readonly (string | null | undefined)[]): string {
   const material = parts.filter((p): p is string => typeof p === "string" && p.length > 0).join("|");
   if (!material) return "UNKNOWN-MACHINE";
   const hex = createHash("sha256").update(material).digest("hex").slice(0, 12).toUpperCase();
   return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
-}
-
-/** Windows `MachineGuid`, or null anywhere it cannot be read. */
-function windowsMachineGuid(): string | null {
-  if (process.platform !== "win32") return null;
-  try {
-    const out = execFileSync(
-      "reg",
-      ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid", "/reg:64"],
-      { encoding: "utf8", timeout: 4000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
-    );
-    const m = out.match(/MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]{36})/);
-    return m ? m[1].toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-let cached: string | null = null;
-
-/**
- * This machine's ID. Computed once per process — the registry read is cheap
- * but there is no reason to repeat it on every entitlement check.
- */
-export function getMachineId(): string {
-  if (cached) return cached;
-
-  const guid = windowsMachineGuid();
-  if (guid) {
-    cached = deriveMachineId(["winguid", guid]);
-    return cached;
-  }
-
-  let cpu: string | null = null;
-  try {
-    cpu = os.cpus()?.[0]?.model?.trim() ?? null;
-  } catch {
-    cpu = null;
-  }
-  cached = deriveMachineId(["fallback", os.hostname(), os.platform(), os.arch(), cpu]);
-  return cached;
-}
-
-/** Test seam — drop the memoised value. */
-export function resetMachineIdCache(): void {
-  cached = null;
 }
 
 /**

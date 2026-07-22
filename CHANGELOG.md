@@ -4,6 +4,56 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.86.0
+Vendor control over licence keys, and the sales assets to actually sell with.
+No changes to the journal itself — this release is about the business around it.
+
+- **Your sales ledger.** Keys were *signed, not registered* — nothing in the
+  system knew a key existed, so there was no way to answer "did this person
+  actually buy?". `license-issue.mjs` now records every key it mints to
+  `license-ledger.jsonl` (gitignored, contains buyer emails).
+  `license-list.mjs` reads it back: filter by buyer or key, and
+  `--expiring 30` produces your renewal outreach list.
+- **Key IDs.** Every key now carries a short derived ID (`A1B2-C3D4-E5`,
+  `sha256(key)` truncated) shown in **Settings → License**. Support threads
+  quote the ID instead of pasting the key — which is a credential that ends up
+  in screenshots.
+- **Revocation.** `license-revoke.mjs <KEY-ID> "reason"` stops a refunded or
+  leaked key activating. Documented honestly: this is a *build-time* list in an
+  offline app, so it reaches new installs only and is not a kill switch. A real
+  one would mean phoning home on launch, which this product promises never to
+  do. Revocation is checked *before* the signature, because a revoked key is
+  still cryptographically perfect.
+- **Machine-bound keys — opt-in per sale.** `--machine ABCD-EF12-3456` locks a
+  key to one computer; omit it and the key runs anywhere, which is what every
+  key issued before this does forever. The buyer copies their **Machine ID**
+  from Settings → License. The fingerprint is Windows' own `MachineGuid` —
+  stable across app reinstalls, driver updates, RAM upgrades and renames —
+  falling back to hostname + platform + arch + CPU model. Deliberately *not*
+  total memory, MAC address or disk serial: each of those changes for reasons
+  that are not the customer's fault and would kill a paying key. The binding
+  lives inside the signed payload, so it cannot be stripped; a test forges a
+  stripped payload and asserts the signature check catches it.
+- **BUY_URL now derives from a single `WHATSAPP_NUMBER`** with a pre-filled
+  message, falling back to the releases page while unset so no button is ever
+  dead. A test **fails the build** if `LICENSE_ENFORCEMENT` is `"block"` while
+  the number is still empty — the one combination that would strand every
+  trial-expired user behind a dead link.
+- **Landing page rebuilt** (the previous one predated v2.80 and still carried
+  Razorpay placeholders and no screenshots): WhatsApp-first CTA, founding-trader
+  pricing, real product screenshots, staged positions as the flagship section,
+  and a delivery flow matching email-a-ZIP. SEBI-safe by construction — no
+  return, accuracy or win-rate claims anywhere. `build-landing.mjs` inlines the
+  screenshots into one self-contained file and refuses to build while any
+  `[[PLACEHOLDER]]` is unfilled.
+- **Docs brought current**: `LICENSE_OPERATIONS.md` (the owner's runbook —
+  issue, list, support, refund, rotate), `INDICATORS_LAUNCH_KIT.md` (analysis of
+  both Pine scripts, sales copy, paste-ready TradingView descriptions,
+  invite-only publishing steps), plus a current-state section appended to the
+  roadmap, whose handoff notes had stopped at v1.14.0.
+- 25 new tests (576 total). Enforcement deliberately still `"banner"` — flipping
+  it needs the real WhatsApp number.
+
 ## v2.85.0
 **Staged positions** — build a position in tranches and scale out of it, the
 way positions are actually managed.

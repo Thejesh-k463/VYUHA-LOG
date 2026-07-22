@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.85.0",
+  "version": "2.86.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -21,7 +21,8 @@
     "desktop:bundle": "node scripts/build-desktop.mjs",
     "desktop:build": "next build && node scripts/build-desktop.mjs && tauri build",
     "desktop:icons": "node scripts/make-icon.mjs && tauri icon src-tauri/icon-source.png",
-    "bump-version": "node scripts/bump-version.mjs"
+    "bump-version": "node scripts/bump-version.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run test -- --run && npm run build"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.5",
