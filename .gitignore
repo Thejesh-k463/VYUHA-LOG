@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+# Vendor licence ledger — contains buyer emails and the keys you issued.
+# Never commit; back it up privately alongside license-private.pem.
+license-ledger.jsonl
 
 # debug
 npm-debug.log*

@@ -115,7 +115,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 **Desktop (Windows):** grab `Vyuha_x.y.z_x64-setup.exe` from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled. Every fresh install starts a **14-day full-Pro trial** (fully offline — no signup, no card), and the core journal is free forever. Your data persists in app-data across updates and reinstalls.
 
-**New here?** Flip through the 📽 [**Getting-Started deck**](docs/GETTING_STARTED_DECK.html) — 12 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
+**New here?** Flip through the 📽 [**Getting-Started deck**](docs/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
 **Run from source:**
 

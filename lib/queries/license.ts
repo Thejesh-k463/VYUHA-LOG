@@ -5,6 +5,7 @@ import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import {
   verifyLicenseKey,
+  licenseKeyId,
   evaluateEntitlement,
   LICENSE_ENFORCEMENT,
   type Entitlement,
@@ -15,18 +16,23 @@ export interface LicenseStatus {
   licensed: boolean;
   payload: LicensePayload | null;
   enforcement: typeof LICENSE_ENFORCEMENT;
+  /** Short quotable ID of the installed key — what the buyer reads out to you
+   *  for support, and what you match against the vendor ledger. Never the key
+   *  itself, which would be a credential in a support thread. */
+  keyId: string | null;
 }
 
 /** Re-verifies the stored key on every read — a DB-tampered key simply reads unlicensed. */
 export function getLicenseStatus(): LicenseStatus {
   const row = db.select({ licenseKey: settings.licenseKey }).from(settings).get();
   const key = row?.licenseKey;
-  if (!key) return { licensed: false, payload: null, enforcement: LICENSE_ENFORCEMENT };
+  if (!key) return { licensed: false, payload: null, enforcement: LICENSE_ENFORCEMENT, keyId: null };
   const check = verifyLicenseKey(key);
   return {
     licensed: check.valid,
     payload: check.valid ? (check.payload ?? null) : null,
     enforcement: LICENSE_ENFORCEMENT,
+    keyId: check.valid ? licenseKeyId(key) : null,
   };
 }
 

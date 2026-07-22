@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateKeyPairSync, sign } from "node:crypto";
-import { parseLicenseKey, verifyLicenseKey } from "@/lib/license";
+import { generateKeyPairSync, sign, createHash } from "node:crypto";
+import { parseLicenseKey, verifyLicenseKey, licenseKeyId, REVOKED_KEY_IDS } from "@/lib/license";
 
 // Ephemeral vendor keypair for tests — mirrors scripts/license-{keygen,issue}.mjs exactly.
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -140,5 +140,66 @@ describe("evaluateEntitlement", () => {
     expect(e.state).toBe("trial");
     expect(e.pro).toBe(true);
     expect(e.reason).toBeTruthy();
+  });
+});
+
+describe("licenseKeyId — the vendor's handle on a sold key", () => {
+  it("is stable: the same key always yields the same id", () => {
+    const k = issue("a@b.com");
+    expect(licenseKeyId(k)).toBe(licenseKeyId(k));
+  });
+
+  it("ignores surrounding whitespace, so a pasted key still matches the ledger", () => {
+    const k = issue("a@b.com");
+    expect(licenseKeyId(`  ${k}\n`)).toBe(licenseKeyId(k));
+  });
+
+  it("differs per buyer even for the same SKU and date", () => {
+    expect(licenseKeyId(issue("a@b.com"))).not.toBe(licenseKeyId(issue("c@d.com")));
+  });
+
+  it("has the quotable A1B2-C3D4-E5 shape", () => {
+    expect(licenseKeyId(issue("a@b.com"))).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{2}$/);
+  });
+
+  it("matches the id scripts/license-issue.mjs computes", () => {
+    // The script derives the id independently; if these ever diverge, the
+    // ledger and the app would disagree about what a key is called.
+    const k = issue("a@b.com");
+    const hex = createHash("sha256").update(k).digest("hex").slice(0, 10).toUpperCase();
+    expect(licenseKeyId(k)).toBe(`${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 10)}`);
+  });
+});
+
+describe("revocation", () => {
+  it("ships with an empty revocation list", () => {
+    // A stray id committed here would silently kill a paying customer's key.
+    expect(REVOKED_KEY_IDS).toEqual([]);
+  });
+
+  it("rejects a cryptographically VALID key whose id is revoked", () => {
+    const k = issue("refunded@b.com");
+    const check = verifyLicenseKey(k, PUB_PEM, [licenseKeyId(k)]);
+    expect(check.valid).toBe(false);
+    expect(check.reason).toMatch(/revoked/i);
+  });
+
+  it("leaves other keys alone", () => {
+    const revoked = issue("refunded@b.com");
+    const good = issue("paying@b.com");
+    expect(verifyLicenseKey(good, PUB_PEM, [licenseKeyId(revoked)]).valid).toBe(true);
+  });
+
+  it("drops a revoked key back to trial, then to unlicensed", () => {
+    const k = issue("refunded@b.com");
+    const ids = [licenseKeyId(k)];
+    const inTrial = evaluateEntitlement(k, new Date().toISOString(), new Date(), PUB_PEM, ids);
+    expect(inTrial.pro).toBe(true); // trial still running
+    expect(inTrial.state).toBe("trial");
+
+    const noTrial = evaluateEntitlement(k, "2020-01-01T00:00:00.000Z", new Date(), PUB_PEM, ids);
+    expect(noTrial.pro).toBe(false);
+    expect(noTrial.state).toBe("unlicensed");
+    expect(noTrial.reason).toMatch(/revoked/i);
   });
 });

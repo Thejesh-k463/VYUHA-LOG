@@ -2,8 +2,8 @@
 // Usage: node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N]
 //   sku: toolkit | app | indicators (default toolkit)
 //   No expiry flag = lifetime key. --years N = annual SKU expiring N years from today.
-import { sign, createPrivateKey } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { sign, createPrivateKey, createHash } from "node:crypto";
+import { readFileSync, appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -41,4 +41,29 @@ const payload = Buffer.from(JSON.stringify(body), "utf8");
 const signature = sign(null, payload, createPrivateKey(privPem));
 const key = `VYUHA-${payload.toString("base64url")}.${signature.toString("base64url")}`;
 
+// Short, stable ID — must match lib/license.ts#licenseKeyId exactly.
+const hex = createHash("sha256").update(key).digest("hex").slice(0, 10).toUpperCase();
+const keyId = `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 10)}`;
+
+// Append to the vendor ledger. WITHOUT this you have no record of what you
+// sold: keys are signed, not registered, so nothing else in the system knows a
+// key exists. Needed to reissue after a lost email, to answer "did this person
+// actually buy?", and to revoke by ID after a refund or leak.
+// GITIGNORED (contains buyer emails) — back it up privately with the .pem.
+const ledgerLine = JSON.stringify({
+  keyId,
+  email,
+  sku,
+  issued: body.issued,
+  expires: expires ?? null,
+  key,
+  note: process.env.VYUHA_LICENSE_NOTE ?? null,
+}) + "\n";
+appendFileSync(path.join(root, "license-ledger.jsonl"), ledgerLine);
+
+// The KEY goes to stdout alone, so `license-issue.mjs … > key.txt` still works
+// and you can pipe it straight into an email. Everything else is stderr.
 console.log(key);
+console.error(`\n  key id : ${keyId}`);
+console.error(`  buyer  : ${email}  (${sku}${expires ? `, expires ${expires}` : ", lifetime"})`);
+console.error(`  ledger : license-ledger.jsonl — back this up with license-private.pem`);

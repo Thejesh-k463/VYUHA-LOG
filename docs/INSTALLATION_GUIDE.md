@@ -22,17 +22,26 @@ after download.
 
 > Your data lives in a local database file on your PC. Nothing is uploaded anywhere.
 
-## 2. Activate your license *(if your build is license-gated)*
+## 2. Your 14-day trial, and activating a license
 
-If you bought the paid Toolkit and your build asks for a license key:
+**Every fresh install starts a 14-day full-Pro trial** — no signup, no card, entirely offline.
+The clock starts the first time *you* open the app, not when the installer was built. The core
+journal (trades, imports, dashboard, playbooks, backups) is **free forever**; the trial covers the
+Pro analytics.
 
-1. On first launch, go to **Settings → License** (or the activation prompt).
-2. Paste the **license key** from your purchase email.
-3. Click **Activate**. You'll see **"Licensed to <your email>"** and the Pro screens (Tax, Greeks,
-   Broker Costs) unlock.
-4. Activation is **offline** — the key is verified on your machine; no internet needed.
+When you buy:
 
-Lost your key? Reply to your purchase email.
+1. Go to **Settings → License**.
+2. Paste the **license key** from your purchase email (one line, starts with `VYUHA-`).
+3. Click **Activate**. You'll see **"Licensed to <your email>"**, your SKU, and a **Key ID** like
+   `A1B2-C3D4-E5`.
+4. Activation is **offline** — verified on your machine against a signature. No internet needed,
+   ever, and nothing about you is transmitted.
+
+**Quote the Key ID, never the key, when contacting support.** The Key ID identifies your licence
+without exposing the credential itself.
+
+Lost your key? Reply to your purchase email — it can be reissued from your email address.
 
 ## 3. First-time setup (5 minutes)
 
@@ -55,7 +64,10 @@ You have two paths — use either or both:
 ### A. Import a broker file (fastest)
 1. Go to **Journal → Import**.
 2. Drag in your broker export. Supported today: **Zerodha** (tradebook / Console P&L), **Dhan**
-   (CSV), **Groww** (XLSX), and broker **PDF** statements.
+   (CSV), **Groww** (XLSX), **Angel One** and **Upstox** (tradebook *or* aggregated P&L export),
+   and broker **PDF** statements.
+   *Tradebook exports list every individual fill, so a position you scaled into arrives with its
+   real entry ladder instead of one blended average — see Staged positions below.*
 3. Vyuha auto-detects the broker, parses the trades, recomputes charges from your rate card, and
    shows a preview.
 4. Review, then **Commit**. Duplicates are detected and skipped automatically.
@@ -77,9 +89,12 @@ You have two paths — use either or both:
 | Area | What it does |
 |---|---|
 | **Dashboard** | Combined P&L, equity curve, win rate, profit factor, daily P&L calendar |
-| **Portfolio Risk** | Live exposure, open risk at stop, **Option Greeks** (with India VIX IV fallback), expiry/physical-settlement obligations, pre-trade limits |
+| **Portfolio Risk** | Live exposure, open risk at stop, **Option Greeks** (with India VIX IV fallback), expiry/physical-settlement obligations, pre-trade limits, **SEBI compliance radar** (expiry-day margin rules, weekly-expiry regime, index position limits) |
 | **Option Strategies** | Auto-recognises straddles/strangles/spreads and draws the payoff diagram |
 | **Trades / Equity / Active** | Your journal, filterable, with F&O detail (DTE, lots, long/short) |
+| **Staged positions** (Trades → the ⧉ layers button) | Build a position in **tranches**, each with its own stop; **book partial exits** (25/50/100%) and let the rest run. Exits price against your blended average; R stays anchored to your first entry. Warns when you're averaging down, or when an add has quietly pushed your risk above what you originally planned |
+| **Clickable KPI cards** | Click any headline number — Net P&L, Open Risk @ SL, MTF funded — for a breakdown of what it's actually made of |
+| **Playbooks → Preset library** | 25 battle-tested setups across 7 global trading ecosystems; filter, read the rules, add the ones you actually trade with one click |
 | **Corporate Actions** | Apply splits/bonuses/dividends to open positions; dividend posts to the ledger with **TDS** |
 | **Cash & Ledger** | Deposits, withdrawals, charges, dividends, margin penalties → true available capital |
 | **Analytics → Tax Summary** | Capital-gains tax + set-off/carry-forward + dividend TDS (informational) |

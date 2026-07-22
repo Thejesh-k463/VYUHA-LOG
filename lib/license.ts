@@ -14,7 +14,7 @@
 //   "banner" (current): everything works; Pro screens show an "unlicensed" banner.
 //   "block":            Pro screens render the upsell panel instead of content.
 
-import { verify as edVerify } from "node:crypto";
+import { verify as edVerify, createHash } from "node:crypto";
 
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
@@ -43,6 +43,34 @@ export interface LicenseCheck {
 
 const KEY_PREFIX = "VYUHA-";
 
+/**
+ * Short, stable, human-quotable ID for a key — `sha256(key)` truncated and
+ * grouped, e.g. `A1B2-C3D4-E5`.
+ *
+ * Exists so the vendor can refer to a sold key in a ledger, a support thread or
+ * the revocation list WITHOUT storing or pasting the whole key anywhere. It is
+ * derived, not random: the same key always yields the same ID, on your machine
+ * and on the buyer's, so a customer can read theirs out of Settings and you can
+ * match it against what you issued.
+ */
+export function licenseKeyId(key: string): string {
+  const hex = createHash("sha256").update(key.trim()).digest("hex").slice(0, 10).toUpperCase();
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 10)}`;
+}
+
+/**
+ * Keys that must stop working — refunds, chargebacks, or a key found posted
+ * publicly. Add the ID (not the key) via `node scripts/license-revoke.mjs`.
+ *
+ * HONEST LIMIT: this is a build-time list in an offline app. A revoked key
+ * keeps working until the user installs a build that contains the revocation.
+ * There is no remote kill switch and adding one would mean a server call on
+ * launch, which is exactly the promise this product is sold on. Revocation is
+ * therefore a slow, honest tool: it stops resale of a leaked key to future
+ * installs, it does not reach back into a machine already running.
+ */
+export const REVOKED_KEY_IDS: readonly string[] = [];
+
 /** Split a key into payload+signature bytes. Pure string handling — no crypto. */
 export function parseLicenseKey(key: string): { payloadRaw: Buffer; signature: Buffer; payload: LicensePayload } | null {
   const trimmed = key.trim();
@@ -62,9 +90,18 @@ export function parseLicenseKey(key: string): { payloadRaw: Buffer; signature: B
 }
 
 /** Verify a license key against a public key (defaults to the baked-in vendor key). */
-export function verifyLicenseKey(key: string, publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM): LicenseCheck {
+export function verifyLicenseKey(
+  key: string,
+  publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
+  revokedIds: readonly string[] = REVOKED_KEY_IDS,
+): LicenseCheck {
   const parsed = parseLicenseKey(key);
   if (!parsed) return { valid: false, reason: "Malformed key — paste the full VYUHA-… key from your purchase email." };
+  // Revocation is checked BEFORE the signature: a revoked key is still
+  // cryptographically perfect, so signature validity is not the question.
+  if (revokedIds.includes(licenseKeyId(key))) {
+    return { valid: false, reason: "This key has been revoked. Contact support if you believe this is a mistake." };
+  }
   try {
     const ok = edVerify(null, parsed.payloadRaw, publicKeyPem, parsed.signature);
     if (!ok) return { valid: false, reason: "Signature check failed — the key was altered or issued for a different build." };
@@ -141,9 +178,10 @@ export function evaluateEntitlement(
   trialStartedAt: string | null,
   today: Date = new Date(),
   publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
+  revokedIds: readonly string[] = REVOKED_KEY_IDS,
 ): Entitlement {
   if (storedKey) {
-    const check = verifyLicenseKey(storedKey, publicKeyPem);
+    const check = verifyLicenseKey(storedKey, publicKeyPem, revokedIds);
     if (check.valid && check.payload) {
       if (isKeyExpired(check.payload, today)) {
         // Expired annual key: fall back to trial if any remains, else free.

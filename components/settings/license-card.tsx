@@ -53,8 +53,15 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
               Licensed to <span className="font-medium">{status.payload.email}</span>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {SKU_LABELS[status.payload.sku] ?? status.payload.sku} · issued {status.payload.issued} · verified offline
+              {SKU_LABELS[status.payload.sku] ?? status.payload.sku} · issued {status.payload.issued}
+              {status.payload.expires ? ` · expires ${status.payload.expires}` : " · lifetime"} · verified offline
             </p>
+            {status.keyId && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Key ID <span className="font-mono text-foreground">{status.keyId}</span>
+                <span className="ml-1.5">— quote this for support (it is not your key).</span>
+              </p>
+            )}
             <Button
               size="sm"
               variant="outline"

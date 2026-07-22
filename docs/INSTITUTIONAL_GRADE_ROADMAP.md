@@ -1068,3 +1068,75 @@ Tapetide-sourced sector data for all 9 held symbols. v1.8.0 = P1.3 market-data f
 + price_history + sector concentration; migration `0008`). v1.7.0 = P1.1
 finish (TWR + benchmark α/β) + P1.4 pre-trade limits. 1.6.0
 was a no-feature version-sync-only bump. Version synced across all 4 files via `npm run bump-version`.
+
+---
+
+# Current state — v2.85.0 (2026-07-22)
+
+The handoff notes above are historical (they stop at v1.14.0). This section is the live summary;
+per-release detail lives in `CHANGELOG.md`.
+
+**Tag: v2.85.0 · 551 tests · 5 brokers · 31 routes · 44 pure modules · 26 migrations**
+
+## Shipped since the notes above
+
+| Version | What landed |
+|---|---|
+| **v2.85** | **Staged positions** — tranched entries with a stop each, partial exits, per-leg R, per-fill charges, per-tranche risk in the cockpit, importer-rebuilt entry ladders |
+| **v2.84** | Clickable KPI drill-downs (16 cards); browsable 25-setup preset playbook library |
+| **v2.82** | Angel One + Upstox importers; SEBI Compliance Radar; shareable stat cards |
+| **v2.80** | Performance pass; monetization v2 (14-day trial, `<ProGate>`, annual SKU); full visual overhaul |
+| **v2.75** | Rule-checklist enforcement, playbook expectancy, stop tuning, opt-in auto-MTM, breach alerts, ITR pack |
+
+## Architectural invariants — do not break these
+
+1. **Money is integer paise in the DB, rupees at runtime.** The `moneyPaise` custom type converts
+   at the column boundary. Call sites work in rupees. *Converting again in application code is a
+   100× bug — this has happened once (v2.85 development) and was caught only by checking against
+   real data, not by unit tests.*
+2. **Pure modules stay pure.** `lib/{engine,analytics,risk,domain}` import no DB and no React, so
+   they can be exhaustively unit-tested. DB access lives behind `lib/queries/*`.
+3. **Staged positions: weighted-average pricing, FIFO quantity consumption, R frozen at the first
+   entry.** These three are independent and all deliberate — see the header comment in
+   `lib/domain/staged.ts`. Remaining tranche prices will *not* sum to the remaining cost basis;
+   that is asserted in tests so it is not "fixed" later.
+4. **The parent `trades` row always holds the aggregate.** Legs are additive detail. Every report,
+   tracker and tax pack reads the flat row and needs no knowledge that legs exist.
+5. **Never fabricate a denominator.** Share cards return "—" rather than invent a capital base;
+   mistake economics report the expectancy *gap*, not counterfactual P&L.
+6. **The core journal is never gated.** `PRO_FEATURES` covers analytics only — a user's own record
+   of their trades is not held hostage.
+
+## Known limits, accepted deliberately
+
+- **Statutory rounding drift (≤ ~₹2).** STT and stamp duty round to the nearest rupee, so pricing
+  a trade as two legs rounds twice where a round trip rounds once. Observed ≤ ₹1.11 across every
+  segment on real data. The per-leg figure is the more accurate one and is not corrected back.
+- **Licence revocation is build-time.** An offline app cannot have a kill switch without phoning
+  home. See `docs/monetization/LICENSE_OPERATIONS.md` §4.
+- **No device binding.** One key activates on unlimited machines; the deterrent is the buyer's
+  email displayed in-app. Trade-off analysed in `LICENSE_OPERATIONS.md` §6.
+- **No intraday data.** MAE/MFE and any future trade-replay work from EOD bhavcopy only.
+
+## Highest-value work not yet done
+
+Ranked from the July-2026 ecosystem review (global journals + India's post-2024 F&O regime):
+
+1. **Time-of-day edge analysis.** `entry_time`/`exit_time` are stored on every trade and read by
+   *nothing*. Free data; India's sessions have distinct regimes (9:15–9:30, the 11:00–14:00 chop,
+   15:00–15:30, expiry-day 14:30–15:30). Cheapest large win available.
+2. **Return on Margin (ROM).** F&O traders' real denominator is margin blocked, not turnover or
+   notional. `lib/risk/margin.ts` already computes SPAN estimates — run it historically. No Indian
+   journal does this.
+3. **Pre-market plan → session review.** A `sessions` table plus a deterministic EOD diff of plan
+   vs actual (off-watchlist symbols, over max trades, past your own cutoff). Beats an LLM because
+   it is reproducible.
+4. **EOD trade replay chart.** `price_history` exists; draw entry/exit/SL/target markers with the
+   MAE/MFE band shaded. Makes excursion analysis visual.
+5. **Option-seller depth.** Theta captured vs days held, IV at entry vs exit, expiry outcome
+   (expired worthless / assigned / squared off) — India's dominant retail cohort.
+6. **Scaling-quality report** (now that v2.85 records the ladder): does adding actually improve
+   expectancy, or turn winners into losers? Compare first-entry-only P&L against actual.
+
+Explicitly **not** planned: cloud AI (breaks the offline promise), full backtesting (needs
+intraday data; Streak/AlgoTest/Sensibull own it), social leaderboards.
