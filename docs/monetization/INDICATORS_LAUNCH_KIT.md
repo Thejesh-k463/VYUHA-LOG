@@ -12,8 +12,10 @@ Scripts covered:
 
 ## 0. Fix these before you publish
 
-*Status 2026-07-22 — §0.1 resolved by the owner. **§0.2 and §0.3 are still open.** §0.2 is visible
-to anyone who loads the indicator on an NSE chart, so fix that one first.* anything
+*Status 2026-07-22 — §0.1 (licence header) and §0.2 (benchmark) both resolved by the owner.
+**§0.3 is still open**, plus two follow-ups created by the benchmark change: confirm the new index
+ticker actually resolves, and recalibrate the Beta thresholds for a more volatile benchmark. Both
+are described in §0.2.* anything
 
 ### 0.1 ✅ RESOLVED — the copyright header on SA-PRO
 
@@ -33,29 +35,44 @@ one. Add your own to both, so authorship is positively stated rather than merely
 // All rights reserved. Redistribution or resale prohibited.
 ```
 
-### 0.2 ⚠ STILL OPEN — the benchmark default is wrong for Indian stocks
+### 0.2 ✅ RESOLVED — benchmark changed to NIFTY MIDSMALLCAP
 
-`SA-PRO` line 47:
+The default was `SPY`, which meant an NSE chart was having its relative strength, RS rating,
+Cheat-Entry `rsHolding` test **and Beta** all computed against the S&P 500. **Fixed by the owner on
+2026-07-22**, now defaulting to the NIFTY MidSmallcap index.
+
+**That is the better choice for this product's audience.** Indian retail momentum trading lives in
+mid and smallcaps, and measuring a smallcap against NIFTY flatters it during smallcap-led rallies —
+you get "strong RS" readings that are really just the segment moving. A midsmallcap benchmark asks
+the sharper question: *is this name beating its own peer group?*
+
+Two consequences worth knowing, neither a defect:
+
+**1. Verify the symbol actually resolves.** If the ticker string does not match a real TradingView
+symbol, `request.security()` returns `na`, `rsLine` falls to `0` and **RS silently reads
+Neutral/Weak on every chart** — it will look like the indicator is broken rather than
+misconfigured. Load it once and check the table's **"Bench:"** cell shows the index name you
+expect, and that the RS % actually moves between different stocks. TradingView's NSE index tickers
+are not obvious (`NIFTY_MIDSMLCAP400`, `CNXSMALLCAP` and similar all exist), so confirm the exact
+string in the symbol picker rather than typing it from memory.
+
+**2. Your Beta numbers will now read lower — recalibrate the thresholds.** Beta is
+covariance ÷ benchmark variance. A midsmallcap index is considerably more volatile than NIFTY, so
+the denominator grows and every beta shrinks. A stock that read ~1.2 against NIFTY may read ~0.8
+against midsmallcap. The defaults are:
 
 ```pine
-i_benchmarkSym = input.symbol("SPY", "Benchmark", ...)
+i_betaLowTh  = 0.8   // "Low"  below this
+i_betaHighTh = 1.2   // "High" above this
 ```
 
-Your own screenshot shows this live: **KSH International (NSE) being measured against `BATS:SPY`**
-— an Indian smallcap's relative strength computed against the S&P 500. The RS number, the RS rating,
-the Cheat-Entry `rsHolding` test **and Beta** are all downstream of that symbol, so all four are
-currently meaningless for an NSE chart.
+Left unchanged, almost everything will now classify as "Low volatility", which is misleading — it
+is measuring against a more volatile yardstick, not describing calmer stocks. Load a handful of
+names you know well, see where the betas actually land, and move the thresholds to match. Mention
+the benchmark explicitly in the description so buyers know what beta is relative to.
 
-**Change the default to `NSE:NIFTY`** before you publish. It is a one-word change and it is the
-single most visible credibility problem in the product:
-
-```pine
-i_benchmarkSym = input.symbol("NSE:NIFTY", "Benchmark", group=G_RS,
-     tooltip="NSE:NIFTY or NSE:CNXSMALLCAP for India; SPY/QQQ for US")
-```
-
-Consider also defaulting `NSE:CNXSMALLCAP` guidance in the tooltip — comparing a smallcap to NIFTY
-overstates RS during smallcap-led rallies.
+**Also worth adding to the tooltip:** for large-cap charts the user should switch to `NSE:NIFTY`.
+The benchmark should match the instrument's peer group, whichever way round.
 
 ### 0.3 The stage MA period needs a timeframe warning
 
@@ -237,8 +254,19 @@ TIMEFRAME MATTERS. Stage analysis is built on the 30-week moving average. Use a 
 MA Period 30, or on a DAILY chart set MA Period to 150 (30 weeks × 5 sessions). Leaving it at 30 on
 a daily chart produces a 30-day MA and stages will change far too often.
 
-SET YOUR BENCHMARK. Indian equities: NSE:NIFTY. US: SPY or QQQ. Relative strength and beta are both
-meaningless if the benchmark does not match the instrument's market.
+SET YOUR BENCHMARK — IT CHANGES EVERYTHING DOWNSTREAM. Relative strength, the pullback check and
+beta are all measured against whichever symbol you choose here.
+
+The default is the NIFTY MidSmallcap index, because that is the peer group most Indian momentum
+trading actually happens in — measuring a smallcap against NIFTY flatters it during a smallcap-led
+rally and reports strength that is really just the segment moving. For large-cap charts switch to
+NSE:NIFTY; for US instruments use SPY or QQQ. The benchmark should match the instrument's peer
+group, whichever way round.
+
+Note that beta is relative to that benchmark, not an absolute property of the stock. Against a more
+volatile index the same stock reports a lower beta, so read it as "how volatile is this name
+compared to the yardstick I chose" — and adjust the Low/High thresholds to suit the benchmark you
+actually trade against.
 
 WORKFLOW. Qualify with Stage and RS first — Stage 2 with positive RS is where most trend continuation
 lives. Then use the pullback check for timing and beta to size. Stage 4 with negative RS is the
