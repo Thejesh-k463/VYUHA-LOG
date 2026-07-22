@@ -12,10 +12,10 @@ Scripts covered:
 
 ## 0. Fix these before you publish
 
-*Status 2026-07-22 — §0.1 (licence header) and §0.2 (benchmark) both resolved by the owner.
-**§0.3 is still open**, plus two follow-ups created by the benchmark change: confirm the new index
-ticker actually resolves, and recalibrate the Beta thresholds for a more volatile benchmark. Both
-are described in §0.2.* anything
+*Status 2026-07-22 — **all three resolved.** §0.1 and §0.2 by the owner, §0.3 in code as part of
+SA-PRO v2.0.0. Two follow-ups remain, both described in §0.2: confirm the mid/smallcap index ticker
+actually resolves in the symbol picker, and recalibrate the Beta thresholds now that the benchmark
+is more volatile than NIFTY.* anything
 
 ### 0.1 ✅ RESOLVED — the copyright header on SA-PRO
 
@@ -74,49 +74,64 @@ the benchmark explicitly in the description so buyers know what beta is relative
 **Also worth adding to the tooltip:** for large-cap charts the user should switch to `NSE:NIFTY`.
 The benchmark should match the instrument's peer group, whichever way round.
 
-### 0.3 The stage MA period needs a timeframe warning
+### 0.3 ✅ RESOLVED IN v2.0.0 — stage MA now auto-scales
 
-Weinstein's method is built on the **30-week** MA. `SA-PRO` defaults to `30` periods on whatever
-timeframe the chart is on — so on a **daily** chart it is a 30-*day* MA, which is a completely
-different indicator and will flip stages far too often.
+Weinstein's method is built on the **30-week** MA. v1 defaulted to `30` periods on whatever timeframe
+the chart happened to be, so on a **daily** chart it was a 30-*day* MA — a completely different
+indicator that flips stages every few days and reads as broken.
 
-The tooltip says "30 for weekly" but nothing enforces or warns. Two options:
+v2.0.0 auto-scales instead:
 
-- **Simplest:** say it loudly in the description — *"Use on weekly charts with MA 30, or on daily
-  charts set MA to 150."*
-- **Better:** auto-scale the default. Detect `timeframe.isdaily` and use `150`, weekly `30`.
+| Chart | Stage MA |
+|---|---|
+| Weekly | 30 (Weinstein's original) |
+| Daily | 150 (30 weeks x 5 sessions) |
+| Monthly | 7 |
+| Intraday | 150, **and the table prints `⚠ intraday — built for D/W`** |
 
-Buyers who put it on a daily chart with the default and see stages flipping every week will assume
-the indicator is broken. It isn't — it's being used at the wrong scale.
+Auto-scaling can be switched off (`Auto-scale MA to timeframe`) to set the period by hand. The
+Expanded table shows which period is in force and whether it came from auto, so a user can always see
+what is actually being measured.
 
----
+## 0.5 Where the files live
+
+| File | Path |
+|---|---|
+| **SA-PRO v2.0.0** (paste this into TradingView) | `K:\Thejesh\PERSONAL\IMPORTANT DOCUMENTS\STAGE-ANALYSIS-INDICATOR-KTR-v2.txt` |
+| SA-PRO v1.0.0 (kept as a fallback) | `K:\Thejesh\PERSONAL\IMPORTANT DOCUMENTS\STAGE-ANALYSIS-INDICATOR-KTR.txt` |
+| RS-PRO | `K:\Thejesh\PERSONAL\IMPORTANT DOCUMENTS\RS-PRO-KTR.txt` |
+| This launch kit | `vyuha\docs\monetization\INDICATORS_LAUNCH_KIT.md` |
+
+The Pine sources live **outside the repo**, in your personal documents folder — they are not tracked
+by git and never leave your machine. The live script is whatever is saved in the TradingView Pine
+Editor; these `.txt` files are your local copies, so keep them in step after any edit you make there.
 
 ## 1. What you actually have (the honest technical read)
 
-### SA-PRO — "should I be in this name at all?"
+### SA-PRO v2.0.0 — "should I be in this name at all?"
 
-A **top-down qualification screen** in one table. Five independent reads:
+A **top-down qualification screen** in one table. Ten independent reads, every one toggleable.
 
 | Metric | What it computes | Why a trader cares |
 |---|---|---|
-| **Stage** | Price vs MA + MA slope, bucketed into Weinstein's S1–S4, with a Conservative/Moderate/Aggressive slope threshold and a "periods in stage" counter | Stops you buying Stage 4 falling knives and Stage 3 tops |
-| **RS** | Stock ÷ benchmark, vs its own MA, with slope confirmation | Weak-vs-index names underperform on the way up and lead on the way down |
-| **Momentum** | ROC, smoothed, **plus acceleration** (is the rate of change itself rising?) | Distinguishes "rising" from "rising faster" — the Stage-2 sweet spot |
-| **Cheat Entry** | Near the MA **and** volume dried up **and** RS still holding **and** in Stage 1/2 | A Qullamaggie-style low-risk pullback entry, all four conditions required |
-| **Beta** | Covariance/variance vs the benchmark over 50 periods | Position sizing — a 1.8-beta name needs a smaller position for the same risk |
+| **Stage** | Price vs MA + MA slope, bucketed into Weinstein's S1–S4, with a sensitivity setting and a "periods in stage" counter. **MA auto-scales to the timeframe** | Stops you buying Stage 4 falling knives and Stage 3 tops |
+| **EMA ribbon** | 9/20/50 stack order, slope of all three, and price location relative to them | A clean stack with everything rising is a different chart from the same stack with price cutting back through it |
+| **HTF EMAs** | The same ribbon one step up — intraday reads Daily, daily reads Weekly, weekly reads Monthly, chosen automatically | The timeframe above you, without switching charts |
+| **RS** | Stock ÷ benchmark, vs its own MA, with slope confirmation — plus a guard that says so loudly if the benchmark fails to resolve | Weak-vs-peers names underperform on the way up and lead on the way down |
+| **Momentum** | ROC, smoothed, **plus acceleration** | Distinguishes "rising" from "rising faster" — the Stage-2 sweet spot |
+| **Cheat Entry** | Near the MA **and** volume dried up **and** RS holding **and** in Stage 1/2 | A Qullamaggie-style low-risk pullback, all four required |
+| **ADR%** | Average daily range, always computed on **daily** bars | Realistic targets and stops — a 2% move in a 6% ADR name is noise |
+| **RVOL** | This bar vs the average of the **previous** N bars | The institutional-participation proxy; pairs with the Cheat Entry volume test |
+| **Liquidity sweep** | Wick beyond the last confirmed swing that closes back inside, with direction and age | Stops taken then rejected — the most actionable single SMC concept |
+| **Beta** | Covariance/variance vs the benchmark | Position sizing — and it moves with the benchmark you pick |
 
-**The genuinely differentiated part:** lines 565–571 export every metric to the data window:
+**The genuinely differentiated part** is unchanged and now larger: every metric is exported to the
+data window, which makes all of it usable in **TradingView's Pine Screener**. You can scan the whole
+NSE universe for *"Stage 2, RS positive, EMA stack bullish, Cheat Entry = 1"* instead of flipping
+charts one by one. Most indicators are decoration; this one is a screening engine. **Lead with this.**
 
-```pine
-plot(currentStage, title="Stage", display=display.data_window)
-plot(rsRating, ...), plot(isCheatEntry ? 1 : 0, ...), plot(beta, ...)
-```
-
-That makes all of it usable in **TradingView's Pine Screener** — you can scan the entire NSE universe
-for *"Stage 2, RS positive, Cheat Entry = 1"* instead of flipping charts one by one. Most indicators
-are decoration; this one is a screening engine. **Lead with this.**
-
-Three display densities (Minimal / Normal / Expanded) and eight alert conditions.
+Three display densities (Minimal / Normal / Expanded), eight table positions, 37 toggles, 37 colour
+pickers, nine independent text-size controls, and 13 alert conditions.
 
 ### RS-PRO — "is the move aligned, and where's the trigger?"
 
@@ -172,10 +187,13 @@ Sell them as a pair. Never as "two indicators".
 **🎁 Included free with the Trader's Toolkit — two invite-only TradingView indicators**
 
 **📊 Stage Analysis PRO** — *Should I even be in this name?*
-Weinstein stage (S1–S4) with a duration counter, relative strength vs NIFTY, momentum **and its
-acceleration**, a four-condition pullback-entry check, and beta for position sizing — one compact
-table, three density modes. **Every metric exports to TradingView's Pine Screener**, so you can scan
-the whole market for "Stage 2 + strong RS + in the pullback zone" instead of flipping charts.
+Weinstein stage (S1–S4) with a duration counter and a moving average that **auto-scales to your
+timeframe**; a 9/20/50 EMA ribbon reporting stack, slope and price location; the same ribbon one
+timeframe **higher, chosen automatically**; relative strength against the peer index you choose;
+momentum **and its acceleration**; a four-condition pullback-entry check; and three institutional
+reads — **ADR%, RVOL and liquidity-sweep detection**. One table, three density modes, everything
+toggleable. **Every metric exports to TradingView's Pine Screener**, so you can scan the whole market
+for "Stage 2 + strong RS + bullish EMA stack + in the pullback zone" instead of flipping charts.
 
 **📈 RS Multi-TF PRO** — *Is the move aligned, and where's the trigger?*
 Five RSI horizons (14/22/55/122/254) on one chart — a single-pane read on swing, weekly and yearly
@@ -213,81 +231,128 @@ use it. Thin or promotional descriptions get moderated. **Do not** put prices, p
 "DM me to buy" in the description — put contact details in your **profile signature** instead, and
 check the current House Rules before publishing, as they change.
 
-### SA-PRO description
+### SA-PRO description (v2.0.0)
 
 ```
 STAGE ANALYSIS PRO — a top-down qualification dashboard
 
-Answers one question before you commit capital: does this name deserve a position right now?
-Five independent reads in one compact table.
+Answers one question before you commit capital: does this name deserve a position right now, and
+is the trend structure behind it actually intact? Ten independent reads in one configurable table.
 
-── WHAT IT SHOWS ──
+── TREND & STAGE ──
 
-STAGE (S1–S4) — Classifies the chart using price position relative to a moving average combined
-with that average's slope:
-  S1 Accumulation — basing, flat MA
-  S2 Advancing    — above a rising MA
-  S3 Distribution — topping, flat MA
-  S4 Declining    — below a falling MA
-Displays the transition (e.g. "S1 → S2"), flags it as (New) for a configurable number of bars, and
-counts how long the current stage has lasted. A Conservative / Moderate / Aggressive setting adjusts
-how much slope is required before a stage changes, so you can tune sensitivity to your holding period.
+STAGE (S1-S4) — Classifies the chart from price position relative to a moving average combined with
+that average's slope:
+  S1 Accumulation - basing, flat MA
+  S2 Advancing    - above a rising MA
+  S3 Distribution - topping, flat MA
+  S4 Declining    - below a falling MA
+Shows the transition (e.g. "S1 -> S2"), flags it as (New) for a configurable number of bars, and
+counts how long the current stage has lasted. Conservative / Moderate / Aggressive adjusts how much
+slope is required before a stage changes, so you can tune it to your holding period.
 
-RELATIVE STRENGTH — Compares the instrument to a benchmark you choose (NSE:NIFTY, SPY, QQQ…),
-measured against its own moving average with slope confirmation, so a stock that is merely falling
-more slowly than the index is not reported as strong.
+The moving average AUTO-SCALES to your chart. Stage analysis is built on the 30-WEEK average, so the
+indicator uses 30 periods on a weekly chart and 150 on a daily (30 weeks x 5 sessions). Without that,
+a daily chart would be running a 30-DAY average and stages would change every few days. You can turn
+auto-scaling off and set the period yourself.
+
+EMA RIBBON (9/20/50, lengths configurable) — Reports three things that only mean something together:
+  Stack    - are they ordered 9>20>50 (bullish), 9<20<50 (bearish), or tangled?
+  Slope    - are all three rising, all falling, or mixed?
+  Location - is price above all three, below all three, or inside the ribbon?
+A clean stack with all three rising and price above them is a very different chart from the same
+stack with price cutting back through it. Each line can be toggled, recoloured and re-weighted
+independently, with optional shading between fast and slow that tints by stack direction.
+
+HIGHER-TIMEFRAME EMAs — The same ribbon computed one meaningful step above your chart, chosen
+automatically: intraday reads Daily, daily reads Weekly, weekly reads Monthly. You always have the
+timeframe above you in view without switching charts. A manual override is available. Values use
+confirmed higher-timeframe bars only, so they do not repaint. Lines are OFF by default to keep the
+chart readable; the dashboard row is on.
+
+── STRENGTH, MOMENTUM & RISK ──
+
+RELATIVE STRENGTH — Compares the instrument to a benchmark you choose, measured against its own
+moving average with slope confirmation, so a stock merely falling more slowly than the index is not
+reported as strong. If the benchmark symbol does not resolve, the table says so explicitly rather
+than quietly reporting neutral.
 
 MOMENTUM — Rate of change, smoothed, plus its ACCELERATION. Distinguishes "price is rising" from
-"price is rising faster", which are different things for a trend follower.
+"price is rising faster", which are different things to a trend follower.
 
-PULLBACK ENTRY CHECK — Reports Yes only when four conditions hold together: price is within a
-configurable distance of the moving average, volume has contracted below its average, relative
-strength is still holding above its own MA, and the chart is in Stage 1 or 2. Any one alone is
-noise; together they describe a low-volatility pullback inside an established trend.
+PULLBACK ENTRY CHECK — Reports Yes only when four conditions hold together: price within a
+configurable distance of the moving average, volume contracted below its average, relative strength
+still holding above its own MA, and the chart in Stage 1 or 2. Any one alone is noise; together they
+describe a low-volatility pullback inside an established trend.
 
-BETA — Rolling covariance against the benchmark, for position sizing. A high-beta name needs a
-smaller position for the same rupee risk.
+BETA — Rolling covariance against the benchmark, for position sizing.
+
+── INSTITUTIONAL READS ──
+
+ADR% — Average Daily Range as a percentage, computed on DAILY bars whatever timeframe you are
+viewing, so it stays meaningful intraday. Sets realistic targets and stop distances: a 2% move in a
+6% ADR name is noise, and the same move in a 2% ADR name is not.
+
+RVOL — Relative Volume: this bar's volume against the average of the PREVIOUS N bars, excluding the
+current one so a genuine surge is not diluted by itself. A participation proxy — see the limitations
+note below on what this is and is not.
+
+LIQUIDITY SWEEP — Detects a wick beyond the most recent confirmed swing high or low that CLOSES back
+inside: stops taken, then rejected. Reports direction, how many bars ago, and whether it is still
+fresh. Optional chart markers.
 
 ── HOW TO USE IT ──
 
-TIMEFRAME MATTERS. Stage analysis is built on the 30-week moving average. Use a WEEKLY chart with
-MA Period 30, or on a DAILY chart set MA Period to 150 (30 weeks × 5 sessions). Leaving it at 30 on
-a daily chart produces a 30-day MA and stages will change far too often.
+SET YOUR BENCHMARK FIRST — IT CHANGES EVERYTHING DOWNSTREAM. Relative strength, the pullback check
+and beta are all measured against whichever symbol you choose. The default is a mid/smallcap index,
+because that is the peer group most Indian momentum trading happens in; measuring a smallcap against
+a largecap index flatters it during a smallcap-led rally and reports strength that is really just the
+segment moving. For largecap charts switch to a largecap index; for US instruments use SPY or QQQ.
+Pick from the symbol picker rather than typing.
 
-SET YOUR BENCHMARK — IT CHANGES EVERYTHING DOWNSTREAM. Relative strength, the pullback check and
-beta are all measured against whichever symbol you choose here.
+Note that BETA IS RELATIVE TO THAT BENCHMARK, not an absolute property of the stock. Against a more
+volatile index the same stock reports a LOWER beta, so the Low/High thresholds need setting to suit
+the benchmark you actually trade against.
 
-The default is the NIFTY MidSmallcap index, because that is the peer group most Indian momentum
-trading actually happens in — measuring a smallcap against NIFTY flatters it during a smallcap-led
-rally and reports strength that is really just the segment moving. For large-cap charts switch to
-NSE:NIFTY; for US instruments use SPY or QQQ. The benchmark should match the instrument's peer
-group, whichever way round.
+TIMEFRAME. Stage analysis is a daily and weekly method. It works best on those; on intraday charts
+the table says so plainly.
 
-Note that beta is relative to that benchmark, not an absolute property of the stock. Against a more
-volatile index the same stock reports a lower beta, so read it as "how volatile is this name
-compared to the yardstick I chose" — and adjust the Low/High thresholds to suit the benchmark you
-actually trade against.
+WORKFLOW. Qualify with Stage and RS — Stage 2 with positive RS is where most trend continuation
+lives. Confirm the structure with the EMA ribbon and the higher-timeframe stack. Time the entry with
+the pullback check or a fresh liquidity sweep. Size it with ADR% and beta. Stage 4 with negative RS
+is the signal to do nothing.
 
-WORKFLOW. Qualify with Stage and RS first — Stage 2 with positive RS is where most trend continuation
-lives. Then use the pullback check for timing and beta to size. Stage 4 with negative RS is the
-signal to do nothing.
+SCREENING. Stage, RS rating, RS %, momentum, pullback flag, beta, EMA stack, higher-timeframe stack,
+ADR%, RVOL and sweep state are all exported to the Data Window, which makes them available in the
+Pine Screener. You can scan a whole universe for a combination rather than reviewing charts one at a
+time.
 
-SCREENING. Stage, RS rating, RS %, momentum rating, pullback flag, beta and stage-change are all
-exported to the Data Window, which makes them available in the Pine Screener. You can scan a whole
-universe for a stage/RS/pullback combination rather than reviewing charts individually.
+── DISPLAY & CONTROL ──
 
-── DISPLAY & ALERTS ──
+Three density modes (Minimal / Normal / Expanded), eight table positions, and independent colour and
+text-size control for every section. Table background, transparency, border width, header colours,
+alternating row shading and the Details column are all configurable. Every metric, every line and
+every alert can be switched off individually — the intent is that you keep what suits your style and
+hide the rest.
 
-Three density modes (Minimal / Normal / Expanded), four table positions, and full colour, text-size
-and threshold control for every metric. Alerts for stage change, RS crossing its MA in either
-direction, momentum strengthening or weakening, pullback-entry appearing, and beta threshold crosses.
+Alerts: stage change, RS crossing its MA either way, momentum strengthening or weakening, pullback
+entry appearing, EMA stack flipping bullish or bearish, liquidity sweeps in both directions, RVOL
+surge, and beta threshold crosses.
 
 ── NOTES & LIMITATIONS ──
 
-Values update on the live bar and settle at bar close; assess signals on closed bars. Stage
-classification is a trend-state description, not a forecast. Beta and RS depend entirely on the
-benchmark you select. This tool describes what price has already done — it does not predict what
-it will do next.
+RVOL IS NOT ORDER FLOW. It is a volume-participation proxy. True footprint, bid-ask delta and
+cumulative volume delta require tick or bid-ask data that is not available to Pine scripts, and any
+script claiming otherwise on standard equity data is inferring, not measuring.
+
+LIQUIDITY SWEEPS ARE CONFIRMATION, NOT A LIVE TRIGGER. A swing pivot is only known once the
+configured number of bars has passed after it forms, so a sweep is necessarily reported after the
+fact. That is inherent to pivot detection, not a defect.
+
+Values update on the live bar and settle at bar close; assess signals on closed bars. Higher-timeframe
+values use confirmed HTF bars only and do not repaint. Stage classification is a description of trend
+state, not a forecast. RS and beta depend entirely on the benchmark you select. This tool describes
+what price has already done — it does not predict what it will do next.
 
 For educational and informational purposes only. Not investment advice and not a recommendation to
 buy or sell any security. Past performance does not guarantee future results. Trading carries risk
