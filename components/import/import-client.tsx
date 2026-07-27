@@ -13,9 +13,24 @@ interface PreviewRow {
   tradingsymbol: string; symbol: string; segment: Segment; bucket: string; exchange: string;
   buyQty: number; sellQty: number; buyValue: number; sellValue: number;
   grossPnl: number; chargesTotal: number; netPnl: number; isOpen: boolean; isDuplicate: boolean;
+  buyDate?: string | null; sellDate?: string | null; tradingsymbol_?: string;
+}
+type ProductHint = "delivery" | "mtf" | "intraday";
+const PRODUCT_CHOICES: { value: ProductHint; label: string; hint: string }[] = [
+  { value: "delivery", label: "Equity Delivery", hint: "Paid in full, held overnight" },
+  { value: "mtf", label: "Equity MTF", hint: "Broker-funded; interest accrues daily" },
+  { value: "intraday", label: "Equity Intraday", hint: "Squared off the same day" },
+];
+interface FileKindCapability {
+  kind: "transactions" | "pnl";
+  label: string;
+  knowsProduct: boolean;
+  knowsTime: boolean;
+  knowsFills: boolean;
 }
 interface PreviewResp {
   mode: "preview";
+  fileKind?: FileKindCapability;
   detected: { sourceId: string; label: string; confidence: number };
   candidates: { sourceId: string; label: string; confidence: number }[];
   preview: {
@@ -34,9 +49,12 @@ export function ImportClient() {
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [committed, setCommitted] = useState<{ added: number; skipped: number } | null>(null);
+  const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
+  /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
+  const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
 
   async function doPreview(f: File) {
-    setBusy(true); setError(null); setPreview(null); setCommitted(null);
+    setBusy(true); setError(null); setPreview(null); setCommitted(null); setProductOverrides({});
     try {
       const fd = new FormData();
       fd.append("file", f);
@@ -60,6 +78,10 @@ export function ImportClient() {
       fd.append("file", file);
       fd.append("mode", "commit");
       if (preview) fd.append("sourceId", preview.detected.sourceId);
+      // Only a P&L file needs these — a tradebook states the product itself.
+      if (Object.keys(productOverrides).length > 0) {
+        fd.append("productOverrides", JSON.stringify(productOverrides));
+      }
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Commit failed"); return; }
@@ -78,10 +100,83 @@ export function ImportClient() {
     if (f) doPreview(f);
   }
 
+  /**
+   * Apply a product type to every row of a symbol and re-price.
+   *
+   * The re-preview matters: segment, charges, MTF interest and ROM all derive
+   * from the product, so showing the OLD numbers next to a NEW choice would be
+   * quietly wrong at exactly the moment the user is deciding.
+   */
+  async function setProduct(symbol: string, hint: ProductHint) {
+    if (!file) return;
+    const next = { ...productOverrides, [symbol]: hint };
+    setProductOverrides(next);
+    setBusy(true); setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("mode", "preview");
+      if (preview) fd.append("sourceId", preview.detected.sourceId);
+      fd.append("productOverrides", JSON.stringify(next));
+      const res = await fetch("/api/import", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Failed to re-price"); return; }
+      setPreview(json);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Symbols in this file, for the bulk product-correction panel. */
+  const symbolsNeedingProduct = preview?.preview
+    ? [...new Set(preview.preview.rows.filter((r) => !r.isDuplicate).map((r) => r.symbol))].sort()
+    : [];
+
   const p = preview?.preview;
+
+  const isPnlTab = tab === "pnl";
 
   return (
     <div className="space-y-5">
+      {/* ── Which kind of file are you importing? ─────────────────────────
+          The two are not equivalent: a tradebook states the product and the
+          time; a P&L statement states neither. Making the choice explicit is
+          the whole point — it sets expectations BEFORE the numbers appear. */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => { setTab("transactions"); setPreview(null); setFile(null); setCommitted(null); }}
+          className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+            !isPnlTab ? "border-primary/60 bg-primary/5" : "border-border hover:bg-card-hover/40"
+          }`}
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            📗 Transactions / Tradebook
+            <Badge variant="accent">recommended</Badge>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Every execution, with product type and timestamps. Delivery, MTF and intraday are
+            identified automatically, scaled positions keep their entry ladder, and time-of-day
+            analytics work.
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setTab("pnl"); setPreview(null); setFile(null); setCommitted(null); }}
+          className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+            isPnlTab ? "border-primary/60 bg-primary/5" : "border-border hover:bg-card-hover/40"
+          }`}
+        >
+          <div className="text-sm font-semibold">📘 P&amp;L Statement</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            A pre-aggregated summary. It carries no product column and no times, so Vyuha will
+            ask you to confirm delivery / MTF / intraday before committing.
+          </div>
+        </button>
+      </div>
+
       {/* Dropzone */}
       <div
         onDragOver={(e) => e.preventDefault()}
@@ -94,7 +189,11 @@ export function ImportClient() {
           <span className="font-medium text-foreground">Drop a broker file</span>{" "}
           <span className="text-muted-foreground">or click to browse</span>
         </div>
-        <div className="text-xs text-muted-foreground">Dhan CSV · Groww XLSX · Zerodha CSV/XLSX · PDF</div>
+        <div className="text-xs text-muted-foreground">
+          {isPnlTab
+            ? "Dhan CSV · Groww XLSX · Zerodha Console · Angel One / Upstox P&L · PDF"
+            : "Zerodha tradebook · Angel One tradebook · Upstox tradebook (CSV/XLSX)"}
+        </div>
         {file && <Badge variant="secondary" className="mt-1">{file.name}</Badge>}
         <input
           ref={inputRef}
@@ -165,6 +264,69 @@ export function ImportClient() {
               )}
             </CardContent>
           </Card>
+
+          {/* The file kind is DETECTED, not taken on trust from the tab —
+              dropping a tradebook on the P&L tab should say so rather than
+              silently asking for product types the file already knows. */}
+          {preview!.fileKind && preview!.fileKind.kind !== tab && (
+            <Card className="border-warning/40">
+              <CardContent className="flex items-start gap-2.5 p-4 text-sm">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                <span>
+                  This looks like a <b>{preview!.fileKind.label}</b>, not what the{" "}
+                  <b>{isPnlTab ? "P&L Statement" : "Transactions"}</b> tab expects. It will still
+                  import correctly — the tab only decides what Vyuha asks you.
+                </span>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Product confirmation — only when the file genuinely cannot say. */}
+          {preview!.fileKind && !preview!.fileKind.knowsProduct && symbolsNeedingProduct.length > 0 && (
+            <Card className="border-accent/40">
+              <CardHeader>
+                <CardTitle className="text-base">Confirm the product type</CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  A P&amp;L file has no product column, so these were <b>assumed</b>. Same-day round
+                  trips are inferred as intraday; everything else defaults to <b>delivery</b>, which
+                  is the safest wrong answer — it neither invents MTF interest nor applies intraday
+                  leverage. Correct any that were actually MTF: charges, interest and Return-on-Margin
+                  all depend on it.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-64 space-y-1.5 overflow-auto">
+                  {symbolsNeedingProduct.map((sym) => {
+                    const current = productOverrides[sym];
+                    return (
+                      <div key={sym} className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-2.5 py-1.5">
+                        <span className="min-w-[140px] text-xs font-medium">{sym}</span>
+                        <div className="flex gap-1">
+                          {PRODUCT_CHOICES.map((c) => (
+                            <button
+                              key={c.value}
+                              type="button"
+                              title={c.hint}
+                              disabled={busy}
+                              onClick={() => setProduct(sym, c.value)}
+                              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                                current === c.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "border border-border text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                        {!current && <span className="text-[10px] text-muted-foreground">assumed</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {p.reconciliation && <Reconciliation reco={p.reconciliation} />}
 

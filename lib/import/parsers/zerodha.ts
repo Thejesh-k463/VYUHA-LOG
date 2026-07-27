@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { extractTime } from "../time-parse";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
@@ -144,8 +145,16 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       else { acc.sellQty += qty; acc.sellVal += qty * price; }
       // Keep the fill itself — the staged ladder is rebuilt from these.
       if (qty > 0) {
-        const rowDate = cDate >= 0 ? r[cDate] || null : acc.date;
-        acc.executions.push({ side: side.startsWith("b") ? "buy" : "sell", qty, price, date: rowDate });
+        const rawWhen = cDate >= 0 ? r[cDate] || null : acc.date;
+        // Date and time are pulled independently — the same column may hold a
+        // bare date or a full timestamp depending on the export.
+        acc.executions.push({
+          side: side.startsWith("b") ? "buy" : "sell",
+          qty,
+          price,
+          date: rawWhen,
+          time: extractTime(rawWhen),
+        });
       }
       groups.set(key, acc);
     }
@@ -166,6 +175,10 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         unrealisedPnl: 0,
         buyDate: a.date,
         sellDate: a.sellQty > 0 ? a.date : null,
+        // First buy fill opens a long; last sell fill closes it. Times come
+        // from the executions so they survive aggregation.
+        entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
+        exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
         productHint: productHint(a.product),
         exchangeHint: exchangeFrom(a.exch),
         sourceFile: ctx.filename,

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
+import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
+import type { ProductHint } from "@/lib/engine/types";
 
 export const runtime = "nodejs";
 
@@ -12,6 +14,18 @@ export async function POST(req: Request) {
   const file = form.get("file");
   const mode = String(form.get("mode") ?? "preview");
   const forcedSource = form.get("sourceId") ? String(form.get("sourceId")) : null;
+
+  // Bulk product corrections for a P&L file, keyed by tradingsymbol. Sent by
+  // the P&L tab once the user has confirmed what these trades actually were.
+  let productOverrides: Record<string, ProductHint> | null = null;
+  const rawOverrides = form.get("productOverrides");
+  if (rawOverrides) {
+    try {
+      productOverrides = JSON.parse(String(rawOverrides)) as Record<string, ProductHint>;
+    } catch {
+      return NextResponse.json({ error: "Malformed product overrides." }, { status: 400 });
+    }
+  }
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
@@ -44,7 +58,7 @@ export async function POST(req: Request) {
 
   if (mode === "commit") {
     try {
-      const result = commitParsedFile(parsed, file.name);
+      const result = commitParsedFile(parsed, file.name, productOverrides);
       revalidatePath("/trades");
       revalidatePath("/");
       return NextResponse.json({
@@ -59,11 +73,15 @@ export async function POST(req: Request) {
   }
 
   // preview
-  const preview = previewParsedFile(parsed);
+  const preview = previewParsedFile(parsed, productOverrides);
+  const kind = classifyFileKind(parsed.format);
   return NextResponse.json({
     mode: "preview",
     detected: { sourceId: chosen.sourceId, label: chosen.label, confidence: chosen.confidence },
     candidates: ranked.map((p) => ({ sourceId: p.sourceId, label: p.label, confidence: p.confidence })),
+    // What this KIND of file can and cannot tell us — drives whether the UI
+    // asks for product types or trusts the file.
+    fileKind: capabilityOf(kind),
     preview,
   });
 }

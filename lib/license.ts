@@ -183,6 +183,7 @@ export const PRO_FEATURES: { href: string; label: string }[] = [
   { href: "/reports/itr", label: "ITR Pack — 44AB/44AD audit read + CA export" },
   { href: "/reports/broker-compare", label: "Broker cost comparison (whole history re-priced)" },
   { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },
+  { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
 ];
 
 export type EntitlementState = "licensed" | "trial" | "expired-key" | "unlicensed";

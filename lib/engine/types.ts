@@ -63,6 +63,15 @@ export interface NormalizedTrade {
   exchangeHint: Exchange | null;
   sourceFile: string | null;
   /**
+   * HH:MM of the opening and closing fill, when the source carries it.
+   *
+   * Tradebooks do; aggregated P&L reports do not, and null is the honest
+   * answer there — the time-of-day analytics show an empty state rather than
+   * inventing a session.
+   */
+  entryTime?: string | null;
+  exitTime?: string | null;
+  /**
    * The individual fills behind this aggregate, when the source file had them
    * (tradebook exports list every execution; P&L reports are pre-aggregated).
    *

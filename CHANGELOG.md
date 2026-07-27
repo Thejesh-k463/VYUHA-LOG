@@ -4,6 +4,87 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.89.0
+Two things traders asked for after using v2.88 in anger: **know what kind of
+trade you imported**, and **know what kind of trader you are**.
+
+### Import split — P&L vs Transactions
+
+`/import` now presents two clearly-labelled kinds, because they are genuinely
+not equivalent and the difference decides how much Vyuha can know:
+
+- **Transactions / Tradebook** (recommended) — every execution, with product
+  type and timestamps. Delivery, MTF and intraday identify themselves, scaled
+  positions keep their entry ladder, and time-of-day analytics work.
+- **P&L Statement** — a pre-aggregated summary with **no product column and no
+  times**. "Was this delivery or MTF?" is genuinely unanswerable from the file.
+
+So the P&L path now **asks once, before commit**. Rows are grouped by symbol
+with a guess pre-selected, and choosing a different product **re-prices
+immediately** — segment, charges, MTF interest and Return-on-Margin all derive
+from it, so showing old numbers beside a new choice would be wrong at exactly
+the moment you are deciding.
+
+- Same-day round trips are **inferred** as intraday, which is reliable. MTF is
+  never inferred — it is indistinguishable from delivery in a P&L file — so the
+  default is **delivery**, the safest wrong answer: it neither invents MTF
+  interest nor applies intraday leverage. Guessed rows are labelled "assumed".
+- The file kind is **detected**, not taken on trust from the tab. Drop a
+  tradebook on the P&L tab and it says so rather than asking for product types
+  the file already knows.
+
+### Execution times now actually reach the database
+
+`entry_time` and `exit_time` existed since the first schema and **nothing ever
+wrote them**. Tradebook parsers now extract HH:MM and commit persists it.
+
+- Date and time are extracted **independently**, because the same broker column
+  may hold a bare date, a full timestamp, or both split by `T`, a space, or
+  nothing.
+- Day-first is assumed for ambiguous dates, per Indian convention — reading
+  `06-01-2026` as June 1st rather than 6th January would silently rewrite the
+  P&L calendar by months.
+- A wrong time is worse than none, so anything unparseable returns null rather
+  than guessing.
+
+### Arjun's Eye — the trader's cockpit (`/arjuns-eye`, Pro)
+
+A new page under Journal. Performance keeps its risk-adjusted returns under
+Analytics untouched — the two answer different questions: *how good are my
+returns* versus *what kind of trader am I*.
+
+- **When you actually make money** — expectancy by Indian session (opening
+  drive, morning trend, midday chop, afternoon push, closing hour) and by
+  weekday.
+- **Which products are worth your capital** — expectancy, win rate, charge drag
+  and average hold per segment.
+- **Do you cut winners and hold losers?** — average hold of winners vs losers
+  and the ratio between them, the most common structural leak in retail.
+- **Does a loss change how you trade?** — expectancy after a win vs after a
+  loss, streaks, and same-day re-entries after a loser.
+- **Is your conviction rewarded?** — expectancy by position-size quartile.
+
+Three honesty rules are enforced in code, not just intended:
+
+1. **No finding below 15 trades** in a group. Thin groups are shown, labelled
+   *thin*, and excluded from the conclusions — "Tuesdays are your best day"
+   from four trades is noise dressed as insight.
+2. **No invented sessions.** Trades without a time are counted as a coverage
+   gap and the section says a tradebook import is needed. Bucketing them into
+   09:15 would fabricate an edge that never existed.
+3. **Descriptive, never prescriptive.** A test asserts no finding contains
+   "you should", "must" or "stop doing".
+
+### Fixed while building this
+
+A regex bug that would have misattributed **every timestamped trade by six
+hours**: the regex word-boundary anchor does not match between `01` and `T` in `2026-06-01T09:15:32`
+(both are word characters), so the date-strip silently failed and the time
+regex read `15:32` out of the middle of the date. Caught by a test written
+before the code was trusted.
+
+56 new unit tests (668 total) and 3 new end-to-end flows (7 total).
+
 ## v2.88.0
 **Return on Margin** — the metric that answers what your capital actually
 earned, not what your turnover did.

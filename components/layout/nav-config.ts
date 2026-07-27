@@ -31,6 +31,7 @@ import {
   BookOpen,
   Printer,
   FileSearch,
+  Eye,
 } from "lucide-react";
 
 export type NavItem = {
@@ -51,6 +52,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/surveillance", label: "Surveillance", icon: ShieldAlert, group: "Risk" },
   { href: "/calculator", label: "Trade Calculator", icon: Calculator, group: "Risk" },
   { href: "/trades", label: "Trades", icon: ListOrdered, group: "Journal" },
+  { href: "/arjuns-eye", label: "Arjun's Eye", icon: Eye, group: "Journal" },
   { href: "/playbooks", label: "Playbooks", icon: BookOpen, group: "Journal" },
   { href: "/ipos", label: "IPOs", icon: Rocket, group: "Journal" },
   { href: "/import", label: "Import", icon: Upload, group: "Journal" },

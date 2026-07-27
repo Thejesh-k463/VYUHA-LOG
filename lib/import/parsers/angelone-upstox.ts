@@ -13,6 +13,7 @@
 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { extractTime } from "../time-parse";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
@@ -172,7 +173,15 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       }
       // Keep the fill itself, not just its contribution to the average — this
       // is what the staged-position ladder is rebuilt from.
-      if (qty > 0) acc.executions.push({ side: side.startsWith("b") ? "buy" : "sell", qty, price, date });
+      if (qty > 0) {
+        acc.executions.push({
+          side: side.startsWith("b") ? "buy" : "sell",
+          qty,
+          price,
+          date,
+          time: extractTime(date),
+        });
+      }
       groups.set(key, acc);
     }
     const trades: NormalizedTrade[] = [];
@@ -191,6 +200,8 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         grossPnl: a.buyQty > 0 && a.sellQty > 0 ? a.sellVal - a.buyVal : 0,
         unrealisedPnl: 0,
         buyDate: a.buyDate,
+        entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
+        exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
         sellDate: a.sellDate,
         productHint: productHint(a.product),
         exchangeHint: exchangeFrom(a.exch),

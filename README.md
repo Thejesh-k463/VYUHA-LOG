@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-612%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-668%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -51,6 +51,22 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Charges are booked per fill** — brokerage per order, STT per execution, DP once per exit *day*, MTF interest per tranche from its own entry date. Scaling into options really does cost ₹20 an order, and Vyuha says so instead of hiding it in an average.
 - **Imports rebuild the ladder for you.** Zerodha, Angel One and Upstox tradebooks list every execution — those fills are preserved, so a scaled position arrives with its real shape. An ordinary buy-then-sell stays an ordinary trade.
 - **Two warnings worth having:** *averaging down* (adding below your average — inverted correctly for shorts), and *open risk now exceeds your initial risk* — which fires on any add you didn't fund by trailing the earlier stops up.
+
+### 👁 Arjun's Eye — the trader's cockpit
+<img src="docs/screenshots/arjuns-eye.png" alt="Arjun's Eye — session edge, segment scorecard, holding behaviour and tilt" width="900" />
+
+- Every other report answers *how did my money do*. This one answers **what kind of trader am I, and where does my edge actually come from**.
+- **When you actually make money** — expectancy by Indian session (opening drive · morning trend · midday chop · afternoon push · closing hour) and by weekday.
+- **Do you cut winners and hold losers?** The single most common structural leak in retail trading, invisible in a P&L total.
+- **Does a loss change how you trade?** Expectancy after a win vs after a loss, plus same-day re-entries — revenge trading, measured.
+- **Is your conviction rewarded?** Expectancy by position-size quartile. If your biggest positions are not your best, that is a *sizing* question, not a selection one.
+- **Three honesty rules enforced in code:** no finding below 15 trades in a group; no invented sessions for trades whose time is unknown; and every finding phrased as an observation, never an instruction — there is a test asserting no finding says "you should".
+
+### 📥 Import that tells you what kind of file you brought
+
+- Two clearly-labelled kinds, because they are **not equivalent**. A **tradebook** states the product and the time; a **P&L statement** states neither.
+- So the P&L path **asks once, before commit** — grouped by symbol, with a guess pre-selected. Changing a product **re-prices immediately**, because charges, MTF interest and ROM all derive from it.
+- Same-day round trips are *inferred* as intraday. **MTF is never inferred** — it is indistinguishable from delivery in a P&L file — so the default is delivery, the safest wrong answer, and guessed rows are labelled *assumed*.
 
 ### 📐 Return on Margin — what your capital actually earned
 <img src="docs/screenshots/rom-report.png" alt="Return on Margin — capital blocked per segment, ROM per day, capital-efficient trades" width="900" />
@@ -181,8 +197,8 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (612 tests) |
-| `npm run test:e2e` | Playwright e2e — import, staged positions, ROM report, KPI drill-down |
+| `npm test` | Vitest unit suite (668 tests) |
+| `npm run test:e2e` | Playwright e2e — 7 flows: import, import split, staged positions, ROM, KPI drill-down, Arjun's Eye |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

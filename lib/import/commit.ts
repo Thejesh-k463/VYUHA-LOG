@@ -14,7 +14,7 @@ import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade } from "@/lib/engine/types";
+import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
@@ -222,7 +222,37 @@ export interface PreviewResult {
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
 }
 
-export function previewParsedFile(parsed: ParsedFile): PreviewResult {
+
+/**
+ * Apply a user-chosen product type to a P&L file's rows.
+ *
+ * A P&L statement has no product column, so `productHint` arrives null and the
+ * classifier falls back to delivery. When the user has told us what these
+ * trades actually were, that answer must be applied BEFORE classification —
+ * segment, charges, MTF interest and Return-on-Margin all derive from it.
+ *
+ * Keyed by tradingsymbol so a bulk correction ("these 14 rows are MTF")
+ * survives the row ordering of the preview table.
+ */
+function applyProductOverrides(
+  parsed: ParsedFile,
+  overrides: Record<string, ProductHint> | null,
+): ParsedFile {
+  if (!overrides || Object.keys(overrides).length === 0) return parsed;
+  return {
+    ...parsed,
+    trades: parsed.trades.map((t) => {
+      const hint = overrides[t.tradingsymbol];
+      return hint ? { ...t, productHint: hint } : t;
+    }),
+  };
+}
+
+export function previewParsedFile(
+  parsedIn: ParsedFile,
+  productOverrides: Record<string, ProductHint> | null = null,
+): PreviewResult {
+  const parsed = applyProductOverrides(parsedIn, productOverrides);
   const { rates, defaults } = loadContext();
   const overrides = loadOverrides(parsed.broker);
   const existing = new Set(
@@ -281,7 +311,12 @@ export function previewParsedFile(parsed: ParsedFile): PreviewResult {
   };
 }
 
-export function commitParsedFile(parsed: ParsedFile, fileName: string): CommitResult {
+export function commitParsedFile(
+  parsedIn: ParsedFile,
+  fileName: string,
+  productOverrides: Record<string, ProductHint> | null = null,
+): CommitResult {
+  const parsed = applyProductOverrides(parsedIn, productOverrides);
   const { rates, defaults } = loadContext();
   const overrides = loadOverrides(parsed.broker);
 
@@ -330,6 +365,11 @@ export function commitParsedFile(parsed: ParsedFile, fileName: string): CommitRe
           closingPrice: t.closingPrice,
           buyDate: normalizeDate(t.buyDate),
           sellDate: normalizeDate(t.sellDate),
+          // Execution times, when the source carried them. These columns
+          // existed since the first schema but nothing ever wrote them, so
+          // time-of-day analytics had no data to read.
+          entryTime: t.entryTime ?? null,
+          exitTime: t.exitTime ?? null,
           grossPnl: t.grossPnl,
           chargesTotal: b.charges.total,
           netPnl: b.netPnl,
