@@ -271,3 +271,41 @@ describe("cockpitReport", () => {
     expect(rep.closedTrades).toBe(3);
   });
 });
+
+/**
+ * The module's stated honesty rule is that nothing is silently dropped. These
+ * pin the two reconciliation invariants that rule implies — both were broken
+ * once and are invisible in any single-number assertion.
+ */
+describe("cockpit reconciliation invariants", () => {
+  it("counts weekend trades instead of discarding them", () => {
+    // 2026-06-06 is a Saturday. NSE runs occasional Saturday live sessions,
+    // and a hand-entered trade can carry any date at all.
+    const rows = [
+      ...many(5, { buyDate: "2026-06-01", sellDate: "2026-06-01", netPnl: 100 }), // Monday
+      ...many(3, { buyDate: "2026-06-06", sellDate: "2026-06-06", netPnl: 50 }),  // Saturday
+    ];
+    const te = timeEdge(rows);
+    const counted = te.byWeekday.reduce((s, b) => s + b.trades, 0);
+    expect(counted).toBe(8);
+    expect(te.byWeekday.find((b) => b.label === "Saturday")?.trades).toBe(3);
+  });
+
+  it("does not show a weekday bucket that has no trades", () => {
+    const te = timeEdge(many(4, { buyDate: "2026-06-01", sellDate: "2026-06-01" }));
+    expect(te.byWeekday.map((b) => b.label)).toEqual(["Monday"]);
+  });
+
+  it("reports off-hours stamps rather than forcing them into a session", () => {
+    const rows = [
+      ...many(4, { entryTime: "10:30", buyDate: "2026-06-01", sellDate: "2026-06-01" }),
+      ...many(2, { entryTime: "16:45", buyDate: "2026-06-01", sellDate: "2026-06-01" }),
+    ];
+    const te = timeEdge(rows);
+    expect(te.withTime).toBe(6);
+    expect(te.offHours).toBe(2);
+    // Every timed trade is either in a session bucket or counted as off-hours.
+    const inSessions = te.bySession.reduce((s, b) => s + b.trades, 0);
+    expect(inSessions + te.offHours).toBe(te.withTime);
+  });
+});

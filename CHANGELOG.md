@@ -4,6 +4,56 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## Unreleased — forensic audit fixes
+
+A full-book audit of every feature. Money identities were already exact
+(gross − charges − net reconciled to 0.0000 across 252 trades, charge
+components summed to the stored total to the paise, no float leak). Six
+defects surfaced, all fixed.
+
+**The equity curve disagreed with Net P&L by ₹1.47 lakh, silently.**
+`dailyPnl` buckets on the exit date, so a closed trade without one belongs to
+no day. An aggregated broker P&L statement (Dhan's) carries no per-trade dates
+at all — the range lives in the file header only — so 116 of 243 closed trades
+were invisible to the return series while the dashboard's Net P&L counted every
+rupee. Performance reported **−2.84%** on a book that was down ~11.5%, with
+CAGR, Sharpe, Sortino and max drawdown all computed on the dated quarter of it.
+Both surfaces now state their coverage before showing a number: which trades
+are included, how much P&L sits outside, and that a tradebook import closes the
+gap. Nothing about the maths changed — the silence was the defect.
+
+**F&O rows were offered an equity product choice that did nothing.** The P&L
+confirmation panel listed every symbol, including options and futures. A
+derivative names its own segment and `classify()` ignores the product hint
+entirely, so those buttons were dead controls — and the panel keyed on the
+display symbol while the server looked up the tradingsymbol, so the override
+could silently miss. Only equity is listed now, keyed correctly, with the
+derivative count stated rather than hidden.
+
+**Two silent drops in Arjun's Eye**, both against the module's own documented
+rule that nothing is discarded quietly. Weekday analysis built Mon–Fri only, so
+a Saturday trade — NSE does run occasional Saturday live sessions — vanished
+and the weekday counts stopped reconciling. And a timed trade outside
+09:15–15:30 fell out of every session bucket with no trace, which is exactly
+what a misread broker time column looks like. Both are now counted and
+surfaced; three tests pin the reconciliation.
+
+**The cost engine was underselling itself.** Reconciliation showed "total
+charges −32.5%" in warning colour, which reads as a broken engine. Almost all
+of that gap is brokerage, which genuinely cannot be derived from a
+scrip-aggregated file. Excluding it, computed statutory charges match the
+broker to **0.69% — ₹291 on ₹42,006**. That comparison is now shown.
+
+Also fixed: literal control characters and a garbled sentence in
+`lib/import/time-parse.ts`, and a race in a new e2e spec that read `innerText`
+before the streamed page had rendered.
+
+Verified end-to-end: a timestamped tradebook imported through the live pipeline
+produced `09:20` from `2026-06-01T09:20:15` — the six-hour bug confirmed fixed
+against real data, not only unit tests — with MIS/CNC classifying correctly and
+the sessions bucketing as expected. 671 unit tests, 8 e2e flows, 38 routes with
+no NaN, Infinity, or error boundary.
+
 ## v2.89.0
 Two things traders asked for after using v2.88 in anger: **know what kind of
 trade you imported**, and **know what kind of trader you are**.

@@ -178,6 +178,17 @@ export default function ArjunsEyePage() {
                           By session · expectancy per trade
                         </div>
                         <EdgeBar rows={time.bySession} empty="No timed trades in market hours." />
+                        {/* Reconciliation, not decoration: the session buckets
+                            must account for every timed trade. A non-zero
+                            count here usually means a misread time column. */}
+                        {time.offHours > 0 && (
+                          <p className="mt-2 text-xs text-warning">
+                            {num(time.offHours)} timed trade{time.offHours === 1 ? "" : "s"} fall outside
+                            09:15–15:30 and belong to no session, so they are excluded from the bars
+                            above rather than forced into one. Worth checking the import — a broker
+                            time column read wrongly looks exactly like this.
+                          </p>
+                        )}
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
                           {SESSIONS.map((s) => (
                             <span key={s.key}>

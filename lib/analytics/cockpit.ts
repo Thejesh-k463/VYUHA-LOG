@@ -113,6 +113,13 @@ export interface TimeEdge {
   withTime: number;
   /** Closed trades missing an entry time, i.e. imported from a P&L file. */
   withoutTime: number;
+  /**
+   * Timed trades whose entry falls OUTSIDE 09:15–15:30 and so belong to no
+   * session. Reported rather than dropped: `bySession` must reconcile against
+   * `withTime`, and a pile of off-hours stamps means the broker column was
+   * misread, which is exactly the failure worth surfacing.
+   */
+  offHours: number;
   /** True when there is simply not enough timed data to say anything. */
   insufficient: boolean;
 }
@@ -127,8 +134,15 @@ export function timeEdge(trades: CockpitTrade[]): TimeEdge {
 
   // Weekday works off the exit date, so it functions even for P&L imports —
   // deliberately a wider population than the session analysis.
+  //
+  // All SEVEN days are built, not just Mon–Fri. NSE does run occasional
+  // Saturday live sessions (disaster-recovery drills, and Muhurat has fallen
+  // on a Saturday), and a hand-entered trade can carry any date. Weekend
+  // buckets are dropped below only when genuinely empty, so the weekday
+  // counts always reconcile against the closed-trade total instead of
+  // quietly discarding rows that do not fit the expected week.
   const dated = closed.filter((t) => weekdayOf(t.sellDate ?? t.buyDate) != null);
-  const byWeekday = [1, 2, 3, 4, 5]
+  const byWeekday = [1, 2, 3, 4, 5, 6, 0]
     .map((d) => bucket(String(d), WEEKDAYS[d], dated.filter((t) => weekdayOf(t.sellDate ?? t.buyDate) === d)))
     .filter((b) => b.trades > 0);
 
@@ -137,6 +151,7 @@ export function timeEdge(trades: CockpitTrade[]): TimeEdge {
     byWeekday,
     withTime: timed.length,
     withoutTime: closed.length - timed.length,
+    offHours: timed.filter((t) => sessionOf(t.entryTime) == null).length,
     insufficient: timed.length < MIN_SAMPLE,
   };
 }

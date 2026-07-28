@@ -5,3 +5,4 @@ UCC,TEST0001
 Scrip Name,Buy Qty.,Avg. Buy Price,Buy Value,Sell Qty.,Avg. Sell Price,Sell Value,Closing Price,Realised P&L,Realised P&L %,Unrealised P&L,Unrealised P&L %
 "A2ETEST ALPHA","100","250.00","25000.00","100","262.00","26200.00","0.00","1200.00","4.80","0.00","0.00"
 "A2ETEST BETA","50","480.00","24000.00","50","470.00","23500.00","0.00","-500.00","-2.08","0.00","0.00"
+"OPT NIFTY 26 Jun 2026 24000 CE","75","120.00","9000.00","75","145.00","10875.00","0.00","1875.00","20.83","0.00","0.00"

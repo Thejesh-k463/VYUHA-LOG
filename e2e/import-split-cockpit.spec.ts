@@ -34,6 +34,36 @@ test("import split: P&L tab asks for the product type and re-prices on change", 
 });
 
 /**
+ * A derivative names its own segment, and `classify()` derives it from the
+ * symbol while ignoring the product hint entirely. Offering an option row
+ * "Equity Delivery / MTF / Intraday" would be a control that looks like it
+ * does something and does nothing — so only equity may appear in the panel.
+ */
+test("import split: F&O rows are not offered an equity product choice", async ({ page }) => {
+  await gotoImportReady(page);
+  await page.getByText(/P&L Statement/).first().click();
+  await page.locator('input[type="file"]').setInputFiles(PNL_FRESH);
+
+  await expect(page.getByText(/Confirm the product type/i)).toBeVisible({ timeout: 25_000 });
+  // Scoped to the panel itself — the preview table below lists every row,
+  // including the option, so an unscoped match would prove nothing.
+  const panel = page.getByTestId("product-confirm-rows");
+
+  // The two equity scrips are listed...
+  await expect(panel.getByText("A2ETEST ALPHA", { exact: true })).toBeVisible();
+  await expect(panel.getByText("A2ETEST BETA", { exact: true })).toBeVisible();
+
+  // ...and the option is NOT, but is accounted for rather than ignored.
+  await expect(panel.getByText(/NIFTY/)).toHaveCount(0);
+  await expect(page.getByText(/F&O is never ambiguous/i)).toBeVisible();
+
+  // It still imports — the preview table classifies it on its own.
+  await expect(
+    page.locator("table").filter({ hasText: "Segment" }).getByText("Index Options"),
+  ).toBeVisible();
+});
+
+/**
  * Arjun's Eye must never fabricate a session for a trade whose time it does
  * not know — the honesty property the whole page rests on.
  */
@@ -60,6 +90,12 @@ test("Arjun's Eye: renders, and refuses to invent a session it cannot know", asy
 test("Arjun's Eye: never states a finding it cannot support", async ({ page }) => {
   await ensureDatedTrades(page);
   await page.goto("/arjuns-eye");
+
+  // innerText() does NOT auto-wait, and this page streams behind a Suspense
+  // boundary — reading straight after goto() captures the "Loading" placeholder
+  // and the assertion then fails on an empty string rather than on the data.
+  await expect(page.getByRole("heading", { name: /Arjun's Eye/i })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText(/What the data says/i)).toBeVisible({ timeout: 25_000 });
 
   const body = await page.locator("main").innerText();
   // Either there are enough trades for findings, or it says so plainly — but

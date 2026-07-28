@@ -10,11 +10,11 @@
 /**
  * Strip the date portion first, so its digits cannot be misread as a clock.
  *
- * NOTE the `(?!\d)` lookaheads rather than ``: in `2026-06-01T09:15` there is
- * `2026-06-01T09:15` there is NO word boundary between "01" and "T", nor
- * trailing `` silently fails to match and the time regex then reads "15:32"
- * fails, and the time regex then reads "15:32" out of the middle of the
- * date: six hours off and entirely plausible-looking.
+ * NOTE the `(?!\d)` lookaheads rather than a word-boundary anchor. In
+ * `2026-06-01T09:15:32` there is NO word boundary between "01" and "T" — both
+ * are word characters — so a `\b`-anchored date pattern silently fails to
+ * match, and the time regex then reads "15:32" out of the middle of the date
+ * itself: six hours off and entirely plausible-looking.
  */
 function withoutDate(s: string): string {
   return s

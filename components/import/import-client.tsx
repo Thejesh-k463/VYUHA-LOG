@@ -16,6 +16,8 @@ interface PreviewRow {
   buyDate?: string | null; sellDate?: string | null; tradingsymbol_?: string;
 }
 type ProductHint = "delivery" | "mtf" | "intraday";
+/** The only segments where the product type is genuinely in question. */
+const EQUITY_SEGMENTS = new Set<Segment>(["eq_delivery", "eq_mtf", "eq_intraday"]);
 const PRODUCT_CHOICES: { value: ProductHint; label: string; hint: string }[] = [
   { value: "delivery", label: "Equity Delivery", hint: "Paid in full, held overnight" },
   { value: "mtf", label: "Equity MTF", hint: "Broker-funded; interest accrues daily" },
@@ -129,10 +131,32 @@ export function ImportClient() {
     }
   }
 
-  /** Symbols in this file, for the bulk product-correction panel. */
-  const symbolsNeedingProduct = preview?.preview
-    ? [...new Set(preview.preview.rows.filter((r) => !r.isDuplicate).map((r) => r.symbol))].sort()
+  /**
+   * Rows the product question actually APPLIES to.
+   *
+   * Only equity is ambiguous. A derivative names itself — `OPT NIFTY 26 Jun
+   * 2026 24000 CE` is an index option no matter what a P&L file omits — and
+   * `classify()` derives its segment from the symbol, ignoring the product
+   * hint entirely. Offering it "Equity Delivery / MTF / Intraday" would be a
+   * control that looks like it does something and does nothing.
+   *
+   * Keyed by TRADINGSYMBOL, because that is what the override map is looked up
+   * by on the server. `symbol` is the display name and the two can differ.
+   */
+  const productRows = preview?.preview
+    ? [
+        ...new Map(
+          preview.preview.rows
+            .filter((r) => !r.isDuplicate && EQUITY_SEGMENTS.has(r.segment))
+            .map((r) => [r.tradingsymbol, r.symbol] as const),
+        ).entries(),
+      ].sort((a, b) => a[1].localeCompare(b[1]))
     : [];
+
+  /** Derivative rows that need no question — reported so the panel can say so. */
+  const derivativeRowCount = preview?.preview
+    ? preview.preview.rows.filter((r) => !r.isDuplicate && !EQUITY_SEGMENTS.has(r.segment)).length
+    : 0;
 
   const p = preview?.preview;
 
@@ -282,7 +306,7 @@ export function ImportClient() {
           )}
 
           {/* Product confirmation — only when the file genuinely cannot say. */}
-          {preview!.fileKind && !preview!.fileKind.knowsProduct && symbolsNeedingProduct.length > 0 && (
+          {preview!.fileKind && !preview!.fileKind.knowsProduct && productRows.length > 0 && (
             <Card className="border-accent/40">
               <CardHeader>
                 <CardTitle className="text-base">Confirm the product type</CardTitle>
@@ -293,13 +317,20 @@ export function ImportClient() {
                   leverage. Correct any that were actually MTF: charges, interest and Return-on-Margin
                   all depend on it.
                 </p>
+                {derivativeRowCount > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Only equity rows are listed. The other <b>{num(derivativeRowCount)}</b> row
+                    {derivativeRowCount === 1 ? " is a derivative and names" : "s are derivatives and name"}{" "}
+                    its own segment — <b>F&amp;O is never ambiguous</b>, so there is nothing to confirm.
+                  </p>
+                )}
               </CardHeader>
               <CardContent>
-                <div className="max-h-64 space-y-1.5 overflow-auto">
-                  {symbolsNeedingProduct.map((sym) => {
-                    const current = productOverrides[sym];
+                <div data-testid="product-confirm-rows" className="max-h-64 space-y-1.5 overflow-auto">
+                  {productRows.map(([key, sym]) => {
+                    const current = productOverrides[key];
                     return (
-                      <div key={sym} className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-2.5 py-1.5">
+                      <div key={key} className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-2.5 py-1.5">
                         <span className="min-w-[140px] text-xs font-medium">{sym}</span>
                         <div className="flex gap-1">
                           {PRODUCT_CHOICES.map((c) => (
@@ -308,7 +339,7 @@ export function ImportClient() {
                               type="button"
                               title={c.hint}
                               disabled={busy}
-                              onClick={() => setProduct(sym, c.value)}
+                              onClick={() => setProduct(key, c.value)}
                               className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                                 current === c.value
                                   ? "bg-primary text-primary-foreground"
@@ -396,6 +427,29 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
     .map((k) => ({ k, reported: reco.reported[k], computed: reco.computed[k] ?? reco.computed[k === "stt" ? "sttCtt" : k === "stamp" ? "stampDuty" : k === "totalCharges" ? "total" : k] }))
     .filter((r) => r.reported != null);
 
+  /**
+   * The reconciliation that actually judges the cost engine.
+   *
+   * A scrip-aggregated P&L hides order counts, so brokerage genuinely cannot
+   * be derived and its Δ is structural, not an error. It also dominates the
+   * TOTAL Δ — leaving a headline like "-32%" that reads as "the charge engine
+   * is wrong" when every statutory component may be within a rupee. Taking
+   * brokerage out of both sides is the comparison worth showing.
+   */
+  const repTotal = reco.reported.totalCharges ?? reco.reported.total;
+  const compTotal = reco.computed.total;
+  const repBrok = reco.reported.brokerage;
+  const compBrok = reco.computed.brokerage;
+  const exBrokerage =
+    repTotal != null && compTotal != null && repBrok != null && compBrok != null && repTotal - repBrok > 0
+      ? (() => {
+          const reported = repTotal - repBrok;
+          const computed = compTotal - compBrok;
+          const delta = computed - reported;
+          return { reported, computed, delta, pct: (delta / reported) * 100 };
+        })()
+      : null;
+
   return (
     <Card>
       <CardHeader><CardTitle>Reconciliation (computed vs broker-reported)</CardTitle></CardHeader>
@@ -427,6 +481,16 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
             })}
           </tbody>
         </table>
+        {exBrokerage && (
+          <p className="mt-2 text-[11px]">
+            <b>Excluding brokerage, the statutory charges reconcile to{" "}
+              {Math.abs(exBrokerage.pct).toFixed(2)}%</b>{" "}
+            — {num(exBrokerage.computed, 0)} computed against {num(exBrokerage.reported, 0)} reported,
+            a gap of {num(Math.abs(exBrokerage.delta), 0)}. STT, exchange, SEBI, stamp, IPFT and GST
+            are all derivable from the file; brokerage is not, so it is the honest number to judge
+            the cost engine on.
+          </p>
+        )}
         <p className="mt-2 text-[11px] text-muted-foreground">
           Brokerage &amp; MTF interest can&apos;t be derived from scrip-aggregated P&amp;L (order counts / financing days are hidden); large Δ there is expected.
         </p>

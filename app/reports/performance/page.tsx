@@ -49,6 +49,24 @@ export default function PerformancePage() {
   const p = computePerformance(daily, capital, RISK_FREE);
   const curve = equityCurve(trades);
 
+  /**
+   * How much of the book these time-series metrics can actually see.
+   *
+   * `dailyPnl` buckets on the exit date, so a closed trade with no date lands
+   * on no day and is invisible to total return, CAGR, Sharpe, Sortino and max
+   * drawdown alike. An aggregated broker P&L statement (Dhan's, notably)
+   * carries no per-trade dates at all — the range lives only in the file
+   * header — so a book built from one can be largely absent here while the
+   * headline Net P&L on the dashboard counts every rupee.
+   *
+   * Two numbers that disagree by lakhs, with no explanation, is the exact
+   * failure this journal exists to avoid. So the gap is stated, not hidden.
+   */
+  const closedTrades = trades.filter((t) => !t.isOpen);
+  const undated = closedTrades.filter((t) => !t.sellDate);
+  const undatedPnl = undated.reduce((s, t) => s + t.netPnl, 0);
+  const datedPnl = closedTrades.reduce((s, t) => s + t.netPnl, 0) - undatedPnl;
+
   // T1.4 — stats for the shareable card (same KPI engine as the dashboard).
   const k = computeKpis(trades);
   const closedNets = trades.filter((t) => !t.isOpen).map((t) => t.netPnl);
@@ -138,8 +156,35 @@ export default function PerformancePage() {
           <Card><CardContent className="p-6 text-sm text-muted-foreground">No closed trades with dates yet — performance needs a realised P&L history.</CardContent></Card>
         ) : (
           <>
+            {/* Coverage, stated before the numbers rather than after. Every
+                metric below is a TIME SERIES, so it can only see trades that
+                carry a date — and the dashboard's Net P&L counts trades that
+                do not. Naming the gap is the difference between an honest
+                partial answer and a wrong one. */}
+            {undated.length > 0 && (
+              <Card className="border-warning/40">
+                <CardContent className="space-y-1.5 p-4 text-sm">
+                  <div className="font-medium text-warning">
+                    These metrics cover {closedTrades.length - undated.length} of your {closedTrades.length} closed trades.
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {undated.length} closed trades carry <b>no exit date</b>, so they belong to no day
+                    and cannot appear in a return series. Every figure on this page — total return,
+                    CAGR, Sharpe, Sortino, drawdown — is computed on{" "}
+                    <b className={cls(datedPnl)}>{inr(datedPnl, { decimals: 0 })}</b> of realised P&amp;L,
+                    while <b className={cls(undatedPnl)}>{inr(undatedPnl, { decimals: 0 })}</b> sits outside it.
+                    The dashboard&apos;s Net P&amp;L counts both, which is why the two will not agree.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Aggregated broker P&amp;L statements are the usual cause — Dhan&apos;s puts the
+                    date range in the file header only, never on the rows. A{" "}
+                    <b>tradebook / transaction import</b> carries per-trade dates and closes the gap.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
             <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              <KpiCard label="Total return" value={`${sign(p.totalReturnPct)}${p.totalReturnPct}%`} valueClassName={cls(p.totalReturnPct)} sub={`${inr(p.endEquity - p.startEquity, { decimals: 0 })} on ${inr(p.startEquity, { decimals: 0 })}`} />
+              <KpiCard label="Total return" value={`${sign(p.totalReturnPct)}${p.totalReturnPct}%`} valueClassName={cls(p.totalReturnPct)} sub={`${inr(p.endEquity - p.startEquity, { decimals: 0 })} on ${inr(p.startEquity, { decimals: 0 })}${undated.length > 0 ? " · dated only" : ""}`} />
               <KpiCard label="XIRR (money-weighted)" value={xirrPct == null ? "—" : `${sign(xirrPct)}${xirrPct}%`} valueClassName={cls(xirrPct)} sub={xirrDays >= 30 ? `over ${Math.round(xirrDays / 30)} mo · ledger-derived` : "<30d — unstable"} />
               <KpiCard label="TWR (time-weighted)" value={twr == null ? "—" : `${sign(twr.twrPct)}${twr.twrPct}%`} valueClassName={cls(twr?.twrPct ?? null)} sub={twr == null ? "no history" : twr.annualizedPct == null ? "cumulative · <30d" : `${sign(twr.annualizedPct)}${twr.annualizedPct}% annualised · flow-neutral`} />
               <KpiCard label="CAGR" value={p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={cls(p.cagrPct)} sub={p.cagrPct == null ? "<30d window" : "annualised"} />

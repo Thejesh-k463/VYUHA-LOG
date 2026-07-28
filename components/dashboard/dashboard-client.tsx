@@ -52,6 +52,23 @@ export function DashboardClient({
 
   const k = React.useMemo(() => computeKpis(filtered), [filtered]);
   const curve = React.useMemo(() => equityCurve(filtered), [filtered]);
+
+  /**
+   * P&L the equity curve cannot plot.
+   *
+   * The curve is built from exit dates; the Net P&L KPI above it counts every
+   * closed trade. A book imported from an aggregated broker P&L statement has
+   * no per-trade dates, so the two can differ by lakhs — and a curve that
+   * quietly ends far above the headline loss is worse than no curve at all.
+   */
+  const undatedNet = React.useMemo(
+    () => filtered.filter((t) => !t.isOpen && !t.sellDate).reduce((s, t) => s + t.netPnl, 0),
+    [filtered],
+  );
+  const undatedCount = React.useMemo(
+    () => filtered.filter((t) => !t.isOpen && !t.sellDate).length,
+    [filtered],
+  );
   const daily = React.useMemo(() => Object.fromEntries(dailyPnl(filtered)), [filtered]);
   const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
   const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
@@ -275,6 +292,14 @@ export function DashboardClient({
           </CardHeader>
           <CardContent>
             {curve.length > 0 ? <EquityCurve data={curve} /> : <Empty />}
+            {undatedCount > 0 && (
+              <p className="mt-2 text-xs text-warning">
+                {undatedCount} closed trades carry no exit date and cannot be plotted —{" "}
+                <b>{inr(undatedNet, { decimals: 0 })}</b> of realised P&amp;L sits outside this curve
+                but inside the Net P&amp;L above. Aggregated broker P&amp;L files have no per-trade
+                dates; a tradebook import does.
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
