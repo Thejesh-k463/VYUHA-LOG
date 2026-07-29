@@ -52,6 +52,8 @@ export default function BrokerComparePage() {
           }
         : null,
     actualCharges: t.chargesTotal,
+    buyDate: t.buyDate,
+    sellDate: t.sellDate,
   }));
 
   // Current broker = the one carrying the most trades.
@@ -79,7 +81,12 @@ export default function BrokerComparePage() {
               <KpiCard label="Charges actually recorded" value={inr(report.actualTotal, { decimals: 0 })} sub="across your brokers" />
               <KpiCard
                 label="Cheapest broker"
-                value={report.cheapest ? label(report.cheapest.broker) : "—"}
+                value={
+                  report.cheapest
+                    ? label(report.cheapest.broker) +
+                      (report.cheapest.plan !== "default" ? ` · ${report.cheapest.planLabel ?? report.cheapest.plan}` : "")
+                    : "—"
+                }
                 sub={report.cheapest ? `${inr(report.cheapest.total, { decimals: 0 })} all-in` : ""}
               />
               <KpiCard
@@ -103,20 +110,29 @@ export default function BrokerComparePage() {
                         <th className="px-2 py-2 text-right font-medium">GST</th>
                         <th className="px-2 py-2 text-right font-medium">DP</th>
                         <th className="px-2 py-2 text-right font-medium">MTF int.</th>
+                        <th className="px-2 py-2 text-right font-medium">Plan fee</th>
                         <th className="px-2.5 py-2 text-right font-medium">Total</th>
                         <th className="px-2.5 py-2 text-right font-medium">vs recorded</th>
                       </tr>
                     </thead>
                     <tbody>
                       {report.brokers.map((b) => {
-                        const isCheapest = report.cheapest?.broker === b.broker;
+                        const isCheapest = report.cheapest?.broker === b.broker && report.cheapest?.plan === b.plan;
                         return (
-                          <tr key={b.broker} className={`border-b border-border/40 ${isCheapest ? "bg-profit/5" : ""}`}>
+                          <tr key={`${b.broker}|${b.plan}`} className={`border-b border-border/40 ${isCheapest ? "bg-profit/5" : ""}`}>
                             <td className="px-2.5 py-2 font-medium">
                               <span className="inline-flex items-center gap-1.5">
                                 {label(b.broker)}
+                                {/* A paid plan is a different offer from the same
+                                    broker, so it gets its own row and its own
+                                    label — with the fee it costs. */}
+                                {b.plan !== "default" && (
+                                  <Badge variant="secondary" title={`₹${b.subscription} over ${b.months} month(s)`}>
+                                    {b.planLabel ?? b.plan} · paid
+                                  </Badge>
+                                )}
                                 {isCheapest ? <Badge variant="profit">cheapest</Badge> : null}
-                                {b.broker === currentBroker ? <Badge variant="secondary">current</Badge> : null}
+                                {b.broker === currentBroker && b.plan === "default" ? <Badge variant="secondary">current</Badge> : null}
                                 {b.missing > 0 ? <Badge variant="warning">{b.missing} unpriced</Badge> : null}
                               </span>
                             </td>
@@ -125,7 +141,7 @@ export default function BrokerComparePage() {
                                 option in the table when it is simply absent.
                                 Dashes say "no answer", which is the truth. */}
                             {b.covered === 0 ? (
-                              <td className="px-2 py-2 text-center text-muted-foreground" colSpan={7}>
+                              <td className="px-2 py-2 text-center text-muted-foreground" colSpan={8}>
                                 no rates configured — nothing to compare
                               </td>
                             ) : (
@@ -135,6 +151,14 @@ export default function BrokerComparePage() {
                                 <td className="px-2 py-2 text-right tabular-nums">{inr(b.gst, { decimals: 0 })}</td>
                                 <td className="px-2 py-2 text-right tabular-nums">{inr(b.dp, { decimals: 0 })}</td>
                                 <td className="px-2 py-2 text-right tabular-nums">{inr(b.mtfInterest, { decimals: 0 })}</td>
+                                {/* The fee belongs in the table, not a tooltip:
+                                    it is the whole reason a paid plan is a
+                                    decision rather than a free upgrade. */}
+                                <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">
+                                  {b.subscription > 0
+                                    ? <span title={`₹${b.subscription / b.months}/month × ${b.months}`}>{inr(b.subscription, { decimals: 0 })}</span>
+                                    : "—"}
+                                </td>
                                 <td className="px-2.5 py-2 text-right font-semibold tabular-nums">
                                   {inr(b.total, { decimals: 0 })}
                                   {!b.complete && <span className="ml-1 text-warning" title="Partial — covers only the trades this broker can price">*</span>}
@@ -164,7 +188,15 @@ export default function BrokerComparePage() {
               Each broker total re-prices the identical trades (turnover, quantities and order counts) on that broker&apos;s
               rate card from charge config — brokerage, DP and MTF interest are the real differentiators; STT/exchange/SEBI/stamp
               are statutory and broker-invariant. &ldquo;vs recorded&rdquo; compares to the charges already stored on your
-              trades. Edit any rate in Settings → charge config to model a different plan.
+              trades.
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              <b>Free and paid plans are listed separately.</b> Most accounts are on a broker&apos;s free tier, so that is
+              the row without a badge; a subscription plan appears as its own row because it is a different offer, and its
+              monthly fee is charged over the {report.brokers[0]?.months ?? 1} month
+              {(report.brokers[0]?.months ?? 1) === 1 ? "" : "s"} your compared trades span and included in the total.
+              Comparing a paid plan on brokerage alone would always make it look cheaper than it is. Edit any rate in
+              Settings → charge config; a row you edit is yours and later app updates will not overwrite it.
             </p>
           </>
         )}

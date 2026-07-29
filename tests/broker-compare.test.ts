@@ -7,6 +7,7 @@ import type { ChargeRates } from "@/lib/engine/types";
 // Minimal rate factory for deterministic assertions.
 const rate = (broker: string, over: Partial<ChargeRates>): ChargeRates => ({
   broker: broker as ChargeRates["broker"],
+  plan: "default", planLabel: null, subscriptionMonthly: 0,
   segment: "eq_delivery",
   exchange: "NSE",
   brokerageFlat: null, brokeragePct: 0, brokerageCap: null, brokerageFloor: 0,
@@ -18,8 +19,8 @@ const rate = (broker: string, over: Partial<ChargeRates>): ChargeRates => ({
 
 describe("compareBrokers — deterministic", () => {
   const map = new Map<string, ChargeRates>([
-    ["A|eq_delivery|NSE", rate("A", { brokeragePct: 0 })], // zero brokerage
-    ["B|eq_delivery|NSE", rate("B", { brokerageFlat: 20 })], // ₹20/order
+    ["A|default|eq_delivery|NSE", rate("A", { brokeragePct: 0 })], // zero brokerage
+    ["B|default|eq_delivery|NSE", rate("B", { brokerageFlat: 20 })], // ₹20/order
     // "C" intentionally has no rate row.
   ]);
   const trades: CompareTrade[] = [
@@ -59,8 +60,11 @@ describe("compareBrokers — against the real seed rate cards", () => {
   ];
   const r = compareBrokers(trades, map, [...BROKERS], "dhan");
 
-  it("returns one cost row per broker with positive totals", () => {
-    expect(r.brokers.length).toBe(BROKERS.length);
+  it("returns one cost row per broker PLAN with positive totals", () => {
+    // One row per offer, not per broker: Kotak Neo sells a paid tier alongside
+    // its free one, and the whole point is to see them side by side.
+    expect(r.brokers.length).toBe(BROKERS.length + 1);
+    expect(r.brokers.filter((b) => b.plan !== "default").map((b) => b.broker)).toEqual(["kotakneo"]);
     expect(r.cheapest).not.toBeNull();
     for (const b of r.brokers) {
       expect(b.covered).toBe(2);
@@ -71,5 +75,61 @@ describe("compareBrokers — against the real seed rate cards", () => {
   it("cheapest total ≤ every other broker total", () => {
     const min = Math.min(...r.brokers.map((b) => b.total));
     expect(r.cheapest!.total).toBe(min);
+  });
+});
+
+describe("a paid plan carries its subscription into the total", () => {
+  const map = seedRatesMap();
+  // Two months apart, so the ₹249/month fee is charged twice.
+  const trades: CompareTrade[] = [
+    { segment: "eq_delivery", exchange: "NSE", buyValue: 200000, sellValue: 205000, buyQty: 50, sellQty: 50, buyOrderCount: 1, sellOrderCount: 1, actualCharges: 400, buyDate: "2026-05-04", sellDate: "2026-05-06" },
+    { segment: "eq_delivery", exchange: "NSE", buyValue: 100000, sellValue: 104000, buyQty: 25, sellQty: 25, buyOrderCount: 1, sellOrderCount: 1, actualCharges: 250, buyDate: "2026-07-02", sellDate: "2026-07-04" },
+  ];
+  const r = compareBrokers(trades, map, [...BROKERS]);
+  const pro = r.brokers.find((b) => b.plan === "pro")!;
+  const free = r.brokers.find((b) => b.broker === "kotakneo" && b.plan === "default")!;
+
+  it("amortises the monthly fee over the window the trades span", () => {
+    expect(pro.months).toBe(2);
+    expect(pro.subscription).toBe(498);
+  });
+
+  it("adds the fee to the total rather than reporting brokerage alone", () => {
+    // On ~₹6L of delivery turnover the halved brokerage saves more than the
+    // ₹498 of fees, so Pro really is the cheaper offer here — but only because
+    // the fee was counted and still lost. That is the comparison being right,
+    // not the plan being flattered.
+    expect(pro.brokerage).toBeLessThan(free.brokerage);
+    expect(pro.total).toBeLessThan(free.total);
+    expect(pro.total - pro.subscription).toBeLessThan(pro.total);
+  });
+
+  it("lets the fee OUTWEIGH the saving on a small book", () => {
+    // The case that matters for most users: trade little, and a ₹249/month
+    // plan costs far more than the brokerage it saves. Comparing brokerage
+    // alone would have recommended it anyway.
+    const small: CompareTrade[] = [
+      { segment: "eq_delivery", exchange: "NSE", buyValue: 20000, sellValue: 20500, buyQty: 10, sellQty: 10, buyOrderCount: 1, sellOrderCount: 1, actualCharges: 40, buyDate: "2026-05-04", sellDate: "2026-05-06" },
+    ];
+    const s = compareBrokers(small, map, ["kotakneo"]);
+    const sPro = s.brokers.find((b) => b.plan === "pro")!;
+    const sFree = s.brokers.find((b) => b.plan === "default")!;
+    expect(sPro.brokerage).toBeLessThan(sFree.brokerage);
+    expect(sPro.total).toBeGreaterThan(sFree.total);
+    expect(s.cheapest!.plan).toBe("default");
+  });
+
+  it("charges a free plan nothing", () => {
+    for (const b of r.brokers.filter((x) => x.plan === "default")) {
+      expect(b.subscription, b.broker).toBe(0);
+    }
+  });
+
+  it("assumes ONE month when the trades carry no dates", () => {
+    // The smallest honest charge rather than none — and it is the assumption
+    // that flatters the paid plan least.
+    const undated = trades.map(({ buyDate: _b, sellDate: _s, ...t }) => t);
+    const u = compareBrokers(undated, map, ["kotakneo"]);
+    expect(u.brokers.find((b) => b.plan === "pro")!.subscription).toBe(249);
   });
 });

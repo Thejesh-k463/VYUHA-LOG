@@ -1,7 +1,8 @@
 // Sidecar entrypoint for the Tauri desktop app.
 // Runs under plain Node (no tsx). It:
 //   1. resolves the per-user data dir (passed by Tauri via VYUHA_DATA_DIR),
-//   2. seeds the SQLite file from the bundled template on first run,
+//   2. seeds the SQLite file from the bundled template on first run, and
+//      refreshes its rate cards on every launch (new brokers / corrected rates),
 //   3. applies any pending Drizzle migrations (handles schema upgrades on update),
 //   4. starts the Next.js standalone server bound to localhost.
 import fs from "node:fs";
@@ -45,10 +46,66 @@ if (fs.existsSync(migrationsDir)) {
     const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
     const sqlite = new Database(dbPath);
     migrate(drizzle(sqlite), { migrationsFolder: migrationsDir });
+    refreshRateCards(sqlite, seedTemplate);
     sqlite.close();
     console.log("[vyuha] migrations applied");
   } catch (e) {
     console.error("[vyuha] migration step failed:", e?.message ?? e);
+  }
+}
+
+/**
+ * Bring charge_config up to date with the rate cards this build ships.
+ *
+ * Migrations already ran on every launch, but SEEDING did not: it happened once,
+ * when the database file was first created. So a broker added in a later release,
+ * or a rate corrected after a broker revised its card, never reached anyone who
+ * had already installed Vyuha — the app kept quoting figures from the build the
+ * user first ran, and the new brokers showed as "unpriced" forever.
+ *
+ * Rows the user edited are pinned by `user_edited` and never touched: their
+ * number came from their own contract note and outranks ours.
+ *
+ * The template is the same seed the TypeScript path writes (build-desktop.mjs
+ * generates it by running that seed), so both routes agree by construction.
+ */
+function refreshRateCards(sqlite, templatePath) {
+  if (!fs.existsSync(templatePath)) return;
+  const KEY = ["broker", "plan", "segment", "exchange"];
+  const cols = sqlite
+    .prepare("PRAGMA table_info(charge_config)")
+    .all()
+    .map((c) => c.name);
+  // Only columns BOTH databases have — an older template must not break launch.
+  sqlite.prepare("ATTACH ? AS seedtpl").run(templatePath);
+  try {
+    const tplCols = new Set(
+      sqlite.prepare("PRAGMA seedtpl.table_info(charge_config)").all().map((c) => c.name),
+    );
+    const shared = cols.filter((c) => tplCols.has(c) && c !== "id");
+    if (!KEY.every((k) => shared.includes(k))) return;
+    const values = shared.filter((c) => !KEY.includes(c) && c !== "user_edited" && c !== "updated_at");
+    const list = shared.map((c) => `"${c}"`).join(", ");
+    const match = KEY.map((k) => `t."${k}" = s."${k}"`).join(" AND ");
+
+    const added = sqlite
+      .prepare(`INSERT OR IGNORE INTO charge_config (${list}) SELECT ${list} FROM seedtpl.charge_config`)
+      .run().changes;
+
+    const set = values.map((c) => `"${c}" = (SELECT s."${c}" FROM seedtpl.charge_config s WHERE ${match})`);
+    // `IS NOT` is SQLite's null-safe comparison, so an unchanged row with NULLs
+    // in it does not count as a difference and get rewritten every launch.
+    const differs = values.map((c) => `t."${c}" IS NOT s."${c}"`).join(" OR ");
+    const refreshed = sqlite
+      .prepare(
+        `UPDATE charge_config AS t SET ${set.join(", ")}
+         WHERE t.user_edited = 0
+           AND EXISTS (SELECT 1 FROM seedtpl.charge_config s WHERE ${match} AND (${differs}))`,
+      )
+      .run().changes;
+    console.log(`[vyuha] rate cards: ${added} added, ${refreshed} refreshed (user edits kept)`);
+  } finally {
+    sqlite.prepare("DETACH seedtpl").run();
   }
 }
 

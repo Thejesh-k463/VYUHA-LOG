@@ -72,6 +72,8 @@ export async function updateChargeRate(_prev: EditorState, formData: FormData): 
         gstPct: numOrNull(row.gstPct) ?? 0.18,
         dpCharge: numOrNull(row.dpCharge) ?? 0,
         mtfInterestAnnual: numOrNull(row.mtfInterestAnnual) ?? 0,
+        // Pins the row against the seed refresh — see chargeConfig.userEdited.
+        userEdited: true,
         updatedAt: sql`(datetime('now'))`,
       })
       .where(eq(chargeConfig.id, id))

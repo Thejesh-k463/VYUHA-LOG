@@ -142,7 +142,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 
 - **Trade calculator**: exact round-trip charges, net-at-target, net-at-SL, charge-adjusted reward:risk and breakeven — equity, F&O, or MTF, projected across N trades.
 - **Charges & MTF leak report**: where your gross P&L actually goes.
-- **Broker cost comparison**: your entire history re-priced on every broker's rate card — see who'd have been cheapest.
+- **Broker cost comparison**: your entire history re-priced on every broker's rate card — see who'd have been cheapest. **Free and paid plans are listed separately** (Kotak Neo's ₹249/month Trade Free Pro sits beside its free tier), with the subscription amortised over the months your trades span and counted in the total — a paid plan judged on brokerage alone always looks cheaper than it is.
 
 ### 📈 Edge analytics that don't flatter you
 - Expectancy, win rate, avg R by **setup tag** and **segment**.

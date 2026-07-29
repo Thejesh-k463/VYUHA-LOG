@@ -4,7 +4,7 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
-## Unreleased — three more brokers, and a comparison that stops flattering
+## v2.96.0 — free plan vs paid plan, side by side (and rate cards that finally reach you)
 
 ### Kotak Neo, Paytm Money and Sahi
 
@@ -72,6 +72,70 @@ Kotak delivery round trip gives brokerage ₹2,000, STT ₹1,000, stamp ₹75, D
 ₹200 — each matching its formula exactly.
 
 873 unit tests total.
+
+### Free and paid plans are now separate offers
+
+Most traders are on no plan at all. Vyuha was pricing every broker as though
+everyone subscribed — Kotak Neo's 9.69% MTF and cheaper delivery come with
+**Trade Free Pro at ₹249/month**, and the free tier gets neither. Quoting the
+subscriber rate to a non-subscriber recommends a discount they will not receive.
+
+`charge_config` now carries a **plan** (`default` is the free tier every broker
+has), so a paid tier is stored as its own complete rate card beside the free
+one, and both appear as their own rows in Broker Costs:
+
+| | Delivery | MTF interest | Fee |
+|---|---|---|---|
+| Kotak Neo — free | 0.20% | **not published** | — |
+| Kotak Neo — Trade Free Pro | 0.10% | 9.69% | ₹249/month |
+
+**The subscription is in the total, not a footnote.** It is amortised over the
+months the compared trades actually span, because a paid plan judged on
+brokerage alone always looks cheaper than it is — which is precisely the
+mistake this report exists to prevent. On a large book Pro wins even after its
+fee; on a small one the fee costs more than it saves, and the table now says so.
+
+Angel One, Upstox, Dhan, Zerodha, Groww, Paytm Money and Sahi each run a single
+flat structure and sell no tier. Inventing one for them would be a claim about
+their pricing, not a gap in ours.
+
+### Three rate cards were wrong
+
+Checked against each broker's live pricing page:
+
+- **Angel One delivery is FREE**, not "₹20 or 0.1%". It had been overcharged
+  on every delivery trade in the comparison.
+- **Angel One MTF is 18%** a year, not 14.25%.
+- **Upstox MTF is 18.25%** (₹20/day per ₹40,000 slab), not 14.95%.
+
+The two MTF figures had been unsourced estimates, and both were understated by
+about a quarter — the direction that makes margin funding look cheaper.
+
+### New rate cards never reached an installed copy — the real bug
+
+Migrations ran on every launch, but **seeding ran once**, when the database file
+was first created. So every broker added and every rate corrected after a user's
+first launch stayed on the developer's machine. Kotak Neo, Paytm Money and Sahi
+would have shipped and still shown as *unpriced* on your install; the Angel One
+and Upstox corrections above would never have arrived.
+
+Rate cards are now refreshed on every launch — and a row **you** edited is
+pinned by `user_edited` and never overwritten, because your figure came from
+your own contract note and outranks ours.
+
+### Also fixed
+
+- The **trade calculator's broker list was hard-coded to three brokers** —
+  Angel One, Upstox, Kotak Neo, Paytm Money and Sahi were invisible there. It
+  is now driven by the rate cards themselves, so it cannot go stale again. When
+  the selected broker sells a paid tier, a plan picker appears beside it.
+- A legacy unique index on `(broker, segment, exchange)` survived the plan
+  migration and silently swallowed every paid-plan row inserted against it.
+- Margin defaults existed for only five brokers; the three new ones fell through
+  to a global default without saying so.
+
+885 unit tests.
+
 
 ## v2.95.0
 **An IPO allotment is no longer a dead holding.**

@@ -8,6 +8,9 @@ import type { Broker, Exchange, Segment } from "../domain/constants";
 
 type ChargeSeedRow = {
   broker: Broker;
+  plan: string;
+  planLabel: string | null;
+  subscriptionMonthly: number;
   segment: Segment;
   exchange: Exchange;
   brokerageFlat: number | null;
@@ -129,11 +132,13 @@ function brokerageFor(
     }
   }
 
-  // Angel One — ₹20 or 0.1% (whichever lower) on delivery; flat ₹20 elsewhere.
+  // Angel One — angelone.in: equity DELIVERY IS FREE (₹0); flat ₹20 on
+  // intraday, F&O, currency and commodity. Previously seeded as "₹20 or 0.1%",
+  // which overstated every delivery trade.
   if (broker === "angelone") {
     switch (segment) {
       case "eq_delivery":
-        return { flat: null, pct: 0.001, cap: 20, floor: 0 };
+        return ZERO;
       case "eq_mtf":
       case "eq_intraday":
       case "future":
@@ -307,24 +312,31 @@ function mtfFor(broker: Broker): {
       };
     case "angelone":
       return {
-        mtfInterestAnnual: 0.1425,
+        // angelone.in: "interest starts from 18% p.a." — was seeded at 14.25%,
+        // which understated financing on every MTF position.
+        mtfInterestAnnual: 0.18,
         mtfTiers: null,
         pledgeCharge: 20,
         unpledgeCharge: 20,
       };
     case "upstox":
       return {
-        mtfInterestAnnual: 0.1495,
+        // Upstox bills ₹20/day per ₹40,000 slab = 0.05%/day ≈ 18.25% p.a.
+        // Was seeded at 14.95%, an unsourced estimate.
+        mtfInterestAnnual: 0.1825,
         mtfTiers: null,
         pledgeCharge: 20,
         unpledgeCharge: 20,
       };
-    // Kotak Neo publishes 9.69% p.a., but ONLY on the Trade Free Pro plan
-    // (₹249/month). The free plan quotes no MTF rate at all, so this figure is
-    // the best-case and a Pro subscriber's; the monthly fee is not modelled.
+    // Kotak Neo publishes 9.69% p.a., but ONLY on Trade Free Pro (₹249/month).
+    // The free plan quotes no MTF rate at all — so the free row says so, and
+    // the 9.69% lives on the Pro row where it was actually offered. Carrying
+    // the Pro rate on the free plan advertised a discount nobody unsubscribed
+    // would receive, in the very report meant to compare cost.
     case "kotakneo":
       return {
-        mtfInterestAnnual: 0.0969,
+        mtfInterestAnnual: 0,
+        mtfRateUnknown: true,
         mtfTiers: null,
         pledgeCharge: 20,
         unpledgeCharge: 20,
@@ -372,6 +384,44 @@ const COMBOS: { segment: Segment; exchanges: Exchange[] }[] = [
   { segment: "commodity_option", exchanges: ["MCX"] },
 ];
 
+/**
+ * Paid plans, in addition to the free "default" every broker has.
+ *
+ * Only Kotak Neo sells one among the brokers here — Angel One, Upstox, Dhan,
+ * Zerodha, Groww, Paytm and Sahi all run a single flat structure. Each entry
+ * lists ONLY the segments the paid plan actually changes; everything else
+ * falls through to the broker's default rates.
+ *
+ * The monthly fee is carried on the row so the comparison can amortise it.
+ * A paid plan judged on brokerage alone would always look cheaper than it is —
+ * the fee is the entire reason it is a decision.
+ */
+interface PaidPlan {
+  plan: string;
+  label: string;
+  monthly: number;
+  /** Segment overrides; anything absent uses the default plan's rate. */
+  brokerage?: Partial<Record<Segment, { flat: number | null; pct: number; cap: number | null; floor: number }>>;
+  mtfInterestAnnual?: number;
+}
+
+const PAID_PLANS: Partial<Record<Broker, PaidPlan[]>> = {
+  // kotakneo.com/pricing — "Trade Free Pro", ₹249/month. It buys a cheaper
+  // delivery rate (0.10% vs 0.20%) and MTF at 9.69%.
+  kotakneo: [
+    {
+      plan: "pro",
+      label: "Trade Free Pro",
+      monthly: 249,
+      brokerage: {
+        eq_delivery: { flat: null, pct: 0.001, cap: null, floor: 0 },
+        eq_mtf: { flat: null, pct: 0.001, cap: null, floor: 0 },
+      },
+      mtfInterestAnnual: 0.0969,
+    },
+  ],
+};
+
 const BROKER_LIST: Broker[] = [
   "dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi",
 ];
@@ -380,20 +430,33 @@ const BROKER_LIST: Broker[] = [
 
 export function buildChargeConfigSeed(): ChargeSeedRow[] {
   const rows: ChargeSeedRow[] = [];
-  for (const broker of BROKER_LIST) {
+
+  /** Emit one broker's full rate card under a given plan. */
+  const emit = (broker: Broker, plan: PaidPlan | null) => {
     for (const { segment, exchanges } of COMBOS) {
       for (const exchange of exchanges) {
-        const b = brokerageFor(broker, segment);
+        // A paid plan overrides only what it actually changes; everything
+        // else falls through to the broker's standard rates.
+        const b = plan?.brokerage?.[segment] ?? brokerageFor(broker, segment);
         const stt = sttFor(segment);
         const isDeliveryLike = segment === "eq_delivery" || segment === "eq_mtf";
         const isMtf = segment === "eq_mtf";
-        const dp = isDeliveryLike ? dpFor(broker) : { dpCharge: 0, dpPct: 0, dpGstApplicable: false, dpMinValue: 0 };
-        const mtf = isMtf
+        const dp = isDeliveryLike
+          ? dpFor(broker)
+          : { dpCharge: 0, dpPct: 0, dpGstApplicable: false, dpMinValue: 0 };
+        const baseMtf = isMtf
           ? mtfFor(broker)
           : { mtfInterestAnnual: 0, mtfRateUnknown: false, mtfTiers: null, pledgeCharge: 0, unpledgeCharge: 0 };
+        const mtf =
+          isMtf && plan?.mtfInterestAnnual != null
+            ? { ...baseMtf, mtfInterestAnnual: plan.mtfInterestAnnual, mtfTiers: null, mtfRateUnknown: false }
+            : baseMtf;
 
         rows.push({
           broker,
+          plan: plan?.plan ?? "default",
+          planLabel: plan?.label ?? null,
+          subscriptionMonthly: plan?.monthly ?? 0,
           segment,
           exchange,
           brokerageFlat: b.flat,
@@ -419,6 +482,12 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         });
       }
     }
+  };
+
+  for (const broker of BROKER_LIST) {
+    emit(broker, null);
+    for (const plan of PAID_PLANS[broker] ?? []) emit(broker, plan);
   }
   return rows;
 }
+

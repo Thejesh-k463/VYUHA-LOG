@@ -79,6 +79,8 @@ export async function POST(req: Request) {
         gstPct: numOrNull(body.gstPct) ?? 0.18,
         dpCharge: numOrNull(body.dpCharge) ?? 0,
         mtfInterestAnnual: numOrNull(body.mtfInterestAnnual) ?? 0,
+        // Pins the row against the seed refresh — see chargeConfig.userEdited.
+        userEdited: true,
         updatedAt: now,
       })
       .where(eq(chargeConfig.id, id))

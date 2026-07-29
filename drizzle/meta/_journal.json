@@ -218,6 +218,27 @@
       "when": 1785510000000,
       "tag": "0030_mtf-rate-unknown",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1785600000000,
+      "tag": "0031_broker-plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1785690000000,
+      "tag": "0032_drop-legacy-charge-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1785690600000,
+      "tag": "0033_charge-user-edited",
+      "breakpoints": true
     }
   ]
 }

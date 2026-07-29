@@ -293,6 +293,24 @@ export const chargeConfig = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     broker: text("broker").notNull(),
+    /**
+     * Which PRICING PLAN this row describes.
+     *
+     * "default" is the free/standard plan every account starts on, and is what
+     * most traders are on. Brokers that sell a paid tier (Kotak Neo's Pro plan
+     * at ₹249/month) get a second set of rows, so the comparison can show both
+     * side by side and answer the question a trader actually has: would paying
+     * for the upgrade have earned its fee back on MY book?
+     */
+    plan: text("plan").notNull().default("default"),
+    /** Human label for the plan, e.g. "Trade Free Pro". */
+    planLabel: text("plan_label"),
+    /**
+     * Monthly subscription for this plan, in rupees. Zero for a free plan.
+     * A paid plan compared on brokerage alone would always look cheaper than
+     * it is — the fee is the whole reason it is a choice.
+     */
+    subscriptionMonthly: real("subscription_monthly").notNull().default(0),
     segment: text("segment").notNull(),
     exchange: text("exchange").notNull(),
 
@@ -345,10 +363,21 @@ export const chargeConfig = sqliteTable(
     pledgeCharge: real("pledge_charge").notNull().default(0),
     unpledgeCharge: real("unpledge_charge").notNull().default(0),
 
+    /**
+     * True once the user has edited this row by hand.
+     *
+     * The seed refreshes rate rows on every launch so a published correction
+     * (a revised MTF rate, a new plan) reaches installed copies — but it skips
+     * rows carrying this flag, because a user's own figure outranks ours.
+     */
+    userEdited: integer("user_edited", { mode: "boolean" }).notNull().default(false),
+
     updatedAt: text("updated_at").notNull().default(now),
   },
   (t) => [
-    uniqueIndex("charge_config_key_uq").on(t.broker, t.segment, t.exchange),
+    // Plan is part of the key: a paid tier shares broker+segment+exchange with
+    // the free one and must still be storable alongside it.
+    uniqueIndex("charge_config_uq").on(t.broker, t.plan, t.segment, t.exchange),
   ],
 );
 

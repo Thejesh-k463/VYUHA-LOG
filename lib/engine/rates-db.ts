@@ -5,8 +5,8 @@ import { chargeConfig } from "@/lib/db/schema";
 import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
 import type { ChargeRates } from "./types";
 
-function key(broker: string, segment: string, exchange: string) {
-  return `${broker}|${segment}|${exchange}`;
+function key(broker: string, plan: string, segment: string, exchange: string) {
+  return `${broker}|${plan}|${segment}|${exchange}`;
 }
 
 /** Load all charge_config rows into an in-memory lookup (one query per import). */
@@ -14,8 +14,11 @@ export const loadRatesMap = cache((): Map<string, ChargeRates> => {
   const rows = db.select().from(chargeConfig).all();
   const map = new Map<string, ChargeRates>();
   for (const r of rows) {
-    map.set(key(r.broker, r.segment, r.exchange), {
+    map.set(key(r.broker, r.plan ?? "default", r.segment, r.exchange), {
       broker: r.broker as Broker,
+      plan: r.plan ?? "default",
+      planLabel: r.planLabel ?? null,
+      subscriptionMonthly: r.subscriptionMonthly ?? 0,
       segment: r.segment as Segment,
       exchange: r.exchange as Exchange,
       brokerageFlat: r.brokerageFlat,

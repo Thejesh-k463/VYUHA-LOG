@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { computeTradeCalc, type Side } from "@/lib/analytics/trade-calc";
 import type { ChargeRates } from "@/lib/engine/types";
+import { BROKERS, BROKER_LABELS } from "@/lib/domain/constants";
 import { formatPaise } from "@/lib/money";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { AlertCircle } from "lucide-react";
@@ -41,6 +42,9 @@ export function TradeCalculator({
 }) {
   const [mode, setMode] = useState<"equity" | "fno">("equity");
   const [broker, setBroker] = useState("dhan");
+  // Most accounts are on no plan at all, so "default" — the free tier — is
+  // where the calculator starts, whatever paid tiers a broker also sells.
+  const [plan, setPlan] = useState("default");
   const mtfOwnMarginPct = mtfMarginByBroker[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   const [product, setProduct] = useState("eq_delivery");
   const [instrument, setInstrument] = useState("index_option");
@@ -60,7 +64,19 @@ export function TradeCalculator({
   const segment = mode === "equity" ? product : instrument;
   const effExchange = segment.startsWith("commodity") ? "MCX" : exchange;
   const qty = mode === "equity" ? num(shares) : num(lots) * num(lotSize);
-  const rateCard = rates[`${broker}|${segment}|${effExchange}`];
+  /** The plans this broker actually sells, free tier first. */
+  const brokerPlans = useMemo(() => {
+    const seen = new Map<string, string | null>();
+    for (const [k, r] of Object.entries(rates)) {
+      if (k.startsWith(`${broker}|`) && !seen.has(r.plan)) seen.set(r.plan, r.planLabel);
+    }
+    return [...seen.entries()].sort((a) => (a[0] === "default" ? -1 : 1));
+  }, [rates, broker]);
+  const effPlan = brokerPlans.some(([p]) => p === plan) ? plan : "default";
+  /** Monthly fee of one of this broker's plans, for the picker's label. */
+  const subscriptionOf = (p: string) =>
+    rates[`${broker}|${p}|eq_delivery|NSE`]?.subscriptionMonthly ?? 0;
+  const rateCard = rates[`${broker}|${effPlan}|${segment}|${effExchange}`];
 
   const result = useMemo(() => {
     if (!rateCard || qty <= 0 || num(entry) <= 0) return null;
@@ -117,12 +133,25 @@ export function TradeCalculator({
             ))}
           </div>
 
+          {brokerPlans.length > 1 && (
+            <Field label="Plan">
+              <select value={effPlan} onChange={(e) => setPlan(e.target.value)} className={selectCls}>
+                {brokerPlans.map(([p, lbl]) => (
+                  <option key={p} value={p}>
+                    {p === "default" ? "Free plan" : (lbl ?? p)}
+                    {subscriptionOf(p) > 0 ? ` — ₹${subscriptionOf(p)}/month` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <Field label="Broker">
+              {/* Driven by the rate cards themselves — a hard-coded list went
+                  stale the moment a broker was added, silently hiding it. */}
               <select value={broker} onChange={(e) => setBroker(e.target.value)} className={selectCls}>
-                <option value="dhan">Dhan</option>
-                <option value="zerodha">Zerodha</option>
-                <option value="groww">Groww</option>
+                {BROKERS.map((b) => <option key={b} value={b}>{BROKER_LABELS[b]}</option>)}
               </select>
             </Field>
             <Field label={mode === "equity" ? "Product" : "Instrument"}>

@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import { db } from "./index";
 import { capitalSnapshots, chargeConfig, marginConfig, riskConfig, settings } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
@@ -10,6 +11,7 @@ export interface SeedReport {
   settings: "seeded" | "kept";
   capitalSnapshots: "seeded" | "kept";
   chargeAdded: number;
+  chargeRefreshed: number;
   riskAdded: number;
 }
 
@@ -19,6 +21,7 @@ export function seedDatabase(log = false): SeedReport {
     settings: "kept",
     capitalSnapshots: "kept",
     chargeAdded: 0,
+    chargeRefreshed: 0,
     riskAdded: 0,
   };
   const say = (m: string) => log && console.log(m);
@@ -56,10 +59,52 @@ export function seedDatabase(log = false): SeedReport {
     say("• capital_snapshots already present — left untouched");
   }
 
+  /*
+   * Rate rows are both ADDED and REFRESHED here.
+   *
+   * Adding alone was the bug: the seed ran once, on a fresh database, so every
+   * broker and every corrected rate published after that never reached an
+   * install — the app kept quoting figures it shipped with a year earlier.
+   *
+   * Refreshing skips any row the user edited (`userEdited`). Their number is
+   * the one they verified against their own contract note, and overwriting it
+   * on an app update would be the app silently disagreeing with the broker.
+   */
   for (const row of buildChargeConfigSeed()) {
-    report.chargeAdded += db.insert(chargeConfig).values(row).onConflictDoNothing().run().changes;
+    const inserted = db.insert(chargeConfig).values(row).onConflictDoNothing().run().changes;
+    report.chargeAdded += inserted;
+    if (inserted > 0) continue;
+
+    const existing = db
+      .select()
+      .from(chargeConfig)
+      .where(
+        and(
+          eq(chargeConfig.broker, row.broker),
+          eq(chargeConfig.plan, row.plan),
+          eq(chargeConfig.segment, row.segment),
+          eq(chargeConfig.exchange, row.exchange),
+        ),
+      )
+      .get();
+    if (!existing || existing.userEdited) continue;
+
+    const differs = (Object.keys(row) as (keyof typeof row)[]).some((k) => {
+      const a = row[k];
+      const b = (existing as Record<string, unknown>)[k];
+      return typeof a === "object" && a !== null
+        ? JSON.stringify(a) !== JSON.stringify(b)
+        : a !== b;
+    });
+    if (!differs) continue;
+
+    db.update(chargeConfig).set(row).where(eq(chargeConfig.id, existing.id)).run();
+    report.chargeRefreshed += 1;
   }
-  say(`✓ charge_config: ${report.chargeAdded} added`);
+  say(
+    `✓ charge_config: ${report.chargeAdded} added, ${report.chargeRefreshed} refreshed` +
+      ` (user-edited rows left untouched)`,
+  );
 
   const riskRows = [
     { scope: "global", key: "", perTradeMaxLoss: 9500, monthlyTargetBase: 425000, monthlyTargetStretch: 510000 },
@@ -85,7 +130,12 @@ export function seedDatabase(log = false): SeedReport {
   // groww.in/blog/mtf-interest-rates). Other segments share one ballpark across
   // brokers for now (no strong per-broker research yet) but the schema
   // supports differentiating any of them later via the same editor.
-  const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = { dhan: 25, zerodha: 20, groww: 25, angelone: 25, upstox: 25 };
+  const EQ_MTF_OWN_MARGIN_BY_BROKER: Record<string, number> = {
+    dhan: 25, zerodha: 20, groww: 25, angelone: 25, upstox: 25,
+    // kotakneo.com/pricing "up to 4X", paytmmoney 4x, sahi 4x — same ballpark,
+    // and without a row these three fell back to the global default silently.
+    kotakneo: 25, paytm: 25, sahi: 25,
+  };
   const SEGMENT_MARGIN_DEFAULTS = [
     { segment: "eq_delivery", marginPct: 100, note: "full value deployed" },
     { segment: "eq_intraday", marginPct: 20, note: "5x intraday leverage" },

@@ -21,10 +21,20 @@ export interface CompareTrade {
   sellOrderCount: number;
   mtf?: { fundedAmount: number; daysHeld: number; pledgeScrips?: number } | null;
   actualCharges: number; // chargesTotal actually recorded for this trade
+  /** Dates, used ONLY to work out how many months a subscription would cover. */
+  buyDate?: string | null;
+  sellDate?: string | null;
 }
 
 export interface BrokerCost {
   broker: string;
+  /** "default" for the free tier; a paid plan gets its own row. */
+  plan: string;
+  planLabel: string | null;
+  /** Subscription over the compared window, amortised from the monthly fee. */
+  subscription: number;
+  /** Months the compared trades span — what the subscription is charged for. */
+  months: number;
   total: number;
   brokerage: number;
   statutory: number; // STT/CTT + exchange + SEBI + stamp + IPFT
@@ -64,12 +74,51 @@ export function compareBrokers(
 ): BrokerCompareReport {
   const actualTotal = r2(trades.reduce((s, t) => s + t.actualCharges, 0));
 
-  const costs: BrokerCost[] = brokers.map((broker) => {
+  /**
+   * How long the compared book spans, in months — what a monthly subscription
+   * would actually have been charged for.
+   *
+   * A paid plan judged on brokerage alone always looks cheaper than it is, so
+   * the fee has to be in the total or the comparison is an advertisement. With
+   * no dates to measure, one month is assumed: it is the smallest honest
+   * charge, and understating the fee is the direction that flatters the paid
+   * plan, so the UI says which assumption was used.
+   */
+  const dates = trades
+    .map((t) => t.sellDate ?? t.buyDate)
+    .filter((d): d is string => !!d)
+    .sort();
+  const months =
+    dates.length >= 2
+      ? Math.max(
+          1,
+          Math.ceil(
+            (new Date(dates[dates.length - 1]).getTime() - new Date(dates[0]).getTime()) /
+              (30 * 86_400_000),
+          ),
+        )
+      : 1;
+
+  /** Every broker × plan pair present in the rate table. */
+  const pairs: { broker: string; plan: string }[] = [];
+  for (const broker of brokers) {
+    const seen = new Set<string>();
+    for (const k of ratesMap.keys()) {
+      const [b, plan] = k.split("|");
+      if (b === broker && !seen.has(plan)) {
+        seen.add(plan);
+        pairs.push({ broker, plan });
+      }
+    }
+    if (seen.size === 0) pairs.push({ broker, plan: "default" });
+  }
+
+  const costs: BrokerCost[] = pairs.map(({ broker, plan }) => {
     const acc = { total: 0, brokerage: 0, statutory: 0, gst: 0, dp: 0, mtfInterest: 0 };
     let covered = 0;
     let missing = 0;
     for (const t of trades) {
-      const rates = ratesMap.get(`${broker}|${t.segment}|${t.exchange}`);
+      const rates = ratesMap.get(`${broker}|${plan}|${t.segment}|${t.exchange}`);
       if (!rates) {
         missing++;
         continue;
@@ -103,9 +152,18 @@ export function compareBrokers(
       acc.mtfInterest += c.mtfInterest;
       covered++;
     }
+    // The subscription is part of what the plan costs, so it belongs in the
+    // total rather than in a footnote nobody reads.
+    const sample = ratesMap.get(`${broker}|${plan}|eq_delivery|NSE`);
+    const subscription = r2((sample?.subscriptionMonthly ?? 0) * months);
+
     return {
       broker,
-      total: r2(acc.total),
+      plan,
+      planLabel: sample?.planLabel ?? null,
+      subscription,
+      months,
+      total: r2(acc.total + subscription),
       brokerage: r2(acc.brokerage),
       statutory: r2(acc.statutory),
       gst: r2(acc.gst),
@@ -116,7 +174,7 @@ export function compareBrokers(
       complete: missing === 0 && covered > 0,
       // Comparable only against a complete total; otherwise it is the
       // difference between your whole book and part of someone else's.
-      vsActual: r2(acc.total - actualTotal),
+      vsActual: r2(acc.total + subscription - actualTotal),
     };
   });
 

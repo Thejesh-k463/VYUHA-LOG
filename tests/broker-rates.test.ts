@@ -19,8 +19,8 @@ import type { ChargeRates } from "@/lib/engine/types";
 
 const rates = seedRatesMap();
 /** Returns undefined instead of throwing, so a gap can be asserted on. */
-const get = (b: Broker, s: Segment, ex = "NSE"): ChargeRates | undefined =>
-  rates.get(`${b}|${s}|${ex}`);
+const get = (b: Broker, s: Segment, ex = "NSE", plan = "default"): ChargeRates | undefined =>
+  rates.get(`${b}|${plan}|${s}|${ex}`);
 
 /** One round trip, sized so percentage and flat brokerage differ visibly. */
 const roundTrip = (segment: Segment, value = 500_000) => ({
@@ -145,8 +145,8 @@ describe("Kotak Neo — kotakneo.com/pricing (Trade Free Plan)", () => {
     expect(computeCharges(roundTrip("eq_delivery", 10_000), r).dpCharges).toBeCloseTo(20, 0);
   });
 
-  it("MTF interest is 9.69% a year", () => {
-    expect(get("kotakneo", "eq_mtf")!.mtfInterestAnnual).toBeCloseTo(0.0969, 4);
+  it("MTF interest is 9.69% a year — on Trade Free PRO, not the free plan", () => {
+    expect(get("kotakneo", "eq_mtf", "NSE", "pro")!.mtfInterestAnnual).toBeCloseTo(0.0969, 4);
   });
 });
 
@@ -228,9 +228,12 @@ describe("Sahi — sahi.com/pricing", () => {
     expect(r.dpCharge).toBe(13.5);
   });
 
-  it("is the only broker with an unknown MTF rate", () => {
+  it("shares 'no published MTF rate' with Kotak Neo's FREE plan and nobody else", () => {
+    // Kotak publishes 9.69% for Pro subscribers only; on the free tier it says
+    // nothing, and neither broker's silence may be read as zero.
     const unknown = BROKERS.filter((b) => get(b, "eq_mtf")?.mtfRateUnknown);
-    expect(unknown).toEqual(["sahi"]);
+    expect(unknown).toEqual(["kotakneo", "sahi"]);
+    expect(get("kotakneo", "eq_mtf", "NSE", "pro")?.mtfRateUnknown).toBe(false);
   });
 });
 
@@ -262,5 +265,65 @@ describe("the existing brokers still price exactly as before", () => {
         expect(computeCharges(roundTrip(seg), r).dpCharges, `${broker}/${seg}`).toBe(0);
       }
     }
+  });
+});
+
+describe("pricing plans — the free tier and the paid tier are separate offers", () => {
+  it("gives every broker a free 'default' plan", () => {
+    // Most users are on no plan at all, so the default must be the free one.
+    for (const broker of BROKERS) {
+      expect(get(broker, "eq_delivery")?.subscriptionMonthly, broker).toBe(0);
+    }
+  });
+
+  it("carries Kotak Neo's Trade Free Pro as its own rate card", () => {
+    const pro = get("kotakneo", "eq_delivery", "NSE", "pro");
+    expect(pro?.planLabel).toBe("Trade Free Pro");
+    expect(pro?.subscriptionMonthly).toBe(249);
+    // The plan's whole point: 0.10% delivery against 0.20% on the free tier.
+    expect(pro?.brokeragePct).toBe(0.001);
+    expect(get("kotakneo", "eq_delivery")?.brokeragePct).toBe(0.002);
+  });
+
+  it("keeps 9.69% MTF on the plan that actually offers it", () => {
+    // Kotak publishes this rate for Pro subscribers only. On the free tier it
+    // publishes nothing — which is stated as unknown, not quoted as the Pro rate
+    // and not seeded as zero.
+    expect(get("kotakneo", "eq_mtf", "NSE", "pro")?.mtfInterestAnnual).toBe(0.0969);
+    const free = get("kotakneo", "eq_mtf");
+    expect(free?.mtfRateUnknown).toBe(true);
+    expect(free?.mtfInterestAnnual).toBe(0);
+  });
+
+  it("leaves the single-structure brokers with no paid plan at all", () => {
+    // Inventing a tier for a broker that does not sell one would be a claim
+    // about their pricing, not a gap in ours.
+    for (const broker of BROKERS.filter((b) => b !== "kotakneo")) {
+      const plans = new Set([...rates.keys()].filter((k) => k.startsWith(`${broker}|`)).map((k) => k.split("|")[1]));
+      expect([...plans], broker).toEqual(["default"]);
+    }
+  });
+
+  it("charges the same statutory levies on a paid plan — only brokerage differs", () => {
+    const free = get("kotakneo", "eq_delivery")!;
+    const pro = get("kotakneo", "eq_delivery", "NSE", "pro")!;
+    expect(pro.sttPct).toBe(free.sttPct);
+    expect(pro.stampPct).toBe(free.stampPct);
+    expect(pro.sebiPct).toBe(free.sebiPct);
+    expect(pro.gstPct).toBe(free.gstPct);
+    expect(pro.dpCharge).toBe(free.dpCharge);
+  });
+});
+
+describe("rate cards corrected against the brokers' published pages", () => {
+  it("prices Angel One delivery at zero — it is free, not ₹20", () => {
+    const r = get("angelone", "eq_delivery")!;
+    expect(r.brokerageFlat).toBe(0);
+    expect(r.brokeragePct).toBe(0);
+  });
+
+  it("uses each broker's published MTF interest rate", () => {
+    expect(get("angelone", "eq_mtf")?.mtfInterestAnnual).toBe(0.18);
+    expect(get("upstox", "eq_mtf")?.mtfInterestAnnual).toBe(0.1825);
   });
 });

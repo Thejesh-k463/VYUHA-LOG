@@ -129,6 +129,11 @@ export interface Execution {
 /** Subset of charge_config the pure engine needs (broker × segment × exchange). */
 export interface ChargeRates {
   broker: Broker;
+  /** Pricing plan: "default" is the free tier most accounts are on. */
+  plan: string;
+  planLabel: string | null;
+  /** Monthly subscription in rupees; 0 for a free plan. */
+  subscriptionMonthly: number;
   segment: Segment;
   exchange: Exchange;
   brokerageFlat: number | null;
