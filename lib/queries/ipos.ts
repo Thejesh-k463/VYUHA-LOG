@@ -36,3 +36,11 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
 export function getIpoRealisedNet(): number {
   return getIposComputed().rows.filter((r) => r.realised).reduce((s, r) => s + r.netPnl, 0);
 }
+
+/** trade id → ipo id, for holdings already pushed to the IPO section. */
+export function getIpoTradeLinks(): Map<number, number> {
+  const rows = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos).all();
+  const m = new Map<number, number>();
+  for (const r of rows) if (r.tradeId != null) m.set(r.tradeId, r.id);
+  return m;
+}

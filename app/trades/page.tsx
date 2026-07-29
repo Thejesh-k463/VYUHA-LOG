@@ -6,6 +6,9 @@ import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { inr } from "@/lib/format";
 import { AcquisitionPanel, type PendingBasisTrade } from "@/components/trades/acquisition-panel";
+import { UnmarkedHoldingsPanel, type UnmarkedHolding } from "@/components/trades/unmarked-holdings-panel";
+import { getIpoTradeLinks } from "@/lib/queries/ipos";
+import { isMarked } from "@/lib/analytics/trade-status";
 import { summariseAcquisitions, ipoAllottedPnl, hasKnownBasis } from "@/lib/analytics/acquisition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -32,6 +35,19 @@ export default function TradesPage() {
       suggestedPrice: t.suggestedBasisPrice ?? null,
     }));
   const acq = summariseAcquisitions(basisRows);
+
+  // Open positions with NO mark. They have no unrealised result, so they sit
+  // outside the gain/loss views — and when they also have no cost, they are
+  // almost always an IPO allotment, which is credited without ever appearing
+  // as a buy.
+  const ipoLinks = getIpoTradeLinks();
+  const unmarked: UnmarkedHolding[] = trades
+    .filter((t) => t.isOpen && !isMarked(t))
+    .map((t) => ({
+      id: t.id, symbol: t.symbol, buyQty: t.buyQty, buyValue: t.buyValue,
+      buyDate: t.buyDate, acquisition: t.acquisition,
+      ipoId: ipoLinks.get(t.id) ?? null,
+    }));
   const ipo = ipoAllottedPnl(basisRows);
 
   return (
@@ -46,6 +62,8 @@ export default function TradesPage() {
           <KpiCard label="Charges / gross" value={`${chargePct.toFixed(1)}%`} sub="charge leak" />
         </section>
         <AcquisitionPanel trades={pending} />
+
+        <UnmarkedHoldingsPanel holdings={unmarked} />
 
         {/* IPO-allotted P&L, reported APART from trading edge. A listing-day
             pop is not a repeatable skill, and folding it into expectancy would

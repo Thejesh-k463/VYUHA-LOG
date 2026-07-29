@@ -60,3 +60,22 @@ test("unpriced sales are quarantined from the edge statistics", async ({ page })
   }
   expect(body).not.toMatch(/NaN|Infinity/);
 });
+
+/**
+ * An IPO allotment arrives as an open holding with NEITHER a cost basis nor a
+ * mark price — credited on allotment, never bought. It can be neither valued
+ * nor scored, so Vyuha must offer a way out rather than leaving it stranded.
+ */
+test("unmarked open holdings are surfaced with a route into the IPO section", async ({ page }) => {
+  await page.goto("/trades");
+  await expect(page.getByRole("heading", { name: "Trades" })).toBeVisible({ timeout: 30_000 });
+
+  const body = await page.locator("main").innerText();
+  if (/with no mark price/i.test(body)) {
+    // The consequence must be stated, not just the fact.
+    await expect(page.getByText(/no unrealised result/i).first()).toBeVisible();
+    // And there must be an actual way to resolve it.
+    await expect(page.getByRole("button", { name: /came from an IPO/i }).first()).toBeVisible();
+  }
+  expect(body).not.toMatch(/NaN|Infinity/);
+});

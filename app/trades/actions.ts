@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { trades } from "@/lib/db/schema";
+import { trades, ipos as iposTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
 import { SEGMENTS, EXCHANGES, SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
@@ -11,6 +11,8 @@ import { classify } from "@/lib/engine/classify";
 import { evaluateLimits } from "@/lib/risk/limits";
 import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
+import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
+import { recordAudit } from "@/lib/audit";
 import {
   addLeg,
   updateLeg,
@@ -462,5 +464,84 @@ export async function setAcquisitionAction(_prev: ActionState, formData: FormDat
     message: hasPrice
       ? "Cost basis set — this trade now counts toward your edge."
       : "Marked. Add a cost per share to include it in win rate and expectancy.",
+  };
+}
+
+/**
+ * "This holding came from an IPO allotment."
+ *
+ * IPO shares are credited without ever appearing as a buy, so the position
+ * lands in the journal with no cost basis and no mark — unable to be scored as
+ * a gain or a loss, and unable to join the edge statistics. The IPO section is
+ * where the user actually knows those numbers, so this creates the record,
+ * links the two, and hands the user somewhere to fill them in.
+ *
+ * Nothing is guessed here. The issue price is left blank unless the holding
+ * genuinely has a purchase price, because that price is precisely the fact the
+ * journal is missing.
+ */
+export async function pushTradeToIpoAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+
+  const row = db.select().from(trades).where(eq(trades.id, id)).get();
+  if (!row) return { ok: false, message: "Trade not found." };
+
+  const existing = db.select().from(iposTable).where(eq(iposTable.tradeId, id)).get();
+  if (existing) {
+    return { ok: true, message: `Already linked to an IPO record — open IPOs to edit it.` };
+  }
+
+  const seed = ipoSeedFromTrade({
+    symbol: row.symbol,
+    exchange: row.exchange,
+    buyQty: row.buyQty,
+    avgBuyPrice: row.avgBuyPrice,
+    buyValue: row.buyValue,
+    buyDate: row.buyDate,
+    closingPrice: row.closingPrice,
+  });
+
+  const created = db
+    .insert(iposTable)
+    .values({
+      name: seed.name,
+      exchange: seed.exchange,
+      board: "mainboard",
+      allotted: true,
+      allottedQty: seed.allottedQty,
+      appliedPrice: seed.appliedPrice,
+      lotSize: seed.lotSize,
+      lotsApplied: seed.lotsApplied,
+      allotmentDate: seed.allotmentDate,
+      listingPrice: seed.listingPrice,
+      notes: seed.notes,
+      tradeId: id,
+    })
+    .returning({ id: iposTable.id })
+    .get();
+
+  // Mark provenance immediately. The BASIS stays absent until the user enters
+  // an issue price — flagging it as an IPO does not by itself make it priced,
+  // and pretending otherwise would put it back into statistics it cannot join.
+  db.update(trades)
+    .set({ acquisition: "ipo", updatedAt: new Date().toISOString() })
+    .where(eq(trades.id, id))
+    .run();
+
+  recordAudit({
+    entity: "trade",
+    action: "update",
+    summary: `${row.symbol}: pushed to IPOs as an allotment (IPO #${created!.id})`,
+    before: { acquisition: row.acquisition },
+    after: { acquisition: "ipo", ipoId: created!.id },
+  });
+
+  revalidateAfterTradeChange();
+  for (const p of ["/ipos", "/arjuns-eye", "/reports/performance"]) revalidatePath(p);
+
+  return {
+    ok: true,
+    message: `Created an IPO record for ${row.symbol}. Open IPOs and enter the issue price — that supplies the cost basis, and a listing price gives the holding its mark.`,
   };
 }

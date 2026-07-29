@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-794%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-813%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -82,6 +82,13 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Dhan API** (`Import → Connect broker`): `productType` returns **MTF** outright. Stated, not inferred — those rows need no confirmation at all.
 - **Dhan ledger** (`Cash & Ledger`): MTF interest is calculated daily and posted **weekly**, so the ledger holds the real number. Vyuha imports it and shows **actual vs its own estimate side by side** — a comparison, never a correction, because splitting a weekly account-level posting across positions would invent an allocation the broker never made.
 - The ledger parser finds columns by **header keyword, not position**; matches MTF **first** so a generic "charges" rule cannot swallow it; treats opening-balance rows as **assertions, not entries**; and **lists anything it cannot classify** rather than filing a guess.
+
+### 🎟 IPO allotments become real holdings
+
+- IPO shares are **credited, never bought**, so the holding arrives with no cost basis *and* no mark price — unable to be valued, unable to be scored. Vyuha surfaces those holdings instead of letting them sit dead.
+- **"This came from an IPO"** creates a linked record seeded from the holding. The **issue price is left blank on purpose** — it is the one fact only you know, and guessing it would defeat the point.
+- Fill it in and the IPO record becomes the **source of truth**: issue price (minus category discount) supplies the basis, listing price supplies the mark, an exit price closes the position and books the P&L, and the allotment date starts the tax holding period. One place, so the numbers can never drift.
+- With no listing price it stays **honestly unmarked** — basis supplied so it rejoins the statistics, but no mark invented.
 
 ### 🎟 Sold something you never bought? It says so instead of scoring a win
 
@@ -254,8 +261,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (794 tests) |
-| `npm run test:e2e` | Playwright e2e — 13 flows incl. the Dhan transaction report, unpriced-sale quarantine and the status/outcome views |
+| `npm test` | Vitest unit suite (813 tests) |
+| `npm run test:e2e` | Playwright e2e — 14 flows incl. the Dhan transaction report, unpriced-sale quarantine and the status/outcome views |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

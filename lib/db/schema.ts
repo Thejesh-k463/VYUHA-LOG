@@ -478,6 +478,16 @@ export const ipos = sqliteTable("ipos", {
   listingDate: text("listing_date"),
   exitDate: text("exit_date"),
   notes: text("notes"),
+  /**
+   * The holding this allotment became, when the two have been linked.
+   *
+   * IPO shares are credited without ever appearing as a buy, so the resulting
+   * position arrives with no cost basis and no mark. The IPO record holds both
+   * facts, and once linked it is the SOURCE OF TRUTH for them — saving the IPO
+   * writes the basis and the mark onto the trade. Null means an ordinary
+   * application with no holding attached yet.
+   */
+  tradeId: integer("trade_id"),
   createdAt: text("created_at").notNull().default(now),
   updatedAt: text("updated_at").notNull().default(now),
 });

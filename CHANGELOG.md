@@ -4,6 +4,62 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.95.0
+**An IPO allotment is no longer a dead holding.**
+
+Shares from an IPO are credited on allotment — they never appear as a buy in
+any tradebook. So the position lands in the journal missing **both** facts that
+make a holding mean anything:
+
+- **no cost basis** — nothing says what you paid, so it cannot join win rate,
+  expectancy or Return on Margin
+- **no mark price** — nothing says what it is worth, so it has no unrealised
+  result and appears in neither "in gain" nor "in loss"
+
+It just sat there, contributing to nothing.
+
+### The route out
+
+Trades now surfaces **open holdings with no mark price**, says plainly what
+that costs you, and — when the holding has no cost either, which is the
+signature of an allotment — offers **"This came from an IPO"**.
+
+That creates a linked IPO record seeded from the holding: symbol, quantity,
+exchange and date carried across. The **issue price is deliberately left
+blank**, because that is precisely the fact the journal is missing and the one
+thing only you know. Nothing is guessed.
+
+### The IPO record becomes the source of truth
+
+Once linked, saving the IPO writes back to the holding:
+
+- the **issue price minus any category discount** becomes the cost basis
+- the **listing price** becomes the mark — or the **exit price** if you have
+  sold, which also closes the position and books the realised P&L
+- the **allotment date** becomes the acquisition date, which starts the tax
+  holding period
+
+Verified end to end: 37 shares at ₹500 issue, listed at ₹598 → basis ₹18,500,
+mark ₹598, unrealised **₹3,626**. Then an exit at ₹640 → closed, sold ₹23,680,
+gross **₹5,180**, mark cleared, unrealised back to zero.
+
+Keeping the two numbers in **one** place is the point. A second copy on the
+trade would drift, and you would have no way to tell which was right.
+
+### What it still refuses to do
+
+- With no listing price and no exit, the holding stays **honestly unmarked**.
+  The basis is supplied — so it rejoins the edge statistics — but no mark is
+  invented, and it keeps appearing under **Open** rather than being sorted into
+  a gain or loss it never had.
+- An application that was **not allotted** produces no holding at all. A patch
+  is refused rather than creating a position from shares that never arrived.
+- Flagging a holding as an IPO does **not** by itself price it. Until an issue
+  price is entered it stays out of win rate and expectancy, because it still
+  has no basis.
+
+19 new unit tests (813 total) and 1 new e2e flow (14 total).
+
 ## v2.94.0
 **See exactly the trades you mean**, and a repo that no longer mixes the
 vendor's files with the buyer's.
