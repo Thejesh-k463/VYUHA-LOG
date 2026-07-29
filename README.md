@@ -7,13 +7,13 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-813%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-873%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
-*Dhan · Zerodha · Groww · Angel One · Upstox — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
+*Dhan · Zerodha · Groww · Angel One · Upstox · Kotak Neo · Paytm Money · Sahi — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
 
 </div>
 
@@ -261,7 +261,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (813 tests) |
+| `npm test` | Vitest unit suite (873 tests) |
 | `npm run test:e2e` | Playwright e2e — 14 flows incl. the Dhan transaction report, unpriced-sale quarantine and the status/outcome views |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |

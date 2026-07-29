@@ -11,8 +11,8 @@ const rate = (broker: string, over: Partial<ChargeRates>): ChargeRates => ({
   exchange: "NSE",
   brokerageFlat: null, brokeragePct: 0, brokerageCap: null, brokerageFloor: 0,
   sttPct: 0.001, sttSide: "sell", exchangeTxnPct: 0, sebiPct: 0, stampPct: 0, ipftPct: 0,
-  gstPct: 0.18, dpCharge: 0, dpGstApplicable: false, dpMinValue: 0,
-  mtfInterestAnnual: 0, mtfTiers: null, pledgeCharge: 0, unpledgeCharge: 0,
+  gstPct: 0.18, dpCharge: 0, dpPct: 0, dpGstApplicable: false, dpMinValue: 0,
+  mtfInterestAnnual: 0, mtfRateUnknown: false, mtfTiers: null, pledgeCharge: 0, unpledgeCharge: 0,
   ...over,
 });
 

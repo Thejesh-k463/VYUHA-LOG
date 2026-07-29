@@ -326,6 +326,8 @@ export const chargeConfig = sqliteTable(
 
     // DP charges (delivery SELL, per scrip)
     dpCharge: real("dp_charge").notNull().default(0),
+    /** Percentage DP fee; dpCharge becomes the floor when this is > 0. */
+    dpPct: real("dp_pct").notNull().default(0),
     dpGstApplicable: integer("dp_gst_applicable", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -333,6 +335,8 @@ export const chargeConfig = sqliteTable(
 
     // MTF interest (annual). For tiered brokers, mtfTiers holds the slabs.
     mtfInterestAnnual: real("mtf_interest_annual").notNull().default(0),
+    /** The broker publishes no MTF rate; see ChargeRates.mtfRateUnknown. */
+    mtfRateUnknown: integer("mtf_rate_unknown", { mode: "boolean" }).notNull().default(false),
     mtfTiers: text("mtf_tiers", { mode: "json" }).$type<
       { upTo: number | null; rate: number }[]
     >(),

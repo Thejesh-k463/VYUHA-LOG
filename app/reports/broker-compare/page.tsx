@@ -120,15 +120,37 @@ export default function BrokerComparePage() {
                                 {b.missing > 0 ? <Badge variant="warning">{b.missing} unpriced</Badge> : null}
                               </span>
                             </td>
-                            <td className="px-2 py-2 text-right tabular-nums">{inr(b.brokerage, { decimals: 0 })}</td>
-                            <td className="px-2 py-2 text-right tabular-nums">{inr(b.statutory, { decimals: 0 })}</td>
-                            <td className="px-2 py-2 text-right tabular-nums">{inr(b.gst, { decimals: 0 })}</td>
-                            <td className="px-2 py-2 text-right tabular-nums">{inr(b.dp, { decimals: 0 })}</td>
-                            <td className="px-2 py-2 text-right tabular-nums">{inr(b.mtfInterest, { decimals: 0 })}</td>
-                            <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{inr(b.total, { decimals: 0 })}</td>
-                            <td className={`px-2.5 py-2 text-right tabular-nums ${b.vsActual < 0 ? "text-profit" : b.vsActual > 0 ? "text-loss" : ""}`}>
-                              {b.vsActual === 0 ? "—" : `${b.vsActual < 0 ? "−" : "+"}${inr(Math.abs(b.vsActual), { decimals: 0 })}`}
-                            </td>
+                            {/* A broker that priced NOTHING must not show ₹0 and a
+                                fat green "saving" — that reads as the cheapest
+                                option in the table when it is simply absent.
+                                Dashes say "no answer", which is the truth. */}
+                            {b.covered === 0 ? (
+                              <td className="px-2 py-2 text-center text-muted-foreground" colSpan={7}>
+                                no rates configured — nothing to compare
+                              </td>
+                            ) : (
+                              <>
+                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.brokerage, { decimals: 0 })}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.statutory, { decimals: 0 })}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.gst, { decimals: 0 })}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.dp, { decimals: 0 })}</td>
+                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.mtfInterest, { decimals: 0 })}</td>
+                                <td className="px-2.5 py-2 text-right font-semibold tabular-nums">
+                                  {inr(b.total, { decimals: 0 })}
+                                  {!b.complete && <span className="ml-1 text-warning" title="Partial — covers only the trades this broker can price">*</span>}
+                                </td>
+                                {/* vs recorded is only meaningful against a COMPLETE
+                                    total. A partial one compares your whole book
+                                    with part of theirs, which always flatters. */}
+                                <td className={`px-2.5 py-2 text-right tabular-nums ${!b.complete ? "text-muted-foreground" : b.vsActual < 0 ? "text-profit" : b.vsActual > 0 ? "text-loss" : ""}`}>
+                                  {!b.complete
+                                    ? "n/a"
+                                    : b.vsActual === 0
+                                      ? "—"
+                                      : `${b.vsActual < 0 ? "−" : "+"}${inr(Math.abs(b.vsActual), { decimals: 0 })}`}
+                                </td>
+                              </>
+                            )}
                           </tr>
                         );
                       })}

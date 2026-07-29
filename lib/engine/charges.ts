@@ -93,8 +93,12 @@ export function computeChargesPaise(input: ChargeInputPaise, rates: ChargeRates)
   let dpCharges = 0;
   let dpForGst = 0;
   if (isDeliveryLike && input.sellQty > 0 && input.sellValue >= P(rates.dpMinValue)) {
-    dpCharges = P(rates.dpCharge);
-    if (rates.dpGstApplicable) dpForGst = P(rates.dpCharge);
+    // A percentage DP fee (Kotak Neo bills 0.04% subject to a ₹20 minimum)
+    // makes `dpCharge` the FLOOR rather than the whole fee. Brokers with a
+    // flat fee leave dpPct at 0, so their arithmetic is unchanged.
+    const pctPart = rates.dpPct > 0 ? Math.round(rates.dpPct * input.sellValue) : 0;
+    dpCharges = Math.max(P(rates.dpCharge), pctPart);
+    if (rates.dpGstApplicable) dpForGst = dpCharges;
   }
 
   let mtfInterest = 0;

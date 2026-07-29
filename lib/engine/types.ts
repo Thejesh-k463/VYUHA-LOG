@@ -143,9 +143,28 @@ export interface ChargeRates {
   ipftPct: number;
   gstPct: number;
   dpCharge: number;
+  /**
+   * Percentage DP charge, when the broker bills a share of the sale rather
+   * than a flat fee (Kotak Neo: 0.04% subject to a ₹20 minimum). Zero for the
+   * flat-fee brokers, which keeps their arithmetic byte-identical.
+   *
+   * When set, the charge is max(dpCharge, dpPct × sellValue) — `dpCharge`
+   * becomes the FLOOR rather than the whole fee.
+   */
+  dpPct: number;
   dpGstApplicable: boolean;
   dpMinValue: number;
   mtfInterestAnnual: number;
+  /**
+   * True when the broker does not PUBLISH an MTF interest rate.
+   *
+   * Neither available option was honest on its own: seeding 0% advertises free
+   * funding in the very report that exists to compare costs, and omitting the
+   * row entirely makes `findRates` throw the moment such a trade is imported.
+   * So the row exists — every other charge on it is real — and the unknown is
+   * stated as a fact the comparison can act on.
+   */
+  mtfRateUnknown: boolean;
   mtfTiers: { upTo: number | null; rate: number }[] | null;
   pledgeCharge: number;
   unpledgeCharge: number;

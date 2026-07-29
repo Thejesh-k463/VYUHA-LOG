@@ -22,9 +22,11 @@ type ChargeSeedRow = {
   ipftPct: number;
   gstPct: number;
   dpCharge: number;
+  dpPct: number;
   dpGstApplicable: boolean;
   dpMinValue: number;
   mtfInterestAnnual: number;
+  mtfRateUnknown: boolean;
   mtfTiers: { upTo: number | null; rate: number }[] | null;
   pledgeCharge: number;
   unpledgeCharge: number;
@@ -159,6 +161,67 @@ function brokerageFor(
     }
   }
 
+  // Kotak Neo — "Trade Free Plan" (free, lifetime), the default a new account
+  // gets. kotakneo.com/pricing: 0.20% delivery; intraday "₹10 or 0.05%,
+  // whichever is LOWER" (a cap, not a floor); ₹10 F&O carry-forward.
+  // MTF follows the delivery rate — MTF is a delivery product and Kotak
+  // publishes no separate MTF brokerage.
+  if (broker === "kotakneo") {
+    switch (segment) {
+      case "eq_delivery":
+      case "eq_mtf":
+        return { flat: null, pct: 0.002, cap: null, floor: 0 }; // 0.20%
+      case "eq_intraday":
+        return { flat: null, pct: 0.0005, cap: 10, floor: 0 }; // min(10, 0.05%)
+      case "future":
+      case "commodity_future":
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return { flat: 10, pct: 0, cap: null, floor: 0 };
+    }
+  }
+
+  // Paytm Money — paytmmoney.com/stocks/pricing.
+  // Delivery "2.5% or up to ₹20, whichever is lower"; intraday "0.05% or up to
+  // ₹20, whichever is lower"; F&O up to ₹20/executed order.
+  // MTF is billed at "0.1% of trade value OR current brokerage, whichever is
+  // HIGHER" — a floor, not a cap, and 0.1% dominates at any real size.
+  if (broker === "paytm") {
+    switch (segment) {
+      case "eq_delivery":
+        return { flat: null, pct: 0.025, cap: 20, floor: 0 }; // min(20, 2.5%)
+      case "eq_intraday":
+        return { flat: null, pct: 0.0005, cap: 20, floor: 0 }; // min(20, 0.05%)
+      case "eq_mtf":
+        return { flat: null, pct: 0.001, cap: null, floor: 0 }; // 0.1%, uncapped
+      case "future":
+      case "commodity_future":
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return FLAT20;
+    }
+  }
+
+  // Sahi — sahi.com/pricing. Flat ₹10/order across segments; equity (BOTH
+  // delivery and intraday) is "₹10 or 0.05%, whichever is lower". Note that
+  // delivery is NOT free here, unlike most discount brokers.
+  if (broker === "sahi") {
+    switch (segment) {
+      case "eq_delivery":
+      case "eq_intraday":
+      case "eq_mtf":
+        return { flat: null, pct: 0.0005, cap: 10, floor: 0 }; // min(10, 0.05%)
+      case "future":
+      case "commodity_future":
+      case "index_option":
+      case "stock_option":
+      case "commodity_option":
+        return { flat: 10, pct: 0, cap: null, floor: 0 };
+    }
+  }
+
   // groww
   switch (segment) {
     case "eq_delivery":
@@ -178,6 +241,7 @@ function brokerageFor(
 // --- DP charges (delivery + MTF sell, per scrip) by broker ------------------
 function dpFor(broker: Broker): {
   dpCharge: number;
+  dpPct?: number;
   dpGstApplicable: boolean;
   dpMinValue: number;
 } {
@@ -192,12 +256,24 @@ function dpFor(broker: Broker): {
       return { dpCharge: 20.0, dpGstApplicable: true, dpMinValue: 0 };
     case "upstox":
       return { dpCharge: 18.5, dpGstApplicable: true, dpMinValue: 0 };
+    // Kotak Neo bills DP as a PERCENTAGE with a floor: 0.04% of the value
+    // sold, minimum ₹20, per scrip per day on delivery/BTST sells. It is the
+    // only broker here that does, which is why `dpPct` exists at all.
+    case "kotakneo":
+      return { dpCharge: 20, dpPct: 0.0004, dpGstApplicable: true, dpMinValue: 0 };
+    // Paytm Money: ₹20 from 1 Feb 2025 (incl ₹3.50 CDSL), excluding GST.
+    case "paytm":
+      return { dpCharge: 20, dpGstApplicable: true, dpMinValue: 0 };
+    // Sahi: ₹13.50 per company on SELL transactions.
+    case "sahi":
+      return { dpCharge: 13.5, dpGstApplicable: true, dpMinValue: 0 };
   }
 }
 
 // --- MTF interest by broker --------------------------------------------------
 function mtfFor(broker: Broker): {
   mtfInterestAnnual: number;
+  mtfRateUnknown?: boolean;
   mtfTiers: { upTo: number | null; rate: number }[] | null;
   pledgeCharge: number;
   unpledgeCharge: number;
@@ -243,6 +319,44 @@ function mtfFor(broker: Broker): {
         pledgeCharge: 20,
         unpledgeCharge: 20,
       };
+    // Kotak Neo publishes 9.69% p.a., but ONLY on the Trade Free Pro plan
+    // (₹249/month). The free plan quotes no MTF rate at all, so this figure is
+    // the best-case and a Pro subscriber's; the monthly fee is not modelled.
+    case "kotakneo":
+      return {
+        mtfInterestAnnual: 0.0969,
+        mtfTiers: null,
+        pledgeCharge: 20,
+        unpledgeCharge: 20,
+      };
+    // Paytm Money publishes a TIERED book-size rate, and note it is not
+    // monotonic — the middle band is the most expensive:
+    //   up to ₹1L 7.99% · ₹1L–1Cr 9.99% · above ₹1Cr 8.99%
+    case "paytm":
+      return {
+        mtfInterestAnnual: 0,
+        mtfTiers: [
+          { upTo: 100000, rate: 0.0799 },
+          { upTo: 10000000, rate: 0.0999 },
+          { upTo: null, rate: 0.0899 },
+        ],
+        pledgeCharge: 20,
+        unpledgeCharge: 20,
+      };
+    // Sahi names margin funding as a revenue source but publishes NO rate.
+    // Seeding a guess would make Sahi look artificially cheap in exactly the
+    // comparison this report exists to answer. `eq_mtf` is therefore left out
+    // of Sahi's seeded combos entirely (see COMBOS_BY_BROKER), so it reports
+    // as UNPRICED rather than as free.
+    case "sahi":
+      return {
+        mtfInterestAnnual: 0,
+        // Sahi names margin funding as a revenue source but publishes NO rate.
+        mtfRateUnknown: true,
+        mtfTiers: null,
+        pledgeCharge: 15, // ₹15 per transaction/ISIN + GST, from their pricing page
+        unpledgeCharge: 15,
+      };
   }
 }
 
@@ -258,7 +372,11 @@ const COMBOS: { segment: Segment; exchanges: Exchange[] }[] = [
   { segment: "commodity_option", exchanges: ["MCX"] },
 ];
 
-const BROKER_LIST: Broker[] = ["dhan", "zerodha", "groww", "angelone", "upstox"];
+const BROKER_LIST: Broker[] = [
+  "dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi",
+];
+
+
 
 export function buildChargeConfigSeed(): ChargeSeedRow[] {
   const rows: ChargeSeedRow[] = [];
@@ -269,10 +387,10 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         const stt = sttFor(segment);
         const isDeliveryLike = segment === "eq_delivery" || segment === "eq_mtf";
         const isMtf = segment === "eq_mtf";
-        const dp = isDeliveryLike ? dpFor(broker) : { dpCharge: 0, dpGstApplicable: false, dpMinValue: 0 };
+        const dp = isDeliveryLike ? dpFor(broker) : { dpCharge: 0, dpPct: 0, dpGstApplicable: false, dpMinValue: 0 };
         const mtf = isMtf
           ? mtfFor(broker)
-          : { mtfInterestAnnual: 0, mtfTiers: null, pledgeCharge: 0, unpledgeCharge: 0 };
+          : { mtfInterestAnnual: 0, mtfRateUnknown: false, mtfTiers: null, pledgeCharge: 0, unpledgeCharge: 0 };
 
         rows.push({
           broker,
@@ -290,9 +408,11 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
           ipftPct: exchange === "NSE" ? IPFT_NSE_PCT : 0,
           gstPct: GST,
           dpCharge: dp.dpCharge,
+          dpPct: dp.dpPct ?? 0,
           dpGstApplicable: dp.dpGstApplicable,
           dpMinValue: dp.dpMinValue,
           mtfInterestAnnual: mtf.mtfInterestAnnual,
+          mtfRateUnknown: mtf.mtfRateUnknown ?? false,
           mtfTiers: mtf.mtfTiers,
           pledgeCharge: mtf.pledgeCharge,
           unpledgeCharge: mtf.unpledgeCharge,

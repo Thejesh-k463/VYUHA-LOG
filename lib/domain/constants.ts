@@ -1,6 +1,6 @@
 // Central domain vocabulary. Imported by the classifier, charges engine, and UI.
 
-export const BROKERS = ["dhan", "zerodha", "groww", "angelone", "upstox"] as const;
+export const BROKERS = ["dhan", "zerodha", "groww", "angelone", "upstox", "kotakneo", "paytm", "sahi"] as const;
 export type Broker = (typeof BROKERS)[number];
 
 export const BUCKETS = ["equity", "active"] as const;
@@ -32,6 +32,9 @@ export const BROKER_LABELS: Record<Broker, string> = {
   groww: "Groww",
   angelone: "Angel One",
   upstox: "Upstox",
+  kotakneo: "Kotak Neo",
+  paytm: "Paytm Money",
+  sahi: "Sahi",
 };
 
 // Display names only — the DB/API bucket value stays "active" everywhere.

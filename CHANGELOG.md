@@ -4,6 +4,75 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## Unreleased — three more brokers, and a comparison that stops flattering
+
+### Kotak Neo, Paytm Money and Sahi
+
+Rate cards sourced from each broker's own pricing page and cited in
+`lib/db/seed-data.ts`, so a future reader can check them against the source.
+
+| | Delivery | Intraday | F&O | MTF interest |
+|---|---|---|---|---|
+| **Kotak Neo** | 0.20%, uncapped | ₹10 or 0.05%, lower | ₹10 flat | 9.69% (Pro plan only) |
+| **Paytm Money** | 2.5% or ₹20, lower | 0.05% or ₹20, lower | ₹20 | tiered 7.99 / 9.99 / 8.99% |
+| **Sahi** | ₹10 or 0.05%, lower | ₹10 or 0.05%, lower | ₹10 flat | **not published** |
+
+Four things that would have been wrong if assumed:
+
+- **Kotak's delivery is 0.20% with NO cap.** On a large delivery book that is
+  the difference between ₹94k and ₹1.73k lakh of charges — it is a percentage
+  broker, not a discount one, and the comparison now says so plainly.
+- **Sahi's delivery is not free**, unlike almost every other discount broker.
+- **Paytm's MTF tiers are not monotonic** — the middle band (9.99%) is dearer
+  than the top one (8.99%). Code that assumed sorted tiers would misprice every
+  mid-size book.
+- **Paytm's MTF brokerage is a FLOOR, not a cap** — "0.1% or current brokerage,
+  whichever is higher" — so capping it at ₹20 would understate it badly.
+
+### Percentage DP charges
+
+Kotak Neo bills DP as **0.04% of the sale with a ₹20 minimum**, which the
+flat-fee model could not express. `dpPct` now exists: when set, the flat
+`dpCharge` becomes the FLOOR rather than the whole fee. Every other broker
+leaves it at zero, so their arithmetic is byte-identical to before.
+
+### "Unpriced" no longer reads as free
+
+**"Unpriced" means that broker has no rate row for those trades' segment and
+exchange** — it could not price them at all. Angel One and Upstox showed
+`₹0` and a green `−₹94,133`, which reads as the biggest saving in the table
+when it actually means *no answer*. Now:
+
+- A broker that priced **nothing** shows "no rates configured — nothing to
+  compare" instead of zeros.
+- A broker with **partial** coverage shows its total marked `*` and `n/a`
+  against recorded, because a partial total is the cost of a smaller book: it
+  is always lower, and always flatters.
+- **Only a broker that priced every trade can be called cheapest.** Ranking on
+  a partial total would put a broker that priced three trades above one that
+  priced three hundred, purely for doing less work.
+
+### Sahi's unknown MTF rate
+
+Sahi names margin funding as a revenue source but publishes no rate. Neither
+obvious option was honest: seeding 0% advertises free funding in the very
+report meant to compare costs, and omitting the row makes `findRates` throw the
+moment such a trade is imported. So `mtfRateUnknown` states it as a fact — the
+row exists with every other charge real, and an MTF trade priced against Sahi
+counts as unpriced rather than as free.
+
+### Verified
+
+A 60-assertion forensic sweep across **every broker × every segment**: no
+negative components, components summing to the stated total, brokerage
+respecting each cap and floor, statutory rates identical across all eight
+brokers (they are the law, not a broker's choice), and each broker's published
+numbers pinned individually. Hand-checked against arithmetic: a ₹5,00,000
+Kotak delivery round trip gives brokerage ₹2,000, STT ₹1,000, stamp ₹75, DP
+₹200 — each matching its formula exactly.
+
+873 unit tests total.
+
 ## v2.95.0
 **An IPO allotment is no longer a dead holding.**
 

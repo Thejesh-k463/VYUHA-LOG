@@ -33,6 +33,15 @@ export interface BrokerCost {
   mtfInterest: number;
   covered: number; // trades the broker can price (has a rate row)
   missing: number; // trades with no rate row for that broker
+  /**
+   * True only when this broker could price EVERY trade.
+   *
+   * A partial total is not comparable with a full one: it is the cost of a
+   * SMALLER book, so it is always lower and always flatters. Sahi publishes no
+   * MTF interest rate, for instance, so on a book containing MTF positions its
+   * total silently omits them. Only a complete broker may be called cheapest.
+   */
+  complete: boolean;
   vsActual: number; // total − actualTotal (negative = cheaper than what you paid)
 }
 
@@ -62,6 +71,14 @@ export function compareBrokers(
     for (const t of trades) {
       const rates = ratesMap.get(`${broker}|${t.segment}|${t.exchange}`);
       if (!rates) {
+        missing++;
+        continue;
+      }
+      // An MTF trade priced against a broker who publishes NO interest rate
+      // would understate that broker by the entire financing cost — the
+      // largest single component of an MTF position. Counting it as unpriced
+      // is the honest answer, and it stops the broker being called cheapest.
+      if (t.segment === "eq_mtf" && rates.mtfRateUnknown) {
         missing++;
         continue;
       }
@@ -96,13 +113,20 @@ export function compareBrokers(
       mtfInterest: r2(acc.mtfInterest),
       covered,
       missing,
+      complete: missing === 0 && covered > 0,
+      // Comparable only against a complete total; otherwise it is the
+      // difference between your whole book and part of someone else's.
       vsActual: r2(acc.total - actualTotal),
     };
   });
 
-  // Brokers that can't price any trade sort last and can't be "cheapest".
-  costs.sort((a, b) => (a.covered === 0 ? 1 : 0) - (b.covered === 0 ? 1 : 0) || a.total - b.total);
-  const cheapest = costs.find((c) => c.covered > 0) ?? null;
+  // Incomplete brokers sort last and can never be "cheapest". Sorting them by
+  // total would rank a broker that priced three trades above one that priced
+  // three hundred, purely because it was asked to do less work.
+  costs.sort(
+    (a, b) => (a.complete ? 0 : 1) - (b.complete ? 0 : 1) || b.covered - a.covered || a.total - b.total,
+  );
+  const cheapest = costs.find((c) => c.complete) ?? null;
   const current = currentBroker ? costs.find((c) => c.broker === currentBroker) ?? null : null;
 
   return {
