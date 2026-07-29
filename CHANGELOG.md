@@ -4,6 +4,63 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.90.1 — CRITICAL: v2.90.0 installer does not run on any machine but the build machine
+
+**Do not distribute v2.90.0.** It starts, fails to load the database engine, and
+shows a bare "Internal Server Error".
+
+### What happened
+
+Next 16 stages every `serverExternalPackages` entry as a **symlink** under
+`.next/node_modules/<pkg>-<hash>`, pointing at an **absolute path inside the
+developer's checkout**:
+
+```
+better-sqlite3-90e2652d1716b047 -> T:\…yuha
+ode_modulesetter-sqlite3
+pdf-parse-08f4573089f02674      -> T:\…yuha
+ode_modules\pdf-parse
+```
+
+The compiled server requires those packages *by the hashed name*. The desktop
+bundler copied the links verbatim, so the installer shipped two 69-byte
+pointers to a directory that exists on exactly one computer in the world. On
+any other machine the first database call fails with:
+
+```
+Cannot find module 'better-sqlite3-90e2652d1716b047'
+```
+
+and because the failure happens during render, Next then tries to draw its
+global error page — which needs the same missing module — so the user sees
+plain "Internal Server Error" with no clue as to the cause.
+
+### Why it slipped through
+
+Two reasons, both now closed:
+
+1. **It works perfectly on the build machine.** The symlink target is real
+   there, so every local check — 735 unit tests, 10 e2e flows, a full route
+   sweep, a manual browse of the running app — passed against a bundle that
+   could never work anywhere else.
+2. **The only outward symptom was the installer getting SMALLER.** 32.25 MB at
+   v2.89.0 → 28.27 MB at v2.90.0, because two real packages became two links.
+   A shrinking installer reads like a successful optimisation, not a defect.
+
+### The fix
+
+- Symlinks are now **materialised into real directories** during bundling.
+  `fs.cpSync(..., { dereference: true })` alone is not enough on Windows, where
+  these are directory junctions that get copied as links regardless, so each one
+  is explicitly replaced with its target's contents.
+- A **portability guard** now runs before any installer is produced and **fails
+  the build** if the bundle contains a symlink, an empty external package, or a
+  missing `better-sqlite3` native binding. A build that would only run on the
+  build machine can no longer reach a customer.
+
+v2.90.1 is byte-for-byte v2.90.0 plus this fix. Installer is back to 32.25 MB,
+exactly on the size trend from v2.80 onward.
+
 ## v2.90.0
 **Dhan's Global Transaction Report** — the file that finally answers the three
 questions an aggregated P&L cannot: *when* did I trade this, *what product* was
