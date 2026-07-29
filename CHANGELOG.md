@@ -4,6 +4,36 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.92.0
+**The staged-position panel no longer blocks you.**
+
+"Add entry" was disabled once a position went flat, on the reasoning that you
+cannot add to something that no longer exists. That reasoning was wrong twice
+over:
+
+- **Re-entering the same name, or correcting a fill booked in error, are
+  ordinary things a trader does.** A journal that refuses to record what
+  actually happened is worse than one that records it with a caveat.
+- **The engine already allowed it.** `validateLegs` only ever rejects an exit
+  larger than the quantity open at that point, and `rebuildStagedTrade`
+  re-derives `isOpen` from the ladder — so a new entry re-opens the trade by
+  itself. The block was a UI opinion with nothing behind it.
+
+All three actions — Add entry, Book exit, Set stop on all open — are now always
+clickable. In their place:
+
+- A line under the buttons says what each will do **from the current state**:
+  that Add entry re-opens a flat position and keeps the realised P&L, and that
+  Book exit has nothing to sell against until an entry exists.
+- The Add-entry dialog carries an explicit **"this re-opens the position"**
+  notice when the position is flat, with what happens to the P&L already booked.
+- An e2e test now asserts that **no action is ever disabled by position state**,
+  so this cannot quietly return.
+
+The principle, written down so it stops being re-litigated: **Vyuha warns; the
+user decides.** Guards that remain are only for work in flight (a pending
+submit) or genuinely empty input — never for a state the app disapproves of.
+
 ## v2.91.0
 **MTF, answered properly** — and the updater signing that has been quietly
 broken since v2.84.

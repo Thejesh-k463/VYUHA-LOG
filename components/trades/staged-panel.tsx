@@ -163,18 +163,47 @@ export function StagedPanel({ trade, onChanged }: { trade: Trade; onChanged?: ()
         </div>
       )}
 
-      {/* ── Actions ────────────────────────────────────────────────────── */}
+      {/* ── Actions ──────────────────────────────────────────────────────
+          NOTHING here is disabled by the state of the position.
+
+          Vyuha warns; it does not decide. A closed position is a perfectly
+          ordinary thing to add an entry to — you re-entered the same name, or
+          you are correcting a fill you booked wrongly — and the engine already
+          handles it: `validateLegs` only ever rejects an exit larger than the
+          quantity open at that point, and `rebuildStagedTrade` re-derives
+          `isOpen` from the ladder, so a new entry re-opens the trade by itself.
+          The old `disabled` here was a UI opinion with no engine behind it, and
+          it stopped a trader recording something that really happened.
+
+          The consequences are surfaced below and inside each dialog instead, so
+          the choice stays informed rather than unavailable. */}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)} disabled={!trade.isOpen && p.openQty === 0}>
+        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
           <Plus className="size-3.5" /> Add entry
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setExitOpen(true)} disabled={p.openQty <= 0}>
+        <Button size="sm" variant="outline" onClick={() => setExitOpen(true)}>
           <Minus className="size-3.5" /> Book exit
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => setStopOpen(true)} disabled={p.openTranches.length === 0}>
+        <Button size="sm" variant="ghost" onClick={() => setStopOpen(true)}>
           <Target className="size-3.5" /> Set stop on all open
         </Button>
       </div>
+
+      {/* Say what each action will do from HERE, in place of blocking it. */}
+      {p.openQty <= 0 && (
+        <p className="text-xs text-muted-foreground">
+          This position is fully closed.{" "}
+          <b className="text-foreground">Add entry</b> will re-open it and the realised P&amp;L so far is kept.{" "}
+          <b className="text-foreground">Book exit</b> has nothing to sell against and will be refused by the
+          ladder — add the entry first.
+        </p>
+      )}
+      {p.openQty > 0 && p.openTranches.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          No open tranches carry a stop, so <b className="text-foreground">Set stop on all open</b> has nothing
+          to apply to yet.
+        </p>
+      )}
 
       {/* ── The ladder ─────────────────────────────────────────────────── */}
       <div className="overflow-x-auto rounded-lg border border-border">
@@ -261,7 +290,14 @@ export function StagedPanel({ trade, onChanged }: { trade: Trade; onChanged?: ()
         </p>
       )}
 
-      <AddEntryDialog trade={trade} open={addOpen} onOpenChange={setAddOpen} onDone={refresh} isLong={isLong} />
+      <AddEntryDialog
+        trade={trade}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onDone={refresh}
+        isLong={isLong}
+        reopening={p.openQty <= 0}
+      />
       <BookExitDialog
         trade={trade}
         open={exitOpen}
@@ -333,9 +369,11 @@ function DeleteLeg({ legId, tradeId, onDone }: { legId: number; tradeId: number;
 }
 
 function AddEntryDialog({
-  trade, open, onOpenChange, onDone, isLong,
+  trade, open, onOpenChange, onDone, isLong, reopening,
 }: {
   trade: Trade; open: boolean; onOpenChange: (v: boolean) => void; onDone: () => void; isLong: boolean;
+  /** True when the position is currently flat, so this entry re-opens it. */
+  reopening: boolean;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(addEntryLegAction, { ok: false, message: "" });
   // Depend on the STATE OBJECT, not on state.ok. Each server action returns a
@@ -359,6 +397,13 @@ function AddEntryDialog({
             the stop on your earlier tranches increases the total you stand to lose.
           </DialogDescription>
         </DialogHeader>
+        {reopening && (
+          <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs">
+            This position is currently <b>flat</b>, so this entry <b>re-opens it</b>. The realised P&amp;L
+            already booked stays exactly as it is; the new tranche starts its own open quantity. If you meant
+            to log a separate trade instead, close this and add a new one.
+          </div>
+        )}
         <form action={formAction} className="space-y-3">
           <input type="hidden" name="tradeId" value={trade.id} />
           <div className="grid grid-cols-2 gap-3">

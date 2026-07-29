@@ -16,9 +16,9 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
   await page.goto("/trades");
   await expect(page.locator("tbody tr").first()).toBeVisible();
 
-  // Pick an OPEN position. "Add entry" is deliberately disabled once a trade is
-  // fully closed — you cannot add to something that no longer exists — so a
-  // closed row would fail on a correct product behaviour.
+  // Pick an OPEN position — simply because enabling staged mode is the flow
+  // under test here. Nothing in the panel is disabled by position state; see
+  // the "never blocks" test below.
   const openRow = page.locator("tbody tr").filter({ has: page.locator('button[title="Close position"]') }).first();
   await expect(openRow, "fixture has no open trade to stage").toBeVisible();
   await openRow.locator('button[title*="tranches"], button[title*="Staged position"]').click();
@@ -59,4 +59,39 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
 
   // A realised exit leg now exists.
   await expect(dialog.getByText(/1 exit/i)).toBeVisible({ timeout: 20_000 });
+});
+
+/**
+ * The panel WARNS; it never blocks.
+ *
+ * "Add entry" used to be disabled once a position went flat, on the reasoning
+ * that you cannot add to something that no longer exists. That reasoning was
+ * wrong twice over: re-entering the same name, or correcting a fill booked in
+ * error, are both ordinary things a trader does — and the engine already allows
+ * them. `validateLegs` only ever rejects an exit larger than the quantity open
+ * at that point, and `rebuildStagedTrade` re-derives `isOpen` from the ladder,
+ * so a new entry re-opens the trade by itself. The block was a UI opinion that
+ * stopped someone recording something that really happened.
+ */
+test("staged panel never disables an action because of position state", async ({ page }) => {
+  await ensureTrades(page);
+  await page.goto("/trades");
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+
+  const row = page.locator("tbody tr").filter({ has: page.locator('button[title*="tranches"], button[title*="Staged position"]') }).first();
+  await expect(row, "no staged-capable row in the fixture").toBeVisible();
+  await row.locator('button[title*="tranches"], button[title*="Staged position"]').click();
+
+  const dialog = page.getByRole("dialog").filter({ hasText: "Staged position" });
+  await expect(dialog).toBeVisible();
+  const enable = dialog.getByRole("button", { name: /Enable staged mode/i });
+  if (await enable.count()) await enable.click();
+  await expect(dialog.getByText(/Open qty/i)).toBeVisible({ timeout: 30_000 });
+
+  // Whatever the position state, none of the three actions may be disabled.
+  for (const name of [/Add entry/i, /Book exit/i, /Set stop on all open/i]) {
+    const btn = dialog.getByRole("button", { name }).first();
+    await expect(btn).toBeVisible();
+    await expect(btn, `"${name}" must never be disabled by position state`).toBeEnabled();
+  }
 });
