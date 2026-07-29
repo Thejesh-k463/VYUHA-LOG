@@ -55,7 +55,7 @@ test("import split: F&O rows are not offered an equity product choice", async ({
 
   // ...and the option is NOT, but is accounted for rather than ignored.
   await expect(panel.getByText(/NIFTY/)).toHaveCount(0);
-  await expect(page.getByText(/F&O is never ambiguous/i)).toBeVisible();
+  await expect(page.getByText(/neither can ever be MTF/i)).toBeVisible();
 
   // It still imports — the preview table classifies it on its own.
   await expect(

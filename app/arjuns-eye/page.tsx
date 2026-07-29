@@ -88,6 +88,8 @@ export default function ArjunsEyePage() {
     buyDate: t.buyDate,
     sellDate: t.sellDate,
     entryTime: t.entryTime,
+    acquisition: t.acquisition,
+    acquisitionPrice: t.acquisitionPrice,
     exitTime: t.exitTime,
     isOpen: t.isOpen,
     rMultiple: t.rMultiple,
@@ -113,10 +115,33 @@ export default function ArjunsEyePage() {
       <PageHeader
         title="Arjun's Eye"
         description="The trader's cockpit — what kind of trader you are, and where your edge actually comes from."
-        actions={<Badge variant="secondary">{rep.closedTrades} closed trades</Badge>}
+        actions={
+          <div className="flex items-center gap-2">
+            {rep.excludedUnpriced > 0 && (
+              <Badge variant="warning">{rep.excludedUnpriced} unpriced excluded</Badge>
+            )}
+            <Badge variant="secondary">{rep.closedTrades} closed trades</Badge>
+          </div>
+        }
       />
       <div className="space-y-5 p-6">
         <ProGate>
+          {/* Stated before any panel: these numbers are computed on a
+              population, and the user is entitled to know which one. */}
+          {rep.excludedUnpriced > 0 && (
+            <Card className="border-warning/40">
+              <CardContent className="p-4 text-xs text-muted-foreground">
+                <b className="text-warning">
+                  {rep.excludedUnpriced} closed trade{rep.excludedUnpriced === 1 ? " is" : "s are"} excluded from every panel below.
+                </b>{" "}
+                {rep.excludedUnpriced === 1 ? "It was" : "They were"} sold without a purchase on record — usually an
+                IPO allotment — so there is no cost to measure an edge against. With a buy value of zero the
+                arithmetic would score {rep.excludedUnpriced === 1 ? "it" : "them"} as {rep.excludedUnpriced === 1 ? "a" : ""} 100%
+                winner{rep.excludedUnpriced === 1 ? "" : "s"} and lift every expectancy on this page.
+                Set a cost on the <a className="underline" href="/trades">Trades</a> page to include {rep.excludedUnpriced === 1 ? "it" : "them"}.
+              </CardContent>
+            </Card>
+          )}
           {rep.closedTrades === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-2 p-10 text-center">

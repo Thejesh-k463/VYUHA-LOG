@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-668%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-735%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -61,6 +61,21 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Does a loss change how you trade?** Expectancy after a win vs after a loss, plus same-day re-entries — revenge trading, measured.
 - **Is your conviction rewarded?** Expectancy by position-size quartile. If your biggest positions are not your best, that is a *sizing* question, not a selection one.
 - **Three honesty rules enforced in code:** no finding below 15 trades in a group; no invented sessions for trades whose time is unknown; and every finding phrased as an observation, never an instruction — there is a test asserting no finding says "you should".
+
+### 🧾 Reads the product type out of the charges themselves
+
+- Dhan's **Global Transaction Report** has no product column — but India levies statutory charges at *different rates per product*, so the rate is a fingerprint. Stamp duty **0.015%** on a delivery buy vs **0.003%** intraday, corroborated independently by STT (**0.1%** both legs vs **0.025%** sell-only). Two witnesses agreeing on **89 of 92 rows** of a real report.
+- **A bill that mixes both is split algebraically.** Stamp duty is linear in value, so "bought 3,600, squared 1,800 same day" has exactly one solution. Labelled *derived* — it is arithmetic on a total, not a stated fact.
+- **MTF is still never claimed**, and that was verified rather than assumed: `Oth. Charges` totalled **₹0.03** across 92 rows and GST was 18% of (brokerage + txn + SEBI) to within **₹0.01**. No unexplained rupee, nowhere for financing to hide. So Vyuha asks about the *delivery* rows only — intraday and F&O can never be MTF.
+- **Legs pair FIFO across dates into real positions**, matching how the Income Tax Act treats equity delivery, so holding periods agree with the ones that decide STCG vs LTCG. A conservation check asserts not one share or rupee is created or lost.
+- **The broker's own charges are stored as truth.** Vyuha cannot be more accurate about a charge than the charge itself; its computed figures stay alongside as a cross-check.
+
+### 🎟 Sold something you never bought? It says so instead of scoring a win
+
+- Sell an IPO allotment and the tradebook holds the sale and nothing else — shares are credited on allotment and never appear as a buy. With a buy value of zero the arithmetic reads it as a **100% winner, every time**.
+- Those trades are **counted in cash but quarantined from every edge statistic** — win rate, expectancy, profit factor, ROM — until you set a cost.
+- **Vyuha recovers that cost from the file's own footer.** The rows omit the purchase, but the broker's gross P&L includes it, so subtracting everything matchable leaves what it must have cost. On a real report: −₹8,268.27 matched against a −₹8,489.60 footer left −₹221.33 for one holding — 37 shares sold for ₹21,904, implying **₹597.98 a share**. Pre-filled for confirmation, never applied silently.
+- IPO P&L is reported **apart from trading edge** — a listing-day pop is not a repeatable skill.
 
 ### 📥 Import that tells you what kind of file you brought
 
@@ -197,8 +212,8 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (668 tests) |
-| `npm run test:e2e` | Playwright e2e — 7 flows: import, import split, staged positions, ROM, KPI drill-down, Arjun's Eye |
+| `npm test` | Vitest unit suite (735 tests) |
+| `npm run test:e2e` | Playwright e2e — 10 flows incl. the Dhan transaction report and unpriced-sale quarantine |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

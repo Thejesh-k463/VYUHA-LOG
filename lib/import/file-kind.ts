@@ -19,7 +19,7 @@ import type { ProductHint } from "@/lib/engine/types";
 export type FileKind = "transactions" | "pnl";
 
 /** Parser `format` strings that mean "one row per execution". */
-const TRANSACTION_FORMATS = new Set(["tradebook", "console"]);
+const TRANSACTION_FORMATS = new Set(["tradebook", "console", "transactions"]);
 
 /**
  * Classify a parsed file. Defaults to "pnl" for anything unrecognised,
@@ -42,10 +42,34 @@ export interface FileKindCapability {
   knowsFills: boolean;
 }
 
-export function capabilityOf(kind: FileKind): FileKindCapability {
-  return kind === "transactions"
-    ? { kind, label: "Transactions / Tradebook", knowsProduct: true, knowsTime: true, knowsFills: true }
-    : { kind, label: "P&L Statement", knowsProduct: false, knowsTime: false, knowsFills: false };
+/**
+ * Formats that are transaction-level but carry a SETTLEMENT stamp rather than
+ * a fill time. Dhan's Global Transaction Report reads `00:00:00` on every row,
+ * so claiming it knows the time would push the whole book into a fabricated
+ * pre-open session — the precise thing Arjun's Eye refuses to do.
+ */
+const NO_FILL_TIME_FORMATS = new Set(["transactions"]);
+
+/**
+ * Formats where the product is DERIVED from the charge signature rather than
+ * stated outright. It is reliable for delivery vs intraday, but MTF is
+ * indistinguishable from delivery, so the confirmation step is still needed —
+ * just narrowed to the delivery rows.
+ */
+const DERIVED_PRODUCT_FORMATS = new Set(["transactions"]);
+
+export function capabilityOf(kind: FileKind, format?: string): FileKindCapability {
+  if (kind !== "transactions") {
+    return { kind, label: "P&L Statement", knowsProduct: false, knowsTime: false, knowsFills: false };
+  }
+  const f = (format ?? "").toLowerCase();
+  return {
+    kind,
+    label: "Transactions / Tradebook",
+    knowsProduct: !DERIVED_PRODUCT_FORMATS.has(f),
+    knowsTime: !NO_FILL_TIME_FORMATS.has(f),
+    knowsFills: !NO_FILL_TIME_FORMATS.has(f),
+  };
 }
 
 /** Product choices a user can apply to P&L rows that carry no product column. */

@@ -197,12 +197,12 @@ export function DashboardClient({
               {
                 label: "Best day", value: inr(dayStats.best, { decimals: 0 }), tone: "profit",
                 hint: dayStats.bestDate ?? undefined,
-                href: dayStats.bestDate ? `/trades?from=${dayStats.bestDate}&to=${dayStats.bestDate}` : undefined,
+                href: dayStats.bestDate ? `/trades?from=${dayStats.bestDate}&to=${dayStats.bestDate}&realised=1` : undefined,
               },
               {
                 label: "Worst day", value: inr(dayStats.worst, { decimals: 0 }), tone: "loss",
                 hint: dayStats.worstDate ?? undefined,
-                href: dayStats.worstDate ? `/trades?from=${dayStats.worstDate}&to=${dayStats.worstDate}` : undefined,
+                href: dayStats.worstDate ? `/trades?from=${dayStats.worstDate}&to=${dayStats.worstDate}&realised=1` : undefined,
               },
               { label: "Closed / open", value: `${k.closedCount} / ${k.openCount}` },
             ],

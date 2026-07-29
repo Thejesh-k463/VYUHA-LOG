@@ -13,6 +13,32 @@ export interface AnalyticsTrade {
   sellDate: string | null;
   buyDate: string | null;
   setupTag: string | null;
+  /**
+   * How the stock was acquired, when NOT bought inside the imported window
+   * (see lib/analytics/acquisition.ts). Null for the overwhelming majority.
+   */
+  acquisition?: string | null;
+  /** User-supplied cost per share for an acquisition-flagged trade. */
+  acquisitionPrice?: number | null;
+  /** Purchase value; zero on a sale whose purchase is not in the data. */
+  buyValue?: number;
+}
+
+/**
+ * Can this trade's EDGE be measured?
+ *
+ * A sale whose purchase is not in the data has `buyValue = 0`, which makes the
+ * arithmetic read it as pure profit — a 100% winner, every time. Counting
+ * those would inflate win rate, profit factor, expectancy and average win
+ * simultaneously, all in the flattering direction.
+ *
+ * Cash is different: the sale and its charges really happened, so net P&L,
+ * gross and charges still include them. Only the RATIOS are protected.
+ */
+export function edgeMeasurable(t: AnalyticsTrade): boolean {
+  if (!t.acquisition) return true;
+  if ((t.buyValue ?? 0) > 0) return true;
+  return t.acquisitionPrice != null;
 }
 
 export interface Kpis {
@@ -35,6 +61,10 @@ export interface Kpis {
   maxWinStreak: number;
   maxLossStreak: number;
   currentStreak: number; // +n wins / -n losses
+  /** Closed trades excluded from the edge ratios for want of a cost basis. */
+  unpricedCount: number;
+  /** Their net P&L — counted in the cash totals, absent from the ratios. */
+  unpricedNetPnl: number;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -54,10 +84,19 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
   let netPnl = 0, grossPnl = 0, charges = 0;
   let wins = 0, losses = 0, sumWin = 0, sumLoss = 0;
   let rSum = 0, rCount = 0;
+  let unpricedCount = 0, unpricedNetPnl = 0;
   for (const t of closed) {
+    // Cash always counts — the money moved whether or not we know the basis.
     netPnl += t.netPnl;
     grossPnl += t.grossPnl;
     charges += t.chargesTotal;
+
+    if (!edgeMeasurable(t)) {
+      unpricedCount++;
+      unpricedNetPnl += t.netPnl;
+      continue;
+    }
+
     if (t.netPnl > 0) { wins++; sumWin += t.netPnl; }
     else if (t.netPnl < 0) { losses++; sumLoss += t.netPnl; }
     if (t.rMultiple != null) { rSum += t.rMultiple; rCount++; }
@@ -83,6 +122,15 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
   }
 
   const closedCount = closed.length;
+  /**
+   * Denominator for the RATIOS: closed trades whose edge can actually be
+   * measured. Dividing by every closed trade while the numerator skips the
+   * unpriced ones would swap one distortion for its mirror image — an
+   * understated win rate instead of an overstated one.
+   */
+  const pricedCount = closedCount - unpricedCount;
+  const pricedNetPnl = netPnl - unpricedNetPnl;
+
   return {
     count: trades.length,
     closedCount,
@@ -93,9 +141,9 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
     chargePctOfGross: grossPnl !== 0 ? r2((charges / Math.abs(grossPnl)) * 100) : 0,
     wins,
     losses,
-    winRate: closedCount ? wins / closedCount : 0,
+    winRate: pricedCount ? wins / pricedCount : 0,
     profitFactor: sumLoss !== 0 ? r2(sumWin / Math.abs(sumLoss)) : sumWin > 0 ? Infinity : 0,
-    expectancy: closedCount ? r2(netPnl / closedCount) : 0,
+    expectancy: pricedCount ? r2(pricedNetPnl / pricedCount) : 0,
     avgR: rCount ? r2(rSum / rCount) : null,
     avgWin: wins ? r2(sumWin / wins) : 0,
     avgLoss: losses ? r2(sumLoss / losses) : 0,
@@ -103,6 +151,8 @@ export function computeKpis(trades: AnalyticsTrade[]): Kpis {
     maxWinStreak: maxWin,
     maxLossStreak: maxLoss,
     currentStreak: cur,
+    unpricedCount,
+    unpricedNetPnl: r2(unpricedNetPnl),
   };
 }
 

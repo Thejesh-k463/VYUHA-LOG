@@ -36,6 +36,27 @@ export interface CockpitTrade {
   exitTime: string | null;
   isOpen: boolean;
   rMultiple: number | null;
+  /**
+   * Set when the stock was acquired outside the imported window, so the
+   * purchase price is not in the data (see lib/analytics/acquisition.ts).
+   */
+  acquisition?: string | null;
+  acquisitionPrice?: number | null;
+}
+
+/**
+ * Whether this trade can contribute to an EDGE statistic.
+ *
+ * A sale with no purchase on record has `buyValue = 0`, which reads as a 100%
+ * win. Arjun's Eye is entirely built from expectancy and win rate, so letting
+ * those through would corrupt every panel on the page at once — the session
+ * bars, the segment scorecard, the sizing quartiles and the tilt comparison
+ * alike. They are dropped here, once, at the entry point.
+ */
+export function edgeMeasurable(t: CockpitTrade): boolean {
+  if (!t.acquisition) return true;
+  if (t.buyValue > 0) return true;
+  return t.acquisitionPrice != null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -440,13 +461,19 @@ export interface CockpitReport {
   segments: SegmentRow[];
   findings: Finding[];
   closedTrades: number;
+  /** Trades held out for want of a cost basis — reported, never silent. */
+  excludedUnpriced: number;
 }
 
 export function cockpitReport(
-  trades: CockpitTrade[],
+  tradesIn: CockpitTrade[],
   chargesById: Record<number, number> = {},
   segmentLabels: Record<string, string> = {},
 ): CockpitReport {
+  // Every panel below is an expectancy or a win rate, so unpriced sales are
+  // excluded once here rather than defended against five times downstream.
+  const trades = tradesIn.filter(edgeMeasurable);
+  const excludedUnpriced = tradesIn.length - trades.length;
   const time = timeEdge(trades);
   const holding = holdingBehaviour(trades);
   const sizing = sizingBehaviour(trades);
@@ -461,5 +488,6 @@ export function cockpitReport(
     segments,
     findings: findings(time, holding, sizing, tilt, segments),
     closedTrades: trades.filter((t) => !t.isOpen).length,
+    excludedUnpriced,
   };
 }

@@ -396,3 +396,71 @@ export async function applyStopAllAction(_prev: ActionState, formData: FormData)
   if (res.ok) revalidateAfterTradeChange();
   return { ok: res.ok, message: res.message };
 }
+
+/**
+ * Set how a holding was acquired, and what it cost.
+ *
+ * This is the resolution step for a trade the importer could not price: sold
+ * inside the window, bought before it. Until a basis is supplied the trade is
+ * counted in cash but held out of win rate, expectancy, profit factor and ROM,
+ * because `buyValue = 0` would otherwise read as a 100% win — the single most
+ * flattering lie the journal could tell.
+ *
+ * Supplying the price recomputes gross and net P&L from the sale that already
+ * happened. Charges are left untouched: they were always real and were never
+ * the thing in doubt.
+ */
+export async function setAcquisitionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const id = Number(formData.get("tradeId"));
+  if (!Number.isFinite(id)) return { ok: false, message: "Invalid trade." };
+
+  const kind = str(formData.get("acquisition")) ?? "";
+  if (!["unknown", "ipo", "bonus", "gift"].includes(kind)) {
+    return { ok: false, message: "Pick how these shares were acquired." };
+  }
+
+  const row = db.select().from(trades).where(eq(trades.id, id)).get();
+  if (!row) return { ok: false, message: "Trade not found." };
+
+  const rawPrice = formData.get("acquisitionPrice");
+  const hasPrice = rawPrice != null && String(rawPrice).trim() !== "";
+  const price = hasPrice ? Number(rawPrice) : null;
+  if (hasPrice && (!Number.isFinite(price!) || price! < 0)) {
+    return { ok: false, message: "Cost per share must be zero or more." };
+  }
+
+  const acquisitionDate = str(formData.get("acquisitionDate"));
+
+  // Leaving the price blank is a legitimate "I do not know yet" — the trade
+  // stays flagged and out of the statistics rather than being forced to a
+  // number the user does not actually have.
+  const patch: Record<string, unknown> = {
+    acquisition: kind,
+    acquisitionPrice: hasPrice ? price : null,
+    acquisitionDate: acquisitionDate ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (hasPrice) {
+    const buyValue = Math.round(row.sellQty * price! * 100) / 100;
+    const grossPnl = Math.round((row.sellValue - buyValue) * 100) / 100;
+    patch.buyQty = row.sellQty;
+    patch.avgBuyPrice = price;
+    patch.buyValue = buyValue;
+    patch.grossPnl = grossPnl;
+    patch.netPnl = Math.round((grossPnl - row.chargesTotal) * 100) / 100;
+    patch.realisedPct = buyValue > 0 ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
+    if (acquisitionDate) patch.buyDate = acquisitionDate;
+  }
+
+  db.update(trades).set(patch).where(eq(trades.id, id)).run();
+  revalidateAfterTradeChange();
+  for (const p of ["/ipos", "/arjuns-eye", "/reports/performance"]) revalidatePath(p);
+
+  return {
+    ok: true,
+    message: hasPrice
+      ? "Cost basis set — this trade now counts toward your edge."
+      : "Marked. Add a cost per share to include it in win rate and expectancy.",
+  };
+}

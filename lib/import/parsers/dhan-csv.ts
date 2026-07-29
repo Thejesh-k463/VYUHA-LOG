@@ -12,6 +12,10 @@ const toNum = (v: unknown): number => {
 export function detectDhanCsv(ctx: ParseContext): number {
   const text = ctx.text ?? "";
   if (!text) return 0;
+  // A Global Transaction Report is also a Dhan CSV with the same footer, but a
+  // different and much richer body. Stand down explicitly rather than relying
+  // on the other parser simply scoring higher.
+  if (/Date\s*,\s*Scrip Name\s*,\s*Exchange\s*,\s*Bill No\./i.test(text)) return 0;
   let score = 0;
   if (/dhan/i.test(ctx.filename)) score += 0.3;
   if (/^PnL report/i.test(text.trimStart())) score += 0.4;

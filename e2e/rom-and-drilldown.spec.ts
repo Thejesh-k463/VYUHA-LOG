@@ -70,5 +70,15 @@ test("KPI drill-down: worst-day link filters trades that sum to the headline", a
   expect(nets.length).toBeGreaterThan(0);
   const sum = nets.map((n) => Number(n.replace(/[^\d.-]/g, ""))).reduce((a, b) => a + b, 0);
 
-  expect(Math.round(sum), "filtered trades must reconcile with the clicked figure").toBe(Math.round(worst));
+  // Tolerance, and why it is not a fudge: these values are read from the
+  // RENDERED table, where each Net is displayed rounded to the whole rupee.
+  // Summing N rounded numbers carries up to 0.5 rupee of error each, so an
+  // exact match is arithmetically impossible for a multi-row day. Half a rupee
+  // per row is the true bound; anything beyond it is a real reconciliation
+  // failure — an off-by-one-trade bug lands far outside this.
+  const tolerance = Math.max(1, Math.ceil(nets.length / 2));
+  expect(
+    Math.abs(sum - worst),
+    `filtered trades must reconcile with the clicked figure (sum ${sum} vs ${worst}, ${nets.length} rows)`,
+  ).toBeLessThanOrEqual(tolerance);
 });

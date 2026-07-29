@@ -4,7 +4,93 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
-## Unreleased — forensic audit fixes
+## v2.90.0
+**Dhan's Global Transaction Report** — the file that finally answers the three
+questions an aggregated P&L cannot: *when* did I trade this, *what product* was
+it, and *what did it actually cost*.
+
+### A new importer, and why it matters more than "one more broker file"
+
+Dhan's P&L export has no per-trade dates and no product column. That is why a
+book built from it sat almost entirely outside the equity curve and every
+risk-adjusted metric. The Global Transaction Report has one row per scrip per
+settlement bill, with a real date, and the broker's own charges on every row.
+
+- **Delivery and intraday are told apart from the charges themselves.** India
+  levies statutory charges at different rates per product, so the rate is a
+  fingerprint: stamp duty **0.015%** on a delivery buy against **0.003%**
+  intraday, corroborated independently by STT at **0.1%** on both legs versus
+  **0.025%** on the sell alone. Two witnesses, agreeing on 89 of 92 rows of a
+  real report. Below ₹5,000 the per-rupee rounding swamps the signal, so those
+  rows return *unknown* rather than a reading of an artefact.
+- **MTF is still never claimed.** An MTF position carries exactly the same STT
+  and stamp duty as delivery; the only thing separating them is financing
+  interest, which is a ledger entry and appears nowhere in this file. Verified
+  rather than assumed: `Oth. Charges` totalled **₹0.03** across 92 rows and GST
+  was 18% of (brokerage + txn + SEBI) to within **₹0.01**, leaving no
+  unexplained rupee for financing to hide in. The confirmation panel therefore
+  narrows from every scrip to just the **delivery** rows — intraday and F&O can
+  never be MTF, so asking about them was noise.
+- **Bills that mix both products are split algebraically.** Buy 3,600, square
+  1,800 the same day and carry the rest, and the stamp duty lands between the
+  two rates. Since stamp is linear in value, the split has exactly one
+  solution. Labelled as *derived*, because it is arithmetic on a total rather
+  than a stated fact.
+- **Legs are paired FIFO across dates into positions.** Bought the 6th, sold
+  the 7th is one trade held one day — not a phantom open position and a phantom
+  naked short. FIFO matches how the Income Tax Act treats equity delivery, so
+  the holding periods agree with the ones that decide STCG versus LTCG. A
+  conservation check asserts no share and no rupee is created or lost.
+- **The broker's charges are stored as the truth**, with Vyuha's computed
+  figures kept alongside as a cross-check. This is real money that really left
+  the account; the engine cannot be more accurate about a charge than the charge
+  itself, and storing an estimate that differs from the contract note would make
+  the journal disagree with the broker.
+- Execution times stay **null**. The date column reads `00:00:00` on every row —
+  a settlement stamp, not a fill — and bucketing the whole book into a
+  pre-open session would fabricate an edge.
+
+### Sales with no purchase — the IPO allotment problem
+
+Sell a holding acquired before the import window and the file contains the sale
+and nothing else. In Indian retail this is most often an **IPO allotment**:
+shares are credited on allotment and never appear as a buy anywhere.
+
+With `buyValue = 0` the arithmetic still "works" — and every number it produces
+is false and flattering. A book of IPO flips would show a 100% win rate and an
+infinite Return on Margin.
+
+- These trades are now **flagged, and counted in cash but held out of every edge
+  statistic** — win rate, expectancy, profit factor, ROM — until a cost is set.
+  The sale and its charges were always real and remain in Net P&L.
+- **Vyuha recovers the missing cost from the file's own footer.** The rows omit
+  the purchase, but the broker's stated gross P&L includes the trade, so
+  subtracting everything that could be matched leaves exactly what it must have
+  cost. On a real report: matched gross of −₹8,268.27 against a footer of
+  −₹8,489.60 left −₹221.33 for one unmatched holding — 37 shares sold for
+  ₹21,904, implying **₹597.98 a share**. Offered pre-filled for confirmation,
+  never applied silently.
+- Confirm the acquisition as **IPO allotment, bonus/split, transfer-in or an
+  ordinary earlier purchase**, set the cost and date, and the trade rejoins the
+  statistics. IPO P&L is reported in its own panel, apart from trading edge —
+  a listing-day pop is not a repeatable skill and blending it into expectancy
+  overstates how well you actually trade.
+
+### Fixed
+
+**A drill-down that did not reconcile.** The trades date filter used
+`sellDate ?? buyDate` regardless of whether a position was open, while
+`dailyPnl` skips open trades entirely. A holding that is open *and* carries a
+sell date — a partial exit, or a sale with no recorded purchase — appeared in
+the filtered rows but never in the figure that was clicked. Realised
+drill-downs now restrict to closed trades, and the effective date is the exit
+for a closed trade and the **entry** for an open one, which is what the code
+already claimed in a comment.
+
+64 new unit tests (735 total) and 2 new end-to-end flows (10 total), the new
+ones asserted against a real 92-row broker report rather than synthetic data.
+
+## v2.89.1 — forensic audit fixes
 
 A full-book audit of every feature. Money identities were already exact
 (gross − charges − net reconciled to 0.0000 across 252 trades, charge

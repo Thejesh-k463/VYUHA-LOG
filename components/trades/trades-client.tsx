@@ -61,6 +61,9 @@ export function TradesClient({
   // Date window, set by deep links from the KPI drill-downs (e.g. "worst day").
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
+  /** Set by a realised-P&L drill-down: restrict to closed trades so the rows
+   *  reconcile exactly with the figure that was clicked. */
+  const [realised, setRealised] = React.useState(false);
 
   // Deep links. Two kinds:
   //   ?add=manual|open              — command palette, opens a dialog
@@ -80,6 +83,7 @@ export function TradesClient({
     if (f) setFrom(f);
     const t = q.get("to");
     if (t) setTo(t);
+    if (q.get("realised") === "1") setRealised(true);
     const seg = q.get("segment");
     if (seg) setSegment(seg);
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -100,8 +104,18 @@ export function TradesClient({
       // buckets realised P&L on sellDate. Matching either leg instead would
       // pull in positions opened that day but closed later, and the trades
       // shown would not add up to the daily figure the user just clicked.
+      // A REALISED drill-down must show exactly the population dailyPnl
+      // summed — closed trades only. An open position can carry a sell date
+      // (a partial exit, or a holding sold without a recorded purchase), and
+      // including it here put rupees on screen that were never in the figure
+      // the user clicked. Off by the open trade's charges, every time.
+      if (realised && t.isOpen) return false;
+
       if (from || to) {
-        const d = t.sellDate ?? t.buyDate;
+        // Effective date: exit for a closed trade, ENTRY for an open one.
+        // `sellDate ?? buyDate` looked equivalent but is not — it hands an
+        // open position its exit date whenever one exists.
+        const d = t.isOpen ? t.buyDate : t.sellDate;
         if (!d) return false;
         if (from && d < from) return false;
         if (to && d > to) return false;
@@ -109,7 +123,7 @@ export function TradesClient({
       if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [trades, search, broker, segment, bucket, from, to]);
+  }, [trades, search, broker, segment, bucket, from, to, realised]);
 
   const columns = React.useMemo<ColumnDef<Trade, unknown>[]>(() => [
     {

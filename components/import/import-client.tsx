@@ -16,8 +16,17 @@ interface PreviewRow {
   buyDate?: string | null; sellDate?: string | null; tradingsymbol_?: string;
 }
 type ProductHint = "delivery" | "mtf" | "intraday";
-/** The only segments where the product type is genuinely in question. */
-const EQUITY_SEGMENTS = new Set<Segment>(["eq_delivery", "eq_mtf", "eq_intraday"]);
+/**
+ * The only segments where the product type is genuinely in QUESTION.
+ *
+ * Intraday is excluded deliberately. It is never in doubt: a same-day round
+ * trip is a fact in a P&L file, and in a transaction report the intraday stamp
+ * duty rate (0.003% against delivery's 0.015%) states it outright. What cannot
+ * be known either way is whether a DELIVERY row was actually MTF — the two are
+ * identical in STT and stamp duty, and financing interest never appears in
+ * either kind of file. So that, and only that, is what the user is asked.
+ */
+const AMBIGUOUS_SEGMENTS = new Set<Segment>(["eq_delivery", "eq_mtf"]);
 const PRODUCT_CHOICES: { value: ProductHint; label: string; hint: string }[] = [
   { value: "delivery", label: "Equity Delivery", hint: "Paid in full, held overnight" },
   { value: "mtf", label: "Equity MTF", hint: "Broker-funded; interest accrues daily" },
@@ -147,15 +156,16 @@ export function ImportClient() {
     ? [
         ...new Map(
           preview.preview.rows
-            .filter((r) => !r.isDuplicate && EQUITY_SEGMENTS.has(r.segment))
+            .filter((r) => !r.isDuplicate && AMBIGUOUS_SEGMENTS.has(r.segment))
             .map((r) => [r.tradingsymbol, r.symbol] as const),
         ).entries(),
       ].sort((a, b) => a[1].localeCompare(b[1]))
     : [];
 
-  /** Derivative rows that need no question — reported so the panel can say so. */
+  /** Rows that answer the question themselves — reported, so the panel can say
+   *  what it is NOT asking about rather than leaving the user to wonder. */
   const derivativeRowCount = preview?.preview
-    ? preview.preview.rows.filter((r) => !r.isDuplicate && !EQUITY_SEGMENTS.has(r.segment)).length
+    ? preview.preview.rows.filter((r) => !r.isDuplicate && !AMBIGUOUS_SEGMENTS.has(r.segment)).length
     : 0;
 
   const p = preview?.preview;
@@ -319,9 +329,9 @@ export function ImportClient() {
                 </p>
                 {derivativeRowCount > 0 && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Only equity rows are listed. The other <b>{num(derivativeRowCount)}</b> row
-                    {derivativeRowCount === 1 ? " is a derivative and names" : "s are derivatives and name"}{" "}
-                    its own segment — <b>F&amp;O is never ambiguous</b>, so there is nothing to confirm.
+                    Only rows that could be MTF are listed. The other <b>{num(derivativeRowCount)}</b>{" "}
+                    {derivativeRowCount === 1 ? "row is" : "rows are"} intraday or F&amp;O, which
+                    identify themselves — <b>neither can ever be MTF</b>, so there is nothing to confirm.
                   </p>
                 )}
               </CardHeader>

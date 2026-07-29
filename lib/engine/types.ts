@@ -80,6 +80,41 @@ export interface NormalizedTrade {
    * opening side make the trade a staged position on commit.
    */
   executions?: Execution[] | null;
+  /**
+   * Charges the broker ACTUALLY levied on this trade, when the file states
+   * them per row (a transaction/contract report does; a P&L summary does not).
+   *
+   * When present these are stored as the truth and the computed figures are
+   * kept only as a cross-check. Reasoning: this is real money that really left
+   * the account. Vyuha's engine cannot be more accurate about a charge than
+   * the charge itself, and quietly storing a computed number that differs from
+   * the contract note would make the journal disagree with the broker.
+   */
+  reportedCharges?: Partial<ChargeBreakdown> | null;
+  /**
+   * True when this row was SOLD without any matching purchase in the file —
+   * the stock was acquired before the window, very often as an IPO allotment.
+   *
+   * Its cost basis is not merely unknown but unknowable from the file, so P&L
+   * for it is meaningless until the user supplies one. Reporting a 100% gain
+   * because buyValue is zero would be a fabrication.
+   */
+  basisUnknown?: boolean;
+  /**
+   * A per-share cost RECOVERED from the file's own footer for an unmatched
+   * holding (see `deriveBasisFromFooter`). Offered as a suggestion the user
+   * confirms — never applied silently, because it is arithmetic on a total
+   * rather than a stated purchase price.
+   */
+  suggestedBasisPrice?: number | null;
+  /**
+   * True when `productHint` was INFERRED from the charge signature rather than
+   * stated by the file. Surfaced in the UI so a derived fact never wears the
+   * same clothes as a reported one.
+   */
+  productDerived?: boolean;
+  /** Per-row provenance notes, carried through to the trade record. */
+  importNotes?: string[] | null;
 }
 
 /** One executed fill from a broker tradebook. */

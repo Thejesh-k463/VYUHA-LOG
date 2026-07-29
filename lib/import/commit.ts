@@ -93,7 +93,7 @@ function buildRow(
   const sellOrderCount = t.sellQty > 0 ? defaults.sellOrders : 0;
 
   const r = findRates(rates, t.broker, cls.segment, cls.exchange);
-  const charges = computeCharges(
+  const computed = computeCharges(
     {
       segment: cls.segment,
       buyValue: t.buyValue,
@@ -105,6 +105,31 @@ function buildRow(
     },
     r,
   );
+
+  /**
+   * When the file states what the broker ACTUALLY charged, that is the truth.
+   *
+   * This is real money that really left the account; the engine cannot be more
+   * accurate about a charge than the charge itself, and storing a computed
+   * figure that differs from the contract note would make the journal disagree
+   * with the broker. The computed breakdown is kept alongside as a cross-check
+   * so drift in the rate table stays visible instead of silently overriding.
+   */
+  const reported = t.reportedCharges;
+  const charges = reported
+    ? {
+        ...computed,
+        ...reported,
+        total:
+          reported.total ??
+          Math.round(
+            ((reported.brokerage ?? 0) + (reported.sttCtt ?? 0) + (reported.exchangeTxn ?? 0) +
+              (reported.sebi ?? 0) + (reported.stampDuty ?? 0) + (reported.ipft ?? 0) +
+              (reported.gst ?? 0) + (reported.dpCharges ?? 0) + (reported.mtfInterest ?? 0) +
+              (reported.pledgeCharges ?? 0)) * 100,
+          ) / 100,
+      }
+    : computed;
 
   const netPnl = Math.round((t.grossPnl - charges.total) * 100) / 100;
   // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short) row has
@@ -394,6 +419,12 @@ export function commitParsedFile(
           importBatchId: batchId,
           dedupHash: b.dedup,
           staged: stagedFromExecutions(t),
+          // A sell with no matching purchase in the file: the cost basis is
+          // unknowable until the user says how the stock was acquired, so it
+          // is flagged rather than reported as an all-profit trade.
+          acquisition: t.basisUnknown ? "unknown" : null,
+          suggestedBasisPrice: t.suggestedBasisPrice ?? null,
+          importNotes: t.importNotes?.length ? t.importNotes.join(" | ") : null,
         })
         .returning({ id: tradesTable.id })
         .get();

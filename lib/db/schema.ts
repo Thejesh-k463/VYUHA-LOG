@@ -109,6 +109,38 @@ export const trades = sqliteTable(
     // classic single-entry behaviour byte-for-byte, so nothing existing moves.
     staged: integer("staged", { mode: "boolean" }).notNull().default(false),
 
+    /**
+     * How this position was acquired, when it was NOT bought inside the
+     * imported window.
+     *
+     *   null       bought normally — the overwhelming majority
+     *   "unknown"  sold with no matching purchase in the file; the stock was
+     *              acquired earlier, so the cost basis is unknowable from the
+     *              data alone
+     *   "ipo"      user-confirmed IPO allotment
+     *   "bonus"    bonus / split / corporate action credit
+     *   "gift"     transfer-in, gift or inheritance
+     *
+     * Anything other than null with `buy_value_paise = 0` has NO usable cost
+     * basis, and is excluded from win rate, expectancy and ROM until the user
+     * supplies one — reporting a 100% gain because the buy value happens to be
+     * zero would be a fabrication.
+     */
+    acquisition: text("acquisition"),
+    /** Per-share cost the user supplied for an acquisition-flagged trade. */
+    acquisitionPrice: real("acquisition_price"),
+    /** When the shares were acquired — starts the tax holding period. */
+    acquisitionDate: text("acquisition_date"),
+    /**
+     * Cost per share RECOVERED from an import file's own footer, offered as a
+     * suggestion. Deliberately a separate column from `acquisitionPrice`: a
+     * derived number must never sit where a confirmed one lives, or the UI
+     * cannot tell the user which of the two they are looking at.
+     */
+    suggestedBasisPrice: real("suggested_basis_price"),
+    /** Provenance notes written by the importer (product derived, mixed bill…). */
+    importNotes: text("import_notes"),
+
     // Charges breakdown
     brokerage: moneyPaise("brokerage_paise").notNull().default(0),
     sttCtt: moneyPaise("stt_ctt_paise").notNull().default(0),

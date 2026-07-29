@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     candidates: ranked.map((p) => ({ sourceId: p.sourceId, label: p.label, confidence: p.confidence })),
     // What this KIND of file can and cannot tell us — drives whether the UI
     // asks for product types or trusts the file.
-    fileKind: capabilityOf(kind),
+    fileKind: capabilityOf(kind, parsed.format),
     preview,
   });
 }

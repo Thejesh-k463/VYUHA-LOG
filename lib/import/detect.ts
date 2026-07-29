@@ -1,5 +1,6 @@
 import type { ParseContext, ParsedFile } from "./types";
 import { detectDhanCsv, parseDhanCsv } from "./parsers/dhan-csv";
+import { detectDhanGtr, parseDhanGtr } from "./parsers/dhan-gtr";
 import { detectGrowwXlsx, parseGrowwXlsx } from "./parsers/groww-xlsx";
 import { detectZerodha, parseZerodha } from "./parsers/zerodha";
 import { detectPdf, parsePdf } from "./parsers/pdf";
@@ -13,6 +14,7 @@ export interface DetectedParser {
 }
 
 const REGISTRY: DetectedParser[] = [
+  { sourceId: "dhan-gtr", label: "Dhan Global Transaction Report (CSV)", confidence: 0, parse: parseDhanGtr },
   { sourceId: "dhan-csv", label: "Dhan P&L (CSV)", confidence: 0, parse: parseDhanCsv },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", confidence: 0, parse: parseGrowwXlsx },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", confidence: 0, parse: parseZerodha },
@@ -22,6 +24,7 @@ const REGISTRY: DetectedParser[] = [
 ];
 
 const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
+  "dhan-gtr": detectDhanGtr,
   "dhan-csv": detectDhanCsv,
   "groww-xlsx": detectGrowwXlsx,
   zerodha: detectZerodha,
