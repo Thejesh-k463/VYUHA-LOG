@@ -4,6 +4,56 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.94.0
+**See exactly the trades you mean**, and a repo that no longer mixes the
+vendor's files with the buyer's.
+
+### Status and outcome, in one control
+
+The Trades filter bar gains a dropdown covering both questions at once:
+
+- **Status** — Open · Closed · Staged (scaled) positions
+- **Outcome** — In gain (open) · In loss (open) · Profit (closed) · Loss (closed)
+
+Every option carries its **own live count**, computed after the other filters,
+so an empty view is visible before it is chosen. The counts are a partition:
+open + closed always equals the total, and an e2e test asserts that choosing an
+option returns exactly the number it advertised — a filter whose label disagrees
+with its result is worse than no filter.
+
+**An open position with no mark price appears in neither "in gain" nor "in
+loss".** It has no unrealised result to judge. Vyuha stores 0 for an unmarked
+holding, and reading that 0 as breakeven would file it under a result it never
+had — so those positions stay under the *status* views, and the count of them is
+stated on screen rather than left as a silent shortfall.
+
+Staged is deliberately **not exclusive**: a staged position is also open or
+closed, so "show me my staged trades" and "show me what is open" never fight.
+
+### The repository now separates owner from client
+
+```
+docs/client/   what a BUYER gets — install guide, getting-started deck, welcome
+docs/owner/    VENDOR ONLY — licensing, release runbook, monetization, indicators
+docs/sales/    public marketing assets (landing page, brochure)
+```
+
+Two new indexes: `docs/owner/README.md` is the operating manual for cutting a
+release and selling a key — including which three secrets exist, where they
+live, and precisely what each one costs if lost. `docs/client/README.md` is the
+buyer's first page, including which broker file to import and why Vyuha asks
+about MTF at all.
+
+Also removed: a stale `updater-private.key.pub` at the repo root, left over from
+the dead pre-v2.91 signing key. It matched nothing that ships and could only
+mislead. The current public key now sits in `docs/owner/` beside the runbook.
+
+The README gained a **repo map**, and states the rule that keeps the maths
+honest: `lib/analytics/*` and `lib/engine/*` import neither the database nor
+React, which is why every number can be tested without a browser.
+
+18 new unit tests (794 total) and 3 new e2e flows (13 total).
+
 ## v2.92.0
 **The staged-position panel no longer blocks you.**
 

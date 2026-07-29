@@ -262,7 +262,7 @@ Read sections 1–2 before writing any code.
 >   top playbooks + mistake economics, disclaimer. `PrintButton` → window.print → "Save as PDF". Root layout is
 >   print-aware: sidebar wrapped in `contents print:hidden`, scroll containers `print:overflow-visible` —
 >   Recharts SVG prints fine.
-> - **Code signing (PREPARED, dormant — docs/CODE_SIGNING.md)** — release.yml auto-activates Azure Trusted
+> - **Code signing (PREPARED, dormant — docs/owner/CODE_SIGNING.md)** — release.yml auto-activates Azure Trusted
 >   Signing when the six `AZURE_*` repo secrets exist: installs trusted-signing-cli and overlays
 >   `src-tauri/tauri.signed.conf.json` (Windows `signCommand`) via tauri-action `args`. No secrets → identical
 >   unsigned build as today. CORRECTION (v1.40.0): `secrets` is not allowed in `if:` at ANY level — it's a
@@ -1120,7 +1120,7 @@ per-release detail lives in `CHANGELOG.md`.
   a trade as two legs rounds twice where a round trip rounds once. Observed ≤ ₹1.11 across every
   segment on real data. The per-leg figure is the more accurate one and is not corrected back.
 - **Licence revocation is build-time.** An offline app cannot have a kill switch without phoning
-  home. See `docs/monetization/LICENSE_OPERATIONS.md` §4.
+  home. See `docs/owner/LICENSE_OPERATIONS.md` §4.
 - **No device binding.** One key activates on unlimited machines; the deterrent is the buyer's
   email displayed in-app. Trade-off analysed in `LICENSE_OPERATIONS.md` §6.
 - **No intraday data.** MAE/MFE and any future trade-replay work from EOD bhavcopy only.

@@ -8,7 +8,7 @@
 //
 // Threat model: stop honest sharing, not determined crackers — the key embeds the
 // buyer's email and the UI shows "Licensed to <email>" (social friction). An offline
-// app can always be patched; that is accepted (see docs/monetization/MONETIZATION_PLAN.md).
+// app can always be patched; that is accepted (see docs/owner/MONETIZATION_PLAN.md).
 //
 // ENFORCEMENT MODES — flip ONE constant when you start selling:
 //   "banner" (current): everything works; Pro screens show an "unlicensed" banner.
@@ -150,7 +150,7 @@ export const TRIAL_DAYS = 14;
  *
  * Delivery model (2026-07): the installer ZIP and licence key are sent
  * personally by email after a WhatsApp conversation — see
- * docs/monetization/LICENSE_OPERATIONS.md.
+ * docs/owner/LICENSE_OPERATIONS.md.
  */
 // Typed as `string`, not inferred as a literal: the guard tests compare it
 // against "" and TypeScript would otherwise narrow it to a single literal type

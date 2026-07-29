@@ -23,6 +23,9 @@ import {
 import type { Trade } from "@/lib/db/schema";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
+import {
+  TRADE_VIEWS, matchesView, countViews, countForView, type TradeView,
+} from "@/lib/analytics/trade-status";
 import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen, Layers } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -58,6 +61,10 @@ export function TradesClient({
   const [broker, setBroker] = React.useState("");
   const [segment, setSegment] = React.useState("");
   const [bucket, setBucket] = React.useState("");
+  /** Status + outcome in one control: open/closed/staged, and in-gain /
+   *  in-loss / profit / loss. See lib/analytics/trade-status.ts for why an
+   *  UNMARKED open position deliberately belongs to neither gain nor loss. */
+  const [view, setView] = React.useState<TradeView>("all");
   // Date window, set by deep links from the KPI drill-downs (e.g. "worst day").
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
@@ -97,6 +104,7 @@ export function TradesClient({
       if (broker && t.broker !== broker) return false;
       if (segment && t.segment !== segment) return false;
       if (bucket && t.bucket !== bucket) return false;
+      if (!matchesView(t, view)) return false;
       // Date window matches the trade's EFFECTIVE date: the exit for a closed
       // trade, the entry for one still open.
       //
@@ -123,6 +131,30 @@ export function TradesClient({
       if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
       return true;
     });
+  }, [trades, search, broker, segment, bucket, from, to, realised, view]);
+
+  /**
+   * Counts for the dropdown, computed AFTER the other filters but BEFORE the
+   * view itself — so each option shows how many rows choosing it would give,
+   * rather than how many exist in the whole book.
+   */
+  const viewCounts = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = trades.filter((t) => {
+      if (broker && t.broker !== broker) return false;
+      if (segment && t.segment !== segment) return false;
+      if (bucket && t.bucket !== bucket) return false;
+      if (realised && t.isOpen) return false;
+      if (from || to) {
+        const d = t.isOpen ? t.buyDate : t.sellDate;
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+      }
+      if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+    return countViews(base);
   }, [trades, search, broker, segment, bucket, from, to, realised]);
 
   const columns = React.useMemo<ColumnDef<Trade, unknown>[]>(() => [
@@ -252,6 +284,30 @@ export function TradesClient({
           <option value="">All buckets</option>
           {BUCKETS.map((b) => <option key={b} value={b}>{BUCKET_LABELS[b]}</option>)}
         </Select>
+        {/* Status AND outcome in one control. Each option carries the count it
+            would return, so an empty result is visible before it is chosen. */}
+        <Select
+          value={view}
+          onChange={(e) => setView(e.target.value as TradeView)}
+          className="h-8 w-56"
+          title="Filter by status (open / closed / staged) or by result"
+        >
+          <option value="all">All trades ({viewCounts.all})</option>
+          <optgroup label="Status">
+            {TRADE_VIEWS.filter((v) => v.group === "Status").map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.label} ({countForView(viewCounts, v.value)})
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Outcome">
+            {TRADE_VIEWS.filter((v) => v.group === "Outcome").map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.label} ({countForView(viewCounts, v.value)})
+              </option>
+            ))}
+          </optgroup>
+        </Select>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{data.length} of {trades.length}</span>
           <Dialog open={addOpenTrade} onOpenChange={setAddOpenTrade}>
@@ -280,6 +336,23 @@ export function TradesClient({
           </Dialog>
         </div>
       </div>
+
+      {/* Why a gain/loss view can return fewer rows than "Open".
+
+          An open position with no mark price has NO unrealised result — Vyuha
+          stores 0 for it, and reading that 0 as breakeven would file the
+          holding under a result it never had. So unmarked positions appear
+          under the STATUS views and in neither outcome view, and the count is
+          stated here rather than left as a silent gap. */}
+      {(view === "open-gain" || view === "open-loss") && viewCounts.openUnmarked > 0 && (
+        <p className="-mt-1 text-xs text-muted-foreground">
+          <b className="text-warning">{viewCounts.openUnmarked}</b> open position
+          {viewCounts.openUnmarked === 1 ? " has" : "s have"} no mark price, so {viewCounts.openUnmarked === 1 ? "it is" : "they are"}{" "}
+          in neither gain nor loss — an unmarked position has no unrealised result to judge. Set a
+          mark on <a className="underline" href="/risk">Portfolio Risk</a>, or choose{" "}
+          <b className="text-foreground">Open</b> above to see every open position.
+        </p>
+      )}
 
       <Card className="p-0">
         <DataTable columns={columns} data={data} emptyMessage="No trades yet — import a broker file or add one manually." />

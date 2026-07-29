@@ -1,7 +1,7 @@
 // Turn the landing page into ONE self-contained .html file.
 //
 //   node scripts/build-landing.mjs
-//   → docs/monetization/landing-page.standalone.html
+//   → docs/sales/landing-page.standalone.html
 //
 // Every <img src="../screenshots/x.png"> becomes an inline data: URI, so the
 // output is a single file you can email, drop on any static host, or open from
@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const src = path.join(root, "docs", "monetization", "landing-page.html");
-const out = path.join(root, "docs", "monetization", "landing-page.standalone.html");
+const src = path.join(root, "docs", "sales", "landing-page.html");
+const out = path.join(root, "docs", "sales", "landing-page.standalone.html");
 
 let html = readFileSync(src, "utf8");
 

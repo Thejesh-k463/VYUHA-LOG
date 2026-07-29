@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-776%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-794%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -61,6 +61,12 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **Does a loss change how you trade?** Expectancy after a win vs after a loss, plus same-day re-entries — revenge trading, measured.
 - **Is your conviction rewarded?** Expectancy by position-size quartile. If your biggest positions are not your best, that is a *sizing* question, not a selection one.
 - **Three honesty rules enforced in code:** no finding below 15 trades in a group; no invented sessions for trades whose time is unknown; and every finding phrased as an observation, never an instruction — there is a test asserting no finding says "you should".
+
+### 🔎 See exactly the trades you mean
+
+- One dropdown on **Trades** covers both questions: **status** (Open · Closed · Staged) and **outcome** (In gain — open · In loss — open · Profit — closed · Loss — closed).
+- **Every option carries its own live count**, computed after your other filters — so you can see a view is empty before you choose it, and the numbers always add up: open + closed = all.
+- **An open position with no mark price appears in neither "in gain" nor "in loss"** — because it has no unrealised result. Vyuha stores 0 for an unmarked holding, and reading that 0 as breakeven would file it under a result it never had. The count of unmarked positions is stated on screen instead of leaving a silent shortfall.
 
 ### 🧾 Reads the product type out of the charges themselves
 
@@ -172,7 +178,7 @@ Each key embeds the buyer's email in its signed payload, so no two are alike, an
 "Licensed to &lt;email&gt;". Keys can optionally be **bound to one computer** via a Windows
 `MachineGuid`-derived fingerprint. Revocation is a build-time list — honest about being a slow tool
 rather than a kill switch, because a kill switch would mean phoning home. Full procedures:
-[`docs/monetization/LICENSE_OPERATIONS.md`](docs/monetization/LICENSE_OPERATIONS.md).
+[`docs/owner/LICENSE_OPERATIONS.md`](docs/owner/LICENSE_OPERATIONS.md).
 
 ---
 
@@ -189,7 +195,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 **What's free and what isn't (v2.87+):** every fresh install starts a **14-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording trades, all five broker importers, the dashboard, staged positions, playbooks and backups. A licence unlocks the analytics layer — Portfolio Risk cockpit, Tax Summary, ITR Pack and Broker Cost comparison. Your own record of your trading is never held hostage, and nothing leaves your machine either way.
 
-**New here?** Flip through the 📽 [**Getting-Started deck**](docs/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
+**New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
 **Run from source:**
 
@@ -201,6 +207,35 @@ npm run dev       # http://localhost:3000
 ```
 
 ---
+
+## 🗂 Where things live
+
+```
+app/         Next routes — one folder per page, plus /api
+components/  UI, grouped by feature (trades, import, cash, dashboard…)
+lib/
+  engine/    charges, classification, rate tables — pure, no DB
+  analytics/ every report's maths — pure, no DB, no React
+  import/    parsers (one per broker file), pairing, product inference
+  risk/      position sizing, limits, margin
+  queries/   the ONLY layer that touches the database (server-only)
+  domain/    shared constants and vocabulary
+drizzle/     migrations, applied in order at startup
+tests/       794 unit tests, one file per module
+e2e/         13 Playwright flows through the real app
+docs/
+  client/    what a BUYER gets — install guide, getting-started deck
+  owner/     VENDOR ONLY — licensing, release, monetization, indicators
+  sales/     public marketing assets (landing page, brochure)
+  screenshots/
+scripts/     build, release, and the vendor licence tooling
+```
+
+The rule that keeps the maths honest: **`lib/analytics/*` and `lib/engine/*`
+import neither the database nor React.** They take plain data and return plain
+data, which is why every number in the app can be unit-tested without a browser
+or a fixture database — and why a reporting bug can be reproduced in three
+lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
@@ -219,8 +254,8 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (776 tests) |
-| `npm run test:e2e` | Playwright e2e — 10 flows incl. the Dhan transaction report and unpriced-sale quarantine |
+| `npm test` | Vitest unit suite (794 tests) |
+| `npm run test:e2e` | Playwright e2e — 13 flows incl. the Dhan transaction report, unpriced-sale quarantine and the status/outcome views |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

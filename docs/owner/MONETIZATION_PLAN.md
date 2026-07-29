@@ -5,8 +5,53 @@ license) + both TradingView indicators (invite-only). Indicators also sold stand
 **Checkout:** Razorpay (UPI/cards) + your own landing page. **Delivery:** automated email
 with license key + download link; indicator access granted via TradingView invite-only.
 
-This document is the strategic spine. The other files in `docs/monetization/` and
+This document is the strategic spine. The other files in `docs/owner/` and
 `docs/prompts/` are the concrete deliverables it refers to.
+
+---
+
+## 0. What you are actually selling, as of v2.94.0
+
+Keep this list current — it is the one place that answers "what does the buyer
+get today", and it is where landing-page copy should be drawn from.
+
+**The wedge, in one line:** every other journal tells an Indian trader their
+P&L. Vyuha tells them what it *cost*, whether it was *repeatable*, and refuses
+to flatter them.
+
+### Sellable capabilities
+
+| Capability | Why a trader pays for it |
+|---|---|
+| **Exact Indian cost engine** | STT, exchange, SEBI, stamp, IPFT, GST, DP, pledge — per broker × segment × exchange, integer paise, statutory rounding. Reconciles to **0.69% of the broker's own statutory charges** on a real 92-row report, brokerage excluded because it is not derivable. |
+| **MTF done properly** | Interest on the funded portion only, correct T+1 day count, broker-specific own-margin %. The **ledger import reads the interest actually charged**, and shows it against Vyuha's estimate. |
+| **Arjun's Eye** (Pro) | Session and weekday edge, winners-vs-losers hold time, post-loss tilt, expectancy by size quartile — with a 15-trade honesty gate. Nothing else in the Indian market does this. |
+| **Return on Margin** (Pro) | P&L against **capital actually blocked**, instrument-aware. Turnover-based returns are close to meaningless for F&O. |
+| **Product inference from charges** | Delivery vs intraday read from stamp duty (0.015% vs 0.003%) corroborated by STT — from a file with no product column. |
+| **Dhan API** | `productType: MTF` stated by the broker. The one fact no Dhan file carries. |
+| **IPO-allotment handling** | A sale with no purchase is quarantined from win rate rather than scored as a 100% winner, and its cost is recovered from the file's own footer. |
+| **Staged positions** | Tranches with a stop each, FIFO exits, per-leg R — and the panel **never blocks an edit**. |
+| **Status & outcome views** | Open / Closed / Staged, and in-gain / in-loss / profit / loss, each with a live count that reconciles. |
+| **SEBI compliance radar** (Pro) | Post-2024 F&O rules, expiry-day ELM, intraday index limits. |
+| **Tax tooling** (Pro) | Grandfathering, dividend TDS, set-off, ITR pack with 44AB/44AD read. |
+
+### The honesty positioning — this IS the differentiator
+
+Say it out loud in the sales copy, because it is what a serious trader tests
+you on within ten minutes:
+
+- Expectancy warns when the sample is too small to trust.
+- An unmarked open position appears in neither gain nor loss, and says why.
+- An unpriced IPO sale is excluded from win rate, and says why.
+- Undated trades are named on the Performance page rather than quietly dropped.
+- Findings are descriptive, never "you should".
+
+### Trust signals worth quoting
+
+- **794 unit tests, 13 end-to-end flows**, run against a real broker report.
+- **Signed auto-update** (since v2.91.0) with a build that refuses to ship
+  unsigned or machine-dependent.
+- **Zero telemetry, zero cloud** — verifiable, since the app runs offline.
 
 ---
 
@@ -62,7 +107,7 @@ Free lead magnet ──▶ WhatsApp + email list ──▶ Content (X / YouTube)
 - **Lead magnet #2:** a **free web capital-gains / F&O-tax calculator** (a stripped page of the
   tax engine) — ranks for search, shareable, demonstrates the exact depth people pay for. Gate
   the full report behind an email/WhatsApp opt-in.
-- **Show, don't tell:** `docs/GETTING_STARTED_DECK.html` is a 13-slide visual walkthrough
+- **Show, don't tell:** `docs/client/GETTING_STARTED_DECK.html` is a 13-slide visual walkthrough
   (install → import → journal → playbook loop → activate). Print it to PDF for WhatsApp
   broadcasts; the same slides double as a YouTube-short storyboard.
 - **List:** WhatsApp (via a Business number / broadcast) converts far better than email in India.
@@ -155,17 +200,17 @@ the same SKU on the same day get completely different keys.
 
 | Ask | File |
 |---|---|
-| 1. Installation guide | `docs/INSTALLATION_GUIDE.md` |
+| 1. Installation guide | `docs/client/INSTALLATION_GUIDE.md` |
 | 2. Zerodha tradebook import prompt-doc | `docs/prompts/ZERODHA_TRADEBOOK_IMPORT.md` |
-| 3. Hide Pine Script source (invite-only) | `docs/monetization/PINE_SCRIPT_INVITE_ONLY.md` |
-| 4a. Sales landing page | `docs/monetization/landing-page.html` |
-| 4b. One-page PDF brochure | `docs/monetization/brochure.html` (Print → Save as PDF) |
-| 5. Compliant growth / content-bot plan | `docs/monetization/GROWTH_ENGINE_PLAN.md` |
-| 6. **Getting-started slide deck (v2.80)** — install → import → journal → playbook loop → activate; visual-first, printable to PDF, doubles as demo-video storyboard | `docs/GETTING_STARTED_DECK.html` |
+| 3. Hide Pine Script source (invite-only) | `docs/owner/PINE_SCRIPT_INVITE_ONLY.md` |
+| 4a. Sales landing page | `docs/sales/landing-page.html` |
+| 4b. One-page PDF brochure | `docs/sales/brochure.html` (Print → Save as PDF) |
+| 5. Compliant growth / content-bot plan | `docs/owner/GROWTH_ENGINE_PLAN.md` |
+| 6. **Getting-started slide deck (v2.80)** — install → import → journal → playbook loop → activate; visual-first, printable to PDF, doubles as demo-video storyboard | `docs/client/GETTING_STARTED_DECK.html` |
 | 7. Public repo landing page with current screenshots | `README.md` |
 | 8. **Vendor licence tooling (v2.86)** — issue / list / revoke | `scripts/license-{issue,list,revoke}.mjs` |
-| 9. **Licence operations runbook (v2.86)** — sale → delivery → refund → renewal | `docs/monetization/LICENSE_OPERATIONS.md` |
-| 10. **Indicators launch kit** — analysis of both Pine scripts, sales copy, paste-ready TradingView descriptions, invite-only publishing steps | `docs/monetization/INDICATORS_LAUNCH_KIT.md` |
+| 9. **Licence operations runbook (v2.86)** — sale → delivery → refund → renewal | `docs/owner/LICENSE_OPERATIONS.md` |
+| 10. **Indicators launch kit** — analysis of both Pine scripts, sales copy, paste-ready TradingView descriptions, invite-only publishing steps | `docs/owner/INDICATORS_LAUNCH_KIT.md` |
 
 ## 7. Suggested launch sequence (2–4 weeks)
 

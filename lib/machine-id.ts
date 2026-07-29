@@ -19,7 +19,7 @@
  *
  * A machine ID is a *coarse* identifier. Reinstalling Windows produces a new
  * one — expected, and covered by the re-issue procedure in
- * docs/monetization/LICENSE_OPERATIONS.md.
+ * docs/owner/LICENSE_OPERATIONS.md.
  *
  * PRIVACY: the raw values never leave the machine and are never stored. Only
  * the hash is shown, and the user chooses to send it. It contains no personal
