@@ -4,6 +4,73 @@ All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
 
+## v2.91.0
+**MTF, answered properly** — and the updater signing that has been quietly
+broken since v2.84.
+
+### Dhan API — the only source that STATES margin funding
+
+Every Dhan *file* is silent about MTF. A P&L export has no product column; a
+transaction report has one implicitly in the charge rates, but MTF and delivery
+carry identical STT and stamp duty while financing interest is booked to the
+ledger. From files alone, "was this MTF?" is unanswerable.
+
+`GET /v2/positions` answers it: `productType` is an enum of CNC, INTRADAY,
+MARGIN, **MTF**, CO and BO. Stated by the broker, not inferred from charges, so
+those rows need no confirmation dialog at all.
+
+- Connect under **Import → Connect broker**, now a two-broker card. Dhan wants a
+  **Client ID** plus a 24-hour access token from web.dhan.co → DhanHQ Trading
+  APIs; Zerodha is unchanged.
+- Pulls today's positions through the same classify → charges → dedup pipeline
+  as every file, so re-pulls stay idempotent.
+- `MARGIN` deliberately maps to *no* hint: it is the F&O carry-forward product,
+  and the classifier already reads the segment off the symbol.
+- Positions carry aggregates, not fills, so execution times stay null rather
+  than inventing a session.
+
+### Dhan ledger import — real MTF interest instead of an estimate
+
+Dhan calculates MTF interest daily and posts it **weekly to the ledger**. Until
+now Vyuha estimated it from the funded amount and a day count. **Cash & Ledger**
+now imports the ledger and reads the real figure.
+
+- The card shows **actual vs estimated side by side**, with the gap in rupees
+  and percent. Deliberately a *comparison, not a correction*: ledger interest is
+  a weekly account-level posting, and splitting it back across positions would
+  invent a per-trade allocation the broker never stated.
+- Columns are found by **header keyword, not position**, so a reordered export
+  still parses.
+- MTF is matched **first and on its own**, because a generic "charges" rule
+  would otherwise swallow "MTF charges".
+- Opening/closing balance rows are recognised as **assertions, not entries**, so
+  the opening capital is never counted as a deposit.
+- Anything the classifier cannot read is **listed for review**, never filed
+  under a guess. A ledger importer that silently mislabels a debit is worse than
+  one that admits it is unsure.
+
+### Fixed: releases have been unsigned since v2.84
+
+`tauri.conf.json` ships a public key and `createUpdaterArtifacts: true`, so every
+install trusts updates signed with the matching private key. That key was never
+on this machine. Tauri does not fail without it — it prints a notice at the end
+of a multi-minute build and emits no `.sig`. Seven releases went out looking
+complete with auto-update silently dead; the last signature was **v2.82**.
+
+- A signing keypair now lives in `.secrets/` (gitignored) and the build picks it
+  up automatically.
+- `tauri build` is launched by a wrapper so the key reaches the right process —
+  the three `&&`-chained steps do not share an environment.
+- The build now **refuses to start** without a key, and **fails after** if the
+  installer has no `.sig`. Deliberate unsigned builds need
+  `VYUHA_ALLOW_UNSIGNED=1`.
+- **The public key changed**, because the original private key is unrecoverable.
+  Installs at v2.82 or earlier will not accept these updates and must be
+  reinstalled once from the release page. Everything since v2.84 was unsigned
+  anyway, so nothing that previously worked is lost.
+
+41 new unit tests (776 total).
+
 ## v2.90.1 — CRITICAL: v2.90.0 installer does not run on any machine but the build machine
 
 **Do not distribute v2.90.0.** It starts, fails to load the database engine, and

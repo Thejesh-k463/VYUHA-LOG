@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { LedgerForm } from "@/components/cash/ledger-form";
+import { LedgerImport } from "@/components/cash/ledger-import";
 import { LedgerTable } from "@/components/cash/ledger-table";
 import { getSettings } from "@/lib/queries/settings";
 import { getLedgerEntries } from "@/lib/queries/ledger";
@@ -96,6 +97,8 @@ export default function CashPage() {
             <BucketCard key={b.bucket} b={b} />
           ))}
         </div>
+
+        <LedgerImport />
 
         <Card>
           <CardHeader><CardTitle>Add ledger entry</CardTitle></CardHeader>

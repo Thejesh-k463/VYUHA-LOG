@@ -64,3 +64,9 @@ next-env.d.ts
 
 # tauri updater signing key (vendor secret — never commit)
 updater-private.key
+
+# Tauri updater SIGNING KEY. Never commit — anyone holding it can sign an
+# update that every installed copy of Vyuha will trust and install.
+.secrets/
+*.key
+!*.key.pub

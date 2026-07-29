@@ -1,7 +1,14 @@
 "use client";
 
-// P2.1 — "Connect broker" card: save Kite Connect credentials locally, then
-// pull today's executions through the normal preview → commit pipeline.
+// "Connect broker" card: save API credentials locally, then pull through the
+// normal preview → commit pipeline.
+//
+// Two brokers, for two different reasons. Zerodha's Kite gives today's
+// executions with fill times. Dhan's API gives something no Dhan FILE can:
+// `productType: "MTF"`. A Dhan P&L export has no product column at all, and in
+// a transaction report MTF is indistinguishable from delivery — identical STT,
+// identical stamp duty, and financing interest booked to the ledger rather than
+// the contract note. The API is the only place margin funding is stated.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -24,19 +31,61 @@ interface PullResult {
   rows?: number;
 }
 
+type BrokerId = "zerodha" | "dhan";
+
+const BROKERS: Record<BrokerId, {
+  label: string;
+  tab: string;
+  keyLabel: string;
+  keyPlaceholder: string;
+  blurb: React.ReactNode;
+}> = {
+  zerodha: {
+    label: "Zerodha Kite",
+    tab: "Zerodha (Kite Connect)",
+    keyLabel: "API key",
+    keyPlaceholder: "kitexxxxxxxx",
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s executions</span> from Kite Connect, with fill times, through
+        the normal classify → charges → dedup pipeline (re-pulls are idempotent). Needs a Kite Connect app and the
+        day&apos;s access token — tokens expire every trading day.
+      </>
+    ),
+  },
+  dhan: {
+    label: "Dhan",
+    tab: "Dhan (DhanHQ v2)",
+    keyLabel: "Client ID",
+    keyPlaceholder: "1000000009",
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s positions</span>, and is the only Dhan source that states{" "}
+        <b>MTF</b>. No Dhan file can: a P&amp;L export has no product column, and in a transaction report an MTF
+        position carries exactly the same STT and stamp duty as delivery while the financing interest sits in the
+        ledger. Get the token from web.dhan.co → DhanHQ Trading APIs; it lasts 24 hours by default.
+      </>
+    ),
+  },
+};
+
 export function BrokerConnect() {
   const router = useRouter();
-  const [conn, setConn] = useState<ConnStatus | null>(null);
+  const [broker, setBroker] = useState<BrokerId>("zerodha");
+  const [conns, setConns] = useState<ConnStatus[]>([]);
   const [apiKey, setApiKey] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const spec = BROKERS[broker];
+  const conn = conns.find((c) => c.broker === broker) ?? null;
+
   async function refresh() {
     try {
       const res = await fetch("/api/import/broker");
       const data = await res.json();
-      if (data.ok) setConn(data.connections.find((c: ConnStatus) => c.broker === "zerodha") ?? null);
+      if (data.ok) setConns(data.connections ?? []);
     } catch {
       /* stays disconnected */
     }
@@ -48,7 +97,7 @@ export function BrokerConnect() {
     fetch("/api/import/broker")
       .then((r) => r.json())
       .then((d) => {
-        if (alive && d.ok) setConn(d.connections.find((c: ConnStatus) => c.broker === "zerodha") ?? null);
+        if (alive && d.ok) setConns(d.connections ?? []);
       })
       .catch(() => {});
     return () => {
@@ -75,7 +124,7 @@ export function BrokerConnect() {
   }
 
   async function save() {
-    const { data } = await post({ action: "save", broker: "zerodha", apiKey, accessToken }, "save");
+    const { data } = await post({ action: "save", broker, apiKey, accessToken }, "save");
     setMsg({ ok: !!data.ok, text: data.message ?? "" });
     if (data.ok) {
       setApiKey("");
@@ -85,52 +134,85 @@ export function BrokerConnect() {
   }
 
   async function pull(mode: "preview" | "commit") {
-    const { data } = await post({ action: "pull", broker: "zerodha", mode }, mode);
+    const { data } = await post({ action: "pull", broker, mode }, mode);
     if (!data.ok) {
       setMsg({ ok: false, text: data.message ?? "Pull failed" });
       return;
     }
     if (mode === "commit") {
       const r: PullResult = data.result ?? {};
-      setMsg({ ok: true, text: `Committed — ${r.added ?? 0} added, ${r.skipped ?? 0} duplicates skipped.` });
+      const warn = (data.warnings ?? []).join(" ");
+      setMsg({ ok: true, text: `Committed — ${r.added ?? 0} added, ${r.skipped ?? 0} duplicates skipped. ${warn}`.trim() });
       await refresh();
       router.refresh();
     } else {
-      const rows = data.preview?.trades?.length ?? data.preview?.rows ?? 0;
+      const rows = data.preview?.rows?.length ?? data.preview?.summary?.total ?? 0;
       const warn = (data.warnings ?? []).join(" ");
-      setMsg({ ok: true, text: `Preview: ${rows} normalized trade${rows === 1 ? "" : "s"} from today's executions. ${warn}`.trim() });
+      setMsg({ ok: true, text: `Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}. ${warn}`.trim() });
     }
   }
 
   async function disconnect() {
-    const { data } = await post({ action: "disconnect", broker: "zerodha" }, "disconnect");
+    const { data } = await post({ action: "disconnect", broker }, "disconnect");
     setMsg({ ok: !!data.ok, text: data.message ?? "" });
-    setConn(null);
+    await refresh();
+  }
+
+  function switchBroker(b: BrokerId) {
+    setBroker(b);
+    setApiKey("");
+    setAccessToken("");
+    setMsg(null);
   }
 
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Connect broker (API) — Zerodha Kite</CardTitle>
+        <CardTitle>Connect broker (API)</CardTitle>
         {conn && <Badge variant="secondary">key {conn.apiKeyMasked}</Badge>}
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(BROKERS) as BrokerId[]).map((b) => {
+            const connected = conns.some((c) => c.broker === b);
+            return (
+              <button
+                key={b}
+                type="button"
+                onClick={() => switchBroker(b)}
+                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                  broker === b
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {BROKERS[b].tab}
+                {connected && <span className="ml-1.5 opacity-70">· connected</span>}
+              </button>
+            );
+          })}
+        </div>
+
         <p className="text-xs text-muted-foreground">
-          Pulls <span className="font-medium">today&apos;s executions</span> from Kite Connect through the normal
-          classify → charges → dedup pipeline (re-pulls are idempotent). Needs a Kite Connect app (api key) and the
-          day&apos;s access token — tokens expire every trading day. Credentials are stored in your local database
-          in plain text; this journal is single-user and offline.
+          {spec.blurb} Credentials are stored in your local database in plain text; this journal is single-user and
+          offline.
         </p>
+
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label>API key</Label>
-            <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={conn ? conn.apiKeyMasked : "kitexxxxxxxx"} />
+            <Label>{spec.keyLabel}</Label>
+            <Input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={conn ? conn.apiKeyMasked : spec.keyPlaceholder}
+            />
           </div>
           <div className="space-y-1">
             <Label>Access token (today&apos;s)</Label>
             <Input value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="paste after login" />
           </div>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={save} disabled={busy != null || !apiKey || !accessToken}>
             {busy === "save" ? "Saving…" : conn ? "Update connection" : "Save connection"}
@@ -150,6 +232,7 @@ export function BrokerConnect() {
             <span className="text-[11px] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
           )}
         </div>
+
         {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}
       </CardContent>
     </Card>

@@ -4,13 +4,34 @@ import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { kiteImportSource, toParsedFile } from "@/lib/import/api/kite";
+import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
+import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 
 export const runtime = "nodejs";
 
-// P2.1 — broker-API auto-import. v1 supports Zerodha (Kite Connect). The pull
-// reuses the exact file-import pipeline: normalize → preview/commit.
+// Broker-API auto-import. Supports Zerodha (Kite Connect) and Dhan (DhanHQ v2).
+// The pull reuses the exact file-import pipeline: normalize → preview/commit.
+//
+// Dhan matters for one specific reason: its API is the ONLY Dhan source that
+// states MTF. Every Dhan file is silent about margin funding — a P&L export has
+// no product column, and in a transaction report MTF is indistinguishable from
+// delivery because the two carry identical STT and stamp duty while financing
+// interest lives in the ledger. `productType: "MTF"` ends that guessing.
+
+/** Brokers with a working API pull, and what each needs in the two fields. */
+const API_BROKERS: Record<string, { label: string; keyLabel: string; note: string }> = {
+  zerodha: {
+    label: "Zerodha (Kite Connect)",
+    keyLabel: "API key",
+    note: "Kite access tokens expire daily — re-paste after each login.",
+  },
+  dhan: {
+    label: "Dhan (DhanHQ v2)",
+    keyLabel: "Client ID",
+    note: "Dhan access tokens are issued from web.dhan.co → DhanHQ Trading APIs and are valid for 24 hours by default.",
+  },
+};
 
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
 
@@ -37,11 +58,15 @@ export async function POST(req: Request) {
     const broker = String(body.broker ?? "");
     const apiKey = String(body.apiKey ?? "").trim();
     const accessToken = String(body.accessToken ?? "").trim();
-    if (broker !== "zerodha") {
-      return NextResponse.json({ ok: false, message: "Only Zerodha (Kite Connect) is supported so far." }, { status: 400 });
+    const spec = API_BROKERS[broker];
+    if (!spec) {
+      return NextResponse.json(
+        { ok: false, message: `Unsupported broker. Available: ${Object.values(API_BROKERS).map((b) => b.label).join(", ")}.` },
+        { status: 400 },
+      );
     }
     if (!apiKey || !accessToken) {
-      return NextResponse.json({ ok: false, message: "API key and access token are required." }, { status: 400 });
+      return NextResponse.json({ ok: false, message: `${spec.keyLabel} and access token are required.` }, { status: 400 });
     }
     db.insert(brokerConnections)
       .values({ broker, apiKey, accessToken })
@@ -57,7 +82,7 @@ export async function POST(req: Request) {
       before: null,
       after: { broker, apiKey: mask(apiKey) }, // never audit the token
     });
-    return NextResponse.json({ ok: true, message: "Connection saved. Kite access tokens expire daily — re-paste after each login." });
+    return NextResponse.json({ ok: true, message: `Connection saved. ${spec.note}` });
   }
 
   if (body.action === "disconnect") {
@@ -75,14 +100,21 @@ export async function POST(req: Request) {
 
     let parsed;
     try {
-      const source = kiteImportSource({ apiKey: conn.apiKey, accessToken: conn.accessToken });
-      parsed = toParsedFile(await source.fetchTrades({}));
+      if (broker === "dhan") {
+        // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
+        // came first. Renaming it would need a migration for no behavioural gain.
+        const source = dhanImportSource({ clientId: conn.apiKey, accessToken: conn.accessToken });
+        parsed = dhanToParsedFile(await source.fetchTrades({}));
+      } else {
+        const source = kiteImportSource({ apiKey: conn.apiKey, accessToken: conn.accessToken });
+        parsed = kiteToParsedFile(await source.fetchTrades({}));
+      }
     } catch (e) {
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });
     }
 
     if (mode === "commit") {
-      const fileName = `kite-api-${new Date().toISOString().slice(0, 10)}`;
+      const fileName = `${broker === "dhan" ? "dhan" : "kite"}-api-${new Date().toISOString().slice(0, 10)}`;
       const result = commitParsedFile(parsed, fileName);
       db.update(brokerConnections)
         .set({ lastPullAt: new Date().toISOString() })

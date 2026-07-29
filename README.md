@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-735%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-776%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -69,6 +69,13 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - **MTF is still never claimed**, and that was verified rather than assumed: `Oth. Charges` totalled **₹0.03** across 92 rows and GST was 18% of (brokerage + txn + SEBI) to within **₹0.01**. No unexplained rupee, nowhere for financing to hide. So Vyuha asks about the *delivery* rows only — intraday and F&O can never be MTF.
 - **Legs pair FIFO across dates into real positions**, matching how the Income Tax Act treats equity delivery, so holding periods agree with the ones that decide STCG vs LTCG. A conservation check asserts not one share or rupee is created or lost.
 - **The broker's own charges are stored as truth.** Vyuha cannot be more accurate about a charge than the charge itself; its computed figures stay alongside as a cross-check.
+
+### 🏦 MTF, answered by the broker rather than guessed
+
+- Every Dhan **file** is silent about margin funding — MTF and delivery carry identical STT and stamp duty, and financing interest is booked to the ledger, not the contract note. So Vyuha stopped guessing and went to the two places that actually know.
+- **Dhan API** (`Import → Connect broker`): `productType` returns **MTF** outright. Stated, not inferred — those rows need no confirmation at all.
+- **Dhan ledger** (`Cash & Ledger`): MTF interest is calculated daily and posted **weekly**, so the ledger holds the real number. Vyuha imports it and shows **actual vs its own estimate side by side** — a comparison, never a correction, because splitting a weekly account-level posting across positions would invent an allocation the broker never made.
+- The ledger parser finds columns by **header keyword, not position**; matches MTF **first** so a generic "charges" rule cannot swallow it; treats opening-balance rows as **assertions, not entries**; and **lists anything it cannot classify** rather than filing a guess.
 
 ### 🎟 Sold something you never bought? It says so instead of scoring a win
 
@@ -212,7 +219,7 @@ npm run dev       # http://localhost:3000
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (735 tests) |
+| `npm test` | Vitest unit suite (776 tests) |
 | `npm run test:e2e` | Playwright e2e — 10 flows incl. the Dhan transaction report and unpriced-sale quarantine |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
