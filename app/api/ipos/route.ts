@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ipos, trades } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { tradePatchFromIpo } from "@/lib/analytics/ipo-link";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -152,7 +153,7 @@ export async function POST(req: Request) {
 
   const row = db
     .insert(ipos)
-    .values({ ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
+    .values({ accountId: getSelectedAccountId() || 1, ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
     .returning({ id: ipos.id })
     .get();
   if (linkedTradeId) syncLinkedTrade(linkedTradeId, values);

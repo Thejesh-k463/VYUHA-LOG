@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { NAV_GROUPS, NAV_ITEMS } from "./nav-config";
 import { cn } from "@/lib/utils";
+import { AccountSwitcher } from "@/components/system/account-switcher";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
 
@@ -43,7 +44,7 @@ function MarketClock() {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({accounts,selectedAccountId}:{accounts:{id:number;name:string;archived:boolean}[];selectedAccountId:number}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
 
@@ -92,6 +93,7 @@ export function Sidebar() {
       </div>
 
       {/* ⌘K hint — the command palette is the fastest way around the app. */}
+      {!collapsed && <div className="border-b border-border px-3 py-2"><AccountSwitcher accounts={accounts} selected={selectedAccountId} compact /></div>}
       <div className={cn("border-b border-border py-2", collapsed ? "px-2" : "px-3")}>
         <button
           type="button"
@@ -163,7 +165,7 @@ export function Sidebar() {
       </nav>
 
       <div className={cn("flex flex-col gap-1 border-t border-border py-2 text-[10px] text-muted-foreground", collapsed ? "items-center px-1" : "px-4")}>
-        {!collapsed && <span>Local · Offline · v2.96</span>}
+        {!collapsed && <span>Local · Offline · v2.97</span>}
         <MarketClock />
       </div>
     </aside>

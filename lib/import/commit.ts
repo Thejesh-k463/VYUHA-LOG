@@ -148,6 +148,7 @@ function loadContext() {
   const globalRisk = db.select().from(riskConfig).where(eq(riskConfig.scope, "global")).all()[0];
   return {
     rates,
+    accountId: s?.selectedAccountId && s.selectedAccountId > 0 ? s.selectedAccountId : 1,
     defaults: {
       buyOrders: s?.defaultBuyOrders ?? 1,
       sellOrders: s?.defaultSellOrders ?? 1,
@@ -278,10 +279,10 @@ export function previewParsedFile(
   productOverrides: Record<string, ProductHint> | null = null,
 ): PreviewResult {
   const parsed = applyProductOverrides(parsedIn, productOverrides);
-  const { rates, defaults } = loadContext();
+  const { rates, defaults, accountId } = loadContext();
   const overrides = loadOverrides(parsed.broker);
   const existing = new Set(
-    db.select({ h: tradesTable.dedupHash }).from(tradesTable).where(eq(tradesTable.broker, parsed.broker)).all().map((r) => r.h),
+    db.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
   );
 
   const rows: PreviewRow[] = [];
@@ -342,17 +343,17 @@ export function commitParsedFile(
   productOverrides: Record<string, ProductHint> | null = null,
 ): CommitResult {
   const parsed = applyProductOverrides(parsedIn, productOverrides);
-  const { rates, defaults } = loadContext();
+  const { rates, defaults, accountId } = loadContext();
   const overrides = loadOverrides(parsed.broker);
 
   return db.transaction((tx) => {
     const existing = new Set(
-      tx.select({ h: tradesTable.dedupHash }).from(tradesTable).where(eq(tradesTable.broker, parsed.broker)).all().map((r) => r.h),
+      tx.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
     );
 
     const batch = tx
       .insert(importBatches)
-      .values({ broker: parsed.broker, fileName, rowCount: parsed.trades.length, status: "completed" })
+      .values({ accountId, broker: parsed.broker, fileName, rowCount: parsed.trades.length, status: "completed" })
       .returning({ id: importBatches.id })
       .get();
     const batchId = batch!.id;
@@ -370,6 +371,7 @@ export function commitParsedFile(
 
       const inserted = tx.insert(tradesTable)
         .values({
+          accountId,
           broker: t.broker,
           bucket: b.classification.bucket,
           segment: b.classification.segment,
@@ -503,7 +505,7 @@ export function commitManualTrade(
   t: NormalizedTrade,
   fields: ManualJournalFields = {},
 ): { id: number | null; duplicate: boolean } {
-  const { rates, defaults } = loadContext();
+  const { rates, defaults, accountId } = loadContext();
 
   let cls = classify({
     tradingsymbol: t.tradingsymbol,
@@ -525,7 +527,7 @@ export function commitManualTrade(
   const dup = db
     .select({ id: tradesTable.id })
     .from(tradesTable)
-    .where(and(eq(tradesTable.broker, t.broker), eq(tradesTable.dedupHash, dedup)))
+    .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, t.broker), eq(tradesTable.dedupHash, dedup)))
     .all();
   if (dup.length > 0) return { id: null, duplicate: true };
 
@@ -580,6 +582,7 @@ export function commitManualTrade(
   const row = db
     .insert(tradesTable)
     .values({
+      accountId,
       broker: t.broker,
       bucket: cls.bucket,
       segment: cls.segment,

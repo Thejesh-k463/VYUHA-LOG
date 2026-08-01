@@ -1,10 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { capitalSnapshots, trades } from "@/lib/db/schema";
-import { eq, count } from "drizzle-orm";
+import { capitalSnapshots } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import type { Bucket } from "@/lib/domain/constants";
 import { getSettings } from "./settings";
 import { getIpoRealisedNet } from "./ipos";
+import { getSelectedAccount, getSelectedAccountId } from "./accounts";
+import { getTrades } from "./trades";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -22,16 +24,17 @@ export interface CapitalSummary {
 
 export function getCapitalSummary(): CapitalSummary {
   const s = getSettings();
-  const closed = db.select().from(trades).where(eq(trades.isOpen, false)).all();
+  const closed = getTrades().filter((t)=>!t.isOpen);
+  const account = getSelectedAccount();
   const equityRealised = r2(closed.filter((t) => t.bucket === "equity").reduce((a, t) => a + t.netPnl, 0));
   const activeRealised = r2(closed.filter((t) => t.bucket === "active").reduce((a, t) => a + t.netPnl, 0));
   const ipoRealised = r2(getIpoRealisedNet());
   const totalRealised = r2(equityRealised + activeRealised + ipoRealised);
   const rolledIn = s?.pnlRolledIn ?? 0;
   return {
-    equityCapital: s?.equityCapital ?? 0,
-    activeCapital: s?.activeCapital ?? 0,
-    totalCapital: (s?.equityCapital ?? 0) + (s?.activeCapital ?? 0),
+    equityCapital: account?.equityCapital ?? s?.equityCapital ?? 0,
+    activeCapital: account?.activeCapital ?? s?.activeCapital ?? 0,
+    totalCapital: (account?.equityCapital ?? s?.equityCapital ?? 0) + (account?.activeCapital ?? s?.activeCapital ?? 0),
     equityRealised,
     activeRealised,
     ipoRealised,
@@ -49,7 +52,7 @@ export interface CapitalHistoryPoint {
 
 /** Capital checkpoints over time (one row per snapshot date, per-bucket columns). */
 export function getCapitalHistory(): CapitalHistoryPoint[] {
-  const rows = db.select().from(capitalSnapshots).orderBy(capitalSnapshots.asOfDate).all();
+  const accountId=getSelectedAccountId(); const q=db.select().from(capitalSnapshots); const rows=(accountId>0?q.where(eq(capitalSnapshots.accountId,accountId)):q).orderBy(capitalSnapshots.asOfDate).all();
   const byDate = new Map<string, CapitalHistoryPoint>();
   for (const r of rows) {
     const p = byDate.get(r.asOfDate) ?? { date: r.asOfDate, equity: null, active: null };
@@ -62,24 +65,25 @@ export function getCapitalHistory(): CapitalHistoryPoint[] {
   if (s) {
     const today = new Date().toISOString().slice(0, 10);
     const last = byDate.get(today) ?? { date: today, equity: null, active: null };
-    last.equity = s.equityCapital;
-    last.active = s.activeCapital;
+    const account=getSelectedAccount(); last.equity = account?.equityCapital ?? s.equityCapital;
+    last.active = account?.activeCapital ?? s.activeCapital;
     byDate.set(today, last);
   }
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function getOpeningSnapshot(bucket: Bucket) {
+  const accountId=getSelectedAccountId();
   return (
     db
       .select()
       .from(capitalSnapshots)
-      .where(eq(capitalSnapshots.bucket, bucket))
+      .where(accountId>0?and(eq(capitalSnapshots.accountId,accountId),eq(capitalSnapshots.bucket, bucket)):eq(capitalSnapshots.bucket,bucket))
       .orderBy(capitalSnapshots.asOfDate)
       .all()[0] ?? null
   );
 }
 
 export function getTradeCount(): number {
-  return db.select({ c: count() }).from(trades).all()[0]?.c ?? 0;
+  return getTrades().length;
 }

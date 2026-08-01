@@ -1,10 +1,11 @@
 // P0.4 — backup envelope format (PURE, no DB). Shared by the dump/restore engine
 // and validated before any destructive restore.
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 // Order is insert-order for restore (parents-ish first); delete runs in reverse.
 export const BACKUP_TABLES = [
+  "accounts",
   "settings",
   "charge_config",
   "risk_config",
@@ -18,6 +19,18 @@ export const BACKUP_TABLES = [
   "restricted_securities",
   "ledger_entries",
   "audit_log",
+  "trade_legs",
+  "symbol_aliases",
+  "benchmark_prices",
+  "instruments",
+  "price_history",
+  "corporate_actions",
+  "playbooks",
+  "margin_config",
+  "trade_attachments",
+  "broker_connections",
+  "trading_sessions",
+  "regulatory_rule_packs",
 ] as const;
 
 export type BackupTable = (typeof BACKUP_TABLES)[number];
@@ -28,6 +41,18 @@ export interface BackupEnvelope {
   createdAt: string;
   counts: Record<string, number>;
   tables: Record<string, unknown[]>;
+  attachments?: { storedName: string; mime: string; dataBase64: string }[];
+}
+
+export interface EncryptedBackupEnvelope {
+  vyuhaEncrypted: true;
+  version: 1;
+  algorithm: "aes-256-gcm";
+  kdf: "scrypt";
+  salt: string;
+  iv: string;
+  tag: string;
+  ciphertext: string;
 }
 
 export interface ValidationResult {
@@ -49,4 +74,11 @@ export function validateBackup(obj: unknown): ValidationResult {
     if (!Array.isArray(tables[name])) return { ok: false, message: `Table "${name}" is not an array.` };
   }
   return { ok: true, message: "Valid Vyuha backup.", tables };
+}
+
+export function isEncryptedBackup(obj: unknown): obj is EncryptedBackupEnvelope {
+  if (!obj || typeof obj !== "object") return false;
+  const o = obj as Record<string, unknown>;
+  return o.vyuhaEncrypted === true && o.algorithm === "aes-256-gcm" && o.kdf === "scrypt" &&
+    [o.salt, o.iv, o.tag, o.ciphertext].every((v) => typeof v === "string");
 }

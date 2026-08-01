@@ -5,6 +5,7 @@ import { ledgerEntries, trades } from "@/lib/db/schema";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { parseDhanLedger, reconcileMtfInterest } from "@/lib/import/parsers/dhan-ledger";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -24,17 +25,23 @@ export const runtime = "nodejs";
  *  file does not double-post. Keyed on date+amount+narration, which is as close
  *  to an identity as a ledger line has. */
 function existingKeys(from: string, to: string): Set<string> {
+  const accountId = getSelectedAccountId();
   const rows = db
     .select()
     .from(ledgerEntries)
-    .where(and(gte(ledgerEntries.date, from), lte(ledgerEntries.date, to)))
+    .where(accountId > 0
+      ? and(gte(ledgerEntries.date, from), lte(ledgerEntries.date, to), eq(ledgerEntries.accountId, accountId))
+      : and(gte(ledgerEntries.date, from), lte(ledgerEntries.date, to)))
     .all();
   return new Set(rows.map((r) => `${r.date}|${r.amountPaise}|${(r.note ?? "").slice(0, 60)}`));
 }
 
 /** Vyuha's own MTF interest estimate over the same window, for comparison. */
 function estimatedMtfInterest(from: string, to: string): number {
-  const rows = db.select().from(trades).where(eq(trades.segment, "eq_mtf")).all();
+  const accountId = getSelectedAccountId();
+  const rows = db.select().from(trades).where(accountId > 0
+    ? and(eq(trades.segment, "eq_mtf"), eq(trades.accountId, accountId))
+    : eq(trades.segment, "eq_mtf")).all();
   return rows
     .filter((t) => {
       const d = t.sellDate ?? t.buyDate;
@@ -95,9 +102,11 @@ export async function POST(req: Request) {
   }
 
   db.transaction((tx) => {
+    const accountId = getWriteAccountId();
     for (const r of fresh) {
       tx.insert(ledgerEntries)
         .values({
+          accountId,
           date: r.date,
           bucket: "",
           type: r.kind,

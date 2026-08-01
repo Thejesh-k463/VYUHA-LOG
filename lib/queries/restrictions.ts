@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { restrictedSecurities, trades } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { getSelectedAccountId } from "./accounts";
 import type {
   RestrictedRow,
   HeldSymbol,
@@ -27,7 +28,10 @@ export function getRestrictedList(): RestrictedRow[] {
 
 /** Open positions aggregated per underlying symbol (for matching restrictions). */
 export function getHeldSymbols(): HeldSymbol[] {
-  const rows = db.select().from(trades).where(eq(trades.isOpen, true)).all();
+  const accountId = getSelectedAccountId();
+  const rows = db.select().from(trades).where(accountId > 0
+    ? and(eq(trades.isOpen, true), eq(trades.accountId, accountId))
+    : eq(trades.isOpen, true)).all();
   const map = new Map<string, HeldSymbol>();
   for (const t of rows) {
     const key = t.symbol.toUpperCase();

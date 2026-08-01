@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { mtmPrices, trades } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 
 export type MtmState = { ok: boolean; message: string; updated: number };
 
@@ -29,7 +30,10 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   // Index open trades by upper-cased symbol for SL/TSL/target matching.
-  const open = db.select().from(trades).where(eq(trades.isOpen, true)).all();
+  const accountId = getSelectedAccountId();
+  const open = db.select().from(trades).where(accountId > 0
+    ? and(eq(trades.isOpen, true), eq(trades.accountId, accountId))
+    : eq(trades.isOpen, true)).all();
   const bySymbol = new Map<string, typeof open>();
   for (const t of open) {
     const k = t.symbol.toUpperCase();

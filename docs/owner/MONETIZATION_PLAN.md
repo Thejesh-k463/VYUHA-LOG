@@ -10,7 +10,7 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.94.0
+## 0. What you are actually selling, as of v2.97.0
 
 Keep this list current — it is the one place that answers "what does the buyer
 get today", and it is where landing-page copy should be drawn from.
@@ -18,6 +18,14 @@ get today", and it is where landing-page copy should be drawn from.
 **The wedge, in one line:** every other journal tells an Indian trader their
 P&L. Vyuha tells them what it *cost*, whether it was *repeatable*, and refuses
 to flatter them.
+
+> ### v2.97 launch story
+>
+> **Trust the data → plan the session → review the decision → improve the process.**
+> The seven-upgrade release is one coherent outcome, not seven menu items: the backup protects
+> the record, Data Quality tells the buyer whether it is analysis-ready, Sessions and Rule Packs
+> structure the operating day, Scaling/Replay and the Options Journal deepen review, and Accounts
+> let a serious trader keep every broker or entity separate without losing the consolidated view.
 
 ### Sellable capabilities
 
@@ -34,6 +42,13 @@ to flatter them.
 | **Status & outcome views** | Open / Closed / Staged, and in-gain / in-loss / profit / loss, each with a live count that reconciles. |
 | **SEBI compliance radar** (Pro) | Post-2024 F&O rules, expiry-day ELM, intraday index limits. |
 | **Tax tooling** (Pro) | Grandfathering, dividend TDS, set-off, ITR pack with 44AB/44AD read. |
+| **Complete encrypted recovery** | A full database + screenshot backup, optional AES-256-GCM password protection, and a restore preview turn “local-only” from a risk into a trust feature. |
+| **Data Quality Center** | Makes analytical confidence visible before the user acts on a report; every issue links to the screen that fixes it. |
+| **Session planner/review** | Converts Vyuha from an after-the-fact journal into a daily pre-market → execution → review loop. |
+| **Sourced rule packs** | Dates every SEBI/broker assumption, shows the source, and schedules review—material proof that “India-specific” is maintained, not marketing copy. |
+| **Scaling Quality + Replay** | Answers whether adding actually helped, while labelling the counterfactual honestly and showing fills over local EOD history. |
+| **Options Seller Journal** | IV, DTE, hedge, expiry outcome, and adjustment-family evidence create a seller-specific review product instead of a generic notes field. |
+| **Multi-account books** | Separate brokers/entities and consolidated analysis make the app credible for advanced retail traders, families, and small desks. |
 
 ### The honesty positioning — this IS the differentiator
 
@@ -48,7 +63,7 @@ you on within ten minutes:
 
 ### Trust signals worth quoting
 
-- **794 unit tests, 13 end-to-end flows**, run against a real broker report.
+- **892 unit/integration tests, 14 end-to-end flows**, including real broker-report paths.
 - **Signed auto-update** (since v2.91.0) with a build that refuses to ship
   unsigned or machine-dependent.
 - **Zero telemetry, zero cloud** — verifiable, since the app runs offline.
@@ -67,7 +82,11 @@ things competitors can't easily copy:
    dividend TDS + advance-tax + harvesting. This is the recurring annual pain nothing on the
    retail market does well. Peaks **Jan–Jul** each year (advance-tax + filing season).
 
-3. **Staged positions (v2.85)** — scale in across tranches with a stop on each, scale out in
+3. **Daily operating loop (v2.97)** — plan before the open, review against explicit limits after
+   the close, and fix data-quality gaps before believing a report. This increases weekly habit
+   frequency, which matters more to retention than adding another static report.
+
+4. **Staged positions (v2.85)** — scale in across tranches with a stop on each, scale out in
    parts, per-leg R. Every competitor models a trade as one entry and one exit; professionals
    do not trade that way. This is the clearest "they actually trade" signal in the product and
    the easiest thing to demo in 30 seconds.
@@ -90,6 +109,21 @@ Launch tactic: cap the launch price to the **first 100 buyers** ("founding trade
 testimonials + Google reviews, then step to list price. Anchor the bundle against the sum of
 standalone prices so it visibly saves money. Annual keys expire gracefully in-app (renewal
 notice + grace trial → free) — safe to sell without support overhead.
+
+### Packaging decision for v2.97
+
+| Keep free forever | Put in Pro | Why |
+|---|---|---|
+| Journal, imports, account switcher, basic backup/restore | Encrypted attachment-complete recovery | The buyer always owns and can export their record; paid recovery protects it professionally. |
+| Data-quality issue list | Confidence history and advanced remediation trends (future) | Do not hide whether data is wrong; monetize longitudinal intelligence. |
+| One active session plan | Session history, adherence trends, rule-pack history | The daily habit starts free; process analytics carry recurring value. |
+| Basic option fields | Seller cohort analytics and adjustment-family comparisons | Capture is portable; comparative insight is the product. |
+| Aggregate account totals | Cross-account allocation, exposure, and tax/entity reports | Serious multi-book analysis is a clear advanced-user boundary. |
+
+**Recommended commercial test:** keep the lifetime app SKU during the founding-trader phase, but
+make **₹799/year** the visually recommended app-only offer and lifetime the **₹2,999 anchor**.
+Measure activation→paid conversion, 30-day session-plan retention, and annual-plan share before
+changing list prices. Do not claim conversion uplift until the funnel records it.
 
 ## 3. Funnel
 
@@ -231,9 +265,13 @@ Everything technical is now BUILT — the sequence is pure go-to-market:
    renewal outreach list. Back up `license-private.pem` + `license-ledger.jsonl` after every
    batch of sales. Full procedures in `LICENSE_OPERATIONS.md`.
 
-### What changed since this plan was last revised (v2.82 → v2.85)
+### What changed since this plan was last revised (v2.82 → v2.97)
 
 Demo-able additions worth putting in the sales assets, newest first:
+
+- **v2.97 — the trust-to-review loop.** Demo a red Data Quality issue becoming green, plan one
+  session, show the post-market adherence review, then switch accounts. Close by exporting an
+  encrypted full backup. This is the strongest 90-second product story in the current build.
 
 - **v2.85 — Staged positions.** Scale in / scale out with a stop per tranche and per-leg R.
   The single best 30-second demo in the product; nothing else on the market does it.

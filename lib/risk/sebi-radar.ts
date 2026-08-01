@@ -61,6 +61,24 @@ export const NET_INDEX_LIMIT = 1_500_00_00_000; // ₹1,500 cr, end-of-day net
 export const GROSS_INDEX_LIMIT = 10_000_00_00_000; // ₹10,000 cr gross
 export const EXPIRY_DAY_ELM_PCT = 2; // extra ELM on short options expiring today
 
+export interface RadarRules {
+  weeklyExpiryIndex: Record<string, string>;
+  monthlyOnlyIndexes: readonly string[];
+  netIndexLimit: number;
+  grossIndexLimit: number;
+  expiryDayElmPct: number;
+  limitMetric: "notional" | "future_equivalent";
+}
+
+export const DEFAULT_RADAR_RULES: RadarRules = {
+  weeklyExpiryIndex: WEEKLY_EXPIRY_INDEX,
+  monthlyOnlyIndexes: MONTHLY_ONLY_INDEXES,
+  netIndexLimit: NET_INDEX_LIMIT,
+  grossIndexLimit: GROSS_INDEX_LIMIT,
+  expiryDayElmPct: EXPIRY_DAY_ELM_PCT,
+  limitMetric: "future_equivalent",
+};
+
 const DERIVATIVE_SEGMENTS = new Set(["index_option", "stock_option", "future", "commodity_future", "commodity_option"]);
 const INDEX_SEGMENTS = new Set(["index_option"]);
 
@@ -71,7 +89,7 @@ function underlyingOf(symbol: string): string {
   return symbol.toUpperCase().replace(/^(OPT|FUT)\s+/, "").split(/[\s\d]/)[0] ?? "";
 }
 
-export function sebiRadar(positions: RadarPosition[], today = new Date().toISOString().slice(0, 10)): RadarReport {
+export function sebiRadar(positions: RadarPosition[], today = new Date().toISOString().slice(0, 10), rules: RadarRules = DEFAULT_RADAR_RULES): RadarReport {
   const items: RadarItem[] = [];
   const derivatives = positions.filter((p) => DERIVATIVE_SEGMENTS.has(p.segment) && p.qty > 0);
 
@@ -83,9 +101,9 @@ export function sebiRadar(positions: RadarPosition[], today = new Date().toISOSt
     items.push({
       id: "expiry-elm",
       level: "action",
-      title: `Expiry-day margin: +${EXPIRY_DAY_ELM_PCT}% ELM on ${shortOptionsToday.length} short option${shortOptionsToday.length === 1 ? "" : "s"}`,
+      title: `Expiry-day margin: +${rules.expiryDayElmPct}% ELM on ${shortOptionsToday.length} short option${shortOptionsToday.length === 1 ? "" : "s"}`,
       detail:
-        `SEBI adds an extra ${EXPIRY_DAY_ELM_PCT}% Extreme Loss Margin on short option contracts expiring today. ` +
+        `SEBI adds an extra ${rules.expiryDayElmPct}% Extreme Loss Margin on short option contracts expiring today. ` +
         `Your broker will block more margin than the SPAN estimate elsewhere in this app shows — check available margin before adding size.`,
       positions: shortOptionsToday.map((p) => p.symbol),
     });
@@ -105,7 +123,7 @@ export function sebiRadar(positions: RadarPosition[], today = new Date().toISOSt
   const monthlyOnlyHeld = [
     ...new Set(
       derivatives
-        .filter((p) => MONTHLY_ONLY_INDEXES.includes(underlyingOf(p.symbol) as (typeof MONTHLY_ONLY_INDEXES)[number]))
+        .filter((p) => rules.monthlyOnlyIndexes.includes(underlyingOf(p.symbol)))
         .map((p) => underlyingOf(p.symbol)),
     ),
   ];
@@ -123,13 +141,13 @@ export function sebiRadar(positions: RadarPosition[], today = new Date().toISOSt
   // ---- 3. Index position-limit proximity ---------------------------------
   const indexPositions = derivatives.filter((p) => INDEX_SEGMENTS.has(p.segment));
   const indexNotional = indexPositions.reduce((s, p) => s + Math.abs(p.qty * (p.mtm || p.entry)), 0);
-  if (indexNotional > NET_INDEX_LIMIT * 0.5) {
+  if (indexNotional > rules.netIndexLimit * 0.5) {
     items.push({
       id: "position-limit",
-      level: indexNotional > NET_INDEX_LIMIT ? "action" : "caution",
-      title: `Index exposure ${inr(indexNotional)} vs the ${inr(NET_INDEX_LIMIT)} net limit`,
+      level: indexNotional > rules.netIndexLimit ? "action" : "caution",
+      title: `Index exposure ${inr(indexNotional)} vs the ${inr(rules.netIndexLimit)} net limit`,
       detail:
-        "Since Apr 2025 exchanges snapshot open positions at random points INTRADAY, not just at close — an intraday spike can breach even if you flatten by EOD. This is a crude Σ|qty × mark|, not the exchange's own delta-based computation.",
+        `Exchanges snapshot positions intraday. This journal estimate is crude Σ|qty × mark|; the configured official metric is ${rules.limitMetric === "future_equivalent" ? "Future Equivalent / delta-adjusted" : "notional"}. Confirm with your broker's RMS.`,
     });
   }
 

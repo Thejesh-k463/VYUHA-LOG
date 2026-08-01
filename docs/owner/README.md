@@ -28,9 +28,9 @@ All three are gitignored and have **never been committed** — verified by
 ## Cutting a release
 
 ```bash
-npm run verify          # typecheck + lint + 794 tests + production build
-npm run test:e2e        # 13 browser flows
-npm run bump-version 2.94.0
+npm run verify          # typecheck + lint + 892 tests + production build
+npm run test:e2e        # 14 browser flows
+npm run bump-version 2.97.0
 npm run desktop:build   # builds, signs, and REFUSES to ship unsigned
 ```
 

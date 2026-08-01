@@ -239,6 +239,13 @@
       "when": 1785690600000,
       "tag": "0033_charge-user-edited",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1785700000000,
+      "tag": "0034_vyuha-297-foundation",
+      "breakpoints": true
     }
   ]
 }

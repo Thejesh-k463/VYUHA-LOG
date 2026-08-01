@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "./index";
-import { capitalSnapshots, chargeConfig, marginConfig, riskConfig, settings } from "./schema";
+import { capitalSnapshots, chargeConfig, marginConfig, regulatoryRulePacks, riskConfig, settings, accounts } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
 
 const GO_LIVE = "2026-06-19";
@@ -25,6 +25,8 @@ export function seedDatabase(log = false): SeedReport {
     riskAdded: 0,
   };
   const say = (m: string) => log && console.log(m);
+
+  db.insert(accounts).values({ id: 1, name: "Primary", isDefault: true }).onConflictDoNothing().run();
 
   if (db.select().from(settings).all().length === 0) {
     db.insert(settings)
@@ -154,6 +156,13 @@ export function seedDatabase(log = false): SeedReport {
     db.insert(marginConfig).values(row).onConflictDoNothing().run();
   }
   say("✓ margin_config seeded (broker-specific)");
+
+  const rulePacks = [
+    { code: "sebi-equity-derivatives", category: "regulatory", version: "2025.09", effectiveFrom: "2025-09-01", title: "SEBI equity-index derivatives monitoring", sourceTitle: "SEBI — Framework for Intraday Position Limits Monitoring", sourceUrl: "https://www.sebi.gov.in/legal/circulars/sep-2025/framework-for-intraday-position-limits-monitoring-for-equity-index-derivatives_97031.html", payload: { weeklyExpiryIndex: { NSE: "NIFTY", BSE: "SENSEX" }, monthlyOnlyIndexes: ["BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"], netIndexLimit: 15000000000, grossIndexLimit: 100000000000, expiryDayElmPct: 2, limitMetric: "future_equivalent" } },
+    { code: "broker-rate-cards", category: "pricing", version: "2026.08", effectiveFrom: "2026-08-01", title: "Broker pricing and MTF assumptions", sourceTitle: "Broker-published rate cards; individually editable in Settings", sourceUrl: "https://github.com/Thejesh-k463/VYUHA-LOG/blob/main/lib/db/seed-data.ts", payload: { key: "broker × plan × segment × exchange", userEditedRowsPinned: true, statutoryRounding: "STT/CTT and stamp to nearest rupee", mtfBasis: "broker-funded principal only" } },
+  ];
+  for (const row of rulePacks) db.insert(regulatoryRulePacks).values(row).onConflictDoNothing().run();
+  say("✓ regulatory_rule_packs seeded");
 
   return report;
 }

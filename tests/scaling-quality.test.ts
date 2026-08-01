@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { scalingQuality } from "@/lib/analytics/scaling-quality";
+describe("scaling quality",()=>{it("compares the realised ladder with the first-entry-only baseline",()=>{const r=scalingQuality([{id:1,symbol:"ABC",direction:"long",legs:[{id:1,kind:"entry",seq:1,tradeDate:"2026-01-01",qty:10,price:100,chargesTotal:1},{id:2,kind:"entry",seq:2,tradeDate:"2026-01-02",qty:10,price:110,chargesTotal:1},{id:3,kind:"exit",seq:3,tradeDate:"2026-01-03",qty:20,price:120,chargesTotal:2}]}]);expect(r.closed).toBe(1);expect(r.rows[0].firstEntryOnlyNet).not.toBeNull();expect(r.rows[0].scalingImpact).toBeGreaterThan(0);expect(r.improved).toBe(1);});});

@@ -1,13 +1,15 @@
 # Vyuha — Institutional-Grade Roadmap & Build Handoff
 
-**Status:** **v2.87.0** · single-user, local-first, offline · Next.js 16 (App Router) + TS,
+**Status:** **v2.97.0** · multi-account, local-first, offline · Next.js 16 (App Router) + TS,
 Tailwind v4, Drizzle ORM / better-sqlite3, Recharts, TanStack Table, packaged as a
 Tauri desktop app.
 
 > ⚠ **The narrative below is HISTORY, newest-first, and stops being current partway down.**
 > For the live picture — what is shipped, the architectural invariants worth protecting, the limits
 > accepted deliberately, and the ranked list of work not yet done — jump to
-> **[Current state — v2.87.0](#current-state--v2870)** at the bottom of this file.
+> **Current release:** v2.97.0 adds complete encrypted backups, data-quality scoring, session
+> planning/review, sourced rule packs, scaling replay, options-seller journaling, and account
+> isolation with an aggregate view. See the current-state appendix for the earlier baseline.
 
 **Purpose of this doc:** a self-contained handoff so a *fresh* session (no chat
 history) can take Vyuha from "excellent retail journal" to "institutional grade."
@@ -1076,17 +1078,19 @@ was a no-feature version-sync-only bump. Version synced across all 4 files via `
 
 ---
 
-# Current state — v2.87.0 (2026-07-22)
+# Current state — v2.97.0 (2026-08-01)
 
 The handoff notes above are historical (they stop at v1.14.0). This section is the live summary;
 per-release detail lives in `CHANGELOG.md`.
 
-**Tag: v2.87.0 · 576 tests · 5 brokers · 32 routes · 27 API routes · 55 pure modules · 27 migrations · ~30k LOC**
+**Release: v2.97.0 · 892 unit/integration tests · 14 Playwright flows · 34 migrations · production bundle verified**
 
 ## Shipped since the notes above
 
 | Version | What landed |
 |---|---|
+| **v2.97** | Complete encrypted backup/restore; Data Quality Center; session planner/review; sourced versioned rule packs; scaling quality + replay; options-seller journal; multi-account isolation and aggregate view |
+| **v2.96** | Free-vs-paid product comparison and source-linked broker rate cards |
 | **v2.87** | **First paid build** — licence enforcement ON, WhatsApp buy flow live |
 | **v2.86** | Vendor licence control: sales ledger, key IDs, revocation, opt-in machine binding; landing page rebuilt |
 | **v2.85** | **Staged positions** — tranched entries with a stop each, partial exits, per-leg R, per-fill charges, per-tranche risk in the cockpit, importer-rebuilt entry ladders |

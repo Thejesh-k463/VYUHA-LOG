@@ -4,7 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { settings, capitalSnapshots, riskConfig, chargeConfig } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { getWriteAccountId } from "@/lib/queries/accounts";
 
 const numOrNull = (v: unknown): number | null => {
   if (v === "" || v == null) return null;
@@ -175,10 +176,11 @@ function syncOpeningSnapshot(
   asOfDate: string,
   opening: number,
 ) {
+  const accountId = getWriteAccountId();
   const existing = db
     .select()
     .from(capitalSnapshots)
-    .where(eq(capitalSnapshots.bucket, bucket))
+    .where(and(eq(capitalSnapshots.accountId, accountId), eq(capitalSnapshots.bucket, bucket)))
     .orderBy(capitalSnapshots.asOfDate)
     .all()[0];
 
@@ -193,6 +195,7 @@ function syncOpeningSnapshot(
   } else {
     db.insert(capitalSnapshots)
       .values({
+        accountId,
         bucket,
         asOfDate,
         openingCapital: opening,

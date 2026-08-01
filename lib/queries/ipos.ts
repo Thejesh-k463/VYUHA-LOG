@@ -1,11 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { ipos } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { computeIpo, summariseIpos, type IpoComputed, type IpoSummary } from "@/lib/analytics/ipo";
+import { getSelectedAccountId } from "./accounts";
 
 export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {
-  const raw = db.select().from(ipos).orderBy(desc(ipos.createdAt)).all();
+  const accountId=getSelectedAccountId(); const q=db.select().from(ipos); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
   const rows = raw.map((r) =>
     computeIpo({
       id: r.id,
@@ -39,7 +40,7 @@ export function getIpoRealisedNet(): number {
 
 /** trade id → ipo id, for holdings already pushed to the IPO section. */
 export function getIpoTradeLinks(): Map<number, number> {
-  const rows = db.select({ id: ipos.id, tradeId: ipos.tradeId }).from(ipos).all();
+  const accountId=getSelectedAccountId(); const q=db.select({id:ipos.id,tradeId:ipos.tradeId}).from(ipos); const rows=accountId>0?q.where(eq(ipos.accountId,accountId)).all():q.all();
   const m = new Map<number, number>();
   for (const r of rows) if (r.tradeId != null) m.set(r.tradeId, r.id);
   return m;

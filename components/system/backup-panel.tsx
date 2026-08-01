@@ -3,13 +3,29 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, Database, CheckCircle2, AlertCircle } from "lucide-react";
+import { Download, Upload, Database, CheckCircle2, AlertCircle, ShieldCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 export function BackupPanel() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [password, setPassword] = useState("");
+
+  async function onExport() {
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "export", password, includeAttachments: true }) });
+    const data = await res.json().catch(() => ({ ok: false, message: "Backup failed." }));
+    setBusy(false);
+    if (!data.ok) return setMsg({ ok: false, text: data.message });
+    const blob = new Blob([JSON.stringify(data.payload)], { type: "application/json" });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href; a.download = data.fileName; a.click(); URL.revokeObjectURL(href);
+    setMsg({ ok: true, text: `Complete backup downloaded${password ? " with AES-256 encryption" : ""}.` });
+  }
 
   async function onRestoreFile(file: File) {
     setMsg(null);
@@ -20,13 +36,19 @@ export function BackupPanel() {
       setMsg({ ok: false, text: "That file isn't valid JSON." });
       return;
     }
-    if (!confirm("Restore will REPLACE all current data with the backup's contents. Continue?")) return;
     setBusy(true);
-    const res = await fetch("/api/backup", {
+    const encrypted = !!(dump && typeof dump === "object" && "vyuhaEncrypted" in dump);
+    const restorePassword = encrypted ? prompt("This backup is encrypted. Enter its password:") : "";
+    if (encrypted && restorePassword == null) { setBusy(false); return; }
+    const previewRes = await fetch("/api/backup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "restore", dump }),
+      body: JSON.stringify({ action: "preview", dump, password: restorePassword }),
     });
+    const preview = await previewRes.json().catch(() => ({ ok: false, message: "Preview failed" }));
+    if (!preview.ok) { setBusy(false); setMsg({ ok: false, text: preview.message }); return; }
+    if (!confirm(`Restore snapshot from ${preview.createdAt ?? "unknown date"}?\n\n${preview.totalRows} rows and ${preview.attachments} attachment files will replace current data.`)) { setBusy(false); return; }
+    const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", dump, password: restorePassword }) });
     const data = await res.json().catch(() => ({ ok: false, message: "Restore failed" }));
     setBusy(false);
     setMsg({ ok: !!data.ok, text: data.message ?? "" });
@@ -36,10 +58,8 @@ export function BackupPanel() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" asChild>
-          <a href="/api/backup" download>
-            <Download className="size-3.5" /> Backup (JSON)
-          </a>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void onExport()}>
+          <Download className="size-3.5" /> {busy ? "Working…" : "Complete backup"}
         </Button>
         <Button size="sm" variant="outline" asChild>
           <a href="/api/backup?format=sqlite" download>
@@ -61,6 +81,10 @@ export function BackupPanel() {
           }}
         />
       </div>
+      <div className="flex max-w-xl items-center gap-2">
+        <ShieldCheck className="size-4 shrink-0 text-accent" />
+        <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Optional password (8+ characters encrypts the backup)" />
+      </div>
       {msg && (
         <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
           {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
@@ -68,8 +92,8 @@ export function BackupPanel() {
         </span>
       )}
       <p className="text-[11px] text-muted-foreground">
-        Chart-screenshot attachments are image files in the app data folder (data/attachments) — copy that folder
-        separately; the JSON backup covers tables only.
+        Complete backups include every database table and chart attachment. A password encrypts the entire portable
+        file with AES-256-GCM; keep it safe because an offline encrypted backup cannot be recovered without it.
       </p>
     </div>
   );

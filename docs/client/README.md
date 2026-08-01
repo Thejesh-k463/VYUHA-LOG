@@ -3,6 +3,18 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.97
+
+| Workspace | What it gives you |
+|---|---|
+| **Data Quality** | A confidence score and direct fixes for incomplete basis, marks, stops, MTF, option, IPO, instrument, and attachment data. |
+| **Sessions** | Plan the day before the open, then review trade count, cutoff, loss budget, watchlist, and playbook adherence after it. |
+| **Rule Packs** | See which dated SEBI/broker assumptions power the radar, their sources, and when they need review. |
+| **Scaling Quality** | Measure whether adds improved or harmed a staged position and replay fills over local EOD history. |
+| **Options Journal** | Record IV, DTE, hedge status, expiry outcome, and adjustment families for seller-specific review. |
+| **Accounts** | Keep separate broker/entity books or switch to an aggregate “All accounts” view. |
+| **Backup & Restore** | Export the complete journal—including screenshots—optionally encrypted, and preview a restore before confirming. |
+
 ---
 
 ## Getting started
@@ -63,7 +75,9 @@ Everything lives in one SQLite file on your machine:
 %LOCALAPPDATA%\Vyuha\data\vyuha.sqlite
 ```
 
-**Back it up** from Backup & Restore inside the app, or just copy that file.
+**Back it up** from Backup & Restore inside the app. The v2.97 backup includes the complete
+database plus screenshot attachments; set a password when the file will leave your machine.
+You can still copy the SQLite file for a quick local snapshot.
 Uninstalling does not delete it, and a new version migrates it in place after
 taking its own pre-migration backup.
 

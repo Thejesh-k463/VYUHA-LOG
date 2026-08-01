@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
 import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,8 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
 
 export async function GET() {
-  const rows = db.select().from(brokerConnections).all();
+  const selected=getSelectedAccountId(); const accountId=selected||1;
+  const rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
   return NextResponse.json({
     ok: true,
     connections: rows.map((r) => ({
@@ -53,6 +55,7 @@ export async function POST(req: Request) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, message: "Bad request" }, { status: 400 });
   }
+  const selected=getSelectedAccountId(); const accountId=selected||1;
 
   if (body.action === "save") {
     const broker = String(body.broker ?? "");
@@ -69,9 +72,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: `${spec.keyLabel} and access token are required.` }, { status: 400 });
     }
     db.insert(brokerConnections)
-      .values({ broker, apiKey, accessToken })
+      .values({ accountId, broker, apiKey, accessToken })
       .onConflictDoUpdate({
-        target: brokerConnections.broker,
+        target: [brokerConnections.accountId, brokerConnections.broker],
         set: { apiKey, accessToken, updatedAt: new Date().toISOString() },
       })
       .run();
@@ -87,7 +90,7 @@ export async function POST(req: Request) {
 
   if (body.action === "disconnect") {
     const broker = String(body.broker ?? "");
-    db.delete(brokerConnections).where(eq(brokerConnections.broker, broker)).run();
+    db.delete(brokerConnections).where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker))).run();
     recordAudit({ entity: "settings", action: "delete", summary: `Broker connection removed: ${broker}`, before: { broker }, after: null });
     return NextResponse.json({ ok: true, message: "Disconnected." });
   }
@@ -95,7 +98,7 @@ export async function POST(req: Request) {
   if (body.action === "pull") {
     const broker = String(body.broker ?? "zerodha");
     const mode = body.mode === "commit" ? "commit" : "preview";
-    const conn = db.select().from(brokerConnections).where(eq(brokerConnections.broker, broker)).all()[0];
+    const conn = db.select().from(brokerConnections).where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker))).all()[0];
     if (!conn) return NextResponse.json({ ok: false, message: "No saved connection — save the API key + access token first." }, { status: 400 });
 
     let parsed;
@@ -118,7 +121,7 @@ export async function POST(req: Request) {
       const result = commitParsedFile(parsed, fileName);
       db.update(brokerConnections)
         .set({ lastPullAt: new Date().toISOString() })
-        .where(eq(brokerConnections.broker, broker))
+        .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
         .run();
       revalidatePath("/trades");
       revalidatePath("/");

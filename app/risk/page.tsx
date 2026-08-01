@@ -43,6 +43,7 @@ import { MarginPanel } from "@/components/risk/margin-panel";
 import { BreachBanner } from "@/components/risk/breach-banner";
 import { SebiRadarPanel } from "@/components/risk/sebi-radar-panel";
 import { sebiRadar, type RadarPosition } from "@/lib/risk/sebi-radar";
+import { getActiveRadarRules } from "@/lib/queries/rule-packs";
 import { scanBreaches } from "@/lib/jobs/auto-mtm";
 
 export const dynamic = "force-dynamic";
@@ -234,7 +235,7 @@ export default function RiskPage() {
     mtm: p.mtm,
     exchange: p.exchange,
   }));
-  const radar = sebiRadar(radarInputs, today);
+  const radar = sebiRadar(radarInputs, today, getActiveRadarRules());
 
   const marginSummary = estimateMargin(marginInputs, getMarginRates(), {
     equity: equityCapital,

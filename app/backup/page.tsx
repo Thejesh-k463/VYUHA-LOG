@@ -8,6 +8,7 @@ import { BACKUP_TABLES } from "@/lib/backup-format";
 export const dynamic = "force-dynamic";
 
 const TABLE_LABEL: Record<string, string> = {
+  accounts: "Accounts",
   settings: "Settings",
   charge_config: "Charge config",
   risk_config: "Risk config",
@@ -21,6 +22,18 @@ const TABLE_LABEL: Record<string, string> = {
   restricted_securities: "Restricted",
   ledger_entries: "Ledger",
   audit_log: "Audit log",
+  trade_legs: "Trade legs",
+  symbol_aliases: "Aliases",
+  benchmark_prices: "Benchmarks",
+  instruments: "Instruments",
+  price_history: "Price history",
+  corporate_actions: "Corporate actions",
+  playbooks: "Playbooks",
+  margin_config: "Margin config",
+  trade_attachments: "Attachments",
+  broker_connections: "Broker connections",
+  trading_sessions: "Session plans",
+  regulatory_rule_packs: "Rule packs",
 };
 
 export default function BackupPage() {
@@ -53,7 +66,7 @@ export default function BackupPage() {
         </Card>
 
         <p className="text-[11px] text-muted-foreground">
-          The JSON backup is a complete, human-readable dump of every table and restores exactly (round-trips all rows).
+          The portable backup includes every table and attachment and restores exactly after a preview.
           The SQLite download is the raw database file. <strong>Restore replaces all current data</strong> after validating
           the file is a Vyuha backup. A pre-migration snapshot is also written to <code>data/backups/</code> automatically
           before any schema migration.

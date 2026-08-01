@@ -3,8 +3,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
+import { getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -19,10 +20,11 @@ const intOrNull = (v: unknown): number | null => {
 };
 
 function syncOpeningSnapshot(bucket: "equity" | "active", asOfDate: string, opening: number) {
+  const accountId = getWriteAccountId();
   const existing = db
     .select()
     .from(capitalSnapshots)
-    .where(eq(capitalSnapshots.bucket, bucket))
+    .where(and(eq(capitalSnapshots.accountId, accountId), eq(capitalSnapshots.bucket, bucket)))
     .orderBy(capitalSnapshots.asOfDate)
     .all()[0];
   if (existing) {
@@ -32,7 +34,7 @@ function syncOpeningSnapshot(bucket: "equity" | "active", asOfDate: string, open
       .run();
   } else {
     db.insert(capitalSnapshots)
-      .values({ bucket, asOfDate, openingCapital: opening, deployed: 0, available: opening, realisedPnlToDate: 0 })
+      .values({ accountId, bucket, asOfDate, openingCapital: opening, deployed: 0, available: opening, realisedPnlToDate: 0 })
       .run();
   }
 }

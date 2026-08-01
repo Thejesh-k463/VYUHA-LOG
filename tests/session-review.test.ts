@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { reviewSession } from "@/lib/analytics/session-review";
+describe("session review",()=>{it("detects watchlist, cutoff, count and loss breaches deterministically",()=>{const r=reviewSession({sessionDate:"2026-08-01",plannedSymbols:["NIFTY"],plannedPlaybookIds:[1],maxTrades:1,maxLoss:500,cutoffTime:"14:30"},[{id:1,symbol:"NIFTY",playbookId:1,entryDate:"2026-08-01",entryTime:"10:00",netPnl:-300},{id:2,symbol:"BANKNIFTY",playbookId:null,entryDate:"2026-08-01",entryTime:"15:00",netPnl:-400}]);expect(r.offPlanSymbols).toEqual(["BANKNIFTY"]);expect(r.afterCutoff).toBe(1);expect(r.maxTradesBreached).toBe(true);expect(r.maxLossBreached).toBe(true);});});

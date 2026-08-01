@@ -6,6 +6,7 @@ import { CommandPalette } from "@/components/system/command-palette";
 import { Toaster } from "@/components/ui/toaster";
 import { getSettings } from "@/lib/queries/settings";
 import { cn } from "@/lib/utils";
+import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 
 // C1 typography — self-hosted at build time (next/font), so the shipped app
 // stays fully offline. Inter carries the UI; JetBrains Mono carries every
@@ -50,7 +51,7 @@ export default function RootLayout({
       <body className="min-h-full font-sans antialiased">
         <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
           <div className="contents print:hidden">
-            <Sidebar />
+            <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={getSelectedAccountId()} />
           </div>
           <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
         </div>

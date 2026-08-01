@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-873%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-892%20passing-2ea44f)](tests)
 [![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
@@ -22,6 +22,11 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 ## Why Vyuha?
 
 Most journals tell you your P&L. **Vyuha tells you why.**
+
+> **v2.97 — Trust, workflow, and portfolio intelligence.** Complete encrypted backups with
+> attachment recovery; a Data Quality Center; pre-market plans and post-market reviews;
+> versioned regulatory rule packs; scaling-quality and trade-replay analysis; an options-seller
+> journal; and true multi-account books with an aggregate view.
 
 - 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
 - 💸 **MTF done right — the only journal that gets it.** Interest accrues on the *broker-funded portion only* (own-margin % is broker-specific: Dhan/Groww ≈25%, Zerodha ≈20%), with the **correct T+1 day-count** verified against Dhan's own docs. See ROI on your own capital, leverage, breakeven price, and a ⚠ flag when interest has eaten your entire paper gain.
@@ -261,7 +266,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit suite (873 tests) |
+| `npm test` | Vitest unit suite (892 tests) |
+| `npm run test:e2e` | Playwright release book (14 browser flows) |
 | `npm run test:e2e` | Playwright e2e — 14 flows incl. the Dhan transaction report, unpriced-sale quarantine and the status/outcome views |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |

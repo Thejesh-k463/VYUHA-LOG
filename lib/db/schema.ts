@@ -43,6 +43,7 @@ export const trades = sqliteTable(
   "trades",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull().default(1),
 
     // Classification
     broker: text("broker").notNull(), // dhan | zerodha | groww
@@ -97,6 +98,12 @@ export const trades = sqliteTable(
     targetPlanned: real("target_planned"),
     riskAmount: moneyPaise("risk_amount_paise"),
     impliedVol: real("implied_vol"), // user-entered IV %, e.g. 20 for 20% (option Greeks)
+    entryIv: real("entry_iv"),
+    exitIv: real("exit_iv"),
+    entryDte: integer("entry_dte"),
+    hedgeStatus: text("hedge_status"), // unhedged | hedged | partial | not_applicable
+    expiryOutcome: text("expiry_outcome"), // squared_off | expired_worthless | exercised | assigned | open
+    adjustmentGroup: text("adjustment_group"),
     fmv31Jan2018: real("fmv_31jan2018"), // per-share FMV on 31-Jan-2018 (LTCG grandfathering; pre-2018 lots only)
     rMultiple: real("r_multiple"),
     ruleViolations: text("rule_violations", { mode: "json" }).$type<string[]>(),
@@ -167,7 +174,7 @@ export const trades = sqliteTable(
     updatedAt: text("updated_at").notNull().default(now),
   },
   (t) => [
-    uniqueIndex("trades_broker_dedup_uq").on(t.broker, t.dedupHash),
+    uniqueIndex("trades_account_broker_dedup_uq").on(t.accountId, t.broker, t.dedupHash),
     index("trades_segment_idx").on(t.segment),
     index("trades_bucket_idx").on(t.bucket),
     index("trades_sell_date_idx").on(t.sellDate),
@@ -175,6 +182,7 @@ export const trades = sqliteTable(
     // playbook expectancy/discipline rollups group by playbook_id.
     index("trades_is_open_idx").on(t.isOpen),
     index("trades_playbook_idx").on(t.playbookId),
+    index("trades_account_idx").on(t.accountId),
   ],
 );
 
@@ -245,6 +253,7 @@ export const positions = sqliteTable(
   "positions",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull().default(1),
     broker: text("broker").notNull(),
     bucket: text("bucket").notNull(),
     segment: text("segment").notNull(),
@@ -274,6 +283,7 @@ export const positions = sqliteTable(
 // ---------------------------------------------------------------------------
 export const capitalSnapshots = sqliteTable("capital_snapshots", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().default(1),
   bucket: text("bucket").notNull(),
   asOfDate: text("as_of_date").notNull(),
   openingCapital: real("opening_capital").notNull().default(0),
@@ -408,6 +418,7 @@ export const riskConfig = sqliteTable(
 // ---------------------------------------------------------------------------
 export const importBatches = sqliteTable("import_batches", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().default(1),
   broker: text("broker").notNull(),
   fileName: text("file_name").notNull(),
   rowCount: integer("row_count").notNull().default(0),
@@ -485,6 +496,7 @@ export const settings = sqliteTable("settings", {
   // Monetization v2 — offline 14-day full-Pro trial, stamped on first run
   // (backfilled to migration time for existing installs). See lib/license.ts.
   trialStartedAt: text("trial_started_at"),
+  selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });
 
@@ -493,6 +505,7 @@ export const settings = sqliteTable("settings", {
 // ---------------------------------------------------------------------------
 export const ipos = sqliteTable("ipos", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().default(1),
   name: text("name").notNull(),
   broker: text("broker"),
   exchange: text("exchange").notNull().default("NSE"),
@@ -556,6 +569,7 @@ export const ledgerEntries = sqliteTable(
   "ledger_entries",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull().default(1),
     date: text("date").notNull(), // ISO date
     bucket: text("bucket").notNull().default(""), // equity | active | ""
     type: text("type").notNull(), // deposit | withdrawal | charge | realised_pnl | mtf_interest | interest | dividend | dividend_tds | adjustment
@@ -764,14 +778,77 @@ export const brokerConnections = sqliteTable(
   "broker_connections",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull().default(1),
     broker: text("broker").notNull(), // zerodha | dhan | groww
     apiKey: text("api_key").notNull(),
     accessToken: text("access_token").notNull(),
     lastPullAt: text("last_pull_at"), // ISO datetime of the last successful pull
     updatedAt: text("updated_at").notNull().default(now),
   },
-  (t) => [uniqueIndex("broker_connections_broker_uq").on(t.broker)],
+  (t) => [uniqueIndex("broker_connections_account_broker_uq").on(t.accountId, t.broker)],
 );
+
+// ---------------------------------------------------------------------------
+// accounts — first-class local portfolios. Existing journals migrate to id=1.
+// ---------------------------------------------------------------------------
+export const accounts = sqliteTable("accounts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  broker: text("broker"),
+  accountRef: text("account_ref"),
+  taxIdentity: text("tax_identity"),
+  equityCapital: real("equity_capital"),
+  activeCapital: real("active_capital"),
+  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull().default(now),
+  updatedAt: text("updated_at").notNull().default(now),
+}, (t) => [uniqueIndex("accounts_name_uq").on(t.name)]);
+
+// ---------------------------------------------------------------------------
+// trading_sessions — deterministic pre-market plan -> post-market review.
+// ---------------------------------------------------------------------------
+export const tradingSessions = sqliteTable("trading_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().default(1),
+  sessionDate: text("session_date").notNull(),
+  market: text("market").notNull().default("NSE"),
+  plannedSymbols: text("planned_symbols", { mode: "json" }).$type<string[]>().notNull().default([]),
+  plannedPlaybookIds: text("planned_playbook_ids", { mode: "json" }).$type<number[]>().notNull().default([]),
+  maxTrades: integer("max_trades"),
+  maxLoss: moneyPaise("max_loss_paise"),
+  cutoffTime: text("cutoff_time"),
+  thesis: text("thesis"),
+  status: text("status").notNull().default("planned"), // planned | reviewed
+  reviewNotes: text("review_notes"),
+  createdAt: text("created_at").notNull().default(now),
+  updatedAt: text("updated_at").notNull().default(now),
+}, (t) => [
+  uniqueIndex("trading_sessions_account_date_uq").on(t.accountId, t.sessionDate),
+  index("trading_sessions_date_idx").on(t.sessionDate),
+]);
+
+// ---------------------------------------------------------------------------
+// regulatory_rule_packs — dated, attributable rule/config payloads.
+// ---------------------------------------------------------------------------
+export const regulatoryRulePacks = sqliteTable("regulatory_rule_packs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  code: text("code").notNull(),
+  category: text("category").notNull(),
+  version: text("version").notNull(),
+  effectiveFrom: text("effective_from").notNull(),
+  effectiveTo: text("effective_to"),
+  title: text("title").notNull(),
+  sourceTitle: text("source_title").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  reviewedAt: text("reviewed_at"),
+  createdAt: text("created_at").notNull().default(now),
+}, (t) => [
+  uniqueIndex("regulatory_rule_pack_code_version_uq").on(t.code, t.version),
+  index("regulatory_rule_pack_effective_idx").on(t.effectiveFrom),
+]);
 
 // Type exports
 export type Trade = typeof trades.$inferSelect;
@@ -806,3 +883,6 @@ export type NewCorporateAction = typeof corporateActions.$inferInsert;
 export type MarginConfigRow = typeof marginConfig.$inferSelect;
 export type TradeAttachment = typeof tradeAttachments.$inferSelect;
 export type BrokerConnection = typeof brokerConnections.$inferSelect;
+export type Account = typeof accounts.$inferSelect;
+export type TradingSession = typeof tradingSessions.$inferSelect;
+export type RegulatoryRulePack = typeof regulatoryRulePacks.$inferSelect;

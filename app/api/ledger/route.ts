@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { ledgerEntries } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { toPaise } from "@/lib/money";
 import { LEDGER_TYPES, type LedgerType } from "@/lib/analytics/ledger";
 import { recordAudit } from "@/lib/audit";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -34,8 +35,11 @@ export async function POST(req: Request) {
   if (body.action === "delete") {
     const id = Number(body.id);
     if (!Number.isFinite(id)) return NextResponse.json({ ok: false, message: "Bad id" }, { status: 400 });
-    const prev = db.select().from(ledgerEntries).where(eq(ledgerEntries.id, id)).get();
-    db.delete(ledgerEntries).where(eq(ledgerEntries.id, id)).run();
+    const accountId = getSelectedAccountId();
+    const owned = accountId > 0 ? and(eq(ledgerEntries.id, id), eq(ledgerEntries.accountId, accountId)) : eq(ledgerEntries.id, id);
+    const prev = db.select().from(ledgerEntries).where(owned).get();
+    if (!prev) return NextResponse.json({ ok: false, message: "Entry not found in this account." }, { status: 404 });
+    db.delete(ledgerEntries).where(owned).run();
     recordAudit({
       entity: "ledger",
       entityId: id,
@@ -63,7 +67,8 @@ export async function POST(req: Request) {
     const amountPaise = fixed != null ? fixed * toPaise(Math.abs(amount)) : toPaise(amount);
     const note = typeof body.note === "string" ? body.note.slice(0, 200) : null;
 
-    const ins = db.insert(ledgerEntries).values({ date, bucket, type, amountPaise, note, source: "manual" }).returning({ id: ledgerEntries.id }).get();
+    const accountId = getWriteAccountId();
+    const ins = db.insert(ledgerEntries).values({ accountId, date, bucket, type, amountPaise, note, source: "manual" }).returning({ id: ledgerEntries.id }).get();
     recordAudit({
       entity: "ledger",
       entityId: ins?.id ?? null,

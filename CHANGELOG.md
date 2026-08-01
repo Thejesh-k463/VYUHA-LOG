@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.97.0 — trust, workflow, and portfolio intelligence
+
+Seven coordinated upgrades turn Vyuha from a journal with deep analytics into a safer daily
+operating system for traders:
+
+- **Complete, encrypted backup and restore.** Versioned full-database exports now include every
+  user table and screenshot attachment, support AES-256-GCM password protection, and show a
+  restore preview before anything is replaced.
+- **Data Quality Center.** One confidence score surfaces missing cost basis, marks, stops,
+  MTF funding, option metadata, instrument-master coverage, IPO links, and missing attachment
+  files, with direct remediation routes.
+- **Session planner and review.** Pre-market watchlist, playbook, cutoff, trade-count and loss
+  budgets flow into a deterministic post-market adherence review.
+- **Versioned rule packs.** SEBI derivatives rules and broker-rate assumptions carry effective
+  dates, source URLs, review dates, versions, and an audit trail; the compliance radar reads the
+  active pack rather than hard-coded display copy.
+- **Scaling Quality + Trade Replay.** Staged positions are compared with a clearly labelled
+  first-entry-only counterfactual and replayed over local EOD price history.
+- **Options Seller Journal.** Entry/exit IV, DTE, hedge status, expiry outcome, and adjustment
+  groups sit beside premium-capture and outcome summaries.
+- **Multi-account portfolios.** Trades, ledgers, imports, broker connections, capital snapshots,
+  IPOs, and quality/workflow reports are account-aware, with a sidebar switcher and an honest
+  aggregate “All accounts” read view.
+
+Foundation: migration `0034_vyuha-297-foundation.sql`; **892 unit/integration tests and 14
+Playwright flows** pass, together with typecheck, lint, and the production bundle.
+
 All notable changes to Vyuha are tracked here. Versions are kept in sync across
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the sidebar
 footer via `npm run bump-version <version>`.
