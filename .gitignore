@@ -62,6 +62,9 @@ next-env.d.ts
 /src-tauri/target/
 /src-tauri/gen/
 
+# Shareable client ZIPs are release artefacts, never repository content.
+/release-packages/
+
 # tauri updater signing key (vendor secret — never commit)
 updater-private.key
 
