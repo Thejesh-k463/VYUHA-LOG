@@ -45,10 +45,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # --bundles nsis keeps Windows output identical to previous releases.
+          # bundle.targets is "all" so macOS emits .app/.dmg, but on Windows
+          # "all" also produces an MSI — a second installer users have never been
+          # offered, and a second candidate for the updater's windows-x86_64 slot.
           - os: windows-latest
             label: Windows installer (x64)
             rust-target: ""
-            args: ""
+            args: --bundles nsis
 
           # ── Why TWO macOS jobs instead of one universal binary ──────────────
           # The app ships a bundled Node sidecar that build-desktop.mjs copies
@@ -114,7 +118,10 @@ jobs:
           AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
           # The per-arch target, plus the signed-config overlay on Windows only.
-          args: ${{ runner.os == 'Windows' && env.HAS_CODE_SIGNING == 'true' && '--config src-tauri/tauri.signed.conf.json' || matrix.args }}
+          # Append the signed-config overlay rather than replacing matrix.args —
+          # replacing it would silently drop --bundles nsis the moment code
+          # signing is switched on.
+          args: ${{ (runner.os == 'Windows' && env.HAS_CODE_SIGNING == 'true') && format('{0} --config src-tauri/tauri.signed.conf.json', matrix.args) || matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"
           # Placeholder only — replace it with the real notes when publishing the

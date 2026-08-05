@@ -1,5 +1,96 @@
 # Changelog
 
+## v2.99.0 — Vyuha runs on a Mac, and the seller journal grows up
+
+Three upgrades and two real bugs, one of which was found by the macOS support
+this release adds.
+
+### Vyuha builds and runs on macOS
+
+The project had been Windows-shaped in the places that decide whether it runs at
+all, so this fixes those rather than bolting a runner onto the side.
+
+- **Bundle targets** went from a hardcoded `nsis` to per-platform, and the macOS
+  bundle metadata that was entirely absent — category, copyright, descriptions,
+  minimum system version — now exists.
+- **The bundled Node had no execute bit on macOS or Linux.** `copyFileSync` does
+  not carry the source mode across on every platform, and a sidecar without `+x`
+  fails at spawn with a bare `EACCES` — after the installer has been built,
+  signed and published.
+- **Two Mac builds, not one universal binary.** The app ships a Node runtime
+  copied from the machine that built it, so a universal bundle would carry an
+  arm64 Node that dies on startup on every Intel Mac, in a way no check would
+  notice. Take the build matching your Mac.
+- **Releases now build on three platforms** — Windows x64, macOS Apple silicon,
+  macOS Intel — and one platform failing no longer removes the others from the
+  draft.
+- **CI runs the full Playwright suite on a real Mac**, plus a job that proves the
+  desktop bundle assembles there and that its sidecar is present, native and
+  executable.
+
+> **macOS Gatekeeper:** these builds are not yet notarised with an Apple
+> Developer ID, so the first launch reports that the developer cannot be
+> verified. Right-click the app → Open → Open, once.
+
+### Option-seller journal, round two
+
+The existing report was the scoreboard — how much premium was kept. These are the
+questions a seller actually changes behaviour over:
+
+- **Where the edge is, by days to expiry.** Expiry zone, expiry week, fortnight,
+  monthly and far are different businesses on the same underlying.
+- **Does hedging pay?** Hedged vs unhedged expectancy, reported as a *gap between
+  two observed populations* and never as "hedging cost you ₹X" — you chose which
+  trades to hedge, so the two groups are not a controlled comparison. That caveat
+  ships inside the result rather than as UI decoration.
+- **Did rolling help?** Adjustment chains compared against what the first leg
+  alone actually booked — a result that was genuinely available, not a model of
+  what the underlying did next. It surfaces the number worth knowing: how many
+  chains turned a first-leg profit into an overall loss.
+- **Rich IV or cheap IV**, ranked within this journal's own recorded entry IVs
+  for that underlying, because there is no IV feed. Fewer than eight observations
+  and it says so instead of ranking against three numbers.
+- **Premium kept per day of risk**, as a median — one expiry-day scalp distorts
+  an average badly.
+
+Every grouped finding carries its sample size and stops calling itself
+trustworthy below fifteen trades. Undated trades, unrecorded DTE and open
+positions are excluded rather than guessed.
+
+### Licence: time is now monotonic
+
+The trial and any annual key were both evaluated against the system clock, and an
+offline app cannot ask anyone what day it is. Winding the clock back renewed a
+14-day trial and revived a lapsed key, silently and repeatedly.
+
+The install now remembers the latest date it has ever seen and reasons about
+`max(clock, mark)`. It is a **ratchet, not a lock**: forward jumps are always
+honoured, a two-day tolerance absorbs timezone changes, DST and NTP corrections,
+**nothing is ever expired early**, and a corrupt mark is ignored rather than
+locking anyone out. A genuinely wrong clock costs a user nothing.
+
+### Two bugs
+
+- **Two e2e failures that were real, not flaky.** `staged-position` had reddened
+  CI for six consecutive releases: the panel fetches its ladder after mount, so
+  the test's `enable.count()` ran during the loading window, returned 0, skipped
+  the click silently, then waited twenty seconds for a ladder that was never
+  created — surfacing as a failure that pointed at the panel instead of the
+  skipped click. The backup spec compared a page count against a whole-database
+  dump, which are different populations.
+- **`SQLITE_BUSY` during `next build`.** Page data is collected by several worker
+  processes, each opening the same SQLite file and racing to set `journal_mode`.
+  Raising `busy_timeout` did **not** fix it — changing the journal mode takes a
+  brief exclusive lock and returns busy immediately rather than waiting. The
+  database is now created before the build, and the pragma is tolerated failing
+  since WAL is a property of the file, not the connection.
+
+### Notes
+
+Migration `0036_clock-high-water-mark.sql`. **1,062 unit/integration tests and 19
+Playwright flows** pass on Linux and macOS, with typecheck, lint and the
+production bundle.
+
 ## v2.98.0 — the safety net proven, and the last mile of the tax stack
 
 v2.97 shipped seven subsystems in one release. The two that can lose data silently — the
