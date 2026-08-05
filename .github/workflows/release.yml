@@ -1,21 +1,28 @@
 name: Release
 
 # Push a tag like v1.10.0 (matching package.json / tauri.conf.json / Cargo.toml —
-# keep them in sync with `npm run bump-version <version>`) to build the Windows
-# installer and attach it to a DRAFT GitHub Release for review before publishing.
+# keep them in sync with `npm run bump-version <version>`) to build the desktop
+# installers and attach them to a DRAFT GitHub Release for review before publishing.
 #
 # AUTO-UPDATE (wired): tauri-plugin-updater checks the latest PUBLISHED release's
 # latest.json on startup. This workflow signs the updater artifacts with the vendor
-# keypair — REQUIRES the repo secret TAURI_SIGNING_PRIVATE_KEY (contents of the local
-# `updater-private.key`, which is gitignored). Without the secret, the build fails at
-# the signing step: add it under Settings → Secrets and variables → Actions.
+# keypair — REQUIRES the repo secret TAURI_SIGNING_PRIVATE_KEY.
+#
+#   ⚠ THE SECRET MUST HOLD THE CONTENTS OF `.secrets/vyuha-updater.key`, whose
+#   public half is the `plugins.updater.pubkey` baked into tauri.conf.json
+#   (key id 4FF85F3BBE1DA21D). Signing with any other key produces a .sig that
+#   the build reports as valid while every installed copy REJECTS the update.
+#   That is not hypothetical: the key was rotated at v2.91.0, this secret kept
+#   the pre-rotation key, and v2.98.0 shipped an update no existing install
+#   would take. Verify a release by decoding the signature's key id — never by
+#   trusting a "signed" log line.
+#
 # The release stays a DRAFT — updates only reach users once you press Publish.
 #
-# CODE SIGNING (prepared, dormant until secrets exist — see docs/CODE_SIGNING.md):
-# when the four AZURE_* secrets are configured, the workflow installs
-# trusted-signing-cli and builds with src-tauri/tauri.signed.conf.json overlaid,
-# which signs the exe + installer via Azure Trusted Signing. With no secrets the
-# extra steps skip and the installer ships unsigned exactly as before.
+# CODE SIGNING (prepared, dormant until secrets exist — see docs/owner/CODE_SIGNING.md):
+# Windows-only. When the AZURE_* secrets are configured the workflow installs
+# trusted-signing-cli and overlays src-tauri/tauri.signed.conf.json. With no
+# secrets the extra steps skip and the installer ships unsigned exactly as before.
 
 on:
   push:
@@ -24,14 +31,43 @@ on:
 
 jobs:
   build-release:
-    name: Build & publish Windows installer
-    runs-on: windows-latest
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
     # The `secrets` context is NOT allowed inside `if:` expressions (any level) —
     # "Unrecognized named-value: 'secrets'" is a workflow-file validation error
     # that fails the run with zero jobs. Map the probe into env here (env MAY
     # read secrets) and gate steps on env instead.
     env:
       HAS_CODE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+
+    strategy:
+      # One platform failing must not delete the others' artifacts from the draft.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows installer (x64)
+            rust-target: ""
+            args: ""
+
+          # ── Why TWO macOS jobs instead of one universal binary ──────────────
+          # The app ships a bundled Node sidecar that build-desktop.mjs copies
+          # from `process.execPath` — i.e. the RUNNER's own node binary, which is
+          # single-architecture. A `--target universal-apple-darwin` bundle would
+          # therefore carry an arm64 node inside a universal app and die on
+          # startup on any Intel Mac, in a way no CI check would notice. Building
+          # per-arch keeps each bundle's node matched to the machine that will
+          # run it.
+          - os: macos-14
+            label: macOS (Apple silicon)
+            rust-target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+
+          - os: macos-13
+            label: macOS (Intel)
+            rust-target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +77,8 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
 
       - name: Install dependencies
         run: npm ci
@@ -58,8 +96,8 @@ jobs:
       # steps left LOCAL `tauri build` shipping a stale desktop-dist (the v1.12–v1.20
       # local installers bug). The conf field is the one mechanism both paths share —
       # do NOT reintroduce explicit build steps here or a stale bundle can ship again.
-      - name: Install trusted-signing-cli (only when code-signing secrets exist)
-        if: ${{ env.HAS_CODE_SIGNING == 'true' }}
+      - name: Install trusted-signing-cli (Windows, only when code-signing secrets exist)
+        if: ${{ runner.os == 'Windows' && env.HAS_CODE_SIGNING == 'true' }}
         run: cargo install trusted-signing-cli --locked
 
       - uses: tauri-apps/tauri-action@v0
@@ -67,7 +105,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-          # Azure Trusted Signing (no-ops while the secrets are empty)
+          # Azure Trusted Signing (Windows only; no-ops while the secrets are empty)
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -75,8 +113,8 @@ jobs:
           AZURE_CODE_SIGNING_NAME: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
           AZURE_CERT_PROFILE_NAME: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
         with:
-          # Overlay the signCommand config only when signing is configured.
-          args: ${{ env.HAS_CODE_SIGNING == 'true' && '--config src-tauri/tauri.signed.conf.json' || '' }}
+          # The per-arch target, plus the signed-config overlay on Windows only.
+          args: ${{ runner.os == 'Windows' && env.HAS_CODE_SIGNING == 'true' && '--config src-tauri/tauri.signed.conf.json' || matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"
           # Placeholder only — replace it with the real notes when publishing the

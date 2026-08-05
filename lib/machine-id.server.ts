@@ -11,6 +11,7 @@ import "server-only";
  */
 
 import os from "node:os";
+import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { deriveMachineId } from "@/lib/machine-id";
 
@@ -33,6 +34,47 @@ function windowsMachineGuid(): string | null {
   }
 }
 
+/**
+ * macOS `IOPlatformUUID` — the hardware UUID, burned into the logic board.
+ *
+ * The Windows counterpart of MachineGuid in every way that matters here: stable
+ * across OS reinstalls and app reinstalls, unaffected by renaming the Mac or
+ * changing network hardware. Read via `ioreg`, which needs no privileges.
+ */
+function macPlatformUuid(): string | null {
+  if (process.platform !== "darwin") return null;
+  try {
+    const out = execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], {
+      encoding: "utf8",
+      timeout: 4000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const m = out.match(/"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]{36})"/);
+    return m ? m[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Linux `/etc/machine-id` (systemd), falling back to the D-Bus copy.
+ *
+ * Written once at OS install. Read directly rather than shelled out — it is a
+ * plain file, and spawning a process to `cat` it would be silly.
+ */
+function linuxMachineId(): string | null {
+  if (process.platform !== "linux") return null;
+  for (const p of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+    try {
+      const v = fs.readFileSync(p, "utf8").trim();
+      if (/^[0-9a-f]{32}$/i.test(v)) return v.toLowerCase();
+    } catch {
+      /* try the next one */
+    }
+  }
+  return null;
+}
+
 let cached: string | null = null;
 
 /**
@@ -42,9 +84,23 @@ let cached: string | null = null;
 export function getMachineId(): string {
   if (cached) return cached;
 
+  // Each platform's strong identifier is namespaced with its own tag, so the
+  // same 36-char string read on two platforms could never collide into one id.
   const guid = windowsMachineGuid();
   if (guid) {
     cached = deriveMachineId(["winguid", guid]);
+    return cached;
+  }
+
+  const macUuid = macPlatformUuid();
+  if (macUuid) {
+    cached = deriveMachineId(["macuuid", macUuid]);
+    return cached;
+  }
+
+  const linuxId = linuxMachineId();
+  if (linuxId) {
+    cached = deriveMachineId(["linuxid", linuxId]);
     return cached;
   }
 

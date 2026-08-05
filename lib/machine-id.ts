@@ -13,9 +13,17 @@
  *
  *   • Windows: the OS `MachineGuid` — written once at Windows install and
  *     untouched by app reinstalls, driver changes, RAM upgrades or renames.
+ *   • macOS: `IOPlatformUUID` — the hardware UUID on the logic board. Survives
+ *     an OS reinstall, a rename, and any network-hardware change.
+ *   • Linux: `/etc/machine-id`, written once at OS install.
  *   • Fallback: hostname + platform + arch + CPU model. Deliberately NOT
  *     total memory (changes on a RAM upgrade), NOT the MAC address (changes
  *     with docks, VPNs and USB adapters), NOT disk serial (changes on clone).
+ *
+ * Each platform's identifier is namespaced with its own tag before hashing, so
+ * the same string observed on two platforms cannot collapse into one id. The
+ * fallback is deliberately the LAST resort: hostname is user-editable, so a
+ * machine that lands on it can silently change identity when renamed.
  *
  * A machine ID is a *coarse* identifier. Reinstalling Windows produces a new
  * one — expected, and covered by the re-issue procedure in

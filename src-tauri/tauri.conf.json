@@ -34,9 +34,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "targets": "all",
+    "category": "Finance",
+    "shortDescription": "Local-first trade journal for Indian traders",
+    "longDescription": "A fully local, offline trade journal and analytics cockpit for Indian retail traders. Exact broker-and-segment charge computation, MTF interest, discipline enforcement and ITR-ready tax schedules. No account, no cloud, no telemetry.",
+    "copyright": "Copyright © Vyuha",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",

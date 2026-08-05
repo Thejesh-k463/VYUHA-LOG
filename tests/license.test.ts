@@ -235,6 +235,25 @@ describe("machine binding", () => {
     expect(deriveMachineId([null, undefined, ""])).toBe("UNKNOWN-MACHINE");
   });
 
+  it("namespaces each platform's identifier so two OSes cannot collide", () => {
+    // A Windows MachineGuid and a macOS IOPlatformUUID are both 36-char
+    // hyphenated hex. Without the platform tag, the same string read on two
+    // machines would derive one id — and a key bound to a Mac would unlock a PC.
+    const raw = "550e8400-e29b-41d4-a716-446655440000";
+    const ids = [
+      deriveMachineId(["winguid", raw]),
+      deriveMachineId(["macuuid", raw]),
+      deriveMachineId(["linuxid", raw]),
+    ];
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it("gives every platform the same quotable shape", () => {
+    for (const tag of ["winguid", "macuuid", "linuxid", "fallback"]) {
+      expect(deriveMachineId([tag, "some-identifier"])).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    }
+  });
+
   it("an UNBOUND key runs anywhere — the default and every legacy key", () => {
     expect(machineMatches(undefined, "AAAA-BBBB-CCCC")).toBe(true);
     expect(machineMatches(null, "AAAA-BBBB-CCCC")).toBe(true);

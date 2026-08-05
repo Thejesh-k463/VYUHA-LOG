@@ -8,7 +8,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
 [![Tests](https://img.shields.io/badge/tests-1019%20passing-2ea44f)](tests)
-[![Platform](https://img.shields.io/badge/platform-Windows%20desktop%20%7C%20localhost-blue)](#-get-it)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20desktop%20%7C%20localhost-blue)](#-get-it)
 [![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
@@ -195,8 +195,10 @@ node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"         # stop a leaked/
 ```
 
 Each key embeds the buyer's email in its signed payload, so no two are alike, and the app shows
-"Licensed to &lt;email&gt;". Keys can optionally be **bound to one computer** via a Windows
-`MachineGuid`-derived fingerprint. Revocation is a build-time list — honest about being a slow tool
+"Licensed to &lt;email&gt;". Keys can optionally be **bound to one computer** via a hardware-derived
+fingerprint — Windows `MachineGuid`, macOS `IOPlatformUUID`, or Linux
+`/etc/machine-id`, each namespaced so the same value on two platforms cannot
+collide. Revocation is a build-time list — honest about being a slow tool
 rather than a kill switch, because a kill switch would mean phoning home. Full procedures:
 [`docs/owner/LICENSE_OPERATIONS.md`](docs/owner/LICENSE_OPERATIONS.md).
 
@@ -211,7 +213,17 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 ## 🚀 Get it
 
-**Desktop (Windows):** grab `Vyuha_x.y.z_x64-setup.exe` from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled. Your data persists in app-data across updates and reinstalls.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls.
+
+| Platform | File | Data lives in |
+|---|---|---|
+| **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
+| **macOS** (Apple silicon) | `Vyuha_x.y.z_aarch64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
+| **macOS** (Intel) | `Vyuha_x.y.z_x64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
+
+macOS ships **two separate builds rather than one universal binary on purpose** — the app bundles a Node runtime, and a universal app would carry a single-architecture Node that fails on the other machine. Take the one matching your Mac.
+
+> **macOS Gatekeeper:** the builds are not yet notarised with an Apple Developer ID, so the first launch shows *"Vyuha cannot be opened because the developer cannot be verified."* Right-click the app → **Open** → **Open**, once. Nothing about the app changes; macOS simply asks before running software it cannot attribute.
 
 **What's free and what isn't (v2.87+):** every fresh install starts a **14-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording trades, all five broker importers, the dashboard, staged positions, playbooks and backups. A licence unlocks the analytics layer — Portfolio Risk cockpit, Tax Summary, ITR Pack and Broker Cost comparison. Your own record of your trading is never held hostage, and nothing leaves your machine either way.
 
@@ -279,7 +291,7 @@ lines.
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
-| `npm run desktop:build` | Build the native Windows installer (needs Rust; see below) |
+| `npm run desktop:build` | Build the native desktop app for the CURRENT platform (needs Rust; see below) |
 
 </details>
 
@@ -288,18 +300,28 @@ lines.
 
 Vyuha is a full-stack Next.js server (server actions + better-sqlite3), so it can't be a static
 export. The Tauri shell spawns the Next **standalone** server as a **bundled-Node sidecar** bound to
-`127.0.0.1`, waits for the port, then points the native WebView2 window at it. On first run the
-launcher copies a seeded template DB (empty journal) into the OS app-data dir
-(`%APPDATA%/in.vyuha.tradejournal`); your data persists there across updates and reinstalls.
+`127.0.0.1`, waits for the port, then points the native webview at it — WebView2 on Windows, WKWebView
+on macOS. On first run the launcher copies a seeded template DB (empty journal) into the OS app-data
+dir (`%APPDATA%\in.vyuha.tradejournal`, or `~/Library/Application Support/in.vyuha.tradejournal`);
+your data persists there across updates and reinstalls.
 
 ```bash
-# one-time prerequisites (Windows): Rust + WebView2 + MSVC C++ build tools
+# one-time prerequisites
+#   Windows : Rust + WebView2 + MSVC C++ build tools
+#   macOS   : Rust + Xcode Command Line Tools (xcode-select --install)
 npm run desktop:build
-# → signed installer at src-tauri/target/release/bundle/nsis/
+# → Windows: src-tauri/target/release/bundle/nsis/
+# → macOS:   src-tauri/target/release/bundle/dmg/
 ```
 
-Releases are built by CI on tag push (`v*`), signed with the updater keypair, and published as
-**drafts** — updates only reach users when a draft is explicitly published.
+`desktop:build` builds for **whichever platform you run it on** — there is no cross-compilation, so a
+macOS build needs a Mac. That is what the release matrix is for.
+
+Releases are built by CI on tag push (`v*`) across a matrix — Windows x64, macOS Apple silicon and
+macOS Intel — signed with the updater keypair and published as **drafts**, so updates only reach
+users when a draft is explicitly published. macOS ships per-architecture rather than as one universal
+binary because the app carries a bundled Node runtime, and a universal bundle would embed a
+single-architecture Node that fails on the other kind of Mac.
 
 </details>
 

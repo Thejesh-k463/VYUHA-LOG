@@ -37,8 +37,19 @@ jobs:
         run: npm run build
 
   e2e:
-    name: Playwright e2e
-    runs-on: ubuntu-latest
+    name: Playwright e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # A macOS-only failure must still be visible when Linux is green, and vice
+      # versa — that difference is the entire reason for running both.
+      fail-fast: false
+      matrix:
+        # ubuntu is the fast signal on every push. macOS is here because the
+        # desktop app now ships for it: better-sqlite3 loads a different prebuilt
+        # binary, paths are case-sensitive with a different separator, and the
+        # per-user data dir resolves somewhere else entirely. None of that is
+        # exercised by a Linux run.
+        os: [ubuntu-latest, macos-14]
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +61,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browsers
+      # --with-deps installs system libraries via apt and is Linux-only; on
+      # macOS it fails outright, so the browser download runs without it.
+      - name: Install Playwright browsers (Linux)
+        if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright browsers (macOS)
+        if: runner.os == 'macOS'
+        run: npx playwright install chromium
 
       - name: Run e2e (spins up its own isolated DB + dev server on :3100)
         run: npm run test:e2e
@@ -60,6 +78,41 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          # Matrix legs cannot share an artifact name — a collision fails the
+          # upload and you lose the report for the leg you actually need.
+          name: playwright-report-${{ matrix.os }}
           path: playwright-report/
           retention-days: 7
+
+  # Proves the desktop bundle assembles on macOS: the Next standalone build, the
+  # seeded template DB, and the per-arch Node sidecar with its execute bit. This
+  # is the part that cannot be checked from a Windows dev box at all. It stops
+  # short of `tauri build`, which would add several minutes of Rust compilation
+  # to every push — the release workflow covers that on tag.
+  desktop-bundle-macos:
+    name: Desktop bundle assembles (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle + assemble desktop-dist
+        run: npm run build && npm run desktop:bundle
+
+      - name: Assert the sidecar is present, native and executable
+        run: |
+          set -euo pipefail
+          test -f desktop-dist/.next/BUILD_ID
+          test -f desktop-dist/desktop-server.mjs
+          test -f desktop-dist/vyuha.seed.sqlite
+          test -x desktop-dist/node/node
+          file desktop-dist/node/node | tee /dev/stderr | grep -q "arm64"
+          desktop-dist/node/node --version
+          echo "✓ macOS desktop bundle is complete and runnable"

@@ -98,10 +98,16 @@ try {
   const nodeDir = path.join(dist, "node");
   fs.mkdirSync(nodeDir, { recursive: true });
   const exeName = process.platform === "win32" ? "node.exe" : "node";
-  fs.copyFileSync(process.execPath, path.join(nodeDir, exeName));
+  const nodeOut = path.join(nodeDir, exeName);
+  fs.copyFileSync(process.execPath, nodeOut);
+  // macOS and Linux need the execute bit explicitly. copyFileSync does NOT
+  // carry the source mode across on every platform/filesystem, and a bundled
+  // node without +x fails at spawn with a bare EACCES — after the installer has
+  // already been built, signed and published.
+  if (process.platform !== "win32") fs.chmodSync(nodeOut, 0o755);
   const nodeLicense = path.join(path.dirname(process.execPath), "LICENSE");
   if (fs.existsSync(nodeLicense)) fs.copyFileSync(nodeLicense, path.join(nodeDir, "LICENSE"));
-  console.log(`• bundled Node ${process.version} → node/${exeName}`);
+  console.log(`• bundled Node ${process.version} (${process.platform}/${process.arch}) → node/${exeName}`);
 } catch (e) {
   console.warn("! could not bundle the Node runtime — installer will need system Node:", e.message);
 }
