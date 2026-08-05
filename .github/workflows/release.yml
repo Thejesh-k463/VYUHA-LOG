@@ -79,6 +79,10 @@ jobs:
           args: ${{ env.HAS_CODE_SIGNING == 'true' && '--config src-tauri/tauri.signed.conf.json' || '' }}
           tagName: ${{ github.ref_name }}
           releaseName: "Vyuha ${{ github.ref_name }}"
-          releaseBody: "See docs/INSTITUTIONAL_GRADE_ROADMAP.md for what changed."
+          # Placeholder only — replace it with the real notes when publishing the
+          # draft. It must not name a file that can be deleted: this line pointed
+          # at docs/INSTITUTIONAL_GRADE_ROADMAP.md for eleven releases and became a
+          # dead link the moment that file was removed.
+          releaseBody: "See CHANGELOG.md for what changed in this release."
           releaseDraft: true
           prerelease: false

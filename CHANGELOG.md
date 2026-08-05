@@ -1287,4 +1287,5 @@ test data reverted. 433 unit tests (+30), typecheck, lint all green.
   option strategy recognition + payoff diagrams, physical-settlement tracker,
   F&O ban/ASM surveillance, tax-loss harvesting, advance-tax planner, broker-cost
   comparison, bhavcopy auto-MTM, symbol-alias map, and the trade calculator.
-  See `docs/INSTITUTIONAL_GRADE_ROADMAP.md` for full detail on each.
+  (Detail formerly lived in `docs/INSTITUTIONAL_GRADE_ROADMAP.md`, removed in v2.98 —
+  the invariants and conventions it carried now live in `AGENTS.md`.)
