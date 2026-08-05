@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { trades, ipos as iposTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { commitManualTrade, applyOverride, closePosition, updateManualTrade, type UpdateTradeFields } from "@/lib/import/commit";
+import { deleteTradesByIds, deleteImportBatch } from "@/lib/queries/delete";
 import { SEGMENTS, EXCHANGES, SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { classify } from "@/lib/engine/classify";
 import { evaluateLimits } from "@/lib/risk/limits";
@@ -186,9 +187,36 @@ export async function overrideTrade(formData: FormData): Promise<void> {
 export async function deleteTrade(formData: FormData): Promise<void> {
   const id = Number(formData.get("tradeId"));
   if (!Number.isFinite(id)) return;
-  db.delete(trades).where(eq(trades.id, id)).run();
-  revalidatePath("/trades");
-  revalidatePath("/");
+  // Routed through the delete engine rather than deleting the row directly.
+  // The old implementation removed `trades` and nothing else, orphaning
+  // trade_legs and trade_attachments and leaving the attachment bytes on disk
+  // forever, with no audit entry to say the trade had existed.
+  deleteTradesByIds([id], "deleted from the trades table");
+  revalidateAfterTradeChange();
+}
+
+/** Delete a resolved set of ids — the exact list the confirmation showed. */
+export async function deleteTradesAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const raw = String(formData.get("ids") ?? "");
+  const reason = String(formData.get("reason") ?? "bulk delete");
+  const ids = raw.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return { ok: false, message: "Nothing was selected." };
+  const res = deleteTradesByIds(ids, reason);
+  if (res.ok) revalidateAfterTradeChange();
+  return { ok: res.ok, message: res.message };
+}
+
+/** Delete an import batch, optionally cascading to the trades it created. */
+export async function deleteImportBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const batchId = Number(formData.get("batchId"));
+  const cascade = String(formData.get("cascade") ?? "") === "true";
+  if (!Number.isFinite(batchId)) return { ok: false, message: "Invalid import." };
+  const res = deleteImportBatch(batchId, cascade);
+  if (res.ok) {
+    revalidateAfterTradeChange();
+    revalidatePath("/import");
+  }
+  return { ok: res.ok, message: res.message };
 }
 
 function revalidateAfterTradeChange() {
