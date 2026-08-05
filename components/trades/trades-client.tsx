@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { ManualTradeForm } from "./manual-trade-form";
+import type { WriteAccountOption } from "@/components/system/write-account-picker";
 import { CloseTradeDialog } from "./close-trade-dialog";
 import { EditTradeDialog } from "./edit-trade-dialog";
 import { StagedPanel } from "./staged-panel";
@@ -41,12 +42,15 @@ export function TradesClient({
   trades,
   playbooks = [],
   mtfMarginByBroker = {},
+  writeAccounts = [],
 }: {
   trades: Trade[];
   playbooks?: PlaybookOption[];
   /** eq_mtf own-margin % per broker (real leverage varies — Dhan/Groww ~25%,
    * Zerodha ~20%) — components look up the currently-selected/trade's broker. */
   mtfMarginByBroker?: Record<string, number>;
+  /** Non-empty only in the aggregate view with 2+ accounts — see A6. */
+  writeAccounts?: WriteAccountOption[];
 }) {
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -319,7 +323,7 @@ export function TradesClient({
                 <DialogTitle>Add open trade</DialogTitle>
                 <DialogDescription>A running position (no exit yet) with SL / TSL / target — appears in Portfolio Risk.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfMarginByBroker={mtfMarginByBroker} />
+              <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfMarginByBroker={mtfMarginByBroker} writeAccounts={writeAccounts} />
             </DialogContent>
           </Dialog>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -331,7 +335,7 @@ export function TradesClient({
                 <DialogTitle>Add trade</DialogTitle>
                 <DialogDescription>Auto-classified with a live charge preview as you type.</DialogDescription>
               </DialogHeader>
-              <ManualTradeForm onDone={() => setAddOpen(false)} mtfMarginByBroker={mtfMarginByBroker} />
+              <ManualTradeForm onDone={() => setAddOpen(false)} mtfMarginByBroker={mtfMarginByBroker} writeAccounts={writeAccounts} />
             </DialogContent>
           </Dialog>
         </div>

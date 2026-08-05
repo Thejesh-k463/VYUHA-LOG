@@ -14,6 +14,10 @@ export async function POST(req: Request) {
   const file = form.get("file");
   const mode = String(form.get("mode") ?? "preview");
   const forcedSource = form.get("sourceId") ? String(form.get("sourceId")) : null;
+  // Only sent from the "All accounts" view, where the target is ambiguous.
+  // Validated against the accounts table downstream in getWriteAccountId.
+  const rawAccountId = form.get("accountId");
+  const accountId = rawAccountId ? Number(rawAccountId) : null;
 
   // Bulk product corrections for a P&L file, keyed by tradingsymbol. Sent by
   // the P&L tab once the user has confirmed what these trades actually were.
@@ -58,7 +62,7 @@ export async function POST(req: Request) {
 
   if (mode === "commit") {
     try {
-      const result = commitParsedFile(parsed, file.name, productOverrides);
+      const result = commitParsedFile(parsed, file.name, productOverrides, accountId);
       revalidatePath("/trades");
       revalidatePath("/");
       return NextResponse.json({
@@ -73,7 +77,7 @@ export async function POST(req: Request) {
   }
 
   // preview
-  const preview = previewParsedFile(parsed, productOverrides);
+  const preview = previewParsedFile(parsed, productOverrides, accountId);
   const kind = classifyFileKind(parsed.format);
   return NextResponse.json({
     mode: "preview",

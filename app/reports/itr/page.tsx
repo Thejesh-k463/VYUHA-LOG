@@ -7,8 +7,10 @@ import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
 import { itrPackByFy } from "@/lib/analytics/itr";
+import { itrScheduleByFy, scheduleExportRows } from "@/lib/analytics/itr-schedule";
+import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
 import { inr } from "@/lib/format";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -18,14 +20,53 @@ const EXPORT_COLS = [
   { key: "turnover", label: "Turnover" }, { key: "charges", label: "Charges/Expenses" },
 ];
 
+const SCHEDULE_COLS = [
+  { key: "fy", label: "FY" }, { key: "form", label: "Form" },
+  { key: "schedule", label: "Schedule" }, { key: "code", label: "Item" },
+  { key: "label", label: "Description" }, { key: "amount", label: "Amount" },
+  { key: "note", label: "Note" },
+];
+
 export default function ItrPackPage() {
   const settings = getSettings();
+  const fyStartMonth = settings?.fyStartMonth ?? 4;
+  const trades = getTrades();
   const packs = itrPackByFy(
-    getTrades().map((t) => ({
+    trades.map((t) => ({
       segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
       grossPnl: t.grossPnl, netPnl: t.netPnl, chargesTotal: t.chargesTotal, isOpen: t.isOpen,
     })),
-    settings?.fyStartMonth ?? 4,
+    fyStartMonth,
+  );
+
+  // Carry-forward comes from the SAME set-off engine the Tax Summary uses, so
+  // Schedule CFL cannot drift from the figures on that page.
+  const currentFy = packs[packs.length - 1]?.fy ?? "2026-27";
+  const timeline = computeTaxTimeline(
+    aggregateTradesByFy(
+      trades.filter((t) => !t.isOpen).map((t) => ({
+        segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+        buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+        fmv31Jan2018: t.fmv31Jan2018,
+      })),
+      fyStartMonth,
+      currentFy,
+    ),
+  );
+  const carryForwardByFy = new Map<string, CarryForwardLot[]>(
+    timeline.map((r) => [r.fy, r.newCarryForward]),
+  );
+
+  const schedules = itrScheduleByFy(
+    trades.map((t) => ({
+      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+      chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
+      fmv31Jan2018: t.fmv31Jan2018, isOpen: t.isOpen,
+    })),
+    fyStartMonth,
+    currentFy,
+    carryForwardByFy,
   );
 
   const exportRows = packs.flatMap((p) => [
@@ -101,6 +142,83 @@ export default function ItrPackPage() {
           <div className="flex items-center justify-end">
             <ExportButtons filename="vyuha-itr-pack" columns={EXPORT_COLS} rows={exportRows} />
           </div>
+        )}
+
+        {/* ── Schedule-format view ────────────────────────────────────────────
+            The pack above answers "how does my book split across heads?". This
+            answers "what goes in which BOX?" — the ITR's own item codes, so a
+            CA can read straight across into the utility. */}
+        {schedules.length > 0 && (
+          <Card className="p-0">
+            <CardHeader className="flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileSpreadsheet className="size-4" /> Schedule-format line items
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Schedule CG (A3 · 111A, B4 · 112A), Schedule BP and Schedule CFL, in the return&apos;s own
+                  item codes.
+                </p>
+              </div>
+              <ExportButtons filename="vyuha-itr-schedules" columns={SCHEDULE_COLS} rows={scheduleExportRows(schedules)} />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-start gap-2 rounded-md border border-accent/40 bg-accent/5 p-3 text-xs">
+                <Info className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                <p>
+                  <span className="font-medium">STT is treated differently by head, on purpose.</span> It is
+                  excluded from capital-gains deductions (proviso to S.48) but allowed in full as a business
+                  expense against intraday and F&amp;O. The same rupees, two treatments — which is why the
+                  Schedule CG balance below is deliberately <em>higher</em> than the net P&amp;L shown elsewhere
+                  in Vyuha.
+                </p>
+              </div>
+
+              {schedules.map((s) => (
+                <section key={s.fy} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">FY {s.fy}</h3>
+                    <Badge variant="accent">{s.itrForm} indicated</Badge>
+                    <span className="text-[11px] text-muted-foreground">{s.formReason}</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
+                          <th className="py-1.5 pr-3 font-medium">Schedule</th>
+                          <th className="py-1.5 pr-3 font-medium">Item</th>
+                          <th className="py-1.5 pr-3 font-medium">Description</th>
+                          <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {s.lines.map((l, i) => (
+                          <tr key={`${l.code}-${i}`} className={`border-b border-border/40 ${l.amount === null ? "bg-card-hover/30" : ""}`}>
+                            <td className="py-1.5 pr-3 text-muted-foreground">{l.schedule}</td>
+                            <td className="py-1.5 pr-3 font-mono">{l.code}</td>
+                            <td className="py-1.5 pr-3">
+                              {l.amount === null ? <span className="font-medium">{l.label}</span> : l.label}
+                              {l.note && <p className="text-[10px] text-muted-foreground">{l.note}</p>}
+                            </td>
+                            <td className="py-1.5 pr-3 text-right tabular-nums">
+                              {l.amount === null ? <span className="text-muted-foreground">—</span> : inr(l.amount, { decimals: 0 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <ul className="space-y-1 text-[11px] text-muted-foreground">
+                    {s.cautions.map((c, i) => (
+                      <li key={i} className="flex gap-1.5"><Info className="mt-0.5 size-3 shrink-0" />{c}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </CardContent>
+          </Card>
         )}
         </ProGate>
       </div>

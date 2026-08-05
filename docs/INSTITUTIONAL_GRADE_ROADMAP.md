@@ -1,15 +1,18 @@
 # Vyuha — Institutional-Grade Roadmap & Build Handoff
 
-**Status:** **v2.97.0** · multi-account, local-first, offline · Next.js 16 (App Router) + TS,
+**Status:** **v2.98.0** · multi-account, local-first, offline · Next.js 16 (App Router) + TS,
 Tailwind v4, Drizzle ORM / better-sqlite3, Recharts, TanStack Table, packaged as a
 Tauri desktop app.
 
 > ⚠ **The narrative below is HISTORY, newest-first, and stops being current partway down.**
 > For the live picture — what is shipped, the architectural invariants worth protecting, the limits
-> accepted deliberately, and the ranked list of work not yet done — jump to
-> **Current release:** v2.97.0 adds complete encrypted backups, data-quality scoring, session
-> planning/review, sourced rule packs, scaling replay, options-seller journaling, and account
-> isolation with an aggregate view. See the current-state appendix for the earlier baseline.
+> accepted deliberately, and the ranked list of work not yet done — jump to the
+> **Current state** appendix at the end of this file.
+>
+> **Current release:** v2.98.0 hardens what v2.97 shipped — it closed a data-loss path in restore,
+> made restore atomic across the database and the attachment directory, strengthened the backup KDF,
+> ended the ambiguity of writing from the aggregate account view, and put the whole thing under
+> tests (892 → 988 unit/integration, 14 → 19 Playwright).
 
 **Purpose of this doc:** a self-contained handoff so a *fresh* session (no chat
 history) can take Vyuha from "excellent retail journal" to "institutional grade."
@@ -1078,17 +1081,18 @@ was a no-feature version-sync-only bump. Version synced across all 4 files via `
 
 ---
 
-# Current state — v2.97.0 (2026-08-01)
+# Current state — v2.98.0 (2026-08-05)
 
 The handoff notes above are historical (they stop at v1.14.0). This section is the live summary;
 per-release detail lives in `CHANGELOG.md`.
 
-**Release: v2.97.0 · 892 unit/integration tests · 14 Playwright flows · 34 migrations · production bundle verified**
+**Release: v2.98.0 · 1019 unit/integration tests · 19 Playwright flows · 35 migrations · production bundle verified**
 
 ## Shipped since the notes above
 
 | Version | What landed |
 |---|---|
+| **v2.98** | ITR schedule-format export (Schedule CG/BP/CFL in the return's own item codes, with the S.48 STT rule applied per head); hardening of the v2.97 surface: closed a data-loss path in restore, made restore atomic across DB + attachments, raised the backup KDF to OWASP scrypt with recorded parameters, resolved the aggregate-view write ambiguity (migration 0035 + account picker), and put backup, isolation and the four thin v2.97 modules under test |
 | **v2.97** | Complete encrypted backup/restore; Data Quality Center; session planner/review; sourced versioned rule packs; scaling quality + replay; options-seller journal; multi-account isolation and aggregate view |
 | **v2.96** | Free-vs-paid product comparison and source-linked broker rate cards |
 | **v2.87** | **First paid build** — licence enforcement ON, WhatsApp buy flow live |
@@ -1117,6 +1121,19 @@ per-release detail lives in `CHANGELOG.md`.
    mistake economics report the expectancy *gap*, not counterfactual P&L.
 6. **The core journal is never gated.** `PRO_FEATURES` covers analytics only — a user's own record
    of their trades is not held hostage.
+7. **Every account-scoped read goes through `getSelectedAccountId()`**, applying
+   `accountId > 0 ? filter : all`. A query that forgets it merges two books into one tax pack,
+   turnover figure or expectancy number, and *nothing on screen looks broken* — which is exactly why
+   `tests/account-isolation.test.ts` reads the `account_id` columns out of SQLite and fails on any
+   table that gains one without a scoped read.
+8. **0 is a view, not a place.** The aggregate "All accounts" selection can never receive a write.
+   `getWriteAccountId()` resolves it — to the user's explicit pick where the UI could ask, to a real
+   account otherwise — and validates any explicit id against the accounts table, so a stale tab
+   cannot redirect a trade into a book it does not belong to.
+9. **Restore leaves the journal intact on any failure.** Attachments are staged before the database
+   transaction, the table swap is one transaction, and the directory is swapped only after it
+   commits. Attachments are replaced *only* when the backup carries some: an orphaned file is
+   invisible and reclaimable, a deleted screenshot is gone.
 
 ## Known limits, accepted deliberately
 
@@ -1131,23 +1148,44 @@ per-release detail lives in `CHANGELOG.md`.
 
 ## Highest-value work not yet done
 
-Ranked from the July-2026 ecosystem review (global journals + India's post-2024 F&O regime):
+> The previous edition of this list ranked six items from the July-2026 ecosystem review. **All six
+> shipped** (time-of-day edge as Arjun's Eye, ROM, session plan/review, trade replay, options-seller
+> depth, scaling quality) and the list sat here stale for a release. What follows is the list as of
+> v2.98 — if you ship one, delete it here in the same commit.
 
-1. **Time-of-day edge analysis.** `entry_time`/`exit_time` are stored on every trade and read by
-   *nothing*. Free data; India's sessions have distinct regimes (9:15–9:30, the 11:00–14:00 chop,
-   15:00–15:30, expiry-day 14:30–15:30). Cheapest large win available.
-2. **Return on Margin (ROM).** F&O traders' real denominator is margin blocked, not turnover or
-   notional. `lib/risk/margin.ts` already computes SPAN estimates — run it historically. No Indian
-   journal does this.
-3. **Pre-market plan → session review.** A `sessions` table plus a deterministic EOD diff of plan
-   vs actual (off-watchlist symbols, over max trades, past your own cutoff). Beats an LLM because
-   it is reproducible.
-4. **EOD trade replay chart.** `price_history` exists; draw entry/exit/SL/target markers with the
-   MAE/MFE band shaded. Makes excursion analysis visual.
-5. **Option-seller depth.** Theta captured vs days held, IV at entry vs exit, expiry outcome
-   (expired worthless / assigned / squared off) — India's dominant retail cohort.
-6. **Scaling-quality report** (now that v2.85 records the ladder): does adding actually improve
-   expectancy, or turn winners into losers? Compare first-entry-only P&L against actual.
+Feature surface is no longer the binding constraint: 39 screens and 43 analytics modules already
+cover more than any Indian retail journal on the market. The constraints now are **distribution**
+and one **data ceiling**.
 
-Explicitly **not** planned: cloud AI (breaks the offline promise), full backtesting (needs
-intraday data; Streak/AlgoTest/Sensibull own it), social leaderboards.
+1. **Intraday bar ingestion.** The stated ceiling under "Known limits". MAE/MFE, stop tuning, trade
+   replay and the session-edge work in Arjun's Eye all run on EOD bhavcopy bars. Lifting that would
+   sharpen four existing reports at once — but it is a DATA-ACQUISITION problem before it is a code
+   problem, and the realistic sources (a paid broker historical API, or user-pasted CSV) each pull
+   against the offline promise differently. Decide the source before writing anything.
+2. **macOS build.** Widens the market, but costs per-platform sqlite prebuilds, a per-platform node
+   sidecar, notarisation and separate signing. Hold until there is buyer signal asking for it.
+3. **Option-seller depth, round two.** `lib/analytics/options-seller.ts` is 2 KB against a cohort
+   that dominates Indian retail F&O. Rolling and adjustment chains, IV rank at entry, and margin
+   efficiency per strategy are the obvious next cuts.
+4. **Licence hardening.** Revocation is build-time and there is no device binding — both analysed
+   and accepted in `LICENSE_OPERATIONS.md`, both re-openable if leakage ever shows up in the ledger.
+
+Explicitly **not** planned: cloud AI (breaks the offline promise), full backtesting (needs intraday
+data; Streak/AlgoTest/Sensibull own it), social leaderboards.
+
+## Testing conventions added in v2.98
+
+Almost every test still runs against pure modules with no database — that rule is intact and is why
+the suite finishes in seconds. Two things cannot be tested that way, because the behaviour under
+test *is* the I/O:
+
+- **`tests/helpers/temp-db.ts`** opens a throwaway migrated SQLite file for those cases. It sets
+  `VYUHA_DB_PATH` before the first dynamic `import("@/lib/db")` — a static import anywhere in the
+  module graph binds the connection first and the helper will throw rather than let a test silently
+  assert against the wrong database.
+- **One temp database per FILE.** Vitest gives one module registry per file, and `lib/db` caches its
+  connection on `globalThis`, so a second `openTempDb()` in the same file reuses the first one. The
+  helper detects this and fails loudly; if a test needs a second database, it needs a second file.
+- **The account-scoped table registry** in `tests/account-isolation.test.ts` reads `account_id`
+  columns out of SQLite itself. Adding that column to a new table fails the test until the query
+  layer scopes it — which catches the *next* table, not just today's eight.

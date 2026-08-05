@@ -152,7 +152,9 @@ export async function createManualTrade(
       daysHeld: num(formData.get("daysHeld")) || null,
       currentPrice: num(formData.get("currentPrice")) || null,
       lotSize: num(formData.get("lotSize")) || null,
-    });
+    },
+    // Present only when the form was submitted from the "All accounts" view.
+    num(formData.get("accountId")) || null);
     if (res.duplicate) return { ok: false, message: "A matching trade already exists (duplicate)." };
     revalidatePath("/trades");
     revalidatePath("/risk");

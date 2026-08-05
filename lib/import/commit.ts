@@ -18,6 +18,7 @@ import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade, ProductH
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
+import { getWriteAccountId } from "@/lib/queries/accounts";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
@@ -142,13 +143,19 @@ function buildRow(
   return { classification: cls, charges, netPnl, isOpen, dedup, buyOrderCount, sellOrderCount, riskAmount, rMultiple, realisedPct };
 }
 
-function loadContext() {
+/**
+ * @param explicitAccountId the account the USER chose for this write. Only the
+ *   "All accounts" view can produce that question, and only when more than one
+ *   account exists — see getWriteAccountId. Ignored when it is not a real
+ *   account id, so a stale or hand-crafted value can never redirect a write.
+ */
+function loadContext(explicitAccountId?: number | null) {
   const rates = loadRatesMap();
   const s = db.select().from(settingsTable).limit(1).all()[0];
   const globalRisk = db.select().from(riskConfig).where(eq(riskConfig.scope, "global")).all()[0];
   return {
     rates,
-    accountId: s?.selectedAccountId && s.selectedAccountId > 0 ? s.selectedAccountId : 1,
+    accountId: getWriteAccountId(explicitAccountId),
     defaults: {
       buyOrders: s?.defaultBuyOrders ?? 1,
       sellOrders: s?.defaultSellOrders ?? 1,
@@ -277,9 +284,12 @@ function applyProductOverrides(
 export function previewParsedFile(
   parsedIn: ParsedFile,
   productOverrides: Record<string, ProductHint> | null = null,
+  // Dedup is per (account, broker), so a preview run against a different
+  // account than the commit would report the wrong duplicate count.
+  accountIdIn?: number | null,
 ): PreviewResult {
   const parsed = applyProductOverrides(parsedIn, productOverrides);
-  const { rates, defaults, accountId } = loadContext();
+  const { rates, defaults, accountId } = loadContext(accountIdIn);
   const overrides = loadOverrides(parsed.broker);
   const existing = new Set(
     db.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
@@ -341,9 +351,10 @@ export function commitParsedFile(
   parsedIn: ParsedFile,
   fileName: string,
   productOverrides: Record<string, ProductHint> | null = null,
+  accountIdIn?: number | null,
 ): CommitResult {
   const parsed = applyProductOverrides(parsedIn, productOverrides);
-  const { rates, defaults, accountId } = loadContext();
+  const { rates, defaults, accountId } = loadContext(accountIdIn);
   const overrides = loadOverrides(parsed.broker);
 
   return db.transaction((tx) => {
@@ -504,8 +515,9 @@ export interface ManualJournalFields {
 export function commitManualTrade(
   t: NormalizedTrade,
   fields: ManualJournalFields = {},
+  accountIdIn?: number | null,
 ): { id: number | null; duplicate: boolean } {
-  const { rates, defaults, accountId } = loadContext();
+  const { rates, defaults, accountId } = loadContext(accountIdIn);
 
   let cls = classify({
     tradingsymbol: t.tradingsymbol,

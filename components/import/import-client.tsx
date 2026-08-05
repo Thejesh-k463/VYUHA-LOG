@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,8 +53,12 @@ interface PreviewResp {
   };
 }
 
-export function ImportClient() {
+export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAccountOption[] }) {
   const router = useRouter();
+  // A6 — which book do these trades belong to? Only asked in the aggregate
+  // view with 2+ accounts; dedup is per (account, broker), so this must be
+  // decided BEFORE the preview, not at commit.
+  const [accountId, setAccountId] = useState<number>(writeAccounts[0]?.id ?? 0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +75,7 @@ export function ImportClient() {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("mode", "preview");
+      if (accountId > 0) fd.append("accountId", String(accountId));
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Failed to parse file"); return; }
@@ -88,6 +94,7 @@ export function ImportClient() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("mode", "commit");
+      if (accountId > 0) fd.append("accountId", String(accountId));
       if (preview) fd.append("sourceId", preview.detected.sourceId);
       // Only a P&L file needs these — a tradebook states the product itself.
       if (Object.keys(productOverrides).length > 0) {
@@ -129,6 +136,7 @@ export function ImportClient() {
       fd.append("mode", "preview");
       if (preview) fd.append("sourceId", preview.detected.sourceId);
       fd.append("productOverrides", JSON.stringify(next));
+      if (accountId > 0) fd.append("accountId", String(accountId));
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Failed to re-price"); return; }
@@ -174,6 +182,16 @@ export function ImportClient() {
 
   return (
     <div className="space-y-5">
+      {/* Asked before the file, because dedup is per (account, broker): a
+          preview run against one account would report the wrong duplicate
+          count for another. Changing it discards the current preview. */}
+      <WriteAccountPicker
+        accounts={writeAccounts}
+        value={accountId}
+        onChange={(id) => { setAccountId(id); setPreview(null); setCommitted(null); }}
+        label="Import into account"
+      />
+
       {/* ── Which kind of file are you importing? ─────────────────────────
           The two are not equivalent: a tradebook states the product and the
           time; a P&L statement states neither. Making the choice explicit is

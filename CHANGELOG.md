@@ -1,5 +1,88 @@
 # Changelog
 
+## v2.98.0 — the safety net proven, and the last mile of the tax stack
+
+v2.97 shipped seven subsystems in one release. The two that can lose data silently — the
+backup and multi-account isolation — carried almost no tests between them. This release
+does not add features; it makes the existing ones provable, and fixes what writing the
+proofs uncovered.
+
+### Backup and restore
+
+- **A latent data-loss path in restore is closed.** `dumpDatabase(false)` still emitted
+  `attachments: []`, and restore guarded on the field's *presence* rather than its length —
+  an empty array is truthy. Restoring an attachments-excluded backup therefore deleted every
+  screenshot on disk while restoring the `trade_attachments` rows that pointed at them.
+  Attachments are now replaced only when the backup actually carries some. A backup exported
+  without them says nothing about which files should exist, and the asymmetry of guessing
+  wrong is total: an orphaned file is invisible and reclaimable, a deleted screenshot is gone.
+- **Restore is now ordered so any failure leaves the journal intact.** Incoming attachment
+  bytes are decoded and staged to a sibling directory *before* the database transaction runs;
+  the table swap is one transaction; the staged directory is swapped in only after that
+  commits. A malformed payload or a bad row now returns "your journal is unchanged" instead
+  of throwing partway through.
+- **The backup KDF was strengthened.** scrypt ran at node's default cost (N=16384) — light
+  for a key protecting an entire trading history in an offline file an attacker can grind at
+  leisure. New backups use OWASP's baseline (N=2^17) and, more importantly, **record the
+  parameters in the envelope**, so the cost can be raised again without stranding files
+  already on disk. Backups written before this release still open.
+- **19 round-trip tests** now cover what `backup-format` never did: dump → wipe → restore
+  reproducing every table, money surviving as integer paise, attachment bytes returning,
+  encrypt → decrypt → restore, wrong passwords, tampered ciphertext (GCM), and v1 envelopes.
+
+### Multi-account
+
+- **Single-account installs no longer sit in the aggregate view.** Migration 0034 defaulted
+  `selected_account_id` to 0 ("All accounts") while trades defaulted to account 1, so every
+  install landed in an aggregate view of exactly one account — which is what made writes
+  ambiguous in the first place. Migration `0035` selects the sole account, and
+  `getSelectedAccountId()` resolves a stored 0 the same way, covering fresh installs and
+  users who delete a second account back down to one.
+- **Writes from the aggregate view now ask which account.** With 2+ accounts, the add-trade
+  form and the importer show an account picker instead of silently filing everything under
+  Primary. The importer asks before the preview, because dedup is per (account, broker) and a
+  preview run against the wrong account reports the wrong duplicate count. An explicit account
+  id is validated against the accounts table, so a stale tab cannot redirect a write.
+- **14 isolation tests**, including a **schema registry test** that reads `account_id` columns
+  out of SQLite itself and fails the moment a new table gains one — catching the next table,
+  not just today's eight.
+
+### ITR schedule-format export
+
+The ITR pack already computed the head-wise split, Guidance-Note turnover and the 44AB read.
+What it could not do was answer the question a CA actually asks: *which box does this go in?*
+
+- **Schedule CG** — A3 for STCG u/s 111A and B4 for LTCG u/s 112A, in the return's own item
+  codes, with consideration and cost reported **separately** (a net gain loses exactly the two
+  figures the schedule asks for) and the ₹1.25L / ₹1L deduction applied per the sell-date regime.
+- **Schedule BP** for both business heads, **Schedule CFL** with each loss vintage and the year
+  it lapses — sourced from the same set-off engine the Tax Summary uses, so the two pages cannot
+  drift apart.
+- **It says which form the book implies:** ITR-2 for a capital-gains-only year, ITR-3 the moment
+  any intraday or F&O appears.
+- **The STT rule is applied per head, which a re-label would get wrong.** STT is excluded from
+  capital-gains deductions (proviso to S.48) but allowed in full as a business expense against
+  intraday and F&O. Every other figure in Vyuha is net of STT, so the Schedule CG balance is
+  deliberately *higher* than the net P&L shown elsewhere. The charge breakdown is stored per
+  trade, so the split is a fact here rather than an estimate.
+- Amounts the app cannot derive are emitted as **blank, never 0** — "not applicable" and "zero"
+  are different answers on a tax return.
+
+### The v2.97 features are now actually tested
+
+- **The four thin modules went from 5 tests to 71.** Options-seller, scaling quality, session
+  review and data quality shipped as headline features with one or two tests between them.
+- **Five new Playwright flows** cover the surfaces no e2e had ever touched: the Data Quality
+  Center, session plan → review, account switching and isolation, the backup export → restore
+  round trip through the real UI, and an encrypted backup refusing the wrong password.
+
+### Notes
+
+Isolation was found to be *correctly implemented* across all eight account-scoped tables;
+these tests lock that in rather than fix it. Foundation: migration
+`0035_default-account-selection.sql`; **1,019 unit/integration tests and 19 Playwright flows**
+pass, with typecheck, lint and the production bundle.
+
 ## v2.97.0 — trust, workflow, and portfolio intelligence
 
 Seven coordinated upgrades turn Vyuha from a journal with deep analytics into a safer daily

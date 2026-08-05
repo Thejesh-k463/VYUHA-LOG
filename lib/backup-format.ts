@@ -44,15 +44,53 @@ export interface BackupEnvelope {
   attachments?: { storedName: string; mime: string; dataBase64: string }[];
 }
 
+/**
+ * scrypt cost parameters.
+ *
+ * v1 envelopes carried none, because they were written with node's defaults
+ * (N=16384) — light for a key that protects an entire trading history, since
+ * the file is offline and an attacker can grind it at their leisure. v2 raises
+ * the cost and WRITES THE PARAMETERS DOWN, so the cost can be raised again
+ * later without stranding files already on a user's disk.
+ */
+export interface ScryptParams {
+  N: number;
+  r: number;
+  p: number;
+}
+
+/** Node's defaults — what every v1 envelope was sealed with. */
+export const SCRYPT_PARAMS_V1: ScryptParams = { N: 16384, r: 8, p: 1 };
+
+/** OWASP's baseline scrypt cost. ~134 MB of memory per derivation. */
+export const SCRYPT_PARAMS_V2: ScryptParams = { N: 1 << 17, r: 8, p: 1 };
+
+/** Memory ceiling for a derivation: 128 · N · r, plus headroom. */
+export function scryptMaxmem(params: ScryptParams): number {
+  return 128 * params.N * params.r * 2;
+}
+
+export const ENCRYPTED_BACKUP_VERSION = 2;
+
 export interface EncryptedBackupEnvelope {
   vyuhaEncrypted: true;
-  version: 1;
+  /** 1 = node-default scrypt cost (no kdfParams); 2 = cost recorded explicitly. */
+  version: number;
   algorithm: "aes-256-gcm";
   kdf: "scrypt";
+  /** Absent on v1 envelopes — read SCRYPT_PARAMS_V1 in that case. */
+  kdfParams?: ScryptParams;
   salt: string;
   iv: string;
   tag: string;
   ciphertext: string;
+}
+
+/** The cost an envelope was sealed with; v1 files predate the field. */
+export function paramsOf(env: EncryptedBackupEnvelope): ScryptParams {
+  const p = env.kdfParams;
+  if (!p || typeof p.N !== "number" || typeof p.r !== "number" || typeof p.p !== "number") return SCRYPT_PARAMS_V1;
+  return p;
 }
 
 export interface ValidationResult {

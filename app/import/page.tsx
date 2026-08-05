@@ -4,6 +4,7 @@ import { BrokerConnect } from "@/components/import/broker-connect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getImportBatches } from "@/lib/queries/trades";
+import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
 import { BROKER_LABELS, type Broker } from "@/lib/domain/constants";
 import { fmtDate } from "@/lib/format";
 
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 export default function ImportPage() {
   const batches = getImportBatches();
+  // A6 — only the aggregate view leaves the destination account unanswered.
+  const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
 
   return (
     <>
@@ -19,7 +22,7 @@ export default function ImportPage() {
         description="Auto-detect broker & format, preview, then commit. Re-imports are de-duplicated."
       />
       <div className="space-y-6 p-6">
-        <ImportClient />
+        <ImportClient writeAccounts={writeAccounts} />
 
         <BrokerConnect />
 

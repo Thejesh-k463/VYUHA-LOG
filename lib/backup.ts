@@ -7,6 +7,10 @@ import { attachmentsDir } from "@/lib/db";
 import {
   BACKUP_VERSION,
   BACKUP_TABLES,
+  ENCRYPTED_BACKUP_VERSION,
+  SCRYPT_PARAMS_V2,
+  scryptMaxmem,
+  paramsOf,
   validateBackup,
   type BackupEnvelope,
   type BackupTable,
@@ -70,10 +74,21 @@ export function encryptBackup(dump: BackupEnvelope, password: string): Encrypted
   if (password.length < 8) throw new Error("Backup password must be at least 8 characters.");
   const salt = randomBytes(16);
   const iv = randomBytes(12);
-  const key = scryptSync(password, salt, 32);
+  const params = SCRYPT_PARAMS_V2;
+  const key = scryptSync(password, salt, 32, { ...params, maxmem: scryptMaxmem(params) });
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(dump), "utf8"), cipher.final()]);
-  return { vyuhaEncrypted: true, version: 1, algorithm: "aes-256-gcm", kdf: "scrypt", salt: salt.toString("base64"), iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ciphertext: ciphertext.toString("base64") };
+  return {
+    vyuhaEncrypted: true,
+    version: ENCRYPTED_BACKUP_VERSION,
+    algorithm: "aes-256-gcm",
+    kdf: "scrypt",
+    kdfParams: params,
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+  };
 }
 
 export function decryptBackup(value: unknown, password: string): unknown {
@@ -81,7 +96,10 @@ export function decryptBackup(value: unknown, password: string): unknown {
   try {
     const salt = Buffer.from(value.salt, "base64");
     const iv = Buffer.from(value.iv, "base64");
-    const key = scryptSync(password, salt, 32);
+    // Read the cost the file was SEALED with, not the current one, so raising
+    // the cost never strands a backup already sitting on someone's disk.
+    const params = paramsOf(value);
+    const key = scryptSync(password, salt, 32, { ...params, maxmem: scryptMaxmem(params) });
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(Buffer.from(value.tag, "base64"));
     const raw = Buffer.concat([decipher.update(Buffer.from(value.ciphertext, "base64")), decipher.final()]);
@@ -100,35 +118,86 @@ export function previewBackup(value: unknown, password = "") {
   return { ok: true, message: "Backup is valid.", version: d.version, createdAt: d.createdAt, counts: d.counts, totalRows: Object.values(d.counts ?? {}).reduce((s, n) => s + Number(n || 0), 0), attachments: d.attachments?.length ?? 0, dump: d };
 }
 
-/** Wipe every table and reload from a validated dump, atomically. */
+/**
+ * Wipe every table and reload from a validated dump.
+ *
+ * A restore replaces a user's entire journal, so the ordering below is chosen so
+ * that ANY failure leaves the existing data intact:
+ *
+ *   1. decode + stage the incoming attachment bytes to a sibling directory
+ *      (a malformed payload fails here, before anything is touched)
+ *   2. run the table swap inside one transaction (a bad row rolls the lot back)
+ *   3. only after the commit, swap the staged directory into place
+ *
+ * Attachments are replaced ONLY when the backup actually carries some. A backup
+ * exported without them says nothing about which files should exist, and the
+ * asymmetry of guessing wrong is total: an orphaned file on disk is invisible
+ * and reclaimable, a deleted screenshot is gone. So the files stay.
+ */
 export function restoreDatabase(dump: unknown): { ok: boolean; message: string; restored?: number } {
   const v = validateBackup(dump);
   if (!v.ok) return { ok: false, message: v.message };
   const tables = v.tables!;
-  const result = db.transaction((tx) => {
-    for (const name of [...BACKUP_TABLES].reverse()) tx.delete(TABLE_MAP[name]).run();
-    let restored = 0;
-    for (const name of BACKUP_TABLES) {
-      const rows = (tables[name] ?? []) as Record<string, unknown>[];
-      for (const r of rows) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tx.insert(TABLE_MAP[name]).values(r as any).run();
-        restored++;
+  const incoming = (dump as BackupEnvelope).attachments ?? [];
+
+  // ---- 1. stage attachments -------------------------------------------------
+  // `stagingDir` is a plain const rather than a nullable, and `replaceAttachments`
+  // carries the decision: a `string | null` in the path.join below makes the
+  // bundler's static file-pattern analysis widen to the whole project tree.
+  const stagingDir = `${attachmentsDir}.restoring`;
+  const replaceAttachments = incoming.length > 0;
+  if (replaceAttachments) {
+    try {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+      fs.mkdirSync(stagingDir, { recursive: true });
+      for (const a of incoming) {
+        const safe = path.basename(a.storedName);
+        if (!safe || safe !== a.storedName) continue; // never write outside the directory
+        fs.writeFileSync(path.join(stagingDir, safe), Buffer.from(a.dataBase64, "base64"));
       }
-    }
-    if ((tables.accounts ?? []).length === 0) tx.insert(schema.accounts).values({ id: 1, name: "Primary", isDefault: true }).run();
-    return { ok: true, message: `Restored ${restored} rows across ${BACKUP_TABLES.length} tables.`, restored };
-  });
-  const envelope = dump as BackupEnvelope;
-  if (envelope.attachments) {
-    fs.mkdirSync(attachmentsDir, { recursive: true });
-    for (const existing of fs.readdirSync(attachmentsDir)) fs.rmSync(path.join(attachmentsDir, existing), { force: true });
-    for (const a of envelope.attachments) {
-      const safe = path.basename(a.storedName);
-      if (safe !== a.storedName || !safe) continue;
-      fs.writeFileSync(path.join(attachmentsDir, safe), Buffer.from(a.dataBase64, "base64"));
+    } catch (e) {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+      return { ok: false, message: `Could not unpack the backup's attachments — ${e instanceof Error ? e.message : "unknown error"}. Nothing was changed.` };
     }
   }
+
+  // ---- 2. swap the tables ---------------------------------------------------
+  let result: { ok: boolean; message: string; restored: number };
+  try {
+    result = db.transaction((tx) => {
+      for (const name of [...BACKUP_TABLES].reverse()) tx.delete(TABLE_MAP[name]).run();
+      let restored = 0;
+      for (const name of BACKUP_TABLES) {
+        const rows = (tables[name] ?? []) as Record<string, unknown>[];
+        for (const r of rows) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tx.insert(TABLE_MAP[name]).values(r as any).run();
+          restored++;
+        }
+      }
+      if ((tables.accounts ?? []).length === 0) tx.insert(schema.accounts).values({ id: 1, name: "Primary", isDefault: true }).run();
+      return { ok: true, message: `Restored ${restored} rows across ${BACKUP_TABLES.length} tables.`, restored };
+    });
+  } catch (e) {
+    if (replaceAttachments) fs.rmSync(stagingDir, { recursive: true, force: true });
+    return { ok: false, message: `Restore failed and was rolled back — ${e instanceof Error ? e.message : "unknown error"}. Your journal is unchanged.` };
+  }
+
+  // ---- 3. swap the attachment directory in ----------------------------------
+  if (replaceAttachments) {
+    const retired = `${attachmentsDir}.replaced`;
+    try {
+      fs.rmSync(retired, { recursive: true, force: true });
+      if (fs.existsSync(attachmentsDir)) fs.renameSync(attachmentsDir, retired);
+      fs.renameSync(stagingDir, attachmentsDir);
+      fs.rmSync(retired, { recursive: true, force: true });
+    } catch (e) {
+      // The journal is already restored and correct; only the screenshots are
+      // in doubt. Say so plainly rather than reporting a clean success.
+      return { ok: true, message: `${result.message} Screenshots could not be swapped in (${e instanceof Error ? e.message : "unknown error"}) — see ${path.basename(stagingDir)}.`, restored: result.restored };
+    }
+  }
+
   return result;
 }
 

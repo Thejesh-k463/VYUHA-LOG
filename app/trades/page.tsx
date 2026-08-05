@@ -8,6 +8,7 @@ import { inr } from "@/lib/format";
 import { AcquisitionPanel, type PendingBasisTrade } from "@/components/trades/acquisition-panel";
 import { UnmarkedHoldingsPanel, type UnmarkedHolding } from "@/components/trades/unmarked-holdings-panel";
 import { getIpoTradeLinks } from "@/lib/queries/ipos";
+import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
 import { isMarked } from "@/lib/analytics/trade-status";
 import { summariseAcquisitions, ipoAllottedPnl, hasKnownBasis } from "@/lib/analytics/acquisition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 
 export default function TradesPage() {
   const trades = getTrades();
+  // A6 — only the aggregate view leaves "which account?" unanswered.
+  const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
   const stats = getTradeStats();
   const chargePct = stats.gross !== 0 ? (stats.charges / Math.abs(stats.gross)) * 100 : 0;
 
@@ -100,6 +103,7 @@ export default function TradesPage() {
           trades={trades}
           playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived, rules: p.rules }))}
           mtfMarginByBroker={getMtfMarginByBroker()}
+          writeAccounts={writeAccounts}
         />
       </div>
     </>

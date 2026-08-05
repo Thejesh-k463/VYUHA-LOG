@@ -13,6 +13,7 @@ import { LimitVerdict } from "@/components/risk/limit-verdict";
 import type { LimitResult } from "@/lib/risk/limits";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
+import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 interface PreviewResp {
@@ -43,12 +44,15 @@ export function ManualTradeForm({
   onDone,
   mode = "closed",
   mtfMarginByBroker = {},
+  writeAccounts = [],
 }: {
   onDone?: () => void;
   mode?: "open" | "closed";
   /** eq_mtf own-margin % per broker (real leverage varies by broker) — looked
    * up against whichever broker is currently selected in this form. */
   mtfMarginByBroker?: Record<string, number>;
+  /** Non-empty only in the aggregate view with 2+ accounts — see A6. */
+  writeAccounts?: WriteAccountOption[];
 }) {
   const open = mode === "open";
   const [state, formAction, pending] = useActionState<ActionState, FormData>(createManualTrade, { ok: false, message: "" });
@@ -251,6 +255,10 @@ export function ManualTradeForm({
     <form action={formAction} className="space-y-4">
       {open && <input type="hidden" name="open" value="true" />}
       <input type="hidden" name="direction" value={kind === "fno" ? direction : "buy"} />
+
+      {/* Ambiguous only in the "All accounts" view with 2+ accounts; renders
+          nothing otherwise. */}
+      <WriteAccountPicker accounts={writeAccounts} />
 
       <div className="flex rounded-lg border border-border bg-background/40 p-0.5 text-xs">
         {(["equity", "fno"] as const).map((k) => (
