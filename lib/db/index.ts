@@ -18,6 +18,18 @@ const sqlite =
   globalForDb.__vyuhaSqlite ??
   (() => {
     const conn = new Database(dbPath);
+    // busy_timeout MUST be set before any pragma that takes a write lock.
+    //
+    // `next build` collects page data with several worker PROCESSES, and every
+    // route that reaches a query opens this file in each of them. Without a
+    // timeout the second worker to arrive fails instantly with SQLITE_BUSY
+    // rather than waiting the few milliseconds the first one needs — which is
+    // exactly how the macOS build broke while Linux passed on timing luck.
+    // Setting WAL is itself a locking operation, so ordering matters here.
+    //
+    // It protects the shipped app too: the desktop sidecar and any second
+    // process touching the same journal now queue instead of erroring.
+    conn.pragma("busy_timeout = 10000");
     conn.pragma("journal_mode = WAL");
     conn.pragma("foreign_keys = ON");
     return conn;

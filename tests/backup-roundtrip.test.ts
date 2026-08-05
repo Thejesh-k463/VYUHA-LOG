@@ -222,3 +222,13 @@ describe("encrypted backups", () => {
     expect(t.db.select().from(t.schema.trades).all()).toHaveLength(1);
   });
 });
+
+describe("connection pragmas", () => {
+  it("sets a busy timeout before WAL, so concurrent openers wait instead of erroring", () => {
+    // `next build` opens this file from several worker processes at once. With
+    // no timeout the second one fails instantly with SQLITE_BUSY — which is how
+    // the macOS build broke while Linux passed on timing luck alone.
+    expect(t.sqlite.pragma("busy_timeout", { simple: true })).toBeGreaterThanOrEqual(10000);
+    expect(String(t.sqlite.pragma("journal_mode", { simple: true })).toLowerCase()).toBe("wal");
+  });
+});
