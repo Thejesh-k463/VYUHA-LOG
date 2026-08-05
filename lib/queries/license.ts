@@ -60,7 +60,7 @@ export function getLicenseStatus(): LicenseStatus {
  */
 export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICENSE_ENFORCEMENT } => {
   const row = db
-    .select({ id: settings.id, licenseKey: settings.licenseKey, trialStartedAt: settings.trialStartedAt })
+    .select({ id: settings.id, licenseKey: settings.licenseKey, trialStartedAt: settings.trialStartedAt, clockHighWaterMark: settings.clockHighWaterMark })
     .from(settings)
     .get();
 
@@ -72,14 +72,24 @@ export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICE
     trialStartedAt = db.select({ t: settings.trialStartedAt }).from(settings).where(eq(settings.id, row.id)).get()?.t ?? trialStartedAt;
   }
 
+  // Advance the clock high-water mark. Only ever forwards: a system clock behind
+  // the mark is disbelieved for entitlement purposes rather than written down,
+  // so a rollback cannot lower the ratchet and then renew anything.
+  const now = new Date();
+  const mark = row?.clockHighWaterMark ?? null;
+  if (row && (mark == null || now.getTime() > new Date(mark).getTime())) {
+    db.update(settings).set({ clockHighWaterMark: now.toISOString() }).where(eq(settings.id, row.id)).run();
+  }
+
   return {
     ...evaluateEntitlement(
       row?.licenseKey ?? null,
       trialStartedAt,
-      new Date(),
+      now,
       LICENSE_PUBLIC_KEY_PEM,
       REVOKED_KEY_IDS,
       getMachineId(),
+      mark,
     ),
     enforcement: LICENSE_ENFORCEMENT,
   };

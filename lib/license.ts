@@ -198,6 +198,58 @@ export interface Entitlement {
 
 const dayMs = 86_400_000;
 
+/**
+ * How far the clock may legitimately move backwards before we stop believing it.
+ *
+ * Timezone changes, DST, a laptop waking in another country and an NTP
+ * correction are all real and all small. Two days absorbs every one of them
+ * without absorbing a deliberate rollback, which is measured in months.
+ */
+export const CLOCK_TOLERANCE_DAYS = 2;
+
+/**
+ * The date the app will reason about, given the system clock and the latest date
+ * it has ever seen.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ * The trial and any annual key are both evaluated against the system clock, and
+ * an offline app cannot ask anyone what day it is. Setting the clock back a year
+ * therefore renewed a 14-day trial and un-expired a lapsed key, indefinitely and
+ * silently. This makes time effectively monotonic: the app remembers the latest
+ * date it has observed, and a clock that jumps meaningfully backwards is simply
+ * not believed for entitlement purposes.
+ *
+ * It is a RATCHET, not a lock. It never expires anything early, never punishes
+ * ordinary drift, and a user who genuinely had a wrong clock loses nothing —
+ * their high-water mark simply stops moving until real time catches up. And like
+ * everything else here it can be patched out of an offline binary; the goal is
+ * to make casual extension not work, not to defeat a determined cracker.
+ */
+export function effectiveToday(
+  now: Date,
+  highWaterMark: string | null,
+  toleranceDays: number = CLOCK_TOLERANCE_DAYS,
+): Date {
+  if (!highWaterMark) return now;
+  const seen = new Date(highWaterMark).getTime();
+  if (Number.isNaN(seen)) return now;
+  // Only a move backwards past the tolerance is disbelieved. Forward jumps are
+  // always honoured — time passing is exactly what we expect.
+  return now.getTime() < seen - toleranceDays * dayMs ? new Date(seen) : now;
+}
+
+/** True when the system clock sits meaningfully behind the latest date seen. */
+export function clockMovedBackwards(
+  now: Date,
+  highWaterMark: string | null,
+  toleranceDays: number = CLOCK_TOLERANCE_DAYS,
+): boolean {
+  if (!highWaterMark) return false;
+  const seen = new Date(highWaterMark).getTime();
+  if (Number.isNaN(seen)) return false;
+  return now.getTime() < seen - toleranceDays * dayMs;
+}
+
 /** Days of trial remaining (ceil — day 14 still counts). Pure. */
 export function trialDaysLeft(trialStartedAt: string | null, today: Date = new Date()): number {
   if (!trialStartedAt) return 0;
@@ -220,11 +272,16 @@ export function isKeyExpired(payload: LicensePayload, today: Date = new Date()):
 export function evaluateEntitlement(
   storedKey: string | null,
   trialStartedAt: string | null,
-  today: Date = new Date(),
+  todayIn: Date = new Date(),
   publicKeyPem: string = LICENSE_PUBLIC_KEY_PEM,
   revokedIds: readonly string[] = REVOKED_KEY_IDS,
   currentMachineId?: string,
+  /** Latest date this install has ever observed — see effectiveToday. */
+  clockHighWaterMark: string | null = null,
 ): Entitlement {
+  // Every date comparison below uses the ratcheted date, so winding the system
+  // clock back cannot renew a trial or revive an expired key.
+  const today = effectiveToday(todayIn, clockHighWaterMark);
   if (storedKey) {
     const check = verifyLicenseKey(storedKey, publicKeyPem, revokedIds, currentMachineId);
     if (check.valid && check.payload) {

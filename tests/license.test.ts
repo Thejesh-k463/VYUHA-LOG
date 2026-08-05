@@ -78,7 +78,7 @@ describe("verifyLicenseKey", () => {
 // ---------------------------------------------------------------------------
 // Monetization v2 — entitlement layer (expiry + trial)
 // ---------------------------------------------------------------------------
-import { evaluateEntitlement, isKeyExpired, trialDaysLeft, TRIAL_DAYS } from "@/lib/license";
+import { evaluateEntitlement, isKeyExpired, trialDaysLeft, TRIAL_DAYS, effectiveToday, clockMovedBackwards } from "@/lib/license";
 
 function issueWithExpiry(email: string, expires: string): string {
   const payload = Buffer.from(JSON.stringify({ email, sku: "app", issued: "2026-01-01", expires }), "utf8");
@@ -332,5 +332,66 @@ describe("launch configuration guards", () => {
     if (WHATSAPP_NUMBER !== "") {
       expect(WHATSAPP_NUMBER, "digits only — no +, spaces or dashes").toMatch(/^\d{10,15}$/);
     }
+  });
+});
+
+describe("clock tamper guard", () => {
+  const iso = (d: string) => new Date(d + "T12:00:00Z");
+
+  it("believes the clock when there is no mark yet", () => {
+    expect(effectiveToday(iso("2026-08-06"), null).toISOString()).toBe(iso("2026-08-06").toISOString());
+  });
+
+  it("always honours time moving FORWARD", () => {
+    // A forward jump is just time passing — never disbelieved.
+    expect(effectiveToday(iso("2027-01-01"), "2026-08-06T12:00:00Z").getTime())
+      .toBe(iso("2027-01-01").getTime());
+  });
+
+  it("absorbs ordinary backward drift — timezone, DST, an NTP correction", () => {
+    // One day back is within tolerance and must not trip anything.
+    const now = iso("2026-08-05");
+    expect(effectiveToday(now, "2026-08-06T12:00:00Z").getTime()).toBe(now.getTime());
+    expect(clockMovedBackwards(now, "2026-08-06T12:00:00Z")).toBe(false);
+  });
+
+  it("disbelieves a deliberate rollback", () => {
+    const rolled = iso("2025-08-06"); // a year back
+    const mark = "2026-08-06T12:00:00Z";
+    expect(effectiveToday(rolled, mark).toISOString()).toBe(new Date(mark).toISOString());
+    expect(clockMovedBackwards(rolled, mark)).toBe(true);
+  });
+
+  it("a rolled-back clock cannot renew an expired trial", () => {
+    const started = "2026-01-01T00:00:00Z";           // trial long over
+    const mark = "2026-08-06T12:00:00Z";
+    const rolled = iso("2026-01-02");                  // "day 2 of the trial"
+
+    // Without the mark, the rollback works — that is the hole being closed.
+    expect(evaluateEntitlement(null, started, rolled).pro).toBe(true);
+    // With it, the app reasons from the latest date it ever saw.
+    expect(evaluateEntitlement(null, started, rolled, undefined, undefined, undefined, mark).pro).toBe(false);
+  });
+
+  it("a rolled-back clock cannot revive an expired annual key", () => {
+    const key = issueWithExpiry("buyer@x.com", "2026-06-30");
+    const mark = "2026-08-06T12:00:00Z";
+    const rolled = iso("2026-06-01"); // before the expiry
+
+    expect(evaluateEntitlement(key, null, rolled, PUB_PEM).state).toBe("licensed");
+    expect(evaluateEntitlement(key, null, rolled, PUB_PEM, undefined, undefined, mark).state).toBe("expired-key");
+  });
+
+  it("never expires anything EARLY — a valid key stays valid at the mark", () => {
+    const key = issueWithExpiry("buyer@x.com", "2027-12-31");
+    const e = evaluateEntitlement(key, null, iso("2026-08-06"), PUB_PEM, undefined, undefined, "2026-08-06T12:00:00Z");
+    expect(e.state).toBe("licensed");
+    expect(e.pro).toBe(true);
+  });
+
+  it("ignores a corrupt mark rather than locking the user out", () => {
+    const now = iso("2026-08-06");
+    expect(effectiveToday(now, "not-a-date").getTime()).toBe(now.getTime());
+    expect(clockMovedBackwards(now, "not-a-date")).toBe(false);
   });
 });

@@ -496,6 +496,10 @@ export const settings = sqliteTable("settings", {
   // Monetization v2 — offline 14-day full-Pro trial, stamped on first run
   // (backfilled to migration time for existing installs). See lib/license.ts.
   trialStartedAt: text("trial_started_at"),
+  // Latest date this install has ever observed. Entitlement checks reason about
+  // max(system clock, this) so winding the clock back cannot renew a trial or
+  // revive an expired key. Ratchet, not a lock — see lib/license.ts#effectiveToday.
+  clockHighWaterMark: text("clock_high_water_mark"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });

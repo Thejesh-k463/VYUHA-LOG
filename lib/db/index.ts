@@ -30,7 +30,21 @@ const sqlite =
     // It protects the shipped app too: the desktop sidecar and any second
     // process touching the same journal now queue instead of erroring.
     conn.pragma("busy_timeout = 10000");
-    conn.pragma("journal_mode = WAL");
+    // journal_mode is a property of the FILE, not the connection: once any
+    // connection has set WAL it persists in the database header, across other
+    // connections and across restarts. So a racing process does not need to set
+    // it — and must not die trying.
+    //
+    // busy_timeout alone does not cover this. Changing the journal mode needs a
+    // brief exclusive lock and returns SQLITE_BUSY *immediately* rather than
+    // waiting, which is why raising the timeout did not fix the macOS build:
+    // `next build` collects page data with several worker processes, each
+    // importing lib/db and racing to set WAL on the same fresh file.
+    try {
+      conn.pragma("journal_mode = WAL");
+    } catch {
+      /* another connection got there first — the file is already in WAL */
+    }
     conn.pragma("foreign_keys = ON");
     return conn;
   })();

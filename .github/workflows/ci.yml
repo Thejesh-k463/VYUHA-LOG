@@ -103,6 +103,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Create the database BEFORE the build.
+      #
+      # `next build` collects page data with several worker processes, and any
+      # route reaching a query imports lib/db in each of them. On a fresh
+      # checkout there is no data/vyuha.sqlite, so those workers race to create
+      # the same file and set journal_mode=WAL on it — which needs a brief
+      # exclusive lock and returns SQLITE_BUSY immediately rather than honouring
+      # busy_timeout. macOS lost that race; Linux happened not to.
+      #
+      # Migrating first means the file already exists and is already in WAL, so
+      # no worker has to change the mode and there is nothing to contend over.
+      # (lib/db also tolerates the pragma failing now, but not needing it at all
+      # is the deterministic fix rather than the hopeful one.)
+      - name: Create the database first (removes the build-time WAL race)
+        run: npm run db:migrate
+
       - name: Build web bundle + assemble desktop-dist
         run: npm run build && npm run desktop:bundle
 
