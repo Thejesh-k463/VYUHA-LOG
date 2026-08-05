@@ -25,11 +25,29 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
   const dialog = page.getByRole("dialog").filter({ hasText: "Staged position" });
   await expect(dialog).toBeVisible();
 
+  // WAIT FOR THE LADDER FETCH BEFORE DECIDING ANYTHING.
+  //
+  // StagedPanel mounts in a loading state and only fetches /api/trades/legs
+  // afterwards, so "Enable staged mode" does not exist yet at the moment the
+  // dialog becomes visible. Asking `enable.count()` during that window returns
+  // 0 — the click is skipped silently, and the test then waits 20s for a ladder
+  // that was never created. The failure surfaces as "Open qty not found",
+  // which points at the panel rather than at the skipped click.
+  //
+  // This raced on both a Windows dev box and a Linux CI runner and was the
+  // single failing test in CI runs #45 through #50.
+  await expect(dialog.getByText(/Loading the ladder/i)).toHaveCount(0, { timeout: 20_000 });
+
   // Enable staged mode — the existing quantity becomes the first entry. This is
   // lossless by design, so nothing about the trade's money should change.
   const enable = dialog.getByRole("button", { name: /Enable staged mode/i });
   if (await enable.count()) {
+    await expect(enable).toBeEnabled();
     await enable.click();
+    // The button is replaced by the ladder only after the server action
+    // returns and the panel refetches; waiting for it to go keeps the next
+    // assertion from racing the same way.
+    await expect(enable).toHaveCount(0, { timeout: 20_000 });
   }
   await expect(dialog.getByText(/Open qty/i)).toBeVisible({ timeout: 20_000 });
   await expect(dialog.getByText(/single entry/i)).toBeVisible();
@@ -84,8 +102,13 @@ test("staged panel never disables an action because of position state", async ({
 
   const dialog = page.getByRole("dialog").filter({ hasText: "Staged position" });
   await expect(dialog).toBeVisible();
+  // Same race as the test above — settle the ladder fetch before deciding.
+  await expect(dialog.getByText(/Loading the ladder/i)).toHaveCount(0, { timeout: 20_000 });
   const enable = dialog.getByRole("button", { name: /Enable staged mode/i });
-  if (await enable.count()) await enable.click();
+  if (await enable.count()) {
+    await enable.click();
+    await expect(enable).toHaveCount(0, { timeout: 30_000 });
+  }
   await expect(dialog.getByText(/Open qty/i)).toBeVisible({ timeout: 30_000 });
 
   // Whatever the position state, none of the three actions may be disabled.

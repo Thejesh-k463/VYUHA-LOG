@@ -73,3 +73,6 @@ updater-private.key
 .secrets/
 *.key
 !*.key.pub
+
+# Corrected release artefacts staged for manual upload — never version binaries.
+/release-2.98.0-corrected/

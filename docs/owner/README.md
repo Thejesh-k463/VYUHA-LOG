@@ -30,7 +30,7 @@ All three are gitignored and have **never been committed** — verified by
 ```bash
 npm run verify          # typecheck + lint + 892 tests + production build
 npm run test:e2e        # 14 browser flows
-npm run bump-version 2.97.0
+npm run bump-version 2.98.0
 npm run desktop:build   # builds, signs, and REFUSES to ship unsigned
 ```
 

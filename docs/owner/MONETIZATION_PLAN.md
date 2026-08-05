@@ -10,7 +10,7 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.97.0
+## 0. What you are actually selling, as of v2.98.0
 
 Keep this list current — it is the one place that answers "what does the buyer
 get today", and it is where landing-page copy should be drawn from.
@@ -19,6 +19,18 @@ get today", and it is where landing-page copy should be drawn from.
 P&L. Vyuha tells them what it *cost*, whether it was *repeatable*, and refuses
 to flatter them.
 
+> ### v2.98 launch story
+>
+> **The record is safe, and it reaches your CA in the form they ask for.**
+> Two beats. First, trust: restore no longer removes chart attachments and cannot leave a
+> half-applied journal, backup encryption is materially stronger, and multi-account writes stop
+> guessing which book they belong to. Second, the close: the ITR pack now emits **Schedule CG, BP
+> and CFL in the return's own item codes**, and gets the STT treatment right per head — excluded
+> from capital-gains deductions under S.48, allowed as a business expense against intraday and
+> F&O. That last point is the demo: the Schedule CG balance is deliberately *higher* than the net
+> P&L shown elsewhere in the app, and being able to explain why is what separates this from a
+> spreadsheet. It is also **seasonal** — worth most in the run-up to the filing deadline.
+>
 > ### v2.97 launch story
 >
 > **Trust the data → plan the session → review the decision → improve the process.**

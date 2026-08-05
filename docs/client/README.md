@@ -3,7 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
-## New in v2.97
+## New in v2.98
+
+| Workspace | What it gives you |
+|---|---|
+| **ITR Pack → Schedules** | Your figures in the return's own item codes — Schedule CG (A3 · 111A, B4 · 112A), Schedule BP and Schedule CFL — with the form indicated (ITR-2 or ITR-3). STT is handled correctly per head: excluded from capital-gains deductions, allowed as a business expense against intraday and F&O. |
+| **Safer restore** | Restoring a backup no longer removes chart screenshots, and a restore that fails partway leaves your journal exactly as it was. |
+| **Stronger backup passwords** | Encrypted backups use a much costlier key derivation. Files made with older versions still open. |
+| **Clearer multi-account writes** | Adding or importing a trade while viewing all accounts now asks which account it belongs to. |
+
+## Also in v2.97
 
 | Workspace | What it gives you |
 |---|---|
@@ -75,7 +84,7 @@ Everything lives in one SQLite file on your machine:
 %LOCALAPPDATA%\Vyuha\data\vyuha.sqlite
 ```
 
-**Back it up** from Backup & Restore inside the app. The v2.97 backup includes the complete
+**Back it up** from Backup & Restore inside the app. The backup includes the complete
 database plus screenshot attachments; set a password when the file will leave your machine.
 You can still copy the SQLite file for a quick local snapshot.
 Uninstalling does not delete it, and a new version migrates it in place after
