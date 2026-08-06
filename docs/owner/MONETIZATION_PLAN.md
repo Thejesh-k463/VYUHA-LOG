@@ -10,7 +10,19 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.1
+## 0. What you are actually selling, as of v2.99.5
+
+> ### v2.99.5 marketing note — the product finally has a face
+>
+> The व mark (Devanagari va under an edge-to-edge shirorekha, the headline
+> stroke doubling as a price level) replaces the placeholder icon everywhere:
+> installer, taskbar/dock, favicon, share card. The share card matters most
+> commercially — it is the one asset users post publicly, and it now carries a
+> real mark instead of a letter that rendered as a missing-font box on some
+> machines. Screenshots in listings and the landing page should be retaken
+> after this release. Also honest-craft copy fodder: every table separator,
+> header band and the light theme's teal were re-measured against WCAG and
+> fixed; "Compact/Comfortable" density is a Settings choice.
 
 Keep this list current — it is the one place that answers "what does the buyer
 get today", and it is where landing-page copy should be drawn from.

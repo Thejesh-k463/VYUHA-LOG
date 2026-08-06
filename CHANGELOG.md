@@ -1,5 +1,52 @@
 # Changelog
 
+## v2.99.5 — the व mark, and tables you can actually read
+
+### Identity
+
+Vyuha finally has its own mark: the Devanagari letter **व** hanging from a
+shirorekha extended edge to edge across a teal squircle — the headline stroke
+of the letter doubling as a price level cutting the frame. It ships everywhere
+at once — installer icon, taskbar/dock, favicon, sidebar, share card — all
+generated from one committed glyph outline by `scripts/make-logo.mjs`, so the
+surfaces cannot drift. The outline comes from Noto Sans Devanagari (SIL OFL),
+extracted once and committed: nothing depends on a Devanagari font being
+installed on the user's machine. The share card previously drew व as canvas
+*text* in a font with no Devanagari coverage — exported PNGs could carry a
+tofu box; they now paint the same outline via `Path2D`. A secondary ₹ mark
+(same bar, same baseline — ₹ was derived from र and hangs from the identical
+stroke) ships as a brand asset.
+
+### Readability
+
+- **Row separators you can see.** Every table drew its row rules at
+  `border-border/40` — measured at 1.08:1 against the row surface, below what
+  the eye registers as a line. A dedicated `--color-rule` token (~1.5:1, both
+  themes) now rules all 50 separator sites. Zebra striping was measured and
+  rejected: the surface tokens are only 1.02–1.05 apart, too close to read.
+- **Headers that read as headers.** Table headers were the same size and
+  nearly the same weight as data rows. They are now a step smaller, uppercase,
+  letter-spaced — a proper header band.
+- **Light-mode primary now passes AA.** `#0d9488` on white measured 3.74:1,
+  under the 4.5:1 floor for the small text primary is used for (links, active
+  nav, sort state). Now `#0b7a70` at 5.21:1 — visually the same teal.
+
+### Ease of use
+
+- **Display density** (Settings → Preferences): Compact (the shipped terminal
+  look) or Comfortable. One root font-size — everything is rem-sized, so the
+  whole interface scales together, and the choice joins My Default Settings.
+  Baselines captured before this release simply don't track it: no phantom
+  "differs from your default" after upgrading.
+- **The trades table pins select + Instrument** while scrolling horizontally —
+  wide tables no longer scroll the symbol out from under you.
+- **Long option names truncate** (full name on hover) instead of one
+  tradingsymbol shoving every P&L column off screen.
+- **Sticky headers and rows now share one surface** — scrolling no longer
+  reveals a tone step between the header band and the table it belongs to.
+- Table heights use `dvh`, so mobile browser chrome no longer hides the last
+  visible rows.
+
 ## v2.99.1 — a help desk, honest deletion, and settings that come back
 
 ### Help Desk

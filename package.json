@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.99.1",
+  "version": "2.99.5",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -21,7 +21,7 @@
     "desktop:bundle": "node scripts/build-desktop.mjs",
     "desktop:build": "next build && node scripts/build-desktop.mjs && node scripts/tauri-build.mjs",
     "client:package": "node scripts/build-client-package.mjs",
-    "desktop:icons": "node scripts/make-icon.mjs && tauri icon src-tauri/icon-source.png",
+    "desktop:icons": "node scripts/make-logo.mjs && tauri icon src-tauri/icon-source.png",
     "bump-version": "node scripts/bump-version.mjs",
     "verify": "npm run typecheck && npm run lint && npm run test -- --run && npm run build"
   },

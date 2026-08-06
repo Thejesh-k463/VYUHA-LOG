@@ -23,7 +23,16 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99 — Vyuha runs on a Mac, and the journal cleans up after itself.** Native builds for
+> **v2.99.5 — Vyuha gets its mark, and tables you can actually read.** The Devanagari **व**
+> hanging from an edge-to-edge shirorekha — the letter's headline stroke doubling as a price
+> level — now ships as the installer icon, favicon, sidebar and share-card mark, generated from
+> one committed glyph outline (Noto Sans Devanagari, SIL OFL) so no surface depends on the
+> user's fonts. Every table gained visible row rules (the old separators measured 1.08:1 —
+> below what the eye registers), a proper uppercase header band, a pinned Instrument column,
+> truncated option names, and a **Compact/Comfortable display density** setting. Light-mode
+> primary now passes WCAG AA.
+>
+> *v2.99 — Vyuha runs on a Mac, and the journal cleans up after itself.* Native builds for
 > Windows, macOS Apple silicon and macOS Intel. A **Help Desk** describing every screen — including
 > what each deliberately won't do. **Honest deletion**: select rows, delete an imported file (with
 > the its-trades question asked, never assumed), batch scopes by date/broker/segment — every delete
