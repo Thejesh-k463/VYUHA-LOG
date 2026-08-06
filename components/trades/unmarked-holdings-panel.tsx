@@ -21,7 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { pushTradeToIpoAction } from "@/app/trades/actions";
 import { inr } from "@/lib/format";
-import { Sparkles, TriangleAlert } from "lucide-react";
+import { Sparkles, TriangleAlert, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export interface UnmarkedHolding {
   id: number;
@@ -61,7 +63,8 @@ function Row({ h }: { h: UnmarkedHolding }) {
           </>
         ) : (
           <>
-            No mark price, so there is no unrealised result to show. Set one on{" "}
+            The purchase is on record — what is missing is a <b>current price</b> to value it at today.
+            Without one there is no unrealised result to show. Enter a recent close on{" "}
             <a className="underline" href="/risk">Portfolio Risk</a>, or record where the shares came from.
           </>
         )}
@@ -82,7 +85,7 @@ function Row({ h }: { h: UnmarkedHolding }) {
           </form>
         )}
         <a href="/risk" className="text-xs text-muted-foreground underline">
-          or set a mark price
+          or enter a current price to value it
         </a>
       </div>
 
@@ -93,7 +96,29 @@ function Row({ h }: { h: UnmarkedHolding }) {
   );
 }
 
-export function UnmarkedHoldingsPanel({ holdings }: { holdings: UnmarkedHolding[] }) {
+function DismissButton({ fingerprint }: { fingerprint: string }) {
+  // Dismiss-with-memory: hides this panel for THIS set of holdings. Any change
+  // to the set — a new unmarked holding, one resolved — brings it back.
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size="sm" variant="ghost" className="text-muted-foreground" disabled={busy}
+      title="Hide until these holdings change"
+      onClick={() => {
+        setBusy(true);
+        fetch("/api/dismissals", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "dismiss", panel: "unmarked-holdings", fingerprint }),
+        }).then(() => router.refresh()).finally(() => setBusy(false));
+      }}
+    >
+      <X className="mr-1 size-3.5" /> {busy ? "Hiding…" : "Dismiss"}
+    </Button>
+  );
+}
+
+export function UnmarkedHoldingsPanel({ holdings, fingerprint }: { holdings: UnmarkedHolding[]; fingerprint?: string }) {
   if (holdings.length === 0) return null;
 
   const noBasis = holdings.filter((h) => h.buyValue <= 0).length;
@@ -101,12 +126,17 @@ export function UnmarkedHoldingsPanel({ holdings }: { holdings: UnmarkedHolding[
   return (
     <Card className="border-warning/40">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span className="flex items-center gap-2">
           <TriangleAlert className="size-4 text-warning" />
-          {holdings.length} open holding{holdings.length === 1 ? "" : "s"} with no mark price
+          {holdings.length} open holding{holdings.length === 1 ? "" : "s"} with no current price to value {holdings.length === 1 ? "it" : "them"} at
+          </span>
+          {fingerprint && <DismissButton fingerprint={fingerprint} />}
         </CardTitle>
         <p className="mt-1 text-xs text-muted-foreground">
-          Without a mark there is <b>no unrealised result</b>, so these appear under <b>Open</b> but in neither
+          A <b>current (mark) price</b> is how an open holding is valued today — it is a separate fact from the
+          purchase price, which these may well have. Without one there is <b>no unrealised result</b>, so these
+          appear under <b>Open</b> but in neither
           &ldquo;in gain&rdquo; nor &ldquo;in loss&rdquo; — Vyuha will not read a missing price as breakeven.
           {noBasis > 0 && (
             <>

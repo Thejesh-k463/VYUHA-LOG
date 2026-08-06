@@ -10,6 +10,8 @@ import { UnmarkedHoldingsPanel, type UnmarkedHolding } from "@/components/trades
 import { getIpoTradeLinks } from "@/lib/queries/ipos";
 import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
 import { isMarked } from "@/lib/analytics/trade-status";
+import { situationFingerprint } from "@/lib/domain/dismissals";
+import { panelHidden } from "@/lib/queries/dismissals";
 import { summariseAcquisitions, ipoAllottedPnl, hasKnownBasis } from "@/lib/analytics/acquisition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -53,6 +55,11 @@ export default function TradesPage() {
     }));
   const ipo = ipoAllottedPnl(basisRows);
 
+  // Dismiss-with-memory: the fingerprint is THIS set of unmarked holdings.
+  // Dismissing hides the panel until the set changes, then it returns.
+  const unmarkedFp = situationFingerprint(unmarked.map((h) => `${h.id}:${h.buyQty}`));
+  const unmarkedHidden = unmarked.length > 0 && panelHidden("unmarked-holdings", unmarkedFp);
+
   return (
     <>
       <PageHeader title="Trades" description="The journal — every leg with charges, R-multiple and tags." />
@@ -66,7 +73,7 @@ export default function TradesPage() {
         </section>
         <AcquisitionPanel trades={pending} />
 
-        <UnmarkedHoldingsPanel holdings={unmarked} />
+        {!unmarkedHidden && <UnmarkedHoldingsPanel holdings={unmarked} fingerprint={unmarkedFp} />}
 
         {/* IPO-allotted P&L, reported APART from trading edge. A listing-day
             pop is not a repeatable skill, and folding it into expectancy would

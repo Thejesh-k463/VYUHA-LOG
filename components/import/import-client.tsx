@@ -50,6 +50,7 @@ interface PreviewResp {
     rows: PreviewRow[];
     summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
     reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
+    crossSource?: { collisions: { symbol: string; kind: string; detail: string }[]; symbols: string[]; risky: boolean; message: string | null };
   };
 }
 
@@ -259,6 +260,22 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
       {busy && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Working…
+        </div>
+      )}
+
+      {p?.crossSource?.message && (
+        <div className={`flex items-start gap-2 rounded-lg border p-4 text-xs ${p.crossSource.risky ? "border-loss/50 bg-loss/10" : "border-warning/40 bg-warning/10"}`}>
+          <AlertTriangle className={`mt-0.5 size-4 shrink-0 ${p.crossSource.risky ? "text-loss" : "text-warning"}`} />
+          <div className="space-y-1.5">
+            <p className="font-semibold">{p.crossSource.risky ? "These trades may already be in your journal" : "Possible overlap with an earlier import"}</p>
+            <p>{p.crossSource.message}</p>
+            <ul className="space-y-0.5 text-muted-foreground">
+              {p.crossSource.collisions.slice(0, 6).map((c, i) => (
+                <li key={i}>▸ <b>{c.symbol}</b> — {c.detail}</li>
+              ))}
+              {p.crossSource.collisions.length > 6 && <li>…and {p.crossSource.collisions.length - 6} more.</li>}
+            </ul>
+          </div>
         </div>
       )}
 

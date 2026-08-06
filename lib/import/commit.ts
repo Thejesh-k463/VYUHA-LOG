@@ -19,6 +19,7 @@ import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
 import { getWriteAccountId } from "@/lib/queries/accounts";
+import { detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
@@ -253,6 +254,8 @@ export interface PreviewResult {
   rows: PreviewRow[];
   summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
+  /** Rows that look like trades already held from a DIFFERENT file kind. */
+  crossSource?: CrossSourceReport;
 }
 
 
@@ -287,13 +290,22 @@ export function previewParsedFile(
   // Dedup is per (account, broker), so a preview run against a different
   // account than the commit would report the wrong duplicate count.
   accountIdIn?: number | null,
+  /** Name of the file being previewed — lets the cross-source check exclude
+   *  rows that came from this very file on an earlier import. */
+  fileName = "",
 ): PreviewResult {
   const parsed = applyProductOverrides(parsedIn, productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
   const overrides = loadOverrides(parsed.broker);
-  const existing = new Set(
-    db.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
-  );
+  // Full rows, not just hashes: the cross-source check below needs quantities,
+  // values and the file each row came from, because a P&L export and a
+  // transaction report state the same trade differently and so hash differently.
+  const existingRows = db
+    .select()
+    .from(tradesTable)
+    .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
+    .all();
+  const existing = new Set(existingRows.map((r) => r.dedupHash));
 
   const rows: PreviewRow[] = [];
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0;
@@ -344,6 +356,37 @@ export function previewParsedFile(
     reconciliation: parsed.reported
       ? { reported: parsed.reported, computed: { ...agg, total: Math.round(chargesTotal * 100) / 100 } }
       : undefined,
+    // Rows that slipped past dedupHash because they came from a file kind that
+    // states different facts. Reported, never merged — see cross-source.ts.
+    crossSource: detectCrossSourceDuplicates(
+      parsed.trades.map((t) => ({
+        broker: parsed.broker,
+        symbol: t.tradingsymbol,
+        tradingsymbol: t.tradingsymbol,
+        buyQty: t.buyQty ?? 0,
+        sellQty: t.sellQty ?? 0,
+        buyValue: t.buyValue ?? 0,
+        sellValue: t.sellValue ?? 0,
+        buyDate: t.buyDate ?? null,
+        sellDate: t.sellDate ?? null,
+        dedupHash: dedupHash({ ...t, broker: parsed.broker } as never),
+      })),
+      existingRows.map((r) => ({
+        id: r.id,
+        broker: r.broker,
+        symbol: r.symbol,
+        tradingsymbol: r.tradingsymbol,
+        buyQty: r.buyQty,
+        sellQty: r.sellQty,
+        buyValue: r.buyValue,
+        sellValue: r.sellValue,
+        buyDate: r.buyDate,
+        sellDate: r.sellDate,
+        sourceFile: r.sourceFile,
+        dedupHash: r.dedupHash,
+      })),
+      fileName,
+    ),
   };
 }
 

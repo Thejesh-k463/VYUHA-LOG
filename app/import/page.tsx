@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getImportBatches } from "@/lib/queries/trades";
 import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
-import { BROKER_LABELS, type Broker } from "@/lib/domain/constants";
-import { fmtDate } from "@/lib/format";
+import { ImportBatchesTable } from "@/components/import/import-batches-table";
+import { tradesInBatch } from "@/lib/queries/delete";
 
 export const dynamic = "force-dynamic";
 
@@ -32,34 +32,13 @@ export default function ImportPage() {
             <Badge variant="secondary">{batches.length}</Badge>
           </CardHeader>
           <CardContent>
-            {batches.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No imports yet.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2 pr-4 font-medium">When</th>
-                    <th className="py-2 pr-4 font-medium">Broker</th>
-                    <th className="py-2 pr-4 font-medium">File</th>
-                    <th className="py-2 pr-4 text-right font-medium">Rows</th>
-                    <th className="py-2 pr-4 text-right font-medium">Added</th>
-                    <th className="py-2 pr-4 text-right font-medium">Skipped</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batches.map((b) => (
-                    <tr key={b.id} className="border-b border-border/50">
-                      <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(b.importedAt)}</td>
-                      <td className="py-1.5 pr-4">{BROKER_LABELS[b.broker as Broker] ?? b.broker}</td>
-                      <td className="py-1.5 pr-4 font-mono text-xs">{b.fileName}</td>
-                      <td className="py-1.5 pr-4 text-right tabular-nums">{b.rowCount}</td>
-                      <td className="py-1.5 pr-4 text-right tabular-nums text-profit">{b.addedCount}</td>
-                      <td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">{b.skippedCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <ImportBatchesTable
+              batches={batches.map((b) => ({
+                id: b.id, broker: b.broker, fileName: b.fileName, rowCount: b.rowCount,
+                addedCount: b.addedCount, skippedCount: b.skippedCount, importedAt: b.importedAt,
+                tradeCount: tradesInBatch(b.id),
+              }))}
+            />
           </CardContent>
         </Card>
       </div>

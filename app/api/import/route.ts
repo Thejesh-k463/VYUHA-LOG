@@ -77,7 +77,7 @@ export async function POST(req: Request) {
   }
 
   // preview
-  const preview = previewParsedFile(parsed, productOverrides, accountId);
+  const preview = previewParsedFile(parsed, productOverrides, accountId, file.name);
   const kind = classifyFileKind(parsed.format);
   return NextResponse.json({
     mode: "preview",

@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ManualTradeForm } from "./manual-trade-form";
 import type { WriteAccountOption } from "@/components/system/write-account-picker";
 import { CloseTradeDialog } from "./close-trade-dialog";
+import { DeleteTradesDialog } from "./delete-trades-dialog";
+import { resolveDeleteScope, type DeletableTrade } from "@/lib/domain/delete-scope";
 import { EditTradeDialog } from "./edit-trade-dialog";
 import { StagedPanel } from "./staged-panel";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
@@ -60,6 +62,10 @@ export function TradesClient({
   const [closingTrade, setClosingTrade] = React.useState<Trade | null>(null);
   const [fullEditing, setFullEditing] = React.useState<Trade | null>(null);
   const [staging, setStaging] = React.useState<Trade | null>(null);
+  // Row selection for bulk delete. A Set of trade ids — cleared after a delete
+  // and whenever the filters change (a hidden selected row is a trap).
+  const [selected, setSelected] = React.useState<ReadonlySet<number>>(new Set());
+  const [deleting, setDeleting] = React.useState(false);
 
   const [search, setSearch] = React.useState("");
   const [broker, setBroker] = React.useState("");
@@ -137,6 +143,26 @@ export function TradesClient({
     });
   }, [trades, search, broker, segment, bucket, from, to, realised, view]);
 
+  // A selection that outlives its filter would let "delete selected" remove
+  // rows the user can no longer see. Visible-set changes reset it.
+  React.useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelected(new Set());
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [search, broker, segment, bucket, from, to, realised, view]);
+
+  const toDeletable = React.useCallback((t: Trade): DeletableTrade => ({
+    id: t.id, accountId: t.accountId, broker: t.broker, segment: t.segment,
+    symbol: t.symbol, tradingsymbol: t.tradingsymbol, buyDate: t.buyDate,
+    sellDate: t.sellDate, isOpen: t.isOpen, netPnl: t.netPnl,
+    importBatchId: t.importBatchId, createdAt: t.createdAt, staged: t.staged,
+  }), []);
+
+  const deletePreview = React.useMemo(() => {
+    if (selected.size === 0) return null;
+    return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...selected] });
+  }, [selected, data, toDeletable]);
+
   /**
    * Counts for the dropdown, computed AFTER the other filters but BEFORE the
    * view itself — so each option shows how many rows choosing it would give,
@@ -162,6 +188,35 @@ export function TradesClient({
   }, [trades, search, broker, segment, bucket, from, to, realised]);
 
   const columns = React.useMemo<ColumnDef<Trade, unknown>[]>(() => [
+    {
+      id: "select",
+      enableSorting: false,
+      header: () => (
+        <input
+          type="checkbox"
+          aria-label="Select all visible trades"
+          className="size-3.5 accent-[var(--color-loss)]"
+          checked={data.length > 0 && selected.size === data.length}
+          ref={(el) => { if (el) el.indeterminate = selected.size > 0 && selected.size < data.length; }}
+          onChange={(e) => setSelected(e.target.checked ? new Set(data.map((t) => t.id)) : new Set())}
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${row.original.symbol}`}
+          className="size-3.5 accent-[var(--color-loss)]"
+          checked={selected.has(row.original.id)}
+          onChange={(e) => {
+            setSelected((prev) => {
+              const next = new Set(prev);
+              if (e.target.checked) next.add(row.original.id); else next.delete(row.original.id);
+              return next;
+            });
+          }}
+        />
+      ),
+    },
     {
       accessorKey: "symbol",
       header: "Instrument",
@@ -270,7 +325,7 @@ export function TradesClient({
         </div>
       ),
     },
-  ], [today]);
+  ], [today, data, selected]);
 
   return (
     <div className="space-y-4">
@@ -359,7 +414,27 @@ export function TradesClient({
       )}
 
       <Card className="p-0">
+        {selected.size > 0 && deletePreview && (
+          <div className="flex items-center justify-between rounded-lg border border-loss/40 bg-loss/5 px-3 py-2 text-xs">
+            <span>
+              <b>{selected.size}</b> selected · net {num(deletePreview.netPnl)} · {deletePreview.open} open
+            </span>
+            <span className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
+              <Button size="sm" variant="destructive" onClick={() => setDeleting(true)}>
+                <Trash2 className="mr-1 size-3.5" /> Delete selected…
+              </Button>
+            </span>
+          </div>
+        )}
         <DataTable columns={columns} data={data} emptyMessage="No trades yet — import a broker file or add one manually." />
+        <DeleteTradesDialog
+          preview={deletePreview}
+          reason="selected in the trades table"
+          open={deleting}
+          onOpenChange={setDeleting}
+          onDone={() => setSelected(new Set())}
+        />
       </Card>
 
       {/* Override dialog */}

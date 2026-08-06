@@ -213,6 +213,7 @@ describe("account-scoped table registry", () => {
       "import_batches",
       "ipos",
       "ledger_entries",
+      "panel_dismissals",
       "positions",
       "trades",
       "trading_sessions",

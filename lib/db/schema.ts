@@ -833,6 +833,20 @@ export const tradingSessions = sqliteTable("trading_sessions", {
 ]);
 
 // ---------------------------------------------------------------------------
+// panel_dismissals — dismiss-with-memory for advisory panels. A dismissal is
+// keyed on a FINGERPRINT of the situation it was shown for (see
+// lib/domain/dismissals.ts): hidden while the facts are unchanged, returns the
+// moment they move. Pruned of stale rows on read.
+// ---------------------------------------------------------------------------
+export const panelDismissals = sqliteTable("panel_dismissals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: integer("account_id").notNull().default(1),
+  panel: text("panel").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  dismissedAt: text("dismissed_at").notNull().default(now),
+}, (t) => [uniqueIndex("panel_dismissals_uq").on(t.accountId, t.panel, t.fingerprint)]);
+
+// ---------------------------------------------------------------------------
 // regulatory_rule_packs — dated, attributable rule/config payloads.
 // ---------------------------------------------------------------------------
 export const regulatoryRulePacks = sqliteTable("regulatory_rule_packs", {
