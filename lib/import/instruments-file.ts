@@ -8,29 +8,37 @@
  *   `cmDDMMMYYYYbhav.csv`)   → SYMBOL, ISIN         (name in UDiFF only)
  * - the securities list (`EQUITY_L.csv`)  → SYMBOL, NAME, ISIN
  * - the F&O market-lots file (`fo_mktlots.csv`) → SYMBOL, LOT SIZE
+ * - an index-constituent list (`ind_*_list.csv` from niftyindices.com)
+ *                             → SYMBOL, NAME, ISIN, SECTOR (official Industry)
  *
- * What these files deliberately do NOT supply: SECTOR. NSE publishes no
- * sector column in any of them, and inventing one would break the
- * "never fabricate" rule — sector tagging stays a manual (or bulk-paste) act.
+ * SECTOR comes ONLY from constituent lists — the trading files (bhavcopy,
+ * EQUITY_L, lots) carry no sector column and none is ever invented for them.
  * The result carries `fields` so the caller can merge-upsert exactly what the
  * file proved, and leave every other column untouched.
  */
 
 import Papa from "papaparse";
 
-export type InstrumentsFileFormat = "bhavcopy" | "securities-list" | "fo-lots" | "unknown";
+export type InstrumentsFileFormat =
+  | "bhavcopy"
+  | "securities-list"
+  | "fo-lots"
+  | "index-constituents"
+  | "unknown";
 
 export interface InstrumentFileRow {
   symbol: string;
   name: string | null;
   isin: string | null;
   lotSize: number | null;
+  /** Official NSE industry — present ONLY in index-constituent lists. */
+  sector: string | null;
 }
 
 export interface InstrumentsFileResult {
   format: InstrumentsFileFormat;
   /** Which instrument columns this file actually supplies. */
-  fields: ("name" | "isin" | "lotSize")[];
+  fields: ("name" | "isin" | "lotSize" | "sector")[];
   rows: InstrumentFileRow[];
   count: number;
   warnings: string[];
@@ -56,6 +64,33 @@ function parseCsv(text: string): { headers: string[]; rows: Record<string, strin
   return { headers: rows.length ? Object.keys(rows[0]) : [], rows };
 }
 
+/**
+ * "ind_niftyIndiaRailwaysPSU_list.csv" → "Nifty India Railways PSU".
+ * Null when the filename doesn't follow the standard constituent-list pattern
+ * — an unrecognised name records no membership rather than a wrong one.
+ * (scripts/build-nse-index-map.mjs carries the same logic for build time.)
+ */
+export function indexLabelFromFilename(fileName: string): string | null {
+  const base = fileName.split(/[\\/]/).pop() ?? "";
+  if (!/^ind[_-].+\.csv$/i.test(base)) return null;
+  let n = base
+    .replace(/^ind[_-]/i, "")
+    .replace(/[_-]?list\.csv$/i, "")
+    .replace(/\.csv$/i, "")
+    .replace(/^nifty[_-]?/i, "");
+  n = n
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .trim();
+  if (!n) return null;
+  n = n
+    .split(/\s+/)
+    .map((w) => (/^(psu|nbfc|sfbs|mfis|ipo|ev|cpse|mnc|fmcg|it)$/i.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(" ");
+  return "Nifty " + n;
+}
+
 export function parseInstrumentsFile(text: string): InstrumentsFileResult {
   const empty = (w: string): InstrumentsFileResult => ({
     format: "unknown", fields: [], rows: [], count: 0, warnings: [w],
@@ -79,7 +114,7 @@ export function parseInstrumentsFile(text: string): InstrumentsFileResult {
         const n = Number(clean(r[c]).replace(/,/g, ""));
         if (Number.isFinite(n) && n > 0) { lot = n; break; }
       }
-      if (lot != null) out.push({ symbol, name: null, isin: null, lotSize: lot });
+      if (lot != null) out.push({ symbol, name: null, isin: null, lotSize: lot, sector: null });
     }
     return {
       format: "fo-lots",
@@ -87,6 +122,31 @@ export function parseInstrumentsFile(text: string): InstrumentsFileResult {
       rows: out,
       count: out.length,
       warnings: out.length ? [] : ["Recognised the F&O lots layout but found no lot sizes."],
+    };
+  }
+
+  // ── Index constituents (ind_*_list.csv): COMPANY NAME, INDUSTRY, SYMBOL ──
+  if (headers.includes("SYMBOL") && headers.includes("INDUSTRY") && headers.some((h) => h.includes("COMPANY"))) {
+    const nameKey = headers.find((h) => h.includes("COMPANY"))!;
+    const isinKey = headers.find((h) => h.includes("ISIN")) ?? null;
+    const out: InstrumentFileRow[] = [];
+    for (const r of rows) {
+      const symbol = up(r["SYMBOL"]);
+      if (!symbol) continue;
+      out.push({
+        symbol,
+        name: clean(r[nameKey]) || null,
+        isin: isinKey ? asIsin(r[isinKey]) : null,
+        lotSize: null,
+        sector: clean(r["INDUSTRY"]) || null,
+      });
+    }
+    return {
+      format: "index-constituents",
+      fields: ["name", "isin", "sector"],
+      rows: out,
+      count: out.length,
+      warnings: out.length ? [] : ["Recognised an index-constituent list but found no rows."],
     };
   }
 
@@ -104,6 +164,7 @@ export function parseInstrumentsFile(text: string): InstrumentsFileResult {
         name: clean(r["NAME OF COMPANY"]) || null,
         isin: isinKey ? asIsin(r[isinKey]) : null,
         lotSize: null,
+        sector: null,
       });
     }
     return {
@@ -138,6 +199,7 @@ export function parseInstrumentsFile(text: string): InstrumentsFileResult {
           name: nameKey ? clean(r[nameKey]) || null : null,
           isin,
           lotSize: null,
+          sector: null,
         });
       }
     }

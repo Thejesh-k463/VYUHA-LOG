@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { InstrumentManager } from "@/components/system/instrument-manager";
 import { getInstruments } from "@/lib/queries/instruments";
 import { getPriceHistoryMeta } from "@/lib/queries/price-history";
+import nseIndexMap from "@/lib/data/nse-index-map.json";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default function InstrumentsPage() {
             <CardTitle>Instruments</CardTitle>
           </CardHeader>
           <CardContent>
-            <InstrumentManager rows={rows} />
+            <InstrumentManager rows={rows} nseMapAsOf={(nseIndexMap as { asOf: string }).asOf} />
           </CardContent>
         </Card>
 

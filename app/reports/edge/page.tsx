@@ -11,6 +11,8 @@ import { getBarsMap } from "@/lib/queries/price-history";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { KpiCard } from "@/components/kpi-card";
+import { getIndexMembershipMap } from "@/lib/queries/instruments";
+import { themeEdge, THEME_MIN_SAMPLE } from "@/lib/analytics/theme-edge";
 
 export const dynamic = "force-dynamic";
 
@@ -49,12 +51,20 @@ export default function EdgeReportPage() {
   const maeReport = computeMaeMfe(maeInputs, getBarsMap(maeInputs.map((i) => i.ticker)));
   const tuning = stopTuningReport(maeReport.rows);
 
+  // Edge by NSE theme — aliases resolve broker names to the tickers the
+  // membership table is keyed on.
+  const themes = themeEdge(
+    trades.map((t) => ({ symbol: resolveTicker(t.symbol.toUpperCase(), aliasMap), isOpen: t.isOpen, netPnl: t.netPnl })),
+    getIndexMembershipMap(),
+  );
+
   return (
     <>
       <PageHeader title="Edge / Setup Analytics" description="Which edges pay — expectancy, win rate and avg R per setup and segment." />
       <div className="space-y-5 p-6">
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
+        <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
         <StopTuningCard tuning={tuning} />
       </div>
@@ -64,6 +74,80 @@ export default function EdgeReportPage() {
 
 /** T2.6 — R-normalized read on stop placement vs the heat trades actually took.
  *  Descriptive of THIS sample only; every suggestion is hedged on purpose. */
+function ThemeEdgeCard({ report }: { report: ReturnType<typeof themeEdge> }) {
+  if (report.rows.length === 0) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>By NSE theme</CardTitle></CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          No thematic tags yet. Load the bundled NSE map on{" "}
+          <span className="text-foreground">Instruments</span> (one click) — it records which
+          thematic indices each of your symbols belongs to, and this card answers where your
+          expectancy actually lives: Defence, Railways PSU, EV, Digital…
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          By NSE theme
+          <Badge variant="secondary">
+            {report.taggedTrades} of {report.closedTrades} closed trades tagged
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="px-2.5 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Theme</th>
+                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Trades</th>
+                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Symbols</th>
+                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Net P&L</th>
+                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Win rate</th>
+                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Expectancy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((r) => (
+                <tr key={r.theme} className="border-b border-rule">
+                  <td className="px-2.5 py-1.5 font-medium">
+                    {r.theme}
+                    {!r.trustworthy && (
+                      <span className="ml-1.5 text-[10px] text-warning" title={`Fewer than ${THEME_MIN_SAMPLE} trades — treat as anecdote, not edge.`}>
+                        thin sample
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.trades}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.symbols}</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${r.netPnl > 0 ? "text-profit" : r.netPnl < 0 ? "text-loss" : ""}`}>{inr(r.netPnl, { decimals: 0 })}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{num(r.winRate, 1)}%</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${r.expectancy > 0 ? "text-profit" : r.expectancy < 0 ? "text-loss" : ""}`}>{inr(r.expectancy, { decimals: 0 })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Themes <b>overlap</b> — one stock can sit in ten indices, so a trade counts in every theme
+          it belongs to and the P&L column deliberately sums to more than your book. Each row is a
+          lens, not a slice.{" "}
+          {report.untaggedTrades > 0 && (
+            <>
+              <span className="text-warning">{report.untaggedTrades} closed trades carry no theme tag</span>{" "}
+              (symbols outside the index universe, or the map not loaded) — this table describes only the tagged part.
+            </>
+          )}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StopTuningCard({ tuning }: { tuning: ReturnType<typeof stopTuningReport> }) {
   if (tuning.sampled === 0) {
     return (

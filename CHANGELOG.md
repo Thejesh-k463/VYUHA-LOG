@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.99.7 — sectors in one click, and edge by theme
+
+### The bundled NSE index map
+
+Official industry classification + thematic index memberships for ~1,150 NSE
+symbols, built from 54 index constituent lists and bundled with the app
+(snapshot date shown in the UI — constituents change at every semi-annual
+rebalance; `scripts/build-nse-index-map.mjs` regenerates from fresh
+downloads). One click on Instruments fills sectors, names and ISINs for every
+symbol in your master — and the **sector-concentration panel on Portfolio
+Risk starts working without any manual tagging**. Sectors fill only empty
+cells: a classification you typed yourself is never overwritten. Individual
+`ind_*_list.csv` uploads work too, and record that index's membership.
+
+### Edge by NSE theme
+
+A new lens on the Edge report: expectancy, win rate and net P&L per thematic
+index — Defence, Railways PSU, EV, Digital, Internet… — answering where your
+edge actually lives, which segment and setup tables cannot see. Honesty built
+in: themes overlap (one stock sits in up to ten indices), so rows are labelled
+as lenses, not slices; only closed trades count; thin samples are flagged; and
+the untagged remainder of your book is reported, never hidden.
+
 ## v2.99.6 — files in, typing out
 
 ### Uploads everywhere data used to be typed

@@ -281,6 +281,13 @@
       "when": 1786030000000,
       "tag": "0039_display-density",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1786040000000,
+      "tag": "0040_instrument-indices",
+      "breakpoints": true
     }
   ]
 }

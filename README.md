@@ -23,7 +23,14 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99.6 — files in, typing out.** Instruments fill from NSE's own files (bhavcopy /
+> **v2.99.7 — sectors in one click, and edge by theme.** A bundled snapshot of NSE's 54 index
+> constituent lists (~1,150 symbols with official industry, ISIN and thematic memberships) fills
+> your instruments master in one click — sector concentration works with zero typing, and your
+> hand-typed tags are never overwritten. The Edge report gains a **theme lens**: expectancy per
+> thematic index (Defence, Railways PSU, EV, Digital…), honestly labelled — themes overlap, thin
+> samples are flagged, and the untagged remainder is reported.
+>
+> *v2.99.6 — files in, typing out.* Instruments fill from NSE's own files (bhavcopy /
 > EQUITY_L / F&O market lots — with in-app guidance on where each lives), corporate actions
 > import from the CF-CA CSV with every reading shown for verification before applying, symbol
 > aliases take a CSV, and AIS reconciliation parses the income-tax portal's JSON download

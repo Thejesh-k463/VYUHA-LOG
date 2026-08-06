@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { instruments } from "@/lib/db/schema";
+import { instruments, instrumentIndices } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
 import { buildSectorMap } from "@/lib/analytics/instruments";
 
@@ -31,4 +31,15 @@ export function getSectorMap(): Map<string, string> {
 export function getInstrumentMeta(): { count: number; withSector: number } {
   const rows = getInstruments();
   return { count: rows.length, withSector: rows.filter((r) => r.sector).length };
+}
+
+/** symbol (upper) → thematic index names. Reference data — not account-scoped. */
+export function getIndexMembershipMap(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const r of db.select().from(instrumentIndices).all()) {
+    const cur = out.get(r.symbol) ?? [];
+    cur.push(r.indexName);
+    out.set(r.symbol, cur);
+  }
+  return out;
 }

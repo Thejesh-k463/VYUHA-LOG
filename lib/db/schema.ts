@@ -670,6 +670,28 @@ export const instruments = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// instrument_indices — NSE thematic index memberships (symbol × index name).
+// Reference data, not account data: populated from the bundled NSE index map
+// or from uploaded ind_*_list.csv constituent files, and refreshed by simply
+// loading again (upserts on the unique pair). Powers edge-by-theme analytics
+// and correlated-bet detection. A symbol legitimately appears many times —
+// IRCTC sits in nine indices — which is exactly the signal.
+// ---------------------------------------------------------------------------
+export const instrumentIndices = sqliteTable(
+  "instrument_indices",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    symbol: text("symbol").notNull(), // canonical ticker (upper-cased)
+    indexName: text("index_name").notNull(), // e.g. "Nifty India Railways PSU"
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("instrument_indices_pair_uq").on(t.symbol, t.indexName),
+    index("instrument_indices_symbol_idx").on(t.symbol),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // price_history — EOD OHLC series (P1.3) built from bhavcopy. One row per
 // symbol+date. Feeds auto-MTM, performance/benchmark series and (later) VaR.
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ HDFCBANK, Financials, HDFC Bank
 TCS, IT, Tata Consultancy, 175, INE467B01029
 INFY, IT`;
 
-export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
+export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDisplay[]; nseMapAsOf: string }) {
   const router = useRouter();
   const [symbol, setSymbol] = useState("");
   const [sector, setSector] = useState("");
@@ -27,7 +27,9 @@ export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
     setPending("file");
     setMsg(null);
     const content = await file.text();
-    await post({ action: "file", text: content, addAll }, "file");
+    // fileName lets the server read the index name off an ind_*_list.csv —
+    // the constituent files carry no index column, only their filename does.
+    await post({ action: "file", text: content, fileName: file.name, addAll }, "file");
   }
 
   async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "file") {
@@ -50,6 +52,31 @@ export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
 
   return (
     <div className="space-y-4">
+      {/* ── One click: the bundled NSE index map ─────────────────────────── */}
+      <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+        <div className="text-xs font-semibold">Fill sectors from the bundled NSE map</div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Official industry classification + thematic index memberships for ~1,150 NSE symbols,
+          bundled with the app (snapshot as of <b>{nseMapAsOf}</b> — constituents change at every
+          semi-annual rebalance). Names and ISINs are filled in; <b>sectors fill only where empty</b>,
+          so anything you tagged yourself stays yours. Refresh anytime by uploading newer
+          <span className="font-mono"> ind_*_list.csv</span> files below.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            size="sm"
+            disabled={pending !== ""}
+            onClick={() => post({ action: "load-nse-map", addAll }, "file")}
+          >
+            {pending === "file" ? "Applying…" : "Load NSE sector map"}
+          </Button>
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input type="checkbox" checked={addAll} onChange={(e) => setAddAll(e.target.checked)} className="size-3.5" />
+            Add every symbol in the map (default: only enrich symbols already in your master)
+          </label>
+        </div>
+      </div>
+
       {/* ── NSE file upload — the no-typing path ─────────────────────────── */}
       <div className="space-y-2 rounded-md border border-border bg-card-hover/30 p-3">
         <div className="text-xs font-semibold">Fill from an NSE file</div>
@@ -70,10 +97,15 @@ export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
             <b>F&amp;O market lots</b> (lot sizes): Derivatives → Contract Information → Market Lots
             → <span className="font-mono">fo_mktlots.csv</span>
           </li>
+          <li>
+            <b>Index constituents</b> (sectors + memberships): niftyindices.com → Indices → any
+            index → Download constituent list → <span className="font-mono">ind_*_list.csv</span>
+          </li>
         </ul>
         <p className="text-[11px] text-muted-foreground">
-          Only the columns a file actually carries are written — your sector tags are never touched
-          (no NSE file publishes sectors; those stay yours to assign below).
+          Only the columns a file actually carries are written. Sectors come solely from
+          constituent lists and <b>fill only empty cells</b> — a sector you typed yourself is never
+          overwritten by an upload.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center">
