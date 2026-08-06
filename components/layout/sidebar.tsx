@@ -7,6 +7,7 @@ import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { NAV_GROUPS, NAV_ITEMS } from "./nav-config";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "@/components/system/account-switcher";
+import { VyuhaMark } from "@/components/brand/mark";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
 
@@ -69,9 +70,9 @@ export function Sidebar({accounts,selectedAccountId}:{accounts:{id:number;name:s
       )}
     >
       <div className={cn("flex h-14 items-center gap-2 border-b border-border", collapsed ? "justify-center px-0" : "px-4")}>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-primary font-bold text-primary-foreground">
-          व
-        </div>
+        {/* Outline, not a text node: `व` is a tofu box on a machine with no
+            Devanagari font, and the sidebar is the one place it would show. */}
+        <VyuhaMark size={28} className="shrink-0" title="Vyuha" />
         {!collapsed && (
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-wide">VYUHA</div>

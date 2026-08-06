@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Download, Share2 } from "lucide-react";
 import { toast } from "@/components/ui/toaster";
+import { VyuhaMark, drawVyuhaMark } from "@/components/brand/mark";
 import {
   buildShareCard,
   SHARE_METRICS,
@@ -65,14 +66,8 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
     ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
 
     // Header: mark + wordmark + period
-    ctx.fillStyle = primary;
-    ctx.beginPath();
-    ctx.roundRect(28, 26, 34, 34, 9);
-    ctx.fill();
-    ctx.fillStyle = bg;
-    ctx.font = "600 20px Inter, system-ui, sans-serif";
+    drawVyuhaMark(ctx, { x: 28, y: 26, size: 34, fill: primary, ink: bg });
     ctx.textBaseline = "middle";
-    ctx.fillText("व", 37, 44);
     ctx.fillStyle = fg;
     ctx.font = "600 17px Inter, system-ui, sans-serif";
     ctx.fillText("VYUHA", 74, 38);
@@ -162,7 +157,9 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
         {/* Live preview of exactly what the PNG will contain */}
         <div className="rounded-lg border border-border bg-card-hover/30 p-4">
           <div className="mb-3 flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-primary font-bold text-primary-foreground">व</span>
+            {/* ink = background, matching drawVyuhaMark above: this preview
+                claims to be exactly what the PNG contains. */}
+            <VyuhaMark size={28} ink="var(--color-background)" />
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-wide">VYUHA</div>
               <div className="text-[10px] text-muted-foreground">{period ?? "Trading journal"}</div>
