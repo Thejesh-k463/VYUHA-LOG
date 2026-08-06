@@ -18,10 +18,21 @@ export function AliasManager({ rows }: { rows: AliasDisplay[] }) {
   const [alias, setAlias] = useState("");
   const [ticker, setTicker] = useState("");
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<"" | "add" | "load" | "clear">("");
+  const [pending, setPending] = useState<"" | "add" | "load" | "clear" | "file">("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  async function post(payload: object, kind: "add" | "load" | "clear" | "delete") {
+  async function onFile(file: File) {
+    setPending("file");
+    setMsg(null);
+    const raw = await file.text();
+    // A CSV export usually leads with a header row ("NAME,TICKER") — the line
+    // parser would happily record it as a real alias, so drop it here.
+    const lines = raw.split(/\r?\n/);
+    const body = /name|alias|ticker|symbol/i.test(lines[0] ?? "") ? lines.slice(1) : lines;
+    await post({ action: "load", text: body.join("\n") }, "file");
+  }
+
+  async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "file") {
     if (kind !== "delete") setPending(kind);
     setMsg(null);
     const res = await fetch("/api/aliases", {
@@ -67,6 +78,23 @@ export function AliasManager({ rows }: { rows: AliasDisplay[] }) {
           <Button size="sm" variant="outline" disabled={pending !== "" || !text.trim()} onClick={() => post({ action: "load", text }, "load")}>
             {pending === "load" ? "Loading…" : "Bulk load"}
           </Button>
+          {/* Same mapping format, from a file — a header row is auto-dropped. */}
+          <label className="inline-flex cursor-pointer items-center">
+            <input
+              type="file"
+              accept=".csv,.txt,text/csv,text/plain"
+              className="hidden"
+              disabled={pending !== ""}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFile(f);
+                e.target.value = "";
+              }}
+            />
+            <span className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium hover:bg-card-hover">
+              {pending === "file" ? "Reading…" : "Upload CSV"}
+            </span>
+          </label>
           <Button size="sm" variant="outline" disabled={pending !== "" || rows.length === 0} onClick={() => { if (confirm("Clear all aliases?")) post({ action: "clear" }, "clear"); }}>
             {pending === "clear" ? "Clearing…" : `Clear${rows.length ? ` (${rows.length})` : ""}`}
           </Button>

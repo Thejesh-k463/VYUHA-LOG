@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { corporateActions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { parseCorporateActionList, type CorporateActionType } from "@/lib/analytics/corporate-actions";
+import { parseNseCorporateActions } from "@/lib/import/nse-corporate-actions";
 import { applyCorporateAction } from "@/lib/corporate-actions-apply";
 import { recordAudit } from "@/lib/audit";
 
@@ -66,6 +67,53 @@ export async function POST(req: Request) {
     recordAudit({ entity: "corporate_action", entityId: ins?.id ?? null, action: "create", summary: `${symbol} ${type} recorded (ex ${exDate})` });
     revalidate();
     return NextResponse.json({ ok: true, message: `${symbol} ${type} recorded.` });
+  }
+
+  if (body.action === "file") {
+    // NSE CF-CA CSV upload. Unlike bulk paste, a downloaded file WILL be
+    // uploaded twice (next month's download overlaps this month's), so events
+    // already recorded — same symbol + type + ex-date — are skipped, never
+    // duplicated. Application stays a separate, per-event decision.
+    const parsed = parseNseCorporateActions(typeof body.text === "string" ? body.text : "");
+    if (parsed.count === 0) {
+      return NextResponse.json(
+        { ok: false, message: parsed.warnings[0] ?? "No splits, bonuses or dividends found in the file." },
+        { status: 400 },
+      );
+    }
+    const existing = new Set(
+      db.select({ s: corporateActions.symbol, t: corporateActions.type, d: corporateActions.exDate })
+        .from(corporateActions).all()
+        .map((r) => `${r.s}|${r.t}|${r.d}`),
+    );
+    let added = 0;
+    db.transaction((tx) => {
+      for (const r of parsed.rows) {
+        if (existing.has(`${r.symbol}|${r.type}|${r.exDate}`)) continue;
+        tx.insert(corporateActions)
+          .values({
+            symbol: r.symbol,
+            type: r.type,
+            exDate: r.exDate,
+            fromUnits: r.fromUnits,
+            toUnits: r.toUnits,
+            dividendPerShare: r.dividendPerShare,
+            note: r.note,
+          })
+          .run();
+        added += 1;
+      }
+    });
+    revalidate();
+    const skippedKinds = Object.entries(parsed.skipped)
+      .map(([k, n]) => `${k.toLowerCase()} ×${n}`)
+      .join(", ");
+    return NextResponse.json({
+      ok: true,
+      message: `${added} new event${added === 1 ? "" : "s"} added, ${parsed.count - added} already recorded.${
+        skippedKinds ? ` Not translated (by design): ${skippedKinds}.` : ""
+      } Review each row's note before applying.`,
+    });
   }
 
   if (body.action === "load") {

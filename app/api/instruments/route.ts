@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { instruments } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { parseInstrumentList } from "@/lib/analytics/instruments";
+import { parseInstrumentsFile } from "@/lib/import/instruments-file";
 
 export const runtime = "nodejs";
 
@@ -53,6 +54,59 @@ export async function POST(req: Request) {
     });
     revalidate();
     return NextResponse.json({ ok: true, message: `Saved ${symbol}.` });
+  }
+
+  if (body.action === "file") {
+    // NSE file upload (bhavcopy / EQUITY_L / fo_mktlots). MERGE semantics: only
+    // the columns the file actually supplies are written — a bhavcopy carries
+    // no sector, and overwriting would wipe every sector the user has tagged.
+    const parsed = parseInstrumentsFile(typeof body.text === "string" ? body.text : "");
+    if (parsed.format === "unknown" || parsed.count === 0) {
+      return NextResponse.json(
+        { ok: false, message: parsed.warnings[0] ?? "Could not read the file." },
+        { status: 400 },
+      );
+    }
+    // Existing-only mode (default for bhavcopy/securities list): enrich the
+    // instruments the user already tracks rather than dumping all ~2000 NSE
+    // listings into their master. `addAll` opts into inserting everything —
+    // the sane default for the lots file, which is only ~200 F&O names.
+    const addAll = body.addAll === true || parsed.format === "fo-lots";
+    const existing = new Set(
+      db.select({ symbol: instruments.symbol }).from(instruments).all().map((r) => r.symbol),
+    );
+    let updated = 0;
+    let added = 0;
+    for (const r of parsed.rows) {
+      const known = existing.has(r.symbol);
+      if (!known && !addAll) continue;
+      const set: Record<string, unknown> = { updatedAt: sql`(datetime('now'))` };
+      if (parsed.fields.includes("name") && r.name) set.name = r.name;
+      if (parsed.fields.includes("isin") && r.isin) set.isin = r.isin;
+      if (parsed.fields.includes("lotSize") && r.lotSize) set.lotSize = r.lotSize;
+      if (Object.keys(set).length === 1) continue; // nothing but the timestamp
+      db.insert(instruments)
+        .values({
+          symbol: r.symbol,
+          name: r.name,
+          isin: r.isin,
+          lotSize: r.lotSize,
+          sector: null,
+        })
+        .onConflictDoUpdate({ target: instruments.symbol, set })
+        .run();
+      if (known) updated += 1;
+      else added += 1;
+    }
+    revalidate();
+    const what =
+      parsed.format === "fo-lots" ? "lot sizes" : parsed.format === "securities-list" ? "names + ISINs" : "ISINs/names";
+    return NextResponse.json({
+      ok: true,
+      message: `Read ${parsed.count} rows (${parsed.format}) — ${what}: ${updated} updated, ${added} added.${
+        parsed.format !== "fo-lots" && !body.addAll ? " Only symbols already in your master were touched." : ""
+      }`,
+    });
   }
 
   if (body.action === "load") {

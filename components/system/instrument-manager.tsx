@@ -19,10 +19,18 @@ export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
   const [symbol, setSymbol] = useState("");
   const [sector, setSector] = useState("");
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<"" | "add" | "load" | "clear">("");
+  const [addAll, setAddAll] = useState(false);
+  const [pending, setPending] = useState<"" | "add" | "load" | "clear" | "file">("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  async function post(payload: object, kind: "add" | "load" | "clear" | "delete") {
+  async function onFile(file: File) {
+    setPending("file");
+    setMsg(null);
+    const content = await file.text();
+    await post({ action: "file", text: content, addAll }, "file");
+  }
+
+  async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "file") {
     if (kind !== "delete") setPending(kind);
     setMsg(null);
     const res = await fetch("/api/instruments", {
@@ -42,6 +50,55 @@ export function InstrumentManager({ rows }: { rows: InstrumentDisplay[] }) {
 
   return (
     <div className="space-y-4">
+      {/* ── NSE file upload — the no-typing path ─────────────────────────── */}
+      <div className="space-y-2 rounded-md border border-border bg-card-hover/30 p-3">
+        <div className="text-xs font-semibold">Fill from an NSE file</div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Three files work here, all free from nseindia.com — download <b>after ~6 PM IST</b> on a
+          trading day so the day&apos;s final data is in them:
+        </p>
+        <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-muted-foreground">
+          <li>
+            <b>Daily bhavcopy</b> (names + ISINs): Market Data → Reports → Daily Reports → Cash Market
+            → <span className="font-mono">BhavCopy_NSE_CM_…csv</span>
+          </li>
+          <li>
+            <b>Securities list</b> (names + ISINs for everything listed): Market Data → Securities
+            Available for Trading → <span className="font-mono">EQUITY_L.csv</span>
+          </li>
+          <li>
+            <b>F&amp;O market lots</b> (lot sizes): Derivatives → Contract Information → Market Lots
+            → <span className="font-mono">fo_mktlots.csv</span>
+          </li>
+        </ul>
+        <p className="text-[11px] text-muted-foreground">
+          Only the columns a file actually carries are written — your sector tags are never touched
+          (no NSE file publishes sectors; those stay yours to assign below).
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFile(f);
+                e.target.value = "";
+              }}
+              disabled={pending !== ""}
+            />
+            <span className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:opacity-90">
+              {pending === "file" ? "Reading…" : "Upload NSE file"}
+            </span>
+          </label>
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input type="checkbox" checked={addAll} onChange={(e) => setAddAll(e.target.checked)} className="size-3.5" />
+            Add every symbol in the file (default: only enrich symbols already in your master)
+          </label>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label className="text-xs">Symbol</Label>

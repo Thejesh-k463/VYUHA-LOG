@@ -25,10 +25,15 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
   const [ratio, setRatio] = useState("");
   const [amount, setAmount] = useState("");
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<"" | "add" | "load" | "clear" | number>("");
+  const [pending, setPending] = useState<"" | "add" | "load" | "clear" | "file" | number>("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "apply", pendingKey: "" | "add" | "load" | "clear" | number) {
+  async function onFile(file: File) {
+    const content = await file.text();
+    await post({ action: "file", text: content }, "load", "file");
+  }
+
+  async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "apply", pendingKey: "" | "add" | "load" | "clear" | "file" | number) {
     setPending(pendingKey);
     setMsg(null);
     const res = await fetch("/api/corporate-actions", {
@@ -108,6 +113,27 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
           <Button size="sm" variant="outline" disabled={pending !== "" || !text.trim()} onClick={() => post({ action: "load", text }, "load", "load")}>
             {pending === "load" ? "Loading…" : "Bulk load"}
           </Button>
+          {/* NSE CF-CA CSV: nseindia.com → Corporates → Corporate Actions →
+              set the date range → Download (.csv). Splits, bonuses and cash
+              dividends are read; every parsed row keeps the original PURPOSE
+              text as its note so the reading can be checked before applying.
+              Re-uploading an overlapping range never duplicates an event. */}
+          <label className="inline-flex cursor-pointer items-center" title="Upload the corporate-actions CSV downloaded from nseindia.com (Corporates → Corporate Actions)">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              disabled={pending !== ""}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFile(f);
+                e.target.value = "";
+              }}
+            />
+            <span className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium hover:bg-card-hover">
+              {pending === "file" ? "Reading…" : "Upload NSE CSV"}
+            </span>
+          </label>
           <Button
             size="sm"
             variant="outline"

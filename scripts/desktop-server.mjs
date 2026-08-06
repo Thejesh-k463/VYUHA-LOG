@@ -19,6 +19,22 @@ const seedTemplate = path.join(here, "vyuha.seed.sqlite");
 if (!fs.existsSync(dbPath) && fs.existsSync(seedTemplate)) {
   fs.copyFileSync(seedTemplate, dbPath);
   console.log("[vyuha] initialized database from seed template →", dbPath);
+  // The clean template ships a 1970-01-01 sentinel go-live (and zero capital):
+  // this user's journal starts today, not on the day the installer was built.
+  // Runs only on the first-run copy, so a user's own go-live is never touched.
+  try {
+    const { default: Database } = await import("better-sqlite3");
+    const s = new Database(dbPath);
+    const today = new Date().toISOString().slice(0, 10);
+    const r = s.prepare("UPDATE settings SET go_live_date = ? WHERE go_live_date = '1970-01-01'").run(today);
+    if (r.changes > 0) {
+      s.prepare("UPDATE capital_snapshots SET as_of_date = ? WHERE as_of_date = '1970-01-01'").run(today);
+      console.log("[vyuha] first launch — journal go-live stamped", today);
+    }
+    s.close();
+  } catch (e) {
+    console.warn("[vyuha] go-live stamp skipped:", e.message);
+  }
 }
 
 // Apply pending migrations (idempotent; safe on every launch, incl. app updates).

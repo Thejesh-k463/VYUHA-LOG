@@ -34,14 +34,14 @@ export function AisReconcile() {
   const [err, setErr] = useState<string | null>(null);
   const [recon, setRecon] = useState<AisReconciliation | null>(null);
 
-  async function run() {
+  async function run(payload?: { jsonText: string }) {
     setBusy(true);
     setErr(null);
     try {
       const res = await fetch("/api/ais", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(payload ?? { text }),
       });
       const data = await res.json();
       if (data.ok) setRecon(data.recon);
@@ -51,6 +51,11 @@ export function AisReconcile() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onFile(file: File) {
+    const jsonText = await file.text();
+    await run({ jsonText });
   }
 
   const amt = (v: number | null) => (v == null ? "—" : inr(v, { decimals: 0 }));
@@ -65,10 +70,31 @@ export function AisReconcile() {
           placeholder={PLACEHOLDER}
           className="w-full rounded-md border border-border bg-input p-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
-        <div className="flex items-center gap-3">
-          <Button onClick={run} disabled={busy || !text.trim()}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => run()} disabled={busy || !text.trim()}>
             {busy ? "Reconciling…" : "Reconcile"}
           </Button>
+          {/* The portal's JSON download, parsed directly — no re-typing.
+              incometax.gov.in → login → AIS → the download arrow → JSON. */}
+          <label
+            className="inline-flex cursor-pointer items-center"
+            title="Upload the AIS JSON from incometax.gov.in (AIS → Download → JSON). The PDF won't work — it's password-protected and made for reading, not parsing."
+          >
+            <input
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFile(f);
+                e.target.value = "";
+              }}
+            />
+            <span className="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium hover:bg-card-hover">
+              {busy ? "Reading…" : "Upload AIS JSON"}
+            </span>
+          </label>
           {err && <span className="text-xs text-loss">{err}</span>}
           {recon && (
             <span className="text-xs text-muted-foreground">

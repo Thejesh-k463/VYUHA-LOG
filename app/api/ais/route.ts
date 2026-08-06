@@ -12,16 +12,21 @@ import {
   type JournalDividend,
   type JournalFyTotal,
 } from "@/lib/analytics/ais";
+import { extractAisJson } from "@/lib/import/ais-json";
 
 export const runtime = "nodejs";
 
 const DELIVERY = new Set(["eq_delivery", "eq_mtf"]);
 
-/** IND-5 — reconcile pasted AIS/26AS rows against the journal (stateless). */
+/** IND-5 — reconcile AIS rows (pasted text OR the portal's JSON download)
+ *  against the journal. Stateless either way. */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const text = typeof body?.text === "string" ? body.text : "";
-  if (!text.trim()) return NextResponse.json({ ok: false, message: "Paste at least one AIS row." }, { status: 400 });
+  const jsonText = typeof body?.jsonText === "string" ? body.jsonText : "";
+  if (!text.trim() && !jsonText.trim()) {
+    return NextResponse.json({ ok: false, message: "Paste AIS rows or upload the AIS JSON." }, { status: 400 });
+  }
 
   const fyStartMonth = getSettings()?.fyStartMonth ?? 4;
   const aliasMap = getAliasMap();
@@ -64,8 +69,17 @@ export async function POST(req: Request) {
     }
   }
 
+  // JSON upload takes priority when both are present; the extractor emits the
+  // exact row shape parseAisText produces, so everything downstream is shared.
+  const parsed = jsonText.trim()
+    ? (() => {
+        const x = extractAisJson(jsonText);
+        return { rows: x.rows, unparsed: x.unparsed };
+      })()
+    : parseAisText(text, fyStartMonth);
+
   const recon = reconcileAis(
-    parseAisText(text, fyStartMonth),
+    parsed,
     [...divMap.values()],
     [...totals.values()].sort((a, b) => a.fy.localeCompare(b.fy)),
     resolve,

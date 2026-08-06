@@ -83,7 +83,9 @@ fs.cpSync(path.join(root, "node_modules", "drizzle-orm"), path.join(dist, "node_
 console.log("• building seed template DB …");
 const seedPath = path.join(dist, "vyuha.seed.sqlite");
 for (const s of ["", "-wal", "-shm"]) fs.rmSync(seedPath + s, { force: true });
-const env = { ...process.env, VYUHA_DB_PATH: seedPath };
+// VYUHA_SEED_CLEAN: the template must never carry the build machine's own
+// capital or go-live date — zero capital, sentinel date, stamped at first run.
+const env = { ...process.env, VYUHA_DB_PATH: seedPath, VYUHA_SEED_CLEAN: "1" };
 execFileSync("npx", ["tsx", "lib/db/migrate.ts"], { stdio: "inherit", shell: true, env });
 execFileSync("npx", ["tsx", "lib/db/seed.ts"], { stdio: "inherit", shell: true, env });
 // drop wal sidecars so the template is a single file

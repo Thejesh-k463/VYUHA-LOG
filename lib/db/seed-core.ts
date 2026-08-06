@@ -3,9 +3,21 @@ import { db } from "./index";
 import { capitalSnapshots, chargeConfig, marginConfig, regulatoryRulePacks, riskConfig, settings, accounts } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
 
-const GO_LIVE = "2026-06-19";
-const EQUITY_CAPITAL = 1_300_000;
-const ACTIVE_CAPITAL = 400_000;
+/**
+ * Two seed profiles:
+ *
+ * - Default (dev + e2e): realistic capital so reports, targets and gauges have
+ *   something to show without manual setup.
+ * - VYUHA_SEED_CLEAN=1 (the DESKTOP TEMPLATE, set by scripts/build-desktop.mjs):
+ *   zero capital and a 1970-01-01 sentinel go-live. The shipped template used
+ *   to carry the developer's own capital figures — every installed copy started
+ *   life showing someone else's ₹13,00,000. The sentinel date is stamped to the
+ *   user's real first-launch date by scripts/desktop-server.mjs.
+ */
+const CLEAN = process.env.VYUHA_SEED_CLEAN === "1";
+const GO_LIVE = CLEAN ? "1970-01-01" : "2026-06-19";
+const EQUITY_CAPITAL = CLEAN ? 0 : 1_300_000;
+const ACTIVE_CAPITAL = CLEAN ? 0 : 400_000;
 
 export interface SeedReport {
   settings: "seeded" | "kept";
