@@ -1,5 +1,83 @@
 # Changelog
 
+## v2.99.1 — a help desk, honest deletion, and settings that come back
+
+### Help Desk
+
+A new screen (`/help`, System group) describing every part of Vyuha: the
+question each screen answers, its honesty rules, and what it deliberately will
+**not** do — the refusals are design, so they are documented as features.
+Searchable by task words ("delete", "stop loss", "grandfathering"), grouped like
+the sidebar, every card deep-linking to its screen. A build-time test joins the
+help registry against the navigation in both directions, so a screen without
+help — or help for a screen that no longer exists — cannot ship.
+
+### CLEAR / DELETE
+
+Deleting is the one destructive thing Vyuha does to a user's own record, so the
+decision and the execution are separated: a pure resolver turns a scope into
+exactly which trades match, and the confirmation dialog shows — and submits —
+that same list of ids. Nothing is re-derived after you confirm.
+
+- **Select rows in Trades** with checkboxes (header selects all visible;
+  selection resets when filters change so a hidden row cannot be deleted
+  unseen), then delete with a full preview: counts, open/staged warnings, net
+  P&L, symbols and date span. Past ten trades, the count must be typed.
+- **Delete an imported file** from the Import screen — with the cascade question
+  asked explicitly: remove the trades it created too, or keep them and lose only
+  the provenance record. The table shows how many trades each import still owns.
+- **Scopes for batch cleanup**: import batch, manual-entry day (which means
+  *not-imported*, so an import can never be swept up by a manual cleanup), date
+  range on either leg, broker, segment, account, or exactly what the current
+  filter shows.
+- **Fixed on the way**: the old single-trade delete removed the trade row and
+  nothing else — orphaning legs and attachment records, leaking screenshot files
+  on disk forever, and writing no audit entry. Every delete now takes the
+  trade's belongings with it, writes the full before-snapshot to the audit log
+  first, and unlinks (never deletes) a linked IPO record.
+- There is deliberately **no "delete everything"** — that is what Backup &
+  Restore is for, where it is preceded by an export.
+
+### Advisory panels can be dismissed — with memory
+
+Panels like "open holdings with no current price" are computed from your data,
+so they cannot simply be closed while the situation persists. Dismissing one now
+hides it **for that exact situation**: any real change — a new unmarked holding,
+one resolved — brings it back. Nothing stays hidden while the facts move.
+
+### Import correctness
+
+- **The reported "no cost on record" bug ran to ground.** The parser handles the
+  Dhan Global Transaction Report correctly (verified against the real file —
+  every position pairs and closes as it should). The real fault: the duplicate
+  check keys on prices and dates, which a P&L export states differently or not
+  at all — so the *same trade* arriving from two file kinds inserted twice,
+  producing a costless duplicate holding, "open" positions that were closed, and
+  what looked like bad merges. The import preview now detects rows that look
+  like trades already recorded from a different file kind and says so before
+  commit — naming the earlier file. Nothing is merged automatically, because
+  merging means choosing whose numbers to keep, and getting that wrong silently
+  corrupts cost basis and holding period.
+- **"No mark price" reworded.** It read as "no buy price". The panel now says
+  what it means: a **current price to value the holding at today** — a separate
+  fact from the purchase price, which these holdings may well have.
+
+### My Default Settings
+
+The first configuration you run with is kept as your baseline, automatically.
+Change anything freely; **Restore my defaults** brings back preferences and the
+charge/margin/risk rate tables in one transaction, with a diff of what would
+change shown before you confirm. **Save current as my default** replaces the
+baseline explicitly. A restore returns *choices*, never state: your licence,
+trial, accounting and account selection survive untouched, byte-for-byte, by
+construction — those fields are not in the snapshot at all.
+
+### Notes
+
+Migrations `0037_panel-dismissals.sql`, `0038_settings-baseline.sql`.
+**1,147 unit/integration tests** pass with typecheck, lint and the production
+bundle.
+
 ## v2.99.0 — Vyuha runs on a Mac, and the seller journal grows up
 
 Three upgrades and two real bugs, one of which was found by the macOS support
