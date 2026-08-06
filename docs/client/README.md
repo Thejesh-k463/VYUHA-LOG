@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.5
+
+| Upgrade | What it gives you |
+|---|---|
+| **The व mark** | Vyuha's icon is now the Devanagari letter व hanging from its headline stroke, extended edge to edge like a price level. You'll see it on the installer, the taskbar or dock, the browser tab, and the stat cards you share. |
+| **Tables you can read** | Row separators are actually visible now, table headers look like headers, and long option names no longer push your P&L columns off screen — the instrument stays pinned while you scroll sideways. |
+| **Display density** | Settings → Preferences → Display density. Compact is the terminal look you know; Comfortable makes the whole interface a step larger. |
+| **Light theme** | The teal used for links and buttons in the light theme is now dark enough to meet accessibility contrast standards. |
+
 ## New in v2.99
 
 | Workspace | What it gives you |
