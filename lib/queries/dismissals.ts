@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { panelDismissals } from "@/lib/db/schema";
 import { isDismissed, type Dismissal, type DismissiblePanel } from "@/lib/domain/dismissals";

@@ -63,7 +63,7 @@ export function parsePurpose(purpose: string): Pick<NseCorporateAction, "type" |
   const p = purpose.toUpperCase();
 
   // BONUS A:B — A new shares per B held.
-  let m = p.match(/BONUS\s+(\d+)\s*:\s*(\d+)/);
+  const m = p.match(/BONUS\s+(\d+)\s*:\s*(\d+)/);
   if (m) {
     const a = num(m[1]);
     const b = num(m[2]);
