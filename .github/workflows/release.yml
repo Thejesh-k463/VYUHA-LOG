@@ -67,7 +67,13 @@ jobs:
             rust-target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
 
-          - os: macos-13
+          # macos-15-intel, NOT macos-13: GitHub retired the macos-13 image, and a
+          # retired label does not fail — the job sits in "Queued" indefinitely
+          # and holds the whole matrix (and therefore the release) with it. That
+          # is exactly how v2.99.0 and v2.99.1 stalled for hours with their other
+          # two jobs already green. Check the label against the current
+          # runner-images list before changing it.
+          - os: macos-15-intel
             label: macOS (Intel)
             rust-target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
