@@ -10,7 +10,7 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.98.0
+## 0. What you are actually selling, as of v2.99.1
 
 Keep this list current — it is the one place that answers "what does the buyer
 get today", and it is where landing-page copy should be drawn from.
@@ -19,6 +19,19 @@ get today", and it is where landing-page copy should be drawn from.
 P&L. Vyuha tells them what it *cost*, whether it was *repeatable*, and refuses
 to flatter them.
 
+> ### v2.99 launch story
+>
+> **"Now on your Mac. And it tells you the truth about itself."**
+> Lead with the platform: macOS availability is the only announcement here that
+> reaches people who could not buy before, so it goes first everywhere. The
+> in-product story is trust-as-craft — a Help Desk that documents what each
+> screen *refuses* to do, deletion that shows its work, an import that warns
+> before double-counting, and settings that come back with one click. Demo
+> beat: import a transaction report, then try to import the matching P&L export
+> and let the room watch Vyuha catch the double-count that every spreadsheet
+> and most journals silently absorb. Seasonal second beat: the ITR schedule
+> export, sold hardest in the run-up to the filing deadline.
+>
 > ### v2.98 launch story
 >
 > **The record is safe, and it reaches your CA in the form they ask for.**
@@ -55,6 +68,11 @@ to flatter them.
 | **SEBI compliance radar** (Pro) | Post-2024 F&O rules, expiry-day ELM, intraday index limits. |
 | **Tax tooling** (Pro) | Grandfathering, dividend TDS, set-off, ITR pack with 44AB/44AD read. |
 | **Complete encrypted recovery** | A full database + screenshot backup, optional AES-256-GCM password protection, and a restore preview turn “local-only” from a risk into a trust feature. |
+| **Runs on a Mac** | Native builds for Apple silicon and Intel, alongside Windows. This is not a feature, it is a **market**: every Mac-owning trader who bounced off "Windows only" is now reachable. Same one-file data, same licence. |
+| **Seller depth** (Pro) | Expectancy by DTE band, hedged-vs-unhedged as an honest gap, roll chains judged against the first leg alone, IV rank within the user's own history, premium per day of risk. India's dominant retail cohort, spoken to directly. |
+| **ITR schedule export** (Pro) | Schedule CG/BP/CFL in the return's own item codes, with the S.48 STT asymmetry applied per head. The demo line: "the CG balance is HIGHER than our own net P&L — and here is why that is correct." |
+| **A journal that cleans up honestly** | Bulk delete with an exact preview, import removal with the cascade question asked, cross-source overlap warnings, dismissible advisories that return when the facts change, and one-click restore of default settings. Deletion is where journals silently corrupt; Vyuha audits every removal with the full before-snapshot. |
+| **Help Desk** | Every screen self-described in-app — including what it refuses to do. Cuts the "what does this button mean" support load to near zero, which is what makes a one-person vendor sustainable. |
 | **Data Quality Center** | Makes analytical confidence visible before the user acts on a report; every issue links to the screen that fixes it. |
 | **Session planner/review** | Converts Vyuha from an after-the-fact journal into a daily pre-market → execution → review loop. |
 | **Sourced rule packs** | Dates every SEBI/broker assumption, shows the source, and schedules review—material proof that “India-specific” is maintained, not marketing copy. |

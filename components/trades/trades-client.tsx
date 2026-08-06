@@ -145,11 +145,20 @@ export function TradesClient({
 
   // A selection that outlives its filter would let "delete selected" remove
   // rows the user can no longer see. Visible-set changes reset it.
-  React.useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setSelected(new Set());
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [search, broker, segment, bucket, from, to, realised, view]);
+  // Selection is PRUNED against the visible rows at render time, never synced
+  // by an effect. The first version reset it with setState inside a
+  // useEffect keyed on the filters — and silencing the
+  // react-hooks/set-state-in-effect rule to do so broke this page under the
+  // React Compiler: the view select simply stopped receiving changes. The rule
+  // was right. Deriving gives the same safety with no state to keep honest:
+  // a selected row that a filter hides stops counting and cannot be deleted,
+  // because every consumer below reads the intersection, not the raw set.
+  const dataIds = React.useMemo(() => new Set(data.map((t) => t.id)), [data]);
+  const visibleSelected = React.useMemo(
+    () => new Set([...selected].filter((id) => dataIds.has(id))),
+    [selected, dataIds],
+  );
+
 
   const toDeletable = React.useCallback((t: Trade): DeletableTrade => ({
     id: t.id, accountId: t.accountId, broker: t.broker, segment: t.segment,
@@ -159,9 +168,9 @@ export function TradesClient({
   }), []);
 
   const deletePreview = React.useMemo(() => {
-    if (selected.size === 0) return null;
-    return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...selected] });
-  }, [selected, data, toDeletable]);
+    if (visibleSelected.size === 0) return null;
+    return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...visibleSelected] });
+  }, [visibleSelected, data, toDeletable]);
 
   /**
    * Counts for the dropdown, computed AFTER the other filters but BEFORE the
@@ -196,8 +205,8 @@ export function TradesClient({
           type="checkbox"
           aria-label="Select all visible trades"
           className="size-3.5 accent-[var(--color-loss)]"
-          checked={data.length > 0 && selected.size === data.length}
-          ref={(el) => { if (el) el.indeterminate = selected.size > 0 && selected.size < data.length; }}
+          checked={data.length > 0 && visibleSelected.size === data.length}
+          ref={(el) => { if (el) el.indeterminate = visibleSelected.size > 0 && visibleSelected.size < data.length; }}
           onChange={(e) => setSelected(e.target.checked ? new Set(data.map((t) => t.id)) : new Set())}
         />
       ),
@@ -206,7 +215,7 @@ export function TradesClient({
           type="checkbox"
           aria-label={`Select ${row.original.symbol}`}
           className="size-3.5 accent-[var(--color-loss)]"
-          checked={selected.has(row.original.id)}
+          checked={visibleSelected.has(row.original.id)}
           onChange={(e) => {
             setSelected((prev) => {
               const next = new Set(prev);
@@ -325,7 +334,7 @@ export function TradesClient({
         </div>
       ),
     },
-  ], [today, data, selected]);
+  ], [today, data, visibleSelected]);
 
   return (
     <div className="space-y-4">
@@ -414,10 +423,10 @@ export function TradesClient({
       )}
 
       <Card className="p-0">
-        {selected.size > 0 && deletePreview && (
+        {visibleSelected.size > 0 && deletePreview && (
           <div className="flex items-center justify-between rounded-lg border border-loss/40 bg-loss/5 px-3 py-2 text-xs">
             <span>
-              <b>{selected.size}</b> selected · net {num(deletePreview.netPnl)} · {deletePreview.open} open
+              <b>{visibleSelected.size}</b> selected · net {num(deletePreview.netPnl)} · {deletePreview.open} open
             </span>
             <span className="flex items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>

@@ -23,16 +23,19 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.98 — The safety net, proven.** Restore no longer deletes your chart screenshots, and now
-> leaves the journal untouched if anything fails partway. Backups encrypt with a stronger key.
-> Writing from the multi-account view asks which book it belongs to instead of guessing. And the
-> tax stack gains a **schedule-format export** — Schedule CG, BP and CFL in the return's own item
-> codes, with STT treated correctly per head (excluded from capital gains under S.48, allowed as a
-> business expense against intraday and F&O).
+> **v2.99 — Vyuha runs on a Mac, and the journal cleans up after itself.** Native builds for
+> Windows, macOS Apple silicon and macOS Intel. A **Help Desk** describing every screen — including
+> what each deliberately won't do. **Honest deletion**: select rows, delete an imported file (with
+> the its-trades question asked, never assumed), batch scopes by date/broker/segment — every delete
+> previews the exact set first and audits the full before-snapshot. **Cross-source duplicate
+> detection** stops a P&L export silently double-recording trades a transaction report already
+> supplied. **My Default Settings** restores your baseline in one click — preferences and rate
+> tables, never licence or accounting state. Seller depth: expectancy by DTE band, hedged-vs-unhedged
+> as an honest gap, roll chains against the first leg, IV rank, premium per day of risk. And the
+> licence clock is now a ratchet — winding the system clock back no longer renews a trial.
 >
-> *v2.97 brought complete encrypted backups, a Data Quality Center, pre-market plans and
-> post-market reviews, versioned regulatory rule packs, scaling-quality and trade-replay analysis,
-> an options-seller journal, and true multi-account books.*
+> *v2.98 proved the safety net (atomic restore, stronger backup crypto, aggregate-view write
+> guards) and added the ITR schedule-format export with the S.48 STT rule applied per head.*
 
 - 🇮🇳 **To-the-rupee Indian cost engine.** STT, exchange txn, SEBI, stamp, IPFT, GST, DP, pledge — computed per **broker × segment × exchange** from an editable rate table, reconciled against real broker files. Money is stored as **integer paise** (no float drift), with statutory rounding.
 - 💸 **MTF done right — the only journal that gets it.** Interest accrues on the *broker-funded portion only* (own-margin % is broker-specific: Dhan/Groww ≈25%, Zerodha ≈20%), with the **correct T+1 day-count** verified against Dhan's own docs. See ROI on your own capital, leverage, breakeven price, and a ⚠ flag when interest has eaten your entire paper gain.

@@ -50,6 +50,11 @@ this is about catching it before the push, not instead of CI.
 
 # Conventions
 
+- **Never silence `react-hooks/set-state-in-effect` — derive instead.** A synchronous
+  `setState` inside a `useEffect` keyed on other state broke the Trades view filter outright under
+  the React Compiler: the select stopped receiving changes, with no error anywhere. The fix was to
+  delete the state-sync entirely and derive (`visibleSelected = selected ∩ visibleRows` at render
+  time). If you find yourself resetting state in an effect, the state is probably derivable.
 - **Settings/editor writes use route handlers + client `fetch` + `router.refresh()`, NOT server
   actions.** Server actions auto-refresh the current route, which remounts sibling client
   components and silently resets their state. This broke the charge-editor row selection and made

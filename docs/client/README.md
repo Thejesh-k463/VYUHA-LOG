@@ -3,7 +3,18 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
-## New in v2.98
+## New in v2.99
+
+| Workspace | What it gives you |
+|---|---|
+| **macOS** | Vyuha now ships native builds for Apple silicon and Intel Macs, alongside Windows. Pick the build matching your Mac; first launch needs right-click → Open (the builds are not yet notarised). |
+| **Help Desk** | Every screen described — what it answers, its honesty rules, and what it deliberately won't do — searchable, with a direct link to each. |
+| **Delete, honestly** | Select trades to delete, remove an imported file (you choose whether its trades go too), or clear by date/broker/segment. Every delete shows exactly what will go before it goes, and the audit log keeps the full record. |
+| **Import overlap warning** | Importing a P&L export after a transaction report used to record the same trades twice. The preview now names the overlapping rows and the file they came from, before anything commits. |
+| **My Default Settings** | Your first configuration is saved as a baseline. Change anything freely — one click brings preferences and rate tables back. Your licence, trial and data are never touched. |
+| **Dismissible warnings** | Advisory panels can be dismissed and stay hidden until the situation they describe actually changes. |
+
+## Also in v2.98
 
 | Workspace | What it gives you |
 |---|---|
