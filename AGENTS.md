@@ -125,4 +125,9 @@ deleted — do not resurrect it.
   the update. The CI secret `TAURI_SIGNING_PRIVATE_KEY` must hold the `.secrets` key for the same
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".
 - Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json, Cargo.toml and
-  the sidebar footer — but **not `src-tauri/Cargo.lock`**, which needs a `cargo` invocation.
+  the sidebar footer — but **not `src-tauri/Cargo.lock`**, which needs a `cargo` invocation, and
+  **not package-lock.json's root version fields**. To sync those, edit the two version strings or
+  run a plain `npm install` — **never `npm install --package-lock-only`**: on Windows it re-resolves
+  without an installed tree to consult and silently drops the darwin/linux optional-dep variants
+  (esbuild etc.) from the lock, and `npm ci` then fails on every non-Windows runner. This broke all
+  four CI jobs at v2.99.5. A stale root version in the lock is harmless; a re-resolved lock is not.
