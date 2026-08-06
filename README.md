@@ -23,7 +23,15 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99.5 — Vyuha gets its mark, and tables you can actually read.** The Devanagari **व**
+> **v2.99.6 — files in, typing out.** Instruments fill from NSE's own files (bhavcopy /
+> EQUITY_L / F&O market lots — with in-app guidance on where each lives), corporate actions
+> import from the CF-CA CSV with every reading shown for verification before applying, symbol
+> aliases take a CSV, and AIS reconciliation parses the income-tax portal's JSON download
+> directly. The audit log now groups by what happened — your edits are no longer buried under
+> auto-MTM maintenance rows. And the first-run database is finally anonymous: zero capital,
+> go-live stamped on first launch.
+>
+> *v2.99.5 — Vyuha gets its mark, and tables you can actually read.* The Devanagari **व**
 > hanging from an edge-to-edge shirorekha — the letter's headline stroke doubling as a price
 > level — now ships as the installer icon, favicon, sidebar and share-card mark, generated from
 > one committed glyph outline (Noto Sans Devanagari, SIL OFL) so no surface depends on the

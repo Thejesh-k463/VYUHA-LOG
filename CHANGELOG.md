@@ -1,5 +1,41 @@
 # Changelog
 
+## v2.99.6 — files in, typing out
+
+### Uploads everywhere data used to be typed
+
+- **Instruments** fill from the files NSE actually publishes: the daily CM
+  bhavcopy or `EQUITY_L.csv` (names + ISINs) and `fo_mktlots.csv` (lot sizes),
+  with in-app guidance on where each lives on nseindia.com and to download
+  after ~6 PM IST. Merge semantics: only columns a file proves are written, so
+  sector tags survive — no NSE file publishes sectors, and none are invented.
+- **Corporate actions** import from the NSE CF-CA CSV. Splits, bonuses and
+  cash dividends are translated (bonus A:B → ×(A+B)/B, FV split X→Y → ×X/Y);
+  every parsed row keeps the verbatim PURPOSE as its note so the reading can
+  be checked before applying; rights and buybacks are counted, never guessed;
+  re-uploading an overlapping date range never duplicates an event.
+- **Symbol aliases** accept a CSV upload (header row auto-dropped).
+- **AIS reconcile** accepts the income-tax portal's JSON download. A tolerant
+  walker classifies headings and inherits them down to detail rows, prefers
+  leaves over category aggregates (the double-count trap), normalises AY→FY,
+  and reads Indian-grouped amounts. Paste still works — one reconciler, two
+  front doors.
+
+### The audit log grew categories
+
+Auto-MTM writes a row per trading day, and after a few months the flat table
+was price-maintenance noise with a journal buried in it. Entries now group by
+**what happened** — Trades · Journal & playbooks · Imports & deletes · Capital
+· Settings & rates · Licence · Auto-MTM — as clickable category cards with
+counts, drilling into the detail table.
+
+### The client template is finally anonymous
+
+The bundled first-run database carried the developer's own capital figures and
+go-live date into every installed copy. It now ships zero capital and a
+sentinel go-live that is stamped to the *user's* actual first-launch date.
+Existing installs are untouched — this affects new installs only.
+
 ## v2.99.5 — the व mark, and tables you can actually read
 
 ### Identity
