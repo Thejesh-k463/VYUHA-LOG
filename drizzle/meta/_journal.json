@@ -267,6 +267,13 @@
       "when": 1786010000000,
       "tag": "0037_panel-dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1786020000000,
+      "tag": "0038_settings-baseline",
+      "breakpoints": true
     }
   ]
 }

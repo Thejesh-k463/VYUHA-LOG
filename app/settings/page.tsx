@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { SettingsForm } from "@/components/settings/settings-form";
+import { DefaultSettingsCard } from "@/components/settings/default-settings-card";
 import { RiskEditor } from "@/components/settings/risk-editor";
 import { ChargeEditor } from "@/components/settings/charge-editor";
 import { CapitalCard } from "@/components/settings/capital-card";
@@ -43,6 +44,7 @@ export default function SettingsPage() {
       <PageHeader title="Settings" description="Capital, go-live, charge rates and risk rules — all editable." />
       <div className="space-y-6 p-6">
         <SettingsForm current={settings} />
+        <DefaultSettingsCard />
         <AccountManager accounts={getAccounts()} />
         <LicenseCard status={getLicenseStatus()} entitlement={getEntitlement()} />
         <CapitalCard summary={capital} />

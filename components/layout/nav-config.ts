@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  LifeBuoy,
   LayoutDashboard,
   Wallet,
   Activity,
@@ -85,6 +86,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/backup", label: "Backup & Restore", icon: Database, group: "System" },
   { href: "/aliases", label: "Symbol Aliases", icon: Tags, group: "System" },
   { href: "/instruments", label: "Instruments", icon: Boxes, group: "System" },
+  { href: "/help", label: "Help Desk", icon: LifeBuoy, group: "System" },
   { href: "/settings", label: "Settings", icon: Settings, group: "System" },
 ];
 

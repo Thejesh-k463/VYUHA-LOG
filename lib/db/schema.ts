@@ -833,6 +833,17 @@ export const tradingSessions = sqliteTable("trading_sessions", {
 ]);
 
 // ---------------------------------------------------------------------------
+// settings_baseline — "My Default Settings". One row; captured on first run,
+// replaced only by an explicit save. Payload shape and the preference/state
+// split live in lib/domain/settings-baseline.ts.
+// ---------------------------------------------------------------------------
+export const settingsBaseline = sqliteTable("settings_baseline", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  capturedAt: text("captured_at").notNull().default(now),
+  payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // panel_dismissals — dismiss-with-memory for advisory panels. A dismissal is
 // keyed on a FINGERPRINT of the situation it was shown for (see
 // lib/domain/dismissals.ts): hidden while the facts are unchanged, returns the
