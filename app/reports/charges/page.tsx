@@ -92,7 +92,7 @@ export default function ChargesReportPage() {
                   </thead>
                   <tbody>
                     {marginPenaltyRows.map((r) => (
-                      <tr key={r.month} className="border-b border-border/40">
+                      <tr key={r.month} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{r.month}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{inr(r.total, { decimals: 0 })}</td>
@@ -143,7 +143,7 @@ function ChargeTable({ title, rows, totals, labelFor, exportName }: { title: str
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.key} className="border-b border-border/40">
+                <tr key={r.key} className="border-b border-rule">
                   <td className="px-2.5 py-1.5 font-medium">{labelFor(r.key)}</td>
                   <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
                   <td className="px-2.5 py-1.5 text-right tabular-nums">{num(r.turnover, 0)}</td>

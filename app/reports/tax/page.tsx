@@ -173,7 +173,7 @@ export default function TaxReportPage() {
                   </thead>
                   <tbody>
                     {rows.map((r) => (
-                      <tr key={r.fy} className="border-b border-border/40">
+                      <tr key={r.fy} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
                         <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.stcg)}`}>{inr(r.stcg, { decimals: 0 })}</td>
                         <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.ltcg)}`}>{inr(r.ltcg, { decimals: 0 })}</td>
@@ -232,7 +232,7 @@ export default function TaxReportPage() {
                       const usedTotal = r.usedCarryForward.reduce((s, u) => s + u.amount, 0);
                       const carryTotal = r.newCarryForward.reduce((s, c) => s + c.amount, 0);
                       return (
-                        <tr key={r.fy} className="border-b border-border/40">
+                        <tr key={r.fy} className="border-b border-rule">
                           <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
                           <td className="px-2.5 py-1.5 text-right tabular-nums">{inr(r.taxableStcg, { decimals: 0 })}</td>
                           <td className="px-2.5 py-1.5 text-right tabular-nums">{inr(r.taxableLtcg, { decimals: 0 })}</td>
@@ -285,7 +285,7 @@ export default function TaxReportPage() {
                   </thead>
                   <tbody>
                     {dividendRows.map((r) => (
-                      <tr key={`${r.fy}-${r.symbol}`} className="border-b border-border/40">
+                      <tr key={`${r.fy}-${r.symbol}`} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
                         <td className="px-2.5 py-1.5">{r.symbol}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums text-profit">{inr(r.grossTotal, { decimals: 0 })}</td>

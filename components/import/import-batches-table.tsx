@@ -43,7 +43,7 @@ export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
         </thead>
         <tbody>
           {batches.map((b) => (
-            <tr key={b.id} className="border-b border-border/50">
+            <tr key={b.id} className="border-b border-rule">
               <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(b.importedAt)}</td>
               <td className="py-1.5 pr-4">{BROKER_LABELS[b.broker as Broker] ?? b.broker}</td>
               <td className="py-1.5 pr-4 font-mono text-xs">{b.fileName}</td>

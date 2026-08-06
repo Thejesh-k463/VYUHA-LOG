@@ -107,7 +107,7 @@ export default function MonthlyReportPage() {
                   </thead>
                   <tbody>
                     {years.map((y) => (
-                      <tr key={y} className="border-b border-border/40">
+                      <tr key={y} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{y}</td>
                         {MONTHS.map((_, i) => {
                           const ret = byYM.get(`${y}-${i + 1}`);
@@ -133,7 +133,7 @@ export default function MonthlyReportPage() {
                 <table className="w-full text-xs">
                   <tbody>
                     {pbStats.slice(0, 5).map((s) => (
-                      <tr key={s.playbookId ?? "untagged"} className="border-b border-border/40">
+                      <tr key={s.playbookId ?? "untagged"} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{s.name}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.trades} trades</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.winRatePct}%</td>

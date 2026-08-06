@@ -93,7 +93,7 @@ export default function HarvestPage() {
                   </thead>
                   <tbody>
                     {lossCandidates.map((c) => (
-                      <tr key={c.id} className="border-b border-border/40">
+                      <tr key={c.id} className="border-b border-rule">
                         <td className="px-2.5 py-2 font-medium">{c.symbol}</td>
                         <td className="px-2 py-2"><Badge variant="outline">{c.term}</Badge></td>
                         <td className="px-2 py-2 text-right tabular-nums">{c.qty}</td>

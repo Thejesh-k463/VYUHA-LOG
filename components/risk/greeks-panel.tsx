@@ -54,7 +54,7 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
             </thead>
             <tbody>
               {greeks.positions.map((g) => (
-                <tr key={g.id} className="border-b border-border/40">
+                <tr key={g.id} className="border-b border-rule">
                   <td className="px-2.5 py-1.5 font-medium">{g.symbol}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                     {g.ivPct}%

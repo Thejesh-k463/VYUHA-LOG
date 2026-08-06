@@ -194,7 +194,7 @@ export default function ItrPackPage() {
                       </thead>
                       <tbody>
                         {s.lines.map((l, i) => (
-                          <tr key={`${l.code}-${i}`} className={`border-b border-border/40 ${l.amount === null ? "bg-card-hover/30" : ""}`}>
+                          <tr key={`${l.code}-${i}`} className={`border-b border-rule ${l.amount === null ? "bg-card-hover/30" : ""}`}>
                             <td className="py-1.5 pr-3 text-muted-foreground">{l.schedule}</td>
                             <td className="py-1.5 pr-3 font-mono">{l.code}</td>
                             <td className="py-1.5 pr-3">

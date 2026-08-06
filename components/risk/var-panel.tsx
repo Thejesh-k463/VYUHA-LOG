@@ -84,7 +84,7 @@ export function VarPanel({
               </thead>
               <tbody>
                 {stress.map((s) => (
-                  <tr key={s.scenario.label} className="border-b border-border/40">
+                  <tr key={s.scenario.label} className="border-b border-rule">
                     <td className="px-2.5 py-1.5 font-medium">{s.scenario.label}</td>
                     <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.deltaPnl)}`}>{signed(s.deltaPnl)}{num(s.deltaPnl, 0)}</td>
                     <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.gammaPnl)}`}>{signed(s.gammaPnl)}{num(s.gammaPnl, 0)}</td>

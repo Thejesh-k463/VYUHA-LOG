@@ -104,7 +104,7 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
               </thead>
               <tbody>
                 {summary.positions.map((p) => (
-                  <tr key={p.id} className="border-b border-border/40">
+                  <tr key={p.id} className="border-b border-rule">
                     <td className="px-2.5 py-1.5 font-medium">{p.symbol}</td>
                     <td className="px-2 py-1.5 text-muted-foreground">{p.segment}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{inr(p.margin, { decimals: 0 })}</td>

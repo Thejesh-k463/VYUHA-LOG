@@ -150,7 +150,7 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
                 </thead>
                 <tbody>
                   {report.rows.map((r) => (
-                    <tr key={r.id} className="border-b border-border/40">
+                    <tr key={r.id} className="border-b border-rule">
                       <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
                       <td className="px-2 py-1.5 uppercase text-muted-foreground">{r.side}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{num(r.entry)} → {num(r.exit)}</td>
@@ -204,7 +204,7 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
                 {rows.map((r) => {
                   const expectancy = r.count ? r.net / r.count : 0;
                   return (
-                    <tr key={r.key} className="border-b border-border/40">
+                    <tr key={r.key} className="border-b border-rule">
                       <td className="px-2.5 py-1.5 font-medium">{labelFor(r.key)}</td>
                       <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
                       <td className={`px-2.5 py-1.5 text-right tabular-nums font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</td>

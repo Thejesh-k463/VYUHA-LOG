@@ -102,7 +102,7 @@ export default function SurveillancePage() {
                   </thead>
                   <tbody>
                     {report.alerts.map((a) => (
-                      <tr key={a.symbol} className={`border-b border-border/40 border-l-2 ${sevBorder[a.severity]}`}>
+                      <tr key={a.symbol} className={`border-b border-rule border-l-2 ${sevBorder[a.severity]}`}>
                         <td className="px-2.5 py-2 font-medium text-foreground">{a.symbol}</td>
                         <td className="px-2 py-2">
                           <div className="flex flex-wrap gap-1">
@@ -165,7 +165,7 @@ export default function SurveillancePage() {
                   </thead>
                   <tbody>
                     {list.map((r, i) => (
-                      <tr key={`${r.symbol}-${r.category}-${i}`} className="border-b border-border/40">
+                      <tr key={`${r.symbol}-${r.category}-${i}`} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
                         <td className="px-2 py-1.5">
                           <Badge variant={r.category === "fno_ban" ? "loss" : r.category === "gsm" ? "warning" : "secondary"}>

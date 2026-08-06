@@ -84,7 +84,7 @@ export default function ExpiryPage() {
                       </thead>
                       <tbody>
                         {s.upcoming.map((u) => (
-                          <tr key={u.date} className="border-b border-border/40">
+                          <tr key={u.date} className="border-b border-rule">
                             <td className="px-2.5 py-2 font-medium">{fmtDate(u.date)}</td>
                             <td className="px-2 py-2 text-right">
                               <Badge variant={u.dte <= 3 ? "loss" : u.dte <= 7 ? "warning" : "secondary"}>{u.dte}d</Badge>

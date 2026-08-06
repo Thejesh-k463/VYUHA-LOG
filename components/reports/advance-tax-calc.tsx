@@ -87,7 +87,7 @@ export function AdvanceTaxCalc({
                 {plan.instalments.map((i) => {
                   const isNext = plan.nextDue?.quarter === i.quarter;
                   return (
-                    <tr key={i.quarter} className={`border-b border-border/40 ${isNext ? "bg-accent/5" : ""}`}>
+                    <tr key={i.quarter} className={`border-b border-rule ${isNext ? "bg-accent/5" : ""}`}>
                       <td className="px-2.5 py-2 font-medium">
                         {i.label}
                         <span className="ml-1 text-[10px] text-muted-foreground">{fmtDate(i.dueDate)}</span>

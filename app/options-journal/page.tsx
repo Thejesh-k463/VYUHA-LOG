@@ -42,7 +42,7 @@ export default function OptionsJournalPage() {
             <th className="py-1.5 pr-3 text-right font-medium">Capture</th>
           </tr></thead>
           <tbody>{dte.buckets.map((b) => (
-            <tr key={b.label} className="border-b border-border/40">
+            <tr key={b.label} className="border-b border-rule">
               <td className="py-1.5 pr-3">{b.label}{!b.trustworthy && b.trades > 0 && <span className="ml-1.5 text-[10px] text-warning">small sample</span>}</td>
               <td className="py-1.5 pr-3 text-right tabular-nums">{b.trades}</td>
               <td className="py-1.5 pr-3 text-right tabular-nums">{b.trades ? inr(b.net, { decimals: 0 }) : "—"}</td>
@@ -104,7 +104,7 @@ export default function OptionsJournalPage() {
         <Card><CardHeader><CardTitle>Premium kept per day of risk</CardTitle></CardHeader><CardContent className="space-y-2 text-xs">
           <p className="text-2xl font-semibold tabular-nums">{theta.medianPerDay == null ? "—" : inr(theta.medianPerDay, { decimals: 0 })}<span className="ml-1 text-xs font-normal text-muted-foreground">median / day</span></p>
           {theta.rows.slice(0, 5).map((r) => (
-            <div key={r.id} className="flex items-center justify-between border-b border-border/40 py-1">
+            <div key={r.id} className="flex items-center justify-between border-b border-rule py-1">
               <span>{r.symbol} <span className="text-muted-foreground">· {r.daysHeld}d</span></span>
               <span className="tabular-nums">{inr(r.perDay, { decimals: 0 })}/day</span>
             </div>))}

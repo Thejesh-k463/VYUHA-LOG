@@ -26,6 +26,7 @@ export const BASELINE_SETTINGS_FIELDS = [
   "activeCapital",
   "theme",
   "accentSkin",
+  "density",
   "baseCurrency",
   "fyStartMonth",
   "colorblindSafe",
@@ -94,6 +95,11 @@ export function diffAgainstBaseline(
   return BASELINE_SETTINGS_FIELDS.filter((f) => {
     const a = current[f];
     const b = baseline.settings[f];
+    // A field the baseline predates (e.g. density, added v2.99.5) was never a
+    // choice the user recorded — it cannot "differ", and restore skips it too
+    // (drizzle drops undefined from .set()). Without this, every upgraded
+    // install shows a permanent phantom "differs from default".
+    if (!(f in baseline.settings)) return false;
     return JSON.stringify(a) !== JSON.stringify(b);
   });
 }

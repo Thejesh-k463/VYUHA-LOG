@@ -242,7 +242,7 @@ export function TradeCalculator({
                 <table className="w-full text-xs">
                   <tbody>
                     {breakdown.map(([label, v]) => (
-                      <tr key={label} className="border-b border-border/40">
+                      <tr key={label} className="border-b border-rule">
                         <td className="px-3 py-1.5 text-muted-foreground">{label}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{formatPaise(v, { decimals: 0 })}</td>
                       </tr>

@@ -17,6 +17,12 @@ const jbMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jb", displ
 export const metadata: Metadata = {
   title: "Vyuha — Trade Journal",
   description: "Local-first trade journal & analytics cockpit for Indian markets.",
+  // app/favicon.ico is picked up by convention; these add the retina PNG and
+  // the iOS home-screen icon. All local files — the app must run offline.
+  icons: {
+    icon: [{ url: "/brand/vyuha-512.png", type: "image/png", sizes: "512x512" }],
+    apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const dynamic = "force-dynamic";
@@ -27,11 +33,13 @@ export default function RootLayout({
   let colorblind = false;
   let theme = "dark";
   let skin = "terminal";
+  let density = "compact";
   try {
     const s = getSettings();
     colorblind = s?.colorblindSafe ?? false;
     theme = s?.theme ?? "dark";
     skin = s?.accentSkin ?? "terminal";
+    density = s?.density ?? "compact";
   } catch {
     // DB not migrated yet — render with defaults.
   }
@@ -46,6 +54,7 @@ export default function RootLayout({
         theme === "light" && "theme-light",
         colorblind && "cb-safe",
         skin !== "terminal" && `skin-${skin}`,
+        density === "comfortable" && "density-comfortable",
       )}
     >
       <body className="min-h-full font-sans antialiased">

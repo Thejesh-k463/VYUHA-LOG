@@ -478,6 +478,9 @@ export const settings = sqliteTable("settings", {
   activeCapital: real("active_capital").notNull(),
   theme: text("theme").notNull().default("dark"),
   accentSkin: text("accent_skin").notNull().default("terminal"), // terminal | tape | ice (C8)
+  // compact | comfortable — one root font-size (16px vs 17px); everything is
+  // rem-sized so the whole interface scales together (app/globals.css).
+  density: text("density").notNull().default("compact"),
   baseCurrency: text("base_currency").notNull().default("INR"),
   fyStartMonth: integer("fy_start_month").notNull().default(4), // April
   colorblindSafe: integer("colorblind_safe", { mode: "boolean" })

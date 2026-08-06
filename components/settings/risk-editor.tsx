@@ -72,7 +72,7 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-border/40">
+                  <tr key={r.id} className="border-b border-rule">
                     <td className="py-1.5 pr-3">
                       <Badge variant={r.scope === "global" ? "default" : "secondary"}>{r.scope}</Badge>{" "}
                       <span className="text-muted-foreground">{r.key ? (SEGMENT_LABELS[r.key as Segment] ?? r.key) : ""}</span>

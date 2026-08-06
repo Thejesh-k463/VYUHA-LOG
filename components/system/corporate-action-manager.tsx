@@ -140,7 +140,7 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-border/40">
+                <tr key={r.id} className="border-b border-rule">
                   <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
                   <td className="px-2 py-1.5 capitalize">{r.type}</td>
                   <td className="px-2 py-1.5 tabular-nums">{r.exDate}</td>

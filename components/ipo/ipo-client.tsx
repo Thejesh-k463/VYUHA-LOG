@@ -118,7 +118,7 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
                   {rows.map((r) => {
                     const pl = r.realised ? r.netPnl : r.unrealised;
                     return (
-                      <tr key={r.id} className="border-b border-border/40">
+                      <tr key={r.id} className="border-b border-rule">
                         <td className="px-2.5 py-2">
                           <div className="flex items-center gap-1.5 font-medium">
                             {r.name}

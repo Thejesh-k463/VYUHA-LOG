@@ -259,7 +259,7 @@ export default function PerformancePage() {
                       {years.map((y) => {
                         const yt = yearTotal(y);
                         return (
-                          <tr key={y} className="border-b border-border/40">
+                          <tr key={y} className="border-b border-rule">
                             <td className="px-2.5 py-1.5 font-medium">{y}</td>
                             {MONTHS.map((_, i) => {
                               const ret = byYM.get(`${y}-${i + 1}`);

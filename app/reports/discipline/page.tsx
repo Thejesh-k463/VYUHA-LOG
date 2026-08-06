@@ -97,7 +97,7 @@ export default function DisciplineReportPage() {
                     </thead>
                     <tbody>
                       {breaches.perRule.map((b) => (
-                        <tr key={b.rule} className="border-b border-border/40">
+                        <tr key={b.rule} className="border-b border-rule">
                           <td className="px-2.5 py-1.5 font-medium">{b.rule}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{b.trades}</td>
                           <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(b.closedNet)}`}>{inr(b.closedNet, { decimals: 0 })}</td>
@@ -146,7 +146,7 @@ export default function DisciplineReportPage() {
                     </thead>
                     <tbody>
                       {ruleCosts.map((r) => (
-                        <tr key={r.rule} className="border-b border-border/40">
+                        <tr key={r.rule} className="border-b border-rule">
                           <td className="px-2.5 py-1.5 font-medium">{r.rule}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{r.trades}</td>
                           <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(r.closedNet)}`}>{inr(r.closedNet, { decimals: 0 })}</td>
@@ -191,7 +191,7 @@ export default function DisciplineReportPage() {
                     </thead>
                     <tbody>
                       {pbStats.map((s) => (
-                        <tr key={s.playbookId ?? "untagged"} className="border-b border-border/40">
+                        <tr key={s.playbookId ?? "untagged"} className="border-b border-rule">
                           <td className={`px-2.5 py-1.5 font-medium ${s.playbookId == null ? "text-muted-foreground" : ""}`}>{s.name}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{s.trades}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{s.winRatePct}%</td>
@@ -236,7 +236,7 @@ export default function DisciplineReportPage() {
                       </thead>
                       <tbody>
                         {mistakes.perTag.map((m) => (
-                          <tr key={m.tag} className="border-b border-border/40">
+                          <tr key={m.tag} className="border-b border-rule">
                             <td className="px-2.5 py-1.5 font-medium">{m.label}</td>
                             <td className="px-2 py-1.5 text-right tabular-nums">{m.trades}</td>
                             <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(m.net)}`}>{inr(m.net, { decimals: 0 })}</td>
@@ -274,7 +274,7 @@ export default function DisciplineReportPage() {
                   </thead>
                   <tbody>
                     {emotions.map((e) => (
-                      <tr key={e.tag} className="border-b border-border/40">
+                      <tr key={e.tag} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{e.label}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{e.trades}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{e.winRatePct}%</td>
@@ -312,7 +312,7 @@ export default function DisciplineReportPage() {
                   </thead>
                   <tbody>
                     {weeks.map((w) => (
-                      <tr key={w.week} className="border-b border-border/40">
+                      <tr key={w.week} className="border-b border-rule">
                         <td className="px-2.5 py-1.5 font-medium">{w.week}</td>
                         <td className="px-2.5 py-1.5 text-muted-foreground">{w.weekStart}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums">{w.trades}</td>

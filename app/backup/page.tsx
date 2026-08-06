@@ -56,7 +56,7 @@ export default function BackupPage() {
             <BackupPanel />
             <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
               {BACKUP_TABLES.map((t) => (
-                <div key={t} className="flex justify-between border-b border-border/40 py-0.5">
+                <div key={t} className="flex justify-between border-b border-rule py-0.5">
                   <span className="text-muted-foreground">{TABLE_LABEL[t] ?? t}</span>
                   <span className="tabular-nums">{counts[t] ?? 0}</span>
                 </div>

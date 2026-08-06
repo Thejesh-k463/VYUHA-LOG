@@ -61,7 +61,7 @@ export function FmvEditor({ rows }: { rows: FmvRow[] }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="border-b border-border/40">
+              <tr key={r.id} className="border-b border-rule">
                 <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{r.buyDate}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{num(r.buyQty, 0)}</td>

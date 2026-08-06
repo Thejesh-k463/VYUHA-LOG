@@ -200,6 +200,8 @@ export function TradesClient({
     {
       id: "select",
       enableSorting: false,
+      // Fixed width so the pinned Instrument column knows its left offset.
+      meta: { width: 36 },
       header: () => (
         <input
           type="checkbox"
@@ -239,16 +241,21 @@ export function TradesClient({
         const lots = t.lotSize && t.lotSize > 0 ? Math.round(qty / t.lotSize) : null;
         const dte = t.isOpen && t.expiry ? daysBetween(today, t.expiry) : null;
         return (
-          <div className="min-w-[170px]">
+          // Capped as well as floored: one long option tradingsymbol used to
+          // set the column width for every row and shove the P&L columns off
+          // screen. The full name still surfaces via the title tooltip.
+          <div className="min-w-[170px] max-w-[230px]" title={t.tradingsymbol}>
             <div className="flex items-center gap-1.5">
-              <span className="font-medium">{t.symbol}</span>
+              {/* min-w-0: a flex item refuses to shrink below its content,
+                  so truncate never fires without it. */}
+              <span className="min-w-0 truncate font-medium">{t.symbol}</span>
               {isDerivative && t.isOpen && (
                 <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${isShort ? "bg-loss/15 text-loss" : "bg-profit/15 text-profit"}`}>
                   {isShort ? "Short" : "Long"}
                 </span>
               )}
             </div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="truncate text-[10px] text-muted-foreground">
               {t.optionType
                 ? [
                     `${t.strike} ${t.optionType}`,
@@ -436,7 +443,7 @@ export function TradesClient({
             </span>
           </div>
         )}
-        <DataTable columns={columns} data={data} emptyMessage="No trades yet — import a broker file or add one manually." />
+        <DataTable columns={columns} data={data} stickyColumns={2} emptyMessage="No trades yet — import a broker file or add one manually." />
         <DeleteTradesDialog
           preview={deletePreview}
           reason="selected in the trades table"

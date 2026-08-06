@@ -102,7 +102,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                   {obligations.map((o) => {
                     const wb = warnBadge[o.warn];
                     return (
-                      <tr key={o.id} className={`border-b border-border/40 border-l-2 ${warnBorder[o.warn]}`}>
+                      <tr key={o.id} className={`border-b border-rule border-l-2 ${warnBorder[o.warn]}`}>
                         <td className="px-2.5 py-2">
                           <div className="flex items-center gap-1.5">
                             <span className="font-medium text-foreground">{o.symbol}</span>

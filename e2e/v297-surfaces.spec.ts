@@ -137,19 +137,20 @@ test("switching accounts changes what the journal shows, and back again", async 
       const sw = page.getByLabel("Portfolio account");
       const second = sw.locator('option', { hasText: "E2E Second Book" });
       if (await second.count()) {
+        // POLL the counter, never networkidle: switching accounts is a POST
+        // followed by a router refresh, and networkidle can resolve in the gap
+        // between the two — the assertion then reads the OLD account's counter
+        // (observed: expected 0, received the primary book's 125).
         await sw.selectOption({ label: "E2E Second Book" });
-        await page.waitForLoadState("networkidle");
-        expect(await countOf()).toBe(0);
+        await expect.poll(countOf, { timeout: 15_000 }).toBe(0);
 
         // The aggregate view sees both books at once.
         await sw.selectOption("0");
-        await page.waitForLoadState("networkidle");
-        expect(await countOf()).toBe(primaryCount);
+        await expect.poll(countOf, { timeout: 15_000 }).toBe(primaryCount);
 
         // Back to the real account so later specs see a normal journal.
         await sw.selectOption({ label: "Primary" });
-        await page.waitForLoadState("networkidle");
-        expect(await countOf()).toBe(primaryCount);
+        await expect.poll(countOf, { timeout: 15_000 }).toBe(primaryCount);
       }
     }
   }

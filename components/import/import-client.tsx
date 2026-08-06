@@ -425,7 +425,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
                   </thead>
                   <tbody>
                     {p.rows.map((r, i) => (
-                      <tr key={i} className={`border-t border-border/40 ${r.isDuplicate ? "opacity-50" : ""}`}>
+                      <tr key={i} className={`border-t border-rule ${r.isDuplicate ? "opacity-50" : ""}`}>
                         <td className="px-2 py-1 font-medium">{r.symbol}</td>
                         <td className="px-2 py-1 text-muted-foreground">{SEGMENT_LABELS[r.segment]}</td>
                         <td className="px-2 py-1 text-right tabular-nums">{num(r.buyValue, 0)}</td>
@@ -514,7 +514,7 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
               const pct = r.reported ? (d / r.reported) * 100 : 0;
               const big = Math.abs(pct) > 10;
               return (
-                <tr key={r.k} className="border-t border-border/40">
+                <tr key={r.k} className="border-t border-rule">
                   <td className="py-1">{label[r.k] ?? r.k}</td>
                   <td className="py-1 text-right tabular-nums">{r.computed != null ? num(r.computed, 0) : "—"}</td>
                   <td className="py-1 text-right tabular-nums">{num(r.reported, 0)}</td>

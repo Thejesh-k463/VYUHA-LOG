@@ -22,6 +22,13 @@
   --color-loss: #f6465d;
   --color-warning: #f0b90b;
   --color-ring: #2dd4bf;
+  /* Row separator. Deliberately LIGHTER than --color-border: at border/40 the
+     old separators computed to 1.08:1 against the card — below what the eye
+     registers as a line at all, on tables 250 rows deep. This sits at ~1.5:1,
+     a visible hairline that still stays out of the data's way. Zebra striping
+     was measured as the alternative and rejected: card-hover vs card is only
+     1.02–1.05, far too close for stripes to read. */
+  --color-rule: #293850;
 
   --radius: 0.5rem;
   /* C1 — Inter for UI, JetBrains Mono for every number (see @layer base). */
@@ -73,18 +80,30 @@
     --color-foreground: #14181f;
     --color-muted: #5b6675;
     --color-muted-foreground: #5b6675;
-    --color-primary: #0d9488;
+    /* #0d9488 measured 3.74:1 on white — under the 4.5:1 AA floor for normal
+       text, and primary IS small text here (links, active nav, sort state).
+       #0b7a70 reads the same hue at 5.2:1. */
+    --color-primary: #0b7a70;
     --color-primary-foreground: #ffffff;
     --color-accent: #1f6feb;
     --color-accent-foreground: #ffffff;
     --color-profit: #15803d;
     --color-loss: #dc2626;
     --color-warning: #b45309;
-    --color-ring: #0d9488;
+    --color-ring: #0b7a70;
+    --color-rule: #dbe2ea;
     /* Light theme: no inner highlight (backgrounds are already light) — classic soft drops. */
     --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.05), 0 1px 3px 0 rgb(16 24 40 / 0.08);
     --shadow-card-hover: 0 4px 12px -2px rgb(16 24 40 / 0.12);
     --shadow-overlay: 0 16px 48px -12px rgb(16 24 40 / 0.28);
+  }
+
+  /* Display density. Everything in the app is sized in rem, so one root
+     font-size scales type, paddings and gaps together — Comfortable is the
+     whole interface at 17/16 scale, not a second set of sizes to maintain.
+     Compact (16px root) is the shipped look and stays the default. */
+  html.density-comfortable {
+    font-size: 17px;
   }
 
   /* Colorblind-safe palette: swap red/green for orange/blue. */

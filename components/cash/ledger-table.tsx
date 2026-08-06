@@ -42,7 +42,7 @@ export function LedgerTable({ rows }: { rows: RunningRow[] }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="border-b border-border/40">
+            <tr key={r.id} className="border-b border-rule">
               <td className="px-2.5 py-1.5 tabular-nums">{r.date}</td>
               <td className="px-2 py-1.5">
                 <Badge variant="secondary">{r.bucket || "—"}</Badge>

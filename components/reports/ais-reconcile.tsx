@@ -108,7 +108,7 @@ export function AisReconcile() {
                 </thead>
                 <tbody>
                   {recon.dividends.map((d) => (
-                    <tr key={d.key} className="border-b border-border/40">
+                    <tr key={d.key} className="border-b border-rule">
                       <td className="px-2.5 py-1.5 font-medium">{d.key}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.aisGross)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.aisTds)}</td>
@@ -137,7 +137,7 @@ export function AisReconcile() {
                 </thead>
                 <tbody>
                   {recon.fyTotals.map((t) => (
-                    <tr key={`${t.fy}-${t.kind}`} className="border-b border-border/40">
+                    <tr key={`${t.fy}-${t.kind}`} className="border-b border-rule">
                       <td className="px-2.5 py-1.5 font-medium">
                         {t.fy} <Badge variant="outline" className="ml-1">{t.kind}</Badge>
                       </td>

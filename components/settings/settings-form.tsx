@@ -20,6 +20,7 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [colorblind, setColorblind] = useState(current.colorblindSafe);
   const [theme, setTheme] = useState(current.theme);
   const [skin, setSkin] = useState(current.accentSkin ?? "terminal");
+  const [density, setDensity] = useState(current.density ?? "compact");
   const [goLiveDate, setGoLive] = useState(current.goLiveDate);
   const [equityCapital, setEquity] = useState(String(current.equityCapital));
   const [activeCapital, setActive] = useState(String(current.activeCapital));
@@ -44,6 +45,10 @@ export function SettingsForm({ current }: { current: Settings }) {
     document.documentElement.classList.remove("skin-tape", "skin-ice");
     if (next !== "terminal") document.documentElement.classList.add(`skin-${next}`);
   }
+  function applyDensity(next: string) {
+    setDensity(next);
+    document.documentElement.classList.toggle("density-comfortable", next === "comfortable");
+  }
 
   async function save() {
     setPending(true);
@@ -54,7 +59,7 @@ export function SettingsForm({ current }: { current: Settings }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "settings",
-          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, fyStartMonth,
+          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
         }),
@@ -106,6 +111,12 @@ export function SettingsForm({ current }: { current: Settings }) {
               <option value="terminal">Terminal (teal)</option>
               <option value="tape">Tape (amber)</option>
               <option value="ice">Ice (blue)</option>
+            </Select>
+          </Field>
+          <Field label="Display density">
+            <Select value={density} onChange={(e) => applyDensity(e.target.value)}>
+              <option value="compact">Compact (terminal default)</option>
+              <option value="comfortable">Comfortable (larger type)</option>
             </Select>
           </Field>
           <Field label="Financial year starts">

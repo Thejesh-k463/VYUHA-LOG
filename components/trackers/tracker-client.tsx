@@ -297,7 +297,7 @@ export function TrackerClient({
               </thead>
               <tbody>
                 {closed.map((c, i) => (
-                  <tr key={i} className="border-t border-border/40">
+                  <tr key={i} className="border-t border-rule">
                     <td className="px-2 py-1 text-muted-foreground">{c.sellDate ?? "—"}</td>
                     <td className="px-2 py-1 font-medium">{c.symbol}</td>
                     <td className="px-2 py-1 text-muted-foreground">{SEGMENT_LABELS[c.segment as Segment]}</td>

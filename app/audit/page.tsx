@@ -65,7 +65,7 @@ export default function AuditPage() {
                     {rows.map((r) => {
                       const changes = diffFields(r.before, r.after);
                       return (
-                        <tr key={r.id} className="border-b border-border/40 align-top">
+                        <tr key={r.id} className="border-b border-rule align-top">
                           <td className="px-2.5 py-1.5 tabular-nums text-muted-foreground whitespace-nowrap">{r.ts}</td>
                           <td className="px-2 py-1.5">
                             <Badge variant="outline">{ENTITY_LABEL[r.entity] ?? r.entity}</Badge>

@@ -119,7 +119,7 @@ export default function BrokerComparePage() {
                       {report.brokers.map((b) => {
                         const isCheapest = report.cheapest?.broker === b.broker && report.cheapest?.plan === b.plan;
                         return (
-                          <tr key={`${b.broker}|${b.plan}`} className={`border-b border-border/40 ${isCheapest ? "bg-profit/5" : ""}`}>
+                          <tr key={`${b.broker}|${b.plan}`} className={`border-b border-rule ${isCheapest ? "bg-profit/5" : ""}`}>
                             <td className="px-2.5 py-2 font-medium">
                               <span className="inline-flex items-center gap-1.5">
                                 {label(b.broker)}
