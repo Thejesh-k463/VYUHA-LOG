@@ -16,9 +16,11 @@ describe("bundled mtf-margins.json", () => {
     }
   });
 
-  it("complete lists are four digits deep; every margin is a sane own-%", () => {
-    expect(b.brokers.zerodha.count).toBeGreaterThan(1000);
-    expect(b.brokers.paytm.count).toBeGreaterThan(1000);
+  it("all seven MTF brokers are complete four-digit lists; margins are sane own-%", () => {
+    for (const broker of ["dhan", "zerodha", "upstox", "kotakneo", "paytm", "angelone", "groww"]) {
+      expect(b.brokers[broker].coverage, broker).toBe("complete");
+      expect(b.brokers[broker].count, broker).toBeGreaterThan(1000);
+    }
     for (const [broker, v] of Object.entries(b.brokers)) {
       for (const [sym, s] of Object.entries(v.stocks)) {
         expect(s.m, `${broker}:${sym}`).toBeGreaterThan(0);
@@ -27,8 +29,15 @@ describe("bundled mtf-margins.json", () => {
     }
   });
 
+  it("approved-but-unfunded rows ship at 100% own margin, never a fake funding number", () => {
+    const kotak = b.brokers.kotakneo as unknown as { count: number; fundedCount: number; stocks: Record<string, { m: number; f: 0 | 1 }> };
+    expect(kotak.fundedCount).toBeLessThan(kotak.count); // Kotak approves more than it funds
+    for (const [sym, s] of Object.entries(kotak.stocks)) {
+      if (s.f === 0) expect(s.m, `kotakneo:${sym} unfunded`).toBe(100);
+    }
+  });
+
   it("declares honesty about what it doesn't have", () => {
-    expect(b.brokers.groww.coverage).toBe("partial");
     expect(b.brokers.sahi.coverage).toBe("no-mtf");
     expect(b.brokers.sahi.count).toBe(0);
   });
@@ -50,19 +59,23 @@ describe("resolveMtfMargin", () => {
     expect(r).toMatchObject({ pct: 42, source: "upload", asOf: "2026-08-01" });
   });
 
-  it("rule brokers fall to their published default, never an invented per-stock number", () => {
-    const r = resolveMtfMargin("angelone", "RELIANCE");
-    expect(r.source).toBe("broker-rule");
-    expect(r.pct).toBe(40);
-    const d = resolveMtfMargin("dhan", "RELIANCE");
-    expect(d).toMatchObject({ source: "broker-rule", pct: 25 });
+  it("every broker's list now answers per-stock — Angel and Dhan included", () => {
+    // These two were rule-only until the owner's workbook supplied real lists.
+    for (const broker of ["angelone", "dhan", "upstox", "groww", "kotakneo"]) {
+      const r = resolveMtfMargin(broker, "RELIANCE");
+      expect(r.source, broker).toBe("stock-list");
+      expect(r.pct, broker).toBeGreaterThan(0);
+    }
   });
 
   it("unknown stock on a complete list → margin-config, then the 25% default", () => {
     const cfg = resolveMtfMargin("zerodha", "NOTALISTEDSTOCK", null, 30);
     expect(cfg).toMatchObject({ pct: 30, source: "margin-config" });
-    const dflt = resolveMtfMargin("upstox", "RELIANCE", null, null);
+    const dflt = resolveMtfMargin("upstox", "NOTALISTEDSTOCK", null, null);
     expect(dflt).toMatchObject({ pct: DEFAULT_MTF_OWN_MARGIN_PCT, source: "default" });
+    // A no-MTF broker has no list and no rule — the chain still answers.
+    const sahi = resolveMtfMargin("sahi", "RELIANCE", null, null);
+    expect(sahi).toMatchObject({ pct: DEFAULT_MTF_OWN_MARGIN_PCT, source: "default" });
   });
 });
 

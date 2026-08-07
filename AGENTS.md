@@ -119,6 +119,19 @@ overlapping lenses (one stock sits in up to ten indices — theme P&L must not b
 partition of the book).
 
 
+# Bundled MTF margins
+
+`lib/data/mtf-margins.json` is a SNAPSHOT of all seven brokers' MTF approved-scrip lists (symbol →
+own-margin %, funded flag, ISIN), built from the owner's refresh toolkit output. To refresh:
+run `scripts/mtf-toolkit/refresh_mtf.bat` (owner's machine; pulls each broker's own feed, needs
+two local inputs for Angel One and Groww — see its README), then
+`python scripts/convert-mtf-workbook.py <workbook>` and `node scripts/build-mtf-margins.mjs`.
+Rules the code enforces and tests assert: marginPct is always the TRADER'S OWN contribution %;
+approved-but-unfunded rows carry 100% (full cash in practice), never an invented funding number;
+the resolution chain is upload → bundled list → rule → margin-config → 25% default; Sahi is
+declared "no-mtf", not omitted.
+
+
 # Desktop build and release
 
 - **Desktop** = Next `output: "standalone"` run as a Node sidecar by the Tauri Rust shell. The DB

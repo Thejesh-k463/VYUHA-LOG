@@ -10,6 +10,8 @@ import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { mtfComparison } from "@/lib/analytics/mtf-compare";
+import { MtfBrokerSection } from "@/components/reports/mtf-broker-section";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,11 @@ export default function BrokerComparePage() {
   const trades = getTrades();
   const ratesMap = loadRatesMap();
   const mtfMarginByBroker = getMtfMarginByBroker();
+
+  // MTF across brokers — the delivery/MTF symbols this journal actually trades.
+  const mtfCmp = mtfComparison(
+    trades.filter((t) => t.segment === "eq_mtf" || t.segment === "eq_delivery").map((t) => t.symbol),
+  );
 
   const compareTrades: CompareTrade[] = trades.map((t) => ({
     segment: t.segment,
@@ -198,6 +205,7 @@ export default function BrokerComparePage() {
               Comparing a paid plan on brokerage alone would always make it look cheaper than it is. Edit any rate in
               Settings → charge config; a row you edit is yours and later app updates will not overwrite it.
             </p>
+            <MtfBrokerSection cmp={mtfCmp} />
           </>
         )}
         </ProGate>

@@ -90,6 +90,41 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/settings", label: "Settings", icon: Settings, group: "System" },
 ];
 
+/**
+ * Merge a user's saved ordering with the CURRENT set of keys (PURE).
+ *
+ * The saved order wins for everything it knows; keys it has never seen —
+ * screens added by an app update — slot in at their default position instead
+ * of vanishing or piling up at the end. Deleted screens drop out silently.
+ * This is what makes a persisted nav order survive updates.
+ */
+export function mergeOrder(saved: string[] | null | undefined, current: string[]): string[] {
+  if (!saved || saved.length === 0) return current;
+  const known = saved.filter((k) => current.includes(k));
+  const out: string[] = [...known];
+  current.forEach((k, i) => {
+    if (out.includes(k)) return;
+    // Insert after the nearest preceding default neighbour already placed.
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const idx = out.indexOf(current[j]);
+      if (idx >= 0) { at = idx + 1; break; }
+    }
+    out.splice(at, 0, k);
+  });
+  return out;
+}
+
+/** Move one key a step up/down within a list (PURE; returns a new array). */
+export function moveKey(list: string[], key: string, dir: -1 | 1): string[] {
+  const i = list.indexOf(key);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return list;
+  const out = [...list];
+  [out[i], out[j]] = [out[j], out[i]];
+  return out;
+}
+
 export const NAV_GROUPS = [
   "Overview",
   "Positions",

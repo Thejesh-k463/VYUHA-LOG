@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
-import { NAV_GROUPS, NAV_ITEMS } from "./nav-config";
+import { PanelLeftClose, PanelLeftOpen, Search, ChevronUp, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { NAV_GROUPS, NAV_ITEMS, mergeOrder, moveKey } from "./nav-config";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "@/components/system/account-switcher";
 import { VyuhaMark } from "@/components/brand/mark";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
+const NAV_ORDER_KEY = "vyuha-nav-order";
 
 /** C7 — live IST clock + NSE market-hours dot (Mon–Fri 09:15–15:30 IST).
  *  Client-only; renders nothing until mounted to avoid hydration drift. */
@@ -61,6 +62,47 @@ export function Sidebar({accounts,selectedAccountId}:{accounts:{id:number;name:s
       return !c;
     });
   }
+
+  // ── User-adjustable nav order ─────────────────────────────────────────────
+  // Saved order is merged with the CURRENT nav at render (mergeOrder), so
+  // screens added by updates appear in their default slot instead of being
+  // lost — the stored arrays never gate what exists, only how it's sorted.
+  const [customizing, setCustomizing] = React.useState(false);
+  const [navOrder, setNavOrder] = React.useState<{ groups: string[]; items: Record<string, string[]> } | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(NAV_ORDER_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { groups: string[]; items: Record<string, string[]> };
+        Promise.resolve().then(() => setNavOrder(parsed));
+      }
+    } catch { /* corrupt order = default order */ }
+  }, []);
+
+  const saveOrder = (next: { groups: string[]; items: Record<string, string[]> }) => {
+    setNavOrder(next);
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
+  };
+
+  const orderedGroups = mergeOrder(navOrder?.groups, [...NAV_GROUPS]);
+  const orderedItems = (group: string) => {
+    const current = NAV_ITEMS.filter((i) => i.group === group).map((i) => i.href);
+    const hrefs = mergeOrder(navOrder?.items?.[group], current);
+    return hrefs.map((h) => NAV_ITEMS.find((i) => i.href === h)!).filter(Boolean);
+  };
+
+  const moveGroup = (group: string, dir: -1 | 1) =>
+    saveOrder({ groups: moveKey(orderedGroups, group, dir), items: navOrder?.items ?? {} });
+  const moveItem = (group: string, href: string, dir: -1 | 1) =>
+    saveOrder({
+      groups: navOrder?.groups ?? orderedGroups,
+      items: { ...(navOrder?.items ?? {}), [group]: moveKey(orderedItems(group).map((i) => i.href), href, dir) },
+    });
+  const resetOrder = () => {
+    localStorage.removeItem(NAV_ORDER_KEY);
+    setNavOrder(null);
+  };
 
   return (
     <aside
@@ -126,43 +168,82 @@ export function Sidebar({accounts,selectedAccountId}:{accounts:{id:number;name:s
             <PanelLeftOpen className="size-4" />
           </button>
         )}
-        {NAV_GROUPS.map((group) => {
-          const items = NAV_ITEMS.filter((i) => i.group === group);
+        {orderedGroups.map((group, gi) => {
+          const items = orderedItems(group);
           if (items.length === 0) return null;
           return (
             <div key={group} className="mb-4">
               {!collapsed && (
-                <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                  {group}
+                <div className="flex items-center px-2 pb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                    {group}
+                  </span>
+                  {customizing && (
+                    <span className="ml-auto flex gap-0.5">
+                      <button type="button" aria-label={`Move ${group} up`} disabled={gi === 0} onClick={() => moveGroup(group, -1)} className="rounded px-1 text-muted-foreground hover:text-foreground disabled:opacity-25">
+                        <ChevronUp className="size-3" />
+                      </button>
+                      <button type="button" aria-label={`Move ${group} down`} disabled={gi === orderedGroups.length - 1} onClick={() => moveGroup(group, 1)} className="rounded px-1 text-muted-foreground hover:text-foreground disabled:opacity-25">
+                        <ChevronDown className="size-3" />
+                      </button>
+                    </span>
+                  )}
                 </div>
               )}
-              {items.map((item) => {
+              {items.map((item, ii) => {
                 const active =
                   item.href === "/"
                     ? pathname === "/"
                     : pathname.startsWith(item.href);
                 const Icon = item.icon;
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={collapsed ? item.label : undefined}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-                      collapsed && "justify-center px-0",
-                      active
-                        ? "bg-primary/10 font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_12px_-4px_color-mix(in_oklab,var(--color-primary)_50%,transparent)]"
-                        : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                  <div key={item.href} className="flex items-center">
+                    <Link
+                      href={item.href}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+                        collapsed && "justify-center px-0",
+                        active
+                          ? "bg-primary/10 font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_12px_-4px_color-mix(in_oklab,var(--color-primary)_50%,transparent)]"
+                          : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="size-4 shrink-0" />
+                      {!collapsed && item.label}
+                    </Link>
+                    {customizing && !collapsed && (
+                      <span className="flex gap-0.5 pr-1">
+                        <button type="button" aria-label={`Move ${item.label} up`} disabled={ii === 0} onClick={() => moveItem(group, item.href, -1)} className="rounded px-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25">
+                          <ChevronUp className="size-3" />
+                        </button>
+                        <button type="button" aria-label={`Move ${item.label} down`} disabled={ii === items.length - 1} onClick={() => moveItem(group, item.href, 1)} className="rounded px-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25">
+                          <ChevronDown className="size-3" />
+                        </button>
+                      </span>
                     )}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    {!collapsed && item.label}
-                  </Link>
+                  </div>
                 );
               })}
             </div>
           );
         })}
+        {!collapsed && (
+          <div className="mt-2 flex items-center gap-2 border-t border-border px-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setCustomizing((c) => !c)}
+              className={cn("flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px]", customizing ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+            >
+              <SlidersHorizontal className="size-3" /> {customizing ? "Done" : "Customize order"}
+            </button>
+            {customizing && (
+              <button type="button" onClick={resetOrder} className="ml-auto rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground">
+                Reset
+              </button>
+            )}
+          </div>
+        )}
       </nav>
 
       <div className={cn("flex flex-col gap-1 border-t border-border py-2 text-[10px] text-muted-foreground", collapsed ? "items-center px-1" : "px-4")}>
