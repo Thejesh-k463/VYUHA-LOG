@@ -3,6 +3,17 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.9
+
+| Upgrade | What it gives you |
+|---|---|
+| **MTF across all 7 brokers** | Every broker's real MTF list is bundled — 10,500+ stocks with each broker's actual margin requirement. Add an MTF trade and your capital vs broker-funded splits itself at that stock's real rate, editable both ways. |
+| **Which broker funds it cheapest** | Broker Costs now prices *your* stocks across every broker's MTF list and highlights the cheapest margin — and tells you when a stock is approved but not actually funded. (Sahi offers no MTF delivery.) |
+| **MTF drift check** | Portfolio Risk flags open MTF positions whose margin requirement has moved since you entered — with the top-up amount a re-margin would demand. |
+| **Chart screenshots at entry** | Save a trade and attach your chart screenshots right there — they stay with the trade for review, fully offline. |
+| **Export selected trades as PDF** | Tick trades in the journal → Export PDF → a clean report with full detail per trade. |
+| **Your sidebar, your order** | "Customize order" at the bottom of the sidebar — arrange screens and groups the way you work; Reset brings the default back. |
+
 ## New in v2.99.5
 
 | Upgrade | What it gives you |

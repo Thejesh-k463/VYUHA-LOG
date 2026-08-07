@@ -23,7 +23,13 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99.8 — MTF that knows your broker's list.** 3,083 per-stock own-margin percentages from
+> **v2.99.9 — every broker's MTF list, compared.** 10,501 per-stock own-margin percentages across
+> all seven brokers, each from the broker's own feed — and a new Broker Costs section that prices
+> **your** delivery/MTF symbols on every list, cheapest broker highlighted (Sahi listed honestly:
+> no MTF delivery). Approved-but-unfunded scrips are declared, never disguised as funded. Plus a
+> sidebar you can reorder — items, whole groups, persisted, update-proof.
+>
+> *v2.99.8 — MTF that knows your broker's list.* 3,083 per-stock own-margin percentages from
 > the brokers' own published MTF lists (Zerodha and Paytm Money complete; partial/rule-based
 > coverage declared honestly for the rest). The Trades form auto-splits your capital vs
 > broker-funded the moment you enter price and quantity — both sides editable, each deriving the

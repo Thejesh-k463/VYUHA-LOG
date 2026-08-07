@@ -10,7 +10,24 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.5
+## 0. What you are actually selling, as of v2.99.9
+
+> ### v2.99.9 marketing note — two demos no competitor can copy quickly
+>
+> **Demo 1 — "your broker's real MTF list, inside your journal."** Add an MTF
+> trade: the capital/funded split fills at that stock's ACTUAL margin from
+> the broker's own list (10,501 per-stock margins, all seven brokers, as-of
+> dated). No other Indian journal has this data in-product.
+>
+> **Demo 2 — "which broker funds YOUR stocks cheapest."** Broker Costs prices
+> the trader's own symbols across all seven MTF lists and highlights the
+> cheapest — plus the honesty hooks that make screenshots shareable: Kotak
+> "approves 1,680, funds 1,178"; Sahi "no MTF delivery". The refresh toolkit
+> keeps the data current monthly, which turns into a retention story: the
+> journal that stays correct.
+>
+> Sales-page bullet, ready to paste: *"The only journal that knows every
+> broker's MTF list — and tells you which one funds your stocks cheapest."*
 
 > ### v2.99.5 marketing note — the product finally has a face
 >

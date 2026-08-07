@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.99.9 — every broker's MTF list, compared — and a sidebar that's yours
+
+### The complete MTF picture (10,501 per-stock margins, all seven brokers)
+
+The bundled margin snapshot is now built from each broker's own feed via the
+owner's refresh toolkit — Dhan (1,742), Zerodha (1,493), Upstox (1,440),
+Kotak Neo (1,680), Paytm Money (1,460), Angel One (1,557, per-scrip from
+back-office categories + NSE VaR/ELM) and Groww (1,129). Approved-but-
+unfunded scrips (Kotak funds 1,178 of its 1,680) carry 100% own margin and a
+funded flag — full cash in practice, never an invented funding number. Every
+MTF consumer upgraded silently: the trades-form auto-split, the margin gauge
+and the drift card now answer per-scrip for brokers that previously fell back
+to rules.
+
+### Broker Costs: MTF across your brokers
+
+A new section on the cost comparison: per-broker funding reality (approved vs
+actually funded, median margin, best leverage), Sahi listed explicitly as
+offering no MTF delivery, and **your own delivery/MTF symbols margin-priced
+across all seven lists** with the cheapest broker highlighted per stock. The
+footer says what the table can't: lowest margin is most leverage, not lowest
+cost — interest, plan fees and DP are priced in the cost table above.
+
+### A sidebar that's yours
+
+"Customize order" — move screens within a group, move whole groups, persisted
+on this machine, one-click reset. Saved order merges with each update's nav,
+so new screens appear in their default slot instead of vanishing.
+
 ## v2.99.8 — MTF that knows your broker's list, and trades that carry their charts
 
 ### Per-stock MTF margins (3,083 real numbers, not one assumption)
