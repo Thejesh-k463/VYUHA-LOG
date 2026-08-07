@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.99.8 — MTF that knows your broker's list, and trades that carry their charts
+
+### Per-stock MTF margins (3,083 real numbers, not one assumption)
+
+The flat 25% own-margin assumption is gone. The app now bundles the brokers'
+own approved-stock margins — Zerodha (1,493, complete), Paytm Money (1,460,
+complete), Groww and Kotak Neo (partial — their sites serve no more openly),
+Angel One and Dhan as their published rules (40%/50% by category; ~25%).
+Coverage is declared everywhere: a partial list never pretends otherwise.
+Resolution chain, most specific wins: your uploaded refresh → bundled stock
+list → broker rule → your margin-config rate → 25% default. Refresh without
+an update: upload a broker's JSON/CSV and it takes precedence.
+
+- **Trades form**: pick MTF, enter price and quantity — your capital and the
+  broker-funded amount fill in from the per-stock margin, both editable, each
+  deriving the other. A badge names the source and its as-of date.
+- **Margin gauge**: MTF positions block their own-margin share at the
+  per-stock rate ("own 25.9% (stock list)"), never 100% of invested.
+- **Startup checks** on Portfolio Risk: a staleness flag when the bundled
+  lists age past 60 days, and an MTF drift card showing open positions whose
+  current requirement moved since entry — with the top-up figure. The journal
+  itself is never rewritten.
+- `docs/MTF_STOCK_LISTS.xlsx`: the full capture, one sheet per broker, with
+  sources and caveats.
+
+### From the previous batch, also in this build
+
+- **Chart screenshots at trade entry** — saving a trade flows into an attach
+  step (trade commits first; screenshots never block the save); the edit
+  dialog gets the same section.
+- **Export selected trades as PDF** from the Trades toolbar — summary tiles
+  plus a full-detail card per trade, print-to-PDF.
+- **Daily P&L calendar honesty** — closed trades with no exit date (aggregated
+  P&L imports) are now counted under the calendar instead of silently missing.
+- MTF margin estimate fixed to block only the own-margin share (was 100% of
+  invested when no rate was configured).
+
 ## v2.99.7 — sectors in one click, and edge by theme
 
 ### The bundled NSE index map
