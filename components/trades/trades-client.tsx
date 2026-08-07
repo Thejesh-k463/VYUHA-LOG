@@ -29,7 +29,7 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
 import {
   TRADE_VIEWS, matchesView, countViews, countForView, type TradeView,
 } from "@/lib/analytics/trade-status";
-import { Plus, Pencil, SquarePen, LogOut, Trash2, NotebookPen, Layers } from "lucide-react";
+import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -437,6 +437,15 @@ export function TradesClient({
             </span>
             <span className="flex items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
+              {/* Print-ready report of exactly these rows; the route re-checks
+                  every id against the account-scoped journal. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.open(`/trades/report?ids=${[...visibleSelected].join(",")}`, "_blank")}
+              >
+                <Printer className="mr-1 size-3.5" /> Export PDF ({visibleSelected.size})
+              </Button>
               <Button size="sm" variant="destructive" onClick={() => setDeleting(true)}>
                 <Trash2 className="mr-1 size-3.5" /> Delete selected…
               </Button>

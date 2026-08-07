@@ -12,6 +12,7 @@ import { BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, type Segme
 import { LimitVerdict } from "@/components/risk/limit-verdict";
 import type { LimitResult } from "@/lib/risk/limits";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
+import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { CheckCircle2, AlertCircle } from "lucide-react";
@@ -91,8 +92,10 @@ export function ManualTradeForm({
   const [exitPremium, setExitPremium] = useState("");
 
   useEffect(() => {
-    if (state.ok && onDone) onDone();
-  }, [state.ok, onDone]);
+    // With a tradeId the dialog stays open for the attach-charts step below —
+    // it closes via that step's Done button instead of snapping shut.
+    if (state.ok && !state.tradeId && onDone) onDone();
+  }, [state.ok, state.tradeId, onDone]);
 
   // F&O structured fields -> the same tradingsymbol/buyQty/avgBuyPrice/sellQty/
   // avgSellPrice state the equity form uses, so charge preview + limits check +
@@ -250,6 +253,22 @@ export function ManualTradeForm({
   const liveTargetRR = plannedRewardRisk(entryPriceNum, sl !== "" ? Number(sl) : null, target !== "" ? Number(target) : null);
   const riskAmountNum = Number(riskAmount) || 0;
   const liveCurrentR = open && unrealizedPnl != null && riskAmountNum > 0 ? Math.round((unrealizedPnl / riskAmountNum) * 100) / 100 : null;
+
+  // Saved — offer the chart-attach step in place of the form. The trade is
+  // already committed; screenshots are optional and never block the save.
+  if (state.ok && state.tradeId) {
+    return (
+      <div className="space-y-4">
+        <p className="flex items-center gap-1.5 text-sm text-profit">
+          <CheckCircle2 className="size-4" /> {state.message}
+        </p>
+        <TradeAttachments tradeId={state.tradeId} label="Attach chart screenshots (optional)" />
+        <div className="flex justify-end">
+          <Button type="button" onClick={() => onDone?.()}>Done</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form action={formAction} className="space-y-4">

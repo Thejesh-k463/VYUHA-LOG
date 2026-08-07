@@ -70,6 +70,11 @@ export function DashboardClient({
     [filtered],
   );
   const daily = React.useMemo(() => Object.fromEntries(dailyPnl(filtered)), [filtered]);
+  // Closed trades the calendar can never show — surfaced, not silently dropped.
+  const undatedClosed = React.useMemo(
+    () => filtered.filter((t) => !t.isOpen && !t.sellDate).length,
+    [filtered],
+  );
   const segStats = React.useMemo(() => bySegment(filtered), [filtered]);
   const setupStats = React.useMemo(() => bySetup(filtered), [filtered]);
 
@@ -322,7 +327,17 @@ export function DashboardClient({
             <span className="inline-block size-3 rounded" style={{ background: "color-mix(in oklab, var(--color-profit) 70%, transparent)" }} /> profit
           </div>
         </CardHeader>
-        <CardContent><CalendarHeatmap daily={daily} /></CardContent>
+        <CardContent>
+          <CalendarHeatmap daily={daily} />
+          {undatedClosed > 0 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              <span className="text-warning">{undatedClosed} closed trade{undatedClosed === 1 ? "" : "s"} carry no exit
+              date</span> and cannot appear on any day — typically rows from an aggregated P&amp;L import, which
+              reports totals without dates. A transaction/tradebook import (Dhan GTR, Zerodha tradebook) carries real
+              dates and fills this calendar. Open positions don&apos;t appear either: no exit, no realised P&amp;L.
+            </p>
+          )}
+        </CardContent>
       </Card>
 
       {/* By segment / setup */}

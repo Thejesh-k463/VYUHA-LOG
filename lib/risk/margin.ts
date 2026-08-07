@@ -121,17 +121,37 @@ export function capitalBlocked(p: MarginPositionInput, rates: MarginRates): Capi
       margin: (pct / 100) * notional,
       basis: `${pct}% × notional ${inrFmt(notional)} (short ${p.optionType})`,
       rateUsed: pct,
-      missingRate,
+      missingRate: missingRate ? `${missingRate} (assumed 100% of notional)` : null,
     };
   }
 
-  if (p.segment === "eq_mtf" || p.segment === "eq_delivery") {
+  if (p.segment === "eq_mtf") {
+    // MTF gets its OWN mechanism, not delivery's. What the trader has blocked
+    // is only the own-margin share — the broker funds the rest (and charges
+    // interest on exactly that funded portion; see lib/jobs/mtf-accrual.ts,
+    // which uses the same rate). Falling back to 100% here was wrong twice
+    // over: it showed capital the trader never deployed, and it contradicted
+    // the interest engine's 25% default for the very same position.
+    const value = p.qty * p.entry;
+    const ownPct = configured ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+    const own = (ownPct / 100) * value;
+    const funded = value - own;
+    return {
+      margin: own,
+      basis: `own ${ownPct}% ${inrFmt(own)} · broker funds ${inrFmt(funded)}`,
+      rateUsed: ownPct,
+      missingRate: configured == null ? `${p.broker}|eq_mtf (fell back to the ${DEFAULT_MTF_OWN_MARGIN_PCT}% MTF own-margin default)` : null,
+    };
+  }
+
+  if (p.segment === "eq_delivery") {
+    // Delivery genuinely blocks the full cash — 100% is the honest default.
     const value = p.qty * p.entry;
     return {
       margin: (pct / 100) * value,
       basis: `${pct}% × invested ${inrFmt(value)}`,
       rateUsed: pct,
-      missingRate,
+      missingRate: missingRate ? `${missingRate} (assumed 100% — full value)` : null,
     };
   }
 
@@ -141,7 +161,7 @@ export function capitalBlocked(p: MarginPositionInput, rates: MarginRates): Capi
     margin: (pct / 100) * value,
     basis: `${pct}% × value ${inrFmt(value)}`,
     rateUsed: pct,
-    missingRate,
+    missingRate: missingRate ? `${missingRate} (assumed 100% of value)` : null,
   };
 }
 

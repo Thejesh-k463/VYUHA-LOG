@@ -71,14 +71,43 @@ describe("estimateMargin", () => {
     expect(del.margin).toBe(10000);
   });
 
-  it("unknown broker+segment falls back to 100% and is reported", () => {
+  it("unknown broker+segment falls back to 100% and says so in the report", () => {
     const s = estimateMargin(
       [pos({ segment: "commodity_future", optionType: null, qty: 10, entry: 700, mtm: 700 })],
       rates,
       capitals,
     );
     expect(s.positions[0].margin).toBe(7000);
-    expect(s.missingRateSegments).toEqual(["dhan|commodity_future"]);
+    // Self-describing string: the fallback names itself, the panel just lists.
+    expect(s.missingRateSegments).toHaveLength(1);
+    expect(s.missingRateSegments[0]).toMatch(/^dhan\|commodity_future \(assumed 100%/);
+  });
+
+  it("MTF with NO configured rate falls back to the 25% own-margin default, never 100%", () => {
+    const s = estimateMargin(
+      [pos({ broker: "newbroker", bucket: "equity", segment: "eq_mtf", optionType: null, qty: 100, entry: 500, mtm: 550 })],
+      rates,
+      capitals,
+    );
+    const p = s.positions[0];
+    // 100% would claim ₹50,000 of the trader's capital is blocked when only
+    // their own-margin share is — and would contradict the interest engine's
+    // default for the very same position.
+    expect(p.margin).toBe(0.25 * 100 * 500);
+    expect(s.missingRateSegments[0]).toMatch(/eq_mtf \(fell back to the 25% MTF own-margin default\)/);
+  });
+
+  it("MTF basis names both sides of the split: own margin and broker-funded", () => {
+    const s = estimateMargin(
+      [pos({ bucket: "equity", segment: "eq_mtf", optionType: null, qty: 100, entry: 500, mtm: 550 })],
+      rates,
+      capitals,
+    );
+    const p = s.positions[0];
+    expect(p.margin).toBe(12500); // dhan 25% × ₹50,000
+    expect(p.basis).toContain("own 25%");
+    expect(p.basis).toContain("broker funds");
+    expect(p.basis).toContain("₹37,500"); // the funded remainder, spelled out
   });
 
   it("uses the position's OWN broker's rate, not a flat global one", () => {

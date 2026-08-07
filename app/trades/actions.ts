@@ -22,7 +22,7 @@ import {
   convertToStaged,
 } from "@/lib/queries/staged";
 
-export type ActionState = { ok: boolean; message: string };
+export type ActionState = { ok: boolean; message: string; tradeId?: number | null };
 
 const num = (v: FormDataEntryValue | null) => {
   const x = Number(String(v ?? "").replace(/,/g, "").trim());
@@ -162,7 +162,7 @@ export async function createManualTrade(
     revalidatePath("/equity");
     revalidatePath("/active");
     revalidatePath("/");
-    return { ok: true, message: isOpenTrade ? "Open trade added — see Portfolio Risk." : "Trade added." };
+    return { ok: true, message: isOpenTrade ? "Open trade added — see Portfolio Risk." : "Trade added.", tradeId: res.id };
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   }

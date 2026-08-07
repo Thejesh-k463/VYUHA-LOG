@@ -154,13 +154,15 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
 
         {summary.missingRateSegments.length > 0 && (
           <p className="text-[11px] text-warning">
-            No margin rate configured for {summary.missingRateSegments.join(", ")} — assumed 100% (full value).
+            No margin rate configured for {summary.missingRateSegments.join("; ")}.
           </p>
         )}
         <p className="text-[11px] text-muted-foreground">
           Estimate only: long options count the premium paid; short options and futures apply the segment rate to
-          notional; MTF/delivery apply it to invested value. Real broker SPAN+exposure margins differ — tune the
-          rates above to match your broker&apos;s margin file.
+          notional; delivery blocks the full invested value. <b>MTF blocks only your own-margin share</b> — the
+          broker funds the rest, and interest accrues on exactly that funded amount (same rate the Charges &amp; MTF
+          Leak report uses). Real broker SPAN+exposure margins differ — tune the rates above to match your
+          broker&apos;s margin file.
         </p>
       </CardContent>
     </Card>

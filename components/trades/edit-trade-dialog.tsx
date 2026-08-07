@@ -11,6 +11,7 @@ import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/m
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import type { Trade } from "@/lib/db/schema";
+import { TradeAttachments } from "@/components/trades/trade-attachments";
 
 interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
@@ -203,6 +204,8 @@ export function EditTradeDialog({
         <Field label="Setup tag"><Input name="setupTag" value={setupTag} onChange={(e) => setSetupTag(e.target.value)} /></Field>
         <Field label="Notes"><Input name="notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
+
+      <TradeAttachments tradeId={trade.id} />
 
       {preview && (
         <div className="rounded-md border border-border bg-card-hover/30 p-3 text-xs">
