@@ -22,9 +22,9 @@ after download.
 
 > Your data lives in a local database file on your PC. Nothing is uploaded anywhere.
 
-## 2. Your 14-day trial, and activating a license
+## 2. Your 7-day trial, and activating a license
 
-**Every fresh install starts a 14-day full-Pro trial** — no signup, no card, entirely offline.
+**Every fresh install starts a 7-day full-Pro trial** — no signup, no card, entirely offline.
 The clock starts the first time *you* open the app, not when the installer was built. The core
 journal (trades, imports, dashboard, playbooks, backups) is **free forever**; the trial covers the
 Pro analytics.

@@ -221,7 +221,7 @@ IPO tracker with allotment P&L · capital compounding (double-count-safe) · cas
 ## 🔑 Licensing (for the maintainer)
 
 Vyuha ships with an **offline licence gate** — an Ed25519 signature verified on the user's own
-machine, with no server call, ever. Every fresh install begins a **14-day full-Pro trial**; the core
+machine, with no server call, ever. Every fresh install begins a **7-day full-Pro trial**; the core
 journal is free forever.
 
 Vendor tooling lives in `scripts/`:
@@ -265,7 +265,7 @@ macOS ships **two separate builds rather than one universal binary on purpose** 
 
 > **macOS Gatekeeper:** the builds are not yet notarised with an Apple Developer ID, so the first launch shows *"Vyuha cannot be opened because the developer cannot be verified."* Right-click the app → **Open** → **Open**, once. Nothing about the app changes; macOS simply asks before running software it cannot attribute.
 
-**What's free and what isn't (v2.87+):** every fresh install starts a **14-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording trades, all five broker importers, the dashboard, staged positions, playbooks and backups. A licence unlocks the analytics layer — Portfolio Risk cockpit, Tax Summary, ITR Pack and Broker Cost comparison. Your own record of your trading is never held hostage, and nothing leaves your machine either way.
+**What's free and what isn't (v2.87+):** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording trades, all five broker importers, the dashboard, staged positions, playbooks and backups. A licence unlocks the analytics layer — Portfolio Risk cockpit, Tax Summary, ITR Pack and Broker Cost comparison. Your own record of your trading is never held hostage, and nothing leaves your machine either way.
 
 **New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 

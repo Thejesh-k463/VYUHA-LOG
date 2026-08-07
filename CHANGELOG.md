@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.99.10 — the trial is now 7 days
+
+The full-Pro trial on a fresh install is **7 days**, down from 14. One trading
+week is enough to import a real book, sit through an expiry and see a
+charge-leak number; the second week mostly added drift before the decision.
+
+Everything else is unchanged from v2.99.9. The core journal remains free
+forever — the trial only ever gated the analytics layer.
+
+Two notes on the mechanics, because they matter:
+
+- The countdown is `TRIAL_DAYS − days-since-first-run`, so an install already
+  past day 7 of the old trial shows 0 days remaining as soon as it updates.
+  Existing evaluators should be issued keys before they update.
+- `TRIAL_DAYS` in `lib/license.ts` is the single source: every screen, doc and
+  sales page derives from it, and the entitlement tests assert against it
+  rather than a baked-in number.
+
 ## v2.99.9 — every broker's MTF list, compared — and a sidebar that's yours
 
 ### The complete MTF picture (10,501 per-stock margins, all seven brokers)

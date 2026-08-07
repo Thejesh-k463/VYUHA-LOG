@@ -108,7 +108,9 @@ describe("isKeyExpired / expiry-aware keys", () => {
 describe("trialDaysLeft", () => {
   it("full at start, counts down, clamps at 0, and handles null/garbage", () => {
     expect(trialDaysLeft("2026-07-01T00:00:00.000Z", T("2026-07-01"))).toBe(TRIAL_DAYS);
-    expect(trialDaysLeft("2026-07-01T00:00:00.000Z", T("2026-07-10"))).toBe(5);
+    // Expressed against TRIAL_DAYS, not a baked-in number: changing the trial
+    // length must not require editing arithmetic in the test that guards it.
+    expect(trialDaysLeft("2026-07-01T00:00:00.000Z", T("2026-07-04"))).toBe(TRIAL_DAYS - 3);
     expect(trialDaysLeft("2026-07-01T00:00:00.000Z", T("2026-09-01"))).toBe(0);
     expect(trialDaysLeft(null, T("2026-07-01"))).toBe(0);
     expect(trialDaysLeft("not a date", T("2026-07-01"))).toBe(0);

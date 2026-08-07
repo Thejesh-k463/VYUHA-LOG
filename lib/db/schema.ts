@@ -496,7 +496,7 @@ export const settings = sqliteTable("settings", {
   // the app is allowed to fetch from NSE and overwrite matched MTM prices).
   autoMtmEnabled: integer("auto_mtm_enabled", { mode: "boolean" }).notNull().default(false),
   lastAutoMtmDate: text("last_auto_mtm_date"), // bhavcopy date last applied (once-per-day guard)
-  // Monetization v2 — offline 14-day full-Pro trial, stamped on first run
+  // Monetization v2 — offline full-Pro trial (TRIAL_DAYS), stamped on first run
   // (backfilled to migration time for existing installs). See lib/license.ts.
   trialStartedAt: text("trial_started_at"),
   // Latest date this install has ever observed. Entitlement checks reason about

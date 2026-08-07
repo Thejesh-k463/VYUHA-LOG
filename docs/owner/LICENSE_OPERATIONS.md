@@ -118,7 +118,7 @@ displayed in-app), not cryptographic.
 
 ## 5. Enforcement — ✅ LIVE (set 2026-07-22)
 
-1. **`LICENSE_ENFORCEMENT` is now `"block"`.** When a 14-day trial ends without a key, the Pro
+1. **`LICENSE_ENFORCEMENT` is now `"block"`.** When a 7-day trial ends without a key, the Pro
    screens (Risk cockpit, Tax Summary, ITR Pack, Broker Compare) render the upsell panel instead of
    their content. The core journal — trades, imports, dashboard, playbooks, backups — is still never
    gated: a trader who can't record what they actually did won't stay long enough to buy anything.

@@ -138,9 +138,21 @@ export const SKU_LABELS: Record<string, string> = {
 // its expiry date, but no longer entitles Pro.
 // ---------------------------------------------------------------------------
 
-/** Full Pro trial for every fresh install — long enough to hit one expiry week
- *  and one MTF interest cycle, short enough to matter. Offline by design. */
-export const TRIAL_DAYS = 14;
+/**
+ * Full Pro trial for every fresh install — one expiry week, offline by design.
+ *
+ * SHORTENED 14 → 7 at v2.99.10. One trading week is still enough to import a
+ * real book, hit an expiry, and see a charge-leak number; two weeks mostly
+ * added drift before the decision. Every user-visible mention derives from
+ * this constant, so it is the only place to change it.
+ *
+ * Note for anyone changing it again: the countdown is
+ * `TRIAL_DAYS − elapsed-since-first-run`, so SHORTENING it moves existing
+ * installs down immediately (someone on day 9 of the old 14 lands at 0).
+ * The core journal is never gated (invariant 7) — only Pro analytics lock —
+ * but testers mid-trial should be issued keys before such a change ships.
+ */
+export const TRIAL_DAYS = 7;
 
 /**
  * Your WhatsApp number in international format, DIGITS ONLY — e.g. "919876543210".
@@ -214,7 +226,7 @@ export const CLOCK_TOLERANCE_DAYS = 2;
  * ── Why this exists ─────────────────────────────────────────────────────────
  * The trial and any annual key are both evaluated against the system clock, and
  * an offline app cannot ask anyone what day it is. Setting the clock back a year
- * therefore renewed a 14-day trial and un-expired a lapsed key, indefinitely and
+ * therefore renewed the full trial and un-expired a lapsed key, indefinitely and
  * silently. This makes time effectively monotonic: the app remembers the latest
  * date it has observed, and a clock that jumps meaningfully backwards is simply
  * not believed for entitlement purposes.

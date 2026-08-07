@@ -193,8 +193,8 @@ Free lead magnet ──▶ WhatsApp + email list ──▶ Content (X / YouTube)
 ```
 
 - **Lead magnet #1 — the installer itself (✅ BUILT, v2.80):** every fresh install starts a
-  **14-day full-Pro trial** — offline, no signup, no card. The download link IS the funnel now:
-  "try everything free for 14 days, journal stays free forever" converts better than any gated
+  **7-day full-Pro trial** — offline, no signup, no card. The download link IS the funnel now:
+  "try everything free for a week, journal stays free forever" converts better than any gated
   PDF. The in-app trial strip and post-trial upsell panel carry the buy link (`BUY_URL` in
   `lib/license.ts` — point it at the Razorpay page at launch).
 - **Lead magnet #2:** a **free web capital-gains / F&O-tax calculator** (a stripped page of the
@@ -260,7 +260,7 @@ the same SKU on the same day get completely different keys.
 2. **Offline validation in-app** — done. Signature verified against the public key baked into
    `lib/license.ts`; the stored key is re-verified on every read. Activation UI at
    **Settings → License**; shows "Licensed to <email>", expiry state, and trial countdown.
-3. **Trial — ✅ BUILT (v2.80)**: every fresh install gets a **14-day full-Pro trial**, stamped
+3. **Trial — ✅ BUILT (v2.80)**: every fresh install gets a **7-day full-Pro trial**, stamped
    offline on first open (`settings.trial_started_at`; the bundled template DB ships with it
    NULL so the clock starts at the user's first run, not the installer build). Expired annual
    keys fall back to any remaining trial days, then to free.
@@ -315,7 +315,7 @@ Everything technical is now BUILT — the sequence is pure go-to-market:
    `"block"`.** (Do NOT flip enforcement before the payment page is live — trial-expired users
    would hit a dead buy link.)
 2. **Week 2** — publish a GitHub release so the auto-updater ships the gated build; announce
-   the 14-day-trial framing everywhere ("try everything free, journal free forever").
+   the 7-day-trial framing everywhere ("try everything free, journal free forever").
 3. **Week 3–4** — content engine on your own X/YouTube (record the getting-started deck as a
    2-minute walkthrough); founding-trader launch (first 100 @ launch price); collect
    testimonials; iterate copy from checkout drop-off. Consider the annual SKU

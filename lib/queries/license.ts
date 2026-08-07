@@ -51,7 +51,7 @@ export function getLicenseStatus(): LicenseStatus {
 
 /**
  * Monetization v2 — the app's one entitlement answer (licensed / trial /
- * expired-key / unlicensed). Lazily stamps the 14-day trial on the true first
+ * expired-key / unlicensed). Lazily stamps the trial (TRIAL_DAYS) on the true first
  * read of a fresh install: the bundled template DB deliberately ships with
  * trial_started_at = NULL (seed runs after migrations, so migration 0024's
  * backfill only touches EXISTING installs), which means the clock starts when

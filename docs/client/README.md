@@ -63,7 +63,7 @@ leaves your computer — there is no account, no cloud, and no telemetry.
    unrecognised publisher; that is expected for an independently distributed
    app. Full walkthrough: [`INSTALLATION_GUIDE.md`](INSTALLATION_GUIDE.md).
 2. **Activate** — Settings → License, paste the `VYUHA-…` key from your
-   purchase email. You get a **14-day full trial** before a key is needed.
+   purchase email. You get a **7-day full trial** before a key is needed.
 3. **Import your trades** — Import → pick the kind of file you have.
 4. **Read the tour** — [`GETTING_STARTED_DECK.html`](GETTING_STARTED_DECK.html),
    openable in any browser.
