@@ -38,6 +38,10 @@ import {
 import { getReturnsMap } from "@/lib/queries/price-history";
 import { VarPanel } from "@/components/risk/var-panel";
 import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
+import { makeMtfResolver } from "@/lib/queries/mtf-margins";
+import { mtfBundleIsStale, MTF_BUNDLE_AS_OF } from "@/lib/risk/mtf-margins";
+import { mtfDrift } from "@/lib/risk/mtf-drift";
+import { MtfDriftCard } from "@/components/risk/mtf-drift-card";
 import { getMarginConfig, getMarginRates } from "@/lib/queries/margin";
 import { MarginPanel } from "@/components/risk/margin-panel";
 import { BreachBanner } from "@/components/risk/breach-banner";
@@ -208,6 +212,8 @@ export default function RiskPage() {
   const stress = exposures.length > 0 ? stressScenarios(stressPositions) : null;
 
   // P1.2 margin slice — estimated margin blocked per position vs bucket capital.
+  // Per-stock MTF margins: uploads → bundled broker lists → rules → default.
+  const mtfResolve = makeMtfResolver();
   const marginInputs: MarginPositionInput[] = inputs.map((p) => ({
     id: p.id,
     symbol: p.symbol,
@@ -221,6 +227,7 @@ export default function RiskPage() {
     strike: p.strike ?? null,
     optionType: p.optionType ?? null,
     spot: p.spot ?? null,
+    mtfStockPct: p.segment === "eq_mtf" ? mtfResolve(p.broker, p.symbol).pct : null,
   }));
   // T1.2 — SEBI rule radar off the same open-position inputs.
   const radarInputs: RadarPosition[] = inputs.map((p) => ({
@@ -241,6 +248,17 @@ export default function RiskPage() {
     equity: equityCapital,
     active: activeCapital,
   });
+
+  // Startup checks (this page renders on every app open that visits risk):
+  // is the bundled margin snapshot stale, and have any open MTF positions'
+  // CURRENT requirements drifted from what they were entered at?
+  const mtfStale = mtfBundleIsStale(today);
+  const mtfDriftRows = mtfDrift(
+    trades
+      .filter((t) => t.isOpen && t.segment === "eq_mtf")
+      .map((t) => ({ id: t.id, symbol: t.symbol, broker: t.broker, buyValue: t.buyValue, mtfFundedAmount: t.mtfFundedAmount })),
+    mtfResolve,
+  );
   const marginRates = getMarginConfig().map((r) => ({ broker: r.broker, segment: r.segment, marginPct: r.marginPct }));
 
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
@@ -286,6 +304,7 @@ export default function RiskPage() {
         <SebiRadarPanel report={radar} />
         <ExpiryObligations summary={settlement} />
         <MarginPanel summary={marginSummary} rates={marginRates} />
+        <MtfDriftCard drift={mtfDriftRows} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
         {exposures.length > 0 && (
           <VarPanel varResult={varResult} betaExp={betaExp} stress={stress} niftyDays={niftyReturns.length} />
         )}

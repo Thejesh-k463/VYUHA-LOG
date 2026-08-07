@@ -1,0 +1,182 @@
+[
+ {
+  "name": "AH Ashiana Housing Limited",
+  "symbol": "ASHIANA",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "2M20 Microns Ltd",
+  "symbol": "20MICRONS",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "3O360 One Mutual Fund - 360 One Gold Etf",
+  "symbol": "GOLD360",
+  "leverage": 3.33,
+  "maxExposureCr": "1"
+ },
+ {
+  "name": "3O360 One Wam Limited",
+  "symbol": "360ONE",
+  "leverage": 4.0,
+  "maxExposureCr": "25"
+ },
+ {
+  "name": "3I3m India Limited",
+  "symbol": "3MINDIA",
+  "leverage": 3.33,
+  "maxExposureCr": "5"
+ },
+ {
+  "name": "5C5paisa Capital Limited",
+  "symbol": "5PAISA",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "6M63 Moons Technologies Limited",
+  "symbol": "63MOONS",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "ABA B Cotspin India Limited",
+  "symbol": "ABCOTS",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "AHAadhar Housing Finance Limited",
+  "symbol": "AADHARHFC",
+  "leverage": 3.33,
+  "maxExposureCr": "5"
+ },
+ {
+  "name": "ADAarti Drugs Limited",
+  "symbol": "AARTIDRUGS",
+  "leverage": 2.86,
+  "maxExposureCr": "2"
+ },
+ {
+  "name": "AIAarti Industries Limited",
+  "symbol": "AARTIIND",
+  "leverage": 3.04,
+  "maxExposureCr": "5"
+ },
+ {
+  "name": "APAarti Pharmalabs Limited",
+  "symbol": "AARTIPHARM",
+  "leverage": 2.9,
+  "maxExposureCr": "5"
+ },
+ {
+  "name": "AFAavas Financiers Limited",
+  "symbol": "AAVAS",
+  "leverage": 3.31,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AFAbans Financial Srvcs Ltd",
+  "symbol": "AFSL",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "AIAbb India Limited",
+  "symbol": "ABB",
+  "leverage": 4.28,
+  "maxExposureCr": "50"
+ },
+ {
+  "name": "AIAbbott India Limited",
+  "symbol": "ABBOTINDIA",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AGAbslgoldetf-Go",
+  "symbol": "BSLGOLDETF",
+  "leverage": 3.33,
+  "maxExposureCr": "1"
+ },
+ {
+  "name": "AGAbslniftyetf-Go",
+  "symbol": "BSLNIFTY",
+  "leverage": 5.0,
+  "maxExposureCr": "1"
+ },
+ {
+  "name": "ALAcc Limited",
+  "symbol": "ACC",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "ASAccelya Solutions India Limited",
+  "symbol": "ACCELYA",
+  "leverage": 1.0,
+  "maxExposureCr": "0.1"
+ },
+ {
+  "name": "ASAcme Solar Holdings Ltd",
+  "symbol": "ACMESOLAR",
+  "leverage": 3.0,
+  "maxExposureCr": "5"
+ },
+ {
+  "name": "ACAction Construction Equipment Limited",
+  "symbol": "ACE",
+  "leverage": 3.05,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "ACAcutaas Chemicals Limited(Fresh Mtf Buying Is Not Allowed)",
+  "symbol": "ACUTAAS",
+  "leverage": 2.75,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AEAdani Energy Solutions Ltd",
+  "symbol": "ADANIENSOL",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AEAdani Enterprises Limited",
+  "symbol": "ADANIENT",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AGAdani Green Energy Ltd",
+  "symbol": "ADANIGREEN",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "APAdani Ports And Special Economic Zone Limited",
+  "symbol": "ADANIPORTS",
+  "leverage": 4.0,
+  "maxExposureCr": "25"
+ },
+ {
+  "name": "APAdani Power Limited",
+  "symbol": "ADANIPOWER",
+  "leverage": 3.33,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "ATAdani Total Gas Limited",
+  "symbol": "ATGL",
+  "leverage": 2.73,
+  "maxExposureCr": "10"
+ },
+ {
+  "name": "AWAdani Wilmar Ltd",
+  "symbol": "AWL",
+  "leverage": 3.28,
+  "maxExposureCr": "10"
+ }
+]

@@ -288,6 +288,13 @@
       "when": 1786040000000,
       "tag": "0040_instrument-indices",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1786050000000,
+      "tag": "0041_mtf-margins",
+      "breakpoints": true
     }
   ]
 }

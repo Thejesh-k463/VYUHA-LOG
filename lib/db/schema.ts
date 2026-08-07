@@ -741,6 +741,28 @@ export const corporateActions = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// mtf_margins — per-stock MTF own-margin overrides (broker × symbol).
+// Reference data: the bundled snapshot in lib/data/mtf-margins.json is the
+// baseline; rows here come from user-uploaded broker files and win over the
+// bundle. marginPct is the TRADER'S OWN contribution % — the broker funds
+// the remainder. Never account-scoped (a margin rate isn't a trade).
+// ---------------------------------------------------------------------------
+export const mtfMargins = sqliteTable(
+  "mtf_margins",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    broker: text("broker").notNull(),
+    symbol: text("symbol").notNull(), // canonical ticker (upper-cased)
+    marginPct: real("margin_pct").notNull(),
+    isin: text("isin"),
+    asOf: text("as_of").notNull(), // ISO date the uploaded list was published/captured
+    source: text("source").notNull(), // e.g. "upload: zerodha.json"
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("mtf_margins_pair_uq").on(t.broker, t.symbol), index("mtf_margins_broker_idx").on(t.broker)],
+);
+
+// ---------------------------------------------------------------------------
 // playbooks — named setups with rule checklists (P2.4 behavioral journaling).
 // Trades link via trades.playbook_id; per-playbook expectancy rolls up on the
 // Discipline page. Archiving hides a playbook from pickers without orphaning

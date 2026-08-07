@@ -45,6 +45,9 @@ export interface MarginPositionInput {
   strike: number | null;
   optionType: string | null; // CE | PE | null
   spot?: number | null;
+  /** Per-stock MTF own-margin % resolved by the caller (uploads → bundled
+   *  broker list → rule); takes precedence over the broker-level rate. */
+  mtfStockPct?: number | null;
 }
 
 export interface PositionMargin {
@@ -129,18 +132,23 @@ export function capitalBlocked(p: MarginPositionInput, rates: MarginRates): Capi
     // MTF gets its OWN mechanism, not delivery's. What the trader has blocked
     // is only the own-margin share — the broker funds the rest (and charges
     // interest on exactly that funded portion; see lib/jobs/mtf-accrual.ts,
-    // which uses the same rate). Falling back to 100% here was wrong twice
-    // over: it showed capital the trader never deployed, and it contradicted
-    // the interest engine's 25% default for the very same position.
+    // which uses the same rate). Precedence: the PER-STOCK margin from the
+    // broker's own approved list (resolved by the caller via
+    // lib/risk/mtf-margins) beats the broker-level rate, which beats the 25%
+    // default — a stock Zerodha margins at 45% must not gauge at 25%.
     const value = p.qty * p.entry;
-    const ownPct = configured ?? DEFAULT_MTF_OWN_MARGIN_PCT;
+    const perStock = p.mtfStockPct != null && p.mtfStockPct > 0 ? p.mtfStockPct : null;
+    const ownPct = perStock ?? configured ?? DEFAULT_MTF_OWN_MARGIN_PCT;
     const own = (ownPct / 100) * value;
     const funded = value - own;
     return {
       margin: own,
-      basis: `own ${ownPct}% ${inrFmt(own)} · broker funds ${inrFmt(funded)}`,
+      basis: `own ${ownPct}%${perStock != null ? " (stock list)" : ""} ${inrFmt(own)} · broker funds ${inrFmt(funded)}`,
       rateUsed: ownPct,
-      missingRate: configured == null ? `${p.broker}|eq_mtf (fell back to the ${DEFAULT_MTF_OWN_MARGIN_PCT}% MTF own-margin default)` : null,
+      missingRate:
+        perStock == null && configured == null
+          ? `${p.broker}|eq_mtf (fell back to the ${DEFAULT_MTF_OWN_MARGIN_PCT}% MTF own-margin default)`
+          : null,
     };
   }
 

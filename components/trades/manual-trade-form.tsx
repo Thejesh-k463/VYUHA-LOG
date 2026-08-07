@@ -62,6 +62,10 @@ export function ManualTradeForm({
   const [broker, setBroker] = useState("dhan");
   const mtfOwnMarginPct = mtfMarginByBroker[broker] ?? DEFAULT_MTF_OWN_MARGIN_PCT;
   const [tradingsymbol, setSymbol] = useState("");
+  // Per-stock MTF own-margin from the broker's approved list (bundled snapshot
+  // or the user's uploaded refresh) — resolved live as broker/symbol change.
+  const [mtfStockInfo, setMtfStockInfo] = useState<{ pct: number; label: string } | null>(null);
+  const symbolForMtf = tradingsymbol.trim().toUpperCase();
   const [productHint, setProductHint] = useState("");
   const [segment, setSegment] = useState("");
   const [exchange, setExchange] = useState("");
@@ -96,6 +100,26 @@ export function ManualTradeForm({
     // it closes via that step's Done button instead of snapping shut.
     if (state.ok && !state.tradeId && onDone) onDone();
   }, [state.ok, state.tradeId, onDone]);
+
+  // Resolve the per-stock MTF margin as broker/symbol settle (debounced; the
+  // async .then keeps every setState off the synchronous effect path).
+  useEffect(() => {
+    if (!symbolForMtf || symbolForMtf.length < 2) {
+      Promise.resolve().then(() => setMtfStockInfo(null));
+      return;
+    }
+    const ctrl = new AbortController();
+    const id = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/mtf-margin?broker=${broker}&symbol=${encodeURIComponent(symbolForMtf)}`, { signal: ctrl.signal });
+        const d = await res.json();
+        setMtfStockInfo(d.ok ? { pct: d.pct, label: d.label } : null);
+      } catch {
+        /* keep the broker-level fallback */
+      }
+    }, 400);
+    return () => { clearTimeout(id); ctrl.abort(); };
+  }, [broker, symbolForMtf]);
 
   // F&O structured fields -> the same tradingsymbol/buyQty/avgBuyPrice/sellQty/
   // avgSellPrice state the equity form uses, so charge preview + limits check +
@@ -221,11 +245,14 @@ export function ManualTradeForm({
 
   // MTF: "own capital used" (what YOU actually put in) is the primary input —
   // funded amount (what interest accrues on) is derived as buyValue − that,
-  // never the full position value. Placeholder shows the auto-estimate from
-  // the configured own-margin % when the field is left blank.
+  // never the full position value. The auto-estimate uses the PER-STOCK
+  // own-margin from the broker's approved list when the app knows it
+  // (/api/mtf-margin: uploads → bundled list → broker rule), falling back to
+  // the broker-level rate.
   const positionValue = (Number(buyQty) || 0) * (Number(avgBuyPrice) || 0);
-  const mtfDefaultOwnCapital = positionValue > 0 ? Math.round((positionValue - defaultMtfFundedAmount(positionValue, mtfOwnMarginPct)) * 100) / 100 : 0;
-  const mtfDefaultFunded = positionValue > 0 ? defaultMtfFundedAmount(positionValue, mtfOwnMarginPct) : 0;
+  const mtfEffectivePct = mtfStockInfo?.pct ?? mtfOwnMarginPct;
+  const mtfDefaultOwnCapital = positionValue > 0 ? Math.round((positionValue - defaultMtfFundedAmount(positionValue, mtfEffectivePct)) * 100) / 100 : 0;
+  const mtfDefaultFunded = positionValue > 0 ? defaultMtfFundedAmount(positionValue, mtfEffectivePct) : 0;
   const mtfEffectiveFunded =
     ownCapitalUsed !== "" && Number(ownCapitalUsed) >= 0
       ? Math.max(0, Math.round((positionValue - Number(ownCapitalUsed)) * 100) / 100)
@@ -437,12 +464,31 @@ export function ManualTradeForm({
                 step="any"
                 value={ownCapitalUsed}
                 onChange={(e) => setOwnCapitalUsed(e.target.value)}
-                placeholder={mtfDefaultOwnCapital > 0 ? `≈ ${Math.round(mtfDefaultOwnCapital).toLocaleString("en-IN")} auto @ ${mtfOwnMarginPct}% margin` : "auto-estimated"}
+                placeholder={mtfDefaultOwnCapital > 0 ? `≈ ${Math.round(mtfDefaultOwnCapital).toLocaleString("en-IN")} auto @ ${mtfEffectivePct}% margin` : "auto-estimated"}
+              />
+            </Field>
+            <Field label="Broker funds (₹)">
+              {/* Bidirectional: type EITHER side of the split and the other
+                  derives — value − funded = own, value − own = funded. */}
+              <Input
+                type="number"
+                step="any"
+                value={positionValue > 0 ? String(Math.round(mtfEffectiveFunded)) : ""}
+                onChange={(e) => {
+                  const funded = Number(e.target.value);
+                  if (positionValue > 0 && Number.isFinite(funded)) {
+                    setOwnCapitalUsed(String(Math.max(0, Math.round((positionValue - funded) * 100) / 100)));
+                  }
+                }}
+                placeholder="derived from own capital"
               />
               <p className="text-[10px] text-muted-foreground">
                 {positionValue > 0
-                  ? `The broker funds the rest: ≈ ₹${Math.round(mtfEffectiveFunded).toLocaleString("en-IN")}${mtfLeverage != null ? ` (${mtfLeverage.toFixed(2)}x leverage)` : ""}. Leave blank to auto-estimate at the configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).`
-                  : `How much of your own money went in, not the full trade value — leave blank to auto-estimate from the configured ${mtfOwnMarginPct}% own-margin rate (Settings → Margin).`}
+                  ? `Split: you ₹${Math.round(mtfEffectiveOwnCapital).toLocaleString("en-IN")} + broker ₹${Math.round(mtfEffectiveFunded).toLocaleString("en-IN")}${mtfLeverage != null ? ` (${mtfLeverage.toFixed(2)}x)` : ""} — interest accrues on the broker's share only. `
+                  : "Enter buy price and quantity and the split auto-fills. "}
+                {mtfStockInfo
+                  ? `Auto @ ${mtfStockInfo.pct}% for ${symbolForMtf || "this stock"} — ${mtfStockInfo.label}.`
+                  : `Auto @ the configured ${mtfEffectivePct}% own-margin rate (Settings → Margin).`}
               </p>
             </Field>
             {!open && (
