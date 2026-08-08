@@ -6,6 +6,7 @@ import { BreachBanner } from "@/components/risk/breach-banner";
 import { scanBreaches } from "@/lib/jobs/auto-mtm";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
+import { asWorkspace } from "@/lib/domain/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ export default function DashboardPage() {
         <AutoMtmRunner />
         <BreachBanner breaches={scanBreaches()} />
         <DashboardClient
+          workspace={asWorkspace(settings?.workspace)}
           trades={dash}
           monthlyBase={risk?.monthlyTargetBase ?? 425000}
           monthlyStretch={risk?.monthlyTargetStretch ?? 510000}

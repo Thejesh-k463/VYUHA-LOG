@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mergeOrder, moveKey } from "@/components/layout/nav-config";
+import { mergeOrder, moveIndex } from "@/components/layout/nav-config";
+import { dropTarget } from "@/components/layout/use-list-drag";
 
 describe("mergeOrder — a saved nav order must survive app updates", () => {
   const current = ["a", "b", "c", "d"];
@@ -28,12 +29,63 @@ describe("mergeOrder — a saved nav order must survive app updates", () => {
   });
 });
 
-describe("moveKey", () => {
-  it("swaps a step in either direction and clamps at the edges", () => {
-    expect(moveKey(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"]);
-    expect(moveKey(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"]);
-    expect(moveKey(["a", "b", "c"], "a", -1)).toEqual(["a", "b", "c"]); // clamp
-    expect(moveKey(["a", "b", "c"], "c", 1)).toEqual(["a", "b", "c"]); // clamp
-    expect(moveKey(["a", "b", "c"], "nope", 1)).toEqual(["a", "b", "c"]);
+describe("moveIndex — the drag primitive", () => {
+  it("moves an entry to an arbitrary position, both directions", () => {
+    expect(moveIndex(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
+    expect(moveIndex(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("dragging DOWN lands where the pointer is — the classic off-by-one", () => {
+    // Remove-then-insert: after removing index 0, "c" sits at index 1, so
+    // inserting at 1 puts "a" between b and c, which is what the drop
+    // indicator showed. A swap-based move would have produced a different list.
+    expect(moveIndex(["a", "b", "c"], 0, 1)).toEqual(["b", "a", "c"]);
+  });
+
+  it("is a no-op for same position or an out-of-range source", () => {
+    const l = ["a", "b", "c"];
+    expect(moveIndex(l, 1, 1)).toBe(l);
+    expect(moveIndex(l, -1, 0)).toBe(l);
+    expect(moveIndex(l, 9, 0)).toBe(l);
+  });
+
+  it("clamps a target past the ends instead of dropping the entry", () => {
+    expect(moveIndex(["a", "b", "c"], 0, 99)).toEqual(["b", "c", "a"]);
+    expect(moveIndex(["a", "b", "c"], 2, -5)).toEqual(["c", "a", "b"]);
+  });
+
+  it("never mutates the input", () => {
+    const l = ["a", "b", "c"];
+    moveIndex(l, 0, 2);
+    expect(l).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("dropTarget — the item must land where the insertion line promised", () => {
+  // The line is drawn between rows of the list as displayed; moveIndex splices
+  // after removing the dragged row. These are different coordinate systems and
+  // the drag felt subtly wrong until they were reconciled.
+  const list = ["a", "b", "c", "d"];
+  const drop = (from: number, line: number) => moveIndex(list, from, dropTarget(from, line));
+
+  it("dragging DOWN lands above the row the line sat before", () => {
+    // Line at 3 = "between c and d". Dragging a there must give b,c,a,d —
+    // NOT b,c,d,a, which is what an unconverted index produces.
+    expect(drop(0, 3)).toEqual(["b", "c", "a", "d"]);
+    expect(drop(0, 2)).toEqual(["b", "a", "c", "d"]);
+  });
+
+  it("dragging UP needs no conversion — removal happens below the target", () => {
+    expect(drop(3, 1)).toEqual(["a", "d", "b", "c"]);
+    expect(drop(2, 0)).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("dropping into the gap the row already occupies is a no-op, either side", () => {
+    expect(drop(1, 1)).toEqual(list);
+    expect(drop(1, 2)).toEqual(list);
+  });
+
+  it("a line past the last row sends the entry to the end", () => {
+    expect(drop(0, 4)).toEqual(["b", "c", "d", "a"]);
   });
 });

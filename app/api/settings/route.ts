@@ -6,6 +6,7 @@ import { chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/s
 import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { getWriteAccountId } from "@/lib/queries/accounts";
+import { WORKSPACES } from "@/lib/domain/workspace";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,7 @@ const SettingsSchema = z.object({
   theme: z.enum(["dark", "light"]),
   accentSkin: z.enum(["terminal", "tape", "ice"]).default("terminal"),
   density: z.enum(["compact", "comfortable"]).default("compact"),
+  workspace: z.enum(WORKSPACES).default("both"),
   fyStartMonth: z.coerce.number().int().min(1).max(12),
   defaultBuyOrders: z.coerce.number().int().min(1).max(50),
   defaultSellOrders: z.coerce.number().int().min(1).max(50),
@@ -132,6 +134,7 @@ export async function POST(req: Request) {
       theme: v.theme,
       accentSkin: v.accentSkin,
       density: v.density,
+      workspace: v.workspace,
       fyStartMonth: v.fyStartMonth,
       defaultBuyOrders: v.defaultBuyOrders,
       defaultSellOrders: v.defaultSellOrders,
@@ -153,7 +156,7 @@ export async function POST(req: Request) {
       before: existing ? { equityCapital: existing.equityCapital, activeCapital: existing.activeCapital, goLiveDate: existing.goLiveDate, theme: existing.theme } : null,
       after: { equityCapital: v.equityCapital, activeCapital: v.activeCapital, goLiveDate: v.goLiveDate, theme: v.theme },
     });
-    for (const p of ["/", "/equity", "/active", "/targets/equity", "/targets/active", "/risk"]) revalidatePath(p);
+    for (const p of ["/", "/equity", "/active", "/targets/equity", "/targets/active", "/risk", "/trades"]) revalidatePath(p);
     return NextResponse.json({ ok: true, message: "Settings saved." });
   }
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/analytics/metrics";
 import { inr, inrCompact } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, BUCKETS, BUCKET_LABELS, SEGMENTS, SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
+import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 
 export interface DashTrade extends AnalyticsTrade {
   symbol: string;
@@ -27,13 +28,18 @@ export function DashboardClient({
   trades,
   monthlyBase,
   monthlyStretch,
+  workspace = "both",
 }: {
   trades: DashTrade[];
   monthlyBase: number;
   monthlyStretch: number;
+  workspace?: Workspace;
 }) {
   const [broker, setBroker] = React.useState("");
-  const [bucket, setBucket] = React.useState("");
+  // Workspace mode seeds the bucket filter, it does not enforce it: this is
+  // the same control the user can set to "All buckets", and it reads back the
+  // choice it made. Nothing is filtered that the screen does not show.
+  const [bucket, setBucket] = React.useState<string>(() => defaultBucket(workspace));
   const [segment, setSegment] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");

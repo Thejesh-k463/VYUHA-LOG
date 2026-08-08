@@ -115,13 +115,46 @@ export function mergeOrder(saved: string[] | null | undefined, current: string[]
   return out;
 }
 
-/** Move one key a step up/down within a list (PURE; returns a new array). */
-export function moveKey(list: string[], key: string, dir: -1 | 1): string[] {
-  const i = list.indexOf(key);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= list.length) return list;
+/**
+ * Move the entry at `from` so it sits at `to` (PURE; returns a new array).
+ *
+ * Index-based rather than direction-based because dragging knows POSITIONS,
+ * not steps: the pointer lands between two neighbours and the item travels
+ * however far it needs in one motion. Splice-out-then-splice-in, so the
+ * indices after removal are the ones `to` is measured against — the reason a
+ * naive swap produces an off-by-one when dragging downward.
+ */
+export function moveIndex<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || from >= list.length) return list;
+  const clamped = Math.max(0, Math.min(list.length - 1, to));
   const out = [...list];
-  [out[i], out[j]] = [out[j], out[i]];
+  const [moved] = out.splice(from, 1);
+  out.splice(clamped, 0, moved);
+  return out;
+}
+
+/**
+ * Apply a reorder that the user performed on a FILTERED view of `full` (PURE).
+ *
+ * Workspace mode can hide screens, so a drag produces indices that count only
+ * the visible rows. Committing those straight into the saved order would write
+ * back a list with every hidden screen missing — and the user would find their
+ * ordering quietly rebuilt the next time they switched modes.
+ *
+ * The move is therefore expressed as a RELATION: the dragged entry keeps its
+ * new position relative to its visible neighbours, and hidden entries are left
+ * exactly where they sit. Dropping at the end of the visible list appends,
+ * which is the only case with no following neighbour to anchor to.
+ */
+export function moveWithinVisible<T>(full: T[], visible: T[], from: number, to: number): T[] {
+  const moved = visible[from];
+  if (moved === undefined) return full;
+  const nextVisible = moveIndex(visible, from, to);
+  const follower = nextVisible[nextVisible.indexOf(moved) + 1];
+  const rest = full.filter((x) => x !== moved);
+  const at = follower === undefined ? -1 : rest.indexOf(follower);
+  const out = [...rest];
+  out.splice(at < 0 ? rest.length : at, 0, moved);
   return out;
 }
 

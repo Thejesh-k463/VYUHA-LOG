@@ -23,6 +23,7 @@ import {
   BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, BUCKETS, BUCKET_LABELS,
   type Segment,
 } from "@/lib/domain/constants";
+import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 import type { Trade } from "@/lib/db/schema";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
@@ -46,6 +47,7 @@ export function TradesClient({
   mtfMarginByBroker = {},
   writeAccounts = [],
   attachmentCounts = {},
+  workspace = "both",
   pro = true,
 }: {
   trades: Trade[];
@@ -58,6 +60,8 @@ export function TradesClient({
   /** tradeId → screenshot count, for the row indicator. Server-computed in one
    *  grouped query so the badge never costs a query per row. */
   attachmentCounts?: Record<number, number>;
+  /** Seeds the bucket filter from the user's workspace mode (a default, not a lock). */
+  workspace?: Workspace;
   /** Entitlement — gates the Pro-only "Open trade" entry point. */
   pro?: boolean;
 }) {
@@ -77,7 +81,7 @@ export function TradesClient({
   const [search, setSearch] = React.useState("");
   const [broker, setBroker] = React.useState("");
   const [segment, setSegment] = React.useState("");
-  const [bucket, setBucket] = React.useState("");
+  const [bucket, setBucket] = React.useState<string>(() => defaultBucket(workspace));
   /** Status + outcome in one control: open/closed/staged, and in-gain /
    *  in-loss / profit / loss. See lib/analytics/trade-status.ts for why an
    *  UNMARKED open position deliberately belongs to neither gain nor loss. */

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
+import { screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { Search, CornerDownLeft, Plus } from "lucide-react";
 
 // Extra search keywords per screen — what a trader would TYPE, not the menu label.
@@ -52,6 +53,17 @@ const COMMANDS: Command[] = [
   { label: "New playbook", group: "Actions", href: "/playbooks?add=1", keywords: "new setup rules", action: true },
 ];
 
+/**
+ * Workspace mode hides the other book's screens here too — a palette that
+ * still offers Expiry Analytics to an equity-only user has not tidied
+ * anything. Actions are matched on their PATH, so "Add IPO" (/ipos?add=1)
+ * disappears with the IPO screen it would open.
+ */
+function commandsFor(ws: Workspace): Command[] {
+  if (ws === "both") return COMMANDS;
+  return COMMANDS.filter((c) => screenVisible(c.href.split("?")[0], ws));
+}
+
 function rank(c: Command, q: string): number {
   const label = c.label.toLowerCase();
   if (label.startsWith(q)) return 0;
@@ -62,7 +74,7 @@ function rank(c: Command, q: string): number {
 }
 
 /** Ctrl+K / Cmd+K command palette — keyboard-first navigation over every screen + quick actions. */
-export function CommandPalette() {
+export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -98,12 +110,14 @@ export function CommandPalette() {
 
   const q = query.trim().toLowerCase();
   const results = React.useMemo(() => {
-    if (!q) return COMMANDS;
-    return COMMANDS.map((c) => ({ c, r: rank(c, q) }))
+    const pool = commandsFor(workspace);
+    if (!q) return pool;
+    return pool
+      .map((c) => ({ c, r: rank(c, q) }))
       .filter((x) => x.r >= 0)
       .sort((a, b) => a.r - b.r)
       .map((x) => x.c);
-  }, [q]);
+  }, [q, workspace]);
 
   function go(c: Command) {
     close();

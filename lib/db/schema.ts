@@ -481,6 +481,10 @@ export const settings = sqliteTable("settings", {
   // compact | comfortable — one root font-size (16px vs 17px); everything is
   // rem-sized so the whole interface scales together (app/globals.css).
   density: text("density").notNull().default("compact"),
+  // both | equity | fno — which book the user trades. Hides the other book's
+  // screens and sets bucket defaults; never gates a route or a total.
+  // See lib/domain/workspace.ts.
+  workspace: text("workspace").notNull().default("both"),
   baseCurrency: text("base_currency").notNull().default("INR"),
   fyStartMonth: integer("fy_start_month").notNull().default(4), // April
   colorblindSafe: integer("colorblind_safe", { mode: "boolean" })

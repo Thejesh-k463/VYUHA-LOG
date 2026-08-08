@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { WORKSPACE_LABELS, asWorkspace, type Workspace } from "@/lib/domain/workspace";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +19,8 @@ const MONTHS = [
 ];
 
 export function SettingsForm({ current }: { current: Settings }) {
+  const router = useRouter();
+  const [workspace, setWorkspace] = useState<Workspace>(asWorkspace(current.workspace));
   const [colorblind, setColorblind] = useState(current.colorblindSafe);
   const [theme, setTheme] = useState(current.theme);
   const [skin, setSkin] = useState(current.accentSkin ?? "terminal");
@@ -59,7 +63,7 @@ export function SettingsForm({ current }: { current: Settings }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "settings",
-          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, fyStartMonth,
+          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
         }),
@@ -68,6 +72,11 @@ export function SettingsForm({ current }: { current: Settings }) {
       const text = json.message ?? (json.ok ? "Saved." : "Failed.");
       if (json.ok) toast.success(text);
       else toast.error(text);
+      // The sidebar and command palette live in the root layout, so a changed
+      // workspace only reaches them on a server re-render. Refreshing here
+      // (rather than letting a server action do it) is what keeps this form's
+      // other in-progress edits intact — see AGENTS.md.
+      if (json.ok && workspace !== asWorkspace(current.workspace)) router.refresh();
       setMsg(null);
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -92,6 +101,37 @@ export function SettingsForm({ current }: { current: Settings }) {
           <Field label="Trade F&O bucket capital (₹)">
             <Input type="number" step="1" value={activeCapital} onChange={(e) => setActive(e.target.value)} />
           </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workspace</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="What do you trade?">
+              <Select value={workspace} onChange={(e) => setWorkspace(asWorkspace(e.target.value))}>
+                <option value="both">{WORKSPACE_LABELS.both} — show everything</option>
+                <option value="equity">{WORKSPACE_LABELS.equity}</option>
+                <option value="fno">{WORKSPACE_LABELS.fno}</option>
+              </Select>
+            </Field>
+            <div className="self-end text-xs text-muted-foreground">
+              {workspace === "both"
+                ? "Every screen is shown. Pick a single book to quieten the sidebar."
+                : workspace === "equity"
+                  ? "Hides Trade F&O Tracker, Option Strategies, Options Seller Journal, F&O targets and Expiry Analytics."
+                  : "Hides Equity Tracker, equity targets, IPOs, Corporate Actions and Tax Harvest."}
+            </div>
+          </div>
+          <p className="rounded-md border border-border bg-card-hover/40 px-3 py-2 text-xs text-muted-foreground">
+            This tidies the <span className="text-foreground">sidebar and command palette</span> and sets the
+            bucket filter on Trades and the Dashboard. It is <span className="text-foreground">not a lock</span>:
+            nothing is deleted, hidden screens still open from a direct link or a saved bookmark, and every
+            total keeps counting <span className="text-foreground">both</span> books. Switch back to{" "}
+            {WORKSPACE_LABELS.both} here at any time.
+          </p>
         </CardContent>
       </Card>
 

@@ -6,6 +6,8 @@ import { getAttachmentCounts } from "@/lib/queries/trades";
 import { getEntitlement } from "@/lib/queries/license";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
+import { getSettings } from "@/lib/queries/settings";
+import { asWorkspace } from "@/lib/domain/workspace";
 import { inr } from "@/lib/format";
 import { AcquisitionPanel, type PendingBasisTrade } from "@/components/trades/acquisition-panel";
 import { UnmarkedHoldingsPanel, type UnmarkedHolding } from "@/components/trades/unmarked-holdings-panel";
@@ -115,6 +117,7 @@ export default function TradesPage() {
           writeAccounts={writeAccounts}
           attachmentCounts={Object.fromEntries(getAttachmentCounts())}
           pro={getEntitlement().pro}
+          workspace={asWorkspace(getSettings()?.workspace)}
         />
       </div>
     </>

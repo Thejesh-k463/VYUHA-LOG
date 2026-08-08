@@ -238,7 +238,6 @@ export function ManualTradeForm({
     return () => { clearTimeout(id); ctrl.abort(); };
   }, [open, preview, buyQty, avgBuyPrice, sl]);
 
-  const isEquity = kind === "equity" && (preview?.classification.segment.startsWith("eq_") ?? true);
   // The own-capital / broker-funds split is MEANINGFUL ONLY FOR MTF — a delivery
   // or intraday equity trade has no broker funding. Showing it (with a 25%
   // default) on every equity trade made testers think the app always assumes

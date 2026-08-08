@@ -27,6 +27,7 @@ export const BASELINE_SETTINGS_FIELDS = [
   "theme",
   "accentSkin",
   "density",
+  "workspace",
   "baseCurrency",
   "fyStartMonth",
   "colorblindSafe",
