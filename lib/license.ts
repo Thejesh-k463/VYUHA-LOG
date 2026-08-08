@@ -291,7 +291,7 @@ export function clockMovedBackwards(
   return now.getTime() < seen - toleranceDays * dayMs;
 }
 
-/** Days of trial remaining (ceil — day 14 still counts). Pure. */
+/** Days of trial remaining (ceil, so the final day still counts). Pure. */
 export function trialDaysLeft(trialStartedAt: string | null, today: Date = new Date()): number {
   if (!trialStartedAt) return 0;
   const start = new Date(trialStartedAt).getTime();

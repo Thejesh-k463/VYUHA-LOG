@@ -10,7 +10,35 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.9
+## 0. What you are actually selling, as of v2.99.20
+
+> ### v2.99.20 marketing note — the paid line finally matches the pitch
+>
+> **The commercial change of this release is the packaging, not a feature.**
+> Pro went from 6 gated screens to 17, and the boundary now reads the way the
+> sales copy always described it: *the record of what you did is free; the
+> intelligence about it is paid.* See "Packaging as shipped (v2.99.20)" below —
+> quote that table, not the v2.97 one.
+>
+> **Demo 3 — "it shows the rate it is actually using."** Add an MTF trade and
+> the split names the resolved percentage, the stock, and which broker's list
+> it came from — and says so out loud when the stock is missing from that list.
+> Until this release the form showed a flat 25% on every equity trade, which
+> made testers think the engine assumed 25%. It never did. Worth demoing
+> precisely because the fix is *legibility*: a number you cannot source is a
+> number a serious trader will not trust.
+>
+> **Demo 4 — "this app is only the half you trade."** Settings → Workspace:
+> pick Equity or F&O and the other book's screens leave the sidebar and the
+> command palette. Sales value is objection-handling — the "too complex for me,
+> I only do delivery" objection dies in five seconds, live. Say the honest part
+> too: nothing is deleted, hidden screens still open from a link, and totals
+> keep counting both books.
+>
+> Softer beats worth a line each: chart screenshots are now visible on the
+> trade row (a paperclip with a count) instead of hidden behind a save; the P&L
+> calendar drills into any single day and shows green/red streaks counted in
+> *traded* days.
 
 > ### v2.99.9 marketing note — two demos no competitor can copy quickly
 >
@@ -108,6 +136,9 @@ to flatter them.
 | **Scaling Quality + Replay** | Answers whether adding actually helped, while labelling the counterfactual honestly and showing fills over local EOD history. |
 | **Options Seller Journal** | IV, DTE, hedge, expiry outcome, and adjustment-family evidence create a seller-specific review product instead of a generic notes field. |
 | **Multi-account books** | Separate brokers/entities and consolidated analysis make the app credible for advanced retail traders, families, and small desks. |
+| **Workspace mode** | Equity-only and F&O-only traders each see one app instead of two half-relevant ones. Kills the "too complex, I only trade delivery" objection without shipping a cut-down build — and reverses in one click, so it is never a trap. |
+| **Chart screenshots on the row** | The setup you saw is attached to the trade you took, and the trade list shows which trades have one. Review without this is recall, not evidence. |
+| **Live open-position tracking** (Pro) | SL/TSL/target and running risk on positions still on. This is the daily-use hook: closed-trade journaling is a weekly habit, watching an open book is a *daily* one. |
 
 ### The honesty positioning — this IS the differentiator
 
@@ -122,7 +153,9 @@ you on within ten minutes:
 
 ### Trust signals worth quoting
 
-- **892 unit/integration tests, 14 end-to-end flows**, including real broker-report paths.
+- **1,242 unit/integration tests across 91 files, 20 end-to-end flows**, including
+  real broker-report paths. (Keep this figure honest — run `npm run verify` before
+  quoting it; a stale number is the easiest thing for a sceptic to catch.)
 - **Signed auto-update** (since v2.91.0) with a build that refuses to ship
   unsigned or machine-dependent.
 - **Zero telemetry, zero cloud** — verifiable, since the app runs offline.
@@ -169,7 +202,33 @@ testimonials + Google reviews, then step to list price. Anchor the bundle agains
 standalone prices so it visibly saves money. Annual keys expire gracefully in-app (renewal
 notice + grace trial → free) — safe to sell without support overhead.
 
-### Packaging decision for v2.97
+### Packaging as shipped (v2.99.20) — quote THIS table
+
+Pro went from 6 gated screens to 17. The boundary is now a single sentence you
+can say on a call: **your record is free, the intelligence about it is paid.**
+
+| Free forever | Pro |
+|---|---|
+| Recording **closed** trades, editing, deleting, tagging | **Live open-position tracking** — SL/TSL/target, running risk |
+| All five broker importers, cross-source overlap warnings | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
+| Dashboard, P&L calendar with day drill-down and streaks | Portfolio Risk cockpit (VaR, Greeks, margin, breach alerts) |
+| Staged positions, playbooks, sessions, trade calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
+| Chart screenshots, attachments, symbol aliases | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
+| Backup & restore, full CSV/JSON export, audit log | Broker-cost + cross-broker MTF comparison, Charges & MTF Leak |
+| Workspace mode, sidebar layout, themes, accounts | PDF reports — monthly, and any selection of trades |
+
+**The one line that must survive every rewrite:** *every trade you have already
+recorded stays readable, editable and exportable without a key, forever.* This
+is the answer to "what happens to my data if I don't buy", and it is the reason
+the gate is defensible rather than hostile. Do not soften it into "your data is
+safe" — buyers hear that from everyone.
+
+**Why open-trade tracking is the right thing to move behind the gate:** it is
+the only feature whose value is *daily*. Closed-trade journaling is a weekly
+chore; watching a live book with stops and risk is a reason to open the app
+every morning, which is exactly what a trial needs to demonstrate in 7 days.
+
+### Packaging decision for v2.97 (superseded — kept for rationale)
 
 | Keep free forever | Put in Pro | Why |
 |---|---|---|
@@ -324,9 +383,15 @@ Everything technical is now BUILT — the sequence is pure go-to-market:
    renewal outreach list. Back up `license-private.pem` + `license-ledger.jsonl` after every
    batch of sales. Full procedures in `LICENSE_OPERATIONS.md`.
 
-### What changed since this plan was last revised (v2.82 → v2.97)
+### What changed since this plan was last revised (v2.82 → v2.99.20)
 
 Demo-able additions worth putting in the sales assets, newest first:
+
+- **v2.99.20 — the app fits the trader.** Two demos, 20 seconds each. Settings →
+  Workspace → "Equity only", and half the sidebar politely leaves. Then add an
+  MTF trade and watch the split name the real percentage, the stock, and the
+  broker list it came from. The first kills the complexity objection; the second
+  is the credibility moment.
 
 - **v2.97 — the trust-to-review loop.** Demo a red Data Quality issue becoming green, plan one
   session, show the post-market adherence review, then switch accounts. Close by exporting an
@@ -341,6 +406,13 @@ Demo-able additions worth putting in the sales assets, newest first:
   Radar**, and **shareable stat cards** (privacy-first: % of capital by default, watermarked
   "self-reported, not broker-verified").
 
-None of these are gated today. Before flipping `LICENSE_ENFORCEMENT` to `"block"`, decide
-deliberately whether staged positions belong in the free core or in Pro — see the note in
-`LICENSE_OPERATIONS.md` §5.
+**That decision is now made (v2.99.20).** The open question this section used to
+carry — whether staged positions belong in free or Pro — resolved as **free**,
+and the line was drawn elsewhere: staged positions, playbooks, sessions and the
+KPI drill-downs are all part of *recording and reading your own book*, so they
+stay free. What moved into Pro is **live open-position tracking**, because it is
+the only one of these whose value recurs daily rather than per-trade.
+
+The remaining launch-day code change is unchanged: `BUY_URL` and
+`LICENSE_ENFORCEMENT` in `lib/license.ts`. Do not flip enforcement before the
+payment page is live.

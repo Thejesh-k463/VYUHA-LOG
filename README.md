@@ -6,10 +6,15 @@
 Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine.
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
-[![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2ea44f)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1147%20passing-2ea44f)](tests)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20desktop%20%7C%20localhost-blue)](#-get-it)
-[![Privacy](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
+[![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
+[![Tests](https://img.shields.io/badge/tests-1242%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-20%20flows-2ea44f)](e2e)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
+[![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
+[![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
+[![Built for](https://img.shields.io/badge/built%20for-Indian%20retail%20traders-ff9933)](#why-vyuha)
+
+### ₹ Exact charges · 🧠 Honest analytics · 🔒 Zero cloud · 🇮🇳 Built for NSE/BSE/MCX
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
@@ -23,11 +28,20 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99.9 — every broker's MTF list, compared.** 10,501 per-stock own-margin percentages across
-> all seven brokers, each from the broker's own feed — and a new Broker Costs section that prices
+> **v2.99.20 — the app fits the trader, not the other way round.** Tell Settings you trade
+> **only equity or only F&O** and the other book's screens leave the sidebar and the ⌘K palette —
+> without deleting anything, without hiding a route you can still link to, and without a single
+> total quietly dropping rows. MTF now **shows the rate it is using**: the capital-vs-funded split
+> appears only on MTF trades and leads with *your* stock's percentage from *your* broker's list,
+> saying so plainly when the stock isn't on it. Chart screenshots became findable — a paperclip
+> and a count on every trade that has one. The P&L calendar **opens**: click a day for that day's
+> trades, with green/red runs counted in days you actually traded. And the sidebar reorders by
+> **drag** now, with a glow and a drop line, instead of clicking arrows.
+>
+> *v2.99.9 — every broker's MTF list, compared.* 10,501 per-stock own-margin percentages across
+> all seven brokers, each from the broker's own feed — and a Broker Costs section that prices
 > **your** delivery/MTF symbols on every list, cheapest broker highlighted (Sahi listed honestly:
-> no MTF delivery). Approved-but-unfunded scrips are declared, never disguised as funded. Plus a
-> sidebar you can reorder — items, whole groups, persisted, update-proof.
+> no MTF delivery). Approved-but-unfunded scrips are declared, never disguised as funded.
 >
 > *v2.99.8 — MTF that knows your broker's list.* 3,083 per-stock own-margin percentages from
 > the brokers' own published MTF lists (Zerodha and Paytm Money complete; partial/rule-based
@@ -83,6 +97,47 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - 🪜 **Positions built the way you actually trade them.** Scale in across tranches with a stop on each, scale out in parts, and see per-leg R — with exits priced at the blended average, quantity retired FIFO so the surviving tranche keeps its own stop, and R frozen at your first entry so it stays comparable. Broker tradebooks rebuild the ladder automatically.
 - 🔬 **Every KPI explains itself.** Click any headline number — Net P&L, Open Risk @ SL, MTF funded, Unrealised P&L — and it opens a breakdown of what it's actually made of: gross minus every charge with your best and worst day, open risk sitting next to initial risk with the unstopped-position count, effective leverage and how much of your paper gain financing has already eaten. Sixteen cards, keyboard-accessible.
 - 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — in three accent skins (**Terminal teal / Tape amber / Ice blue**), dark or light, with a colorblind-safe mode.
+
+---
+
+## 📊 At a glance
+
+<div align="center">
+
+| | | |
+|:--:|:--:|:--:|
+| **10,501** | **7** | **0.69%** |
+| per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
+| **1,242** | **40** | **0** |
+| tests, 20 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
+
+</div>
+
+> **Read that third number again.** On a real 92-row broker report, Vyuha's computed statutory
+> charges land within **0.69%** of the broker's own — STT, exchange, SEBI, stamp, IPFT, GST, DP and
+> pledge, per broker × segment × exchange, in integer paise with statutory rounding. Brokerage is
+> excluded from that claim because it isn't derivable from the file. We say so rather than pad the
+> number.
+
+---
+
+## 💸 What's free, what's paid
+
+**Your record is free. The intelligence about it is paid.**
+
+| ♾ Free forever | 🔑 Pro |
+|---|---|
+| Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
+| All five broker importers + duplicate detection | Portfolio Risk cockpit — VaR, Greeks, margin, breach alerts |
+| Dashboard, P&L calendar with day drill-down & streaks | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
+| Staged positions, playbooks, sessions, calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
+| Chart screenshots, symbol aliases, corporate actions | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
+| Backup & restore, full CSV/JSON export, audit log | Broker-cost + cross-broker MTF comparison, Charges & MTF Leak |
+| Workspace mode, sidebar layout, themes, multi-account | PDF reports — monthly, and any selection of trades |
+
+Every fresh install starts a **7-day full-Pro trial** — offline, no signup, no card. When it ends,
+**every trade you have already recorded stays readable, editable and exportable without a key,
+forever.** Your own record of your trading is never held hostage.
 
 ---
 

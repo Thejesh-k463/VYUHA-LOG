@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v2.99.20 — the app fits the trader, not the other way round
+
+Six changes, all answering the same complaint from testing: the app knew more
+than it was willing to show, and showed more than any one trader needed.
 
 **MTF now shows the rate it is actually using.** The own-capital / broker-funds
 split used to render on *every* equity trade — delivery and intraday included,
@@ -38,6 +41,29 @@ clears in one click, and a chip names the mode and links back to Settings.
 Scaling), the options-seller pack, the tax pack, data & export tools, and live
 open-position tracking now sit behind a licence. Recording *closed* trades —
 your own record of what you have already done — stays free, as it always has.
+
+### Under the hood
+
+- `PRO_FEATURES` went from 6 entries to 17, and its doc comment was corrected:
+  it claimed adding an entry gated a page "everywhere at once", which was never
+  true — `ProGate` takes no feature argument. `tests/pro-gating.test.ts` now
+  reads the real page files and fails if the registry and the gates drift apart,
+  or if a core-journal page ever gains a gate.
+- Two drag bugs fixed before they shipped. `setPointerCapture` ran before any
+  state was set, so a capture failure killed the drag silently; the listeners
+  now live on `window`, which needs no capture — and which is what makes a 12px
+  grip usable at all, since the pointer leaves it immediately. Separately, the
+  insertion line counts rows as displayed while `moveIndex` splices after
+  removal, so every downward drag landed one slot too far. `dropTarget`
+  reconciles the two coordinate systems.
+- `moveWithinVisible` keeps a saved sidebar order intact when workspace mode is
+  hiding part of the list — committing the drag's visible-only indices directly
+  would have written back an order with every hidden screen missing.
+- Migration `0042_workspace-mode` adds `settings.workspace`, defaulting to
+  `both`: existing installs behave exactly as before until the user chooses.
+- Calendar "today" was computed from an ISO/UTC string, which highlights the
+  wrong cell for anyone east of GMT after ~05:30 IST. Now built from local
+  date parts.
 
 ## v2.99.10 — the trial is now 7 days
 

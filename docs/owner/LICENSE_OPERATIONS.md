@@ -119,7 +119,8 @@ displayed in-app), not cryptographic.
 ## 5. Enforcement — ✅ LIVE (set 2026-07-22)
 
 1. **`LICENSE_ENFORCEMENT` is now `"block"`.** When a 7-day trial ends without a key, the Pro
-   screens (Risk cockpit, Tax Summary, ITR Pack, Broker Compare) render the upsell panel instead of
+   screens (17 of them since v2.99.20 — the risk cockpit, deep analytics, the options-seller pack,
+   the tax pack, broker/MTF comparison, PDF reports and open-trade tracking) render the upsell panel instead of
    their content. The core journal — trades, imports, dashboard, playbooks, backups — is still never
    gated: a trader who can't record what they actually did won't stay long enough to buy anything.
 2. **`BUY_URL` points at WhatsApp** — `917393673714`, with a pre-filled message, derived from

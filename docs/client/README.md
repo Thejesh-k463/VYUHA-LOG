@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.20
+
+| Upgrade | What it gives you |
+|---|---|
+| **Equity only? F&O only?** | Settings → Workspace. Pick the book you actually trade and the other one's screens leave your sidebar and the Ctrl+K palette. Nothing is deleted, your totals still count everything, and switching back is one click. |
+| **MTF shows the rate it is using** | The capital vs broker-funded split now appears only on MTF trades — not on delivery or intraday, where broker funding doesn't exist — and leads with the actual percentage for *your* stock on *your* broker's list. If the stock isn't on that list, it says so instead of guessing. |
+| **Screenshots you can find** | Trades with a chart attached now show a paperclip and a count in the journal, so you can see at a glance which trades have evidence. The add-trade form tells you up front that you can attach one. |
+| **Calendar you can open** | Click any day on the P&L calendar to see exactly that day's trades. Above it: your current and best green/red runs — counted in days you actually traded, so a weekend never breaks a streak — plus your best and worst days marked in place and each month's net in its header. |
+| **Drag the sidebar** | Reordering is now a drag: hover any screen or group, grab the grip, and drop it where you want. The row glows and a line shows where it will land. |
+
 ## New in v2.99.9
 
 | Upgrade | What it gives you |
@@ -12,7 +22,7 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 | **MTF drift check** | Portfolio Risk flags open MTF positions whose margin requirement has moved since you entered — with the top-up amount a re-margin would demand. |
 | **Chart screenshots at entry** | Save a trade and attach your chart screenshots right there — they stay with the trade for review, fully offline. |
 | **Export selected trades as PDF** | Tick trades in the journal → Export PDF → a clean report with full detail per trade. |
-| **Your sidebar, your order** | "Customize order" at the bottom of the sidebar — arrange screens and groups the way you work; Reset brings the default back. |
+| **Your sidebar, your order** | Arrange screens and groups the way you work; Reset brings the default back. (Now a drag — see v2.99.20 above.) |
 
 ## New in v2.99.5
 
