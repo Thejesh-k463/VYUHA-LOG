@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+**MTF now shows the rate it is actually using.** The own-capital / broker-funds
+split used to render on *every* equity trade — delivery and intraday included,
+where broker funding does not exist — with a static 25% in the hint text. The
+engine was resolving per-stock margins correctly all along; the form was
+describing a default it wasn't using. The split now appears only for MTF, and
+leads with the resolved percentage, naming the stock and the broker list it
+came from. A stock missing from that broker's list says so instead of quietly
+falling back.
+
+**Chart screenshots are findable.** The feature existed in three places and was
+discoverable in none: add-trade only revealed it *after* saving, the edit and
+journal dialogs buried it below the fold, and no trade row ever indicated an
+attachment existed. Trades now carry a paperclip with a count, and the add form
+says up front that a chart can be attached.
+
+**Daily P&L calendar** — click any day to open exactly that day's trades.
+Above it, current and best green/red runs counted in *traded* days (a weekend
+does not break a streak, and a flat day neither extends nor breaks one), best
+and worst days marked in place, and each month's net in its header. Fixes a
+UTC bug that could highlight the wrong cell as "today" for users east of GMT.
+
+**Sidebar reordering is a drag, not a click.** A grip appears on hover; the row
+follows the pointer with a glow and an insertion line shows where it will land.
+Replaces the arrow buttons, which testers found mechanical.
+
+**Workspace mode (Settings → Workspace).** Say you trade only equity or only
+F&O and the other book's screens leave the sidebar and command palette, with
+the bucket filter on Trades and the Dashboard seeded to match. It is not a
+lock: hidden routes still open from a link or bookmark, the screen you are on
+always stays in the sidebar, the pre-filter is the screen's own control and
+clears in one click, and a chip names the mode and links back to Settings.
+
+**A wider Pro surface.** Deep analytics (Arjun's Eye, Edge/Setups, Discipline,
+Scaling), the options-seller pack, the tax pack, data & export tools, and live
+open-position tracking now sit behind a licence. Recording *closed* trades —
+your own record of what you have already done — stays free, as it always has.
+
 ## v2.99.10 — the trial is now 7 days
 
 The full-Pro trial on a fresh install is **7 days**, down from 14. One trading

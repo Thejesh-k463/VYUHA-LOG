@@ -26,8 +26,10 @@ after download.
 
 **Every fresh install starts a 7-day full-Pro trial** — no signup, no card, entirely offline.
 The clock starts the first time *you* open the app, not when the installer was built. The core
-journal (trades, imports, dashboard, playbooks, backups) is **free forever**; the trial covers the
-Pro analytics.
+journal — recording closed trades, imports, the dashboard, staged positions, playbooks and
+backups — is **free forever**; the trial covers the Pro analytics, plus live open-position
+tracking with SL/target. Whatever you record during the trial stays yours: when it ends, every
+trade is still readable, editable and exportable without a key.
 
 When you buy:
 
