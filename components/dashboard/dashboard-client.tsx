@@ -328,7 +328,14 @@ export function DashboardClient({
           </div>
         </CardHeader>
         <CardContent>
-          <CalendarHeatmap daily={daily} />
+          {/* Drill-down reuses the Trades deep link the KPI cards already use:
+              from=to=<day> plus realised=1, so the rows shown are EXACTLY the
+              population dailyPnl summed for that cell (closed trades only —
+              an open position's charges would otherwise not reconcile). */}
+          <CalendarHeatmap
+            daily={daily}
+            onPickDay={(d) => { window.location.href = `/trades?from=${d}&to=${d}&realised=1`; }}
+          />
           {undatedClosed > 0 && (
             <p className="mt-2 text-[11px] text-muted-foreground">
               <span className="text-warning">{undatedClosed} closed trade{undatedClosed === 1 ? "" : "s"} carry no exit

@@ -1,4 +1,5 @@
 import { PrintButton } from "@/components/reports/print-button";
+import { ProGate } from "@/components/system/pro-gate";
 import { VyuhaMark } from "@/components/brand/mark";
 import { Badge } from "@/components/ui/badge";
 import { getTrades } from "@/lib/queries/trades";
@@ -44,6 +45,7 @@ export default async function SelectedTradesReport({
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6 print:max-w-none print:p-2">
+      <ProGate>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <VyuhaMark size={30} />
@@ -147,6 +149,7 @@ export default async function SelectedTradesReport({
           </p>
         </>
       )}
+      </ProGate>
     </div>
   );
 }

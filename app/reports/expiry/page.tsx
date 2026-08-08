@@ -5,6 +5,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { getTrades } from "@/lib/queries/trades";
 import { computeExpiryStats, type ExpiryBucket } from "@/lib/analytics/expiry-stats";
 import { inr, fmtDate } from "@/lib/format";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default function ExpiryPage() {
         actions={<Badge variant="secondary">{s.expiryDates.length} expiry days seen</Badge>}
       />
       <div className="space-y-5 p-6">
+        <ProGate>
         {closedFno === 0 && s.upcoming.length === 0 ? (
           <Card><CardContent className="p-6 text-sm text-muted-foreground">No F&O trades yet — this view activates once you trade derivatives.</CardContent></Card>
         ) : (
@@ -106,6 +108,7 @@ export default function ExpiryPage() {
             </p>
           </>
         )}
+      </ProGate>
       </div>
     </>
   );

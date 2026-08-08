@@ -29,7 +29,7 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
 import {
   TRADE_VIEWS, matchesView, countViews, countForView, type TradeView,
 } from "@/lib/analytics/trade-status";
-import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers } from "lucide-react";
+import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -45,6 +45,8 @@ export function TradesClient({
   playbooks = [],
   mtfMarginByBroker = {},
   writeAccounts = [],
+  attachmentCounts = {},
+  pro = true,
 }: {
   trades: Trade[];
   playbooks?: PlaybookOption[];
@@ -53,6 +55,11 @@ export function TradesClient({
   mtfMarginByBroker?: Record<string, number>;
   /** Non-empty only in the aggregate view with 2+ accounts — see A6. */
   writeAccounts?: WriteAccountOption[];
+  /** tradeId → screenshot count, for the row indicator. Server-computed in one
+   *  grouped query so the badge never costs a query per row. */
+  attachmentCounts?: Record<number, number>;
+  /** Entitlement — gates the Pro-only "Open trade" entry point. */
+  pro?: boolean;
 }) {
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [addOpen, setAddOpen] = React.useState(false);
@@ -302,14 +309,28 @@ export function TradesClient({
       id: "actions", header: "",
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
+          {/* Screenshots live inside the journal dialog, so the journal button
+              carries their indicator: a count badge means "there are charts in
+              here". Without it a trade with screenshots looked identical to
+              one without, and the feature was invisible from the table. */}
           <Button
             size="icon"
             variant="ghost"
-            className={`size-7 ${(row.original.mistakeTags?.length || row.original.playbookId != null || row.original.emotionTag) ? "text-accent" : ""}`}
+            className={`relative size-7 ${(row.original.mistakeTags?.length || row.original.playbookId != null || row.original.emotionTag) ? "text-accent" : ""}`}
             onClick={() => setJournaling(row.original)}
-            title="Journal — playbook, emotion, mistakes"
+            title={
+              attachmentCounts[row.original.id]
+                ? `Journal — ${attachmentCounts[row.original.id]} chart screenshot${attachmentCounts[row.original.id] === 1 ? "" : "s"}, playbook, emotion, mistakes`
+                : "Journal — playbook, emotion, mistakes (attach chart screenshots here)"
+            }
           >
             <NotebookPen className="size-3.5" />
+            {attachmentCounts[row.original.id] > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex items-center gap-px rounded-full bg-primary px-1 text-[8px] font-semibold leading-[13px] text-primary-foreground">
+                <Paperclip className="size-2" />
+                {attachmentCounts[row.original.id]}
+              </span>
+            )}
           </Button>
           <Button
             size="icon"
@@ -341,7 +362,7 @@ export function TradesClient({
         </div>
       ),
     },
-  ], [today, data, visibleSelected]);
+  ], [today, data, visibleSelected, attachmentCounts]);
 
   return (
     <div className="space-y-4">
@@ -385,6 +406,21 @@ export function TradesClient({
         </Select>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{data.length} of {trades.length}</span>
+          {/* Pro: tracking a LIVE position (SL/TSL/target, risk, Portfolio Risk
+              feed) is the forward-looking half of the journal. Recording a
+              completed trade stays free — the user's own record of what they
+              did is never held hostage (invariant 7). Locked, not hidden: the
+              button says what it unlocks rather than disappearing. */}
+          {!pro ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => { window.location.href = "/settings#license"; }}
+              title="Pro — tracking live positions with SL/target and risk. Recording closed trades stays free."
+            >
+              <Lock className="size-3.5" /> Open trade
+            </Button>
+          ) : (
           <Dialog open={addOpenTrade} onOpenChange={setAddOpenTrade}>
             <DialogTrigger asChild>
               <Button size="sm" variant="secondary"><Plus className="size-4" /> Open trade</Button>
@@ -397,6 +433,7 @@ export function TradesClient({
               <ManualTradeForm mode="open" onDone={() => setAddOpenTrade(false)} mtfMarginByBroker={mtfMarginByBroker} writeAccounts={writeAccounts} />
             </DialogContent>
           </Dialog>
+          )}
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button size="sm"><Plus className="size-4" /> Add trade</Button>

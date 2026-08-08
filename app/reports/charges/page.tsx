@@ -9,6 +9,7 @@ import { chargesBySegment, chargesByMonth, chargesTotals, type ChargeRow } from 
 import { marginPenaltyByMonth, marginPenaltyTotal, type MarginPenaltyEntry } from "@/lib/analytics/margin-penalty";
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default function ChargesReportPage() {
     <>
       <PageHeader title="Charges & MTF-Leak Report" description="Where the edge leaks — by segment and by month, with break-even move %." />
       <div className="space-y-5 p-6">
+        <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiCard label="Total charges" value={inr(totals.total, { decimals: 0 })} valueClassName="text-warning" />
           <KpiCard label="Brokerage" value={inr(totals.brokerage, { decimals: 0 })} />
@@ -113,6 +115,7 @@ export default function ChargesReportPage() {
             </p>
           </CardContent>
         </Card>
+      </ProGate>
       </div>
     </>
   );

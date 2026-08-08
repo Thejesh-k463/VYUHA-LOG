@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { AdvanceTaxCalc } from "@/components/reports/advance-tax-calc";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,9 @@ export default function AdvanceTaxPage() {
         actions={<Badge variant="secondary">FY from {fyStart}</Badge>}
       />
       <div className="p-6">
+        <ProGate>
         <AdvanceTaxCalc initialGains={realisedFy} today={today} fyStartMonth={fyStartMonth} />
+      </ProGate>
       </div>
     </>
   );

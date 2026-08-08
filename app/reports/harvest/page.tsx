@@ -7,6 +7,7 @@ import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { inr } from "@/lib/format";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default function HarvestPage() {
         actions={<Badge variant={r.daysToFyEnd <= 45 ? "warning" : "secondary"}>{r.daysToFyEnd}d to FY end</Badge>}
       />
       <div className="space-y-5 p-6">
+        <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <KpiCard label="Realised STCG (FY)" value={inr(r.realisedStcg, { decimals: 0 })} valueClassName={r.realisedStcg >= 0 ? "text-profit" : "text-loss"} sub="short-term" />
           <KpiCard label="Realised LTCG (FY)" value={inr(r.realisedLtcg, { decimals: 0 })} valueClassName={r.realisedLtcg >= 0 ? "text-profit" : "text-loss"} sub={`₹1.25L exempt`} />
@@ -118,6 +120,7 @@ export default function HarvestPage() {
           post-23-Jul-2024 regime (STCG 20%, LTCG 12.5% beyond the ₹1.25L exemption). No wash-sale rule means you may
           re-buy, but a same-day round-trip can be questioned and changes your holding clock — informational, not advice.
         </p>
+      </ProGate>
       </div>
     </>
   );

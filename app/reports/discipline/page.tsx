@@ -12,6 +12,7 @@ import { playbookStats, mistakeReport, emotionReport, playbookRuleCost, PLAYBOOK
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr } from "@/lib/format";
 import Link from "next/link";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default function DisciplineReportPage() {
     <>
       <PageHeader title="Discipline Scorecard" description="Weekly adherence to the rules that protect your capital." />
       <div className="space-y-5 p-6">
+        <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiCard label="Avg weekly score" value={`${avg}`} valueClassName={scoreColor(avg)} sub={`${weeks.length} weeks`} />
           <KpiCard label="Latest week" value={latest ? `${latest.score}` : "—"} valueClassName={latest ? scoreColor(latest.score) : ""} sub={latest?.week} />
@@ -331,6 +333,7 @@ export default function DisciplineReportPage() {
         <p className="text-[11px] text-muted-foreground">
           Score = average of three sub-scores: losses kept within the per-trade cap, days kept within the daily stop, and trades with an SL/target recorded. Tag SL/targets in Trades to lift the planning score.
         </p>
+      </ProGate>
       </div>
     </>
   );

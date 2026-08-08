@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AisReconcile } from "@/components/reports/ais-reconcile";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default function AisReconcilePage() {
         description="Reconcile the IT-department's Annual Information Statement against your journal before filing."
       />
       <div className="space-y-5 p-6">
+        <ProGate>
         <Card>
           <CardHeader>
             <CardTitle>Paste AIS / Form 26AS rows</CardTitle>
@@ -32,6 +34,7 @@ export default function AisReconcilePage() {
             </p>
           </CardContent>
         </Card>
+      </ProGate>
       </div>
     </>
   );

@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { db } from "@/lib/db";
-import { trades, importBatches } from "@/lib/db/schema";
+import { trades, importBatches, tradeAttachments } from "@/lib/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import type { Trade } from "@/lib/db/schema";
 import { getSelectedAccountId } from "./accounts";
@@ -12,6 +12,24 @@ export const getTrades = cache((): Trade[] => {
   return (accountId > 0 ? q.where(eq(trades.accountId, accountId)) : q)
     .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all();
 });
+
+/**
+ * tradeId → number of chart screenshots attached.
+ *
+ * One grouped query for the whole table rather than a count per row: the
+ * trades table renders hundreds of rows, and the point of this map is a small
+ * paperclip badge — it must never cost a query per trade. Attachments are not
+ * account-scoped themselves (they hang off a trade that already is), so the
+ * map is safe to build unfiltered and read by id.
+ */
+export function getAttachmentCounts(): Map<number, number> {
+  const rows = db
+    .select({ tradeId: tradeAttachments.tradeId, n: sql<number>`count(*)` })
+    .from(tradeAttachments)
+    .groupBy(tradeAttachments.tradeId)
+    .all();
+  return new Map(rows.map((r) => [r.tradeId, Number(r.n)]));
+}
 
 export function getSetupTags(): string[] {
   const accountId = getSelectedAccountId();

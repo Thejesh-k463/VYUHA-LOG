@@ -12,6 +12,7 @@ import { disciplineByWeek } from "@/lib/analytics/discipline";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { inr } from "@/lib/format";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default function MonthlyReportPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6 print:max-w-none print:p-2">
+        <ProGate>
       {/* Report header */}
       <div className="flex items-start justify-between border-b border-border pb-4">
         <div>
@@ -170,6 +172,7 @@ export default function MonthlyReportPage() {
           </p>
         </>
       )}
-    </div>
+    </ProGate>
+      </div>
   );
 }

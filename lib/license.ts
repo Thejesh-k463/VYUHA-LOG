@@ -185,17 +185,46 @@ export const BUY_URL = WHATSAPP_NUMBER
   ? `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(BUY_MESSAGE)}`
   : "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
 
-/** The Pro surface. One registry drives the gates, the upsell card's feature
- *  list, and the docs — add a page here and it's gated everywhere at once.
- *  Deliberate: the CORE JOURNAL (trades, imports, dashboard, playbooks) is
- *  never gated — your data and record-keeping are never held hostage. */
+/**
+ * The Pro surface — the list shown on the upsell card.
+ *
+ * THIS REGISTRY IS DISPLAY-ONLY. `ProGate` takes no feature argument: it
+ * checks entitlement and renders children or the upsell. Adding an entry here
+ * does NOT gate a page — you must also wrap that page's content in
+ * `<ProGate>`. (An earlier comment claimed otherwise, and the two drifted:
+ * six pages were listed while several substantive analytics screens sat
+ * outside the paywall.) `tests/pro-gating.test.ts` now asserts the two stay
+ * in step.
+ *
+ * Deliberate: the CORE JOURNAL — recording trades, every importer, the
+ * dashboard, playbooks, staged positions and backups — is never gated. Your
+ * own record of your trading is never held hostage (invariant 7). The one
+ * journal-side exception is ADDING AN OPEN TRADE: tracking a live position
+ * with SL/target/risk is forward-looking tooling, not record-keeping.
+ */
 export const PRO_FEATURES: { href: string; label: string }[] = [
+  // Positions & risk
   { href: "/risk", label: "Portfolio Risk cockpit (VaR, Greeks, margin, settlement radar, breach alerts)" },
+  { href: "/trades?add=open", label: "Open-trade tracking — live positions with SL/TSL/target and risk" },
+  // Deep analytics
+  { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
+  { href: "/reports/edge", label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
+  { href: "/reports/discipline", label: "Discipline — which broken rule costs you the most" },
+  { href: "/reports/scaling", label: "Scaling Quality & Trade Replay" },
+  // Options seller
+  { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },
+  { href: "/reports/expiry", label: "Expiry Analytics — expiry-day vs other-day edge" },
+  { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },
+  // Tax
   { href: "/reports/tax", label: "Tax Summary (grandfathering, dividend TDS, set-off)" },
   { href: "/reports/itr", label: "ITR Pack — 44AB/44AD audit read + CA export" },
-  { href: "/reports/broker-compare", label: "Broker cost comparison (whole history re-priced)" },
-  { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },
-  { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
+  { href: "/reports/advance-tax", label: "Advance Tax planner — 15 Jun/Sep/Dec/Mar instalments" },
+  { href: "/reports/harvest", label: "Tax Harvest — LTCG exemption and loss harvesting" },
+  { href: "/reports/ais", label: "AIS Reconcile — the portal's JSON against your journal" },
+  // Costs, data & exports
+  { href: "/reports/broker-compare", label: "Broker cost comparison + cross-broker MTF margins" },
+  { href: "/reports/charges", label: "Charges & MTF Leak — where the money actually goes" },
+  { href: "/reports/monthly", label: "PDF reports — monthly, and any selection of trades" },
 ];
 
 export type EntitlementState = "licensed" | "trial" | "expired-key" | "unlicensed";

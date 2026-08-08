@@ -13,6 +13,7 @@ import { resolveTicker } from "@/lib/analytics/aliases";
 import { KpiCard } from "@/components/kpi-card";
 import { getIndexMembershipMap } from "@/lib/queries/instruments";
 import { themeEdge, THEME_MIN_SAMPLE } from "@/lib/analytics/theme-edge";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -62,11 +63,13 @@ export default function EdgeReportPage() {
     <>
       <PageHeader title="Edge / Setup Analytics" description="Which edges pay — expectancy, win rate and avg R per setup and segment." />
       <div className="space-y-5 p-6">
+        <ProGate>
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
         <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
         <StopTuningCard tuning={tuning} />
+      </ProGate>
       </div>
     </>
   );

@@ -2,6 +2,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { getTrades, getTradeStats } from "@/lib/queries/trades";
+import { getAttachmentCounts } from "@/lib/queries/trades";
+import { getEntitlement } from "@/lib/queries/license";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { inr } from "@/lib/format";
@@ -111,6 +113,8 @@ export default function TradesPage() {
           playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived, rules: p.rules }))}
           mtfMarginByBroker={getMtfMarginByBroker()}
           writeAccounts={writeAccounts}
+          attachmentCounts={Object.fromEntries(getAttachmentCounts())}
+          pro={getEntitlement().pro}
         />
       </div>
     </>

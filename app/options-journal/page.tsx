@@ -6,6 +6,7 @@ import { optionsSellerReport } from "@/lib/analytics/options-seller";
 import { dteReport, hedgeReport, rollReport, ivRankReport, thetaEfficiency } from "@/lib/analytics/options-seller-depth";
 import { inr } from "@/lib/format";
 import { getTrades } from "@/lib/queries/trades";
+import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default function OptionsJournalPage() {
   return <>
     <PageHeader title="Options Seller Journal" description="Premium capture, IV change, hedge state, DTE, adjustments and expiry outcomes." />
     <div className="space-y-5 p-6">
+        <ProGate>
       <div className="grid gap-3 sm:grid-cols-4">
         <KpiCard label="Seller trades" value={String(seller.count)} />
         <KpiCard label="Net P&L" value={inr(seller.netPnl)} />
@@ -120,6 +122,7 @@ export default function OptionsJournalPage() {
         {!options.length && <p className="p-4 text-sm text-muted-foreground">No option trades yet.</p>}
       </CardContent></Card>
       <p className="text-[11px] text-muted-foreground">Premium capture is descriptive. Return-on-risk uses the recorded risk amount when present; it is not a broker SPAN statement. IV fields are user/broker observations, never silently inferred.</p>
-    </div>
+    </ProGate>
+      </div>
   </>;
 }

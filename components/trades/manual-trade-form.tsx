@@ -15,7 +15,7 @@ import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/m
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, Paperclip } from "lucide-react";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
@@ -239,6 +239,14 @@ export function ManualTradeForm({
   }, [open, preview, buyQty, avgBuyPrice, sl]);
 
   const isEquity = kind === "equity" && (preview?.classification.segment.startsWith("eq_") ?? true);
+  // The own-capital / broker-funds split is MEANINGFUL ONLY FOR MTF — a delivery
+  // or intraday equity trade has no broker funding. Showing it (with a 25%
+  // default) on every equity trade made testers think the app always assumes
+  // 25%. Gate strictly on MTF: the user picked "MTF" as the product, or the
+  // classifier resolved eq_mtf, or they overrode the segment to eq_mtf.
+  const isMtf =
+    kind === "equity" &&
+    (productHint === "mtf" || segment === "eq_mtf" || preview?.classification.segment === "eq_mtf");
   const blocked = open && limit?.status === "block";
   const dte = kind === "fno" && expiry ? daysBetween(new Date().toISOString().slice(0, 10), expiry) : null;
   const fnoQty = (Number(lots) || 0) * (Number(lotSize) || 0);
@@ -288,6 +296,9 @@ export function ManualTradeForm({
       <div className="space-y-4">
         <p className="flex items-center gap-1.5 text-sm text-profit">
           <CheckCircle2 className="size-4" /> {state.message}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Add the chart you traded — it stays with this trade for review. Skip with <b>Done</b>.
         </p>
         <TradeAttachments tradeId={state.tradeId} label="Attach chart screenshots (optional)" />
         <div className="flex justify-end">
@@ -455,7 +466,7 @@ export function ManualTradeForm({
           />
         </Field>
         <Field label={kind === "fno" ? "Strategy" : "Setup tag"}><Input name="setupTag" placeholder={kind === "fno" ? "e.g. Iron condor, ORB" : "e.g. ORB, pullback"} /></Field>
-        {!isEquity ? null : (
+        {!isMtf ? null : (
           <>
             <Field label="Own capital used (₹)">
               <Input
@@ -464,7 +475,7 @@ export function ManualTradeForm({
                 step="any"
                 value={ownCapitalUsed}
                 onChange={(e) => setOwnCapitalUsed(e.target.value)}
-                placeholder={mtfDefaultOwnCapital > 0 ? `≈ ${Math.round(mtfDefaultOwnCapital).toLocaleString("en-IN")} auto @ ${mtfEffectivePct}% margin` : "auto-estimated"}
+                placeholder={mtfDefaultOwnCapital > 0 ? `≈ ${Math.round(mtfDefaultOwnCapital).toLocaleString("en-IN")} auto` : "auto-estimated"}
               />
             </Field>
             <Field label="Broker funds (₹)">
@@ -482,20 +493,40 @@ export function ManualTradeForm({
                 }}
                 placeholder="derived from own capital"
               />
-              <p className="text-[10px] text-muted-foreground">
-                {positionValue > 0
-                  ? `Split: you ₹${Math.round(mtfEffectiveOwnCapital).toLocaleString("en-IN")} + broker ₹${Math.round(mtfEffectiveFunded).toLocaleString("en-IN")}${mtfLeverage != null ? ` (${mtfLeverage.toFixed(2)}x)` : ""} — interest accrues on the broker's share only. `
-                  : "Enter buy price and quantity and the split auto-fills. "}
-                {mtfStockInfo
-                  ? `Auto @ ${mtfStockInfo.pct}% for ${symbolForMtf || "this stock"} — ${mtfStockInfo.label}.`
-                  : `Auto @ the configured ${mtfEffectivePct}% own-margin rate (Settings → Margin).`}
-              </p>
             </Field>
             {!open && (
               <Field label="Days held so far (MTF)">
                 <Input name="daysHeld" type="number" step="any" value={daysHeld} onChange={(e) => setDaysHeld(e.target.value)} />
               </Field>
             )}
+            {/* The margin RATE gets its own full-width line, because which rate
+                was used and where it came from is the question a trader asks
+                first. A per-stock hit names the stock and its list; only a
+                genuine fallback shows the generic rate — the old copy quoted
+                "25%" even when a real per-stock margin had been resolved. */}
+            <div className="col-span-2 rounded-md border border-border bg-card-hover/30 p-2.5 sm:col-span-4">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                <span className="text-muted-foreground">Own margin</span>
+                <span className="font-mono text-sm font-semibold tabular-nums text-primary">{mtfEffectivePct}%</span>
+                {mtfStockInfo ? (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                    {symbolForMtf} · {BROKER_LABELS[broker as never] ?? broker} list
+                  </span>
+                ) : symbolForMtf.length >= 2 ? (
+                  <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
+                    {symbolForMtf} not on {BROKER_LABELS[broker as never] ?? broker}&apos;s MTF list — fallback rate
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">enter the symbol for its exact broker rate</span>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {positionValue > 0
+                  ? `You ₹${Math.round(mtfEffectiveOwnCapital).toLocaleString("en-IN")} + broker ₹${Math.round(mtfEffectiveFunded).toLocaleString("en-IN")}${mtfLeverage != null ? ` · ${mtfLeverage.toFixed(2)}x leverage` : ""} — interest accrues on the broker's share only. `
+                  : "Enter buy price and quantity and the split fills itself. "}
+                {mtfStockInfo ? mtfStockInfo.label : "Source: Settings → Margin (no per-stock entry matched)."}
+              </p>
+            </div>
           </>
         )}
         <Field label="Notes" className="col-span-2 sm:col-span-4"><Input name="notes" placeholder="optional" /></Field>
@@ -569,6 +600,18 @@ export function ManualTradeForm({
 
       {/* Pre-trade limits verdict (open trades) */}
       {open && limit && <LimitVerdict result={limit} />}
+
+      {/* Chart screenshots need a trade id to attach to, so the picker itself
+          can only appear after the save. Announce it HERE anyway: testers had
+          no way to know the feature existed, because the only mention lived on
+          a screen you reach by saving first. */}
+      <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+        <Paperclip className="size-3.5 shrink-0" />
+        <span>
+          <b className="text-foreground">Chart screenshots:</b> attach them on the next step, right after you save
+          this trade — or any time later from the trade&apos;s journal.
+        </span>
+      </div>
 
       <div className="flex items-center gap-3">
         {/* Limits are advisory — the trader always has final say. A breach flips
