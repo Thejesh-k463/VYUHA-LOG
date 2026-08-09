@@ -477,7 +477,14 @@ export const settings = sqliteTable("settings", {
   equityCapital: real("equity_capital").notNull(),
   activeCapital: real("active_capital").notNull(),
   theme: text("theme").notNull().default("dark"),
-  accentSkin: text("accent_skin").notNull().default("terminal"), // terminal | tape | ice (C8)
+  // RETIRED FEATURE, LIVE COLUMN. The C8 accent skins (terminal | tape | ice)
+  // were dropped in v3: the Dark Luxe palette gives gold and violet fixed
+  // meanings (money / analytics) and a swappable amber primary collided with
+  // the gold role. The column stays because dropping it buys nothing and costs
+  // a migration that would have to rewrite every existing settings row; stored
+  // "tape"/"ice" values are simply never turned into a class (app/layout.tsx),
+  // so those users fall back to Terminal with no error and no data loss.
+  accentSkin: text("accent_skin").notNull().default("terminal"),
   // compact | comfortable — one root font-size (16px vs 17px); everything is
   // rem-sized so the whole interface scales together (app/globals.css).
   density: text("density").notNull().default("compact"),

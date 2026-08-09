@@ -23,7 +23,6 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [workspace, setWorkspace] = useState<Workspace>(asWorkspace(current.workspace));
   const [colorblind, setColorblind] = useState(current.colorblindSafe);
   const [theme, setTheme] = useState(current.theme);
-  const [skin, setSkin] = useState(current.accentSkin ?? "terminal");
   const [density, setDensity] = useState(current.density ?? "compact");
   const [goLiveDate, setGoLive] = useState(current.goLiveDate);
   const [equityCapital, setEquity] = useState(String(current.equityCapital));
@@ -44,11 +43,6 @@ export function SettingsForm({ current }: { current: Settings }) {
     setColorblind(next);
     document.documentElement.classList.toggle("cb-safe", next);
   }
-  function applySkin(next: string) {
-    setSkin(next);
-    document.documentElement.classList.remove("skin-tape", "skin-ice");
-    if (next !== "terminal") document.documentElement.classList.add(`skin-${next}`);
-  }
   function applyDensity(next: string) {
     setDensity(next);
     document.documentElement.classList.toggle("density-comfortable", next === "comfortable");
@@ -63,7 +57,10 @@ export function SettingsForm({ current }: { current: Settings }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "settings",
-          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
+          // accentSkin is not sent: the skin picker was retired in v3. The API
+          // still accepts the field (defaulting to "terminal"), so a saved
+          // "tape"/"ice" row quietly normalises the next time this form saves.
+          goLiveDate, equityCapital, activeCapital, theme, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
         }),
@@ -144,13 +141,6 @@ export function SettingsForm({ current }: { current: Settings }) {
             <Select value={theme} onChange={(e) => applyTheme(e.target.value)}>
               <option value="dark">Dark (terminal)</option>
               <option value="light">Light</option>
-            </Select>
-          </Field>
-          <Field label="Accent skin">
-            <Select value={skin} onChange={(e) => applySkin(e.target.value)}>
-              <option value="terminal">Terminal (teal)</option>
-              <option value="tape">Tape (amber)</option>
-              <option value="ice">Ice (blue)</option>
             </Select>
           </Field>
           <Field label="Display density">

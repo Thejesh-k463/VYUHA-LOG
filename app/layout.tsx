@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
@@ -11,9 +11,18 @@ import { asWorkspace, type Workspace } from "@/lib/domain/workspace";
 
 // C1 typography — self-hosted at build time (next/font), so the shipped app
 // stays fully offline. Inter carries the UI; JetBrains Mono carries every
-// number (wired to .tabular-nums/tables in globals.css) for the terminal look.
+// number (wired to .tabular-nums/tables in globals.css) for the terminal look;
+// Space Grotesk (v3) carries page/panel titles and the wordmark via
+// --font-display. Only 600/700 are pulled — the display face is never used for
+// body copy, so the lighter weights would be dead bytes in the bundle.
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const jbMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jb", display: "swap" });
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Vyuha — Trade Journal",
@@ -33,14 +42,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   let colorblind = false;
   let theme = "dark";
-  let skin = "terminal";
   let density = "compact";
   let workspace: Workspace = "both";
   try {
     const s = getSettings();
     colorblind = s?.colorblindSafe ?? false;
     theme = s?.theme ?? "dark";
-    skin = s?.accentSkin ?? "terminal";
     density = s?.density ?? "compact";
     workspace = asWorkspace(s?.workspace);
   } catch {
@@ -54,9 +61,13 @@ export default function RootLayout({
         "h-full",
         inter.variable,
         jbMono.variable,
+        spaceGrotesk.variable,
         theme === "light" && "theme-light",
         colorblind && "cb-safe",
-        skin !== "terminal" && `skin-${skin}`,
+        // settings.accentSkin is deliberately NOT read here any more. The Tape
+        // and Ice skins were retired in v3 (see app/globals.css); the column
+        // still holds 'tape'/'ice' for anyone who set them, and those rows now
+        // simply render as Terminal rather than erroring or being migrated.
         density === "comfortable" && "density-comfortable",
       )}
     >

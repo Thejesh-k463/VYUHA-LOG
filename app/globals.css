@@ -1,43 +1,85 @@
 @import "tailwindcss";
 
 /*
- * Vyuha — dark trading-terminal theme (default).
+ * Vyuha — "Dark Luxe" (v3 redesign). Dark is the default theme.
  * Tailwind v4: tokens declared in @theme generate utilities (bg-card, text-loss…).
+ *
+ * Colour-role law (the whole palette hangs off this — do not blur it):
+ *   primary (teal)  = the brand AND every interactive element
+ *   gold            = money leaving the account: charges, MTF, margin, warnings
+ *   violet          = analytics / derived statistics
+ *   profit / loss   = P&L only (the colorblind-safe swap below still applies)
+ * Gold and violet are NEVER used for interactive states.
+ *
+ * `static` is load-bearing, not decoration. Tailwind v4 prunes theme variables
+ * that no generated utility references, and the light theme in @layer base
+ * redefines these same names as plain CSS — which is never pruned. Without
+ * `static`, a token nobody has used YET (--color-gold, --color-violet, the
+ * radius/shadow scale) exists in light mode and is undefined in dark, so the
+ * first `var(--color-gold)` written by hand silently renders as nothing on the
+ * default theme. Verified against the built stylesheet, not assumed.
  */
-@theme {
-  --color-background: #0a0e14;
-  --color-surface: #0e141d;
-  --color-card: #111a26;
-  --color-card-hover: #16212f;
-  --color-border: #1f2b3a;
-  --color-input: #16212f;
-  --color-foreground: #e6edf3;
+@theme static {
+  --color-background: #05080f;            /* canvas — near-black, blue-cast */
+  --color-surface: #0a101c;               /* sidebar top of its 180deg gradient */
+  --color-card: #0d1320;                  /* panel gradient END (165deg) */
+  --color-card-top: #121a28;              /* panel gradient START */
+  --color-card-hover: #16202f;
+  --color-border: rgba(148, 163, 184, 0.14);
+  --color-input: #0d1320;
+  --color-foreground: #e9eef5;
   --color-muted: #7d8b9a;
   --color-muted-foreground: #8a98a7;
   --color-primary: #2dd4bf;
-  --color-primary-foreground: #04110f;
-  --color-accent: #2f81f7;
+  --color-primary-deep: #14b8a6;          /* gradient partner */
+  --color-primary-foreground: #031311;
+  --color-gold: #e5b13d;                  /* money accent */
+  --color-gold-bright: #f5d478;           /* gold gradient start */
+  --color-gold-deep: #d99a1d;             /* gold gradient end */
+  --color-violet: #a78bfa;                /* analytics accent */
+  --color-violet-deep: #7c3aed;
+  --color-accent: #a78bfa;                /* re-pointed from blue to violet */
   --color-accent-foreground: #ffffff;
   --color-profit: #16c784;
   --color-loss: #f6465d;
-  --color-warning: #f0b90b;
+  --color-warning: #e5b13d;               /* unified with gold */
   --color-ring: #2dd4bf;
-  /* Row separator. Deliberately LIGHTER than --color-border: at border/40 the
-     old separators computed to 1.08:1 against the card — below what the eye
-     registers as a line at all, on tables 250 rows deep. This sits at ~1.5:1,
-     a visible hairline that still stays out of the data's way. Zebra striping
-     was measured as the alternative and rejected: card-hover vs card is only
-     1.02–1.05, far too close for stripes to read. */
-  --color-rule: #293850;
+  /* Row separator, deliberately its own token rather than --color-border/n.
+     DELIBERATE DEVIATION FROM THE v3 HANDOFF, and the one value in this block
+     that is not verbatim. The handoff specifies rgba(148,163,184,.08); measured
+     against the new panel gradient that composites to 1.12:1 — which is the
+     same place border/40 (1.08:1) landed when separators went invisible on
+     tables 250 rows deep, the bug the flat #293850 (1.48:1) was introduced to
+     fix. The handoff never re-ran that measurement, and a header band plus a
+     drop shadow give a table its OUTER structure; they do nothing to separate
+     row 180 from row 181, which is the actual failure.
+     Only two data points exist — 1.08:1 invisible, 1.48:1 legible — so any
+     value between them is a guess. .23 composites to 1.487:1 on the card and
+     1.49:1 on the darker table-luxe surface, restoring the proven figure in
+     the rgba form v3 wants. Zebra striping stays rejected either way:
+     card-hover vs card is 1.02–1.05, far too close for stripes to register. */
+  --color-rule: rgba(148, 163, 184, 0.23);
+  --color-header-band: rgba(5, 9, 16, 0.75); /* table header background */
+  --color-header-text: #a5b2c0;
 
-  --radius: 0.5rem;
-  /* C1 — Inter for UI, JetBrains Mono for every number (see @layer base). */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: var(--font-jb), ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 0.625rem;                     /* 10px — was 8px; cards use 14px */
+  --radius-card: 14px;
+  --radius-pill: 999px;
 
-  /* C2 — elevation: dark-UI depth comes from a 1px inner top highlight plus a
-     soft drop, not from lightening the whole surface. */
-  --shadow-card: inset 0 1px 0 0 rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  /* Type: Inter for UI, JetBrains Mono for every number (see @layer base),
+     Space Grotesk for headings + the wordmark. */
+  --font-display: var(--font-space-grotesk), var(--font-inter), sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jb), ui-monospace, Menlo, Consolas, monospace;
+
+  /* Elevation — layered luxe: dark-UI depth comes from a 1px inner top
+     highlight plus a deep soft drop, not from lightening the whole surface. */
+  --shadow-card: inset 0 1px 0 0 rgb(255 255 255 / 0.04), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-card-float: inset 0 1px 0 0 rgb(255 255 255 / 0.04), 0 16px 40px -20px rgb(0 0 0 / 0.8);
+  --shadow-primary-glow: 0 4px 18px -6px rgb(45 212 191 / 0.5);
+  --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(45 212 191 / 0.4);
+  /* Not in the v3 token sheet but load-bearing: Card's hover state and the
+     dialog/toast overlays reference them by name. */
   --shadow-card-hover: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 4px 16px -4px rgb(0 0 0 / 0.5);
   --shadow-overlay: inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 16px 48px -12px rgb(0 0 0 / 0.65);
 }
@@ -68,12 +110,21 @@
     background: color-mix(in oklab, var(--color-primary) 35%, transparent);
   }
 
-  /* Light theme — redefines the tokens so every utility picks up light values. */
+  /* Light theme — redefines the tokens so every utility picks up light values.
+     EVERY token declared in @theme must be answered here: a token that is only
+     defined for dark leaks a near-black value onto a near-white canvas, and the
+     failure mode is invisible text, not a visible error.
+
+     Contrast method: ratios below are WCAG 2.1 relative-luminance, measured
+     against the light CANVAS #f4f6f9 — not white. The canvas is the stricter
+     of the two light surfaces (cards are #ffffff and always score ~8% higher),
+     so a value that clears 4.5:1 here clears it everywhere in the light theme. */
   html.theme-light {
     color-scheme: light;
     --color-background: #f4f6f9;
     --color-surface: #ffffff;
     --color-card: #ffffff;
+    --color-card-top: #ffffff;  /* panel gradient collapses to a flat white card */
     --color-card-hover: #eef1f5;
     --color-border: #d7dee6;
     --color-input: #ffffff;
@@ -82,18 +133,38 @@
     --color-muted-foreground: #5b6675;
     /* #0d9488 measured 3.74:1 on white — under the 4.5:1 AA floor for normal
        text, and primary IS small text here (links, active nav, sort state).
-       #0b7a70 reads the same hue at 5.2:1. */
+       #0b7a70 reads the same hue at 5.2:1 (4.81:1 on the #f4f6f9 canvas). */
     --color-primary: #0b7a70;
+    --color-primary-deep: #0a6a61; /* 5.97:1 on #f4f6f9 — gradient partner */
     --color-primary-foreground: #ffffff;
-    --color-accent: #1f6feb;
+    /* Gold. The v3 handoff proposed #9a6b08 for light, but that MEASURES
+       4.33:1 on #f4f6f9 — it only clears AA against pure white (4.69:1), and
+       gold is small text here (charge lines, MTF splits, warnings). #8f6207
+       holds the same hue at 4.95:1. There is no lighter gold at this hue and
+       saturation that clears the floor: the ceiling is ~#966808 at 4.53:1,
+       which is why the bright end of the light ramp is pinned there rather
+       than at the dark theme's #f5d478. */
+    --color-gold: #8f6207;         /* 4.95:1 on #f4f6f9 */
+    --color-gold-bright: #966808;  /* 4.53:1 — lightest gold that still clears AA */
+    --color-gold-deep: #6f4b05;    /* 7.23:1 */
+    /* Violet. The handoff's #6d28d9 measures 6.56:1 on #f4f6f9 and needs no
+       adjustment; it ships verbatim. */
+    --color-violet: #6d28d9;       /* 6.56:1 on #f4f6f9 */
+    --color-violet-deep: #5b21b6;  /* 8.30:1 */
+    --color-accent: #6d28d9;       /* follows violet, as it does in dark */
     --color-accent-foreground: #ffffff;
     --color-profit: #15803d;
     --color-loss: #dc2626;
-    --color-warning: #b45309;
+    --color-warning: #8f6207;      /* unified with gold, as in dark */
     --color-ring: #0b7a70;
     --color-rule: #dbe2ea;
+    --color-header-band: #eef1f5;
+    --color-header-text: #5b6675;  /* 5.15:1 on the header band */
     /* Light theme: no inner highlight (backgrounds are already light) — classic soft drops. */
     --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.05), 0 1px 3px 0 rgb(16 24 40 / 0.08);
+    --shadow-card-float: 0 8px 28px -12px rgb(16 24 40 / 0.22);
+    --shadow-primary-glow: 0 4px 18px -6px rgb(11 122 112 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(11 122 112 / 0.3);
     --shadow-card-hover: 0 4px 12px -2px rgb(16 24 40 / 0.12);
     --shadow-overlay: 0 16px 48px -12px rgb(16 24 40 / 0.28);
   }
@@ -116,29 +187,15 @@
     --color-loss: #ea580c;
   }
 
-  /* C8 — accent skins. Terminal (teal) is the default; these re-point the
-     primary/ring tokens so every gauge, rail, chart line and button follows.
-     P&L semantics (profit/loss/warning) are deliberately untouched. */
-  html.skin-tape {
-    --color-primary: #e8b006; /* ticker-tape amber */
-    --color-primary-foreground: #1a1200;
-    --color-ring: #e8b006;
-  }
-  html.skin-ice {
-    --color-primary: #4cc2f1; /* ice blue */
-    --color-primary-foreground: #04121a;
-    --color-ring: #4cc2f1;
-  }
-  html.theme-light.skin-tape {
-    --color-primary: #b45309;
-    --color-primary-foreground: #ffffff;
-    --color-ring: #b45309;
-  }
-  html.theme-light.skin-ice {
-    --color-primary: #0284c7;
-    --color-primary-foreground: #ffffff;
-    --color-ring: #0284c7;
-  }
+  /* C8 accent skins (Terminal teal / Tape amber / Ice blue) were RETIRED in
+     v3. The Dark Luxe palette gives gold and violet fixed meanings — gold is
+     money, violet is analytics — and a swappable amber primary collided head-on
+     with the gold role. Teal is now the only accent, and it is declared once in
+     @theme above; there is nothing left to override here. The settings.accent_skin
+     COLUMN deliberately survives (see lib/db/schema.ts): dropping it would mean
+     a migration that rewrites every existing row for a preference nobody can
+     set any more. Stored 'tape'/'ice' values are simply never turned into a
+     class — see app/layout.tsx. */
 
   /* Thin terminal scrollbars */
   * {
@@ -153,11 +210,60 @@
  * same element.
  * ------------------------------------------------------------------------- */
 
+/* v3 gradient recipes. "Never flat fills for panels, never pure black."
+   panel-luxe is token-driven rather than literal (#121a28 → #0d1320 are exactly
+   --color-card-top and --color-card) so the LIGHT theme, which collapses both to
+   #ffffff, gets a flat white card instead of a dark-navy one. panel-hero and
+   table-luxe carry the literal dark-surface hexes from the v3 token sheet and
+   have no light-theme counterpart yet — they are unused so far; whoever first
+   puts one on a themed surface owes it a html.theme-light branch. */
+/* --panel-wash is the optional tint layer that card-hero paints ON TOP of the
+   panel gradient. It is a custom property rather than a second background-image
+   declaration because the two utilities would otherwise fight: Tailwind sorts
+   custom utilities by name, so card-hero always loses to panel-luxe on the same
+   element — the hero wash vanished outright the moment Card started shipping
+   panel-luxe, which is how this was found. Registered non-inheriting so a Card
+   nested inside a hero Card does not inherit the tint. */
+@property --panel-wash {
+  syntax: "<image>";
+  inherits: false;
+  initial-value: linear-gradient(transparent, transparent);
+}
+@utility panel-luxe {
+  background-image:
+    var(--panel-wash),
+    linear-gradient(165deg, var(--color-card-top), var(--color-card));
+}
+@utility panel-hero {
+  background-image: linear-gradient(165deg, #13202c, #0c1420);
+}
+@utility table-luxe {
+  background-image: linear-gradient(180deg, #0e1522, #0a101a);
+}
+/* Accent gradients — same in both themes by design (they are fills that carry
+   their own dark/light ink, not surfaces that follow the canvas). */
+@utility grad-primary {
+  background-image: linear-gradient(135deg, #2dd4bf, #0ea5a0);
+}
+@utility grad-gold {
+  background-image: linear-gradient(135deg, #f5d478, #d99a1d);
+}
+@utility grad-violet {
+  background-image: linear-gradient(135deg, #a78bfa, #7c3aed);
+}
+@utility text-grad-gold {
+  background-image: linear-gradient(135deg, #f5d478, #d99a1d);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 /* Hero card: primary-tinted border + faint top-glow wash. Composes with the
-   Card component (touches border-color/background-image only, never bg). */
+   Card component (touches border-color/box-shadow and the --panel-wash layer
+   above, never bg or background-image directly — see the note on @property). */
 @utility card-hero {
   border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-border));
-  background-image: linear-gradient(
+  --panel-wash: linear-gradient(
     160deg,
     color-mix(in oklab, var(--color-primary) 9%, transparent),
     transparent 45%
@@ -239,13 +345,12 @@
 }
 @media print {
   html,
-  html.theme-light,
-  html.skin-tape,
-  html.skin-ice {
+  html.theme-light {
     color-scheme: light;
     --color-background: #ffffff;
     --color-surface: #ffffff;
     --color-card: #ffffff;
+    --color-card-top: #ffffff;
     --color-card-hover: #f3f4f6;
     --color-border: #cbd5e1;
     --color-input: #ffffff;
@@ -253,13 +358,25 @@
     --color-muted: #475569;
     --color-muted-foreground: #475569;
     --color-primary: #0d9488;
+    --color-primary-deep: #0f766e;
     --color-primary-foreground: #ffffff;
-    --color-accent: #1d4ed8;
+    --color-gold: #8f6207;
+    --color-gold-bright: #966808;
+    --color-gold-deep: #6f4b05;
+    --color-violet: #5b21b6;
+    --color-violet-deep: #4c1d95;
+    --color-accent: #5b21b6;
     --color-accent-foreground: #ffffff;
     --color-profit: #15803d;
     --color-loss: #b91c1c;
-    --color-warning: #92400e;
+    --color-warning: #8f6207;
+    --color-rule: #d1d5db;
+    --color-header-band: #f3f4f6;
+    --color-header-text: #374151;
     --shadow-card: none;
+    --shadow-card-float: none;
+    --shadow-primary-glow: none;
+    --shadow-hero: none;
     --shadow-card-hover: none;
     --shadow-overlay: none;
   }
@@ -268,7 +385,11 @@
   .break-avoid {
     break-inside: avoid;
   }
-  .card-hero {
+  /* Gradients cost ink and print grey. Flatten every v3 panel recipe. */
+  .card-hero,
+  .panel-luxe,
+  .panel-hero,
+  .table-luxe {
     background-image: none;
     box-shadow: none;
   }

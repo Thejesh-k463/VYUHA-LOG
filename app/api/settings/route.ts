@@ -45,6 +45,12 @@ const SettingsSchema = z.object({
   equityCapital: z.coerce.number().min(0),
   activeCapital: z.coerce.number().min(0),
   theme: z.enum(["dark", "light"]),
+  // The Tape/Ice accent skins were retired in v3 (see app/globals.css). The
+  // enum still ACCEPTS them on purpose: settings rows written before v3 hold
+  // "tape"/"ice", and a restored backup replays them through this route — a
+  // narrowed enum would turn those into a 400 on an otherwise valid save.
+  // Nothing renders them any more, and the default quietly normalises the row
+  // to "terminal" now that the form no longer sends the field.
   accentSkin: z.enum(["terminal", "tape", "ice"]).default("terminal"),
   density: z.enum(["compact", "comfortable"]).default("compact"),
   workspace: z.enum(WORKSPACES).default("both"),
