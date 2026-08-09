@@ -62,6 +62,23 @@ this is about catching it before the push, not instead of CI.
 - **Tailwind v4 theme overrides must live inside `@layer base`.** Unlayered custom-property
   overrides are dropped by Lightning CSS. The light theme and colorblind palette in
   `app/globals.css` are layered for this reason.
+- **`lib/import/detect.ts` is the ONLY source of truth for what can be imported.** The dropzone
+  hint is generated from the registry (`dropzoneHint()`), never hand-written — two literal strings
+  had drifted until the screen advertised three brokers while the code read five, and a user
+  reasonably reported the feature as broken. `tests/import-registry.test.ts` fails if the copy stops
+  deriving from the registry.
+- **A broker-named parser must see the broker's NAME before it claims a file.** Tradebook *shape*
+  (a symbol column, a side column, buy/sell values) is common to every Indian broker, so scoring on
+  shape alone makes a parser claim other brokers' files: `detectFor` in `angelone-upstox.ts` used to
+  return 0.2 for any CSV with a "Scrip" column, so a Kotak Neo tradebook imported as Angel One
+  trades priced at Angel One's rates. Require the filename or a fingerprint cell. A file that names
+  no broker belongs to the generic column mapper, where the user says whose it is — a question is
+  always better than a confident wrong answer.
+- **Never invent a parser for a format nobody has published.** Kotak Neo, Paytm Money and Sahi
+  document their export columns nowhere (their own help pages and third-party journals both ask
+  users to send a sample). `lib/import/generic-map.ts` exists so those files import correctly by
+  asking; it refuses a row it cannot read rather than coercing a bad cell to 0, because a trade for
+  zero shares at zero rupees is worse than no trade.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.

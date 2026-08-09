@@ -168,10 +168,20 @@ export function BrokerConnect() {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle>Connect broker (API)</CardTitle>
+        <CardTitle>Connect broker (API) — Zerodha &amp; Dhan</CardTitle>
         {conn && <Badge variant="secondary">key {conn.apiKeyMasked}</Badge>}
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Say plainly that this list is two brokers, not all of them. The
+            panel used to sit under a bare "Connect broker (API)" heading, which
+            read as though the other six were missing rather than simply not
+            offering a trade-history API Vyuha has integrated. */}
+        <p className="rounded-md border border-border bg-card-hover/40 px-3 py-2 text-xs text-muted-foreground">
+          Only <span className="text-foreground">Zerodha</span> and <span className="text-foreground">Dhan</span> are
+          wired for live API pulls today. <span className="text-foreground">Every other broker imports by file</span> —
+          drop a CSV or XLSX above; if Vyuha does not recognise the layout it will ask you to match the columns once,
+          then remember it.
+        </p>
         <div className="flex flex-wrap gap-2">
           {(Object.keys(BROKERS) as BrokerId[]).map((b) => {
             const connected = conns.some((c) => c.broker === b);

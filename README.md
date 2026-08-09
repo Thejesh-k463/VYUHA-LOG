@@ -144,7 +144,7 @@ forever.** Your own record of your trading is never held hostage.
 ## ✨ Feature tour
 
 ### 📒 Journal every leg, effortlessly
-- **Import** from **five brokers** — Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, **Angel One** and **Upstox** (tradebook *or* aggregated P&L export), plus PDF — auto-detected, de-duplicated, with a **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite API auto-import** for tradebook pulls.
+- **Import from ANY broker.** Five are auto-detected — Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, **Angel One** and **Upstox** (tradebook *or* aggregated P&L export), plus PDF. For every other broker — **Kotak Neo, Paytm Money, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping for that broker. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite** and **Dhan** API pulls too.
 - **Add / open / close / edit any trade, any time** — with a live charge preview from the same engine that books it, so what you see is exactly what gets saved.
 - **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
 - Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.

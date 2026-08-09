@@ -9,6 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { Upload, FileCheck2, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import { dropzoneHint } from "@/lib/import/detect";
+import { ColumnMapper } from "./column-mapper";
+import type { ColumnMapping } from "@/lib/import/generic-map";
+import type { Broker } from "@/lib/domain/constants";
 
 interface PreviewRow {
   tradingsymbol: string; symbol: string; segment: Segment; bucket: string; exchange: string;
@@ -43,6 +47,13 @@ interface FileKindCapability {
 interface PreviewResp {
   mode: "preview";
   fileKind?: FileKindCapability;
+  /** Present only when the file needs its columns mapped before it can be read. */
+  table?: {
+    headers: string[];
+    sampleRows: string[][];
+    totalRows: number;
+    suggested: ColumnMapping;
+  } | null;
   detected: { sourceId: string; label: string; confidence: number };
   candidates: { sourceId: string; label: string; confidence: number }[];
   preview: {
@@ -69,14 +80,23 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
   const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
   /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
   const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
+  /**
+   * The column mapping the user applied to an unrecognised file, if any.
+   *
+   * It must be re-sent on COMMIT as well as preview: the server re-parses the
+   * uploaded bytes on every call and has no memory of the mapping between
+   * them. Forgetting it here would commit an empty batch.
+   */
+  const [mapping, setMapping] = useState<{ broker: Broker; mapping: ColumnMapping } | null>(null);
 
-  async function doPreview(f: File) {
+  async function doPreview(f: File, withMapping?: { broker: Broker; mapping: ColumnMapping } | null) {
     setBusy(true); setError(null); setPreview(null); setCommitted(null); setProductOverrides({});
     try {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("mode", "preview");
       if (accountId > 0) fd.append("accountId", String(accountId));
+      if (withMapping) fd.append("mapping", JSON.stringify(withMapping));
       const res = await fetch("/api/import", { method: "POST", body: fd });
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Failed to parse file"); return; }
@@ -97,6 +117,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
       fd.append("mode", "commit");
       if (accountId > 0) fd.append("accountId", String(accountId));
       if (preview) fd.append("sourceId", preview.detected.sourceId);
+      if (mapping) fd.append("mapping", JSON.stringify(mapping));
       // Only a P&L file needs these — a tradebook states the product itself.
       if (Object.keys(productOverrides).length > 0) {
         fd.append("productOverrides", JSON.stringify(productOverrides));
@@ -116,7 +137,16 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
 
   function onPick(f: File | null) {
     setFile(f);
+    setMapping(null); // a new file is a new question
     if (f) doPreview(f);
+  }
+
+  /** The user has matched the columns — re-read the same file through them. */
+  function applyMapping(broker: Broker, cols: ColumnMapping) {
+    if (!file) return;
+    const next = { broker, mapping: cols };
+    setMapping(next);
+    doPreview(file, next);
   }
 
   /**
@@ -136,6 +166,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
       fd.append("file", file);
       fd.append("mode", "preview");
       if (preview) fd.append("sourceId", preview.detected.sourceId);
+      if (mapping) fd.append("mapping", JSON.stringify(mapping));
       fd.append("productOverrides", JSON.stringify(next));
       if (accountId > 0) fd.append("accountId", String(accountId));
       const res = await fetch("/api/import", { method: "POST", body: fd });
@@ -243,9 +274,10 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
           <span className="text-muted-foreground">or click to browse</span>
         </div>
         <div className="text-xs text-muted-foreground">
-          {isPnlTab
-            ? "Dhan CSV · Groww XLSX · Zerodha Console · Angel One / Upstox P&L · PDF"
-            : "Zerodha tradebook · Angel One tradebook · Upstox tradebook (CSV/XLSX)"}
+          {/* Generated from the parser registry — the two hand-written
+              strings this replaces had drifted, and the screen claimed
+              three brokers while the code already read five. */}
+          {dropzoneHint(isPnlTab ? "pnl" : "transactions")}
         </div>
         {file && <Badge variant="secondary" className="mt-1">{file.name}</Badge>}
         <input
@@ -300,6 +332,18 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* An unrecognised file asks its question here, before any preview. */}
+      {preview?.table && preview.preview.format === "generic-unmapped" && (
+        <ColumnMapper
+          headers={preview.table.headers}
+          sampleRows={preview.table.sampleRows}
+          totalRows={preview.table.totalRows}
+          suggested={preview.table.suggested}
+          busy={busy}
+          onApply={applyMapping}
+        />
       )}
 
       {p && (

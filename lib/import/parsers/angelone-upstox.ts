@@ -89,21 +89,46 @@ function productHint(raw: string): ProductHint {
   return null; // NRML / carryforward → let the classifier decide from the name
 }
 
+/**
+ * Confidence that this file is THIS broker's export.
+ *
+ * ── The naming evidence is mandatory, and that is the whole point ──────────
+ *
+ * The shape signals below (a symbol column, a side column, a buy/sell value
+ * pair) describe *every* Indian broker's tradebook, not Angel One's or
+ * Upstox's specifically. Scoring on shape alone, this function used to return
+ * 0.2 for any CSV that merely had a column called "Scrip" — enough to win the
+ * registry outright. A Kotak Neo, Paytm Money or Sahi tradebook was therefore
+ * imported silently AS ANGEL ONE: stamped with the wrong broker, priced with
+ * Angel One's charge rates, and reconciling against nothing.
+ *
+ * So a broker-named parser now has to see the broker's NAME — in the filename
+ * or in a fingerprint cell — before it claims anything. Shape only sharpens a
+ * claim the name already justified. A file that names no broker falls through
+ * to the generic column mapper, where the user says whose it is; that is a
+ * question, which is always better than a confident wrong answer.
+ */
 function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
-  let score = 0;
-  if (nameRe.test(ctx.filename)) score += 0.4;
+  const namedInFile = nameRe.test(ctx.filename);
   const rows = toMatrix(ctx);
   const h = findHeader(rows);
-  if (h < 0) return score > 0 ? Math.min(score, 0.3) : 0;
+  if (h < 0) return namedInFile ? 0.3 : 0;
+
   const cells = rows[h].map(norm);
+  const fingerprint =
+    (broker === "angelone" && cells.some((c) => c.includes("angel") || c === "clientcode")) ||
+    (broker === "upstox" && cells.some((c) => c.includes("upstox") || c === "clientid"));
+
+  // No name, no claim.
+  if (!namedInFile && !fingerprint) return 0;
+
+  let score = namedInFile ? 0.4 : 0;
+  if (fingerprint) score += 0.1;
   const hasSymbol = cells.some((c) => ["symbol", "tradingsymbol", "scrip", "scripname", "instrument"].includes(c));
   if (hasSymbol) score += 0.2;
   // Side column (tradebook) or an aggregated buy/sell pair (P&L report).
   if (cells.some((c) => ["buysell", "tradetype", "transactiontype", "side", "ordertype"].includes(c))) score += 0.25;
   if (cells.some((c) => c.includes("buyvalue")) && cells.some((c) => c.includes("sellvalue"))) score += 0.25;
-  // Broker fingerprints seen in their own exports.
-  if (broker === "angelone" && cells.some((c) => c.includes("angel") || c === "clientcode")) score += 0.1;
-  if (broker === "upstox" && cells.some((c) => c.includes("upstox") || c === "clientid")) score += 0.1;
   return Math.min(1, score);
 }
 

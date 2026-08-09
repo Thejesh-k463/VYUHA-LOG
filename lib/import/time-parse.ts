@@ -82,5 +82,20 @@ export function extractDate(raw: string | null | undefined): string | null {
     return `${dmy[3]}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
 
+  // dd-MMM-yyyy — Kotak, Paytm and several contract notes write the month as a
+  // name. Unambiguous by construction, so it needs no day-first assumption.
+  const dMy = s.match(/(?<!\w)(\d{1,2})[-/ ]([A-Za-z]{3,9})[-/ ](\d{4})(?!\d)/);
+  if (dMy) {
+    const mo = MONTHS[dMy[2].slice(0, 3).toLowerCase()];
+    const d = Number(dMy[1]);
+    if (!mo || d < 1 || d > 31) return null;
+    return `${dMy[3]}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
   return null;
 }
+
+const MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};

@@ -1,5 +1,6 @@
 import type { Broker } from "@/lib/domain/constants";
-import type { NormalizedTrade } from "@/lib/engine/types";
+import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { ColumnMapping } from "./generic-map";
 
 /** Result of parsing one broker file into normalized rows + reported totals. */
 export interface ParsedFile {
@@ -12,12 +13,33 @@ export interface ParsedFile {
   warnings: string[];
   /** Raw text (PDF) when a guided manual mapping is needed. */
   rawText?: string;
+  /**
+   * The file's own header row and a few sample rows, sent to the UI when a
+   * file needs COLUMN MAPPING before it can be read (see generic-map.ts). Only
+   * the generic table source populates this.
+   */
+  table?: {
+    headers: string[];
+    sampleRows: string[][];
+    totalRows: number;
+    /** Best-guess mapping, pre-filled in the UI for the user to correct. */
+    suggested: ColumnMapping;
+  };
 }
 
 export interface ParseContext {
   filename: string;
   text?: string;
   buffer?: Buffer;
+  /**
+   * Set only for the generic "map the columns yourself" source, once the user
+   * has told us what the columns mean. Every hand-written parser ignores it.
+   */
+  generic?: {
+    broker: Broker;
+    mapping: ColumnMapping;
+    defaultProduct?: ProductHint;
+  };
 }
 
 /**

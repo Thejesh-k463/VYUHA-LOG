@@ -4,6 +4,8 @@ import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
 import type { ProductHint } from "@/lib/engine/types";
+import { BROKERS, type Broker } from "@/lib/domain/constants";
+import type { ColumnMapping } from "@/lib/import/generic-map";
 
 export const runtime = "nodejs";
 
@@ -38,6 +40,26 @@ export async function POST(req: Request) {
   const bytes = Buffer.from(await file.arrayBuffer());
   const ctx = buildContext(file.name, bytes);
 
+  // Column mapping for the generic "any other broker" source. Absent on the
+  // first pass (the UI has not asked the question yet) and on every file a
+  // hand-written parser claims — those parsers ignore ctx.generic entirely.
+  const rawMapping = form.get("mapping");
+  if (rawMapping) {
+    try {
+      const m = JSON.parse(String(rawMapping)) as { broker?: string; mapping?: unknown; defaultProduct?: ProductHint };
+      if (!m.broker || !BROKERS.includes(m.broker as Broker)) {
+        return NextResponse.json({ error: "Pick which broker this file is from." }, { status: 400 });
+      }
+      ctx.generic = {
+        broker: m.broker as Broker,
+        mapping: (m.mapping ?? {}) as ColumnMapping,
+        defaultProduct: m.defaultProduct ?? null,
+      };
+    } catch {
+      return NextResponse.json({ error: "Malformed column mapping." }, { status: 400 });
+    }
+  }
+
   const ranked = rankParsers(ctx);
   const chosen = forcedSource
     ? ranked.find((p) => p.sourceId === forcedSource) ?? null
@@ -58,6 +80,15 @@ export async function POST(req: Request) {
     parsed = await chosen.parse(ctx);
   } catch (e) {
     return NextResponse.json({ error: `Parse failed: ${(e as Error).message}` }, { status: 422 });
+  }
+
+  // A file waiting on its column mapping has no trades yet. Committing it
+  // would write an empty batch and read as "import did nothing".
+  if (parsed.format === "generic-unmapped" && mode === "commit") {
+    return NextResponse.json(
+      { error: "Map the columns before importing this file." },
+      { status: 422 },
+    );
   }
 
   if (mode === "commit") {
@@ -86,6 +117,10 @@ export async function POST(req: Request) {
     // What this KIND of file can and cannot tell us — drives whether the UI
     // asks for product types or trusts the file.
     fileKind: capabilityOf(kind, parsed.format),
+    // Present only for the generic source: the file's own headers, sample rows
+    // and a suggested mapping for the user to confirm or correct.
+    table: parsed.table ?? null,
+    warnings: parsed.warnings,
     preview,
   });
 }
