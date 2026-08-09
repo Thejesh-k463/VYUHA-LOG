@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.99.30 — import from any broker, and a new skin for the whole app
+
+**Import now works with every broker, including ones we have never seen.**
+The report was "why does import only show 3 brokers", and two bugs sat behind
+it. The dropzone's hint was hand-written and had drifted — the app read five
+brokers' files while the text named three — so it is now generated from the
+parser registry and a test fails if anyone hand-writes it again.
+
+The second was worse and invisible. The Angel One / Upstox detector scored on
+tradebook *shape* alone: a symbol column, a side column. That describes every
+Indian broker's export, so **any CSV with a column called "Scrip" was claimed as
+Angel One** — a Kotak Neo, Paytm Money or Sahi tradebook imported silently as
+Angel One trades, priced with Angel One's charge rates. A broker-named parser
+now has to see the broker's name before it claims a file. The PDF sniffer had
+the same flaw: it knew three brokers and defaulted everything else to Dhan.
+
+Kotak Neo, Paytm Money and Sahi publish no column specification anywhere — not
+in their own help pages, and not in the third-party journals that support them,
+which ask users to email a sample file. So rather than guess at their headers,
+Vyuha **asks**: drop any broker's CSV/XLSX, match the columns once, and the
+mapping is remembered for that broker. Mapped tradebooks go through the same
+FIFO pairing, de-duplication and charge engine as native ones — nothing
+downstream can tell the difference. A row whose cells cannot be read is skipped
+and counted, never coerced to zero; a trade for zero shares at zero rupees is
+worse than no trade.
+
+**A new look — "Dark Luxe".** Near-black blue-cast canvas, panels that are
+gradients rather than flat fills, and a colour law: teal is anything you can
+click, gold is money leaving the account, violet is a statistic about your
+trading. Space Grotesk joins Inter and JetBrains Mono for titles. The Tape and
+Ice accent skins are retired — a swappable amber primary beside a fixed gold
+"money" role reads as a bug, not a choice.
+
+Light mode was measured rather than assumed: the new gold only clears WCAG AA
+against pure white, not against this app's actual off-white canvas, so it ships
+two steps darker at 4.95:1. The row hairline kept its old measured value for the
+same reason — the proposed one computed to 1.12:1, which is where separators
+went invisible on 250-row tables once before.
+
+- `margin_config` gained the broker-completeness test `charge_config` has had
+  for releases; adding a broker with no margin rows used to price at defaults
+  silently.
+- The API panel says plainly that only Zerodha and Dhan pull over an API, and
+  that everything else imports by file.
+
 ## v2.99.20 — the app fits the trader, not the other way round
 
 Six changes, all answering the same complaint from testing: the app knew more
