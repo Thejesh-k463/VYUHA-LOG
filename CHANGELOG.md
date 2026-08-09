@@ -26,6 +26,21 @@ downstream can tell the difference. A row whose cells cannot be read is skipped
 and counted, never coerced to zero; a trade for zero shares at zero rupees is
 worse than no trade.
 
+**A new mark.** Three arcs in the interface's own three roles — teal for what
+you can act on, gold for money, violet for what the numbers say about you —
+ringing व hung from a shirorekha drawn as a price level, with a ₹ coin in the
+lower right. It replaces the squircle everywhere at once: taskbar and dock,
+installer, favicon, sidebar, the share card you post publicly, the printable
+report. The Devanagari outline is reused rather than re-traced, so the letter is
+the same one already shipping and still never a font-dependent text node.
+
+**Tables you can actually read.** Every table rendered in JetBrains Mono — a
+face built for digits — so company names, brokers and segments came out ~15%
+wider with their word shapes flattened. Prose is now set in Inter and only
+numbers stay monospaced, which is the one thing the mono face was ever needed
+for: columns still align to the digit. Table headers, the sidebar caption and
+KPI labels each moved up a step in size.
+
 **A new look — "Dark Luxe".** Near-black blue-cast canvas, panels that are
 gradients rather than flat fills, and a colour law: teal is anything you can
 click, gold is money leaving the account, violet is a statistic about your
@@ -39,6 +54,10 @@ two steps darker at 4.95:1. The row hairline kept its old measured value for the
 same reason — the proposed one computed to 1.12:1, which is where separators
 went invisible on 250-row tables once before.
 
+- The hero card's teal border had never rendered, in any release — Tailwind
+  sorts custom utilities before its own, so the plain border token always won.
+- The desktop build compiled the web bundle, type-checked, seeded the template
+  database and copied an 81 MB Node runtime **twice** on every run. Once now.
 - `margin_config` gained the broker-completeness test `charge_config` has had
   for releases; adding a broker with no margin rows used to price at defaults
   silently.

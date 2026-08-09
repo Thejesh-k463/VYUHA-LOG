@@ -10,7 +10,32 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.20
+## 0. What you are actually selling, as of v2.99.30
+
+> ### v2.99.30 marketing note — the objection that used to end the call
+>
+> **"Does it work with MY broker?"** kills more Indian journal sales than price
+> does, and until this release the honest answer was "five of them". It is now
+> "yours, whichever it is" — five auto-detect, and any other broker's CSV/XLSX
+> imports by matching its columns once, remembered thereafter.
+>
+> Sell the REFUSAL, not just the coverage. Kotak Neo, Paytm Money and Sahi
+> publish no column specification anywhere — not on their own help pages, and
+> not in the third-party journals that support them, which ask users to email a
+> sample file. A rival therefore either guesses at the headers (and imports
+> quantity into the price column without telling anyone) or rejects the file.
+> Vyuha asks, once. That is the same honesty argument the whole product rests
+> on, applied to the first five minutes of the trial.
+>
+> Sales-page bullet, ready to paste: *"Works with your broker. Not five
+> brokers — yours."*
+>
+> **The face changed too.** Three arcs carrying the interface's own three
+> meanings, around the व, with a ₹ coin. Retake every listing screenshot and the
+> landing-page hero after this release; the old squircle is now wrong everywhere
+> it appears. And tables finally read like tables — company names in a text
+> face, numbers still monospaced and aligned — which matters for screenshots
+> more than any feature bullet.
 
 > ### v2.99.20 marketing note — the paid line finally matches the pitch
 >
@@ -136,6 +161,7 @@ to flatter them.
 | **Scaling Quality + Replay** | Answers whether adding actually helped, while labelling the counterfactual honestly and showing fills over local EOD history. |
 | **Options Seller Journal** | IV, DTE, hedge, expiry outcome, and adjustment-family evidence create a seller-specific review product instead of a generic notes field. |
 | **Multi-account books** | Separate brokers/entities and consolidated analysis make the app credible for advanced retail traders, families, and small desks. |
+| **Imports from ANY broker** | Five auto-detect; every other broker imports by matching its columns once, remembered thereafter. The honest framing IS the selling point: Kotak Neo, Paytm Money and Sahi publish no column spec anywhere, so a rival either guesses (and mis-imports silently) or refuses the file. Vyuha asks, once. |
 | **Workspace mode** | Equity-only and F&O-only traders each see one app instead of two half-relevant ones. Kills the "too complex, I only trade delivery" objection without shipping a cut-down build — and reverses in one click, so it is never a trap. |
 | **Chart screenshots on the row** | The setup you saw is attached to the trade you took, and the trade list shows which trades have one. Review without this is recall, not evidence. |
 | **Live open-position tracking** (Pro) | SL/TSL/target and running risk on positions still on. This is the daily-use hook: closed-trade journaling is a weekly habit, watching an open book is a *daily* one. |

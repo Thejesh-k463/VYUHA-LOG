@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.30
+
+| Upgrade | What it gives you |
+|---|---|
+| **Import from any broker** | Five brokers are recognised automatically. For every other one — Kotak Neo, Paytm Money, Sahi, or one that launches next year — drop the CSV or XLSX and Vyuha asks you to match the columns once, then remembers it for that broker. Nothing is guessed: a layout Vyuha doesn't know produces a question, never a trade with the quantity in the price column. |
+| **A new look** | A darker, calmer canvas; panels with depth instead of flat fills; and a colour language you can rely on — teal is something you can click, gold is money leaving your account, violet is a statistic about your trading. |
+| **A new mark** | Three arcs in those same three colours around the व, with a ₹ coin. You'll see it on the installer, the taskbar or dock, the browser tab, and the cards you share. |
+| **Readable tables** | Company names, brokers and segments now use a proper text face instead of the monospaced one meant for digits — far easier to scan. Your numbers stay monospaced, so the columns still line up. |
+| **Faster updates** | The desktop build no longer does its work twice, so new versions reach you sooner. |
+
 ## New in v2.99.20
 
 | Upgrade | What it gives you |
