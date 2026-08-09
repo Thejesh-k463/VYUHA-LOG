@@ -12,7 +12,7 @@ function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
         // radius-card (14px), not the base radius: the v3 spec gives panels a
         // softer corner than controls, and `rounded-lg` was still resolving to
         // the 8px scale while the gradient above had already landed.
-        "panel-luxe rounded-[var(--radius-card)] border border-border bg-card text-foreground shadow-[var(--shadow-card)] transition-shadow duration-200 hover:shadow-[var(--shadow-card-hover)]",
+        "panel-luxe rounded-[var(--radius-card)] border border-[color:var(--card-border,var(--color-border))] bg-card text-foreground shadow-[var(--shadow-card)] transition-shadow duration-200 hover:shadow-[var(--shadow-card-hover)]",
         className,
       )}
       {...props}

@@ -1,13 +1,13 @@
 /**
- * Build the Vyuha logo master art.
+ * Build the Vyuha logo master art (v3 — "Trinity Chakra").
  *
  * ── Why the glyph is an OUTLINE, not text ───────────────────────────────────
  *
- * The mark is the Devanagari letter व (U+0935) on a squircle. If it shipped as
- * a <text> element it would depend on a Devanagari font being installed on the
- * machine doing the rasterising — and on a machine without one, व renders as a
- * tofu box. That failure would reach a user's taskbar, dock and installer, and
- * it would only appear on the machines least likely to be ours. So the glyph is
+ * The mark carries the Devanagari letter व (U+0935). If it shipped as a <text>
+ * element it would depend on a Devanagari font being installed on the machine
+ * doing the rasterising — and on a machine without one, व renders as a tofu
+ * box. That failure would reach a user's taskbar, dock and installer, and it
+ * would only appear on the machines least likely to be ours. So the glyph is
  * committed here as a flattened path, extracted once from a font whose licence
  * permits exactly that.
  *
@@ -18,19 +18,33 @@
  * works including logos. It is deliberately NOT taken from a system font such
  * as Windows' Nirmala UI: bundled proprietary fonts generally licence you to
  * *set type*, not to embed their outlines in a mark you intend to own. Extract
- * a replacement only from an OFL/Apache-licensed face.
+ * a replacement only from an OFL/Apache-licensed face. The v3 redesign REUSES
+ * the committed outline rather than re-tracing it — same path, same licence
+ * position, and the mark cannot drift from the one already shipped.
  *
- * ── The design ──────────────────────────────────────────────────────────────
+ * ── The v3 design ───────────────────────────────────────────────────────────
  *
- * Devanagari hangs from the shirorekha, the headline stroke. Here that stroke
- * is extended edge to edge across the squircle, so it doubles as a price level
- * cutting the frame — one form doing both jobs. It is also what makes the
- * secondary ₹ mark a family member rather than a second icon: ₹ was derived
- * from र and hangs from the same stroke, so swapping the glyph under the same
- * bar keeps the system intact.
+ * Three arcs ring the mark — teal, gold, violet — the same three roles the
+ * interface assigns those hues: teal is what you can act on, gold is money,
+ * violet is what the numbers say about you. They are struck at one radius with
+ * round caps so they read as one interrupted ring rather than three shapes.
  *
- * Usage:  node scripts/make-logo.mjs        → writes SVG masters + icon-source.png
- *         npx tauri icon src-tauri/icon-source.png   → the .ico/.icns/PNG set
+ * Inside, Devanagari still hangs from the shirorekha, but the bar is now a slim
+ * level (44 units) sitting at the glyph's own headline height rather than a
+ * full-thickness stroke fused to it — a price level crossing the frame instead
+ * of a slab. The ₹ coin in the lower right is the secondary mark absorbed into
+ * the primary: ₹ derives from र and hangs from the same stroke, which is what
+ * makes it family rather than decoration.
+ *
+ * ── Fixed colours, and why the old fill/ink props are gone ──────────────────
+ *
+ * v1 let callers re-tint the mark so it followed the active accent skin. Those
+ * skins are retired, and in v3 the three hues ARE the identity — re-tinting
+ * would say something false about which hue means what. The mark now paints
+ * itself and takes no colour arguments.
+ *
+ * Usage:  node scripts/make-logo.mjs        → SVG masters + icon-source.png + mark.tsx
+ *         npm run desktop:icons             → the above, then the .ico/.icns/PNG set
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -40,114 +54,118 @@ const root = process.cwd();
 const outDir = path.join(root, "public", "brand");
 fs.mkdirSync(outDir, { recursive: true });
 
-// ── Brand palette ───────────────────────────────────────────────────────────
-// Matches the accent skins the app already ships (app/globals.css).
-export const SKINS = {
-  terminal: { name: "Terminal teal", bg: "#0d9488", deep: "#0f766e" },
-  tape: { name: "Tape amber", bg: "#d97706", deep: "#b45309" },
-  ice: { name: "Ice blue", bg: "#0284c7", deep: "#0369a1" },
+/**
+ * व, flattened from Noto Sans Devanagari (SIL OFL), 1000 upm, weight 700.
+ * Font coordinates are Y-up; the transforms below flip them.
+ */
+const VA_PATH = fs.readFileSync(path.join(root, "scripts", "glyph-va.path"), "utf8").trim();
+const RUPEE_PATH = fs.readFileSync(path.join(root, "scripts", "glyph-rupee.path"), "utf8").trim();
+
+/**
+ * Every number in the composition, in one place, on a 1000-unit viewBox.
+ *
+ * The glyph transforms are not free parameters — they place the outline so its
+ * headline lands exactly on `bar.y` and the ₹ centres in the coin. Changing a
+ * scale without recomputing the translate will slide the letter off its bar.
+ */
+const GEO = {
+  S: 1000,
+  arcWidth: 58,
+  arcWidthFavicon: 72, // heavier, so the ring survives a 16px favicon
+  bar: { x: 170, y: 336, w: 660, h: 44, rx: 22 },
+  // 618 wide × 622 tall at 0.60 → centred at x=(1000−370.8)/2, baseline 709,
+  // which puts the glyph's shirorekha at exactly bar.y.
+  va: { tx: 314.6, ty: 709, s: 0.6 },
+  coin: { cx: 791, cy: 791, r: 138, ring: 12 },
+  // 62..521 wide at 0.31 → optical centre lands on the coin centre.
+  rupee: { tx: 700, ty: 887, s: 0.31 },
+  tileRadius: 290, // 29% — the squircle radius the icon family shares
 };
 
 /**
- * व, flattened from Noto Sans Devanagari (SIL OFL), 1000 upm, weight 700.
- * Font coordinates are Y-up; the transform in `mark()` flips them.
- */
-const VA_PATH =
-  fs.readFileSync(path.join(root, "scripts", "glyph-va.path"), "utf8").trim();
-
-/** Glyph bounding box in font units, read from the extracted metrics. */
-const VA_BBOX = JSON.parse(fs.readFileSync(path.join(root, "scripts", "glyph-va.json"), "utf8"));
-/**
- * Where the shirorekha sits and how thick it is, in font units, measured by
- * rasterising the glyph and finding the widest ink band at its top. The
- * full-width bar is drawn at exactly this y and thickness so it fuses with the
- * glyph's own stroke instead of sitting near it.
- */
-const VA_BAR = { y: 622, thickness: 112 };
-
-const RUPEE_PATH =
-  fs.readFileSync(path.join(root, "scripts", "glyph-rupee.path"), "utf8").trim();
-const RUPEE_BBOX = JSON.parse(
-  fs.readFileSync(path.join(root, "scripts", "glyph-rupee.json"), "utf8"),
-);
-
-/**
- * Lay out one mark. Both glyphs go through here so the family cannot drift:
- * same squircle radius, same cap height, same baseline, same bar thickness.
+ * Gradient definitions.
  *
- * @returns {{S:number,r:number,barY:number,barH:number,gx:number,gy:number,scale:number,d:string}}
+ * The ids are FIXED rather than generated. Two marks on one page therefore
+ * declare the same ids, and the first declaration wins — which is harmless
+ * precisely because the colours are fixed: every instance defines identical
+ * stops, so whichever wins paints the same thing. This is what lets the React
+ * component stay a plain server component with no `useId` and no "use client".
+ * If a caller-tintable mark is ever reintroduced, this assumption breaks and
+ * the ids must become unique again.
  */
-function geometry(size, glyph, rounded) {
-  const S = size;
-  const { path: d, bbox } = glyph;
-  const glyphH = bbox.yMax - bbox.yMin;
-  const scale = (S * 0.46) / glyphH;
-  const gw = (bbox.xMax - bbox.xMin) * scale;
-  return {
-    S,
-    d,
-    scale,
-    r: rounded ? S * 0.29 : 0, // 29% — the squircle radius the family shares
-    gx: (S - gw) / 2 - bbox.xMin * scale,
-    // Baseline placed so the optical centre of glyph+bar sits at the centre.
-    gy: S * 0.72,
-    // The bar is drawn at the glyph's OWN shirorekha height so the two fuse
-    // into one stroke. Both glyphs top out at 622, which is why ₹ is family.
-    barY: S * 0.72 - VA_BAR.y * scale,
-    barH: VA_BAR.thickness * scale,
-  };
+function defs(idAttr = "id", stopColor = "stop-color") {
+  const lg = (id, x1, y1, x2, y2, stops) =>
+    `    <linearGradient ${idAttr}="${id}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+    stops.map(([o, c]) => `<stop offset="${o}" ${stopColor}="${c}"/>`).join("") +
+    `</linearGradient>`;
+  return [
+    lg("vy3-t", 0, 0, 1, 1, [["0%", "#2dd4bf"], ["100%", "#14b8a6"]]),
+    lg("vy3-g", 0, 0, 1, 0, [["0%", "#f5d478"], ["100%", "#d99a1d"]]),
+    lg("vy3-v", 0, 1, 1, 0, [["0%", "#a78bfa"], ["100%", "#7c3aed"]]),
+    lg("vy3-teal", 0, 0, 0, 1, [["0%", "#8ff5e8"], ["100%", "#14b8a6"]]),
+    lg("vy3-gold", 0, 0, 0, 1, [["0%", "#f7ecd2"], ["55%", "#e5b13d"], ["100%", "#b47f1d"]]),
+    `    <radialGradient ${idAttr}="vy3-disc" cx="35%" cy="25%" r="110%"><stop offset="0%" ${stopColor}="#101a2e"/><stop offset="100%" ${stopColor}="#070b13"/></radialGradient>`,
+    `    <radialGradient ${idAttr}="vy3-tile" cx="30%" cy="18%" r="110%"><stop offset="0%" ${stopColor}="#101a2e"/><stop offset="100%" ${stopColor}="#05070d"/></radialGradient>`,
+  ].join("\n");
 }
 
-const VA = { path: VA_PATH, bbox: VA_BBOX };
-const RUPEE = { path: RUPEE_PATH, bbox: RUPEE_BBOX };
+/** The three-arc ring, struck at one radius with round caps. */
+function arcs(width, w = "stroke-width", lc = "stroke-linecap") {
+  return `  <g fill="none" ${w}="${width}" ${lc}="round">
+    <path d="M 500 88 A 412 412 0 0 1 857 294" stroke="url(#vy3-t)"/>
+    <path d="M 912 500 A 412 412 0 0 1 500 912" stroke="url(#vy3-g)"/>
+    <path d="M 143 706 A 412 412 0 0 1 88 500 A 412 412 0 0 1 143 294" stroke="url(#vy3-v)"/>
+  </g>`;
+}
 
-/**
- * Body of the mark, shared by the SVG files and the React component.
- *
- * The bar is CLIPPED to the squircle. It is drawn full width so it reads as a
- * price level cutting the whole frame, but at its height the corner radius has
- * not yet straightened out, so an unclipped bar overhangs the silhouette by a
- * pixel or two at icon resolutions — a stray ink-coloured nub floating off the
- * rounded corner, most obvious in the macOS dock against a busy wallpaper.
- */
-function body(g, { fill, ink, clipId }) {
-  const { S, r, barY, barH, gx, gy, scale, d } = g;
-  return `  <defs>
-    <clipPath id="${clipId}">
-      <rect width="${S}" height="${S}" rx="${r.toFixed(2)}" ry="${r.toFixed(2)}"/>
-    </clipPath>
-  </defs>
-  <g clip-path="url(#${clipId})">
-    <rect width="${S}" height="${S}" fill="${fill}"/>
-    <rect x="0" y="${barY.toFixed(2)}" width="${S}" height="${barH.toFixed(2)}" fill="${ink}"/>
-    <g transform="translate(${gx.toFixed(2)} ${gy.toFixed(2)}) scale(${scale.toFixed(5)} -${scale.toFixed(5)})">
-      <path d="${d}" fill="${ink}"/>
-    </g>
+/** Shirorekha + व, the part that is the same in every variant. */
+function letter() {
+  const { bar, va } = GEO;
+  return `  <rect x="${bar.x}" y="${bar.y}" width="${bar.w}" height="${bar.h}" rx="${bar.rx}" fill="url(#vy3-teal)"/>
+  <g transform="translate(${va.tx} ${va.ty}) scale(${va.s} -${va.s})">
+    <path fill="url(#vy3-teal)" d="${VA_PATH}"/>
   </g>`;
 }
 
 /**
- * The square mark.
+ * The ₹ coin.
  *
- * @param {object} o
- * @param {string} o.fill      squircle colour
- * @param {string} o.ink       glyph + bar colour
- * @param {number} o.size      viewBox size
- * @param {boolean} o.rounded  false gives a full-bleed square
+ * `withRupee: false` keeps the disc and its gold ring but drops the glyph —
+ * what the favicon does, because at 16px the ₹ outline turns to mud while the
+ * gilded dot still reads as part of the mark.
  */
-export function mark({ fill, ink = "#ffffff", size = 512, rounded = true, id = "vy" } = {}) {
-  const g = geometry(size, VA, rounded);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-${body(g, { fill, ink, clipId: id })}
-</svg>`;
+function coin(withRupee = true) {
+  const { coin: c, rupee: r } = GEO;
+  const glyph = withRupee
+    ? `\n  <g transform="translate(${r.tx} ${r.ty}) scale(${r.s} -${r.s})">
+    <path fill="url(#vy3-gold)" d="${RUPEE_PATH}"/>
+  </g>`
+    : "";
+  return `  <circle cx="${c.cx}" cy="${c.cy}" r="${c.r}" fill="url(#vy3-disc)"/>
+  <circle cx="${c.cx}" cy="${c.cy}" r="${c.r}" fill="none" stroke="url(#vy3-g)" stroke-width="${c.ring}"/>${glyph}`;
 }
 
-/** The secondary ₹ mark — same geometry, different glyph and hue. */
-export function rupeeMark({ fill = SKINS.tape.bg, ink = "#ffffff", size = 512, rounded = true, id = "vyr" } = {}) {
-  const g = geometry(size, RUPEE, rounded);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-${body(g, { fill, ink, clipId: id })}
-</svg>`;
+/**
+ * @param {"mark"|"appicon"|"favicon"} variant
+ *   mark     transparent ground, full composition — the app + web mark
+ *   appicon  opaque squircle tile behind it — what the installer rasterises
+ *   favicon  heavier arcs, coin without the ₹ — survives 16px
+ */
+export function svgFor(variant) {
+  const { S } = GEO;
+  const isFavicon = variant === "favicon";
+  const parts = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}" width="${S}" height="${S}">`,
+    `  <defs>\n${defs()}\n  </defs>`,
+    variant === "appicon"
+      ? `  <rect width="${S}" height="${S}" rx="${GEO.tileRadius}" fill="url(#vy3-tile)"/>`
+      : null,
+    arcs(isFavicon ? GEO.arcWidthFavicon : GEO.arcWidth),
+    letter(),
+    coin(!isFavicon),
+    `</svg>`,
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 /**
@@ -158,136 +176,149 @@ ${body(g, { fill, ink, clipId: id })}
  * Devanagari font — the same failure the icon avoids by shipping an outline.
  * The component must therefore carry the outline too, and generating it keeps
  * the in-app mark and the installer icon provably identical.
- *
- * It clips with CSS `inset(0 round …)` instead of the `<clipPath>` element the
- * standalone SVGs use. A `<clipPath>` needs an `id`, and two marks on one page
- * would then share it; CSS needs no id, so the component stays a plain server
- * component with no `useId` and no "use client".
  */
 function component() {
-  const S = 1000; // unit viewBox — callers scale via width/height
-  const g = geometry(S, VA, true);
-  const gr = geometry(S, RUPEE, true);
-  const round = ((g.r / S) * 100).toFixed(0);
-
-  const shape = (x) => `      <rect width="${S}" height="${S}" fill="var(--mark-fill)" />
-      <rect y={${x.barY.toFixed(1)}} width="${S}" height={${x.barH.toFixed(1)}} fill="var(--mark-ink)" />
-      <g transform="translate(${x.gx.toFixed(1)} ${x.gy.toFixed(1)}) scale(${x.scale.toFixed(5)} -${x.scale.toFixed(5)})">
-        <path d="${x.d}" fill="var(--mark-ink)" />
-      </g>`;
+  const { S, coin: c, bar, va, rupee } = GEO;
+  // JSX needs camelCase attribute names and self-closing tags.
+  const jsxDefs = defs("id", "stopColor").replace(/<stop offset/g, "<stop offset").replace(/\/>/g, " />");
+  const jsxArcs = arcs(GEO.arcWidth, "strokeWidth", "strokeLinecap").replace(/\/>/g, " />");
+  const jsxLetter = letter().replace(/\/>/g, " />");
+  const jsxCoin = coin(true).replace(/stroke-width=/g, "strokeWidth=").replace(/\/>/g, " />");
 
   return `/**
  * GENERATED by scripts/make-logo.mjs — do not edit by hand.
- * Re-run \`node scripts/make-logo.mjs\` to regenerate.
+ * Re-run \`node scripts/make-logo.mjs\` (or \`npm run desktop:icons\`) to regenerate.
  *
- * The Vyuha mark: व hanging from a shirorekha extended edge to edge, so the
- * headline stroke of the letter doubles as a price level cutting the frame.
+ * The Vyuha mark, v3 "Trinity Chakra": three arcs in the interface's own three
+ * roles — teal you can act on, gold for money, violet for what the numbers say
+ * — ringing व hung from a shirorekha drawn as a price level, with the ₹ coin
+ * in the lower right.
  *
- * Colours default to the theme's primary tokens, so the mark re-tints itself
- * with the active accent skin (terminal / tape / ice) and with light mode.
+ * The colours are FIXED. v1 let callers re-tint the mark to follow the accent
+ * skin; those skins are retired, and here the hues carry meaning, so a tinted
+ * mark would state something false. There are no fill/ink props any more.
+ *
+ * The gradient ids are fixed too. Two marks on one page declare the same ids
+ * and the first wins — harmless, because every instance declares identical
+ * stops. That is what keeps this a plain server component with no \`useId\`.
  */
-import type { CSSProperties } from "react";
 
 type MarkProps = {
   size?: number;
   className?: string;
-  /** Squircle colour. Defaults to the active accent. */
-  fill?: string;
-  /** Glyph + bar colour. Defaults to the accent's foreground. */
-  ink?: string;
-  /** Square off the corners (for tight chrome that does its own masking). */
-  square?: boolean;
   title?: string;
+  /**
+   * Force the ₹ coin on or off. Left alone, the coin is dropped below 24px,
+   * where its outline turns to mud and costs more legibility than it adds.
+   */
+  coin?: boolean;
 };
 
-function styleFor(fill: string, ink: string, square: boolean): CSSProperties {
-  return {
-    ["--mark-fill" as string]: fill,
-    ["--mark-ink" as string]: ink,
-    // See the generator: clipping via CSS avoids a colliding <clipPath> id.
-    clipPath: square ? undefined : "inset(0 round ${round}%)",
-  };
-}
-
-export function VyuhaMark({
-  size = 28,
-  className,
-  fill = "var(--color-primary)",
-  ink = "var(--color-primary-foreground)",
-  square = false,
-  title,
-}: MarkProps) {
+export function VyuhaMark({ size = 28, className, title, coin }: MarkProps) {
+  const showCoin = coin ?? size >= 24;
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 ${S} ${S}"
       className={className}
-      style={styleFor(fill, ink, square)}
       role={title ? "img" : "presentation"}
       aria-hidden={title ? undefined : true}
       aria-label={title}
     >
       {title ? <title>{title}</title> : null}
-${shape(g)}
+      <defs>
+${jsxDefs}
+      </defs>
+${jsxArcs}
+${jsxLetter}
+      {showCoin ? (
+        <>
+${jsxCoin}
+        </>
+      ) : null}
     </svg>
   );
 }
 
 /**
- * Paint the mark into a 2D canvas — for the share card, which exports a PNG.
+ * Paint the mark into a 2D canvas — for the share card, which exports a PNG,
+ * and the printable trade report.
  *
- * The share card previously drew the letter as canvas TEXT in Inter, which has
- * no Devanagari coverage at all; the glyph came from whatever the system fell
- * back to, or from nothing. That baked a tofu box into an image users post
- * publicly. Path2D takes the same outline the icon uses, so the exported PNG no
- * longer depends on the exporting machine's fonts.
+ * The share card once drew the letter as canvas TEXT in Inter, which has no
+ * Devanagari coverage at all; the glyph came from whatever the system fell back
+ * to, or from nothing, baking a tofu box into an image users post publicly.
+ * Path2D takes the same outline the icon uses, so the exported PNG no longer
+ * depends on the exporting machine's fonts — and the gradients below are the
+ * same values the SVG declares, so the two cannot drift apart.
  */
 export function drawVyuhaMark(
   ctx: CanvasRenderingContext2D,
-  opts: { x: number; y: number; size: number; fill: string; ink: string },
+  opts: { x: number; y: number; size: number; coin?: boolean },
 ) {
-  const { x, y, size, fill, ink } = opts;
+  const { x, y, size } = opts;
+  const showCoin = opts.coin ?? size >= 24;
   const k = size / ${S};
+  const g = (x0: number, y0: number, x1: number, y1: number, stops: [number, string][]) => {
+    const grd = ctx.createLinearGradient(x0 * k, y0 * k, x1 * k, y1 * k);
+    for (const [o, c] of stops) grd.addColorStop(o, c);
+    return grd;
+  };
+
   ctx.save();
   ctx.translate(x, y);
-  ctx.beginPath();
-  ctx.roundRect(0, 0, size, size, size * ${(g.r / S).toFixed(2)});
-  ctx.clip();
-  ctx.fillStyle = fill;
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = ink;
-  ctx.fillRect(0, ${g.barY.toFixed(1)} * k, size, ${g.barH.toFixed(1)} * k);
-  ctx.translate(${g.gx.toFixed(1)} * k, ${g.gy.toFixed(1)} * k);
-  ctx.scale(${g.scale.toFixed(5)} * k, -${g.scale.toFixed(5)} * k);
-  ctx.fill(new Path2D(${JSON.stringify(g.d)}));
-  ctx.restore();
-}
 
-/** The secondary ₹ mark — same bar, same baseline, different glyph. */
-export function RupeeMark({
-  size = 28,
-  className,
-  fill = "var(--color-primary)",
-  ink = "var(--color-primary-foreground)",
-  square = false,
-  title,
-}: MarkProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 ${S} ${S}"
-      className={className}
-      style={styleFor(fill, ink, square)}
-      role={title ? "img" : "presentation"}
-      aria-hidden={title ? undefined : true}
-      aria-label={title}
-    >
-      {title ? <title>{title}</title> : null}
-${shape(gr)}
-    </svg>
-  );
+  // Three arcs, struck at one radius with round caps.
+  ctx.lineWidth = ${GEO.arcWidth} * k;
+  ctx.lineCap = "round";
+  const ring: [number, number, CanvasGradient][] = [
+    [-90, -30, g(88, 88, 912, 912, [[0, "#2dd4bf"], [1, "#14b8a6"]])],
+    [0, 90, g(88, 500, 912, 500, [[0, "#f5d478"], [1, "#d99a1d"]])],
+    [120, 270, g(88, 912, 912, 88, [[0, "#a78bfa"], [1, "#7c3aed"]])],
+  ];
+  for (const [from, to, grad] of ring) {
+    ctx.beginPath();
+    ctx.strokeStyle = grad;
+    ctx.arc(500 * k, 500 * k, 412 * k, (from * Math.PI) / 180, (to * Math.PI) / 180);
+    ctx.stroke();
+  }
+
+  // Shirorekha + व, in the vertical teal.
+  const teal = g(0, 0, 0, ${S}, [[0, "#8ff5e8"], [1, "#14b8a6"]]);
+  ctx.fillStyle = teal;
+  ctx.beginPath();
+  ctx.roundRect(${bar.x} * k, ${bar.y} * k, ${bar.w} * k, ${bar.h} * k, ${bar.rx} * k);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(${va.tx} * k, ${va.ty} * k);
+  ctx.scale(${va.s} * k, -${va.s} * k);
+  ctx.fill(new Path2D(${JSON.stringify(VA_PATH)}));
+  ctx.restore();
+
+  if (showCoin) {
+    const disc = ctx.createRadialGradient(
+      ${(c.cx - c.r * 0.3).toFixed(0)} * k, ${(c.cy - c.r * 0.5).toFixed(0)} * k, 0,
+      ${c.cx} * k, ${c.cy} * k, ${c.r * 1.1} * k,
+    );
+    disc.addColorStop(0, "#101a2e");
+    disc.addColorStop(1, "#070b13");
+    ctx.beginPath();
+    ctx.arc(${c.cx} * k, ${c.cy} * k, ${c.r} * k, 0, Math.PI * 2);
+    ctx.fillStyle = disc;
+    ctx.fill();
+    ctx.lineWidth = ${c.ring} * k;
+    ctx.strokeStyle = g(${c.cx - c.r}, ${c.cy}, ${c.cx + c.r}, ${c.cy}, [[0, "#f5d478"], [1, "#d99a1d"]]);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.fillStyle = g(0, ${c.cy - c.r}, 0, ${c.cy + c.r}, [[0, "#f7ecd2"], [0.55, "#e5b13d"], [1, "#b47f1d"]]);
+    ctx.translate(${rupee.tx} * k, ${rupee.ty} * k);
+    ctx.scale(${rupee.s} * k, -${rupee.s} * k);
+    ctx.fill(new Path2D(${JSON.stringify(RUPEE_PATH)}));
+    ctx.restore();
+  }
+
+  ctx.restore();
 }
 `;
 }
@@ -295,38 +326,46 @@ ${shape(gr)}
 async function main() {
   const written = [];
 
-  // Skin variants of the primary mark.
-  for (const [key, skin] of Object.entries(SKINS)) {
-    const svg = mark({ fill: skin.bg });
-    const p = path.join(outDir, `vyuha-${key}.svg`);
-    fs.writeFileSync(p, svg);
+  for (const variant of ["mark", "appicon", "favicon"]) {
+    const p = path.join(outDir, `vyuha-${variant}.svg`);
+    fs.writeFileSync(p, svgFor(variant));
     written.push(p);
   }
 
-  // Secondary ₹ mark.
-  fs.writeFileSync(path.join(outDir, "vyuha-rupee.svg"), rupeeMark());
-  written.push(path.join(outDir, "vyuha-rupee.svg"));
-
   // The icon source Tauri rasterises the whole set from.
   //
-  // The squircle is baked IN rather than left full-bleed. `tauri icon` only
-  // resizes — it adds no mask and no padding — so a single source has to serve
-  // Windows, macOS and Linux. A rounded source is the safe compromise: correct
-  // on macOS, which expects the shape in the artwork, and merely inset on
-  // Windows, which would have accepted full-bleed. Shipping full-bleed instead
-  // would leave a hard-cornered square in the macOS dock next to every other
-  // rounded icon, which is the more visible error.
-  const iconSvg = mark({ fill: SKINS.terminal.bg, size: 1024, rounded: true });
+  // The APPICON variant, not the bare mark: `tauri icon` only resizes — it adds
+  // no mask and no background — so the source must already be opaque and
+  // already carry the squircle. A transparent source would leave the macOS dock
+  // showing three floating arcs with no tile behind them.
   const iconSource = path.join(root, "src-tauri", "icon-source.png");
-  await sharp(Buffer.from(iconSvg)).png().toFile(iconSource);
+  await sharp(Buffer.from(svgFor("appicon"))).resize(1024, 1024).png().toFile(iconSource);
   written.push(iconSource);
 
-  // Favicon + web assets.
-  await sharp(Buffer.from(mark({ fill: SKINS.terminal.bg, size: 512 })))
-    .resize(512, 512).png().toFile(path.join(outDir, "vyuha-512.png"));
-  await sharp(Buffer.from(mark({ fill: SKINS.terminal.bg, size: 512 })))
-    .resize(180, 180).png().toFile(path.join(outDir, "apple-touch-icon.png"));
-  written.push(path.join(outDir, "vyuha-512.png"), path.join(outDir, "apple-touch-icon.png"));
+  // Web assets. The favicon variant for the small sizes, the app icon for the
+  // large ones — the ₹ is legible at 512 and mud at 32.
+  await sharp(Buffer.from(svgFor("appicon"))).resize(512, 512).png()
+    .toFile(path.join(outDir, "vyuha-512.png"));
+  await sharp(Buffer.from(svgFor("appicon"))).resize(180, 180).png()
+    .toFile(path.join(outDir, "apple-touch-icon.png"));
+  await sharp(Buffer.from(svgFor("favicon"))).resize(32, 32).png()
+    .toFile(path.join(outDir, "favicon-32.png"));
+  written.push(
+    path.join(outDir, "vyuha-512.png"),
+    path.join(outDir, "apple-touch-icon.png"),
+    path.join(outDir, "favicon-32.png"),
+  );
+
+  // Masters for the accent skins retired in v3, and the standalone ₹ mark the
+  // coin absorbed. Removed rather than left behind: a stale master is the file
+  // someone reaches for when they need "the logo".
+  for (const dead of ["vyuha-terminal.svg", "vyuha-tape.svg", "vyuha-ice.svg", "vyuha-rupee.svg"]) {
+    const p = path.join(outDir, dead);
+    if (fs.existsSync(p)) {
+      fs.unlinkSync(p);
+      console.log("✗ removed", path.relative(root, p));
+    }
+  }
 
   // The in-app mark, generated so it cannot drift from the icon.
   const cp = path.join(root, "components", "brand", "mark.tsx");

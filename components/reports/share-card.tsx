@@ -55,7 +55,8 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
     const bg = v("--color-card", "#111a26");
     const fg = v("--color-foreground", "#e6edf3");
     const mut = v("--color-muted-foreground", "#8a98a7");
-    const primary = v("--color-primary", "#2dd4bf");
+    // No --color-primary here on purpose: the v3 mark carries its own three
+    // hues, so the card no longer feeds it an accent to tint itself with.
     const profit = v("--color-profit", "#16c784");
     const loss = v("--color-loss", "#f6465d");
     const border = v("--color-border", "#1f2b3a");
@@ -66,7 +67,8 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
     ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
 
     // Header: mark + wordmark + period
-    drawVyuhaMark(ctx, { x: 28, y: 26, size: 34, fill: primary, ink: bg });
+    // The v3 mark paints its own three-hue identity — no fill/ink to pass.
+    drawVyuhaMark(ctx, { x: 28, y: 26, size: 34 });
     ctx.textBaseline = "middle";
     ctx.fillStyle = fg;
     ctx.font = "600 17px Inter, system-ui, sans-serif";
@@ -157,9 +159,10 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
         {/* Live preview of exactly what the PNG will contain */}
         <div className="rounded-lg border border-border bg-card-hover/30 p-4">
           <div className="mb-3 flex items-center gap-2">
-            {/* ink = background, matching drawVyuhaMark above: this preview
-                claims to be exactly what the PNG contains. */}
-            <VyuhaMark size={28} ink="var(--color-background)" />
+            {/* Same call as drawVyuhaMark above, so this preview really is
+                what the PNG will contain. 28px keeps the ₹ coin (the mark
+                drops it under 24). */}
+            <VyuhaMark size={28} />
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-wide">VYUHA</div>
               <div className="text-[10px] text-muted-foreground">{period ?? "Trading journal"}</div>

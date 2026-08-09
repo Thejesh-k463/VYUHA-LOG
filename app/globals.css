@@ -229,6 +229,23 @@
   inherits: false;
   initial-value: linear-gradient(transparent, transparent);
 }
+/* --card-border exists for exactly the reason --panel-wash does, and was found
+   the same way: card-hero declares a teal border, Card declares `border-border`,
+   and Tailwind sorts custom utilities BEFORE its own — so the plain token won
+   and the hero border never rendered on any card, in any release. Routing the
+   colour through a property makes it order-independent: Card reads the
+   variable, card-hero sets it. Non-inheriting so a Card nested inside a hero
+   Card keeps the ordinary border. */
+@property --card-border {
+  /* syntax "*" WITH NO initial-value, deliberately. A registered property that
+     declares an initial-value is always "set", so `var(--card-border, …)` never
+     reaches its fallback — declaring it as a <color> with initial-value
+     transparent stripped the border off every ordinary card while fixing the
+     hero. The universal syntax leaves an unset property at the
+     guaranteed-invalid value, which is what makes the fallback fire. */
+  syntax: "*";
+  inherits: false;
+}
 @utility panel-luxe {
   background-image:
     var(--panel-wash),
@@ -262,7 +279,7 @@
    Card component (touches border-color/box-shadow and the --panel-wash layer
    above, never bg or background-image directly — see the note on @property). */
 @utility card-hero {
-  border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-border));
+  --card-border: color-mix(in oklab, var(--color-primary) 35%, var(--color-border));
   --panel-wash: linear-gradient(
     160deg,
     color-mix(in oklab, var(--color-primary) 9%, transparent),

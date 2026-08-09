@@ -174,37 +174,53 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200",
-        collapsed ? "w-14" : "w-60",
+        // v3: 232px and a vertical gradient rather than a flat surface. The
+        // width is set in px because the sidebar is chrome — it should not
+        // grow with the Comfortable density's larger root font, or the nav
+        // eats the table it exists to navigate.
+        "flex h-screen shrink-0 flex-col border-r border-border transition-[width] duration-200",
+        // Token-driven, NOT the spec's literal #0a101c→#070b13. Hard-coding
+        // those left the sidebar dark navy while the rest of the app went
+        // white in light mode — the same trap globals.css warns about for
+        // table-luxe. --color-surface already IS #0a101c in dark, so the top
+        // stop is exact; the bottom resolves to --color-background (#05080f
+        // vs the spec's #070b13, two units of luminance apart and invisible)
+        // and becomes a soft white gradient in light mode.
+        "bg-[linear-gradient(180deg,var(--color-surface),var(--color-background))]",
+        collapsed ? "w-14" : "w-[232px]",
       )}
     >
-      <div className={cn("flex h-14 items-center gap-2 border-b border-border", collapsed ? "justify-center px-0" : "px-4")}>
+      <div className={cn("flex h-14 items-center gap-2 border-b border-border", collapsed ? "justify-center px-0" : "px-3")}>
         {/* Outline, not a text node: `व` is a tofu box on a machine with no
             Devanagari font, and the sidebar is the one place it would show. */}
-        <VyuhaMark size={28} className="shrink-0" title="Vyuha" />
+        <VyuhaMark size={34} className="shrink-0" title="Vyuha" />
         {!collapsed && (
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-wide">VYUHA</div>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-              Trade Journal
+          // The locked lockup: wordmark in the display face, caption in teal.
+          // `nowrap` on both — at 232px a wrapped caption pushes the collapse
+          // button off the row.
+          <div className="min-w-0 leading-tight">
+            {/* text-foreground, not the spec's literal #f2f5f9: that hex is a
+                near-white for a dark ground, and on the now-themed light
+                sidebar the wordmark disappeared into the background. The token
+                resolves to #e9eef5 in dark — the same colour to the eye. */}
+            <div className="whitespace-nowrap font-display text-[14px] font-bold tracking-[0.14em] text-foreground">
+              VYUHA
+            </div>
+            <div className="whitespace-nowrap text-[8.5px] uppercase tracking-[0.16em] text-primary">
+              Journal · Measure · Master
             </div>
           </div>
-        )}
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={toggle}
-            title="Collapse sidebar"
-            className="ml-auto rounded p-1 text-muted-foreground hover:bg-card-hover hover:text-foreground"
-          >
-            <PanelLeftClose className="size-4" />
-          </button>
         )}
       </div>
 
       {/* ⌘K hint — the command palette is the fastest way around the app. */}
       {!collapsed && <div className="border-b border-border px-3 py-2"><AccountSwitcher accounts={accounts} selected={selectedAccountId} compact /></div>}
-      <div className={cn("border-b border-border py-2", collapsed ? "px-2" : "px-3")}>
+      {/* The collapse control lives on this row rather than in the brand header.
+          At 232px the lockup's caption needs the full width: sharing the row
+          pushed "Journal · Measure · Master" under the button, and because
+          `nowrap` paints past a shrunk flex box the overflow never showed up in
+          a bounding-rect check — only in a screenshot. */}
+      <div className={cn("flex items-center gap-2 border-b border-border py-2", collapsed ? "px-2" : "px-3")}>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("vyuha:command-palette"))}
@@ -222,6 +238,16 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
             </>
           )}
         </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={toggle}
+            title="Collapse sidebar"
+            className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-card-hover hover:text-foreground"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">
@@ -260,9 +286,12 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                   >
                     <GripVertical className="size-3" />
                   </button>
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
                     {group}
                   </span>
+                  {/* Hairline continuing past the label — the group reads as a
+                      band rather than a floating word. */}
+                  <span aria-hidden className="ml-2 h-px flex-1 bg-border" />
                 </div>
               )}
               {items.map((item, ii) => {
@@ -299,7 +328,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                           "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
                           collapsed && "justify-center px-0",
                           active
-                            ? "bg-primary/10 font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_12px_-4px_color-mix(in_oklab,var(--color-primary)_50%,transparent)]"
+                            ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
                             : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
                         )}
                       >

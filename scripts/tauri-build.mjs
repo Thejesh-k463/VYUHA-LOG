@@ -1,6 +1,19 @@
 /**
  * Run `tauri build` with the updater signing key in the environment.
  *
+ * THIS SCRIPT DOES NOT BUILD THE WEB BUNDLE, AND MUST NOT. Tauri's own
+ * `beforeBuildCommand` in tauri.conf.json is `npm run build && npm run
+ * desktop:bundle`, so the bundle is rebuilt on every `tauri build` — including
+ * in CI, where tauri-action reads that field and silently ignores a
+ * `beforeBuildCommand` passed as a workflow input.
+ *
+ * `npm run desktop:build` used to run those two steps ITSELF and then call this
+ * script, so every desktop build compiled Next twice, type-checked twice
+ * (19.3s + 13.2s in the v2.99.30 log), re-seeded the template database twice
+ * and re-copied an 81 MB node.exe into a 168 MB tree twice. The freshness rule
+ * in AGENTS.md still holds — the bundle IS always rebuilt — it just happens
+ * once now, where Tauri asks for it.
+ *
  * ── Why this is a script and not just an npm flag ─────────────────────────
  *
  * `desktop:build` is three separate processes chained with `&&`. Environment

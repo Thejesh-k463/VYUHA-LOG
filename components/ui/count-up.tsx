@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { inr } from "@/lib/format";
+import { quietCurrency } from "@/components/kpi-card";
 
 /**
  * C4 — animated number. Counts from 0 to `value` over ~700ms with an ease-out
@@ -48,5 +49,11 @@ export function CountUp({
 
   const text =
     format === "inr" ? inr(display, { decimals }) : `${display.toFixed(decimals)}${suffix}`;
-  return <span>{text}</span>;
+  // The v3 KPI rule — currency sign smaller and muted so the magnitude reads
+  // first — has to happen HERE for animated values. KpiCard can only split a
+  // string it was handed, and these values arrive as a component that formats
+  // itself on every frame. Skipping this is not cosmetic: Net P&L and Total
+  // charges are the biggest numbers on the dashboard, so the rule would have
+  // missed precisely the values it exists for.
+  return <span>{format === "inr" ? quietCurrency(text) : text}</span>;
 }
