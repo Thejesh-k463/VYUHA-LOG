@@ -50,6 +50,11 @@ this is about catching it before the push, not instead of CI.
 
 # Conventions
 
+- **Check `docs/DECISIONS.md` before changing a constant that looks arbitrary,
+  or before re-measuring something.** It records what was measured, and why the
+  obvious alternative loses. Append to it when you measure something or
+  deliberately deviate from a spec or default.
+
 - **Never silence `react-hooks/set-state-in-effect` — derive instead.** A synchronous
   `setState` inside a `useEffect` keyed on other state broke the Trades view filter outright under
   the React Compiler: the select stopped receiving changes, with no error anywhere. The fix was to
