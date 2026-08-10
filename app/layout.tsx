@@ -8,6 +8,7 @@ import { getSettings } from "@/lib/queries/settings";
 import { cn } from "@/lib/utils";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { asWorkspace, type Workspace } from "@/lib/domain/workspace";
+import { asSkin, skinClass, type Skin } from "@/lib/domain/skin";
 
 // C1 typography — self-hosted at build time (next/font), so the shipped app
 // stays fully offline. Inter carries the UI; JetBrains Mono carries every
@@ -44,12 +45,14 @@ export default function RootLayout({
   let theme = "dark";
   let density = "compact";
   let workspace: Workspace = "both";
+  let skin: Skin = "luxe";
   try {
     const s = getSettings();
     colorblind = s?.colorblindSafe ?? false;
     theme = s?.theme ?? "dark";
     density = s?.density ?? "compact";
     workspace = asWorkspace(s?.workspace);
+    skin = asSkin(s?.accentSkin);
   } catch {
     // DB not migrated yet — render with defaults.
   }
@@ -64,10 +67,9 @@ export default function RootLayout({
         spaceGrotesk.variable,
         theme === "light" && "theme-light",
         colorblind && "cb-safe",
-        // settings.accentSkin is deliberately NOT read here any more. The Tape
-        // and Ice skins were retired in v3 (see app/globals.css); the column
-        // still holds 'tape'/'ice' for anyone who set them, and those rows now
-        // simply render as Terminal rather than erroring or being migrated.
+        // Accent skin (restored in v4 as a coordinated TRIPLE — see
+        // lib/domain/skin.ts). Luxe emits no class; it IS the default.
+        skinClass(skin),
         density === "comfortable" && "density-comfortable",
       )}
     >

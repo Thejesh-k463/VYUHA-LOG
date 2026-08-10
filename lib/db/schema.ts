@@ -566,7 +566,7 @@ export const restrictedSecurities = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     symbol: text("symbol").notNull(), // underlying / scrip (upper-cased)
-    category: text("category").notNull(), // fno_ban | asm | gsm | circuit | other
+    category: text("category").notNull(), // fno_ban | asm | gsm | esm | circuit | other
     stage: text("stage"), // e.g. "ASM Stage II", "GSM Stage 4", "Long-term"
     note: text("note"),
     asOfDate: text("as_of_date").notNull(), // ISO date of the published list

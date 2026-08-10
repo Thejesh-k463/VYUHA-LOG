@@ -169,6 +169,118 @@
     --shadow-overlay: 0 16px 48px -12px rgb(16 24 40 / 0.28);
   }
 
+  /* ── Accent skins ────────────────────────────────────────────────────────
+     A skin swaps a TRIPLE — interactive / money / analytics — never just the
+     primary. Recolouring only the primary is what retired the v2 skins: amber
+     sits at hue 45° and gold at 41°, so "the colour you click" and "the colour
+     that cost you money" became the same colour. See lib/domain/skin.ts for the
+     measured separations.
+
+     PLACEMENT IS LOAD-BEARING. `html.skin-ice` and `html.theme-light` have the
+     SAME specificity (0,1,1) — only source order separates them. These blocks
+     therefore sit AFTER the light theme, and every skin answers BOTH themes,
+     with the light branch selected by `html.theme-light.skin-*` (0,2,1) so it
+     wins on specificity rather than on order.
+
+     NEVER touch --color-profit / --color-loss here. Those belong to .cb-safe
+     below; a skin redefining them would silently defeat colourblind mode.
+
+     EVERY VALUE IS A LITERAL hex/rgb/rgba — never color-mix(). The
+     lightweight-charts canvas reads these tokens with getComputedStyle and
+     parses the colour strings itself; a color-mix() value draws an INVISIBLE
+     line with no error anywhere (components/charts/lw/theme.ts).
+
+     Print needs no branch: the @media print block at the end of this file is
+     UNLAYERED, and unlayered declarations beat every layered one regardless of
+     specificity. The PDF is always the light Luxe palette, by design.
+
+     `luxe` has NO block — it IS the @theme default plus html.theme-light. */
+
+  /* Terminal — Luxe's hues, flat. Expressed only through tokens: setting
+     --color-card-top equal to --color-card collapses panel-luxe's gradient,
+     exactly as the light theme already does. Do NOT write
+     `html.skin-mono .card-hero {...}` — @utility compiles into the utilities
+     layer, which always beats @layer base. */
+  html.skin-mono {
+    --color-card-top: #0d1320;
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-card-float: 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --shadow-primary-glow: none;
+    --shadow-hero: none;
+  }
+  html.theme-light.skin-mono {
+    /* The light card is already flat (both gradient stops are #ffffff), so only
+       the elevation needs flattening here — but it DOES need it, or Terminal
+       would be flat in dark and layered in light. Values are the light theme's
+       own shadows with the second, softer layer dropped. */
+    --color-card-top: #ffffff;
+    --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+    --shadow-card-float: 0 4px 14px -8px rgb(16 24 40 / 0.18);
+    --shadow-primary-glow: none;
+    --shadow-hero: none;
+  }
+
+  /* Ice — blue-led. Analytics moves off violet to orchid: violet (255°) sits
+     only 58° from a blue primary, orchid (292°) restores the gap to 95°. */
+  html.skin-ice {
+    --color-primary: #4cc2f1;        /* 8.14:1 on #05080f */
+    --color-primary-deep: #2aa8db;
+    --color-primary-foreground: #04121a;
+    --color-violet: #e879f9;         /* analytics */
+    --color-violet-deep: #c026d3;
+    --color-accent: #e879f9;
+    --color-ring: #4cc2f1;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(76 194 241 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(76 194 241 / 0.4);
+  }
+  html.theme-light.skin-ice {
+    --color-primary: #0369a1;        /* 4.95:1 on #f4f6f9 */
+    --color-primary-deep: #075985;
+    --color-primary-foreground: #ffffff;
+    --color-violet: #a21caf;
+    --color-violet-deep: #86198f;
+    --color-accent: #a21caf;
+    --color-ring: #0369a1;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(3 105 161 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(3 105 161 / 0.3);
+  }
+
+  /* Tape — amber-led, and the one skin where GOLD IS NOT THE MONEY COLOUR.
+     No warm hue clears gold (41°), loss (352°) and profit (157°) at once, so
+     an amber primary forces money to move; it takes violet and analytics takes
+     teal. Role-to-role separation is 98° — wider than the shipping Luxe's 83°.
+     The Settings picker names the money colour for this reason. */
+  html.skin-tape {
+    --color-primary: #e8b006;        /* 7.58:1 on #05080f */
+    --color-primary-deep: #c08f04;
+    --color-primary-foreground: #1a1300;
+    --color-gold: #c084fc;           /* money */
+    --color-gold-bright: #d8b4fe;
+    --color-gold-deep: #9333ea;
+    --color-warning: #c084fc;
+    --color-violet: #2dd4bf;         /* analytics */
+    --color-violet-deep: #14b8a6;
+    --color-accent: #2dd4bf;
+    --color-ring: #e8b006;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(232 176 6 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(232 176 6 / 0.4);
+  }
+  html.theme-light.skin-tape {
+    --color-primary: #8a6508;        /* 4.81:1 on #f4f6f9 */
+    --color-primary-deep: #6f4b05;
+    --color-primary-foreground: #ffffff;
+    --color-gold: #7e22ce;
+    --color-gold-bright: #9333ea;
+    --color-gold-deep: #6b21a8;
+    --color-warning: #7e22ce;
+    --color-violet: #0b7a70;
+    --color-violet-deep: #0a6a61;
+    --color-accent: #0b7a70;
+    --color-ring: #8a6508;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(138 101 8 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(138 101 8 / 0.3);
+  }
+
   /* Display density. Everything in the app is sized in rem, so one root
      font-size scales type, paddings and gaps together — Comfortable is the
      whole interface at 17/16 scale, not a second set of sizes to maintain.

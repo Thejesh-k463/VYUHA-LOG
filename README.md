@@ -28,15 +28,13 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **v2.99.20 — the app fits the trader, not the other way round.** Tell Settings you trade
-> **only equity or only F&O** and the other book's screens leave the sidebar and the ⌘K palette —
-> without deleting anything, without hiding a route you can still link to, and without a single
-> total quietly dropping rows. MTF now **shows the rate it is using**: the capital-vs-funded split
-> appears only on MTF trades and leads with *your* stock's percentage from *your* broker's list,
-> saying so plainly when the stock isn't on it. Chart screenshots became findable — a paperclip
-> and a count on every trade that has one. The P&L calendar **opens**: click a day for that day's
-> trades, with green/red runs counted in days you actually traded. And the sidebar reorders by
-> **drag** now, with a glow and a drop line, instead of clicking arrows.
+> **v2.99.40 — it remembers how you trade.** The calculator keeps a separate last trade for
+> Equity and for F&O — with an index picker that knows the January-2026 market lots (Nifty 65,
+> Sensex 20…) and which exchange each index calls home. Surveillance now reads NSE's own files:
+> drop `fo_secban.csv` or the `REG_IND` indicator file and ban/ASM/GSM/ESM land in the right
+> categories with the date read from the file itself. Chart screenshots open in an in-app viewer.
+> Trades columns reorder by drag. Four coordinated skins — Luxe, Terminal, Ice, Tape — in dark and
+> light. And the installer wears the Vyuha mark end to end, not the NSIS globe.
 >
 > *v2.99.9 — every broker's MTF list, compared.* 10,501 per-stock own-margin percentages across
 > all seven brokers, each from the broker's own feed — and a Broker Costs section that prices

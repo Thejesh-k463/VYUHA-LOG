@@ -27,6 +27,9 @@ import * as React from "react";
  *    what makes drag implementations feel like they're fighting you.
  */
 
+/** Which way the list runs. Rows are "y"; table columns are "x". */
+export type DragAxis = "x" | "y";
+
 export interface DragState {
   /** Which list is being dragged in — a group name, or "__groups__". */
   scope: string;
@@ -38,7 +41,12 @@ export interface DragState {
    * see `dropTarget`.
    */
   toIndex: number;
-  /** Pixels moved since grab, for the follow transform. */
+  /**
+   * Pixels moved since grab, for the follow transform. Only the axis in use is
+   * non-zero. Both are kept — rather than one generic `d` — so the sidebar,
+   * which reads `dy`, needed no change when the x axis was added.
+   */
+  dx: number;
   dy: number;
 }
 
@@ -59,12 +67,16 @@ export function dropTarget(from: number, insertionIndex: number): number {
   return insertionIndex > from ? insertionIndex - 1 : insertionIndex;
 }
 
-export function useListDrag(onCommit: (scope: string, from: number, to: number) => void) {
+export function useListDrag(
+  onCommit: (scope: string, from: number, to: number) => void,
+  axis: DragAxis = "y",
+) {
+  const horizontal = axis === "x";
   const [drag, setDrag] = React.useState<DragState | null>(null);
   // Rects are measured ONCE at grab. Reading them per pointermove would hit
   // layout on every frame, and they cannot change anyway: the list is frozen
   // for the duration of the drag.
-  const geom = React.useRef<{ mids: number[]; startY: number } | null>(null);
+  const geom = React.useRef<{ mids: number[]; start: number } | null>(null);
   // The live drag, mirrored outside React. The commit reads THIS rather than
   // running inside a `setState` updater: updaters must be pure, and React
   // double-invokes them in development — a commit in there fires twice.
@@ -83,14 +95,14 @@ export function useListDrag(onCommit: (scope: string, from: number, to: number) 
         .filter((el): el is HTMLElement => el != null)
         .map((el) => {
           const r = el.getBoundingClientRect();
-          return r.top + r.height / 2;
+          return horizontal ? r.left + r.width / 2 : r.top + r.height / 2;
         });
-      geom.current = { mids, startY: e.clientY };
-      const next: DragState = { scope, key, fromIndex: index, toIndex: index, dy: 0 };
+      geom.current = { mids, start: horizontal ? e.clientX : e.clientY };
+      const next: DragState = { scope, key, fromIndex: index, toIndex: index, dx: 0, dy: 0 };
       stateRef.current = next;
       setDrag(next);
     },
-    [],
+    [horizontal],
   );
 
   const dragging = drag !== null;
@@ -103,9 +115,11 @@ export function useListDrag(onCommit: (scope: string, from: number, to: number) 
       const cur = stateRef.current;
       if (!g || !cur) return;
       // Insertion index = how many neighbours' midpoints the pointer has passed.
+      const p = horizontal ? e.clientX : e.clientY;
       let to = 0;
-      for (const m of g.mids) if (e.clientY > m) to += 1;
-      const next: DragState = { ...cur, toIndex: to, dy: e.clientY - g.startY };
+      for (const m of g.mids) if (p > m) to += 1;
+      const delta = p - g.start;
+      const next: DragState = { ...cur, toIndex: to, dx: horizontal ? delta : 0, dy: horizontal ? 0 : delta };
       stateRef.current = next;
       setDrag(next);
     };
@@ -150,7 +164,7 @@ export function useListDrag(onCommit: (scope: string, from: number, to: number) 
       body.style.userSelect = prevSelect;
       body.style.cursor = prevCursor;
     };
-  }, [dragging]);
+  }, [dragging, horizontal]);
 
   return { drag, begin };
 }

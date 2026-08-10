@@ -98,7 +98,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     href: "/surveillance",
     title: "Surveillance",
     answers: "Is anything I hold on an exchange watchlist?",
-    body: ["Paste the daily NSE/BSE ban, ASM, GSM or circuit list and it is matched against your open positions with severity and what each listing means. Offline-first: you supply the list, nothing is fetched."],
+    body: ["Upload the official NSE files — fo_secban.csv (F&O ban) and REG_IND (ASM/GSM/ESM stages) — or paste any list by hand; either way it is matched against your open positions with severity and what each listing means. Offline-first: you supply the file, nothing is fetched."],
     keywords: ["asm", "gsm", "ban", "circuit", "watchlist"],
   },
   {

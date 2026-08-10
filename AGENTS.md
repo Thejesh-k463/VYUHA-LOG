@@ -60,6 +60,20 @@ this is about catching it before the push, not instead of CI.
   the React Compiler: the select stopped receiving changes, with no error anywhere. The fix was to
   delete the state-sync entirely and derive (`visibleSelected = selected ∩ visibleRows` at render
   time). If you find yourself resetting state in an effect, the state is probably derivable.
+- **localStorage goes through `components/layout/use-stored-value.ts`** — `useStoredValue(key)` to
+  read (hydration-safe: the server snapshot is null, so defaults render and the stored value lands
+  after hydration), `writeStored(key, value)` to write (it notifies same-document readers; the DOM
+  `storage` event fires only in OTHER documents). Keys are `vyuha-…` kebab-case, parameterised with
+  a `:suffix` (`vyuha-import-mapping:${broker}`), and stored JSON wears a versioned envelope
+  `{v:1, …}` so a future shape is discarded rather than mis-read. The older
+  `Promise.resolve().then(setState)` mount-restore (sidebar, column-mapper) remains acceptable for
+  one-shot restores.
+- **Charts that reach paper stay recharts.** The `@media print` palette re-themes SVG through CSS
+  custom properties; canvas (lightweight-charts) rasterises its draw-time colours and prints a dark
+  chart on a white page. lightweight-charts is for screen-only surfaces (the trade replay), and it
+  renders an INVISIBLE series — no throw, no warning — if handed a colour it cannot parse
+  (`color-mix()`, `oklch()`, unresolved `var()`); chart tokens must be literal colours
+  (`tests/skin.test.ts` asserts this).
 - **Settings/editor writes use route handlers + client `fetch` + `router.refresh()`, NOT server
   actions.** Server actions auto-refresh the current route, which remounts sibling client
   components and silently resets their state. This broke the charge-editor row selection and made
@@ -94,6 +108,25 @@ this is about catching it before the push, not instead of CI.
   entry.
 
 
+# Adding a dependency
+
+**Never let npm rewrite `package-lock.json` — not even plain `npm install`.** On this dependency
+graph a plain `npm install <pkg>` (fully installed tree, no flags) deterministically prunes
+vitest's nested `esbuild@0.28.x` and its 26 `@esbuild/*` platform entries from the lock. That is
+not a benign dedupe: vitest's `vite` requires `esbuild ^0.27||^0.28`, so the prune leaves it
+resolving to the top-level 0.25.x — `npm ls esbuild` reports ELSPROBLEMS and `npm ci` fails on
+EVERY platform, Windows included. Procedure that works (used for lightweight-charts):
+
+1. Let npm generate a lock once (to get the registry `integrity` hashes), save it aside.
+2. `git checkout package-lock.json`, then splice ONLY the new package's `packages` entries plus the
+   root `dependencies` line onto HEAD's lock — **preserving existing key order** (npm collates `_`
+   differently from `Array.sort`; a global re-sort silently rewrites unrelated entries).
+3. Prove it: `npm ci` clean, `npm ls esbuild` resolves, and
+   `git diff --numstat package-lock.json` shows additions only.
+
+Full narrative: docs/DECISIONS.md 2026-08-10.
+
+
 # Testing
 
 Almost every test runs against pure modules with no database — that is why the suite finishes in
@@ -115,6 +148,13 @@ specs must not assume they run first (see `e2e/helpers.ts`). Two rules learned t
   and the failure then surfaces somewhere else entirely. This reddened CI for six releases.
 - **Never compare a page count against a whole-database figure.** The trades table is
   account-scoped and view-filtered; a backup dump is every row in every account.
+- **A spec that seeds via `ensureTrades` is `z-` prefixed.** Specs run alphabetically, and whichever
+  runs first is the one that gets to see "Imported 122 trades" — an unprefixed seeding spec steals
+  that moment from `import-dashboard.spec.ts` and fails it on a side effect.
+- **Assert client-restored state with `expect.poll`, never once after `networkidle`.** Saved column
+  orders, calculator snapshots and the like are applied by client code after hydration, and
+  `networkidle` says nothing about hydration — a single assert reads the default and looks exactly
+  like broken persistence (it cost a wrong diagnosis and a revert; DECISIONS.md 2026-08-10).
 
 
 # Brand
@@ -173,8 +213,8 @@ declared "no-mtf", not omitted.
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".
 - Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json, Cargo.toml and
   the sidebar footer — but **not `src-tauri/Cargo.lock`**, which needs a `cargo` invocation, and
-  **not package-lock.json's root version fields**. To sync those, edit the two version strings or
-  run a plain `npm install` — **never `npm install --package-lock-only`**: on Windows it re-resolves
-  without an installed tree to consult and silently drops the darwin/linux optional-dep variants
-  (esbuild etc.) from the lock, and `npm ci` then fails on every non-Windows runner. This broke all
-  four CI jobs at v2.99.5. A stale root version in the lock is harmless; a re-resolved lock is not.
+  **not package-lock.json's root version fields**. To sync those, edit the two version strings BY
+  HAND — never by running npm. `--package-lock-only` drops the darwin/linux optional-dep variants
+  (broke all four CI jobs at v2.99.5), and a plain `npm install` corrupts the lock differently but
+  just as fatally — see **Adding a dependency** above. A stale root version in the lock is
+  harmless; a re-resolved lock is not.

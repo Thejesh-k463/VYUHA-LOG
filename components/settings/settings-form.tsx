@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WORKSPACE_LABELS, asWorkspace, type Workspace } from "@/lib/domain/workspace";
+import { SKINS, SKIN_META, asSkin, skinClass, type Skin } from "@/lib/domain/skin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { Settings } from "@/lib/db/schema";
 import { toast } from "@/components/ui/toaster";
+import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 
 const MONTHS = [
@@ -23,6 +25,7 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [workspace, setWorkspace] = useState<Workspace>(asWorkspace(current.workspace));
   const [colorblind, setColorblind] = useState(current.colorblindSafe);
   const [theme, setTheme] = useState(current.theme);
+  const [skin, setSkin] = useState<Skin>(asSkin(current.accentSkin));
   const [density, setDensity] = useState(current.density ?? "compact");
   const [goLiveDate, setGoLive] = useState(current.goLiveDate);
   const [equityCapital, setEquity] = useState(String(current.equityCapital));
@@ -38,6 +41,18 @@ export function SettingsForm({ current }: { current: Settings }) {
   function applyTheme(next: string) {
     setTheme(next);
     document.documentElement.classList.toggle("theme-light", next === "light");
+  }
+  /** Live preview — same mechanism as applyTheme, so the picker shows the real
+   *  thing rather than a swatch approximation. */
+  function applySkin(next: Skin) {
+    setSkin(next);
+    const el = document.documentElement;
+    for (const s of SKINS) {
+      const c = skinClass(s);
+      if (c) el.classList.remove(c);
+    }
+    const c = skinClass(next);
+    if (c) el.classList.add(c);
   }
   function applyColorblind(next: boolean) {
     setColorblind(next);
@@ -60,7 +75,7 @@ export function SettingsForm({ current }: { current: Settings }) {
           // accentSkin is not sent: the skin picker was retired in v3. The API
           // still accepts the field (defaulting to "terminal"), so a saved
           // "tape"/"ice" row quietly normalises the next time this form saves.
-          goLiveDate, equityCapital, activeCapital, theme, density, workspace, fyStartMonth,
+          goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
         }),
@@ -137,6 +152,47 @@ export function SettingsForm({ current }: { current: Settings }) {
           <CardTitle>Preferences</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 space-y-2">
+            <Label>Accent skin</Label>
+            <div className="flex flex-wrap gap-2">
+              {SKINS.map((id) => {
+                const m = SKIN_META[id];
+                const active = skin === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => applySkin(id)}
+                    title={m.hint}
+                    aria-pressed={active}
+                    className={cn(
+                      "flex items-center gap-2 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs transition-colors",
+                      active
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                    )}
+                  >
+                    {/* The three roles, in order: interactive / money / analytics. */}
+                    <span className="flex shrink-0 overflow-hidden rounded-full" aria-hidden>
+                      <span className="size-3" style={{ background: m.swatch.primary }} />
+                      <span className="size-3" style={{ background: m.swatch.money }} />
+                      <span className="size-3" style={{ background: m.swatch.analytics }} />
+                    </span>
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {SKIN_META[skin].hint}{" "}
+              <span className="text-foreground">
+                Money reads {SKIN_META[skin].moneyLabel} in this skin.
+              </span>{" "}
+              Profit and loss colours never change — those belong to the
+              colourblind-safe setting below.
+            </p>
+          </div>
+
           <Field label="Theme">
             <Select value={theme} onChange={(e) => applyTheme(e.target.value)}>
               <option value="dark">Dark (terminal)</option>

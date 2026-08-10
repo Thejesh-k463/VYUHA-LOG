@@ -53,7 +53,7 @@ export default function SurveillancePage() {
       />
       <div className="space-y-5 p-6">
         {loaded && (
-          <section className="grid grid-cols-3 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <section className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             <Stat label="Restricted" value={String(report.totalRestricted)} />
             <Stat
               label="You hold"
@@ -63,6 +63,7 @@ export default function SurveillancePage() {
             <Stat label="F&O ban" value={String(report.byCategory.fno_ban)} />
             <Stat label="ASM" value={String(report.byCategory.asm)} />
             <Stat label="GSM" value={String(report.byCategory.gsm)} />
+            <Stat label="ESM" value={String(report.byCategory.esm)} />
             <Stat label="Circuit" value={String(report.byCategory.circuit)} />
           </section>
         )}
@@ -184,7 +185,7 @@ export default function SurveillancePage() {
         )}
 
         <p className="text-[11px] text-muted-foreground">
-          Offline-first: paste the daily NSE/BSE restriction lists (F&O ban / ASM / GSM / circuit). Alerts are advisory —
+          Offline-first: upload the official NSE files (fo_secban.csv, REG_IND) or paste the daily NSE/BSE restriction lists (F&O ban / ASM / GSM / circuit). Alerts are advisory —
           a stock in F&O ban allows only position reduction; ASM/GSM raise margins and tighten bands. Always confirm with
           your broker before trading a flagged scrip.
         </p>

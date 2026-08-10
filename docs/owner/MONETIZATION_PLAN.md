@@ -10,7 +10,35 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.30
+## 0. What you are actually selling, as of v2.99.40
+
+> ### v2.99.40 marketing note — the trial's first five minutes got safer
+>
+> Three of this release's features exist to survive the evaluation window,
+> where every sale is actually decided:
+>
+> **The installer no longer looks like malware.** The #1 pre-purchase
+> objection for a solo-shipped Windows app is fear at the Setup screen. The
+> wizard now carries the mark end to end — icon, banner, sidebar — instead of
+> the stock NSIS globe. This is not cosmetics; it is conversion. (The
+> remaining half of that fear is SmartScreen's "Unknown publisher" — budget
+> for code signing, ~$10/month via Azure Trusted Signing, before any paid
+> traffic is sent at the download link.)
+>
+> **Surveillance imports NSE's own files.** Demo line that lands: *"download
+> the exchange's ban list and the app reads the trade date out of the file."*
+> One REG_IND upload covers ASM, GSM and ESM for every listed scrip — a
+> daily-habit feature, and daily habits renew licences.
+>
+> **The calculator remembers both books separately.** Small on paper, felt
+> every session by exactly the two-book traders the F&O packaging targets —
+> and the index picker quietly proves the data is CURRENT (January-2026 lots,
+> sourced and labelled), which is the trust the whole tax pack trades on.
+>
+> Screenshot note: the Settings skin picker (four swatches) and the installer
+> wizard are NEW surfaces worth adding to the listing gallery; existing
+> screenshots remain valid.
+
 
 > ### v2.99.30 marketing note — the objection that used to end the call
 >

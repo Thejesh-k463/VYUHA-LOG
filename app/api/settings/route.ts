@@ -51,7 +51,12 @@ const SettingsSchema = z.object({
   // narrowed enum would turn those into a 400 on an otherwise valid save.
   // Nothing renders them any more, and the default quietly normalises the row
   // to "terminal" now that the form no longer sends the field.
-  accentSkin: z.enum(["terminal", "tape", "ice"]).default("terminal"),
+  // v4 restored skins as coordinated triples. "terminal" is still ACCEPTED
+  // — it is the pre-v4 column default on every install and arrives in any
+  // restored backup — and asSkin() maps it to Luxe, which is what it has
+  // rendered as since v3. The new flat skin is "mono" precisely so that
+  // old string never has to change meaning.
+  accentSkin: z.enum(["luxe", "mono", "ice", "tape", "terminal"]).default("terminal"),
   density: z.enum(["compact", "comfortable"]).default("compact"),
   workspace: z.enum(WORKSPACES).default("both"),
   fyStartMonth: z.coerce.number().int().min(1).max(12),

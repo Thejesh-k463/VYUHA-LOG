@@ -9,7 +9,7 @@
 // This module matches the user's held / open positions against such a list and
 // raises actionable alerts. Offline-first: the list is pasted/imported by the user.
 
-export type RestrictionCategory = "fno_ban" | "asm" | "gsm" | "circuit" | "other";
+export type RestrictionCategory = "fno_ban" | "asm" | "gsm" | "esm" | "circuit" | "other";
 export type Severity = "high" | "medium" | "info";
 
 export interface RestrictedRow {
@@ -70,6 +70,12 @@ export const CATEGORY_META: Record<RestrictionCategory, CatMeta> = {
     base: "medium",
     guidance: "Additional Surveillance — higher margins and tighter price bands. Size positions carefully and expect volatility.",
   },
+  esm: {
+    label: "ESM",
+    base: "medium",
+    guidance:
+      "Enhanced Surveillance — SME-focused: 100% margin, possible trade-to-trade or periodic call-auction. Thin books; exits can be slow.",
+  },
   circuit: {
     label: "Circuit / band",
     base: "info",
@@ -90,6 +96,7 @@ export function normalizeCategory(raw: string): RestrictionCategory {
   if (s.includes("circuit") || s.includes("band")) return "circuit"; // before "ban" (band ⊃ ban)
   if (s.includes("ban") || s.includes("fno") || s.includes("f&o") || s.includes("mwpl")) return "fno_ban";
   if (s.includes("gsm")) return "gsm";
+  if (s.includes("esm")) return "esm";
   if (s.includes("asm")) return "asm";
   return "other";
 }
@@ -140,7 +147,7 @@ export function computeRestrictions(
   }
 
   const byCategory: Record<RestrictionCategory, number> = {
-    fno_ban: 0, asm: 0, gsm: 0, circuit: 0, other: 0,
+    fno_ban: 0, asm: 0, gsm: 0, esm: 0, circuit: 0, other: 0,
   };
   for (const [, rows] of bySymbol) {
     const cats = new Set(rows.map((r) => r.category));

@@ -101,7 +101,7 @@ You have two paths — use either or both:
 | **Cash & Ledger** | Deposits, withdrawals, charges, dividends, margin penalties → true available capital |
 | **Analytics → Tax Summary** | Capital-gains tax + set-off/carry-forward + dividend TDS (informational) |
 | **Analytics → Advance Tax / Tax Harvest / Charges & MTF Leak / Broker Costs** | The money-and-tax toolkit |
-| **Surveillance** | Paste the daily NSE/BSE F&O-ban / ASM-GSM list → alerts on your holdings |
+| **Surveillance** | Upload NSE's daily files (fo_secban.csv / REG_IND — ban, ASM, GSM, ESM) or paste any list → alerts on your holdings |
 
 ## 6. Auto-MTM & market data (optional, still offline)
 

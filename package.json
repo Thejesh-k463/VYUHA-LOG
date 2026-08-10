@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.99.30",
+  "version": "2.99.40",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -41,6 +41,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
+    "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.21.0",
     "next": "16.2.9",
     "papaparse": "^5.5.4",

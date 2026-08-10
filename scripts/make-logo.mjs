@@ -323,6 +323,98 @@ export function drawVyuhaMark(
 `;
 }
 
+/**
+ * NSIS wizard art (v2.99.40).
+ *
+ * Two bitmaps dress the installer beyond the icon: the page-header banner
+ * (150 × 57, top-left of every wizard page) and the Welcome/Finish sidebar
+ * (164 × 314). MUI2 defaults the UNinstaller's bitmaps to these same two, so
+ * one pair covers install, reinstall/update and uninstall.
+ *
+ * They are emitted as 24-bit UNCOMPRESSED BMPs because that is all NSIS
+ * accepts — no alpha, no PNG-in-BMP. sharp cannot write BMP, so the encoder
+ * below is hand-rolled: BGR byte order, bottom-up rows, rows padded to 4
+ * bytes. The SVG composes from the SAME arcs/letter/coin helpers as every
+ * other variant, so the wizard cannot drift from the mark.
+ *
+ * Text renders with the build machine's sans font — acceptable here alone,
+ * because these bitmaps are rasterised on the OWNER's machine at build time,
+ * never on a user's (the rule against live text is about USER machines).
+ */
+function wizardSvg(kind) {
+  const markGroup = (x, y, size) =>
+    `<g transform="translate(${x} ${y}) scale(${size / GEO.S})">
+${arcs(GEO.arcWidth)}
+${letter()}
+${coin(true)}
+</g>`;
+  if (kind === "header") {
+    // Banner strip: tile-dark ground, compact mark, wordmark beside it.
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 57" width="150" height="57">
+  <defs>
+${defs()}
+  </defs>
+  <rect width="150" height="57" fill="#0a1120"/>
+  <rect x="0" y="55" width="150" height="2" fill="#14b8a6" opacity="0.85"/>
+  ${markGroup(8, 6, 45)}
+  <text x="62" y="36" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="3.5" fill="#e9eef5">VYUHA</text>
+</svg>`;
+  }
+  // Sidebar: tall gradient panel — mark, wordmark, the three-word promise.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 314" width="164" height="314">
+  <defs>
+${defs()}
+    <linearGradient id="wiz-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#101a2e"/><stop offset="100%" stop-color="#05070d"/></linearGradient>
+  </defs>
+  <rect width="164" height="314" fill="url(#wiz-bg)"/>
+  ${markGroup(27, 40, 110)}
+  <text x="82" y="196" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="5" fill="#e9eef5">VYUHA</text>
+  <text x="82" y="216" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1.4" fill="#8a98a7">JOURNAL · MEASURE · MASTER</text>
+  <rect x="52" y="232" width="60" height="2" rx="1" fill="#14b8a6" opacity="0.7"/>
+  <text x="82" y="292" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1" fill="#5b6675">LOCAL · OFFLINE · YOURS</text>
+</svg>`;
+}
+
+/** Encode raw RGB(A) pixels as a 24-bit uncompressed BMP (what NSIS requires). */
+function bmp24(raw, width, height, channels) {
+  const rowSize = Math.ceil((width * 3) / 4) * 4;
+  const pixelBytes = rowSize * height;
+  const buf = Buffer.alloc(54 + pixelBytes);
+  buf.write("BM", 0);
+  buf.writeUInt32LE(54 + pixelBytes, 2);
+  buf.writeUInt32LE(54, 10); // pixel data offset
+  buf.writeUInt32LE(40, 14); // BITMAPINFOHEADER
+  buf.writeInt32LE(width, 18);
+  buf.writeInt32LE(height, 22); // positive = bottom-up
+  buf.writeUInt16LE(1, 26); // planes
+  buf.writeUInt16LE(24, 28); // bpp
+  buf.writeUInt32LE(0, 30); // BI_RGB, uncompressed
+  buf.writeUInt32LE(pixelBytes, 34);
+  buf.writeInt32LE(2835, 38); // 72 dpi
+  buf.writeInt32LE(2835, 42);
+  for (let y = 0; y < height; y++) {
+    const srcRow = (height - 1 - y) * width * channels;
+    let dst = 54 + y * rowSize;
+    for (let x = 0; x < width; x++) {
+      const src = srcRow + x * channels;
+      buf[dst++] = raw[src + 2]; // B
+      buf[dst++] = raw[src + 1]; // G
+      buf[dst++] = raw[src]; // R
+    }
+  }
+  return buf;
+}
+
+async function emitWizardBmp(kind, width, height, outPath) {
+  // Flatten onto the banner ground: BMP has no alpha channel to keep.
+  const { data, info } = await sharp(Buffer.from(wizardSvg(kind)))
+    .resize(width, height)
+    .flatten({ background: "#0a1120" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  fs.writeFileSync(outPath, bmp24(data, info.width, info.height, info.channels));
+}
+
 async function main() {
   const written = [];
 
@@ -341,6 +433,13 @@ async function main() {
   const iconSource = path.join(root, "src-tauri", "icon-source.png");
   await sharp(Buffer.from(svgFor("appicon"))).resize(1024, 1024).png().toFile(iconSource);
   written.push(iconSource);
+
+  // NSIS wizard bitmaps (exact MUI2 sizes; 24-bit BMP is mandatory).
+  const headerBmp = path.join(root, "src-tauri", "installer-header.bmp");
+  const sidebarBmp = path.join(root, "src-tauri", "installer-sidebar.bmp");
+  await emitWizardBmp("header", 150, 57, headerBmp);
+  await emitWizardBmp("sidebar", 164, 314, sidebarBmp);
+  written.push(headerBmp, sidebarBmp);
 
   // Web assets. The favicon variant for the small sizes, the app icon for the
   // large ones — the ₹ is legible at 512 and mud at 32.

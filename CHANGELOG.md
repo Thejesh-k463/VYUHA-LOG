@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.99.40 — the calculator remembers, the exchange files import themselves, and the installer looks like us
+
+**The Trade Calculator got a memory and learned the indices.** Equity and F&O
+each keep their own last-entered trade now — flip modes and ₹2,450 of stock
+entry no longer masquerades as an option premium; reload and both books come
+back, including which mode you were in. A new **Underlying index** picker fills
+the correct market lot for Nifty 50, Bank Nifty, FinNifty, Midcap Nifty, Sensex
+and Bankex — verified against the exchanges' January-2026 lot revision (Nifty
+is 65 now, not 75), routed to the right exchange automatically (Sensex means
+BSE), and every lot names its source: your own fo_mktlots upload beats the
+bundled snapshot, and a manual edit is respected and labelled, never silently
+corrected.
+
+**Chart screenshots open inside the app.** Click a thumbnail and a full-size
+viewer appears — arrow keys, a counter, the file's name/size/date, delete, and
+an "Open in tab" escape hatch. Escape closes the viewer, not the dialog you
+were in.
+
+**Surveillance imports the exchange's own files.** Drop NSE's `fo_secban.csv`
+(F&O ban) or the `REG_IND` Surveillance Indicator file — one file that carries
+ASM (long & short term), GSM **and ESM** stages for every listed scrip — and
+the app reads the trade date out of the file itself. Each upload replaces only
+the categories that file speaks for, so the ban list, the surveillance list
+and your pasted BSE rows coexist. ESM is now a first-class category with its
+own tile. A file it cannot fingerprint is refused with the headers it actually
+saw — never imported confidently and wrongly.
+
+**The Trades table's columns reorder by drag**, like the sidebar — the frozen
+row-select and Instrument columns stay put, the order survives restarts, and a
+reset control puts everything back.
+
+**Four coordinated looks.** Luxe (the shipping gradient), Terminal (flat),
+Ice and Tape — each swaps the whole primary/money/analytics triple so the
+colour law holds in every skin, in dark and light both. And the trade replay
+moved to a native price chart (lightweight-charts) — screen-only by design;
+everything that reaches paper stays SVG so PDFs keep printing light.
+
+**The installer finally wears the mark.** Setup's title bar, header, file icon,
+wizard banner and sidebar all carry the Trinity Chakra now instead of the stock
+NSIS globe users kept mistaking for malware — and updates refresh the desktop
+shortcut's icon without an Explorer cache dance.
+
+
 ## v2.99.30 — import from any broker, and a new skin for the whole app
 
 **Import now works with every broker, including ones we have never seen.**

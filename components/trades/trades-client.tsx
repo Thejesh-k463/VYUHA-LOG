@@ -3,6 +3,10 @@
 import * as React from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
+import { applyColumnOrder, movableKeys, parseStoredOrder } from "@/lib/domain/column-order";
+import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
+import { moveIndex } from "@/components/layout/nav-config";
+import { GripVertical } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +44,14 @@ function daysBetween(a: string, b: string): number | null {
   if (Number.isNaN(d1) || Number.isNaN(d2)) return null;
   return Math.round((d2 - d1) / 86400000);
 }
+
+/** Per-device column order. Versioned so a future shape can be discarded
+ *  rather than mis-read. */
+const COL_ORDER_KEY = "vyuha-trades-column-order";
+/** Row-select and Instrument are frozen while scrolling sideways: `select`
+ *  declares the width the sticky maths reads, and the flexible-width allowance
+ *  belongs to Instrument. Neither can be dragged. */
+const PINNED_COLUMNS = 2;
 
 export function TradesClient({
   trades,
@@ -207,6 +219,17 @@ export function TradesClient({
     return countViews(base);
   }, [trades, search, broker, segment, bucket, from, to, realised]);
 
+  // ── User-ordered columns ────────────────────────────────────────────────
+  //
+  // Per-device chrome, like the sidebar order: it lives in localStorage and so
+  // does NOT travel in a backup. The first two columns (row select, Instrument)
+  // are frozen — `applyColumnOrder` slices them off before reordering, so no
+  // stored value can move them.
+  // Derived, not effect-hydrated: a mount effect never lands on a full page
+  // load, which is every desktop launch. See use-stored-value.ts.
+  const rawOrder = useStoredValue(COL_ORDER_KEY);
+  const colOrder = React.useMemo(() => parseStoredOrder(rawOrder), [rawOrder]);
+
   const columns = React.useMemo<ColumnDef<Trade, unknown>[]>(() => [
     {
       id: "select",
@@ -368,6 +391,28 @@ export function TradesClient({
     },
   ], [today, data, visibleSelected, attachmentCounts]);
 
+  // Reorder the ARRAY, never TanStack's `columnOrder`: DataTable reads the raw
+  // prop positionally for its width budget and sticky offsets, and those would
+  // silently describe the old layout.
+  const orderedColumns = React.useMemo(
+    () => applyColumnOrder(columns, colOrder, PINNED_COLUMNS),
+    [columns, colOrder],
+  );
+
+  // The write IS the state change — `writeStored` re-renders every reader of
+  // the key, so there is no second copy of this in React state to fall out of
+  // step with storage.
+  const reorderColumns = React.useCallback((from: number, to: number) => {
+    // Read the CURRENT rendering order, not the stored one: an array saved
+    // before a release added a column no longer matches the indices the drag
+    // just produced.
+    const current = movableKeys(applyColumnOrder(columns, colOrder, PINNED_COLUMNS), PINNED_COLUMNS);
+    const next = moveIndex(current, from, to);
+    writeStored(COL_ORDER_KEY, JSON.stringify({ v: 1, order: next }));
+  }, [columns, colOrder]);
+
+  const resetColumns = React.useCallback(() => writeStored(COL_ORDER_KEY, null), []);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -410,6 +455,16 @@ export function TradesClient({
         </Select>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{data.length} of {trades.length}</span>
+          {/* An invisible affordance is not a feature: the grip only appears on
+              hover, so the table has to say it is there. */}
+          <span className="hidden items-center gap-1 text-xs text-muted-foreground xl:inline-flex">
+            <GripVertical className="size-3 opacity-50" /> drag a column header to reorder
+          </span>
+          {colOrder && (
+            <Button size="sm" variant="ghost" className="text-xs" onClick={resetColumns} title="Restore the default column order on this device">
+              Reset columns
+            </Button>
+          )}
           {/* Pro: tracking a LIVE position (SL/TSL/target, risk, Portfolio Risk
               feed) is the forward-looking half of the journal. Recording a
               completed trade stays free — the user's own record of what they
@@ -493,7 +548,13 @@ export function TradesClient({
             </span>
           </div>
         )}
-        <DataTable columns={columns} data={data} stickyColumns={2} emptyMessage="No trades yet — import a broker file or add one manually." />
+        <DataTable
+          columns={orderedColumns}
+          data={data}
+          stickyColumns={PINNED_COLUMNS}
+          onReorder={reorderColumns}
+          emptyMessage="No trades yet — import a broker file or add one manually."
+        />
         <DeleteTradesDialog
           preview={deletePreview}
           reason="selected in the trades table"

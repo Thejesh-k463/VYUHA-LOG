@@ -12,6 +12,8 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GripVertical } from "lucide-react";
+import { useListDrag } from "@/components/layout/use-list-drag";
 import { EmptyState } from "@/components/ui/empty-state";
 
 interface DataTableProps<T> {
@@ -25,6 +27,13 @@ interface DataTableProps<T> {
    *  pinned column except the last must declare `meta.width` so the ones after
    *  it know their left offset. */
   stickyColumns?: number;
+  /**
+   * Enables drag-to-reorder of the columns AFTER `stickyColumns`. Indices are
+   * relative to the movable region, so 0 means `columns[stickyColumns]`.
+   * Omitted, every branch below is inert and this table renders exactly as it
+   * did before the feature existed.
+   */
+  onReorder?: (from: number, to: number) => void;
   /** Override the table-guard budget (px). Only needed when a table's columns
    *  are far wider or narrower than the defaults below. */
   minWidth?: number;
@@ -45,7 +54,19 @@ const FIXED_COL_MIN = 92; // ~72px of nowrap content + the 2 × 10px px-2.5 gutt
  *  column that is neither fixed-width nor right-aligned is the flexible one
  *  (the instrument/label column in every ledger screen); everything else is a
  *  nowrap cell. */
-function budgetMinWidth<T>(columns: ColumnDef<T, unknown>[]): number {
+/**
+ * Minimum table width implied by the column set.
+ *
+ * Exported for `tests/column-order.test.ts`: the budget must not depend on the
+ * ORDER of the columns, or dragging one would change the table's min-width and
+ * the layout would jump mid-interaction. It holds because eligibility for the
+ * flexible allowance is a per-column property and exactly one eligible column
+ * receives it — so the multiset of contributions, and therefore the sum, is the
+ * same for every permutation. Make the rule POSITIONAL (say, "column 0 is
+ * flexible") and reordering starts moving the min-width. The test is what
+ * notices.
+ */
+export function budgetMinWidth<T>(columns: ColumnDef<T, unknown>[]): number {
   let flexTaken = false;
   let total = 0;
   for (const c of columns) {
@@ -73,6 +94,7 @@ export function DataTable<T>({
   maxHeight = "calc(100dvh - 320px)",
   stickyColumns = 0,
   minWidth,
+  onReorder,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
@@ -104,6 +126,33 @@ export function DataTable<T>({
 
   const tableMinWidth = minWidth ?? budgetMinWidth(columns);
 
+  // Column drag. The x axis is the only difference from the sidebar's row drag;
+  // the hook's hard-won parts (window listeners, commit outside the state
+  // updater, Escape-cancel) are shared.
+  const thRefs = React.useRef<(HTMLElement | null)[]>([]);
+  const { drag, begin } = useListDrag((_scope, from, to) => onReorder?.(from, to), "x");
+
+  /**
+   * Which edge of header `i` should show the drop line, if any.
+   *
+   * `drag.toIndex` is an INSERTION position among the movable headers, so it
+   * ranges over 0…n and the last value has no header to mark on its left —
+   * that one is drawn on the right edge of the final column instead. A drop at
+   * `fromIndex` or `fromIndex + 1` both collapse to a no-op (see `dropTarget`),
+   * so neither draws a line: promising a move that will not happen is worse
+   * than drawing nothing.
+   */
+  const movableCount = Math.max(0, columns.length - stickyColumns);
+  const dropEdge = (i: number): "left" | "right" | null => {
+    if (!onReorder || !drag) return null;
+    const to = drag.toIndex;
+    if (to === drag.fromIndex || to === drag.fromIndex + 1) return null;
+    const rel = i - stickyColumns;
+    if (rel === to) return "left";
+    if (to >= movableCount && rel === movableCount - 1) return "right";
+    return null;
+  };
+
   return (
     // bg-surface on the WRAPPER so header and rows share one surface — the
     // header used to sit on bg-surface while rows showed the page background
@@ -133,6 +182,16 @@ export function DataTable<T>({
             >
               {hg.headers.map((header, i) => {
                 const canSort = header.column.getCanSort();
+                // An EMPTY string header (the row-actions column) cannot be used
+                // as a label: `aria-label=""` is ignored outright, so the name
+                // falls back to content and picks the grip's label back up. The
+                // column id is the honest stand-in — there is no visible text to
+                // match.
+                const headerDef = header.column.columnDef.header;
+                const thLabel =
+                  onReorder && i >= stickyColumns && typeof headerDef === "string"
+                    ? headerDef || header.column.id
+                    : undefined;
                 const sorted = header.column.getIsSorted();
                 return (
                   <th
@@ -142,7 +201,15 @@ export function DataTable<T>({
                       // Same-size same-weight headers read as a first data row.
                       // 0.59375rem = 9.5px at the compact root (v3 §4.2), in rem
                       // so comfortable density scales it with everything else.
-                      "whitespace-nowrap px-2.5 py-2 text-[0.65625rem] font-semibold uppercase tracking-[0.11em]",
+                      "group/th whitespace-nowrap px-2.5 py-2 text-[0.65625rem] font-semibold uppercase tracking-[0.11em]",
+                      // Drop indicator: an inset edge on the header the drag
+                      // would insert at — no extra element, so it cannot
+                      // disturb the width budget the table is laid out from.
+                      dropEdge(i) === "left" && "shadow-[inset_2px_0_0_0_var(--color-primary)]",
+                      dropEdge(i) === "right" && "shadow-[inset_-2px_0_0_0_var(--color-primary)]",
+                      // The grabbed header dims so the line reads as "this one,
+                      // going there" rather than as an unexplained mark.
+                      onReorder && drag?.fromIndex === i - stickyColumns && "opacity-40",
                       canSort && "cursor-pointer select-none hover:text-foreground",
                       (header.column.columnDef.meta as ColMeta)?.align === "right" && "text-right",
                       i < stickyColumns && "sticky z-20",
@@ -162,9 +229,40 @@ export function DataTable<T>({
                           }
                         : stickyStyle(i)
                     }
-                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                    ref={(el) => { thRefs.current[i] = el; }}
+                    // A columnheader's accessible name is computed from its
+                    // CONTENT, so the grip's own label lands inside it and the
+                    // cell announces as "Reorder netPnl column Net". Naming the
+                    // header explicitly keeps it "Net" while the grip keeps its
+                    // own label for when focus reaches it. Only when the header
+                    // is a plain string: for a rendered header, the visible text
+                    // is unknown here and the column id would announce worse
+                    // than the pollution it replaced.
+                    aria-label={thLabel}
+                    // A grab must not also sort. `begin` preventDefaults the
+                    // pointerdown, but the click still bubbles here.
+                    onClick={canSort && !drag ? header.column.getToggleSortingHandler() : undefined}
                   >
                     <span className="inline-flex items-center gap-1">
+                      {onReorder && i >= stickyColumns && (
+                        <button
+                          type="button"
+                          aria-label={`Reorder ${header.id} column`}
+                          title="Drag to move this column"
+                          onPointerDown={(e) =>
+                            // Bounded by the CURRENT column count: the ref array
+                            // is never trimmed, so a release that drops a column
+                            // would otherwise leave a detached node at the tail
+                            // and every midpoint after it would measure 0.
+                            begin(e, "cols", header.id, i - stickyColumns, thRefs.current.slice(stickyColumns, columns.length))
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ touchAction: "none" }}
+                          className="-ml-1 cursor-grab text-muted-foreground/30 opacity-0 transition-opacity group-hover/th:opacity-100 hover:text-foreground active:cursor-grabbing"
+                        >
+                          <GripVertical className="size-3" />
+                        </button>
+                      )}
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {canSort &&
                         (sorted === "asc" ? <ArrowUp className="size-3" /> : sorted === "desc" ? <ArrowDown className="size-3" /> : <ChevronsUpDown className="size-3 opacity-40" />)}

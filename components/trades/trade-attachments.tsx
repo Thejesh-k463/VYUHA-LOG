@@ -7,18 +7,27 @@
 
 import * as React from "react";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 
 export interface AttachmentMeta {
   id: number;
   fileName: string;
   mime: string;
   sizeBytes: number;
+  /** ISO timestamp — the list API always returns it; the viewer captions with it. */
+  createdAt: string;
 }
+
+const fmtBytes = (b: number) => (b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tradeId: number; label?: string }) {
   const [items, setItems] = React.useState<AttachmentMeta[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+  // Which image the viewer shows, or null when closed. `items` can shrink
+  // under it (delete, reload), so every read CLAMPS rather than trusting it.
+  const [viewerIdx, setViewerIdx] = React.useState<number | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const load = React.useCallback(async () => {
@@ -86,7 +95,15 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
           <div className="mb-2 flex flex-wrap gap-2">
             {items.map((a) => (
               <div key={a.id} className="group relative">
-                <a href={`/api/trades/attachments?id=${a.id}`} target="_blank" rel="noreferrer" title={a.fileName}>
+                {/* Click opens the IN-APP viewer — the old behaviour (raw image
+                    in a new browser tab) lives on as a button inside it. */}
+                <button
+                  type="button"
+                  onClick={() => setViewerIdx(items.indexOf(a))}
+                  title={`${a.fileName} — click to view`}
+                  data-testid="attachment-thumb"
+                  className="block cursor-zoom-in"
+                >
                   {/* Thumbnails come from the local attachments API — next/image adds nothing for localhost blobs. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -94,7 +111,7 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
                     alt={a.fileName}
                     className="h-16 w-24 rounded border border-border object-cover"
                   />
-                </a>
+                </button>
                 <button
                   type="button"
                   onClick={() => remove(a.id)}
@@ -124,6 +141,139 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
           PNG/JPG/WebP/GIF up to 8 MB — saved in the app data folder (not in JSON backups).
         </p>
       </div>
+      <AttachmentViewer
+        items={items}
+        index={viewerIdx}
+        onIndex={setViewerIdx}
+        onDelete={remove}
+        busy={busy}
+      />
     </div>
+  );
+}
+
+/**
+ * Full-size in-app viewer — a NESTED Radix dialog, deliberately: all three
+ * mount points of TradeAttachments already sit inside a Dialog, Radix portals
+ * each layer to <body>, and Escape closes only the topmost — so closing the
+ * viewer never takes the journal/edit dialog down with it.
+ */
+function AttachmentViewer({
+  items,
+  index,
+  onIndex,
+  onDelete,
+  busy,
+}: {
+  items: AttachmentMeta[];
+  index: number | null;
+  onIndex: (i: number | null) => void;
+  onDelete: (id: number) => Promise<void>;
+  busy: boolean;
+}) {
+  // Clamp instead of trusting `index`: a delete or reload can shrink `items`
+  // while the viewer is open, and a stale index would render a blank dialog.
+  const idx = index === null ? null : Math.min(index, items.length - 1);
+  const current = idx !== null && idx >= 0 ? items[idx] : null;
+  const open = current !== null;
+
+  const step = (delta: number) => {
+    if (idx === null) return;
+    const next = idx + delta;
+    if (next >= 0 && next < items.length) onIndex(next);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onIndex(null); }}>
+      <DialogContent
+        // Full-bleed dark shell: cn() is tailwind-merge, so these reliably
+        // beat DialogContent's own max-w-2xl / p-5 / max-h-[90vh].
+        className="max-w-[95vw] max-h-none w-auto gap-0 overflow-hidden border-0 bg-black/95 p-0"
+        data-testid="attachment-viewer"
+        onKeyDown={(e) => {
+          // Scoped, not a window listener: the dialog holds focus, so arrows
+          // land here without leaking into the page behind.
+          if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+          if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+        }}
+      >
+        <DialogTitle className="sr-only">Chart screenshot viewer</DialogTitle>
+        {current && (
+          <div className="flex flex-col">
+            <div className="relative flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/trades/attachments?id=${current.id}`}
+                alt={current.fileName}
+                className="max-h-[82vh] max-w-[95vw] object-contain"
+              />
+              {items.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => step(-1)}
+                    disabled={idx === 0}
+                    aria-label="Previous screenshot"
+                    data-testid="attachment-prev"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-1.5 text-white/90 hover:bg-black/80 disabled:opacity-30"
+                  >
+                    <ChevronLeft className="size-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => step(1)}
+                    disabled={idx === items.length - 1}
+                    aria-label="Next screenshot"
+                    data-testid="attachment-next"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-1.5 text-white/90 hover:bg-black/80 disabled:opacity-30"
+                  >
+                    <ChevronRight className="size-5" />
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-white/80">
+              <span className="min-w-0 truncate font-mono" title={current.fileName}>
+                {current.fileName}
+                <span className="ml-2 font-sans text-white/50">
+                  {fmtBytes(current.sizeBytes)}{current.createdAt ? ` · ${current.createdAt.slice(0, 10)}` : ""}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                {items.length > 1 && (
+                  <span className="tabular-nums text-white/60" data-testid="attachment-counter">
+                    {(idx ?? 0) + 1} / {items.length}
+                  </span>
+                )}
+                <a
+                  href={`/api/trades/attachments?id=${current.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open in new tab"
+                  data-testid="attachment-open-tab"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
+                >
+                  <ExternalLink className="size-3.5" /> Open in tab
+                </a>
+                <button
+                  type="button"
+                  disabled={busy}
+                  data-testid="attachment-delete"
+                  title="Delete this screenshot"
+                  onClick={() => {
+                    void onDelete(current.id);
+                    // The clamp above slides onto the next image; when this was
+                    // the last one, `items` empties and the dialog closes itself.
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-loss hover:bg-white/10 disabled:opacity-40"
+                >
+                  <Trash2 className="size-3.5" /> Delete
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

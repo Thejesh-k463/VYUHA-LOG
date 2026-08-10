@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, FileUp } from "lucide-react";
 
 const PLACEHOLDER = `One security per line:  SYMBOL, category, [stage/note]
 RBLBANK, F&O ban, OI 96% of MWPL
@@ -18,10 +18,10 @@ export function RestrictionForm({ count }: { count: number }) {
   const [text, setText] = useState("");
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
   const [source, setSource] = useState("NSE");
-  const [pending, setPending] = useState<"" | "load" | "clear">("");
+  const [pending, setPending] = useState<"" | "load" | "clear" | "file">("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  async function post(payload: object, kind: "load" | "clear") {
+  async function post(payload: object, kind: "load" | "clear" | "file") {
     setPending(kind);
     setMsg(null);
     const res = await fetch("/api/restrictions", {
@@ -38,8 +38,58 @@ export function RestrictionForm({ count }: { count: number }) {
     }
   }
 
+  // Reference-data upload pattern (instrument-manager precedent): the browser
+  // reads the file, the route gets JSON — fileName included, because for
+  // REG_IND the DATE lives in the name.
+  async function onFile(file: File) {
+    const content = await file.text();
+    await post({ action: "file", text: content, fileName: file.name, asOfDate: asOf }, "file");
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {/* ── Official NSE files — the automated path ─────────────────────── */}
+      <div className="rounded-md border border-border bg-card-hover/30 p-3">
+        <p className="text-xs font-medium">Upload the official NSE files</p>
+        <ul className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-muted-foreground">
+          <li>
+            <span className="font-mono text-foreground/90">fo_secban.csv</span> — the F&amp;O ban list.
+            nseindia.com → <i>All Reports → Derivatives</i> → &ldquo;F&amp;O Security in ban period&rdquo;
+            (direct: nsearchives.nseindia.com/content/fo/fo_secban.csv). Updated each evening for the next trade date.
+          </li>
+          <li>
+            <span className="font-mono text-foreground/90">REG_INDDDMMYY.csv</span> — the Surveillance
+            Indicator file: ASM (long &amp; short term), GSM and ESM stages for every listed scrip, in one file.
+            nseindia.com → <i>All Reports</i> → &ldquo;Surveillance Indicator&rdquo;. Keep the original filename — the date is read from it.
+          </li>
+        </ul>
+        <label
+          className="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-card-hover"
+          title="Upload fo_secban.csv or REG_INDDDMMYY.csv — the category comes from the file type"
+        >
+          <FileUp className="size-3.5" />
+          {pending === "file" ? "Reading…" : "Upload NSE file"}
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            disabled={pending !== ""}
+            data-testid="surveillance-file"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <p className="mt-1.5 text-[10px] text-muted-foreground">
+          An upload replaces only the categories that file covers — the ban file touches F&amp;O-ban rows, the
+          surveillance file touches ASM/GSM/ESM rows — so the two coexist. BSE publishes no machine-readable
+          list; paste BSE rows below.
+        </p>
+      </div>
+
+      {/* ── Paste — the manual path (replaces the WHOLE list) ────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Label className="text-xs">As of</Label>
