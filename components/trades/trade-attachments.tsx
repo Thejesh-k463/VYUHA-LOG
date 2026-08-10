@@ -261,9 +261,15 @@ function AttachmentViewer({
                   data-testid="attachment-delete"
                   title="Delete this screenshot"
                   onClick={() => {
+                    // Deleting the LAST image must also null the index, not
+                    // just let the derived `open` flip false: Radix fires
+                    // onOpenChange only for user-driven closes, so a stale
+                    // index would survive — and the next upload would satisfy
+                    // the clamp again and pop the viewer open uninvited
+                    // (2026-08-10 audit, lane C). Non-last deletes keep the
+                    // index; the clamp slides onto the survivor.
+                    if (items.length <= 1) onIndex(null);
                     void onDelete(current.id);
-                    // The clamp above slides onto the next image; when this was
-                    // the last one, `items` empties and the dialog closes itself.
                   }}
                   className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-loss hover:bg-white/10 disabled:opacity-40"
                 >

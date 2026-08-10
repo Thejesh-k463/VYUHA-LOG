@@ -81,4 +81,12 @@ test("attachments: upload, view in-app, navigate, and Escape leaves the edit dia
   await expect(viewer).not.toBeVisible({ timeout: 15_000 });
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByTestId("attachment-thumb")).toHaveCount(0);
+
+  // Regression (2026-08-10 audit, lane C): after delete-to-empty, the stale
+  // viewer index used to survive — and the NEXT upload satisfied the clamp
+  // again, popping the viewer open uninvited. Upload once more and assert the
+  // viewer stays closed until a thumbnail is actually clicked.
+  await input.setInputFiles(PIXEL_A);
+  await expect(editDialog.getByTestId("attachment-thumb")).toHaveCount(1, { timeout: 15_000 });
+  await expect(viewer).not.toBeVisible();
 });

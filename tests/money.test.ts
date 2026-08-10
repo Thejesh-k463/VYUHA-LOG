@@ -45,4 +45,16 @@ describe("money — statutory rounding", () => {
     expect(roundRupee(toPaise(138.49))).toBe(toPaise(138));
     expect(roundRupee(toPaise(0.5))).toBe(toPaise(1)); // round-half-up
   });
+
+  it("survives IEEE754 dust at an EXACT half rupee — the 2026-08-10 audit case", () => {
+    // 0.015% stamp on a ₹50,000 buy: 0.00015 × 5,000,000 paise evaluates to
+    // 749.9999999999999 in floats. Statutory half-up rounding of ₹7.50 is ₹8;
+    // without the epsilon in roundRupee this rounded DOWN to ₹7.
+    const dusty = 0.00015 * 5_000_000;
+    expect(dusty).toBeLessThan(750); // the dust is real, not hypothetical
+    expect(roundRupee(dusty)).toBe(toPaise(8));
+    // And the nudge must never move a genuine just-below-half value up.
+    expect(roundRupee(toPaise(7.49))).toBe(toPaise(7));
+    expect(roundRupee(749.4)).toBe(toPaise(7));
+  });
 });

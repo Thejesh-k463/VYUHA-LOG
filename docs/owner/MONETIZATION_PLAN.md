@@ -10,7 +10,7 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.40
+## 0. What you are actually selling, as of v2.99.45
 
 > ### v2.99.40 marketing note — the trial's first five minutes got safer
 >

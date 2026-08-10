@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.99.45 — the forensic pass
+
+A three-lane audit of every feature against real application data — engines and
+money identities across all 252 journal rows, all 40 routes rendered live, the
+full e2e suite, and an adversarial read of every changed file. Three real
+defects surfaced; all fixed and pinned by tests:
+
+- **Statutory rounding at an exact half rupee.** IEEE754 could land ₹7.50 of
+  stamp duty at 749.9999999999999 paise and round it DOWN to ₹7 where half-up
+  statutory rounding says ₹8. `roundRupee` now carries sub-paisa float armour;
+  off by at most ₹1 and only at exact halves, but a money engine rounds the
+  way the statute says, always.
+- **The attachment viewer could reopen uninvited.** Deleting the last
+  screenshot left a stale viewer index behind, and the next upload satisfied
+  it — popping the viewer open unasked. Delete-last now clears the index.
+- **A truncated REG_IND row could silently wipe the ESM category.** Detection
+  read columns off the first data row instead of the header line; a re-saved
+  file with a short first row could hide the trailing ESM column and clear
+  that category while reporting success. Detection now reads the header.
+
+Everything else came back clean, on the record: money identities 0 violations,
+account scoping intact, licence import graph safe, all routes streaming without
+error chunks, the print path canvas-free, and the empty-ban-day path working
+exactly as designed.
+
+
 ## v2.99.40 — the calculator remembers, the exchange files import themselves, and the installer looks like us
 
 **The Trade Calculator got a memory and learned the indices.** Equity and F&O

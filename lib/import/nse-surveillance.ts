@@ -119,7 +119,12 @@ function parseRegInd(text: string, fileName: string | undefined): NseSurveillanc
   const data = parsed.data ?? [];
   if (data.length === 0) return null;
 
-  const headers = Object.keys(data[0]);
+  // meta.fields, NOT Object.keys(data[0]): in header mode Papa gives a short
+  // row only the keys its cells reach, so a truncated first data row would
+  // either refuse a legitimate file or — worse — hide the trailing ESM column
+  // and silently wipe that category while reporting success (2026-08-10
+  // audit, lane C). The header line itself is the only honest column list.
+  const headers = parsed.meta?.fields ?? Object.keys(data[0]);
   const symKey = headers.find((h) => h === "Symbol");
   const gsmKey = headers.find((h) => h === "GSM");
   const ltKey = headers.find((h) => h.startsWith("Long_Term_Additional_Surveillance_Measure"));

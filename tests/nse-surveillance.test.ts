@@ -79,6 +79,21 @@ describe("REG_IND — the consolidated surveillance indicator file", () => {
     expect(rows[0].stage).toBe("Long-term Stage 1 · Short-term Stage 2");
   });
 
+  it("a TRUNCATED first data row neither refuses the file nor hides the ESM column", () => {
+    // Papa gives a short row only the keys its cells reach, so fingerprinting
+    // on Object.keys(data[0]) either refused this legitimate file or —
+    // depending on where the row cut — dropped esmKey and silently wiped the
+    // ESM category while reporting success (2026-08-10 audit, lane C). The
+    // header line is the honest column list; meta.fields carries it.
+    const lines = REG.split(/\r?\n/).filter(Boolean);
+    const truncatedFirst = lines[1].split(",").slice(0, 2).join(","); // Symbol + one cell
+    const doctored = [lines[0], truncatedFirst, ...lines.slice(2)].join("\n");
+    const r = ok(parseNseSurveillance(doctored, "REG_IND070826.csv"));
+    expect(r.kind).toBe("reg_ind");
+    // ESM rows from LATER, intact rows still parse.
+    expect(r.rows.filter((x) => x.category === "esm").map((x) => x.symbol)).toEqual(["AAREYDRUGS", "AARTECH"]);
+  });
+
   it("derives asOf from the FILENAME, and returns null when renamed", () => {
     expect(ok(parseNseSurveillance(REG, "REG_IND070826.csv")).asOf).toBe("2026-08-07");
     expect(ok(parseNseSurveillance(REG, "downloaded (3).csv")).asOf).toBeNull();

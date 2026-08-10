@@ -28,6 +28,12 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.45 — it remembers how you trade, and it survived a forensic audit.** Every feature was
+> audited against real journal data before this build — money identities across every row, all 40
+> screens rendered live, an adversarial read of every changed file — and the three defects found
+> (a half-rupee rounding edge, a viewer that could reopen uninvited, a file variant that could
+> silently clear a surveillance category) are fixed and pinned by tests.
+>
 > **v2.99.40 — it remembers how you trade.** The calculator keeps a separate last trade for
 > Equity and for F&O — with an index picker that knows the January-2026 market lots (Nifty 65,
 > Sensex 20…) and which exchange each index calls home. Surveillance now reads NSE's own files:

@@ -232,7 +232,11 @@ export function TradeCalculator({
   // DERIVED from the ticker, not separate state: the picker simply writes the
   // underlying's symbol into the ticker field, so per-mode persistence (the
   // snapshot stores ticker) and "Custom = type anything" both come for free.
-  const selectedContract = !isEquity ? (INDEX_CONTRACTS.find((c) => c.symbol === symbol) ?? null) : null;
+  const showUnderlyingPicker = !isEquity && (instrument === "index_option" || instrument === "future");
+  // Gated on the PICKER, not merely on F&O: a leftover "NIFTY" ticker under a
+  // commodity instrument must not caption an MCX trade with NSE-index lot
+  // provenance (2026-08-10 audit, lane C).
+  const selectedContract = showUnderlyingPicker ? (INDEX_CONTRACTS.find((c) => c.symbol === symbol) ?? null) : null;
   const resolvedLot = selectedContract
     ? resolveIndexLot(selectedContract.symbol, indexLots[selectedContract.symbol] ?? null)
     : null;
@@ -251,8 +255,6 @@ export function TradeCalculator({
     // results pane already says so, with the remedy.
     setExchange(c.exchange);
   };
-  const showUnderlyingPicker = !isEquity && (instrument === "index_option" || instrument === "future");
-
   /** The plans this broker actually sells, free tier first. */
   const brokerPlans = useMemo(() => {
     const seen = new Map<string, string | null>();

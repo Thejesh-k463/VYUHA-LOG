@@ -40,7 +40,14 @@ export const mulP = (paise: Paise, factor: number): Paise => Math.round(paise * 
 export const pctP = (paise: Paise, fraction: number): Paise => Math.round(paise * fraction);
 
 /** Statutory rounding to the nearest whole rupee, expressed back in paise. */
-export const roundRupee = (paise: Paise): Paise => Math.round(paise / 100) * 100;
+// The 1e-7 nudge is float-dust armour, not a fudge: statutory callers hand in
+// pct × value, and IEEE754 can land an EXACT half rupee a hair short of itself
+// (0.00015 × 5,000,000 paise = 749.9999999999999), which would round a ₹7.50
+// stamp DOWN to ₹7 where half-up statutory rounding says ₹8. The nudge is ~5
+// orders of magnitude below a paisa, so it can never move a genuine value —
+// only restore halves the representation dropped. Found by the 2026-08-10
+// forensic audit; pinned in tests/money.test.ts.
+export const roundRupee = (paise: Paise): Paise => Math.round(paise / 100 + 1e-7) * 100;
 
 /** Absolute value, keeping integer-paise. */
 export const absP = (paise: Paise): Paise => Math.abs(paise);
