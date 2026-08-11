@@ -9,6 +9,7 @@ import { useListDrag } from "./use-list-drag";
 import { WORKSPACE_LABELS, screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "@/components/system/account-switcher";
+import { Tip } from "@/components/ui/tooltip";
 import { VyuhaMark } from "@/components/brand/mark";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
@@ -221,45 +222,51 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
           `nowrap` paints past a shrunk flex box the overflow never showed up in
           a bounding-rect check — only in a screenshot. */}
       <div className={cn("flex items-center gap-2 border-b border-border py-2", collapsed ? "px-2" : "px-3")}>
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new Event("vyuha:command-palette"))}
-          title="Command palette (Ctrl+K)"
-          className={cn(
-            "flex w-full items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
-            collapsed && "justify-center px-0",
-          )}
-        >
-          <Search className="size-3.5 shrink-0" />
-          {!collapsed && (
-            <>
-              <span>Jump to…</span>
-              <kbd className="ml-auto rounded border border-border bg-card-hover px-1 font-mono text-[10px]">Ctrl K</kbd>
-            </>
-          )}
-        </button>
-        {!collapsed && (
+        <Tip label="Command palette (Ctrl+K)" side={collapsed ? "right" : "bottom"}>
           <button
             type="button"
-            onClick={toggle}
-            title="Collapse sidebar"
-            className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-card-hover hover:text-foreground"
+            onClick={() => window.dispatchEvent(new Event("vyuha:command-palette"))}
+            aria-label="Command palette (Ctrl+K)"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
+              collapsed && "justify-center px-0",
+            )}
           >
-            <PanelLeftClose className="size-4" />
+            <Search className="size-3.5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span>Jump to…</span>
+                <kbd className="ml-auto rounded border border-border bg-card-hover px-1 font-mono text-[10px]">Ctrl K</kbd>
+              </>
+            )}
           </button>
+        </Tip>
+        {!collapsed && (
+          <Tip label="Collapse sidebar">
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label="Collapse sidebar"
+              className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-card-hover hover:text-foreground"
+            >
+              <PanelLeftClose className="size-4" />
+            </button>
+          </Tip>
         )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         {collapsed && (
-          <button
-            type="button"
-            onClick={toggle}
-            title="Expand sidebar"
-            className="mb-2 flex w-full items-center justify-center rounded-md py-1.5 text-muted-foreground hover:bg-card-hover hover:text-foreground"
-          >
-            <PanelLeftOpen className="size-4" />
-          </button>
+          <Tip label="Expand sidebar" side="right">
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label="Expand sidebar"
+              className="mb-2 flex w-full items-center justify-center rounded-md py-1.5 text-muted-foreground hover:bg-card-hover hover:text-foreground"
+            >
+              <PanelLeftOpen className="size-4" />
+            </button>
+          </Tip>
         )}
         {visibleGroups.map(({ group, items }, gi) => {
           const groupDragging = drag?.scope === GROUPS_SCOPE && drag.key === group;
@@ -276,16 +283,17 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                   {/* Grip is always present, revealed on hover — no mode to
                       enter. touch-action:none so a touch-drag reorders instead
                       of scrolling the sidebar. */}
-                  <button
-                    type="button"
-                    aria-label={`Reorder ${group} group`}
-                    title="Drag to move this whole group"
-                    onPointerDown={(e) => begin(e, GROUPS_SCOPE, group, gi, rowRefs.current.get(GROUPS_SCOPE) ?? [])}
-                    style={{ touchAction: "none" }}
-                    className="mr-1 cursor-grab text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover/hdr:opacity-100 active:cursor-grabbing"
-                  >
-                    <GripVertical className="size-3" />
-                  </button>
+                  <Tip label="Drag to move this whole group">
+                    <button
+                      type="button"
+                      aria-label={`Reorder ${group} group`}
+                      onPointerDown={(e) => begin(e, GROUPS_SCOPE, group, gi, rowRefs.current.get(GROUPS_SCOPE) ?? [])}
+                      style={{ touchAction: "none" }}
+                      className="mr-1 cursor-grab text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover/hdr:opacity-100 active:cursor-grabbing"
+                    >
+                      <GripVertical className="size-3" />
+                    </button>
+                  </Tip>
                   <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
                     {group}
                   </span>
@@ -307,34 +315,42 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                       style={dragStyle(group, item.href)}
                     >
                       {!collapsed && (
-                        <button
-                          type="button"
-                          aria-label={`Reorder ${item.label}`}
-                          title={`Drag to move ${item.label}`}
-                          onPointerDown={(e) => begin(e, group, item.href, ii, rowRefs.current.get(group) ?? [])}
-                          style={{ touchAction: "none" }}
-                          className="cursor-grab pl-0.5 pr-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 active:cursor-grabbing"
-                        >
-                          <GripVertical className="size-3" />
-                        </button>
+                        <Tip label={`Drag to move ${item.label}`}>
+                          <button
+                            type="button"
+                            aria-label={`Reorder ${item.label}`}
+                            onPointerDown={(e) => begin(e, group, item.href, ii, rowRefs.current.get(group) ?? [])}
+                            style={{ touchAction: "none" }}
+                            className="cursor-grab pl-0.5 pr-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 active:cursor-grabbing"
+                          >
+                            <GripVertical className="size-3" />
+                          </button>
+                        </Tip>
                       )}
-                      <Link
-                        href={item.href}
-                        title={collapsed ? item.label : undefined}
-                        // A drag that started on the grip must not navigate when
-                        // the pointer happens to lift over the link.
-                        onClick={(e) => { if (drag) e.preventDefault(); }}
-                        className={cn(
-                          "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-                          collapsed && "justify-center px-0",
-                          active
-                            ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
-                            : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
-                        )}
-                      >
-                        <Icon className="size-4 shrink-0" />
-                        {!collapsed && item.label}
-                      </Link>
+                      {(() => {
+                        const link = (
+                          <Link
+                            href={item.href}
+                            aria-label={collapsed ? item.label : undefined}
+                            // A drag that started on the grip must not navigate when
+                            // the pointer happens to lift over the link.
+                            onClick={(e) => { if (drag) e.preventDefault(); }}
+                            className={cn(
+                              "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+                              collapsed && "justify-center px-0",
+                              active
+                                ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
+                                : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                            )}
+                          >
+                            <Icon className="size-4 shrink-0" />
+                            {!collapsed && item.label}
+                          </Link>
+                        );
+                        // The label IS the link text when expanded — a tip there
+                        // would only repeat it, so it exists for the icon rail.
+                        return collapsed ? <Tip label={item.label} side="right">{link}</Tip> : link;
+                      })()}
                     </div>
                     {ii === items.length - 1 && dropLine(group, items.length)}
                   </React.Fragment>
@@ -359,15 +375,16 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         {/* Workspace chip — a filtered sidebar must SAY it is filtered, and say
             where to undo it. Without this, a missing screen looks like a bug. */}
         {!collapsed && workspace !== "both" && (
-          <Link
-            href="/settings"
-            title="Some screens are hidden by your workspace mode. Click to change it."
-            className="mt-2 flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[0.6875rem] text-primary hover:border-primary/60"
-          >
-            <Filter className="size-3 shrink-0" />
-            <span className="truncate">{WORKSPACE_LABELS[workspace]}</span>
-            <span className="ml-auto shrink-0 opacity-70">change</span>
-          </Link>
+          <Tip label="Some screens are hidden by your workspace mode. Click to change it.">
+            <Link
+              href="/settings"
+              className="mt-2 flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[0.6875rem] text-primary hover:border-primary/60"
+            >
+              <Filter className="size-3 shrink-0" />
+              <span className="truncate">{WORKSPACE_LABELS[workspace]}</span>
+              <span className="ml-auto shrink-0 opacity-70">change</span>
+            </Link>
+          </Tip>
         )}
       </nav>
 

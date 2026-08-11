@@ -1,11 +1,41 @@
 # Code Signing — Killing the SmartScreen Warning
 
-**Status: prepared, dormant.** The release pipeline is already wired for Azure Trusted Signing —
-it activates automatically the moment you add the Azure secrets to GitHub. Until then, releases
-ship unsigned exactly as before (SmartScreen "More info → Run anyway").
+**Status: prepared, dormant — and deliberately so.** Owner decision (2026-08-11, v2.99.70):
+users are satisfied with the branded installer wizard, so paid signing is **deferred
+indefinitely**. The Azure Trusted Signing wiring below stays in place untouched — it activates
+automatically if the Azure secrets are ever added to GitHub. Until then, use the free
+mitigations in the next section.
 
-Why bother: an unsigned installer is the single biggest credibility/conversion leak for a paid
-product. Signing removes the scary warning, and reputation accrues to your certificate over time.
+Why the paid path exists at all: an unsigned installer is a credibility/conversion leak, and
+signing makes reputation accrue to your *certificate* across releases instead of resetting.
+
+---
+
+## Free mitigations (no certificate) — what actually helps
+
+There is **no free Authenticode certificate** for a commercial product. (SignPath Foundation
+signs open-source projects for free, but Vyuha is commercial — not eligible. A self-signed
+certificate does nothing: SmartScreen ignores certs that don't chain to a trusted CA.) What a
+₹0 budget *can* buy:
+
+1. **Publish to winget (Windows Package Manager community repo).** Free, and the highest-value
+   item here. `winget install` fetches without the browser's mark-of-the-web, so users who
+   install that way never meet the SmartScreen interstitial at all — and a listing in
+   Microsoft's own repo (manifests are validated and binaries scanned on submission) reads as
+   legitimacy in itself. Submit a manifest per release to
+   github.com/microsoft/winget-pkgs (the `wingetcreate` CLI automates the PR; it can run as a
+   release.yml step later). Then put `winget install <YourId.Vyuha>` in the purchase email as
+   the *recommended* install path, with the .exe as fallback.
+2. **Submit each release's installer to Microsoft.** As a developer, at
+   https://www.microsoft.com/en-us/wdsi/filesubmission — clears Defender false positives and
+   seeds SmartScreen/Defender reputation for that file hash. Do it on release day, before
+   users download.
+3. **Keep the wizard guidance where it is.** docs/client/INSTALLATION_GUIDE.md already explains
+   "More info → Run anyway" as step 3 and in troubleshooting — that copy is what made users
+   comfortable, so it stays.
+4. **Know the ceiling.** Unsigned reputation accrues **per file hash**, so every new release
+   starts cold with SmartScreen no matter how many people installed the last one. That is the
+   one thing only a certificate fixes — which is why the wiring below is kept, not deleted.
 
 ---
 

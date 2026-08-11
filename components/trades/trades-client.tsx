@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Tip } from "@/components/ui/tooltip";
 import { ManualTradeForm } from "./manual-trade-form";
 import type { WriteAccountOption } from "@/components/system/write-account-picker";
 import { CloseTradeDialog } from "./close-trade-dialog";
@@ -337,60 +338,74 @@ export function TradesClient({
     },
     {
       id: "actions", header: "",
-      cell: ({ row }) => (
+      cell: ({ row }) => {
+        const journalLabel = attachmentCounts[row.original.id]
+          ? `Journal — ${attachmentCounts[row.original.id]} chart screenshot${attachmentCounts[row.original.id] === 1 ? "" : "s"}, playbook, emotion, mistakes`
+          : "Journal — playbook, emotion, mistakes (attach chart screenshots here)";
+        const stagedLabel = row.original.staged ? "Staged position — entry ladder, partial exits" : "Build in tranches / book a partial exit";
+        return (
         <div className="flex items-center gap-1">
           {/* Screenshots live inside the journal dialog, so the journal button
               carries their indicator: a count badge means "there are charts in
               here". Without it a trade with screenshots looked identical to
               one without, and the feature was invisible from the table. */}
-          <Button
-            size="icon"
-            variant="ghost"
-            className={`relative size-7 ${(row.original.mistakeTags?.length || row.original.playbookId != null || row.original.emotionTag) ? "text-accent" : ""}`}
-            onClick={() => setJournaling(row.original)}
-            title={
-              attachmentCounts[row.original.id]
-                ? `Journal — ${attachmentCounts[row.original.id]} chart screenshot${attachmentCounts[row.original.id] === 1 ? "" : "s"}, playbook, emotion, mistakes`
-                : "Journal — playbook, emotion, mistakes (attach chart screenshots here)"
-            }
-          >
-            <NotebookPen className="size-3.5" />
-            {attachmentCounts[row.original.id] > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex items-center gap-px rounded-full bg-primary px-1 text-[8px] font-semibold leading-[13px] text-primary-foreground">
-                <Paperclip className="size-2" />
-                {attachmentCounts[row.original.id]}
-              </span>
-            )}
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className={`size-7 ${row.original.staged ? "text-primary" : ""}`}
-            onClick={() => setStaging(row.original)}
-            title={row.original.staged ? "Staged position — entry ladder, partial exits" : "Build in tranches / book a partial exit"}
-          >
-            <Layers className="size-3.5" />
-          </Button>
-          {row.original.isOpen && (
-            <Button size="icon" variant="ghost" className="size-7 text-warning" onClick={() => setClosingTrade(row.original)} title="Close position">
-              <LogOut className="size-3.5" />
+          <Tip label={journalLabel}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={`relative size-7 ${(row.original.mistakeTags?.length || row.original.playbookId != null || row.original.emotionTag) ? "text-accent" : ""}`}
+              onClick={() => setJournaling(row.original)}
+              aria-label={journalLabel}
+            >
+              <NotebookPen className="size-3.5" />
+              {attachmentCounts[row.original.id] > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex items-center gap-px rounded-full bg-primary px-1 text-[8px] font-semibold leading-[13px] text-primary-foreground">
+                  <Paperclip className="size-2" />
+                  {attachmentCounts[row.original.id]}
+                </span>
+              )}
             </Button>
+          </Tip>
+          <Tip label={stagedLabel}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={`size-7 ${row.original.staged ? "text-primary" : ""}`}
+              onClick={() => setStaging(row.original)}
+              aria-label={stagedLabel}
+            >
+              <Layers className="size-3.5" />
+            </Button>
+          </Tip>
+          {row.original.isOpen && (
+            <Tip label="Close position">
+              <Button size="icon" variant="ghost" className="size-7 text-warning" onClick={() => setClosingTrade(row.original)} aria-label="Close position">
+                <LogOut className="size-3.5" />
+              </Button>
+            </Tip>
           )}
-          <Button size="icon" variant="ghost" className="size-7" onClick={() => setFullEditing(row.original)} title="Edit trade — qty/prices/dates/SL/target/risk">
-            <SquarePen className="size-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="size-7" onClick={() => setEditing(row.original)} title="Re-tag / override">
-            <Pencil className="size-3.5" />
-          </Button>
+          <Tip label="Edit trade — qty/prices/dates/SL/target/risk">
+            <Button size="icon" variant="ghost" className="size-7" onClick={() => setFullEditing(row.original)} aria-label="Edit trade — qty/prices/dates/SL/target/risk">
+              <SquarePen className="size-3.5" />
+            </Button>
+          </Tip>
+          <Tip label="Re-tag / override">
+            <Button size="icon" variant="ghost" className="size-7" onClick={() => setEditing(row.original)} aria-label="Re-tag / override">
+              <Pencil className="size-3.5" />
+            </Button>
+          </Tip>
           <form action={deleteTrade}>
             <input type="hidden" name="tradeId" value={row.original.id} />
-            <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-loss" title="Delete"
-              onClick={(e) => { if (!confirm("Delete this trade?")) e.preventDefault(); }}>
-              <Trash2 className="size-3.5" />
-            </Button>
+            <Tip label="Delete">
+              <Button size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-loss" aria-label="Delete"
+                onClick={(e) => { if (!confirm("Delete this trade?")) e.preventDefault(); }}>
+                <Trash2 className="size-3.5" />
+              </Button>
+            </Tip>
           </form>
         </div>
-      ),
+        );
+      },
     },
   ], [today, data, visibleSelected, attachmentCounts]);
 
@@ -464,9 +479,11 @@ export function TradesClient({
             <GripVertical className="size-3 opacity-50" /> drag a column header to reorder
           </span>
           {colOrder && (
-            <Button size="sm" variant="ghost" className="text-xs" onClick={resetColumns} title="Restore the default column order on this device">
-              Reset columns
-            </Button>
+            <Tip label="Restore the default column order on this device">
+              <Button size="sm" variant="ghost" className="text-xs" onClick={resetColumns}>
+                Reset columns
+              </Button>
+            </Tip>
           )}
           {/* Pro: tracking a LIVE position (SL/TSL/target, risk, Portfolio Risk
               feed) is the forward-looking half of the journal. Recording a
@@ -474,14 +491,15 @@ export function TradesClient({
               did is never held hostage (invariant 7). Locked, not hidden: the
               button says what it unlocks rather than disappearing. */}
           {!pro ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => { window.location.href = "/settings#license"; }}
-              title="Pro — tracking live positions with SL/target and risk. Recording closed trades stays free."
-            >
-              <Lock className="size-3.5" /> Open trade
-            </Button>
+            <Tip label="Pro — tracking live positions with SL/target and risk. Recording closed trades stays free.">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => { window.location.href = "/settings#license"; }}
+              >
+                <Lock className="size-3.5" /> Open trade
+              </Button>
+            </Tip>
           ) : (
           <Dialog open={addOpenTrade} onOpenChange={setAddOpenTrade}>
             <DialogTrigger asChild>

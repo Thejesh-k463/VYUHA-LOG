@@ -33,16 +33,16 @@
   --color-primary: #2dd4bf;
   --color-primary-deep: #14b8a6;          /* gradient partner */
   --color-primary-foreground: #031311;
-  --color-gold: #e5b13d;                  /* money accent */
-  --color-gold-bright: #f5d478;           /* gold gradient start */
-  --color-gold-deep: #d99a1d;             /* gold gradient end */
+  --color-gold: #f0b429;                  /* money accent — 10.75:1, sat 87% (v2.99.70 metallic retune, same 41° hue) */
+  --color-gold-bright: #ffd863;           /* specular highlight — 14.55:1 */
+  --color-gold-deep: #cf8d12;             /* bronze shadow — 7.13:1 */
   --color-violet: #a78bfa;                /* analytics accent */
   --color-violet-deep: #7c3aed;
   --color-accent: #a78bfa;                /* re-pointed from blue to violet */
   --color-accent-foreground: #ffffff;
   --color-profit: #16c784;
   --color-loss: #f6465d;
-  --color-warning: #e5b13d;               /* unified with gold */
+  --color-warning: #f0b429;               /* unified with gold */
   --color-ring: #2dd4bf;
   /* Row separator, deliberately its own token rather than --color-border/n.
      DELIBERATE DEVIATION FROM THE v3 HANDOFF, and the one value in this block
@@ -281,6 +281,85 @@
     --shadow-hero: 0 0 30px -12px rgb(138 101 8 / 0.3);
   }
 
+  /* ── The v2.99.70 trio (Royal / Sapphire / Aurora) ──────────────────────
+     Same contract as the first three: literal colours only (the chart canvas
+     cannot parse color-mix), both themes answered for every token, and
+     --color-profit / --color-loss never touched (they belong to colourblind
+     mode). Contrast + hue separations measured before these numbers were
+     written — see lib/domain/skin.ts. */
+
+  html.skin-royal {
+    --color-primary: #a78bfa;        /* 7.36:1 on #05080f */
+    --color-primary-deep: #8b5cf6;
+    --color-primary-foreground: #120a24;
+    --color-violet: #22d3ee;         /* analytics → cyan; violet leads now */
+    --color-violet-deep: #06b6d4;
+    --color-accent: #22d3ee;
+    --color-ring: #a78bfa;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(167 139 250 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(167 139 250 / 0.4);
+  }
+
+  html.theme-light.skin-royal {
+    --color-primary: #6d28d9;        /* 6.56:1 on #f4f6f9 */
+    --color-primary-deep: #5b21b6;
+    --color-primary-foreground: #ffffff;
+    --color-violet: #0e7490;
+    --color-violet-deep: #155e75;
+    --color-accent: #0e7490;
+    --color-ring: #6d28d9;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(109 40 217 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(109 40 217 / 0.3);
+  }
+
+  html.skin-sapphire {
+    --color-primary: #7196ff;        /* 7.16:1 on #05080f */
+    --color-primary-deep: #4f74f5;
+    --color-primary-foreground: #060d24;
+    --color-violet: #e879f9;         /* analytics → orchid */
+    --color-violet-deep: #c026d3;
+    --color-accent: #e879f9;
+    --color-ring: #7196ff;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(113 150 255 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(113 150 255 / 0.4);
+  }
+
+  html.theme-light.skin-sapphire {
+    --color-primary: #1d4ed8;        /* 6.19:1 on #f4f6f9 */
+    --color-primary-deep: #1e40af;
+    --color-primary-foreground: #ffffff;
+    --color-violet: #a21caf;
+    --color-violet-deep: #86198f;
+    --color-accent: #a21caf;
+    --color-ring: #1d4ed8;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(29 78 216 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(29 78 216 / 0.3);
+  }
+
+  html.skin-aurora {
+    --color-primary: #e879f9;        /* 8.14:1 on #05080f */
+    --color-primary-deep: #d946ef;
+    --color-primary-foreground: #1c0a1f;
+    --color-violet: #2dd4bf;         /* analytics → teal */
+    --color-violet-deep: #14b8a6;
+    --color-accent: #2dd4bf;
+    --color-ring: #e879f9;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(232 121 249 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(232 121 249 / 0.4);
+  }
+
+  html.theme-light.skin-aurora {
+    --color-primary: #a21caf;        /* 5.84:1 on #f4f6f9 */
+    --color-primary-deep: #86198f;
+    --color-primary-foreground: #ffffff;
+    --color-violet: #0b7a70;         /* 4.81:1 — the set's worst, = Tape's shipping worst */
+    --color-violet-deep: #0a6a61;
+    --color-accent: #0b7a70;
+    --color-ring: #a21caf;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(162 28 175 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(162 28 175 / 0.3);
+  }
+
   /* Display density. Everything in the app is sized in rem, so one root
      font-size scales type, paddings and gaps together — Comfortable is the
      whole interface at 17/16 scale, not a second set of sizes to maintain.
@@ -375,16 +454,42 @@
   background-image: linear-gradient(135deg, #2dd4bf, #0ea5a0);
 }
 @utility grad-gold {
-  background-image: linear-gradient(135deg, #f5d478, #d99a1d);
+  background-image: linear-gradient(135deg, #ffd863, #cf8d12);
 }
 @utility grad-violet {
   background-image: linear-gradient(135deg, #a78bfa, #7c3aed);
 }
+/* Metallic money text (v2.99.70). Built from the gold TOKENS, not literals,
+   so it follows the theme (light's golds are dark inks that stay AA) and every
+   skin — on Tape, where money is violet, this renders a violet metal, keeping
+   the money-colour doctrine. Vertical highlight→base→shadow is what reads as
+   machined metal on glyphs; the drop-shadow (which follows the text alpha,
+   unlike box-shadow) adds the glint. DOM-only: charts still read the flat
+   tokens. */
 @utility text-grad-gold {
-  background-image: linear-gradient(135deg, #f5d478, #d99a1d);
+  background-image: linear-gradient(
+    180deg,
+    var(--color-gold-bright) 0%,
+    var(--color-gold) 55%,
+    var(--color-gold-deep) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 1px 8px color-mix(in oklab, var(--color-gold) 30%, transparent));
+
+  html.theme-light & {
+    /* Dark-ink golds need no glow on a light canvas. */
+    filter: none;
+  }
+
+  @media print {
+    background-image: none;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+    color: var(--color-gold-deep);
+    filter: none;
+  }
 }
 
 /* Hero card: primary-tinted border + faint top-glow wash. Composes with the

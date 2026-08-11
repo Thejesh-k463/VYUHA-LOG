@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
 import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings } from "@/lib/queries/settings";
 import { cn } from "@/lib/utils";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
@@ -74,13 +75,17 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full font-sans antialiased">
-        <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
-          <div className="contents print:hidden">
-            <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={getSelectedAccountId()} workspace={workspace} />
+        {/* One tooltip provider for the whole app — this is what makes moving
+            between adjacent icons show the next tip instantly. */}
+        <TooltipProvider>
+          <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
+            <div className="contents print:hidden">
+              <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={getSelectedAccountId()} workspace={workspace} />
+            </div>
+            <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
           </div>
-          <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
-        </div>
-        <CommandPalette workspace={workspace} />
+          <CommandPalette workspace={workspace} />
+        </TooltipProvider>
         <Toaster />
       </body>
     </html>

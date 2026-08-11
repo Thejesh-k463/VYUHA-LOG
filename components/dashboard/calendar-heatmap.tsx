@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { inr } from "@/lib/format";
+import { Tip } from "@/components/ui/tooltip";
 import { Flame, Snowflake, Trophy, TrendingDown } from "lucide-react";
 import { streakReport } from "@/lib/analytics/daily-streaks";
 
@@ -60,24 +61,26 @@ export function CalendarHeatmap({
           best run <b className="text-foreground">{streaks.bestGreen}</b> · worst <b className="text-foreground">{streaks.worstRed}</b>
         </span>
         {streaks.best && streaks.best.net > 0 && (
-          <button
-            type="button"
-            onClick={() => onPickDay?.(streaks.best!.date)}
-            className="inline-flex items-center gap-1 rounded-full bg-card-hover px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
-            title={`Best day — ${streaks.best.date}`}
-          >
-            <Trophy className="size-3 text-profit" /> best <b className="text-profit">{inr(streaks.best.net, { decimals: 0 })}</b>
-          </button>
+          <Tip label={`Best day — ${streaks.best.date}`}>
+            <button
+              type="button"
+              onClick={() => onPickDay?.(streaks.best!.date)}
+              className="inline-flex items-center gap-1 rounded-full bg-card-hover px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Trophy className="size-3 text-profit" /> best <b className="text-profit">{inr(streaks.best.net, { decimals: 0 })}</b>
+            </button>
+          </Tip>
         )}
         {streaks.worst && streaks.worst.net < 0 && (
-          <button
-            type="button"
-            onClick={() => onPickDay?.(streaks.worst!.date)}
-            className="inline-flex items-center gap-1 rounded-full bg-card-hover px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
-            title={`Worst day — ${streaks.worst.date}`}
-          >
-            <TrendingDown className="size-3 text-loss" /> worst <b className="text-loss">{inr(streaks.worst.net, { decimals: 0 })}</b>
-          </button>
+          <Tip label={`Worst day — ${streaks.worst.date}`}>
+            <button
+              type="button"
+              onClick={() => onPickDay?.(streaks.worst!.date)}
+              className="inline-flex items-center gap-1 rounded-full bg-card-hover px-2 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <TrendingDown className="size-3 text-loss" /> worst <b className="text-loss">{inr(streaks.worst.net, { decimals: 0 })}</b>
+            </button>
+          </Tip>
         )}
         <span className="inline-flex items-center gap-1 rounded-full bg-card-hover px-2 py-0.5 text-muted-foreground">
           {streaks.greenDays}G / {streaks.redDays}R
@@ -118,13 +121,15 @@ export function CalendarHeatmap({
                   const traded = c.net != null;
                   const isBest = streaks.best?.date === key && streaks.best.net > 0;
                   const isWorst = streaks.worst?.date === key && streaks.worst.net < 0;
-                  return (
+                  const dayBtn = (
                     <button
                       key={i}
                       type="button"
                       disabled={!traded}
                       onClick={() => traded && onPickDay?.(key)}
-                      title={traded ? `${key}: ${inr(c.net!)} — click for the trades` : `${key}: no trades`}
+                      // Untraded cells are disabled — no pointer events, so a
+                      // Radix tip would never open there; the native title stays.
+                      title={traded ? undefined : `${key}: no trades`}
                       className={`relative flex size-6 items-center justify-center rounded-md text-[9px] tabular-nums text-foreground/70 transition-transform duration-100 ${
                         traded ? "cursor-pointer hover:scale-110 hover:text-foreground" : "cursor-default"
                       } ${isToday ? "ring-1 ring-primary ring-offset-1 ring-offset-card" : ""}`}
@@ -142,6 +147,13 @@ export function CalendarHeatmap({
                         />
                       )}
                     </button>
+                  );
+                  return traded ? (
+                    <Tip key={i} label={`${key}: ${inr(c.net!)} — click for the trades`}>
+                      {dayBtn}
+                    </Tip>
+                  ) : (
+                    dayBtn
                   );
                 })}
               </div>

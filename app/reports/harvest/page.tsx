@@ -62,11 +62,11 @@ export default function HarvestPage() {
       <div className="space-y-5 p-6">
         <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <KpiCard label="Realised STCG (FY)" value={inr(r.realisedStcg, { decimals: 0 })} valueClassName={r.realisedStcg >= 0 ? "text-profit" : "text-loss"} sub="short-term" />
-          <KpiCard label="Realised LTCG (FY)" value={inr(r.realisedLtcg, { decimals: 0 })} valueClassName={r.realisedLtcg >= 0 ? "text-profit" : "text-loss"} sub={`₹1.25L exempt`} />
-          <KpiCard label="Harvestable loss" value={inr(r.stLoss + r.ltLoss, { decimals: 0 })} valueClassName="text-loss" sub={`ST ${inr(r.stLoss, { decimals: 0 })} · LT ${inr(r.ltLoss, { decimals: 0 })}`} />
-          <KpiCard label="Est. tax saved" value={inr(r.taxSaved, { decimals: 0 })} valueClassName={r.taxSaved > 0 ? "text-profit" : "text-muted-foreground"} sub="if harvested now" />
-          <KpiCard label="Carries forward" value={inr(r.carryForward, { decimals: 0 })} sub="beyond this year's gains" />
+          <KpiCard label="Realised STCG (FY)" valueNum={r.realisedStcg} format="inr0" valueClassName={r.realisedStcg >= 0 ? "text-profit" : "text-loss"} sub="short-term" />
+          <KpiCard label="Realised LTCG (FY)" valueNum={r.realisedLtcg} format="inr0" valueClassName={r.realisedLtcg >= 0 ? "text-profit" : "text-loss"} sub={`₹1.25L exempt`} />
+          <KpiCard label="Harvestable loss" valueNum={r.stLoss + r.ltLoss} format="inr0" valueClassName="text-loss" sub={`ST ${inr(r.stLoss, { decimals: 0 })} · LT ${inr(r.ltLoss, { decimals: 0 })}`} />
+          <KpiCard label="Est. tax saved" valueNum={r.taxSaved} format="inr0" valueClassName={r.taxSaved > 0 ? "text-profit" : "text-muted-foreground"} sub="if harvested now" />
+          <KpiCard label="Carries forward" valueNum={r.carryForward} format="inr0" sub="beyond this year's gains" />
         </section>
 
         <Card className="p-0">

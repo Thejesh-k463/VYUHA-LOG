@@ -10,7 +10,29 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.60
+## 0. What you are actually selling, as of v2.99.70
+
+> ### v2.99.70 marketing note — seven skins is a personalisation pitch, not a colour pitch
+>
+> Three new accent skins (Royal, Sapphire, Aurora) take the picker from four
+> swatches to seven, in dark and light each. Sell it as **"make it yours"**:
+> traders sit in this app for hours a day, and the luxe-personalisation angle
+> ("seven coordinated palettes, each contrast-measured, P&L colours never
+> touched") differentiates against the SaaS journals' single theme. The
+> Settings → Appearance picker with all seven swatches is a NEW screenshot
+> worth adding to the gallery; a 3-up of the same dashboard in Royal /
+> Sapphire / Aurora makes a strong social/listing tile. The tooltip + palette
+> + count-up polish is felt in demos (the app responds like a native tool) but
+> needs no separate marketing line.
+>
+> **Code-signing decision (2026-08-11):** paid signing is deferred — the
+> branded wizard closed the installer-fear objection well enough. The ₹0
+> playbook is in docs/owner/CODE_SIGNING.md: list the app on winget (bypasses
+> the SmartScreen browser flow entirely and reads as legitimacy), submit each
+> release's installer to Microsoft's reputation portal on release day, and
+> keep the "More info → Run anyway" copy in the client guide. The Azure
+> wiring stays dormant; the earlier "budget ~$10/month before paid traffic"
+> note below is superseded by this decision.
 
 > ### v2.99.60 marketing note — the screenshots are the release
 >

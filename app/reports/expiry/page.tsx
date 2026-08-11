@@ -63,8 +63,8 @@ export default function ExpiryPage() {
                 valueClassName={s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
                 sub="avg/trade vs other days"
               />
-              <KpiCard label="Expiry-day net" value={inr(s.expiryDay.net, { decimals: 0 })} valueClassName={s.expiryDay.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.expiryDay.trades} trades`} />
-              <KpiCard label="Other-day net" value={inr(s.nonExpiry.net, { decimals: 0 })} valueClassName={s.nonExpiry.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.nonExpiry.trades} trades`} />
+              <KpiCard label="Expiry-day net" valueNum={s.expiryDay.net} format="inr0" valueClassName={s.expiryDay.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.expiryDay.trades} trades`} />
+              <KpiCard label="Other-day net" valueNum={s.nonExpiry.net} format="inr0" valueClassName={s.nonExpiry.net >= 0 ? "text-profit" : "text-loss"} sub={`${s.nonExpiry.trades} trades`} />
             </section>
 
             <div className="grid gap-3 md:grid-cols-2">

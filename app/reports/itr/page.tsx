@@ -121,10 +121,10 @@ export default function ItrPackPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <KpiCard label="Speculative (intraday)" value={inr(p.speculative.net, { decimals: 0 })} valueClassName={pnl(p.speculative.net)} sub={`turnover ${inr(p.speculative.turnover, { decimals: 0 })} · ${p.speculative.trades} trades`} />
-                  <KpiCard label="Non-speculative (F&O)" value={inr(p.nonSpeculative.net, { decimals: 0 })} valueClassName={pnl(p.nonSpeculative.net)} sub={`turnover ${inr(p.nonSpeculative.turnover, { decimals: 0 })} · ${p.nonSpeculative.trades} trades`} />
-                  <KpiCard label="STCG (delivery/MTF)" value={inr(p.capitalGains.stcg, { decimals: 0 })} valueClassName={pnl(p.capitalGains.stcg)} sub={`${p.capitalGains.trades} CG trades`} />
-                  <KpiCard label="LTCG (≥ 12m)" value={inr(p.capitalGains.ltcg, { decimals: 0 })} valueClassName={pnl(p.capitalGains.ltcg)} sub="grandfathering on Tax Summary" />
+                  <KpiCard label="Speculative (intraday)" valueNum={p.speculative.net} format="inr0" valueClassName={pnl(p.speculative.net)} sub={`turnover ${inr(p.speculative.turnover, { decimals: 0 })} · ${p.speculative.trades} trades`} />
+                  <KpiCard label="Non-speculative (F&O)" valueNum={p.nonSpeculative.net} format="inr0" valueClassName={pnl(p.nonSpeculative.net)} sub={`turnover ${inr(p.nonSpeculative.turnover, { decimals: 0 })} · ${p.nonSpeculative.trades} trades`} />
+                  <KpiCard label="STCG (delivery/MTF)" valueNum={p.capitalGains.stcg} format="inr0" valueClassName={pnl(p.capitalGains.stcg)} sub={`${p.capitalGains.trades} CG trades`} />
+                  <KpiCard label="LTCG (≥ 12m)" valueNum={p.capitalGains.ltcg} format="inr0" valueClassName={pnl(p.capitalGains.ltcg)} sub="grandfathering on Tax Summary" />
                 </section>
 
                 <div className="rounded-md border border-border bg-card-hover/30 p-3 text-xs">

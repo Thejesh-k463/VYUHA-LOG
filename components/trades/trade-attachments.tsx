@@ -8,6 +8,7 @@
 import * as React from "react";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Tip } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 
 export interface AttachmentMeta {
@@ -130,30 +131,34 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
               <div key={a.id} className="group relative">
                 {/* Click opens the IN-APP viewer — the old behaviour (raw image
                     in a new browser tab) lives on as a button inside it. */}
-                <button
-                  type="button"
-                  onClick={() => setViewerIdx(items.indexOf(a))}
-                  title={`${a.fileName} — click to view`}
-                  data-testid="attachment-thumb"
-                  className="block cursor-zoom-in"
-                >
-                  {/* Thumbnails come from the local attachments API — next/image adds nothing for localhost blobs. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/trades/attachments?id=${a.id}&thumb=1`}
-                    alt={a.fileName}
-                    className="h-16 w-24 rounded border border-border object-cover"
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(a.id)}
-                  disabled={busy}
-                  title="Remove"
-                  className="absolute -right-1.5 -top-1.5 hidden size-4 items-center justify-center rounded-full bg-loss text-[10px] leading-none text-white group-hover:flex"
-                >
-                  ×
-                </button>
+                <Tip label={`${a.fileName} — click to view`}>
+                  <button
+                    type="button"
+                    onClick={() => setViewerIdx(items.indexOf(a))}
+                    aria-label={`${a.fileName} — click to view`}
+                    data-testid="attachment-thumb"
+                    className="block cursor-zoom-in"
+                  >
+                    {/* Thumbnails come from the local attachments API — next/image adds nothing for localhost blobs. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/trades/attachments?id=${a.id}&thumb=1`}
+                      alt={a.fileName}
+                      className="h-16 w-24 rounded border border-border object-cover"
+                    />
+                  </button>
+                </Tip>
+                <Tip label="Remove">
+                  <button
+                    type="button"
+                    onClick={() => remove(a.id)}
+                    disabled={busy}
+                    aria-label="Remove"
+                    className="absolute -right-1.5 -top-1.5 hidden size-4 items-center justify-center rounded-full bg-loss text-[10px] leading-none text-white group-hover:flex"
+                  >
+                    ×
+                  </button>
+                </Tip>
               </div>
             ))}
           </div>
@@ -278,36 +283,38 @@ function AttachmentViewer({
                     {(idx ?? 0) + 1} / {items.length}
                   </span>
                 )}
-                <a
-                  href={`/api/trades/attachments?id=${current.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open in new tab"
-                  data-testid="attachment-open-tab"
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
-                >
-                  <ExternalLink className="size-3.5" /> Open in tab
-                </a>
-                <button
-                  type="button"
-                  disabled={busy}
-                  data-testid="attachment-delete"
-                  title="Delete this screenshot"
-                  onClick={() => {
-                    // Deleting the LAST image must also null the index, not
-                    // just let the derived `open` flip false: Radix fires
-                    // onOpenChange only for user-driven closes, so a stale
-                    // index would survive — and the next upload would satisfy
-                    // the clamp again and pop the viewer open uninvited
-                    // (2026-08-10 audit, lane C). Non-last deletes keep the
-                    // index; the clamp slides onto the survivor.
-                    if (items.length <= 1) onIndex(null);
-                    void onDelete(current.id);
-                  }}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-loss hover:bg-white/10 disabled:opacity-40"
-                >
-                  <Trash2 className="size-3.5" /> Delete
-                </button>
+                <Tip label="Open in new tab">
+                  <a
+                    href={`/api/trades/attachments?id=${current.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="attachment-open-tab"
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
+                  >
+                    <ExternalLink className="size-3.5" /> Open in tab
+                  </a>
+                </Tip>
+                <Tip label="Delete this screenshot">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    data-testid="attachment-delete"
+                    onClick={() => {
+                      // Deleting the LAST image must also null the index, not
+                      // just let the derived `open` flip false: Radix fires
+                      // onOpenChange only for user-driven closes, so a stale
+                      // index would survive — and the next upload would satisfy
+                      // the clamp again and pop the viewer open uninvited
+                      // (2026-08-10 audit, lane C). Non-last deletes keep the
+                      // index; the clamp slides onto the survivor.
+                      if (items.length <= 1) onIndex(null);
+                      void onDelete(current.id);
+                    }}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-loss hover:bg-white/10 disabled:opacity-40"
+                  >
+                    <Trash2 className="size-3.5" /> Delete
+                  </button>
+                </Tip>
               </span>
             </div>
           </div>

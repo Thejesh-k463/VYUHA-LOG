@@ -250,7 +250,7 @@ export function DashboardClient({
         <KpiCard
           label="Total charges"
           value={<CountUp value={k.charges} />}
-          valueClassName="text-warning"
+          valueClassName="text-grad-gold"
           sub={`${k.chargePctOfGross}% of gross`}
           detail={{
             title: "Charges — the silent tax on your edge",
@@ -400,7 +400,7 @@ export function DashboardClient({
       <section className="grid gap-4 sm:grid-cols-3">
         <KpiCard label="Current streak" value={k.currentStreak === 0 ? "—" : `${Math.abs(k.currentStreak)} ${k.currentStreak > 0 ? "wins" : "losses"}`} valueClassName={k.currentStreak > 0 ? "text-profit" : k.currentStreak < 0 ? "text-loss" : ""} sub={`Best ${k.maxWinStreak}W · Worst ${k.maxLossStreak}L`} />
         <KpiCard label="Avg win / loss" value={`${inrCompact(k.avgWin)} / ${inrCompact(k.avgLoss)}`} sub="per closed trade" />
-        <KpiCard label="Charges leak" value={`${k.chargePctOfGross}%`} valueClassName="text-warning" sub={`${inr(k.charges, { decimals: 0 })} paid`} />
+        <KpiCard label="Charges leak" value={`${k.chargePctOfGross}%`} valueClassName="text-grad-gold" sub={`${inr(k.charges, { decimals: 0 })} paid`} />
       </section>
     </div>
   );

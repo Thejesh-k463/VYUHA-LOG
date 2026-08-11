@@ -119,17 +119,20 @@ export default function RomReportPage() {
           <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
             <KpiCard
               label="Closed trades"
-              value={o.trades}
+              valueNum={o.trades}
+              format="int"
               sub={report.skipped > 0 ? `${report.skipped} skipped` : "all priced"}
             />
             <KpiCard
               label="Net P&L"
-              value={inr(o.netPnl, { decimals: 0 })}
+              valueNum={o.netPnl}
+              format="inr0"
               valueClassName={pnlCls(o.netPnl)}
             />
             <KpiCard
               label="Capital deployed"
-              value={inr(o.totalCapital, { decimals: 0 })}
+              valueNum={o.totalCapital}
+              format="inr0"
               sub="sum of capital blocked"
             />
             <KpiCard

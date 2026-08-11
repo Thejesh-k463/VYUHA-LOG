@@ -4,7 +4,41 @@ import * as React from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { CountUp, quietCurrency } from "@/components/ui/count-up";
+import { inr, inrCompact, num, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+/** Named formatters for `format` — a STRING key, not a function, because most
+ *  KpiCard call sites are server components and a function prop cannot cross
+ *  the RSC serialization boundary. Add a key here rather than passing a
+ *  lambda from a page. */
+const KPI_FORMATTERS = {
+  /** inr()'s own default — 2 decimals. Matches a bare `inr(x)` call site. */
+  inr: (n: number) => inr(n),
+  /** Whole rupees — matches `inr(x, { decimals: 0 })`, the most common money
+   *  pattern on KPI cards. */
+  inr0: (n: number) => inr(n, { decimals: 0 }),
+  /** Rupees with paise, spelled explicitly. */
+  inr2: (n: number) => inr(n, { decimals: 2 }),
+  /** "₹39.7K" / "₹1.2Cr". */
+  inrCompact: (n: number) => inrCompact(n),
+  /** "12.34%". */
+  pct: (n: number) => pct(n),
+  /** "12.3%". */
+  pct1: (n: number) => pct(n, 1),
+  /** "63%" — whole-point percentage. */
+  pct0: (n: number) => pct(n, 0),
+  /** Plain number, 2 decimals (R multiples, ratios). */
+  num: (n: number) => num(n),
+  /** Plain integer (counts). */
+  int: (n: number) => num(n, 0),
+} as const;
+export type KpiFormat = keyof typeof KPI_FORMATTERS;
+
+// Re-exported so existing `import { quietCurrency } from "@/components/kpi-card"`
+// call sites keep working; the implementation moved to count-up.tsx to break
+// the kpi-card ↔ count-up module cycle.
+export { quietCurrency };
 
 /** Tiny dependency-free sparkline — pure SVG so it renders in server components. */
 function Sparkline({ points, positive }: { points: number[]; positive: boolean }) {
@@ -62,32 +96,11 @@ export interface KpiDelta {
   formatted: string;
 }
 
-/** Leading sign + rupee symbol of an already-formatted money string. `inr()`
- *  emits "₹39,701.00" and "-₹39,701.00"; `inrCompact()` emits "-₹39.7K". */
-const CURRENCY_PREFIX = /^([+\-−–]?\s?₹)/;
-
-/** v3 §2.2: the currency sign renders smaller and muted so the MAGNITUDE reads
- *  first — `<span style="font-size:.6em">-₹</span>39,701`. This only wraps the
- *  leading sign/symbol; the digits are passed through byte-for-byte, so no
- *  formatting decision moves out of `lib/format.ts`. Non-string values (a
- *  caller-composed ReactNode) are left completely alone — which is why an
- *  animated `<CountUp>` value still renders its sign full size: it formats its
- *  own text. Exported so the same rule can be applied there. */
-export function quietCurrency(value: React.ReactNode): React.ReactNode {
-  if (typeof value !== "string") return value;
-  const m = CURRENCY_PREFIX.exec(value);
-  if (!m) return value;
-  return (
-    <>
-      <span className="text-[0.6em] font-normal text-muted-foreground">{m[1]}</span>
-      {value.slice(m[1].length)}
-    </>
-  );
-}
-
 export function KpiCard({
   label,
   value,
+  valueNum,
+  format,
   sub,
   valueClassName,
   icon,
@@ -97,7 +110,15 @@ export function KpiCard({
   hero = false,
 }: {
   label: string;
-  value: React.ReactNode;
+  /** Pre-formatted value. Ignored when `valueNum` is given. */
+  value?: React.ReactNode;
+  /** C10 rollout — pass the RAW number instead of a formatted string and the
+   *  card animates it with CountUp (reduced-motion renders it instantly).
+   *  Pair with `format` for anything that isn't whole-rupee INR. */
+  valueNum?: number;
+  /** Named formatter for `valueNum` (see KPI_FORMATTERS). A string key so
+   *  server components can use it. Defaults to whole-rupee "inr". */
+  format?: KpiFormat;
   sub?: React.ReactNode;
   valueClassName?: string;
   icon?: React.ReactNode;
@@ -160,7 +181,12 @@ export function KpiCard({
             comfortable-density root. `whitespace-nowrap` is MANDATORY: without
             it a long value breaks between the sign and the first digit. */}
         <div className={cn("mt-2 whitespace-nowrap font-mono text-[1.65rem] font-light leading-none tracking-tight tabular-nums", valueClassName)}>
-          {quietCurrency(value)}
+          {valueNum !== undefined ? (
+            // CountUp applies quietCurrency itself, per frame.
+            <CountUp value={valueNum} format={KPI_FORMATTERS[format ?? "inr"]} />
+          ) : (
+            quietCurrency(value)
+          )}
         </div>
         {spark && <Sparkline points={spark} positive={sparkPositive} />}
       </div>

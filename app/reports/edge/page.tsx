@@ -224,7 +224,7 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
             <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-4">
               <KpiCard label="Avg MFE captured" value={report.avgCapturedPct != null ? `${report.avgCapturedPct}%` : "—"} sub="of best favorable move" />
               <KpiCard label="Avg edge ratio" value={report.avgEdgeRatio != null ? `${report.avgEdgeRatio}` : "—"} sub="MFE ÷ MAE" />
-              <KpiCard label="Covered trades" value={`${report.covered}`} sub={`${report.uncovered} lack bars`} />
+              <KpiCard label="Covered trades" valueNum={report.covered} format="int" sub={`${report.uncovered} lack bars`} />
               <KpiCard label="Granularity" value="EOD" sub="intraday extremes unseen" />
             </div>
             <ReportTable>

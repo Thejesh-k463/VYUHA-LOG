@@ -234,9 +234,9 @@ export default function PerformancePage() {
                     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                       <KpiCard label="Risk of ruin" value={`${mc.riskOfRuinPct}%`} valueClassName={mc.riskOfRuinPct > 10 ? "text-loss" : mc.riskOfRuinPct > 2 ? "text-warning" : "text-profit"} sub="ever −50% from today" />
                       <KpiCard label="P(ending down)" value={`${mc.probLossPct}%`} valueClassName={mc.probLossPct > 50 ? "text-loss" : ""} sub="terminal < today's equity" />
-                      <KpiCard label="Median outcome" value={inr(mc.terminal.p50, { decimals: 0 })} valueClassName={cls(mc.terminal.p50 - mc.startEquity)} sub={`from ${inr(mc.startEquity, { decimals: 0 })}`} />
-                      <KpiCard label="Bad year (p5)" value={inr(mc.terminal.p5, { decimals: 0 })} valueClassName="text-loss" sub="5th percentile" />
-                      <KpiCard label="Good year (p95)" value={inr(mc.terminal.p95, { decimals: 0 })} valueClassName="text-profit" sub="95th percentile" />
+                      <KpiCard label="Median outcome" valueNum={mc.terminal.p50} format="inr0" valueClassName={cls(mc.terminal.p50 - mc.startEquity)} sub={`from ${inr(mc.startEquity, { decimals: 0 })}`} />
+                      <KpiCard label="Bad year (p5)" valueNum={mc.terminal.p5} format="inr0" valueClassName="text-loss" sub="5th percentile" />
+                      <KpiCard label="Good year (p95)" valueNum={mc.terminal.p95} format="inr0" valueClassName="text-profit" sub="95th percentile" />
                     </section>
                     <p className="text-[0.6875rem] text-muted-foreground">
                       Bootstrap of your OWN daily returns (no normality assumed): each simulated day replays a random

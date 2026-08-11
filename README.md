@@ -28,6 +28,20 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.70 — seven skins, and the chrome grows reflexes.** Three new accent skins — **Royal**
+> (regal violet), **Sapphire** (electric indigo with orchid analytics), **Aurora** (fuchsia with
+> teal) — each a measured triple like the original four: same contrast floors on both themes,
+> money/analytics roles kept far apart on the hue wheel, P&L colours untouched. Around them the
+> chrome sharpened: real 300 ms tooltips replace the browser's slow title bubbles on the hot
+> surfaces, the Ctrl+K palette became a true dialog (focus trap, scroll lock), and the animated
+> count-up numbers rolled out from the dashboard to the report and tracker screens.
+
+<p align="center">
+<img src="docs/screenshots/skin-royal.png" alt="Royal skin — violet-led dashboard" width="290" />
+<img src="docs/screenshots/skin-sapphire.png" alt="Sapphire skin — electric indigo dashboard" width="290" />
+<img src="docs/screenshots/skin-aurora.png" alt="Aurora skin — fuchsia dashboard" width="290" />
+</p>
+>
 > **v2.99.60 — built for the ten-thousand-trade book, dressed to match.** Three engineering
 > releases: the Trades table now virtualizes and ships 44% less data (measured — an ~10k-trade
 > book stays instant), the hottest queries went from filesort to index scan, and every report

@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toaster";
 import { computeIpo, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
-import { inr, inrCompact, num } from "@/lib/format";
+import { inr, num } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, type Broker } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
 import { Plus, Pencil, Trash2, FileText } from "lucide-react";
@@ -276,17 +276,18 @@ function IpoStatement({ r }: { r: IpoComputed }) {
 function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary }) {
   return (
     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-      <KpiCard label="IPOs" value={summary.count} sub={`${summary.allottedCount} allotted · ${summary.notAllottedCount} not`} />
-      <KpiCard label="Applied amount" value={inrCompact(summary.applicationAmount)} sub="blocked at apply" />
-      <KpiCard label="Invested (allotted)" value={inrCompact(summary.investedAllotted)} />
-      <KpiCard label="Listing gains" value={inrCompact(summary.listingGains)} valueClassName={pnl(summary.listingGains)} />
+      <KpiCard label="IPOs" valueNum={summary.count} format="int" sub={`${summary.allottedCount} allotted · ${summary.notAllottedCount} not`} />
+      <KpiCard label="Applied amount" valueNum={summary.applicationAmount} format="inrCompact" sub="blocked at apply" />
+      <KpiCard label="Invested (allotted)" valueNum={summary.investedAllotted} format="inrCompact" />
+      <KpiCard label="Listing gains" valueNum={summary.listingGains} format="inrCompact" valueClassName={pnl(summary.listingGains)} />
       <KpiCard
         label="Realised net"
-        value={inr(summary.realisedNet, { decimals: 0 })}
+        valueNum={summary.realisedNet}
+        format="inr0"
         valueClassName={pnl(summary.realisedNet)}
         sub={summary.estTax > 0 ? `est. tax ${inr(summary.estTax, { decimals: 0 })} → post-tax ${inr(summary.postTaxNet, { decimals: 0 })}` : `${summary.exitedCount} exited`}
       />
-      <KpiCard label="Unrealised" value={inr(summary.unrealised, { decimals: 0 })} valueClassName={pnl(summary.unrealised)} sub={`${summary.listedCount} holding`} />
+      <KpiCard label="Unrealised" valueNum={summary.unrealised} format="inr0" valueClassName={pnl(summary.unrealised)} sub={`${summary.listedCount} holding`} />
     </section>
   );
 }

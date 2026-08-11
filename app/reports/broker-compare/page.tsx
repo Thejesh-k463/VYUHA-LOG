@@ -93,7 +93,7 @@ export default function BrokerComparePage() {
         ) : (
           <>
             <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <KpiCard label="Charges actually recorded" value={inr(report.actualTotal, { decimals: 0 })} sub="across your brokers" />
+              <KpiCard label="Charges actually recorded" valueNum={report.actualTotal} format="inr0" sub="across your brokers" />
               <KpiCard
                 label="Cheapest broker"
                 value={
@@ -106,7 +106,8 @@ export default function BrokerComparePage() {
               />
               <KpiCard
                 label="Headroom to save"
-                value={inr(Math.max(0, report.maxSaving), { decimals: 0 })}
+                valueNum={Math.max(0, report.maxSaving)}
+                format="inr0"
                 valueClassName={report.maxSaving > 0 ? "text-profit" : "text-muted-foreground"}
                 sub="vs recorded charges"
               />

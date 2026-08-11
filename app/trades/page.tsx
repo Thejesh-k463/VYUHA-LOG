@@ -70,10 +70,10 @@ export default function TradesPage() {
       <PageHeader title="Trades" description="The journal — every leg with charges, R-multiple and tags." />
       <div className="space-y-5 p-6">
         <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
-          <KpiCard label="Trades" value={stats.count} sub={`${stats.open} open`} />
-          <KpiCard label="Net P&L" value={inr(stats.net, { decimals: 0 })} valueClassName={stats.net >= 0 ? "text-profit" : "text-loss"} />
-          <KpiCard label="Gross P&L" value={inr(stats.gross, { decimals: 0 })} valueClassName={stats.gross >= 0 ? "text-profit" : "text-loss"} />
-          <KpiCard label="Total charges" value={inr(stats.charges, { decimals: 0 })} valueClassName="text-warning" />
+          <KpiCard label="Trades" valueNum={stats.count} format="int" sub={`${stats.open} open`} />
+          <KpiCard label="Net P&L" valueNum={stats.net} format="inr0" valueClassName={stats.net >= 0 ? "text-profit" : "text-loss"} />
+          <KpiCard label="Gross P&L" valueNum={stats.gross} format="inr0" valueClassName={stats.gross >= 0 ? "text-profit" : "text-loss"} />
+          <KpiCard label="Total charges" valueNum={stats.charges} format="inr0" valueClassName="text-grad-gold" />
           <KpiCard label="Charges / gross" value={`${chargePct.toFixed(1)}%`} sub="charge leak" />
         </section>
         <AcquisitionPanel trades={pending} />
@@ -94,11 +94,11 @@ export default function TradesPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                <KpiCard label="Allotments sold" value={ipo.trades} sub={ipo.pending > 0 ? `${ipo.pending} awaiting a price` : "all priced"} />
-                <KpiCard label="Proceeds" value={inr(ipo.proceeds, { decimals: 0 })} />
-                <KpiCard label="Issue cost" value={inr(ipo.cost, { decimals: 0 })} />
-                <KpiCard label="Charges" value={inr(ipo.charges, { decimals: 0 })} valueClassName="text-warning" />
-                <KpiCard label="Net from IPOs" value={inr(ipo.netPnl, { decimals: 0 })} valueClassName={ipo.netPnl >= 0 ? "text-profit" : "text-loss"} />
+                <KpiCard label="Allotments sold" valueNum={ipo.trades} format="int" sub={ipo.pending > 0 ? `${ipo.pending} awaiting a price` : "all priced"} />
+                <KpiCard label="Proceeds" valueNum={ipo.proceeds} format="inr0" />
+                <KpiCard label="Issue cost" valueNum={ipo.cost} format="inr0" />
+                <KpiCard label="Charges" valueNum={ipo.charges} format="inr0" valueClassName="text-grad-gold" />
+                <KpiCard label="Net from IPOs" valueNum={ipo.netPnl} format="inr0" valueClassName={ipo.netPnl >= 0 ? "text-profit" : "text-loss"} />
               </div>
               {acq.pending > 0 && (
                 <p className="mt-3 text-xs text-warning">

@@ -2,7 +2,29 @@
 
 import * as React from "react";
 import { inr } from "@/lib/format";
-import { quietCurrency } from "@/components/kpi-card";
+
+/** Leading sign + rupee symbol of an already-formatted money string. `inr()`
+ *  emits "₹39,701.00" and "-₹39,701.00"; `inrCompact()` emits "-₹39.7K". */
+const CURRENCY_PREFIX = /^([+\-−–]?\s?₹)/;
+
+/** v3 §2.2: the currency sign renders smaller and muted so the MAGNITUDE reads
+ *  first — `<span style="font-size:.6em">-₹</span>39,701`. This only wraps the
+ *  leading sign/symbol; the digits are passed through byte-for-byte, so no
+ *  formatting decision moves out of `lib/format.ts`. Non-string values (a
+ *  caller-composed ReactNode) are left completely alone. Lives HERE, not in
+ *  kpi-card, because both components need it and kpi-card imports CountUp —
+ *  the other direction would be a module cycle. */
+export function quietCurrency(value: React.ReactNode): React.ReactNode {
+  if (typeof value !== "string") return value;
+  const m = CURRENCY_PREFIX.exec(value);
+  if (!m) return value;
+  return (
+    <>
+      <span className="text-[0.6em] font-normal text-muted-foreground">{m[1]}</span>
+      {value.slice(m[1].length)}
+    </>
+  );
+}
 
 /**
  * C4 — animated number. Counts from 0 to `value` over ~700ms with an ease-out
@@ -17,7 +39,10 @@ export function CountUp({
 }: {
   value: number;
   decimals?: number;
-  format?: "inr" | "plain";
+  /** "inr" | "plain", or any formatter from lib/format (inrCompact, pct, …) —
+   *  a function receives the animated intermediate values too, so it must be
+   *  pure and total over the [0, value] range (every lib/format one is). */
+  format?: "inr" | "plain" | ((n: number) => string);
   suffix?: string;
 }) {
   const [display, setDisplay] = React.useState<number>(value);
@@ -48,12 +73,17 @@ export function CountUp({
   }, [value]);
 
   const text =
-    format === "inr" ? inr(display, { decimals }) : `${display.toFixed(decimals)}${suffix}`;
+    typeof format === "function"
+      ? format(display)
+      : format === "inr"
+        ? inr(display, { decimals })
+        : `${display.toFixed(decimals)}${suffix}`;
   // The v3 KPI rule — currency sign smaller and muted so the magnitude reads
   // first — has to happen HERE for animated values. KpiCard can only split a
   // string it was handed, and these values arrive as a component that formats
   // itself on every frame. Skipping this is not cosmetic: Net P&L and Total
   // charges are the biggest numbers on the dashboard, so the rule would have
-  // missed precisely the values it exists for.
-  return <span>{format === "inr" ? quietCurrency(text) : text}</span>;
+  // missed precisely the values it exists for. quietCurrency is a no-op on
+  // strings without a leading ₹, so custom formatters get it unconditionally.
+  return <span>{format === "plain" ? text : quietCurrency(text)}</span>;
 }

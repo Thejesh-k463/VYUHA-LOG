@@ -59,7 +59,7 @@ const TOKENS = {
   primary: ["--color-primary", "#7c5cff"],
   profit: ["--color-profit", "#12b886"],
   loss: ["--color-loss", "#e03131"],
-  gold: ["--color-gold", "#f5d478"],
+  gold: ["--color-gold", "#f0b429"],
   border: ["--color-border", "#2a2f3a"],
   rule: ["--color-rule", "rgba(148, 163, 184, 0.23)"],
   mutedForeground: ["--color-muted-foreground", "#94a3b8"],

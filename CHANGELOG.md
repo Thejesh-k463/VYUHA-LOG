@@ -1,5 +1,39 @@
 # Changelog
 
+## v2.99.70 — three new skins, and the chrome grows reflexes
+
+- **Three new accent skins: Royal, Sapphire, Aurora.** Violet-led and regal;
+  electric indigo with orchid analytics; fuchsia-led with teal — the most
+  vibrant palettes the app has shipped. Like the original four, each is a
+  coordinated triple (primary / money / analytics), measured before it was
+  written: every colour clears the same WCAG contrast floors as the existing
+  skins on both themes, roles sit 67–109° apart on the hue wheel, and no
+  primary comes near the profit/loss hues. Settings → Appearance; the P&L
+  colours (and colourblind mode) are untouched, as always.
+- **Real tooltips.** Hot surfaces — the sidebar rail, the trades toolbar, the
+  calendar heatmap, the screenshot viewer — replace the browser's slow
+  OS-styled `title` bubbles with app-chrome tooltips that appear in 300 ms,
+  follow keyboard focus, and flow instantly between adjacent icons.
+- **The command palette became a real dialog.** Ctrl+K now traps focus, locks
+  the page scroll behind it, and dismisses like every other overlay — the
+  last piece of chrome that only looked like a dialog. Keyboard behaviour
+  (arrows, Enter, Ctrl+K toggle) is unchanged.
+- **The money gold turned metallic.** The gold accent brightened to a more
+  saturated bullion (#f0b429, same 41° hue, contrast up not down), and the
+  headline money numbers — total charges, MTF interest, charges leak — now
+  wear a champagne-to-bronze gradient with a soft glint. Built from tokens,
+  so every skin keeps its own money colour (Tape's stays violet), light theme
+  keeps its AA-safe dark golds, and print falls back to solid ink.
+- **Numbers count up everywhere.** The dashboard's animated KPI treatment
+  rolled out across the report and tracker screens — raw numbers animate in
+  over ~700 ms with the currency sign kept quiet, and render instantly under
+  reduced motion.
+- Owner docs: paid code signing is formally deferred (users are happy with
+  the branded wizard); the free mitigation playbook — winget listing,
+  Microsoft reputation submissions — is written down in
+  docs/owner/CODE_SIGNING.md, with the Azure wiring kept dormant.
+
+
 ## v2.99.60 — every screen speaks the same language
 
 The cosmetic wave. Nothing about what the app computes changed; everything

@@ -67,8 +67,8 @@ export default function DisciplineReportPage() {
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiCard label="Avg weekly score" value={`${avg}`} valueClassName={scoreColor(avg)} sub={`${weeks.length} weeks`} />
           <KpiCard label="Latest week" value={latest ? `${latest.score}` : "—"} valueClassName={latest ? scoreColor(latest.score) : ""} sub={latest?.week} />
-          <KpiCard label="Risk cap respected" value={`${cap.toLocaleString("en-IN")}`} sub="per-trade max loss" />
-          <KpiCard label="Daily stop" value={`${stop.toLocaleString("en-IN")}`} sub="aggregate/day" />
+          <KpiCard label="Risk cap respected" valueNum={cap} format="int" sub="per-trade max loss" />
+          <KpiCard label="Daily stop" valueNum={stop} format="int" sub="aggregate/day" />
         </section>
 
         <SebiRealityCard reality={fnoReality} />

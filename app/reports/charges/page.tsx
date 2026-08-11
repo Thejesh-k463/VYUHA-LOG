@@ -58,9 +58,9 @@ export default function ChargesReportPage() {
       <div className="space-y-5 p-6">
         <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <KpiCard label="Total charges" value={inr(totals.total, { decimals: 0 })} valueClassName="text-warning" />
-          <KpiCard label="Brokerage" value={inr(totals.brokerage, { decimals: 0 })} />
-          <KpiCard label="STT / CTT" value={inr(totals.sttCtt, { decimals: 0 })} />
+          <KpiCard label="Total charges" valueNum={totals.total} format="inr0" valueClassName="text-grad-gold" />
+          <KpiCard label="Brokerage" valueNum={totals.brokerage} format="inr0" />
+          <KpiCard label="STT / CTT" valueNum={totals.sttCtt} format="inr0" />
           <KpiCard label="Avg break-even move" value={`${totals.breakevenPct}%`} sub="charges ÷ turnover" />
         </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
 import { screenVisible, type Workspace } from "@/lib/domain/workspace";
@@ -92,9 +93,8 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (e.key === "Escape") {
-        close();
       }
+      // Escape is Radix Dialog's job now — it closes only the topmost layer.
     }
     // C7 — the sidebar's ⌘K hint chip opens the palette via this event.
     function onOpenEvent() {
@@ -137,26 +137,22 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
     }
   }
 
-  if (!open) return null;
-
   return (
-    <div
-      // Same entrance as every dialog (animate-overlay-in / animate-dialog-in,
-      // token shadow and radius, the panel gradient): Ctrl+K is the most-used
-      // chrome in the app and was the only overlay that popped in hard with a
-      // non-token shadow (2026-08-10 audit). A full Radix Dialog rebuild
-      // (focus trap, scroll lock, role) is the deeper fix — noted, not done
-      // here; the ARIA attributes below carry the semantics meanwhile.
-      role="dialog"
-      aria-modal="true"
-      aria-label="Command palette"
-      className="animate-overlay-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh] backdrop-blur-sm"
-      onClick={close}
-    >
-      <div
-        className="animate-dialog-in panel-luxe w-full max-w-lg overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-overlay)]"
-        onClick={(e) => e.stopPropagation()}
-      >
+    // Radix Dialog (v2.99.70): the palette was the app's only overlay without
+    // a focus trap, scroll lock, or dismissal parity with the dialogs. Radix
+    // supplies all three — Escape and outside-click close via onOpenChange,
+    // Tab cannot escape into the page behind, and the page cannot scroll
+    // under the overlay. Same entrance and chrome tokens as every dialog.
+    <DialogPrimitive.Root open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="animate-overlay-in fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <DialogPrimitive.Content
+          // Top-anchored (12vh), unlike the centred dialogs — a palette that
+          // jumps to mid-screen reads as a modal, not a launcher.
+          className="animate-dialog-in panel-luxe fixed left-1/2 top-[12vh] z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-overlay)] focus:outline-none"
+          aria-describedby={undefined}
+        >
+          <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
         <div className="flex items-center gap-2 border-b border-border px-3">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
@@ -194,10 +190,11 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
             ))
           )}
         </div>
-        <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
-          ↑↓ navigate · Enter open · Ctrl+K toggle
-        </div>
-      </div>
-    </div>
+          <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+            ↑↓ navigate · Enter open · Ctrl+K toggle
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

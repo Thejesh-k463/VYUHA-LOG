@@ -62,10 +62,10 @@ export function AdvanceTaxCalc({
       </Card>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label={`Est. tax ${plan.fyLabel}`} value={inr(plan.estimatedAnnualTax, { decimals: 0 })} sub={`${ratePct}% of gains`} />
+        <KpiCard label={`Est. tax ${plan.fyLabel}`} valueNum={plan.estimatedAnnualTax} format="inr0" sub={`${ratePct}% of gains`} />
         <KpiCard label="Paid so far" value={`${plan.paidPct}%`} valueClassName={plan.paidPct >= 90 ? "text-profit" : plan.paidPct > 0 ? "text-warning" : "text-loss"} sub={inr(plan.taxPaidToDate, { decimals: 0 })} />
         <KpiCard label="Next instalment" value={plan.nextDue ? plan.nextDue.label : "—"} sub={plan.nextDue ? `pay ${inr(Math.max(0, plan.nextDue.cumRequired - plan.taxPaidToDate), { decimals: 0 })}` : "year complete"} />
-        <KpiCard label="234C interest" value={inr(plan.interest234C, { decimals: 0 })} valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub="on shortfalls so far" />
+        <KpiCard label="234C interest" valueNum={plan.interest234C} format="inr0" valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub="on shortfalls so far" />
       </section>
 
       <Card className="p-0">

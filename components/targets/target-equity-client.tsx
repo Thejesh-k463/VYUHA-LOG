@@ -55,7 +55,7 @@ export function TargetEquityClient({
           </div>
           <div className="text-[10px] text-muted-foreground">{topConcentration?.symbol ?? "no open positions"} · limit {concentrationLimit}%</div>
         </Card>
-        <KpiCard label="Per-trade max loss" value={inr(defaultRisk, { decimals: 0 })} sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
+        <KpiCard label="Per-trade max loss" valueNum={defaultRisk} format="inr0" sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
       </section>
 
       <Card>
@@ -93,10 +93,10 @@ export function TargetEquityClient({
             <p className="text-sm text-muted-foreground">No open MTF positions. Tag a delivery position as MTF in Trades to track funding cost.</p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <KpiCard label="MTF positions" value={mtf.count} />
-              <KpiCard label="Funded" value={inrCompact(mtf.funded)} />
+              <KpiCard label="MTF positions" valueNum={mtf.count} format="int" />
+              <KpiCard label="Funded" valueNum={mtf.funded} format="inrCompact" />
               <KpiCard label="Blended rate" value={`${(mtf.blendedRate * 100).toFixed(2)}%`} sub="p.a." />
-              <KpiCard label="Daily interest" value={inr(mtf.dailyInterest, { decimals: 0 })} valueClassName="text-warning" sub={`Accrued ${inrCompact(mtf.accrued)}`} />
+              <KpiCard label="Daily interest" valueNum={mtf.dailyInterest} format="inr0" valueClassName="text-grad-gold" sub={`Accrued ${inrCompact(mtf.accrued)}`} />
               <KpiCard label="Break-even move" value={`${mtf.breakevenMovePct.toFixed(2)}%`} sub="to cover interest" />
             </div>
           )}

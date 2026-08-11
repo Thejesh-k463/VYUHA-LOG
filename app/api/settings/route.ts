@@ -56,7 +56,7 @@ const SettingsSchema = z.object({
   // restored backup — and asSkin() maps it to Luxe, which is what it has
   // rendered as since v3. The new flat skin is "mono" precisely so that
   // old string never has to change meaning.
-  accentSkin: z.enum(["luxe", "mono", "ice", "tape", "terminal"]).default("terminal"),
+  accentSkin: z.enum(["luxe", "mono", "ice", "tape", "royal", "sapphire", "aurora", "terminal"]).default("terminal"),
   density: z.enum(["compact", "comfortable"]).default("compact"),
   workspace: z.enum(WORKSPACES).default("both"),
   fyStartMonth: z.coerce.number().int().min(1).max(12),

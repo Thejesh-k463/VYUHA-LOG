@@ -24,8 +24,8 @@ export default function OptionsJournalPage() {
     <div className="space-y-5 p-6">
         <ProGate>
       <div className="grid gap-3 sm:grid-cols-4">
-        <KpiCard label="Seller trades" value={String(seller.count)} />
-        <KpiCard label="Net P&L" value={inr(seller.netPnl)} />
+        <KpiCard label="Seller trades" valueNum={seller.count} format="int" />
+        <KpiCard label="Net P&L" valueNum={seller.netPnl} />
         <KpiCard label="Premium captured" value={seller.capturePct == null ? "—" : `${seller.capturePct}%`} />
         <KpiCard label="Fully hedged" value={seller.hedgedPct == null ? "—" : `${seller.hedgedPct}%`} />
       </div>

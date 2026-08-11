@@ -164,7 +164,8 @@ export function TrackerClient({
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
           label="Open positions"
-          value={positions.length}
+          valueNum={positions.length}
+          format="int"
           detail={{
             title: "Open positions — the book right now",
             summary: "Every position still running in this bucket.",
@@ -180,7 +181,8 @@ export function TrackerClient({
         />
         <KpiCard
           label="Invested"
-          value={inrCompact(deployed)}
+          valueNum={deployed}
+          format="inrCompact"
           sub={`${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(0) : 0}% of bucket`}
           detail={{
             title: "Capital deployed in this bucket",
@@ -197,7 +199,8 @@ export function TrackerClient({
         />
         <KpiCard
           label="Unrealised P&L"
-          value={inr(unrealised, { decimals: 0 })}
+          valueNum={unrealised}
+          format="inr0"
           valueClassName={pnl(unrealised)}
           detail={{
             title: "Unrealised P&L — paper money",
@@ -215,9 +218,10 @@ export function TrackerClient({
         {variant === "equity" ? (
           <KpiCard
             label="MTF funded"
-            value={inrCompact(mtfFunded)}
+            valueNum={mtfFunded}
+            format="inrCompact"
             sub={`Accrued int. ${inrCompact(mtfInterest)}`}
-            valueClassName="text-warning"
+            valueClassName="text-grad-gold"
             detail={{
               title: "MTF — what the broker is funding",
               summary: "Interest accrues only on the broker-funded portion, never on your own capital.",
@@ -232,7 +236,7 @@ export function TrackerClient({
             }}
           />
         ) : (
-          <KpiCard label="Segments live" value={segments.length} sub={segments.map((s) => SEGMENT_LABELS[s as Segment]).slice(0, 2).join(", ")} />
+          <KpiCard label="Segments live" valueNum={segments.length} format="int" sub={segments.map((s) => SEGMENT_LABELS[s as Segment]).slice(0, 2).join(", ")} />
         )}
       </section>
 

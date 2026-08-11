@@ -88,13 +88,13 @@ export default function MonthlyReportPage() {
         <>
           {/* Scorecard */}
           <section className="grid grid-cols-3 gap-3 md:grid-cols-4">
-            <KpiCard label="Net P&L" value={inr(net, { decimals: 0 })} valueClassName={cls(net)} />
+            <KpiCard label="Net P&L" valueNum={net} format="inr0" valueClassName={cls(net)} />
             <KpiCard label="Total return" value={`${sign(p.totalReturnPct)}${p.totalReturnPct}%`} valueClassName={cls(p.totalReturnPct)} />
             <KpiCard label="Win rate" value={`${winRate}%`} sub={`${wins}/${closed.length} trades`} />
             <KpiCard label="Max drawdown" value={`-${p.maxDrawdownPct}%`} valueClassName="text-loss" sub={inr(p.maxDrawdownAmt, { decimals: 0 })} />
             <KpiCard label="Sharpe" value={p.sharpe == null ? "—" : p.sharpe.toFixed(2)} sub={`Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} />
             <KpiCard label="CAGR" value={p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={cls(p.cagrPct)} />
-            <KpiCard label="Charges paid" value={inr(charges, { decimals: 0 })} valueClassName="text-warning" />
+            <KpiCard label="Charges paid" valueNum={charges} format="inr0" valueClassName="text-grad-gold" />
             <KpiCard label="Discipline score" value={disciplineAvg == null ? "—" : `${disciplineAvg}`} sub="weekly average" />
           </section>
 
