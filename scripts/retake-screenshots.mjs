@@ -113,6 +113,9 @@ async function main() {
   await shoot("staged-position", async () => {
     await page.goto(BASE + "/trades");
     await page.locator("tbody tr").first().waitFor();
+    // The table is virtualized: open rows (null sellDate) sort BELOW the
+    // rendered window in the default order — narrow to the Open view first.
+    await page.locator("select").filter({ hasText: "All trades" }).selectOption("open");
     const openRow = page.locator("tbody tr")
       .filter({ has: page.locator('button[title="Close position"]') }).first();
     await openRow.locator('button[title*="tranches"], button[title*="Staged position"]').click();
@@ -145,6 +148,20 @@ async function main() {
 
   await shoot("rom-report", async () => {
     await page.goto(BASE + "/reports/rom");
+  });
+
+  // v2.99.60 surfaces — the report screens with the new shared table chrome
+  // are the listing's biggest visual upgrade since the Dark Luxe foundation.
+  await shoot("tax-pack", async () => {
+    await page.goto(BASE + "/reports/tax");
+  });
+
+  await shoot("edge-report", async () => {
+    await page.goto(BASE + "/reports/edge");
+  });
+
+  await shoot("surveillance", async () => {
+    await page.goto(BASE + "/surveillance");
   });
 
   await browser.close();
