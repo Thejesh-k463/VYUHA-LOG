@@ -581,7 +581,7 @@ export function ManualTradeForm({
             </div>
           )}
           {(liveTargetRR != null || liveCurrentR != null) && (
-            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[11px]">
+            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[0.6875rem]">
               {liveCurrentR != null && (
                 <span className="text-muted-foreground">
                   Current R: <span className={`font-semibold ${liveCurrentR >= 0 ? "text-profit" : "text-loss"}`}>{liveCurrentR.toFixed(2)}</span>
@@ -604,7 +604,7 @@ export function ManualTradeForm({
           can only appear after the save. Announce it HERE anyway: testers had
           no way to know the feature existed, because the only mention lived on
           a screen you reach by saving first. */}
-      <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-[0.6875rem] text-muted-foreground">
         <Paperclip className="size-3.5 shrink-0" />
         <span>
           <b className="text-foreground">Chart screenshots:</b> attach them on the next step, right after you save

@@ -91,7 +91,7 @@ export function BackupPanel() {
           {msg.text}
         </span>
       )}
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[0.6875rem] text-muted-foreground">
         Complete backups include every database table and chart attachment. A password encrypts the entire portable
         file with AES-256-GCM; keep it safe because an offline encrypted backup cannot be recovered without it.
       </p>

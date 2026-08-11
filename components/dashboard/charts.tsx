@@ -16,6 +16,12 @@ import {
 import type { EquityPoint, GroupStat } from "@/lib/analytics/metrics";
 import { inrCompact, inr } from "@/lib/format";
 
+// The only animation in the app not guarded by prefers-reduced-motion was
+// this chart's 700ms draw-in (2026-08-10 audit). SSR has no matchMedia;
+// default to animating and let the client value win after hydration.
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 const axis = { fontSize: 10, fill: "var(--color-muted-foreground)" };
 
 interface ChartTooltipPayloadItem {
@@ -66,7 +72,7 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
           cursor={{ stroke: "var(--color-muted)", strokeDasharray: "4 3", strokeWidth: 1 }}
         />
         <ReferenceLine y={0} stroke="var(--color-border)" />
-        <Area animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
+        <Area animationDuration={700} isAnimationActive={!prefersReducedMotion()} animationEasing="ease-out" type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
         <Area animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="drawdown" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1} fill="var(--color-loss)" fillOpacity={0.12} />
       </ComposedChart>
     </ResponsiveContainer>
@@ -116,7 +122,11 @@ export function CapitalGrowth({ data }: { data: CapitalPoint[] }) {
         <YAxis tick={axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => inrCompact(v)} />
         <Tooltip content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />} />
         <Area isAnimationActive={false} type="stepAfter" dataKey="equity" name="Equity" connectNulls stroke="var(--color-primary)" strokeWidth={2} fill="var(--color-primary)" fillOpacity={0.08} dot={{ r: 3 }} />
-        <Area isAnimationActive={false} type="stepAfter" dataKey="active" name="Trade F&O" connectNulls stroke="var(--color-profit)" strokeWidth={2} fill="var(--color-profit)" fillOpacity={0.08} dot={{ r: 3 }} />
+        {/* --color-accent, NOT --color-profit: this series is CAPITAL, and the
+            palette's own law reserves the P&L green for P&L (globals.css §
+            colour roles; 2026-08-10 audit). Equity=teal, F&O=violet — the same
+            pairing the analytics screens use. */}
+        <Area isAnimationActive={false} type="stepAfter" dataKey="active" name="Trade F&O" connectNulls stroke="var(--color-accent)" strokeWidth={2} fill="var(--color-accent)" fillOpacity={0.08} dot={{ r: 3 }} />
       </ComposedChart>
     </ResponsiveContainer>
   );

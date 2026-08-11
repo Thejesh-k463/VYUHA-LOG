@@ -109,7 +109,7 @@ export default function DisciplineReportPage() {
                   </table>
                 </div>
                 {breaches.openBreached > 0 && (
-                  <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                  <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                     {breaches.openBreached} breached trade{breaches.openBreached === 1 ? " is" : "s are"} still open —
                     closed net above excludes {breaches.openBreached === 1 ? "it" : "them"}.
                   </p>
@@ -158,7 +158,7 @@ export default function DisciplineReportPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                   Honest framing: this is the P&L of trades where you admitted breaking the rule — not proof
                   the break caused the loss. But a rule that keeps sitting at the top of this table is telling
                   you something.
@@ -248,7 +248,7 @@ export default function DisciplineReportPage() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                  <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                     Clean trades average <span className={`font-medium ${pnlCls(mistakes.cleanExpectancy)}`}>{inr(mistakes.cleanExpectancy, { decimals: 0 })}</span>/trade
                     ({mistakes.cleanTrades}); mistake-tagged trades average{" "}
                     <span className={`font-medium ${pnlCls(mistakes.mistakeExpectancy)}`}>{inr(mistakes.mistakeExpectancy, { decimals: 0 })}</span>/trade —
@@ -330,7 +330,7 @@ export default function DisciplineReportPage() {
             )}
           </CardContent>
         </Card>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Score = average of three sub-scores: losses kept within the per-trade cap, days kept within the daily stop, and trades with an SL/target recorded. Tag SL/targets in Trades to lift the planning score.
         </p>
       </ProGate>

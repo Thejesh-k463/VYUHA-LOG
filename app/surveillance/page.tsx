@@ -184,7 +184,7 @@ export default function SurveillancePage() {
           </Card>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Offline-first: upload the official NSE files (fo_secban.csv, REG_IND) or paste the daily NSE/BSE restriction lists (F&O ban / ASM / GSM / circuit). Alerts are advisory —
           a stock in F&O ban allows only position reduction; ASM/GSM raise margins and tighten bands. Always confirm with
           your broker before trading a flagged scrip.

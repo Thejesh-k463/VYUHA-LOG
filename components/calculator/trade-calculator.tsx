@@ -566,12 +566,12 @@ export function TradeCalculator({
             <Input type="number" value={riskBudget} onChange={(e) => setRiskBudget(e.target.value)} placeholder="9500" className="h-8 tabular-nums" data-testid="calc-risk-budget" />
           </Field>
           {!sizing ? (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Enter a risk budget with a valid entry and stop-loss. Sizing works off the gap between
               them — an entry equal to its stop has no risk per unit to divide by.
             </p>
           ) : sizing.qty <= 0 ? (
-            <p className="text-[11px] text-loss" data-testid="calc-size-none">
+            <p className="text-[0.6875rem] text-loss" data-testid="calc-size-none">
               {inr(num(riskBudget), { decimals: 0 })} doesn&apos;t cover one {sizing.unit} — risk per {sizing.unit} is{" "}
               {inr(sizing.riskPerUnit)}. Widen the budget or tighten the stop.
             </p>
@@ -635,12 +635,12 @@ export function TradeCalculator({
                       <div className="text-xl font-semibold tabular-nums" data-testid="calc-margin-value">
                         {formatPaise(margin.marginPaise, { decimals: 0 })}
                       </div>
-                      <p className="text-[11px] text-muted-foreground" data-testid="calc-margin-basis">{margin.basis}</p>
+                      <p className="text-[0.6875rem] text-muted-foreground" data-testid="calc-margin-basis">{margin.basis}</p>
                       {margin.missingRate ? (
-                        <p className="text-[11px] text-loss">No margin rate configured for {margin.missingRate} — set one in Settings → Margin.</p>
+                        <p className="text-[0.6875rem] text-loss">No margin rate configured for {margin.missingRate} — set one in Settings → Margin.</p>
                       ) : null}
                       {result.rewardPaise > 0 && margin.marginPaise > 0 ? (
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-[0.6875rem] text-muted-foreground">
                           Net at target is {((result.rewardPaise / margin.marginPaise) * 100).toFixed(2)}% of the capital this ties up.
                         </p>
                       ) : null}
@@ -672,7 +672,7 @@ export function TradeCalculator({
                   ) : (
                     <>
                       <div className="text-xl font-semibold tabular-nums text-profit" data-testid="calc-reverse-target">₹{reverse.target}</div>
-                      <p className="text-[11px] text-muted-foreground" data-testid="calc-reverse-detail">
+                      <p className="text-[0.6875rem] text-muted-foreground" data-testid="calc-reverse-detail">
                         Nets {formatPaise(reverse.netRewardPaise, { decimals: 0 })} against{" "}
                         {formatPaise(reverse.netRiskPaise, { decimals: 0 })} at the stop — {reverse.achievedRR}:1 after every charge.
                       </p>
@@ -711,7 +711,7 @@ export function TradeCalculator({
                     <Kpi label="Per day" value={formatPaise(result.mtfCost.dailyInterestPaise, { decimals: 0 })} sub={`${num(holdDays)} days held`} testId="calc-mtf-daily" />
                     <Kpi label="Other charges" value={formatPaise(result.mtfCost.otherChargesPaise, { decimals: 0 })} sub={`total ${formatPaise(result.mtfCost.totalCostPaise, { decimals: 0 })}`} />
                   </div>
-                  <p className="mt-3 text-[11px] text-muted-foreground">
+                  <p className="mt-3 text-[0.6875rem] text-muted-foreground">
                     Carry is the charge that grows while you do nothing: {formatPaise(result.mtfCost.dailyInterestPaise, { decimals: 0 })} a
                     day on {inr(result.mtfCost.fundedAmount, { decimals: 0 })} of the broker&apos;s money. The breakeven move is
                     against the {inr(result.mtfCost.positionValue, { decimals: 0 })} position, interest and charges together.
@@ -723,7 +723,7 @@ export function TradeCalculator({
             <Card className="p-0">
               <CardHeader><CardTitle>Charge breakdown — one round trip (exit at target)</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <table className="w-full text-xs">
+                <div className="overflow-x-auto"><table className="w-full text-xs">
                   <tbody>
                     {breakdown.map(([label, v]) => (
                       <tr key={label} className="border-b border-rule">
@@ -736,7 +736,7 @@ export function TradeCalculator({
                       <td className="px-3 py-2 text-right font-semibold tabular-nums text-loss">{formatPaise(result.chargesPerTradePaise, { decimals: 0 })}</td>
                     </tr>
                   </tbody>
-                </table>
+                </table></div>
               </CardContent>
             </Card>
 
@@ -755,7 +755,7 @@ export function TradeCalculator({
               </CardContent>
             </Card>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Exact charges from the same engine that books your trades (statutory STT/stamp rounded to the rupee, GST 18%
               on brokerage+exchange+SEBI+IPFT). The two scenarios re-price the sell leg at target vs SL, so STT differs
               slightly between them. Edit any rate in Settings → charge config to model a different plan or a rate change.
@@ -770,7 +770,7 @@ export function TradeCalculator({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-[11px] text-muted-foreground">{label}</Label>
+      <Label className="text-[0.6875rem] text-muted-foreground">{label}</Label>
       {children}
     </div>
   );

@@ -110,7 +110,7 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Rates are fractions of turnover (0.1% → 0.001). Editing a rate affects newly imported / re-tagged trades; existing rows recompute on re-import or re-tag.
           </p>
         </div>

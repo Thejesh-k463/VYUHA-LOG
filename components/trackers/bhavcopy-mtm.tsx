@@ -77,7 +77,7 @@ export function BhavcopyMtm() {
         )}
       </div>
       {res?.ok && (
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2 text-[0.6875rem]">
           <Badge variant="secondary">{res.format}</Badge>
           {res.date ? <Badge variant="secondary">as of {res.date}</Badge> : null}
           <Badge variant="secondary">{res.parsed} prices in file</Badge>

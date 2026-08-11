@@ -131,7 +131,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
               <option value="r">Hide ₹ amounts entirely</option>
               <option value="amounts">Show real ₹ amounts</option>
             </Select>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Percentages and R-multiples say everything about skill without revealing account size.
             </p>
           </div>
@@ -143,7 +143,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
                   key={m.id}
                   type="button"
                   onClick={() => toggle(m.id)}
-                  className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                  className={`rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors ${
                     picked.includes(m.id)
                       ? "border-primary/50 bg-primary/10 text-primary"
                       : "border-border text-muted-foreground hover:text-foreground"
@@ -183,7 +183,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
           <div className="mt-3 border-t border-border/60 pt-2 text-[10px] text-muted-foreground">{SHARE_WATERMARK}</div>
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           The image is drawn and saved <span className="text-foreground">on this machine</span> — nothing is uploaded.
           The &ldquo;self-reported&rdquo; watermark is permanent: Vyuha is offline and cannot verify anything with your
           broker, so the card never claims it does.

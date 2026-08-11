@@ -116,7 +116,7 @@ export function TargetActiveClient({
             {segLimits.map((s) => (
               <div key={s.segment} className="rounded-md border border-border bg-card-hover/30 p-3">
                 <div className="text-xs font-medium">{SEGMENT_LABELS[s.segment]}</div>
-                <div className="mt-1.5 space-y-1 text-[11px] text-muted-foreground">
+                <div className="mt-1.5 space-y-1 text-[0.6875rem] text-muted-foreground">
                   <div className="flex justify-between"><span>Per-trade cap</span><span className="tabular-nums text-foreground">{inr(s.perTradeMaxLoss, { decimals: 0 })}</span></div>
                   <div className="flex justify-between"><span>Max trades/day</span><span className="tabular-nums text-foreground">{s.maxTradesDay ?? "—"}</span></div>
                   <div className="flex justify-between"><span>Today</span><span className="tabular-nums text-foreground">{s.todayCount}</span></div>
@@ -125,7 +125,7 @@ export function TargetActiveClient({
             ))}
           </div>
           {undatedActive > 0 && (
-            <p className="mt-3 text-[11px] text-muted-foreground">
+            <p className="mt-3 text-[0.6875rem] text-muted-foreground">
               Note: {undatedActive} Trade F&O-bucket trades (e.g. Dhan options) have no date in the P&L file and aren&apos;t attributed to a day. Add a tradebook import or manual dates for full daily counters.
             </p>
           )}

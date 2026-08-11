@@ -36,8 +36,8 @@ function BucketCard({ b }: { b: BucketLedger }) {
         <div className={`text-2xl font-bold tabular-nums ${grew ? "text-profit" : "text-loss"}`}>
           {formatPaise(b.availablePaise, { decimals: 0 })}
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">available · opening {formatPaise(b.openingPaise, { decimals: 0 })}</div>
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
+        <div className="mt-1 text-[0.6875rem] text-muted-foreground">available · opening {formatPaise(b.openingPaise, { decimals: 0 })}</div>
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[0.6875rem]">
           <Line label="Deposits" v={b.depositsPaise} />
           <Line label="Withdrawals" v={b.withdrawalsPaise} />
           <Line label="Charges / MTF" v={b.chargesPaise} />
@@ -115,7 +115,7 @@ export default function CashPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           P0.1/P0.2: money here is stored and summed as integer paise (no float drift), and capital is derived rather than
           hand-edited. This ledger is the basis for a true money-weighted return (XIRR) once trade cashflows are posted to
           it. Existing trade/charge columns migrate onto the paise core in a later staged pass.

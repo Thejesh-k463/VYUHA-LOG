@@ -101,7 +101,7 @@ export function BreachBanner({ breaches }: { breaches: Breach[] }) {
           <li className="text-xs text-muted-foreground">…and {breaches.length - shown.length} more.</li>
         )}
       </ul>
-      <p className="mt-2 text-[11px] text-muted-foreground">
+      <p className="mt-2 text-[0.6875rem] text-muted-foreground">
         Marks here are EOD or manually entered — <span className="text-foreground">not live quotes</span>.
         Check a live price with your broker and act on YOUR plan, in your own time. This banner never
         places or closes anything.

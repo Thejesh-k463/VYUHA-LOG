@@ -101,7 +101,7 @@ export default function ExpiryPage() {
               </CardContent>
             </Card>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               The expiry calendar is derived from the distinct expiry dates across your own F&O trades — a closed trade
               whose exit date lands on one of those days counts as an expiry-day trade. Pair with the Surveillance and
               physical-settlement panels on Portfolio Risk before each expiry.

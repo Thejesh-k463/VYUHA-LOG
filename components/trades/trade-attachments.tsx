@@ -136,8 +136,8 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
           }}
           className="block w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-accent/15 file:px-2 file:py-1 file:text-xs file:text-accent"
         />
-        {err && <p className="mt-1 text-[11px] text-loss">{err}</p>}
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        {err && <p className="mt-1 text-[0.6875rem] text-loss">{err}</p>}
+        <p className="mt-1 text-[0.6875rem] text-muted-foreground">
           PNG/JPG/WebP/GIF up to 8 MB — saved in the app data folder (not in JSON backups).
         </p>
       </div>
@@ -232,7 +232,7 @@ function AttachmentViewer({
                 </>
               )}
             </div>
-            <div className="flex items-center justify-between gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-white/80">
+            <div className="flex items-center justify-between gap-3 border-t border-white/10 px-3 py-2 text-[0.6875rem] text-white/80">
               <span className="min-w-0 truncate font-mono" title={current.fileName}>
                 {current.fileName}
                 <span className="ml-2 font-sans text-white/50">

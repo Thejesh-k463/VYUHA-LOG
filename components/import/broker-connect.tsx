@@ -239,7 +239,7 @@ export function BrokerConnect() {
             </Button>
           )}
           {conn?.lastPullAt && (
-            <span className="text-[11px] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+            <span className="text-[0.6875rem] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
           )}
         </div>
 

@@ -167,7 +167,7 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
         </CardContent>
       </Card>
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[0.6875rem] text-muted-foreground">
         Tax estimate is informational — STCG/LTCG by holding period from allotment date, at the exit-date rate
         (rates changed 23-Jul-2024). The LTCG annual exemption applies at FY level across all your equity, not
         per IPO, so it isn&apos;t netted here. SME shares trade in lot multiples even after listing. Verify with a
@@ -390,7 +390,7 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
       <F label="Notes"><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional" /></F>
 
       {board === "sme" && (
-        <p className="text-[11px] text-warning/90">SME IPO — shares trade in lot multiples of {ls || "?"} even after listing; plan exits accordingly.</p>
+        <p className="text-[0.6875rem] text-warning/90">SME IPO — shares trade in lot multiples of {ls || "?"} even after listing; plan exits accordingly.</p>
       )}
 
       {/* live preview */}

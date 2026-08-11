@@ -30,7 +30,7 @@ export function SebiRealityCard({ reality }: { reality: FnoReality }) {
         <div className="rounded-lg border border-border bg-card-hover/30 px-4 py-3">
           <div className="text-2xl font-bold tabular-nums text-loss">{facts.lossMakingPct}%</div>
           <div className="text-sm text-foreground">of individual F&amp;O traders made a net loss in {facts.period}.</div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+          <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
             Average net loss ≈ {inr(facts.avgNetLoss, { decimals: 0 })} per loss-making trader. {facts.sourceNote}
           </div>
         </div>
@@ -59,7 +59,7 @@ export function SebiRealityCard({ reality }: { reality: FnoReality }) {
           <p className="text-sm text-muted-foreground">{reality.verdict}</p>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Informational, not advice. Figures from SEBI&apos;s published study; your numbers are realised net P&amp;L on
           closed derivative trades in this journal.
         </p>

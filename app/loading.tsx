@@ -1,5 +1,5 @@
 import { PageSkeleton } from "@/components/ui/page-skeleton";
 
 export default function Loading() {
-  return <PageSkeleton kpis={5} />;
+  return <PageSkeleton kpis={5} filterBar />;
 }

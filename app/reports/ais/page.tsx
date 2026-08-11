@@ -27,7 +27,7 @@ export default function AisReconcilePage() {
               max(₹10, 0.5%).
             </p>
             <AisReconcile />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Informational, not filing advice. AIS aggregates by reporting entity and may include off-journal
               accounts (other demats, bank interest) — a &quot;Not in journal&quot; row isn&apos;t necessarily an
               error, but a MISMATCH on a company you track deserves a look before you file.

@@ -97,7 +97,7 @@ export function VarPanel({
           </div>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Delta-normal model: each position enters as its delta-equivalent exposure to the underlying (options via
           the Greeks above), resampled against the underlying&apos;s OWN daily returns from local price history —
           historical VaR assumes tomorrow looks like the sampled past. Stress P&amp;L ≈ β·Δmarket + ½Γ(ΔS)² + V·ΔIV

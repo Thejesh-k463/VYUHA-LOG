@@ -1,6 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+// break-avoid: the print block's `break-inside: avoid` rule targeted
+// `section, table, .break-avoid` — and nothing carried the class, so every
+// multi-row report card split across page breaks (2026-08-10 audit). Putting
+// it on Card fixes pagination on all 16 report screens in one line.
 function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
@@ -12,7 +16,7 @@ function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
         // radius-card (14px), not the base radius: the v3 spec gives panels a
         // softer corner than controls, and `rounded-lg` was still resolving to
         // the 8px scale while the gradient above had already landed.
-        "panel-luxe rounded-[var(--radius-card)] border border-[color:var(--card-border,var(--color-border))] bg-card text-foreground shadow-[var(--shadow-card)] transition-shadow duration-200 hover:shadow-[var(--shadow-card-hover)]",
+        "break-avoid panel-luxe rounded-[var(--radius-card)] border border-[color:var(--card-border,var(--color-border))] bg-card text-foreground shadow-[var(--shadow-card)] transition-shadow duration-200 hover:shadow-[var(--shadow-card-hover)]",
         className,
       )}
       {...props}

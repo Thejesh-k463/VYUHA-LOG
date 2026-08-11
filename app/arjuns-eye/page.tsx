@@ -48,7 +48,7 @@ function EdgeBar({ rows, empty }: { rows: Bucket[]; empty: string }) {
             <div className={`w-24 shrink-0 text-right font-mono text-xs tabular-nums ${pnl(e)}`}>
               {inr(e, { decimals: 0 })}
             </div>
-            <div className="w-16 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+            <div className="w-16 shrink-0 text-right font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
               {r.trades}t
             </div>
           </div>
@@ -292,7 +292,7 @@ export default function ArjunsEyePage() {
                         sub="loss ÷ win hold"
                       />
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[0.6875rem] text-muted-foreground">
                       {holding.insufficient
                         ? `Needs ${MIN_SAMPLE}+ winners and losers before this means anything.`
                         : "Above 1.0 means losers are given more room than winners — the most common structural leak in retail trading."}
@@ -317,7 +317,7 @@ export default function ArjunsEyePage() {
                         sub={`${tilt.afterLoss.trades} trades`}
                       />
                     </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.6875rem] text-muted-foreground">
                       <span>Longest win streak <b className="text-profit">{tilt.longestWinStreak}</b></span>
                       <span>Longest loss streak <b className="text-loss">{tilt.longestLossStreak}</b></span>
                       <span>Same-day re-entries after a loss <b className={tilt.sameDayReentryAfterLoss > 0 ? "text-warning" : ""}>{tilt.sameDayReentryAfterLoss}</b></span>
@@ -338,7 +338,7 @@ export default function ArjunsEyePage() {
                   ) : (
                     <>
                       <EdgeBar rows={sizing.quartiles} empty="" />
-                      <p className="mt-3 text-[11px] text-muted-foreground">
+                      <p className="mt-3 text-[0.6875rem] text-muted-foreground">
                         Positions sorted smallest to largest. If your biggest positions are not your
                         best, that is a <b>sizing</b> question rather than a selection one — the
                         setups may be fine while the conviction is misplaced.

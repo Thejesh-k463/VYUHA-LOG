@@ -345,7 +345,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         })}
         {!collapsed && visibleGroups.length > 0 && dropLine(GROUPS_SCOPE, visibleGroups.length)}
         {!collapsed && (
-          <div className="mt-2 flex items-center gap-2 border-t border-border px-2 pt-2 text-[11px] text-muted-foreground">
+          <div className="mt-2 flex items-center gap-2 border-t border-border px-2 pt-2 text-[0.6875rem] text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <GripVertical className="size-3 opacity-50" /> drag to reorder
             </span>
@@ -362,7 +362,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
           <Link
             href="/settings"
             title="Some screens are hidden by your workspace mode. Click to change it."
-            className="mt-2 flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[11px] text-primary hover:border-primary/60"
+            className="mt-2 flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-[0.6875rem] text-primary hover:border-primary/60"
           >
             <Filter className="size-3 shrink-0" />
             <span className="truncate">{WORKSPACE_LABELS[workspace]}</span>

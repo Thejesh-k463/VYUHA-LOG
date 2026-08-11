@@ -112,7 +112,7 @@ export function MtfBrokerSection({ cmp }: { cmp: MtfComparison }) {
           </>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Margin is the ONLY axis here — the lowest own-margin is the most leverage, not the lowest cost. Interest
           rates, plan fees and DP charges differ per broker and are priced in the cost comparison above. &ldquo;—&rdquo;
           means the broker doesn&apos;t fund that scrip today; lists move with exchange VAR revisions, so refresh via the

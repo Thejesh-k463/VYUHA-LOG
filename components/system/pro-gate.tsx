@@ -97,7 +97,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             <Link href="/settings">Activate a key</Link>
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Lifetime license, verified fully offline — activation never phones home. One key per trader; it shows
           your email in-app.
         </p>

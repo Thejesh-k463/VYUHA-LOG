@@ -57,7 +57,7 @@ function Row({ t }: { t: PendingBasisTrade }) {
             type="button"
             title={k.hint}
             onClick={() => setKind(k.value)}
-            className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+            className={`rounded px-2 py-0.5 text-[0.6875rem] transition-colors ${
               kind === k.value ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -93,7 +93,7 @@ function Row({ t }: { t: PendingBasisTrade }) {
       </div>
 
       {t.suggestedPrice != null && (
-        <p className="flex items-start gap-1.5 text-[11px] text-accent">
+        <p className="flex items-start gap-1.5 text-[0.6875rem] text-accent">
           <Sparkles className="mt-0.5 size-3 shrink-0" />
           <span>
             Vyuha recovered <b>₹{t.suggestedPrice}</b> a share from the import file&apos;s own footer — the
@@ -104,7 +104,7 @@ function Row({ t }: { t: PendingBasisTrade }) {
       )}
 
       {preview != null && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           At {inr(Number(price), { decimals: 2 })} a share this becomes{" "}
           <b className={preview >= 0 ? "text-profit" : "text-loss"}>{inr(preview, { decimals: 0 })}</b> net
           after {inr(t.chargesTotal, { decimals: 0 })} of charges.
@@ -112,7 +112,7 @@ function Row({ t }: { t: PendingBasisTrade }) {
       )}
 
       {state.message && (
-        <p className={`text-[11px] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
+        <p className={`text-[0.6875rem] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
       )}
     </form>
   );

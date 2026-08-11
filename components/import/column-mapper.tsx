@@ -146,7 +146,7 @@ export function ColumnMapper({
       {/* The file's own first rows, so a wrong mapping is visible before it is
           applied rather than after it has been committed. */}
       <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-[11px]">
+        <table className="w-full text-[0.6875rem]">
           <thead>
             <tr className="bg-card-hover">
               {headers.map((h, i) => {

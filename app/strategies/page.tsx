@@ -92,7 +92,7 @@ export default function StrategiesPage() {
             );
           })
         )}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Payoff is the exact value at expiry (intrinsic only) from your entry premiums — no pricing model needed. Max
           profit/loss marked &ldquo;Unlimited&rdquo; have an uncapped naked option leg. Short legs are read from
           sell-to-open positions. Black-Scholes Greeks (delta/gamma/theta/vega) are computed on{" "}

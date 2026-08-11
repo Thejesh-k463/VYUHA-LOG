@@ -79,7 +79,7 @@ export function PresetLibrary({ existingNames }: { existingNames: string[] }) {
           <button
             type="button"
             onClick={() => setCat("")}
-            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+            className={`rounded-full border px-2.5 py-1 text-[0.6875rem] transition-colors ${
               cat === "" ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -90,7 +90,7 @@ export function PresetLibrary({ existingNames }: { existingNames: string[] }) {
               key={c}
               type="button"
               onClick={() => setCat(c)}
-              className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+              className={`rounded-full border px-2.5 py-1 text-[0.6875rem] transition-colors ${
                 cat === c ? "border-primary/50 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -117,17 +117,17 @@ export function PresetLibrary({ existingNames }: { existingNames: string[] }) {
                   <Button
                     size="sm"
                     variant={added ? "ghost" : "outline"}
-                    className="h-7 shrink-0 px-2 text-[11px]"
+                    className="h-7 shrink-0 px-2 text-[0.6875rem]"
                     disabled={added || busy === p.name}
                     onClick={() => add(p)}
                   >
                     {added ? <><Check className="size-3.5 text-profit" /> Added</> : busy === p.name ? "…" : <><Plus className="size-3.5" /> Add</>}
                   </Button>
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">{p.description}</p>
+                <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">{p.description}</p>
                 <ul className="mt-2 space-y-0.5">
                   {p.rules.map((r, i) => (
-                    <li key={i} className="flex gap-1.5 text-[11px] text-muted-foreground">
+                    <li key={i} className="flex gap-1.5 text-[0.6875rem] text-muted-foreground">
                       <span className="text-profit">✓</span>
                       <span>{r}</span>
                     </li>

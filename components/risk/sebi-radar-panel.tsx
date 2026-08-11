@@ -43,7 +43,7 @@ export function SebiRadarPanel({ report }: { report: RadarReport }) {
                 {ICON[i.level]}
                 <div>
                   <div className="text-xs font-medium">{i.title}</div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">{i.detail}</div>
+                  <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">{i.detail}</div>
                   {i.positions && i.positions.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {i.positions.slice(0, 8).map((p) => (
@@ -56,7 +56,7 @@ export function SebiRadarPanel({ report }: { report: RadarReport }) {
             ))}
           </div>
         )}
-        <p className="border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground">
+        <p className="border-t border-border/60 px-4 py-3 text-[0.6875rem] text-muted-foreground">
           Informational, not compliance advice. Rules and dates change with SEBI/exchange circulars
           (and shift for holidays) — your broker&apos;s RMS is the source of truth. Vyuha never blocks
           a trade; it only reminds you what today&apos;s regime does to your margin.

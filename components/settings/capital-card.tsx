@@ -59,7 +59,7 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
               <div className={`text-xl font-bold tabular-nums ${pnl(summary.available)}`}>
                 {summary.available >= 0 ? "+" : ""}{inr(summary.available, { decimals: 0 })}
               </div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">
+              <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
                 Total realised {inr(summary.totalRealised, { decimals: 0 })} · already compounded {inr(summary.rolledIn, { decimals: 0 })}
               </div>
             </div>
@@ -84,7 +84,7 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
           )}
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Compounding rolls realised P&L (closed trades + exited IPOs) into the chosen bucket&apos;s capital — only the
           portion not already added. Every risk %, allocation and target on the app is computed against bucket capital, so
           they all re-scale automatically. For an arbitrary value, edit the bucket capital fields above and Save.

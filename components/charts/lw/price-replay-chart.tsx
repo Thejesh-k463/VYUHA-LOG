@@ -180,7 +180,7 @@ export default function PriceReplayChart({ bars, legs, stop, target, className }
       <div ref={containerRef} className="absolute inset-0" />
       <span
         ref={legendRef}
-        className="pointer-events-none absolute left-2 top-1 z-10 rounded-md bg-card/70 px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"
+        className="pointer-events-none absolute left-2 top-1 z-10 rounded-md bg-card/70 px-1.5 py-0.5 text-[0.6875rem] tabular-nums text-muted-foreground"
       />
     </div>
   );

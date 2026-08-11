@@ -49,7 +49,7 @@ export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: 
           <Stat label="Actual risk" value={inr(res.totalRisk)} cls={res.totalRisk <= Number(risk) ? "text-profit" : "text-loss"} />
           <Stat label="Capital req." value={inr(res.capitalRequired, { decimals: 0 })} />
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           {equityCapital > 0
             ? `₹${defaultRisk.toLocaleString("en-IN")} max loss ≈ ${((defaultRisk / equityCapital) * 100).toFixed(2)}% of the ₹${equityCapital.toLocaleString("en-IN")} equity bucket.`
             : "Set your equity bucket capital in Settings to see this as a % of capital."}

@@ -235,7 +235,7 @@ export function KpiCard({
               );
             })}
           </div>
-          {detail.note && <p className="text-[11px] text-muted-foreground">{detail.note}</p>}
+          {detail.note && <p className="text-[0.6875rem] text-muted-foreground">{detail.note}</p>}
           {detail.footerHref && (
             <Link
               href={detail.footerHref}

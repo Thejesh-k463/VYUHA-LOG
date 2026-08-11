@@ -71,7 +71,7 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
           </table>
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Black-Scholes estimates from the underlying spot (bhavcopy/manual MTM) — Indian index options are
           European-style (exact), stock options are American-style (Black-Scholes is the standard retail
           approximation, ignoring early-exercise value). IV falls back in three tiers: what you set on a position

@@ -284,7 +284,7 @@ export function StagedPanel({ trade, onChanged }: { trade: Trade; onChanged?: ()
       </div>
 
       {p.fills.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Exits are priced against the blended average cost at the time of the fill, and quantity is
           retired oldest-tranche-first — so the surviving tranche keeps its own stop.
         </p>
@@ -592,7 +592,7 @@ function StopAllDialog({
               <Input id="sa-sl" name="slPlanned" type="number" step="any" min="0" />
             </div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Leave a field blank to clear that stop on every open tranche.
           </p>
           {state.message && (

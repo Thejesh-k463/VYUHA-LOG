@@ -51,7 +51,7 @@ export function RestrictionForm({ count }: { count: number }) {
       {/* ── Official NSE files — the automated path ─────────────────────── */}
       <div className="rounded-md border border-border bg-card-hover/30 p-3">
         <p className="text-xs font-medium">Upload the official NSE files</p>
-        <ul className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-muted-foreground">
+        <ul className="mt-1.5 list-decimal space-y-1 pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
           <li>
             <span className="font-mono text-foreground/90">fo_secban.csv</span> — the F&amp;O ban list.
             nseindia.com → <i>All Reports → Derivatives</i> → &ldquo;F&amp;O Security in ban period&rdquo;

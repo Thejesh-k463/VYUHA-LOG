@@ -81,7 +81,7 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
                   style={{ width: `${Math.min(100, b.utilisationPct)}%` }}
                 />
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-[0.6875rem] text-muted-foreground">
                 {b.utilisationPct}% of bucket capital blocked as estimated margin
               </p>
             </div>
@@ -149,15 +149,15 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
               );
             })}
           </div>
-          {msg && <p className="mt-2 text-[11px] text-muted-foreground">{msg}</p>}
+          {msg && <p className="mt-2 text-[0.6875rem] text-muted-foreground">{msg}</p>}
         </details>
 
         {summary.missingRateSegments.length > 0 && (
-          <p className="text-[11px] text-warning">
+          <p className="text-[0.6875rem] text-warning">
             No margin rate configured for {summary.missingRateSegments.join("; ")}.
           </p>
         )}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Estimate only: long options count the premium paid; short options and futures apply the segment rate to
           notional; delivery blocks the full invested value. <b>MTF blocks only your own-margin share</b> — the
           broker funds the rest, and interest accrues on exactly that funded amount (same rate the Charges &amp; MTF

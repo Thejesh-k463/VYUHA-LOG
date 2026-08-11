@@ -55,7 +55,7 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
       {/* ── One click: the bundled NSE index map ─────────────────────────── */}
       <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
         <div className="text-xs font-semibold">Fill sectors from the bundled NSE map</div>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
           Official industry classification + thematic index memberships for ~1,150 NSE symbols,
           bundled with the app (snapshot as of <b>{nseMapAsOf}</b> — constituents change at every
           semi-annual rebalance). Names and ISINs are filled in; <b>sectors fill only where empty</b>,
@@ -70,7 +70,7 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
           >
             {pending === "file" ? "Applying…" : "Load NSE sector map"}
           </Button>
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
             <input type="checkbox" checked={addAll} onChange={(e) => setAddAll(e.target.checked)} className="size-3.5" />
             Add every symbol in the map (default: only enrich symbols already in your master)
           </label>
@@ -80,11 +80,11 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
       {/* ── NSE file upload — the no-typing path ─────────────────────────── */}
       <div className="space-y-2 rounded-md border border-border bg-card-hover/30 p-3">
         <div className="text-xs font-semibold">Fill from an NSE file</div>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
           Three files work here, all free from nseindia.com — download <b>after ~6 PM IST</b> on a
           trading day so the day&apos;s final data is in them:
         </p>
-        <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-muted-foreground">
+        <ul className="list-disc space-y-0.5 pl-4 text-[0.6875rem] text-muted-foreground">
           <li>
             <b>Daily bhavcopy</b> (names + ISINs): Market Data → Reports → Daily Reports → Cash Market
             → <span className="font-mono">BhavCopy_NSE_CM_…csv</span>
@@ -102,7 +102,7 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
             index → Download constituent list → <span className="font-mono">ind_*_list.csv</span>
           </li>
         </ul>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Only the columns a file actually carries are written. Sectors come solely from
           constituent lists and <b>fill only empty cells</b> — a sector you typed yourself is never
           overwritten by an upload.
@@ -124,7 +124,7 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
               {pending === "file" ? "Reading…" : "Upload NSE file"}
             </span>
           </label>
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
             <input type="checkbox" checked={addAll} onChange={(e) => setAddAll(e.target.checked)} className="size-3.5" />
             Add every symbol in the file (default: only enrich symbols already in your master)
           </label>

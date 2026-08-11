@@ -9,6 +9,8 @@ import { KpiCard } from "@/components/kpi-card";
 import { CountUp } from "@/components/ui/count-up";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ExportButtons } from "@/components/ui/export-button";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
 import {
@@ -163,10 +165,33 @@ export function DashboardClient({
     { key: "rMultiple", label: "R" },
   ];
 
+  // ── First run ───────────────────────────────────────────────────────────
+  // Branch on the UNFILTERED book. The old behaviour showed a brand-new user
+  // five ₹0 KPIs and an empty-chart card whose copy said "widen the date
+  // range or clear a filter" — blaming a filter that was never set, on a
+  // database that was never filled, with no next step offered anywhere
+  // (2026-08-10 audit: "the single worst first impression in the product").
+  if (trades.length === 0) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <EmptyState
+          variant="chart"
+          title="Nothing journalled yet"
+          hint="Import a broker file and this screen comes alive — P&L, expectancy, the equity curve, the daily calendar. Five brokers auto-detect; any other broker's CSV imports by mapping its columns once."
+          action={
+            <Button asChild size="sm">
+              <Link href="/import">Import a broker file</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {/* Filter bar */}
-      <div className="sticky top-[57px] z-[5] -mx-6 flex flex-wrap items-center gap-2 border-b border-border bg-background/90 px-6 py-2 backdrop-blur">
+      <div className="sticky top-[69px] z-[5] -mx-6 flex flex-wrap items-center gap-2 border-b border-border bg-background/90 px-6 py-2 backdrop-blur">
         <Select value={broker} onChange={(e) => setBroker(e.target.value)} className="h-8 w-32">
           <option value="">All brokers</option>
           {BROKERS.map((b) => <option key={b} value={b}>{BROKER_LABELS[b]}</option>)}
@@ -188,7 +213,7 @@ export function DashboardClient({
       </div>
 
       {/* KPIs — count-up, sparkline, delta chip (C4) and click-through drill-downs */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <KpiCard
           label="Net P&L"
           value={<CountUp value={k.netPnl} />}
@@ -349,7 +374,7 @@ export function DashboardClient({
             onPickDay={(d) => { window.location.href = `/trades?from=${d}&to=${d}&realised=1`; }}
           />
           {undatedClosed > 0 && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-[0.6875rem] text-muted-foreground">
               <span className="text-warning">{undatedClosed} closed trade{undatedClosed === 1 ? "" : "s"} carry no exit
               date</span> and cannot appear on any day — typically rows from an aggregated P&amp;L import, which
               reports totals without dates. A transaction/tradebook import (Dhan GTR, Zerodha tradebook) carries real
@@ -404,6 +429,9 @@ function MonthLadder({ month, net, base, stretch }: { month: string; net: number
   );
 }
 
+/** Rendered only when the BOOK has trades but the filters emptied the view —
+ *  the first-run branch above returns before any chart mounts, so this copy
+ *  is finally always true when shown. */
 function Empty() {
   return <EmptyState variant="chart" title="No data for these filters" hint="Widen the date range or clear a filter — closed trades power every chart here." />;
 }

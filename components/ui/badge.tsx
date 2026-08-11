@@ -24,9 +24,9 @@ const badgeVariants = cva(
       },
       size: {
         // The long-standing badge size — every existing call site keeps it.
-        default: "px-2.5 py-0.5 text-[11px]",
+        default: "px-2.5 py-0.5 text-[0.6875rem]",
         // Filter/summary chip: 7px 14px (v3 §3). rem so both densities scale.
-        chip: "px-[0.875rem] py-[0.4375rem] text-[11px]",
+        chip: "px-[0.875rem] py-[0.4375rem] text-[0.6875rem]",
         // MTF / ELM / drift markers: 9px caps. px, not rem — at this size the
         // label is a graphic mark and a fractional cap height only blurs it.
         xs: "px-1.5 py-px text-[9px] uppercase tracking-[0.08em]",

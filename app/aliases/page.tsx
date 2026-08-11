@@ -24,7 +24,7 @@ export default function AliasesPage() {
             <AliasManager rows={rows} />
           </CardContent>
         </Card>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Broker P&amp;L files store full scrip names (e.g. &ldquo;ADANI TOTAL GAS LIMITED&rdquo;), while NSE/BSE bhavcopy
           and the F&amp;O ban / ASM / GSM lists use tickers (&ldquo;ATGL&rdquo;). These mappings let the app reconcile the
           two — used by Auto-MTM (Portfolio Risk) and Surveillance. Matching always tries the raw name first, then the

@@ -52,7 +52,7 @@ export default function SettingsPage() {
           <CardHeader><CardTitle>Capital growth</CardTitle></CardHeader>
           <CardContent>
             <CapitalGrowth data={getCapitalHistory()} />
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-[0.6875rem] text-muted-foreground">
               Capital checkpoints per bucket (snapshots taken when capital changes), ending at today&apos;s live values.
             </p>
           </CardContent>

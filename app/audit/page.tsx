@@ -54,7 +54,7 @@ export default function AuditPage() {
       />
       <div className="space-y-5 p-6">
         <AuditLogClient rows={rows} />
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Append-only: entries are written from a best-effort hook inside each mutation and are never edited or deleted
           from the UI. Shows the most recent 250 changes.
         </p>

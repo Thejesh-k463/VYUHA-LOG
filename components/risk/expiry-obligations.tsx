@@ -181,7 +181,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
               </table>
             </div>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Indian single-stock F&amp;O is <strong>physically settled</strong>; index F&amp;O is cash-settled. An ITM
               stock option or any stock future left open at expiry devolves into share delivery and a delivery-STT
               charge (0.1% of notional) plus exercise STT (0.125% of intrinsic) — far more than squaring off. Enter the

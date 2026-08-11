@@ -109,7 +109,7 @@ export function LedgerImport() {
           MTF interest is <b>not</b> a transaction charge. Dhan calculates it daily and posts it{" "}
           <b>weekly to the ledger</b>, which is why it appears in no P&amp;L export and on no contract note.
           Everywhere else Vyuha has to <i>estimate</i> it from the funded amount and a day count — this reads what
-          you were actually charged. Get it from <span className="font-mono text-[11px]">Profile → All Statements → Ledger</span>,
+          you were actually charged. Get it from <span className="font-mono text-[0.6875rem]">Profile → All Statements → Ledger</span>,
           downloaded as CSV.
         </p>
       </CardHeader>
@@ -151,27 +151,27 @@ export function LedgerImport() {
                 <div className="text-sm font-medium">MTF interest — actual vs estimated</div>
                 <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div>
-                    <div className="text-[11px] text-muted-foreground">Broker charged</div>
+                    <div className="text-[0.6875rem] text-muted-foreground">Broker charged</div>
                     <div className="font-mono text-sm tabular-nums">{inr(m.actual, { decimals: 0 })}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-muted-foreground">Vyuha estimated</div>
+                    <div className="text-[0.6875rem] text-muted-foreground">Vyuha estimated</div>
                     <div className="font-mono text-sm tabular-nums">{inr(m.estimated, { decimals: 0 })}</div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-muted-foreground">Difference</div>
+                    <div className="text-[0.6875rem] text-muted-foreground">Difference</div>
                     <div className={`font-mono text-sm tabular-nums ${Math.abs(m.delta) > 1 ? "text-warning" : "text-profit"}`}>
                       {inr(m.delta, { decimals: 0 })}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[11px] text-muted-foreground">vs estimate</div>
+                    <div className="text-[0.6875rem] text-muted-foreground">vs estimate</div>
                     <div className="font-mono text-sm tabular-nums">
                       {m.deltaPct == null ? "—" : `${m.deltaPct > 0 ? "+" : ""}${m.deltaPct}%`}
                     </div>
                   </div>
                 </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
+                <p className="mt-2 text-[0.6875rem] text-muted-foreground">
                   Shown as a comparison, not a correction. Ledger interest is a weekly <b>account-level</b> posting;
                   splitting it back across individual positions would mean inventing a per-trade allocation the
                   broker never stated.
@@ -198,7 +198,7 @@ export function LedgerImport() {
                   These are imported as adjustments and listed here rather than filed under a guess — a ledger
                   importer that silently mislabels a debit is worse than one that admits it is unsure.
                 </p>
-                <ul className="mt-1.5 space-y-0.5 font-mono text-[11px] text-muted-foreground">
+                <ul className="mt-1.5 space-y-0.5 font-mono text-[0.6875rem] text-muted-foreground">
                   {preview.unclassified.slice(0, 5).map((u, i) => (
                     <li key={i}>
                       {u.date} · {u.narration.slice(0, 60)} · {inr(u.amount, { decimals: 0 })}

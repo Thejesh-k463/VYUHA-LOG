@@ -118,7 +118,7 @@ export default function RomReportPage() {
       <div className="space-y-5 p-6">
         <ProGate>
           {/* ── Headline ───────────────────────────────────────────────── */}
-          <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
             <KpiCard
               label="Closed trades"
               value={o.trades}
@@ -230,7 +230,7 @@ export default function RomReportPage() {
                         <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{r.daysHeld}</td>
                         <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.romPct != null ? pnlCls(r.romPct) : ""}`}>{pct(r.romPct)}</td>
                         <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.romPerDayPct != null ? pnlCls(r.romPerDayPct) : ""}`}>{pct(r.romPerDayPct, 3)}</td>
-                        <td className="px-3 py-2 text-[11px] text-muted-foreground">
+                        <td className="px-3 py-2 text-[0.6875rem] text-muted-foreground">
                           {r.basis}
                           {r.rateAssumed && <span className="ml-1 text-warning">⚠ assumed</span>}
                         </td>

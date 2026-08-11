@@ -28,7 +28,7 @@ export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
 
   return (
     <>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <th className="py-2 pr-4 font-medium">When</th>
@@ -59,7 +59,7 @@ export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
       <DeleteImportDialog batch={target} open={target != null} onOpenChange={(v) => !v && setTarget(null)} />
     </>
   );

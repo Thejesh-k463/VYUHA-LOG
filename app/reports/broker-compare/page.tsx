@@ -191,13 +191,13 @@ export default function BrokerComparePage() {
               </CardContent>
             </Card>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Each broker total re-prices the identical trades (turnover, quantities and order counts) on that broker&apos;s
               rate card from charge config — brokerage, DP and MTF interest are the real differentiators; STT/exchange/SEBI/stamp
               are statutory and broker-invariant. &ldquo;vs recorded&rdquo; compares to the charges already stored on your
               trades.
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               <b>Free and paid plans are listed separately.</b> Most accounts are on a broker&apos;s free tier, so that is
               the row without a badge; a subscription plan appears as its own row because it is a different offer, and its
               monthly fee is charged over the {report.brokers[0]?.months ?? 1} month

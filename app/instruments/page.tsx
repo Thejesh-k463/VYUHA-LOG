@@ -51,7 +51,7 @@ export default function InstrumentsPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Sector tags drive the <strong>sector concentration</strong> panel on Portfolio Risk — they reveal a concentrated
           sector bet that the per-symbol allocation can hide (e.g. several small bank positions = one large Financials
           exposure). Offline-first: paste your own list; nothing leaves the device.

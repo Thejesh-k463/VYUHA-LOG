@@ -135,7 +135,7 @@ function ThemeEdgeCard({ report }: { report: ReturnType<typeof themeEdge> }) {
             </tbody>
           </table>
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Themes <b>overlap</b> — one stock can sit in ten indices, so a trade counts in every theme
           it belongs to and the P&L column deliberately sums to more than your book. Each row is a
           lens, not a slice.{" "}
@@ -184,7 +184,7 @@ function StopTuningCard({ tuning }: { tuning: ReturnType<typeof stopTuningReport
             </p>
           ))}
         </div>
-        <p className="border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground">
+        <p className="border-t border-border/60 px-4 py-3 text-[0.6875rem] text-muted-foreground">
           Descriptive, not prescriptive: these numbers describe YOUR past sample at EOD granularity. Moving
           a stop changes which trades survive — never retro-fit a stop to this table without forward-testing
           the change small.
@@ -251,7 +251,7 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
                 </tbody>
               </table>
             </div>
-            <p className="px-4 py-3 text-[11px] text-muted-foreground">
+            <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
               MAE = worst move against entry over the holding window; MFE = best move in favour; captured = how much
               of the MFE your exit banked. EOD bars only — same-day extremes between entry and exit are approximate.
             </p>

@@ -429,7 +429,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
                               title={c.hint}
                               disabled={busy}
                               onClick={() => setProduct(key, c.value)}
-                              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                              className={`rounded px-2 py-0.5 text-[0.6875rem] transition-colors ${
                                 current === c.value
                                   ? "bg-primary text-primary-foreground"
                                   : "border border-border text-muted-foreground hover:text-foreground"
@@ -543,7 +543,7 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
     <Card>
       <CardHeader><CardTitle>Reconciliation (computed vs broker-reported)</CardTitle></CardHeader>
       <CardContent>
-        <table className="w-full text-xs">
+        <div className="overflow-x-auto"><table className="w-full text-xs">
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="py-1 font-medium">Component</th>
@@ -569,9 +569,9 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
               );
             })}
           </tbody>
-        </table>
+        </table></div>
         {exBrokerage && (
-          <p className="mt-2 text-[11px]">
+          <p className="mt-2 text-[0.6875rem]">
             <b>Excluding brokerage, the statutory charges reconcile to{" "}
               {Math.abs(exBrokerage.pct).toFixed(2)}%</b>{" "}
             — {num(exBrokerage.computed, 0)} computed against {num(exBrokerage.reported, 0)} reported,
@@ -580,7 +580,7 @@ function Reconciliation({ reco }: { reco: { reported: Record<string, number>; co
             the cost engine on.
           </p>
         )}
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-[0.6875rem] text-muted-foreground">
           Brokerage &amp; MTF interest can&apos;t be derived from scrip-aggregated P&amp;L (order counts / financing days are hidden); large Δ there is expected.
         </p>
       </CardContent>

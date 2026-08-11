@@ -243,7 +243,7 @@ export function EditTradeDialog({
             </div>
           )}
           {(liveTargetRR != null || liveCurrentR != null) && (
-            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[11px]">
+            <div className="mt-2 flex flex-wrap gap-6 border-t border-border pt-2 text-[0.6875rem]">
               {liveCurrentR != null && (
                 <span className="text-muted-foreground">
                   Current R: <span className={`font-semibold ${liveCurrentR >= 0 ? "text-profit" : "text-loss"}`}>{liveCurrentR.toFixed(2)}</span>

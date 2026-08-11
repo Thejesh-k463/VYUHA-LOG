@@ -241,7 +241,7 @@ export function TrackerClient({
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {segGroups.map((g) => (
             <Card key={g.segment} className="p-3">
-              <div className="text-[11px] font-medium text-muted-foreground">{SEGMENT_LABELS[g.segment]}</div>
+              <div className="text-[0.6875rem] font-medium text-muted-foreground">{SEGMENT_LABELS[g.segment]}</div>
               <div className="mt-1 flex items-baseline justify-between">
                 <span className="text-lg font-semibold tabular-nums">{g.count}</span>
                 <span className={`text-xs tabular-nums ${pnl(g.unrealised)}`}>{inrCompact(g.unrealised)}</span>

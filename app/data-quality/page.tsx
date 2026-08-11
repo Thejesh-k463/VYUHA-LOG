@@ -28,7 +28,7 @@ export default function DataQualityPage() {
           </div>;
         })}
       </CardContent></Card>
-      <p className="text-[11px] text-muted-foreground">The score is a completeness indicator, not a judgement of trading performance. Critical unknowns carry more weight because they can change reported money.</p>
+      <p className="text-[0.6875rem] text-muted-foreground">The score is a completeness indicator, not a judgement of trading performance. Critical unknowns carry more weight because they can change reported money.</p>
     </div>
   </>;
 }

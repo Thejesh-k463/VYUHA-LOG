@@ -141,14 +141,14 @@ function PlaybookStatsRow({ stat }: { stat?: PlaybookStat }) {
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
   if (!stat || stat.trades === 0) {
     return (
-      <p className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+      <p className="border-t border-border/60 pt-2 text-[0.6875rem] text-muted-foreground">
         No closed trades tagged to this playbook yet — expectancy shows up here once results exist.
       </p>
     );
   }
   return (
     <div className="border-t border-border/60 pt-2">
-      <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[11px] sm:grid-cols-5">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[0.6875rem] sm:grid-cols-5">
         <span className="text-muted-foreground">Trades <span className="font-medium tabular-nums text-foreground">{stat.trades}</span></span>
         <span className="text-muted-foreground">Win <span className="font-medium tabular-nums text-foreground">{stat.winRatePct}%</span></span>
         <span className="text-muted-foreground">Net <span className={`font-medium tabular-nums ${pnl(stat.net)}`}>{inr(stat.net, { decimals: 0 })}</span></span>
@@ -202,7 +202,7 @@ function PlaybookForm({
               </optgroup>
             ))}
           </Select>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             {PRESET_PLAYBOOKS.length} setups from trading ecosystems worldwide — ORB to Wyckoff to India&apos;s
             weekly expiry. Every rule and metric below stays editable before saving; tune the numbers to your
             own risk limits.

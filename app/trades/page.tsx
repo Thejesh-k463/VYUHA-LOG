@@ -69,7 +69,7 @@ export default function TradesPage() {
     <>
       <PageHeader title="Trades" description="The journal — every leg with charges, R-multiple and tags." />
       <div className="space-y-5 p-6">
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <section className="grid grid-cols-2 gap-4 xl:grid-cols-5">
           <KpiCard label="Trades" value={stats.count} sub={`${stats.open} open`} />
           <KpiCard label="Net P&L" value={inr(stats.net, { decimals: 0 })} valueClassName={stats.net >= 0 ? "text-profit" : "text-loss"} />
           <KpiCard label="Gross P&L" value={inr(stats.gross, { decimals: 0 })} valueClassName={stats.gross >= 0 ? "text-profit" : "text-loss"} />

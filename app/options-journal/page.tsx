@@ -53,7 +53,7 @@ export default function OptionsJournalPage() {
               <td className="py-1.5 pr-3 text-right tabular-nums">{b.capturePct == null ? "—" : `${b.capturePct}%`}</td>
             </tr>))}</tbody>
         </table></div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           {dte.best ? <>Strongest band so far: <b>{dte.best}</b>{dte.worst ? <> · weakest: <b>{dte.worst}</b></> : null}. </> : <>No band yet carries enough closed trades to rank. </>}
           {dte.unknownDte > 0 && <>{dte.unknownDte} closed trade(s) had no entry DTE recorded and are excluded rather than guessed.</>}
         </p>
@@ -66,7 +66,7 @@ export default function OptionsJournalPage() {
               <span>{a.label} <span className="text-muted-foreground">({a.trades} closed)</span></span>
               <span className="tabular-nums">{a.expectancy == null ? "—" : `${inr(a.expectancy, { decimals: 0 })} / trade`}</span>
             </div>))}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             {hedge.comparable
               ? <>Gap: <b>{inr(hedge.expectancyGap ?? 0, { decimals: 0 })}</b> per trade in favour of {(hedge.expectancyGap ?? 0) >= 0 ? "hedged" : "unhedged"}. </>
               : <>Not enough closed trades on both sides to compare yet. </>}
@@ -84,7 +84,7 @@ export default function OptionsJournalPage() {
             <p className="rounded-md border border-loss/40 bg-loss/5 px-3 py-2 text-loss">
               {rolls.rescuesThatBackfired} chain(s) turned a first-leg profit into an overall loss.
             </p>)}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Compared against what the first leg alone actually booked — a result that was genuinely available, not a model of what the underlying did next. Chains with an open leg are excluded.
           </p>
         </CardContent></Card>
@@ -96,7 +96,7 @@ export default function OptionsJournalPage() {
             <div className="rounded-md border border-border px-3 py-2"><span className="text-muted-foreground">Rank ≥ 50 (richer)</span><p className="text-base font-semibold tabular-nums">{iv.richHalf.expectancy == null ? "—" : inr(iv.richHalf.expectancy, { decimals: 0 })}</p><span className="text-[10px] text-muted-foreground">{iv.richHalf.trades} trades</span></div>
             <div className="rounded-md border border-border px-3 py-2"><span className="text-muted-foreground">Rank under 50 (cheaper)</span><p className="text-base font-semibold tabular-nums">{iv.cheapHalf.expectancy == null ? "—" : inr(iv.cheapHalf.expectancy, { decimals: 0 })}</p><span className="text-[10px] text-muted-foreground">{iv.cheapHalf.trades} trades</span></div>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             {!iv.comparable && <>Not enough ranked trades on both sides to compare yet. </>}
             {iv.insufficient.length > 0 && <>Unranked for now: {iv.insufficient.join(", ")}. </>}
             {iv.note}
@@ -110,7 +110,7 @@ export default function OptionsJournalPage() {
               <span>{r.symbol} <span className="text-muted-foreground">· {r.daysHeld}d</span></span>
               <span className="tabular-nums">{inr(r.perDay, { decimals: 0 })}/day</span>
             </div>))}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Median, not mean — one expiry-day scalp would distort an average badly.
             {theta.undated > 0 && <> {theta.undated} closed trade(s) lacked complete dates and are excluded.</>}
           </p>
@@ -121,7 +121,7 @@ export default function OptionsJournalPage() {
         <OptionsJournalEditor trades={options.map((t) => ({ id: t.id, symbol: t.symbol, tradingsymbol: t.tradingsymbol, entryIv: t.entryIv, exitIv: t.exitIv, entryDte: t.entryDte, hedgeStatus: t.hedgeStatus, expiryOutcome: t.expiryOutcome, adjustmentGroup: t.adjustmentGroup, isOpen: t.isOpen }))} />
         {!options.length && <p className="p-4 text-sm text-muted-foreground">No option trades yet.</p>}
       </CardContent></Card>
-      <p className="text-[11px] text-muted-foreground">Premium capture is descriptive. Return-on-risk uses the recorded risk amount when present; it is not a broker SPAN statement. IV fields are user/broker observations, never silently inferred.</p>
+      <p className="text-[0.6875rem] text-muted-foreground">Premium capture is descriptive. Return-on-risk uses the recorded risk amount when present; it is not a broker SPAN statement. IV fields are user/broker observations, never silently inferred.</p>
     </ProGate>
       </div>
   </>;

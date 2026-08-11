@@ -83,7 +83,7 @@ export function RiskCockpitClient({
       <Card className="overflow-hidden border-border bg-gradient-to-br from-surface to-card p-0">
         <div className="flex items-start justify-between p-6">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Live Exposure</div>
+            <div className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground">Live Exposure</div>
             <h2 className="mt-1 text-3xl font-bold tracking-tight">Portfolio Risk</h2>
           </div>
           <div className="flex items-center gap-3">
@@ -184,7 +184,7 @@ export function RiskCockpitClient({
       <Card className="p-0">
         <div className="flex items-end justify-between p-5 pb-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Live Tracker</div>
+            <div className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground">Live Tracker</div>
             <h3 className="mt-0.5 text-lg font-semibold">Open Positions</h3>
           </div>
           <div className="text-sm text-muted-foreground">{e.count} position{e.count === 1 ? "" : "s"}</div>
@@ -211,7 +211,7 @@ export function RiskCockpitClient({
               />
             </div>
             {/* column header */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-3 py-2 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
               <div>Stock</div>
               <div className="w-28 text-right">Running impact</div>
               <div className="w-28 text-right">
@@ -289,7 +289,7 @@ function SectorPanel({ s }: { s: SectorConcentration }) {
     <Card className="p-0">
       <div className="flex items-end justify-between p-5 pb-3">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Concentration</div>
+          <div className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground">Concentration</div>
           <h3 className="mt-0.5 text-lg font-semibold">By Sector</h3>
         </div>
         <div className="text-right text-xs text-muted-foreground">
@@ -310,7 +310,7 @@ function SectorPanel({ s }: { s: SectorConcentration }) {
           </div>
         ))}
         {s.classifiedPct < 100 && (
-          <p className="pt-1 text-[11px] text-muted-foreground">
+          <p className="pt-1 text-[0.6875rem] text-muted-foreground">
             {(100 - s.classifiedPct).toFixed(0)}% of invested capital is unclassified — add sectors on{" "}
             <span className="text-foreground">Instruments</span> for a complete picture.
           </p>
@@ -353,7 +353,7 @@ function Tile({
           }
         : {})}
     >
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-bold tabular-nums ${valueCls}`}>{value}</div>
       {clickable && <div className="mt-1.5 text-[10px] text-muted-foreground/70">click for breakdown →</div>}
     </div>
@@ -385,7 +385,7 @@ function Tile({
               </div>
             ))}
           </div>
-          {detail.note && <p className="text-[11px] text-muted-foreground">{detail.note}</p>}
+          {detail.note && <p className="text-[0.6875rem] text-muted-foreground">{detail.note}</p>}
         </DialogContent>
       </Dialog>
     </>
@@ -607,7 +607,7 @@ function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => voi
           <span className="text-muted-foreground">Est. gross P&amp;L (before charges)</span>
           <span className={`tabular-nums font-medium ${estGross >= 0 ? "text-profit" : "text-loss"}`}>{inr(estGross)}</span>
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-[0.6875rem] text-muted-foreground">
           {isShort ? "Covering" : "Closing"} recomputes full charges{p.segment === "eq_mtf" ? " + MTF interest over the holding period" : ""} and moves this to realised P&amp;L.
         </p>
       </div>

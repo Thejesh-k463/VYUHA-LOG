@@ -152,7 +152,7 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
                 </label>
               );
             })}
-            <p className="pt-1 text-[11px] text-muted-foreground">
+            <p className="pt-1 text-[0.6875rem] text-muted-foreground">
               Unticked rules are recorded as violations against this trade. Honest ticking is what makes
               the Discipline page&apos;s &ldquo;which broken rule costs me the most&rdquo; report worth
               reading — nobody sees this but you.

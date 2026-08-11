@@ -136,7 +136,7 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                   <Copy className="size-3.5" /> Copy
                 </Button>
               </div>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
                 Send this with your order if your key is being locked to one computer. It is a one-way
                 fingerprint — it contains no personal information and never leaves this machine unless you
                 send it.

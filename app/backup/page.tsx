@@ -65,7 +65,7 @@ export default function BackupPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           The portable backup includes every table and attachment and restores exactly after a preview.
           The SQLite download is the raw database file. <strong>Restore replaces all current data</strong> after validating
           the file is a Vyuha backup. A pre-migration snapshot is also written to <code>data/backups/</code> automatically

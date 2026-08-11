@@ -26,7 +26,7 @@ export default function CorporateActionsPage() {
             <CorporateActionManager rows={rows} />
           </CardContent>
         </Card>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           <strong>Split / bonus</strong> scales quantity up and every price level (avg cost, SL, trailing SL, target)
           down by the same factor for every currently-open position in that symbol — invested value and ₹
           stop-distance are both preserved. <strong>Dividend</strong> posts one Cash &amp; Ledger entry per open LONG

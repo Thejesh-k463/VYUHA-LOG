@@ -51,7 +51,7 @@ export default async function SelectedTradesReport({
           <VyuhaMark size={30} />
           <div className="leading-tight">
             <div className="text-sm font-semibold tracking-wide">VYUHA — Selected trades</div>
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-[0.6875rem] text-muted-foreground">
               {rows.length} trade{rows.length === 1 ? "" : "s"} ({closed.length} closed, {rows.length - closed.length} open) · generated {dt} ·
               hand-picked selection, not the full journal
             </div>
@@ -89,18 +89,18 @@ export default async function SelectedTradesReport({
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <div className="flex items-baseline gap-2">
                     <span className="font-semibold">{t.symbol}</span>
-                    <span className="text-[11px] text-muted-foreground">{t.tradingsymbol}</span>
+                    <span className="text-[0.6875rem] text-muted-foreground">{t.tradingsymbol}</span>
                     <Badge variant="outline">{SEGMENT_LABELS[t.segment as Segment] ?? t.segment}</Badge>
                     <Badge variant="secondary">{BROKER_LABELS[t.broker as never] ?? t.broker}</Badge>
                     {t.isOpen && <Badge variant="warning">OPEN</Badge>}
                   </div>
                   <div className={`font-mono text-sm tabular-nums ${pnlCls(t.netPnl)}`}>
                     {inr(t.netPnl, { decimals: 0 })}
-                    {t.rMultiple != null && <span className="ml-1.5 text-[11px]">{t.rMultiple.toFixed(2)}R</span>}
+                    {t.rMultiple != null && <span className="ml-1.5 text-[0.6875rem]">{t.rMultiple.toFixed(2)}R</span>}
                   </div>
                 </div>
 
-                <table className="mt-2 w-full text-[11px]">
+                <table className="mt-2 w-full text-[0.6875rem]">
                   <tbody>
                     <tr className="text-muted-foreground">
                       <td className="py-0.5 pr-3">Buy</td>
@@ -134,7 +134,7 @@ export default async function SelectedTradesReport({
                 </table>
 
                 {(t.setupTag || t.notes) && (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
                     {t.setupTag && <span className="mr-2 text-foreground">[{t.setupTag}]</span>}
                     {t.notes}
                   </p>

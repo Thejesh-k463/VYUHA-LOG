@@ -90,7 +90,7 @@ function Row({ h }: { h: UnmarkedHolding }) {
       </div>
 
       {state.message && (
-        <p className={`text-[11px] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
+        <p className={`text-[0.6875rem] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
       )}
     </div>
   );
@@ -152,7 +152,7 @@ export function UnmarkedHoldingsPanel({ holdings, fingerprint }: { holdings: Unm
         {holdings.map((h) => (
           <Row key={h.id} h={h} />
         ))}
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Pushing a holding to IPOs creates a linked record. Entering the <b>issue price</b> there supplies the
           cost basis, and a <b>listing price</b> gives the holding its mark — at which point it rejoins win
           rate, expectancy, Return on Margin and the gain/loss views. The IPO record stays the source of truth

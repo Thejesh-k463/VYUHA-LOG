@@ -109,7 +109,7 @@ export default function ChargesReportPage() {
                 </table>
               </div>
             )}
-            <p className="p-4 pt-2 text-[11px] text-muted-foreground">
+            <p className="p-4 pt-2 text-[0.6875rem] text-muted-foreground">
               No feed reports SEBI peak-margin snapshots — brokers bill the penalty separately from brokerage/STT,
               visible on your contract note. Logged manually, not counted in the charges tables above.
             </p>

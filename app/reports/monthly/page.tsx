@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VyuhaMark } from "@/components/brand/mark";
 import { KpiCard } from "@/components/kpi-card";
 import { EquityCurve } from "@/components/dashboard/charts";
 import { PrintButton } from "@/components/reports/print-button";
@@ -63,7 +64,7 @@ export default function MonthlyReportPage() {
       <div className="flex items-start justify-between border-b border-border pb-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-lg bg-gradient-to-br from-profit to-accent font-bold text-background">व</span>
+            <VyuhaMark size={32} />
             <h1 className="text-2xl font-bold tracking-tight">Vyuha — Performance Report</h1>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -132,7 +133,7 @@ export default function MonthlyReportPage() {
             <Card className="p-0">
               <CardHeader><CardTitle>Top playbooks</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <table className="w-full text-xs">
+                <div className="overflow-x-auto"><table className="w-full text-xs">
                   <tbody>
                     {pbStats.slice(0, 5).map((s) => (
                       <tr key={s.playbookId ?? "untagged"} className="border-b border-rule">
@@ -143,7 +144,7 @@ export default function MonthlyReportPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </CardContent>
             </Card>
             <Card className="p-0">

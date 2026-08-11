@@ -53,7 +53,7 @@ export function AdvanceTaxCalc({
               {numIn(paid, setPaid)}
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 text-[0.6875rem] text-muted-foreground">
             Gains prefilled from realised FY P&amp;L in this journal. Rate is your blended effective rate (STCG 15/20%,
             LTCG 12.5%, F&amp;O at slab) — adjust to your bracket.
           </p>
@@ -126,7 +126,7 @@ export function AdvanceTaxCalc({
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[0.6875rem] text-muted-foreground">
         Planning estimate, not filing advice. Due dates 15 Jun / 15 Sep / 15 Dec / 15 Mar at 15 / 45 / 75 / 100%; 234C is
         1%/month (3 months on the first three instalments, 1 on the last) on each shortfall.
       </p>

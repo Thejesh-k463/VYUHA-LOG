@@ -45,7 +45,7 @@ export function CalendarHeatmap({
       {/* ── Streaks & records ─────────────────────────────────────────────
           Consecutive TRADED days, not calendar days — a weekend or a day off
           neither extends nor breaks a run (lib/analytics/daily-streaks). */}
-      <div className="flex flex-wrap gap-2 text-[11px]">
+      <div className="flex flex-wrap gap-2 text-[0.6875rem]">
         {streaks.currentGreen > 0 && (
           <span className="inline-flex items-center gap-1 rounded-full bg-profit/10 px-2 py-0.5 text-profit">
             <Flame className="size-3" /> {streaks.currentGreen} green day{streaks.currentGreen === 1 ? "" : "s"} running

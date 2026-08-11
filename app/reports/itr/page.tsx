@@ -127,7 +127,7 @@ export default function ItrPackPage() {
                   </ul>
                 </div>
 
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[0.6875rem] text-muted-foreground">
                   Charges ({inr(p.speculative.charges + p.nonSpeculative.charges, { decimals: 0 })} on business
                   heads) are generally deductible business expenses; capital-gains charges
                   ({inr(p.capitalGains.charges, { decimals: 0 })}) adjust cost/consideration instead. Broker
@@ -179,7 +179,7 @@ export default function ItrPackPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold">FY {s.fy}</h3>
                     <Badge variant="accent">{s.itrForm} indicated</Badge>
-                    <span className="text-[11px] text-muted-foreground">{s.formReason}</span>
+                    <span className="text-[0.6875rem] text-muted-foreground">{s.formReason}</span>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -210,7 +210,7 @@ export default function ItrPackPage() {
                     </table>
                   </div>
 
-                  <ul className="space-y-1 text-[11px] text-muted-foreground">
+                  <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
                     {s.cautions.map((c, i) => (
                       <li key={i} className="flex gap-1.5"><Info className="mt-0.5 size-3 shrink-0" />{c}</li>
                     ))}

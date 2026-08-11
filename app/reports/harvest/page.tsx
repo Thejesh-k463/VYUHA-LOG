@@ -59,7 +59,7 @@ export default function HarvestPage() {
       />
       <div className="space-y-5 p-6">
         <ProGate>
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <KpiCard label="Realised STCG (FY)" value={inr(r.realisedStcg, { decimals: 0 })} valueClassName={r.realisedStcg >= 0 ? "text-profit" : "text-loss"} sub="short-term" />
           <KpiCard label="Realised LTCG (FY)" value={inr(r.realisedLtcg, { decimals: 0 })} valueClassName={r.realisedLtcg >= 0 ? "text-profit" : "text-loss"} sub={`₹1.25L exempt`} />
           <KpiCard label="Harvestable loss" value={inr(r.stLoss + r.ltLoss, { decimals: 0 })} valueClassName="text-loss" sub={`ST ${inr(r.stLoss, { decimals: 0 })} · LT ${inr(r.ltLoss, { decimals: 0 })}`} />
@@ -115,7 +115,7 @@ export default function HarvestPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Tax estimated at the
           post-23-Jul-2024 regime (STCG 20%, LTCG 12.5% beyond the ₹1.25L exemption). No wash-sale rule means you may
           re-buy, but a same-day round-trip can be questioned and changes your holding clock — informational, not advice.

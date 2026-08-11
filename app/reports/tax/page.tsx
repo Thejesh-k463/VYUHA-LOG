@@ -300,7 +300,7 @@ export default function TaxReportPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[0.6875rem] text-muted-foreground">
           <strong>Rates by sell date:</strong> before {RATE_CUTOVER_DATE} — STCG 15%, LTCG 10%, ₹1L annual LTCG
           exemption; on/after — STCG 20%, LTCG 12.5%, ₹1.25L exemption. A financial year straddling the cutover uses
           each trade&apos;s own date-based rate, gain-weighted into a single FY rate for the set-off calculation — an
