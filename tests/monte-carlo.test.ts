@@ -66,3 +66,28 @@ describe("monteCarloEquity", () => {
     expect(tight.riskOfRuinPct).toBeGreaterThanOrEqual(loose.riskOfRuinPct);
   });
 });
+
+describe("the memo (2026-08-11 perf wave)", () => {
+  it("identical inputs return the cached object; the uncached export recomputes", async () => {
+    const { monteCarloEquity, monteCarloEquityUncached } = await import("@/lib/analytics/monte-carlo");
+    const rets = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.008));
+    const a = monteCarloEquity(rets, 100000, { paths: 50 });
+    const b = monteCarloEquity(rets, 100000, { paths: 50 });
+    expect(b).toBe(a); // same OBJECT — the memo hit, no recompute
+    const c = monteCarloEquityUncached(rets, 100000, { paths: 50 });
+    expect(c).not.toBe(a); // fresh run…
+    expect(c).toEqual(a); // …but deterministic, so equal values
+  });
+
+  it("a REORDERED return series is a different key — a bootstrap's inputs are a sequence", async () => {
+    const { monteCarloEquity } = await import("@/lib/analytics/monte-carlo");
+    // Monotonic, so the reverse genuinely differs (an alternating pattern
+    // whose period divides length-1 is a PALINDROME — the first version of
+    // this test reversed into itself and "proved" a collision that never was).
+    const rets = Array.from({ length: 40 }, (_, i) => (i - 20) / 1000);
+    const reordered = [...rets].reverse();
+    const a = monteCarloEquity(rets, 100000, { paths: 50 });
+    const b = monteCarloEquity(reordered, 100000, { paths: 50 });
+    expect(b).not.toBe(a); // same length, same sum — must NOT collide
+  });
+});

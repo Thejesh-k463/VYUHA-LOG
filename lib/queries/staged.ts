@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
@@ -207,12 +207,7 @@ export interface StagedView {
  * Read-side view of a staged position. Returns null for a trade that has no
  * ladder, so callers can render the classic single-entry UI unchanged.
  */
-export function getStagedView(tradeId: number): StagedView | null {
-  const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
-  if (!t) return null;
-  const rows = loadLegs(tradeId);
-  if (rows.length === 0) return null;
-
+function buildStagedView(t: typeof tradesTable.$inferSelect, rows: DbLegRow[]): StagedView {
   const legs = toDomainLegs(rows);
   const dir = directionOf(t as never, legs);
   const position = summarise(legs, dir);
@@ -220,8 +215,44 @@ export function getStagedView(tradeId: number): StagedView | null {
   // never disagrees with the position row next to it.
   const markPrice = t.closingPrice ?? null;
   const mark = markToMarket(position, markPrice);
+  return { tradeId: t.id, staged: !!t.staged, direction: dir, legs: rows, position, mark, markPrice };
+}
 
-  return { tradeId, staged: !!t.staged, direction: dir, legs: rows, position, mark, markPrice };
+/**
+ * Staged views for MANY trades in two queries total. The per-id variant below
+ * costs 2 queries each; /risk called it in a loop over every open staged
+ * position (audited 2026-08-10 as the page's N+1). Ids without legs are
+ * simply absent from the result, same contract as the null return below.
+ */
+export function getStagedViews(tradeIds: number[]): Map<number, StagedView> {
+  const out = new Map<number, StagedView>();
+  if (tradeIds.length === 0) return out;
+  const ts = db.select().from(tradesTable).where(inArray(tradesTable.id, tradeIds)).all();
+  const legRows = db
+    .select()
+    .from(tradeLegs)
+    .where(inArray(tradeLegs.tradeId, tradeIds))
+    .orderBy(asc(tradeLegs.tradeId), asc(tradeLegs.seq), asc(tradeLegs.id))
+    .all() as DbLegRow[];
+  const legsByTrade = new Map<number, DbLegRow[]>();
+  for (const r of legRows) {
+    const arr = legsByTrade.get(r.tradeId) ?? [];
+    arr.push(r);
+    legsByTrade.set(r.tradeId, arr);
+  }
+  for (const t of ts) {
+    const rows = legsByTrade.get(t.id);
+    if (rows && rows.length > 0) out.set(t.id, buildStagedView(t, rows));
+  }
+  return out;
+}
+
+export function getStagedView(tradeId: number): StagedView | null {
+  const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
+  if (!t) return null;
+  const rows = loadLegs(tradeId);
+  if (rows.length === 0) return null;
+  return buildStagedView(t, rows);
 }
 
 export interface RebuildResult {

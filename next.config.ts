@@ -13,6 +13,12 @@ const nextConfig: NextConfig = {
   // "use no memo" and e2e/z-compiler-protocol.spec.ts stay — they are the
   // preconditions for the next attempt.
   reactCompiler: false,
+  // Back/forward navigations reuse the client router cache for 30s instead of
+  // refetching the full RSC payload (force-dynamic still re-renders on real
+  // navigations — this touches only the browser-side cache).
+  // (optimizePackageImports: lucide-react barrel-import rewriting lives here
+  // too in this Next version.)
+  experimental: { staleTimes: { dynamic: 30 }, optimizePackageImports: ["lucide-react"] },
   // Native / heavy server-only modules — never bundle; load from node_modules at runtime.
   serverExternalPackages: ["better-sqlite3", "pdf-parse"],
   // Self-contained server build for the Tauri desktop sidecar (`.next/standalone`).

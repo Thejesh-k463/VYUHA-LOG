@@ -4,9 +4,13 @@ import { db } from "@/lib/db";
 import { mtmPrices } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
 
+// ONE scan feeds both maps below: they used to run the identical
+// full-table read back to back on /risk and /reports/performance.
+const readMtmRows = cache(() => db.select().from(mtmPrices).orderBy(desc(mtmPrices.asOfDate)).all());
+
 /** Latest manual/EOD MTM price per symbol (upper-cased keys). */
 export const getMtmMap = cache((): Map<string, number> => {
-  const rows = db.select().from(mtmPrices).orderBy(desc(mtmPrices.asOfDate)).all();
+  const rows = readMtmRows();
   const m = new Map<string, number>();
   for (const r of rows) {
     const key = r.symbol.toUpperCase();
@@ -21,7 +25,7 @@ export const getMtmMap = cache((): Map<string, number> => {
  * option moneyness for physical-settlement; derivative rows hold premiums, not spot.
  */
 export const getSpotMap = cache((): Map<string, number> => {
-  const rows = db.select().from(mtmPrices).orderBy(desc(mtmPrices.asOfDate)).all();
+  const rows = readMtmRows();
   const m = new Map<string, number>();
   for (const r of rows) {
     const ts = (r.tradingsymbol ?? "").trim().toUpperCase();

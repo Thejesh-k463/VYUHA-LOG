@@ -12,7 +12,7 @@ import { getSectorMap } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { getStagedView } from "@/lib/queries/staged";
+import { getStagedViews } from "@/lib/queries/staged";
 import type { ExposureInput } from "@/lib/analytics/exposure";
 import {
   computeSettlement,
@@ -94,12 +94,12 @@ export default function RiskPage() {
   // Per-tranche stops for every staged position, resolved in one pass so the
   // exposure mapping below stays a pure lookup.
   const trancheMap = new Map<number, Array<{ qty: number; price: number; stop: number | null }>>();
-  for (const t of trades) {
-    if (!t.isOpen || !t.staged) continue;
-    const view = getStagedView(t.id);
-    if (!view) continue;
+  // Two queries for ALL staged positions, not two per position (the page's
+  // audited N+1 — 2026-08-10).
+  const stagedIds = trades.filter((t) => t.isOpen && t.staged).map((t) => t.id);
+  for (const [id, view] of getStagedViews(stagedIds)) {
     trancheMap.set(
-      t.id,
+      id,
       view.position.openTranches.map((tr) => ({ qty: tr.openQty, price: tr.price, stop: tr.effectiveSl })),
     );
   }
