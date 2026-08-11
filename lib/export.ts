@@ -1,4 +1,8 @@
-import * as XLSX from "xlsx";
+// xlsx is 399 KB and was statically imported here — which put it in the
+// client bundle of EVERY screen mounting ExportButtons (dashboard, /risk,
+// six reports…), for a function that only ever runs inside an onClick. The
+// dynamic import below defers it to the click; the await is imperceptible
+// against the file-save dialog that follows.
 
 export interface ExportColumn<T> {
   key: keyof T | string;
@@ -18,12 +22,13 @@ function toMatrix<T>(columns: ExportColumn<T>[], rows: T[]) {
 }
 
 /** Download the rows as CSV or XLSX (respects whatever filtered rows you pass). */
-export function exportRows<T>(
+export async function exportRows<T>(
   filename: string,
   columns: ExportColumn<T>[],
   rows: T[],
   format: "csv" | "xlsx",
 ) {
+  const XLSX = await import("xlsx");
   const data = toMatrix(columns, rows);
   const ws = XLSX.utils.json_to_sheet(data, { header: columns.map((c) => c.label) });
   if (format === "csv") {

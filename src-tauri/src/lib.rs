@@ -120,12 +120,15 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut ready = false;
-                for _ in 0..240 {
+                // 1200 x 50ms keeps the same 60s ceiling the 240 x 250ms loop had.
+                for _ in 0..1200 {
                     if TcpStream::connect(("127.0.0.1", PORT)).is_ok() {
                         ready = true;
                         break;
                     }
-                    std::thread::sleep(Duration::from_millis(250));
+                    // 50ms, not 250: the poll granularity IS the average wasted wait after
+                    // the port opens (~125ms at 250ms). Connecting is ~free on loopback.
+                    std::thread::sleep(Duration::from_millis(50));
                 }
                 if ready {
                     let h = handle.clone();

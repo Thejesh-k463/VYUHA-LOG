@@ -183,6 +183,10 @@ export const trades = sqliteTable(
     index("trades_is_open_idx").on(t.isOpen),
     index("trades_playbook_idx").on(t.playbookId),
     index("trades_account_idx").on(t.accountId),
+    // getTrades()'s exact filter+sort — WHERE account_id ORDER BY sell_date
+    // DESC, created_at DESC — as one composite, so the hottest query in the
+    // app (25 force-dynamic pages) is an index scan instead of a filesort.
+    index("trades_account_sell_created_idx").on(t.accountId, sql`${t.sellDate} DESC`, sql`${t.createdAt} DESC`),
   ],
 );
 
@@ -722,7 +726,6 @@ export const priceHistory = sqliteTable(
   },
   (t) => [
     uniqueIndex("price_history_symbol_date_uq").on(t.symbol, t.date),
-    index("price_history_symbol_idx").on(t.symbol),
     index("price_history_date_idx").on(t.date),
   ],
 );

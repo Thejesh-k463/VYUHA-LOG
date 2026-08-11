@@ -43,11 +43,40 @@ if (!fs.existsSync(dbPath) && fs.existsSync(seedTemplate)) {
 const migrationsDir = path.join(here, "drizzle");
 if (fs.existsSync(migrationsDir)) {
   try {
-    if (fs.existsSync(dbPath)) {
+    const { default: Database } = await import("better-sqlite3");
+    const { drizzle } = await import("drizzle-orm/better-sqlite3");
+    const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
+    const sqlite = new Database(dbPath);
+
+    // Back up ONLY when this launch will actually migrate. The old code copied
+    // the whole DB on EVERY launch — 30-150 ms of blocking I/O and up to ten
+    // retained copies (70-350 MB at a large book) protecting against nothing
+    // on the 99% of launches with no pending migration. The journal table is
+    // the same source drizzle's migrator reads, so the check and the migration
+    // cannot disagree about what "pending" means.
+    let appliedCount = 0;
+    try {
+      appliedCount = sqlite
+        .prepare("SELECT count(*) AS n FROM __drizzle_migrations")
+        .get().n;
+    } catch {
+      appliedCount = 0; // fresh database — everything is pending
+    }
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"),
+    );
+    const pending = journal.entries.length > appliedCount;
+
+    if (pending && fs.existsSync(dbPath)) {
       const backupsDir = path.join(dataDir, "backups");
       fs.mkdirSync(backupsDir, { recursive: true });
       const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      fs.copyFileSync(dbPath, path.join(backupsDir, `pre-migrate-${stamp}.sqlite`));
+      // The connection's own backup API, NOT copyFileSync: with WAL on, a raw
+      // file copy misses whatever still lives in the -wal sidecar — a backup
+      // taken after an unclean shutdown could silently lack committed trades.
+      // backup() checkpoints through the connection and is correct by
+      // construction.
+      await sqlite.backup(path.join(backupsDir, `pre-migrate-${stamp}.sqlite`));
       // Keep only the newest 10 pre-migrate backups.
       const old = fs
         .readdirSync(backupsDir)
@@ -57,14 +86,11 @@ if (fs.existsSync(migrationsDir)) {
       for (const f of old) fs.rmSync(path.join(backupsDir, f), { force: true });
       console.log("[vyuha] pre-migration backup →", backupsDir);
     }
-    const { default: Database } = await import("better-sqlite3");
-    const { drizzle } = await import("drizzle-orm/better-sqlite3");
-    const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
-    const sqlite = new Database(dbPath);
+
     migrate(drizzle(sqlite), { migrationsFolder: migrationsDir });
     refreshRateCards(sqlite, seedTemplate);
     sqlite.close();
-    console.log("[vyuha] migrations applied");
+    console.log(pending ? "[vyuha] migrations applied" : "[vyuha] schema current — no migration, no backup");
   } catch (e) {
     console.error("[vyuha] migration step failed:", e?.message ?? e);
   }

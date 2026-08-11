@@ -1,4 +1,6 @@
 import type { Broker } from "@/lib/domain/constants";
+import { IMPORT_SOURCES } from "./registry-meta";
+export { dropzoneHint, brokersWithNativeParser } from "./registry-meta";
 import type { ParseContext, ParsedFile } from "./types";
 import { detectDhanCsv, parseDhanCsv } from "./parsers/dhan-csv";
 import { detectDhanGtr, parseDhanGtr } from "./parsers/dhan-gtr";
@@ -34,16 +36,28 @@ export interface DetectedParser {
  * never outrank a real parser, but it must always be available, so an
  * unrecognised file becomes a column-mapping question instead of a refusal.
  */
-const REGISTRY: DetectedParser[] = [
-  { sourceId: "dhan-gtr", label: "Dhan Global Transaction Report (CSV)", confidence: 0, parse: parseDhanGtr, broker: "dhan", tab: "transactions", hint: "Dhan transaction report" },
-  { sourceId: "dhan-csv", label: "Dhan P&L (CSV)", confidence: 0, parse: parseDhanCsv, broker: "dhan", tab: "pnl", hint: "Dhan CSV" },
-  { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", confidence: 0, parse: parseGrowwXlsx, broker: "groww", tab: "pnl", hint: "Groww XLSX" },
-  { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", confidence: 0, parse: parseZerodha, broker: "zerodha", tab: "both", hint: "Zerodha tradebook / Console" },
-  { sourceId: "angelone", label: "Angel One Tradebook / P&L (CSV/XLSX)", confidence: 0, parse: parseAngelOne, broker: "angelone", tab: "both", hint: "Angel One" },
-  { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", confidence: 0, parse: parseUpstox, broker: "upstox", tab: "both", hint: "Upstox" },
-  { sourceId: "pdf", label: "Broker P&L (PDF)", confidence: 0, parse: parsePdf, broker: null, tab: "pnl", hint: "PDF statement" },
-  { sourceId: "generic-table", label: "Any other broker — map the columns (CSV/XLSX)", confidence: 0, parse: parseGenericTable, broker: null, tab: "both", hint: "any other broker (map columns)" },
-];
+// Built FROM the client-safe metadata leaf (registry-meta.ts), zipping each
+// entry with its parse function — so the copy the dropzone shows and the
+// parsers the server runs cannot drift apart. A meta entry without a parser
+// (or vice versa) throws at module init, which fails every test run loudly.
+const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | ParsedFile> = {
+  "dhan-gtr": parseDhanGtr,
+  "dhan-csv": parseDhanCsv,
+  "groww-xlsx": parseGrowwXlsx,
+  zerodha: parseZerodha,
+  angelone: parseAngelOne,
+  upstox: parseUpstox,
+  pdf: parsePdf,
+  "generic-table": parseGenericTable,
+};
+const REGISTRY: DetectedParser[] = IMPORT_SOURCES.map((m) => {
+  const parse = PARSERS[m.sourceId];
+  if (!parse) throw new Error(`registry-meta lists "${m.sourceId}" but detect.ts has no parser for it`);
+  return { ...m, confidence: 0, parse };
+});
+if (Object.keys(PARSERS).length !== IMPORT_SOURCES.length) {
+  throw new Error("detect.ts has a parser registry-meta.ts does not list — add the metadata entry");
+}
 
 const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "dhan-gtr": detectDhanGtr,
@@ -59,22 +73,6 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
 /** Every registered source, for UI copy and coverage tests. */
 export function importSources(): readonly DetectedParser[] {
   return REGISTRY;
-}
-
-/** Brokers with a dedicated, auto-detecting parser. */
-export function brokersWithNativeParser(): Broker[] {
-  return [...new Set(REGISTRY.map((p) => p.broker).filter((b): b is Broker => b != null))];
-}
-
-/**
- * The dropzone hint for a tab, generated from the registry so it cannot drift.
- * The generic source is always last — it is the fallback, not a headline.
- */
-export function dropzoneHint(tab: "transactions" | "pnl"): string {
-  const parts = REGISTRY.filter((p) => p.tab === tab || p.tab === "both")
-    .sort((a, b) => Number(a.sourceId === "generic-table") - Number(b.sourceId === "generic-table"))
-    .map((p) => p.hint);
-  return [...new Set(parts)].join(" · ");
 }
 
 /** Rank all parsers by confidence for the given file. Highest first. */

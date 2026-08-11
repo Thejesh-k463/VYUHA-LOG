@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { Upload, FileCheck2, AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import { dropzoneHint } from "@/lib/import/detect";
+import { dropzoneHint } from "@/lib/import/registry-meta"; // client-safe leaf — detect.ts drags every parser (incl. 399 KB xlsx) into the bundle
 import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
