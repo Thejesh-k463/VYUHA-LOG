@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.99.55 — fewer questions asked, none answered twice
+
+Performance wave two — the server side:
+
+- **Every navigation asks the database less.** The account resolver answered
+  the same question up to ten times per page; now once. The mark-to-market
+  table was scanned twice back-to-back on the risk screens; now once. The
+  risk cockpit asked two questions per staged position and one per held
+  symbol's price history; now two and one for the lot.
+- **The Monte Carlo stopped re-simulating a book that hadn't changed.** The
+  ruin analysis is deterministic, yet all 504,000 iterations reran on every
+  performance-report view — now computed once per book state.
+- **Back/forward is instant.** The browser reuses its own copy of a page for
+  30 seconds on history navigations instead of refetching everything.
+- **The honest one:** we attempted the React Compiler this wave, proved by
+  bisection that it introduces hydration mismatches on this toolchain (an
+  upstream JSX-whitespace bug — three errors flag-on, zero flag-off, same
+  page, same data), and rolled it back the same day. The attempt left the
+  codebase better guarded than before: the surfaces where a compiler fails
+  SILENTLY — table sorting, the sidebar's order restore, the live charge
+  preview — now have their own regression spec.
+
+
 ## v2.99.50 — built for the ten-thousand-trade book
 
 Performance wave one, everything measured before and after:
