@@ -13,7 +13,7 @@ import {
   EMOTION_LABELS,
   PLAYBOOK_RULE_PREFIX,
 } from "@/lib/analytics/behavior";
-import type { Trade } from "@/lib/db/schema";
+import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 
 export interface PlaybookOption {

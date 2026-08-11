@@ -28,7 +28,10 @@ import {
   type Segment,
 } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
-import type { Trade } from "@/lib/db/schema";
+// SlimTrade, aliased: every `Trade` annotation below narrows to the wire
+// projection (lib/domain/slim-trade.ts) without touching a single identifier.
+// A column/filter/dialog reading a dropped field is now a COMPILE error.
+import type { SlimTrade as Trade } from "@/lib/domain/slim-trade";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import {

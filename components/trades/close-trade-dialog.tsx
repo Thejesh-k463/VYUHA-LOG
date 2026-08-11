@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { DialogClose } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
 import { CheckCircle2, AlertCircle } from "lucide-react";
-import type { Trade } from "@/lib/db/schema";
+import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 
 interface PreviewResp {
   breakdown: { total: number };

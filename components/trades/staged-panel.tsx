@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
 import { Layers, Plus, Minus, Trash2, TriangleAlert, Info, ShieldAlert, Target } from "lucide-react";
-import type { Trade } from "@/lib/db/schema";
+import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import type { StagedView } from "@/lib/queries/staged";
 
 const today = () => new Date().toISOString().slice(0, 10);

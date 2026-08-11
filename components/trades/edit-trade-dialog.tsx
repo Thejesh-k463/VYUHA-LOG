@@ -10,7 +10,7 @@ import { inr } from "@/lib/format";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { CheckCircle2, AlertCircle } from "lucide-react";
-import type { Trade } from "@/lib/db/schema";
+import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 
 interface PreviewResp {
