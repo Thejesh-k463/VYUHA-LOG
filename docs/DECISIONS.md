@@ -27,6 +27,47 @@ Format:
 
 ---
 
+## 2026-08-10 — /trades at scale: slim projection + row virtualization, with numbers
+
+**Context:** Wave 1 of the performance program. At 252 real trades the full
+`Trade[]` RSC payload measured 1,632 B/row; extrapolated to a 10k-trade book
+that is ~16 MB per navigation plus ~500k DOM nodes — unusable.
+
+**Measured / found:**
+- Slim projection (`lib/domain/slim-trade.ts`, 43 of 74 columns — the union
+  the client tree actually reads): **907 B/row, a 44.4% cut** → ~8.7 MB at
+  10k rows (`scripts/measure-slim.mjs`, real data). The dialogs needed NO
+  fetch-on-open — `notes`/`ruleViolations` stay in the projection.
+- Virtualization (`data-table.tsx` `virtual` prop, @tanstack/react-virtual,
+  spacer-row technique): the DOM holds ~30 rows of 122 in e2e; selection,
+  per-view counts and "N of M" all read the full filtered array, so no
+  semantics moved. Sticky header/left survive because windowing is y-only.
+- Composite index `(account_id, sell_date DESC, created_at DESC)`:
+  EXPLAIN QUERY PLAN now reads `SEARCH trades USING INDEX
+  trades_account_sell_created_idx` — no temp B-tree sort — for the query ~25
+  force-dynamic pages run on every navigation.
+- xlsx (401 KB chunk): statically imported by `components/ui/export-button.tsx`
+  via `lib/export.ts`, it rode 13 routes' client bundles. After the dynamic
+  import, **0 page manifests reference the chunk** (verified against
+  `.next/server/app/**/page_client-reference-manifest.js`).
+- The e2e contract change that follows from virtualization: row counts in
+  specs must come from the "N of M" counter, never `tbody tr` counts —
+  rendered rows < population is the FEATURE. And any spec locating a row must
+  narrow (view/search) first: open rows sort below the window in the default
+  DESC order (SQLite NULLs sort last in DESC).
+
+**Why not the obvious thing:** TanStack `columnOrder`-style server pagination
+was rejected — it breaks the counts-reconcile contract and moves the
+derive-don't-sync filter architecture into SQL. Client virtualization alone
+was rejected — it leaves the 16 MB flight payload untouched.
+
+**Invalidated if:** a column starts reading a dropped field (tsc breaks — add
+it to SLIM_TRADE_FIELDS), or DataTable's rows stop being a uniform floor
+(measureElement already handles growth, but a variable-height redesign should
+re-check overscan).
+
+---
+
 ## 2026-08-10 — NSE surveillance files: two formats verified from real downloads; one file covers ASM+GSM+ESM
 
 **Context:** replacing the Surveillance screen's paste-only workflow with file

@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.99.50 — built for the ten-thousand-trade book
+
+Performance wave one, everything measured before and after:
+
+- **The Trades table now scales.** The client receives a 43-field wire
+  projection instead of all 74 columns (44% off the payload — ~8.7 MB instead
+  of ~16 MB at a 10,000-trade book), and the rows are **virtualized**: the DOM
+  holds only what fits your window, whatever the book's size. Selection,
+  per-view counts and the "N of M" counter still speak for the whole filtered
+  book — the semantics moved nowhere.
+- **The hottest query got its index.** Every navigation runs the same
+  account-filtered, date-sorted trades read on ~25 screens; a composite index
+  turns its filesort into an index scan.
+- **399 KB of spreadsheet library left every screen.** The XLSX exporter now
+  loads at the moment you click Export, not on every dashboard/report visit —
+  and the import screen stopped shipping the entire parser stack to the
+  browser for one line of hint text.
+- **Startup got honest.** The desktop app backed up your whole database on
+  every single launch, protecting against migrations that weren't happening —
+  and did it with a raw file copy that, under WAL, could miss just-committed
+  trades. It now backs up only when a migration is actually pending, through
+  SQLite's own backup API, and polls for the server five times faster.
+
+
 ## v2.99.45 — the forensic pass
 
 A three-lane audit of every feature against real application data — engines and
