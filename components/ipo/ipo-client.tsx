@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toaster";
 import { computeIpo, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
 import { inr, inrCompact, num } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, type Broker } from "@/lib/domain/constants";
@@ -67,7 +68,7 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
           <DialogTrigger asChild>
             <Button size="sm"><Plus className="size-4" /> Add IPO</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Add IPO</DialogTitle>
               <DialogDescription>P&L is computed from applied → listing → exit, with sell charges & tax estimate.</DialogDescription>
@@ -175,7 +176,7 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
       </p>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit IPO</DialogTitle>
             <DialogDescription>{editing?.name}</DialogDescription>
@@ -185,7 +186,7 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
       </Dialog>
 
       <Dialog open={!!statement} onOpenChange={(o) => !o && setStatement(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>P&L statement — {statement?.name}</DialogTitle>
             <DialogDescription>Application → allotment → listing → exit, with charges & tax.</DialogDescription>
@@ -314,7 +315,6 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
   const [exitDate, setExitDate] = React.useState(existing?.exitDate ?? "");
   const [notes, setNotes] = React.useState(existing?.notes ?? "");
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
 
   const ls = Number(lotSize) || 0;
   const allottedQty = allotted ? (Number(allottedLots) || 0) * ls : 0;
@@ -329,7 +329,7 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
   });
 
   async function save() {
-    setPending(true); setMsg(null);
+    setPending(true);
     try {
       const res = await fetch("/api/ipos", {
         method: "POST",
@@ -341,10 +341,12 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
         }),
       });
       const json = await res.json();
-      if (json.ok) onDone();
-      else setMsg(json.message ?? "Failed");
+      if (json.ok) {
+        toast.success("IPO saved.");
+        onDone();
+      } else toast.error(json.message ?? "Failed");
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -426,11 +428,10 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        {msg && <span className="mr-auto text-xs text-loss">{msg}</span>}
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button type="button" onClick={save} disabled={pending || !name}>{pending ? "Saving…" : existing ? "Save" : "Add IPO"}</Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

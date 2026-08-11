@@ -10,6 +10,8 @@ import { marginPenaltyByMonth, marginPenaltyTotal, type MarginPenaltyEntry } fro
 import { inr, num } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -77,37 +79,33 @@ export default function ChargesReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {marginPenaltyRows.length === 0 ? (
-              <p className="p-4 text-xs text-muted-foreground">
-                No margin-penalty entries logged yet. When your broker bills a peak-margin or short-margin shortfall
-                penalty (check your contract note), log it via Cash &amp; Ledger with type &ldquo;Margin
-                Penalty&rdquo; — it&apos;ll show up here as a leak, same as brokerage and STT.
-              </p>
+              <EmptyState
+                variant="journal"
+                title="No margin-penalty entries logged yet"
+                hint={<>When your broker bills a peak-margin or short-margin shortfall penalty (check your contract note), log it via Cash &amp; Ledger with type &ldquo;Margin Penalty&rdquo; — it&apos;ll show up here as a leak, same as brokerage and STT.</>}
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Month</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Entries</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Penalty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {marginPenaltyRows.map((r) => (
-                      <tr key={r.month} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{r.month}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{inr(r.total, { decimals: 0 })}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t border-border bg-card-hover/30 font-medium">
-                      <td className="px-2.5 py-2">Total</td>
-                      <td className="px-2.5 py-2 text-right tabular-nums">{marginPenaltyEntries.length}</td>
-                      <td className="px-2.5 py-2 text-right tabular-nums text-warning">{inr(marginPenaltyGrandTotal, { decimals: 0 })}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Month</ReportTh>
+                  <ReportTh align="right">Entries</ReportTh>
+                  <ReportTh align="right">Penalty</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {marginPenaltyRows.map((r) => (
+                    <ReportTr key={r.month}>
+                      <ReportTd className="font-medium">{r.month}</ReportTd>
+                      <ReportTd align="right">{r.count}</ReportTd>
+                      <ReportTd align="right" className="text-warning">{inr(r.total, { decimals: 0 })}</ReportTd>
+                    </ReportTr>
+                  ))}
+                  <tr className="border-t border-border bg-card-hover/30 font-medium">
+                    <ReportTd>Total</ReportTd>
+                    <ReportTd align="right">{marginPenaltyEntries.length}</ReportTd>
+                    <ReportTd align="right" className="text-warning">{inr(marginPenaltyGrandTotal, { decimals: 0 })}</ReportTd>
+                  </tr>
+                </tbody>
+              </ReportTable>
             )}
             <p className="p-4 pt-2 text-[0.6875rem] text-muted-foreground">
               No feed reports SEBI peak-margin snapshots — brokers bill the penalty separately from brokerage/STT,
@@ -129,49 +127,45 @@ function ChargeTable({ title, rows, totals, labelFor, exportName }: { title: str
         <ExportButtons filename={exportName} columns={COLS} rows={rows} />
       </CardHeader>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-y border-border text-left text-muted-foreground">
-                <th className="px-2.5 py-2 font-medium">{title.includes("segment") ? "Segment" : "Month"}</th>
-                <th className="px-2.5 py-2 text-right font-medium">Trades</th>
-                <th className="px-2.5 py-2 text-right font-medium">Turnover</th>
-                <th className="px-2.5 py-2 text-right font-medium">Brokerage</th>
-                <th className="px-2.5 py-2 text-right font-medium">STT/CTT</th>
-                <th className="px-2.5 py-2 text-right font-medium">Exchange</th>
-                <th className="px-2.5 py-2 text-right font-medium">MTF int.</th>
-                <th className="px-2.5 py-2 text-right font-medium">Total</th>
-                <th className="px-2.5 py-2 text-right font-medium">B/E %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.key} className="border-b border-rule">
-                  <td className="px-2.5 py-1.5 font-medium">{labelFor(r.key)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{num(r.turnover, 0)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{num(r.brokerage, 0)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{num(r.sttCtt, 0)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{num(r.exchangeTxn, 0)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{r.mtfInterest > 0 ? num(r.mtfInterest, 0) : "—"}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums font-medium text-warning">{num(r.total, 0)}</td>
-                  <td className="px-2.5 py-1.5 text-right tabular-nums">{r.breakevenPct}%</td>
-                </tr>
-              ))}
-              <tr className="border-t border-border bg-card-hover/30 font-medium">
-                <td className="px-2.5 py-2">Total</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{totals.count}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{num(totals.turnover, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{num(totals.brokerage, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{num(totals.sttCtt, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{num(totals.exchangeTxn, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{num(totals.mtfInterest, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums text-warning">{num(totals.total, 0)}</td>
-                <td className="px-2.5 py-2 text-right tabular-nums">{totals.breakevenPct}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <ReportTable>
+          <ReportThead>
+            <ReportTh>{title.includes("segment") ? "Segment" : "Month"}</ReportTh>
+            <ReportTh align="right">Trades</ReportTh>
+            <ReportTh align="right">Turnover</ReportTh>
+            <ReportTh align="right">Brokerage</ReportTh>
+            <ReportTh align="right">STT/CTT</ReportTh>
+            <ReportTh align="right">Exchange</ReportTh>
+            <ReportTh align="right">MTF int.</ReportTh>
+            <ReportTh align="right">Total</ReportTh>
+            <ReportTh align="right">B/E %</ReportTh>
+          </ReportThead>
+          <tbody>
+            {rows.map((r) => (
+              <ReportTr key={r.key}>
+                <ReportTd className="font-medium">{labelFor(r.key)}</ReportTd>
+                <ReportTd align="right">{r.count}</ReportTd>
+                <ReportTd align="right">{num(r.turnover, 0)}</ReportTd>
+                <ReportTd align="right">{num(r.brokerage, 0)}</ReportTd>
+                <ReportTd align="right">{num(r.sttCtt, 0)}</ReportTd>
+                <ReportTd align="right">{num(r.exchangeTxn, 0)}</ReportTd>
+                <ReportTd align="right">{r.mtfInterest > 0 ? num(r.mtfInterest, 0) : "—"}</ReportTd>
+                <ReportTd align="right" className="font-medium text-warning">{num(r.total, 0)}</ReportTd>
+                <ReportTd align="right">{r.breakevenPct}%</ReportTd>
+              </ReportTr>
+            ))}
+            <tr className="border-t border-border bg-card-hover/30 font-medium">
+              <ReportTd>Total</ReportTd>
+              <ReportTd align="right">{totals.count}</ReportTd>
+              <ReportTd align="right">{num(totals.turnover, 0)}</ReportTd>
+              <ReportTd align="right">{num(totals.brokerage, 0)}</ReportTd>
+              <ReportTd align="right">{num(totals.sttCtt, 0)}</ReportTd>
+              <ReportTd align="right">{num(totals.exchangeTxn, 0)}</ReportTd>
+              <ReportTd align="right">{num(totals.mtfInterest, 0)}</ReportTd>
+              <ReportTd align="right" className="text-warning">{num(totals.total, 0)}</ReportTd>
+              <ReportTd align="right">{totals.breakevenPct}%</ReportTd>
+            </tr>
+          </tbody>
+        </ReportTable>
       </CardContent>
     </Card>
   );

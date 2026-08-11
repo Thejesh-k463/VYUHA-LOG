@@ -8,7 +8,8 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { inr, inrCompact } from "@/lib/format";
 import type { CapitalSummary } from "@/lib/queries/capital";
-import { CheckCircle2, AlertCircle, TrendingUp } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
+import { TrendingUp } from "lucide-react";
 
 const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
@@ -16,10 +17,9 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
   const router = useRouter();
   const [bucket, setBucket] = React.useState<"equity" | "active">("equity");
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   async function compound() {
-    setPending(true); setMsg(null);
+    setPending(true);
     try {
       const res = await fetch("/api/capital", {
         method: "POST",
@@ -27,10 +27,12 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
         body: JSON.stringify({ bucket }),
       });
       const json = await res.json();
-      setMsg({ ok: !!json.ok, text: json.message ?? (json.ok ? "Done." : "Failed.") });
+      const text = json.message ?? (json.ok ? "Done." : "Failed.");
+      if (json.ok) toast.success(text);
+      else toast.error(text);
       if (json.ok) router.refresh();
     } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -77,11 +79,6 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
               </Button>
             </div>
           </div>
-          {msg && (
-            <div className={`mt-2 flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-              {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}{msg.text}
-            </div>
-          )}
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">

@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toaster";
 import { inr } from "@/lib/format";
 import { Upload, TriangleAlert } from "lucide-react";
 
@@ -53,11 +54,9 @@ export function LedgerImport() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function send(f: File, mode: "preview" | "commit") {
     setBusy(true);
-    setMsg(null);
     try {
       const fd = new FormData();
       fd.append("file", f);
@@ -65,12 +64,12 @@ export function LedgerImport() {
       const res = await fetch("/api/import/ledger", { method: "POST", body: fd });
       const data = await res.json();
       if (!data.ok) {
-        setMsg({ ok: false, text: data.message ?? "Import failed" });
+        toast.error(data.message ?? "Import failed");
         return null;
       }
       return data;
     } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
       return null;
     } finally {
       setBusy(false);
@@ -89,10 +88,9 @@ export function LedgerImport() {
     if (!file) return;
     const data = await send(file, "commit");
     if (!data) return;
-    setMsg({
-      ok: true,
-      text: `Imported ${data.added} ledger entries (${data.skipped} already present). Real MTF interest ${inr(data.mtf.actual, { decimals: 0 })}.`,
-    });
+    toast.success(
+      `Imported ${data.added} ledger entries (${data.skipped} already present). Real MTF interest ${inr(data.mtf.actual, { decimals: 0 })}.`,
+    );
     setPreview(null);
     setFile(null);
     if (inputRef.current) inputRef.current.value = "";
@@ -213,8 +211,6 @@ export function LedgerImport() {
             </Button>
           </div>
         )}
-
-        {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}
       </CardContent>
     </Card>
   );

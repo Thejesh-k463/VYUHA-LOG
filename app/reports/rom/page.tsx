@@ -11,6 +11,8 @@ import { romReport, capitalEfficiencyVerdict, type RomTrade, type RomGroup } fro
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { inr, num } from "@/lib/format";
 import { TriangleAlert, Info } from "lucide-react";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -18,43 +20,39 @@ const pnlCls = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "te
 const pct = (v: number | null, dp = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(dp)}%`);
 
 function GroupTable({ rows, empty }: { rows: RomGroup[]; empty: string }) {
-  if (rows.length === 0) return <p className="p-4 text-sm text-muted-foreground">{empty}</p>;
+  if (rows.length === 0) return <EmptyState variant="journal" title={empty} />;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[860px] text-sm">
-        <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left">Group</th>
-            <th className="px-3 py-2 text-right">Trades</th>
-            <th className="px-3 py-2 text-right">Net P&amp;L</th>
-            <th className="px-3 py-2 text-right">Capital deployed</th>
-            <th className="px-3 py-2 text-right">ROM</th>
-            <th className="px-3 py-2 text-right">ROM / day</th>
-            <th className="px-3 py-2 text-right">Annualised</th>
-            <th className="px-3 py-2 text-right">Avg days</th>
-            <th className="px-3 py-2 text-right">Win rate</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/50">
-          {rows.map((g) => (
-            <tr key={g.key} className="hover:bg-card-hover/50">
-              <td className="px-3 py-2 font-medium">{g.label}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums">{g.trades}</td>
-              <td className={`px-3 py-2 text-right font-mono tabular-nums ${pnlCls(g.netPnl)}`}>{inr(g.netPnl, { decimals: 0 })}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{inr(g.totalCapital, { decimals: 0 })}</td>
-              <td className={`px-3 py-2 text-right font-mono tabular-nums ${g.romPct != null ? pnlCls(g.romPct) : ""}`}>{pct(g.romPct)}</td>
-              <td className={`px-3 py-2 text-right font-mono tabular-nums ${g.romPerDayPct != null ? pnlCls(g.romPerDayPct) : ""}`}>{pct(g.romPerDayPct, 3)}</td>
-              <td className={`px-3 py-2 text-right font-mono tabular-nums ${g.annualisedDisplayPct != null ? pnlCls(g.annualisedDisplayPct) : ""}`}>
-                {pct(g.annualisedDisplayPct, 1)}
-                {g.annualisedIsExtrapolation && <span className="ml-1 text-[10px] text-warning" title="Linear extrapolation left the meaningful range — capped">*</span>}
-              </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{num(g.avgDaysHeld, 1)}</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{g.winRate == null ? "—" : `${g.winRate.toFixed(0)}%`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ReportTable minWidth={860}>
+      <ReportThead>
+        <ReportTh>Group</ReportTh>
+        <ReportTh align="right">Trades</ReportTh>
+        <ReportTh align="right">Net P&amp;L</ReportTh>
+        <ReportTh align="right">Capital deployed</ReportTh>
+        <ReportTh align="right">ROM</ReportTh>
+        <ReportTh align="right">ROM / day</ReportTh>
+        <ReportTh align="right">Annualised</ReportTh>
+        <ReportTh align="right">Avg days</ReportTh>
+        <ReportTh align="right">Win rate</ReportTh>
+      </ReportThead>
+      <tbody>
+        {rows.map((g) => (
+          <ReportTr key={g.key}>
+            <ReportTd className="font-medium">{g.label}</ReportTd>
+            <ReportTd align="right">{g.trades}</ReportTd>
+            <ReportTd align="right" className={pnlCls(g.netPnl)}>{inr(g.netPnl, { decimals: 0 })}</ReportTd>
+            <ReportTd align="right" muted>{inr(g.totalCapital, { decimals: 0 })}</ReportTd>
+            <ReportTd align="right" className={g.romPct != null ? pnlCls(g.romPct) : ""}>{pct(g.romPct)}</ReportTd>
+            <ReportTd align="right" className={g.romPerDayPct != null ? pnlCls(g.romPerDayPct) : ""}>{pct(g.romPerDayPct, 3)}</ReportTd>
+            <ReportTd align="right" className={g.annualisedDisplayPct != null ? pnlCls(g.annualisedDisplayPct) : ""}>
+              {pct(g.annualisedDisplayPct, 1)}
+              {g.annualisedIsExtrapolation && <span className="ml-1 text-[10px] text-warning" title="Linear extrapolation left the meaningful range — capped">*</span>}
+            </ReportTd>
+            <ReportTd align="right" muted>{num(g.avgDaysHeld, 1)}</ReportTd>
+            <ReportTd align="right" muted>{g.winRate == null ? "—" : `${g.winRate.toFixed(0)}%`}</ReportTd>
+          </ReportTr>
+        ))}
+      </tbody>
+    </ReportTable>
   );
 }
 
@@ -200,52 +198,45 @@ export default function RomReportPage() {
               <Badge variant="secondary">top 25 by ROM/day</Badge>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] text-sm">
-                  <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Symbol</th>
-                      <th className="px-3 py-2 text-left">Segment</th>
-                      <th className="px-3 py-2 text-left">Side</th>
-                      <th className="px-3 py-2 text-right">Net P&amp;L</th>
-                      <th className="px-3 py-2 text-right">Capital</th>
-                      <th className="px-3 py-2 text-right">Days</th>
-                      <th className="px-3 py-2 text-right">ROM</th>
-                      <th className="px-3 py-2 text-right">ROM / day</th>
-                      <th className="px-3 py-2 text-left">Basis</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
+              {report.rows.length === 0 ? (
+                <EmptyState variant="journal" title="No closed trades with establishable capital yet" />
+              ) : (
+                <ReportTable minWidth={820}>
+                  <ReportThead>
+                    <ReportTh>Symbol</ReportTh>
+                    <ReportTh>Segment</ReportTh>
+                    <ReportTh>Side</ReportTh>
+                    <ReportTh align="right">Net P&amp;L</ReportTh>
+                    <ReportTh align="right">Capital</ReportTh>
+                    <ReportTh align="right">Days</ReportTh>
+                    <ReportTh align="right">ROM</ReportTh>
+                    <ReportTh align="right">ROM / day</ReportTh>
+                    <ReportTh>Basis</ReportTh>
+                  </ReportThead>
+                  <tbody>
                     {report.rows.slice(0, 25).map((r) => (
-                      <tr key={r.id} className="hover:bg-card-hover/50">
-                        <td className="px-3 py-2 font-medium">{r.symbol}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{SEGMENT_LABELS[r.segment as Segment] ?? r.segment}</td>
-                        <td className="px-3 py-2">
+                      <ReportTr key={r.id}>
+                        <ReportTd className="font-medium">{r.symbol}</ReportTd>
+                        <ReportTd muted>{SEGMENT_LABELS[r.segment as Segment] ?? r.segment}</ReportTd>
+                        <ReportTd>
                           <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${r.side === "short" ? "bg-loss/15 text-loss" : "bg-profit/15 text-profit"}`}>
                             {r.side === "short" ? "Short" : "Long"}
                           </span>
-                        </td>
-                        <td className={`px-3 py-2 text-right font-mono tabular-nums ${pnlCls(r.netPnl)}`}>{inr(r.netPnl, { decimals: 0 })}</td>
-                        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{inr(r.capital, { decimals: 0 })}</td>
-                        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{r.daysHeld}</td>
-                        <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.romPct != null ? pnlCls(r.romPct) : ""}`}>{pct(r.romPct)}</td>
-                        <td className={`px-3 py-2 text-right font-mono tabular-nums ${r.romPerDayPct != null ? pnlCls(r.romPerDayPct) : ""}`}>{pct(r.romPerDayPct, 3)}</td>
-                        <td className="px-3 py-2 text-[0.6875rem] text-muted-foreground">
+                        </ReportTd>
+                        <ReportTd align="right" className={pnlCls(r.netPnl)}>{inr(r.netPnl, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" muted>{inr(r.capital, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" muted>{r.daysHeld}</ReportTd>
+                        <ReportTd align="right" className={r.romPct != null ? pnlCls(r.romPct) : ""}>{pct(r.romPct)}</ReportTd>
+                        <ReportTd align="right" className={r.romPerDayPct != null ? pnlCls(r.romPerDayPct) : ""}>{pct(r.romPerDayPct, 3)}</ReportTd>
+                        <ReportTd className="text-[0.6875rem] text-muted-foreground">
                           {r.basis}
                           {r.rateAssumed && <span className="ml-1 text-warning">⚠ assumed</span>}
-                        </td>
-                      </tr>
+                        </ReportTd>
+                      </ReportTr>
                     ))}
-                    {report.rows.length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="p-4 text-sm text-muted-foreground">
-                          No closed trades with establishable capital yet.
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
-                </table>
-              </div>
+                </ReportTable>
+              )}
             </CardContent>
           </Card>
 

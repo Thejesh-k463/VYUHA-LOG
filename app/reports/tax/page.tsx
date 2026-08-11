@@ -21,6 +21,10 @@ import { inr } from "@/lib/format";
 import { Info } from "lucide-react";
 import { ProGate } from "@/components/system/pro-gate";
 import { FmvEditor } from "@/components/reports/fmv-editor";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -155,38 +159,39 @@ export default function TaxReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {rows.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No closed trades yet.</p>
+              <EmptyState
+                variant="journal"
+                title="No closed trades yet"
+                hint="Tax figures appear once a trade is closed."
+                action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">FY</th>
-                      <th className="px-2.5 py-2 text-right font-medium">STCG (equity)</th>
-                      <th className="px-2.5 py-2 text-right font-medium">LTCG (equity)</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Intraday speculative</th>
-                      <th className="px-2.5 py-2 text-right font-medium">F&O business</th>
-                      <th className="px-2.5 py-2 text-right font-medium">F&O turnover</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Charges</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Net realised</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.fy} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.stcg)}`}>{inr(r.stcg, { decimals: 0 })}</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.ltcg)}`}>{inr(r.ltcg, { decimals: 0 })}</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.intradaySpeculative)}`}>{inr(r.intradaySpeculative, { decimals: 0 })}</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.fnoBusiness)}`}>{inr(r.fnoBusiness, { decimals: 0 })}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums text-muted-foreground">{inr(r.fnoTurnover, { decimals: 0 })}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{inr(r.charges, { decimals: 0 })}</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums font-medium ${pnl(r.totalRealised)}`}>{inr(r.totalRealised, { decimals: 0 })}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>FY</ReportTh>
+                  <ReportTh align="right">STCG (equity)</ReportTh>
+                  <ReportTh align="right">LTCG (equity)</ReportTh>
+                  <ReportTh align="right">Intraday speculative</ReportTh>
+                  <ReportTh align="right">F&O business</ReportTh>
+                  <ReportTh align="right">F&O turnover</ReportTh>
+                  <ReportTh align="right">Charges</ReportTh>
+                  <ReportTh align="right">Net realised</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {rows.map((r) => (
+                    <ReportTr key={r.fy}>
+                      <ReportTd className="font-medium">{r.fy}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.stcg)}>{inr(r.stcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.ltcg)}>{inr(r.ltcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.intradaySpeculative)}>{inr(r.intradaySpeculative, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(r.fnoBusiness)}>{inr(r.fnoBusiness, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" muted>{inr(r.fnoTurnover, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className="text-warning">{inr(r.charges, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={`font-medium ${pnl(r.totalRealised)}`}>{inr(r.totalRealised, { decimals: 0 })}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>
@@ -211,42 +216,42 @@ export default function TaxReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {timeline.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No closed equity-delivery/MTF trades yet.</p>
+              <EmptyState
+                variant="journal"
+                title="No closed equity-delivery/MTF trades yet"
+                action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">FY</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Taxable STCG</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Taxable LTCG</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Cap-gains tax due</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Speculative (biz)</th>
-                      <th className="px-2.5 py-2 text-right font-medium">F&O non-spec (biz)</th>
-                      <th className="px-2.5 py-2 text-right font-medium">B/f loss used</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Loss carried out</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {timeline.map((r) => {
-                      const usedTotal = r.usedCarryForward.reduce((s, u) => s + u.amount, 0);
-                      const carryTotal = r.newCarryForward.reduce((s, c) => s + c.amount, 0);
-                      return (
-                        <tr key={r.fy} className="border-b border-rule">
-                          <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums">{inr(r.taxableStcg, { decimals: 0 })}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums">{inr(r.taxableLtcg, { decimals: 0 })}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums font-medium text-warning">{inr(r.taxDue, { decimals: 0 })}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums text-muted-foreground">{inr(r.taxableSpeculative, { decimals: 0 })}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums text-muted-foreground">{inr(r.taxableNonSpeculative, { decimals: 0 })}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums text-profit">{usedTotal > 0 ? inr(usedTotal, { decimals: 0 }) : "—"}</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums text-loss">{carryTotal > 0 ? inr(carryTotal, { decimals: 0 }) : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>FY</ReportTh>
+                  <ReportTh align="right">Taxable STCG</ReportTh>
+                  <ReportTh align="right">Taxable LTCG</ReportTh>
+                  <ReportTh align="right">Cap-gains tax due</ReportTh>
+                  <ReportTh align="right">Speculative (biz)</ReportTh>
+                  <ReportTh align="right">F&O non-spec (biz)</ReportTh>
+                  <ReportTh align="right">B/f loss used</ReportTh>
+                  <ReportTh align="right">Loss carried out</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {timeline.map((r) => {
+                    const usedTotal = r.usedCarryForward.reduce((s, u) => s + u.amount, 0);
+                    const carryTotal = r.newCarryForward.reduce((s, c) => s + c.amount, 0);
+                    return (
+                      <ReportTr key={r.fy}>
+                        <ReportTd className="font-medium">{r.fy}</ReportTd>
+                        <ReportTd align="right">{inr(r.taxableStcg, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right">{inr(r.taxableLtcg, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className="font-medium text-warning">{inr(r.taxDue, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" muted>{inr(r.taxableSpeculative, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" muted>{inr(r.taxableNonSpeculative, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className="text-profit">{usedTotal > 0 ? inr(usedTotal, { decimals: 0 }) : "—"}</ReportTd>
+                        <ReportTd align="right" className="text-loss">{carryTotal > 0 ? inr(carryTotal, { decimals: 0 }) : "—"}</ReportTd>
+                      </ReportTr>
+                    );
+                  })}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>
@@ -270,32 +275,32 @@ export default function TaxReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {dividendRows.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No dividend ledger entries yet — post one via a Corporate Action.</p>
+              <EmptyState
+                variant="journal"
+                title="No dividend ledger entries yet"
+                hint="Post one via a Corporate Action."
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">FY</th>
-                      <th className="px-2.5 py-2 font-medium">Company</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Gross dividend</th>
-                      <th className="px-2.5 py-2 text-right font-medium">TDS (est.)</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Net credited</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dividendRows.map((r) => (
-                      <tr key={`${r.fy}-${r.symbol}`} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{r.fy}</td>
-                        <td className="px-2.5 py-1.5">{r.symbol}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums text-profit">{inr(r.grossTotal, { decimals: 0 })}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums text-warning">{r.thresholdCrossed ? inr(r.tdsTotal, { decimals: 0 }) : "—"}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums font-medium">{inr(r.netTotal, { decimals: 0 })}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>FY</ReportTh>
+                  <ReportTh>Company</ReportTh>
+                  <ReportTh align="right">Gross dividend</ReportTh>
+                  <ReportTh align="right">TDS (est.)</ReportTh>
+                  <ReportTh align="right">Net credited</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {dividendRows.map((r) => (
+                    <ReportTr key={`${r.fy}-${r.symbol}`}>
+                      <ReportTd className="font-medium">{r.fy}</ReportTd>
+                      <ReportTd>{r.symbol}</ReportTd>
+                      <ReportTd align="right" className="text-profit">{inr(r.grossTotal, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className="text-warning">{r.thresholdCrossed ? inr(r.tdsTotal, { decimals: 0 }) : "—"}</ReportTd>
+                      <ReportTd align="right" className="font-medium">{inr(r.netTotal, { decimals: 0 })}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>

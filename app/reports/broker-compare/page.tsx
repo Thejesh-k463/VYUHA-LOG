@@ -12,6 +12,10 @@ import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { mtfComparison } from "@/lib/analytics/mtf-compare";
 import { MtfBrokerSection } from "@/components/reports/mtf-broker-section";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +85,11 @@ export default function BrokerComparePage() {
       <div className="space-y-5 p-6">
         <ProGate>
         {report.tradeCount === 0 ? (
-          <Card><CardContent className="p-6 text-sm text-muted-foreground">No trades to compare yet.</CardContent></Card>
+          <EmptyState
+            variant="journal"
+            title="No trades to compare yet"
+            action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+          />
         ) : (
           <>
             <section className="grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -107,87 +115,83 @@ export default function BrokerComparePage() {
             <Card className="p-0">
               <CardHeader><CardTitle>Per-broker breakdown (same trades)</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-y border-border text-left text-muted-foreground">
-                        <th className="px-2.5 py-2 font-medium">Broker</th>
-                        <th className="px-2 py-2 text-right font-medium">Brokerage</th>
-                        <th className="px-2 py-2 text-right font-medium">Statutory</th>
-                        <th className="px-2 py-2 text-right font-medium">GST</th>
-                        <th className="px-2 py-2 text-right font-medium">DP</th>
-                        <th className="px-2 py-2 text-right font-medium">MTF int.</th>
-                        <th className="px-2 py-2 text-right font-medium">Plan fee</th>
-                        <th className="px-2.5 py-2 text-right font-medium">Total</th>
-                        <th className="px-2.5 py-2 text-right font-medium">vs recorded</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {report.brokers.map((b) => {
-                        const isCheapest = report.cheapest?.broker === b.broker && report.cheapest?.plan === b.plan;
-                        return (
-                          <tr key={`${b.broker}|${b.plan}`} className={`border-b border-rule ${isCheapest ? "bg-profit/5" : ""}`}>
-                            <td className="px-2.5 py-2 font-medium">
-                              <span className="inline-flex items-center gap-1.5">
-                                {label(b.broker)}
-                                {/* A paid plan is a different offer from the same
-                                    broker, so it gets its own row and its own
-                                    label — with the fee it costs. */}
-                                {b.plan !== "default" && (
-                                  <Badge variant="secondary" title={`₹${b.subscription} over ${b.months} month(s)`}>
-                                    {b.planLabel ?? b.plan} · paid
-                                  </Badge>
-                                )}
-                                {isCheapest ? <Badge variant="profit">cheapest</Badge> : null}
-                                {b.broker === currentBroker && b.plan === "default" ? <Badge variant="secondary">current</Badge> : null}
-                                {b.missing > 0 ? <Badge variant="warning">{b.missing} unpriced</Badge> : null}
-                              </span>
-                            </td>
-                            {/* A broker that priced NOTHING must not show ₹0 and a
-                                fat green "saving" — that reads as the cheapest
-                                option in the table when it is simply absent.
-                                Dashes say "no answer", which is the truth. */}
-                            {b.covered === 0 ? (
-                              <td className="px-2 py-2 text-center text-muted-foreground" colSpan={8}>
-                                no rates configured — nothing to compare
-                              </td>
-                            ) : (
-                              <>
-                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.brokerage, { decimals: 0 })}</td>
-                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.statutory, { decimals: 0 })}</td>
-                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.gst, { decimals: 0 })}</td>
-                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.dp, { decimals: 0 })}</td>
-                                <td className="px-2 py-2 text-right tabular-nums">{inr(b.mtfInterest, { decimals: 0 })}</td>
-                                {/* The fee belongs in the table, not a tooltip:
-                                    it is the whole reason a paid plan is a
-                                    decision rather than a free upgrade. */}
-                                <td className="px-2 py-2 text-right tabular-nums text-muted-foreground">
-                                  {b.subscription > 0
-                                    ? <span title={`₹${b.subscription / b.months}/month × ${b.months}`}>{inr(b.subscription, { decimals: 0 })}</span>
-                                    : "—"}
-                                </td>
-                                <td className="px-2.5 py-2 text-right font-semibold tabular-nums">
-                                  {inr(b.total, { decimals: 0 })}
-                                  {!b.complete && <span className="ml-1 text-warning" title="Partial — covers only the trades this broker can price">*</span>}
-                                </td>
-                                {/* vs recorded is only meaningful against a COMPLETE
-                                    total. A partial one compares your whole book
-                                    with part of theirs, which always flatters. */}
-                                <td className={`px-2.5 py-2 text-right tabular-nums ${!b.complete ? "text-muted-foreground" : b.vsActual < 0 ? "text-profit" : b.vsActual > 0 ? "text-loss" : ""}`}>
-                                  {!b.complete
-                                    ? "n/a"
-                                    : b.vsActual === 0
-                                      ? "—"
-                                      : `${b.vsActual < 0 ? "−" : "+"}${inr(Math.abs(b.vsActual), { decimals: 0 })}`}
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Broker</ReportTh>
+                    <ReportTh align="right">Brokerage</ReportTh>
+                    <ReportTh align="right">Statutory</ReportTh>
+                    <ReportTh align="right">GST</ReportTh>
+                    <ReportTh align="right">DP</ReportTh>
+                    <ReportTh align="right">MTF int.</ReportTh>
+                    <ReportTh align="right">Plan fee</ReportTh>
+                    <ReportTh align="right">Total</ReportTh>
+                    <ReportTh align="right">vs recorded</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {report.brokers.map((b) => {
+                      const isCheapest = report.cheapest?.broker === b.broker && report.cheapest?.plan === b.plan;
+                      return (
+                        <ReportTr key={`${b.broker}|${b.plan}`} className={isCheapest ? "bg-profit/5" : undefined}>
+                          <ReportTd className="font-medium">
+                            <span className="inline-flex items-center gap-1.5">
+                              {label(b.broker)}
+                              {/* A paid plan is a different offer from the same
+                                  broker, so it gets its own row and its own
+                                  label — with the fee it costs. */}
+                              {b.plan !== "default" && (
+                                <Badge variant="secondary" title={`₹${b.subscription} over ${b.months} month(s)`}>
+                                  {b.planLabel ?? b.plan} · paid
+                                </Badge>
+                              )}
+                              {isCheapest ? <Badge variant="profit">cheapest</Badge> : null}
+                              {b.broker === currentBroker && b.plan === "default" ? <Badge variant="secondary">current</Badge> : null}
+                              {b.missing > 0 ? <Badge variant="warning">{b.missing} unpriced</Badge> : null}
+                            </span>
+                          </ReportTd>
+                          {/* A broker that priced NOTHING must not show ₹0 and a
+                              fat green "saving" — that reads as the cheapest
+                              option in the table when it is simply absent.
+                              Dashes say "no answer", which is the truth. */}
+                          {b.covered === 0 ? (
+                            <ReportTd className="text-center" muted colSpan={8}>
+                              no rates configured — nothing to compare
+                            </ReportTd>
+                          ) : (
+                            <>
+                              <ReportTd align="right">{inr(b.brokerage, { decimals: 0 })}</ReportTd>
+                              <ReportTd align="right">{inr(b.statutory, { decimals: 0 })}</ReportTd>
+                              <ReportTd align="right">{inr(b.gst, { decimals: 0 })}</ReportTd>
+                              <ReportTd align="right">{inr(b.dp, { decimals: 0 })}</ReportTd>
+                              <ReportTd align="right">{inr(b.mtfInterest, { decimals: 0 })}</ReportTd>
+                              {/* The fee belongs in the table, not a tooltip:
+                                  it is the whole reason a paid plan is a
+                                  decision rather than a free upgrade. */}
+                              <ReportTd align="right" muted>
+                                {b.subscription > 0
+                                  ? <span title={`₹${b.subscription / b.months}/month × ${b.months}`}>{inr(b.subscription, { decimals: 0 })}</span>
+                                  : "—"}
+                              </ReportTd>
+                              <ReportTd align="right" className="font-semibold">
+                                {inr(b.total, { decimals: 0 })}
+                                {!b.complete && <span className="ml-1 text-warning" title="Partial — covers only the trades this broker can price">*</span>}
+                              </ReportTd>
+                              {/* vs recorded is only meaningful against a COMPLETE
+                                  total. A partial one compares your whole book
+                                  with part of theirs, which always flatters. */}
+                              <ReportTd align="right" className={!b.complete ? "text-muted-foreground" : b.vsActual < 0 ? "text-profit" : b.vsActual > 0 ? "text-loss" : undefined}>
+                                {!b.complete
+                                  ? "n/a"
+                                  : b.vsActual === 0
+                                    ? "—"
+                                    : `${b.vsActual < 0 ? "−" : "+"}${inr(Math.abs(b.vsActual), { decimals: 0 })}`}
+                              </ReportTd>
+                            </>
+                          )}
+                        </ReportTr>
+                      );
+                    })}
+                  </tbody>
+                </ReportTable>
               </CardContent>
             </Card>
 

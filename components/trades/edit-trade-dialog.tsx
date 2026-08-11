@@ -5,11 +5,11 @@ import { updateTradeAction, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { DialogClose } from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 
@@ -76,8 +76,13 @@ export function EditTradeDialog({
   const isShort = trade.sellQty > trade.buyQty;
 
   useEffect(() => {
-    if (state.ok) onDone();
-  }, [state.ok, onDone]);
+    if (state.ok) {
+      if (state.message) toast.success(state.message);
+      onDone();
+    } else if (state.message) {
+      toast.error(state.message);
+    }
+  }, [state, onDone]);
 
   const positionValue = (Number(buyQty) || 0) * (Number(avgBuyPrice) || 0);
   // The trade's ALREADY-PERSISTED funded amount is fixed — editing buyQty/price
@@ -259,16 +264,10 @@ export function EditTradeDialog({
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        {state.message && !state.ok && (
-          <span className="flex items-center gap-1.5 text-sm text-loss"><AlertCircle className="size-4" />{state.message}</span>
-        )}
-        {state.ok && (
-          <span className="flex items-center gap-1.5 text-sm text-profit"><CheckCircle2 className="size-4" />{state.message}</span>
-        )}
-      </div>
+        <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>
+      </DialogFooter>
     </form>
   );
 }

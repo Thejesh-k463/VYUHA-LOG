@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { LimitVerdict } from "@/components/risk/limit-verdict";
 import { SEGMENTS, SEGMENT_LABELS } from "@/lib/domain/constants";
 import type { LimitResult } from "@/lib/risk/limits";
+import { toast } from "@/components/ui/toaster";
 
 /** What-if pre-trade limits check — enter a prospective order, see pass/warn/block. */
 export function LimitCheck() {
@@ -18,11 +19,9 @@ export function LimitCheck() {
   const [qty, setQty] = useState("");
   const [result, setResult] = useState<LimitResult | null>(null);
   const [pending, setPending] = useState(false);
-  const [err, setErr] = useState("");
 
   async function check() {
     setPending(true);
-    setErr("");
     try {
       const res = await fetch("/api/risk/limits", {
         method: "POST",
@@ -30,8 +29,8 @@ export function LimitCheck() {
         body: JSON.stringify({ segment, symbol, entry, qty, stop: stop || null }),
       });
       const d = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
-      if (d.ok) setResult(d.result);
-      else { setResult(null); setErr(d.message ?? "Check failed"); }
+      if (d.ok) { setResult(d.result); toast.success("Check complete."); }
+      else { setResult(null); toast.error(d.message ?? "Check failed"); }
     } finally {
       setPending(false);
     }
@@ -67,7 +66,6 @@ export function LimitCheck() {
       </div>
       <div className="flex items-center gap-3">
         <Button size="sm" onClick={check} disabled={pending || !ready}>{pending ? "Checking…" : "Check limits"}</Button>
-        {err && <span className="text-xs text-loss">{err}</span>}
       </div>
       {result && <LimitVerdict result={result} />}
     </div>

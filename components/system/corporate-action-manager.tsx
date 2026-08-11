@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, CheckCircle2, AlertCircle, Play } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
+import { Trash2, Play } from "lucide-react";
 import type { CorporateAction } from "@/lib/db/schema";
 
 const PLACEHOLDER = `One event per line:  SYMBOL, TYPE, EX-DATE, RATIO_OR_AMOUNT
@@ -26,7 +28,6 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
   const [amount, setAmount] = useState("");
   const [text, setText] = useState("");
   const [pending, setPending] = useState<"" | "add" | "load" | "clear" | "file" | number>("");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function onFile(file: File) {
     const content = await file.text();
@@ -35,7 +36,6 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
 
   async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "apply", pendingKey: "" | "add" | "load" | "clear" | "file" | number) {
     setPending(pendingKey);
-    setMsg(null);
     const res = await fetch("/api/corporate-actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -43,7 +43,8 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     setPending("");
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "");
+    else toast.error(data.message ?? "");
     if (data.ok) {
       if (kind === "add") { setSymbol(""); setRatio(""); setAmount(""); }
       if (kind === "load") setText("");
@@ -102,12 +103,12 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
       </div>
 
       <div className="space-y-2">
-        <textarea
+        <Textarea
+          mono
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={4}
           placeholder={PLACEHOLDER}
-          className="w-full rounded-md border border-border bg-input p-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" variant="outline" disabled={pending !== "" || !text.trim()} onClick={() => post({ action: "load", text }, "load", "load")}>
@@ -142,12 +143,6 @@ export function CorporateActionManager({ rows }: { rows: CorporateAction[] }) {
           >
             {pending === "clear" ? "Clearing…" : `Clear${rows.length ? ` (${rows.length})` : ""}`}
           </Button>
-          {msg && (
-            <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-              {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-              {msg.text}
-            </span>
-          )}
         </div>
       </div>
 

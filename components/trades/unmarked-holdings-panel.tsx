@@ -15,10 +15,11 @@
  * the IPO supplies both and the holding rejoins every statistic.
  */
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toaster";
 import { pushTradeToIpoAction } from "@/app/trades/actions";
 import { inr } from "@/lib/format";
 import { Sparkles, TriangleAlert, X } from "lucide-react";
@@ -38,6 +39,11 @@ export interface UnmarkedHolding {
 
 function Row({ h }: { h: UnmarkedHolding }) {
   const [state, action, pending] = useActionState(pushTradeToIpoAction, { ok: false, message: "" });
+  useEffect(() => {
+    if (!state.message) return;
+    if (state.ok) toast.success(state.message);
+    else toast.error(state.message);
+  }, [state]);
   const linked = h.ipoId != null || state.ok;
   const noBasis = h.buyValue <= 0;
 
@@ -88,10 +94,6 @@ function Row({ h }: { h: UnmarkedHolding }) {
           or enter a current price to value it
         </a>
       </div>
-
-      {state.message && (
-        <p className={`text-[0.6875rem] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
-      )}
     </div>
   );
 }

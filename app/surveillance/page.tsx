@@ -7,7 +7,9 @@ import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { computeRestrictions, CATEGORY_META, type Severity } from "@/lib/analytics/restrictions";
 import { fmtDate } from "@/lib/format";
-import { ShieldAlert, ShieldCheck, Ban } from "lucide-react";
+import { ShieldAlert, Ban } from "lucide-react";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -83,56 +85,51 @@ export default function SurveillancePage() {
           </CardHeader>
           <CardContent className="p-0">
             {report.alerts.length === 0 ? (
-              <p className="flex items-center gap-2 px-5 py-4 text-sm text-muted-foreground">
-                <ShieldCheck className="size-4 text-profit" />
-                {loaded
-                  ? "None of your open positions are on the current restriction list."
-                  : "Load a restriction list below to check your open positions against it."}
-              </p>
+              <EmptyState
+                variant="playbook"
+                title={loaded ? "None of your open positions are on the current restriction list" : "No restriction list loaded"}
+                hint={loaded ? undefined : "Load a restriction list below to check your open positions against it."}
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Symbol</th>
-                      <th className="px-2 py-2 font-medium">Flags</th>
-                      <th className="px-2 py-2 font-medium">You hold</th>
-                      <th className="px-2.5 py-2 font-medium">What it means</th>
-                      <th className="px-2.5 py-2 font-medium">Severity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.alerts.map((a) => (
-                      <tr key={a.symbol} className={`border-b border-rule border-l-2 ${sevBorder[a.severity]}`}>
-                        <td className="px-2.5 py-2 font-medium text-foreground">{a.symbol}</td>
-                        <td className="px-2 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {a.categories.map((c) => (
-                              <Badge key={c} variant={c === "fno_ban" ? "loss" : c === "gsm" ? "warning" : "secondary"}>
-                                {CATEGORY_META[c].label}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-2 py-2">
-                          {a.isFno ? (
-                            <Badge variant="outline">F&O</Badge>
-                          ) : (
-                            <Badge variant="secondary">Equity</Badge>
-                          )}
-                        </td>
-                        <td className="px-2.5 py-2 text-muted-foreground">{a.guidance}</td>
-                        <td className="px-2.5 py-2">
-                          <span className="inline-flex items-center gap-1">
-                            {a.severity === "high" ? <Ban className="size-3 text-loss" /> : null}
-                            <Badge variant={sevBadge[a.severity]}>{a.severity}</Badge>
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Symbol</ReportTh>
+                  <ReportTh>Flags</ReportTh>
+                  <ReportTh>You hold</ReportTh>
+                  <ReportTh>What it means</ReportTh>
+                  <ReportTh>Severity</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {report.alerts.map((a) => (
+                    <ReportTr key={a.symbol} className={`border-l-2 ${sevBorder[a.severity]}`}>
+                      <ReportTd className="font-medium text-foreground">{a.symbol}</ReportTd>
+                      <ReportTd>
+                        <div className="flex flex-wrap gap-1">
+                          {a.categories.map((c) => (
+                            <Badge key={c} variant={c === "fno_ban" ? "loss" : c === "gsm" ? "warning" : "secondary"}>
+                              {CATEGORY_META[c].label}
+                            </Badge>
+                          ))}
+                        </div>
+                      </ReportTd>
+                      <ReportTd>
+                        {a.isFno ? (
+                          <Badge variant="outline">F&O</Badge>
+                        ) : (
+                          <Badge variant="secondary">Equity</Badge>
+                        )}
+                      </ReportTd>
+                      <ReportTd muted className="whitespace-normal">{a.guidance}</ReportTd>
+                      <ReportTd>
+                        <span className="inline-flex items-center gap-1">
+                          {a.severity === "high" ? <Ban className="size-3 text-loss" /> : null}
+                          <Badge variant={sevBadge[a.severity]}>{a.severity}</Badge>
+                        </span>
+                      </ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>
@@ -154,32 +151,28 @@ export default function SurveillancePage() {
               <CardTitle>Current list ({list.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="max-h-80 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-card">
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Symbol</th>
-                      <th className="px-2 py-2 font-medium">Category</th>
-                      <th className="px-2 py-2 font-medium">Stage / note</th>
-                      <th className="px-2.5 py-2 font-medium">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.map((r, i) => (
-                      <tr key={`${r.symbol}-${r.category}-${i}`} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
-                        <td className="px-2 py-1.5">
-                          <Badge variant={r.category === "fno_ban" ? "loss" : r.category === "gsm" ? "warning" : "secondary"}>
-                            {CATEGORY_META[r.category].label}
-                          </Badge>
-                        </td>
-                        <td className="px-2 py-1.5 text-muted-foreground">{r.stage ?? "—"}</td>
-                        <td className="px-2.5 py-1.5 text-muted-foreground">{r.source ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable maxHeight="20rem">
+                <ReportThead>
+                  <ReportTh>Symbol</ReportTh>
+                  <ReportTh>Category</ReportTh>
+                  <ReportTh>Stage / note</ReportTh>
+                  <ReportTh>Source</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {list.map((r, i) => (
+                    <ReportTr key={`${r.symbol}-${r.category}-${i}`}>
+                      <ReportTd className="font-medium">{r.symbol}</ReportTd>
+                      <ReportTd>
+                        <Badge variant={r.category === "fno_ban" ? "loss" : r.category === "gsm" ? "warning" : "secondary"}>
+                          {CATEGORY_META[r.category].label}
+                        </Badge>
+                      </ReportTd>
+                      <ReportTd muted>{r.stage ?? "—"}</ReportTd>
+                      <ReportTd muted>{r.source ?? "—"}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             </CardContent>
           </Card>
         )}

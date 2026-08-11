@@ -54,6 +54,37 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
     };
   }, [tradeId]);
 
+  /**
+   * A strip thumbnail, downscaled in the browser (P6, 2026-08-11).
+   *
+   * The API used to serve the FULL original — up to 8 MB, decoded to hundreds
+   * of MB of bitmap — to paint a 96×64 box; a screenshot-heavy journal dialog
+   * was the app's single worst memory event. The webview's canvas does the
+   * resize with zero dependencies (a native sharp module would have to ride
+   * the installer on every platform). Null when a thumbnail would be wrong:
+   * GIFs animate, tiny images ARE their own thumb, and a decode failure just
+   * means the GET falls back to the original byte-for-byte, as it always did.
+   */
+  async function makeThumb(file: File): Promise<Blob | null> {
+    if (file.type === "image/gif") return null;
+    try {
+      const bmp = await createImageBitmap(file);
+      const scale = Math.min(1, 480 / bmp.width);
+      if (scale >= 1) {
+        bmp.close();
+        return null;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bmp.width * scale);
+      canvas.height = Math.round(bmp.height * scale);
+      canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      bmp.close();
+      return await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.82));
+    } catch {
+      return null;
+    }
+  }
+
   async function upload(file: File) {
     setBusy(true);
     setErr(null);
@@ -61,6 +92,8 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
       const fd = new FormData();
       fd.set("tradeId", String(tradeId));
       fd.set("file", file);
+      const thumb = await makeThumb(file);
+      if (thumb) fd.set("thumb", thumb, "thumb.jpg");
       const res = await fetch("/api/trades/attachments", { method: "POST", body: fd });
       const data = await res.json();
       if (!data.ok) setErr(data.message ?? "Upload failed");
@@ -107,7 +140,7 @@ export function TradeAttachments({ tradeId, label = "Chart screenshots" }: { tra
                   {/* Thumbnails come from the local attachments API — next/image adds nothing for localhost blobs. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`/api/trades/attachments?id=${a.id}`}
+                    src={`/api/trades/attachments?id=${a.id}&thumb=1`}
                     alt={a.fileName}
                     className="h-16 w-24 rounded border border-border object-cover"
                   />

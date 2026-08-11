@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
 import type { RiskConfigRow } from "@/lib/db/schema";
 
 type Editable = Record<string, string | number>;
@@ -23,7 +23,6 @@ const FIELDS: { key: keyof RiskConfigRow; label: string }[] = [
 
 export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [edits, setEdits] = React.useState<Record<number, Editable>>(() => {
     const o: Record<number, Editable> = {};
     for (const r of rows) {
@@ -37,7 +36,6 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
 
   async function save() {
     setPending(true);
-    setMsg(null);
     try {
       const rowsPayload = Object.entries(edits).map(([id, fields]) => ({ id: Number(id), ...fields }));
       const res = await fetch("/api/settings", {
@@ -46,9 +44,11 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
         body: JSON.stringify({ type: "risk", rows: rowsPayload }),
       });
       const json = await res.json();
-      setMsg({ ok: !!json.ok, text: json.message ?? (json.ok ? "Saved." : "Failed.") });
+      const text = json.message ?? (json.ok ? "Saved." : "Failed.");
+      if (json.ok) toast.success(text);
+      else toast.error(text);
     } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -94,11 +94,6 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
           </div>
           <div className="flex items-center gap-3">
             <Button type="button" size="sm" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save risk rules"}</Button>
-            {msg && (
-              <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-                {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}{msg.text}
-              </span>
-            )}
           </div>
         </div>
       </CardContent>

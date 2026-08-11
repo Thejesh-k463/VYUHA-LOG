@@ -13,6 +13,8 @@ import { getPlaybooks } from "@/lib/queries/playbooks";
 import { inr } from "@/lib/format";
 import Link from "next/link";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -82,32 +84,29 @@ export default function DisciplineReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {breaches.breachedTrades === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                No trades were entered past a pre-trade limit warning or block. When you save a trade despite the
-                limits engine flagging it, the breached rules land here with what they cost.
-              </p>
+              <EmptyState
+                variant="playbook"
+                title="No trades entered past a limit warning or block"
+                hint="When you save a trade despite the limits engine flagging it, the breached rules land here with what they cost."
+              />
             ) : (
               <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-y border-border text-left text-muted-foreground">
-                        <th className="px-2.5 py-2 font-medium">Rule breached at entry</th>
-                        <th className="px-2 py-2 text-right font-medium">Trades</th>
-                        <th className="px-2.5 py-2 text-right font-medium">Closed net P&L</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {breaches.perRule.map((b) => (
-                        <tr key={b.rule} className="border-b border-rule">
-                          <td className="px-2.5 py-1.5 font-medium">{b.rule}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{b.trades}</td>
-                          <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(b.closedNet)}`}>{inr(b.closedNet, { decimals: 0 })}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Rule breached at entry</ReportTh>
+                    <ReportTh align="right">Trades</ReportTh>
+                    <ReportTh align="right">Closed net P&L</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {breaches.perRule.map((b) => (
+                      <ReportTr key={b.rule}>
+                        <ReportTd className="font-medium">{b.rule}</ReportTd>
+                        <ReportTd align="right">{b.trades}</ReportTd>
+                        <ReportTd align="right" className={pnlCls(b.closedNet)}>{inr(b.closedNet, { decimals: 0 })}</ReportTd>
+                      </ReportTr>
+                    ))}
+                  </tbody>
+                </ReportTable>
                 {breaches.openBreached > 0 && (
                   <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                     {breaches.openBreached} breached trade{breaches.openBreached === 1 ? " is" : "s are"} still open —
@@ -130,34 +129,31 @@ export default function DisciplineReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {ruleCosts.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                No playbook rules marked broken yet. When you journal a trade (📓) with a playbook attached,
-                its rules appear as a checklist — anything you untick lands here with what it cost you.
-              </p>
+              <EmptyState
+                variant="playbook"
+                title="No playbook rules marked broken yet"
+                hint="When you journal a trade (📓) with a playbook attached, its rules appear as a checklist — anything you untick lands here with what it cost you."
+              />
             ) : (
               <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-y border-border text-left text-muted-foreground">
-                        <th className="px-2.5 py-2 font-medium">Rule broken</th>
-                        <th className="px-2 py-2 text-right font-medium">Trades</th>
-                        <th className="px-2 py-2 text-right font-medium">Closed net P&L</th>
-                        <th className="px-2.5 py-2 text-right font-medium">Avg / trade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ruleCosts.map((r) => (
-                        <tr key={r.rule} className="border-b border-rule">
-                          <td className="px-2.5 py-1.5 font-medium">{r.rule}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{r.trades}</td>
-                          <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(r.closedNet)}`}>{inr(r.closedNet, { decimals: 0 })}</td>
-                          <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(r.avgNet ?? 0)}`}>{r.avgNet == null ? "—" : inr(r.avgNet, { decimals: 0 })}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Rule broken</ReportTh>
+                    <ReportTh align="right">Trades</ReportTh>
+                    <ReportTh align="right">Closed net P&L</ReportTh>
+                    <ReportTh align="right">Avg / trade</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {ruleCosts.map((r) => (
+                      <ReportTr key={r.rule}>
+                        <ReportTd className="font-medium">{r.rule}</ReportTd>
+                        <ReportTd align="right">{r.trades}</ReportTd>
+                        <ReportTd align="right" className={pnlCls(r.closedNet)}>{inr(r.closedNet, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className={pnlCls(r.avgNet ?? 0)}>{r.avgNet == null ? "—" : inr(r.avgNet, { decimals: 0 })}</ReportTd>
+                      </ReportTr>
+                    ))}
+                  </tbody>
+                </ReportTable>
                 <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                   Honest framing: this is the P&L of trades where you admitted breaking the rule — not proof
                   the break caused the loss. But a rule that keeps sitting at the top of this table is telling
@@ -173,38 +169,36 @@ export default function DisciplineReportPage() {
             <CardHeader><CardTitle>Playbook expectancy</CardTitle></CardHeader>
             <CardContent className="p-0">
               {pbStats.length === 0 || (pbStats.length === 1 && pbStats[0].playbookId === null) ? (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No trades tagged to a playbook yet — create setups under{" "}
-                  <Link href="/playbooks" className="text-accent underline-offset-2 hover:underline">Playbooks</Link>{" "}
-                  and tag trades from the journal (📓) button on Trades.
-                </p>
+                <EmptyState
+                  variant="playbook"
+                  title="No trades tagged to a playbook yet"
+                  hint={<>Create setups under{" "}
+                    <Link href="/playbooks" className="text-accent underline-offset-2 hover:underline">Playbooks</Link>{" "}
+                    and tag trades from the journal (📓) button on Trades.</>}
+                />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-y border-border text-left text-muted-foreground">
-                        <th className="px-2.5 py-2 font-medium">Playbook</th>
-                        <th className="px-2 py-2 text-right font-medium">Trades</th>
-                        <th className="px-2 py-2 text-right font-medium">Win rate</th>
-                        <th className="px-2 py-2 text-right font-medium">Net</th>
-                        <th className="px-2 py-2 text-right font-medium">Expectancy</th>
-                        <th className="px-2.5 py-2 text-right font-medium">Avg R</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pbStats.map((s) => (
-                        <tr key={s.playbookId ?? "untagged"} className="border-b border-rule">
-                          <td className={`px-2.5 py-1.5 font-medium ${s.playbookId == null ? "text-muted-foreground" : ""}`}>{s.name}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{s.trades}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{s.winRatePct}%</td>
-                          <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(s.net)}`}>{inr(s.net, { decimals: 0 })}</td>
-                          <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${pnlCls(s.expectancy)}`}>{inr(s.expectancy, { decimals: 0 })}/trade</td>
-                          <td className="px-2.5 py-1.5 text-right tabular-nums">{s.avgR == null ? "—" : `${s.avgR}R`}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Playbook</ReportTh>
+                    <ReportTh align="right">Trades</ReportTh>
+                    <ReportTh align="right">Win rate</ReportTh>
+                    <ReportTh align="right">Net</ReportTh>
+                    <ReportTh align="right">Expectancy</ReportTh>
+                    <ReportTh align="right">Avg R</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {pbStats.map((s) => (
+                      <ReportTr key={s.playbookId ?? "untagged"}>
+                        <ReportTd className={`font-medium ${s.playbookId == null ? "text-muted-foreground" : ""}`}>{s.name}</ReportTd>
+                        <ReportTd align="right">{s.trades}</ReportTd>
+                        <ReportTd align="right">{s.winRatePct}%</ReportTd>
+                        <ReportTd align="right" className={pnlCls(s.net)}>{inr(s.net, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className={`font-medium ${pnlCls(s.expectancy)}`}>{inr(s.expectancy, { decimals: 0 })}/trade</ReportTd>
+                        <ReportTd align="right">{s.avgR == null ? "—" : `${s.avgR}R`}</ReportTd>
+                      </ReportTr>
+                    ))}
+                  </tbody>
+                </ReportTable>
               )}
             </CardContent>
           </Card>
@@ -220,34 +214,31 @@ export default function DisciplineReportPage() {
             </CardHeader>
             <CardContent className="p-0">
               {mistakes.mistakeTrades === 0 ? (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No mistakes tagged yet. Honest tagging is the whole point — use the journal (📓) button on a trade
-                  and tick what went wrong. The rollup here shows what breaking your rules actually costs.
-                </p>
+                <EmptyState
+                  variant="journal"
+                  title="No mistakes tagged yet"
+                  hint="Honest tagging is the whole point — use the journal (📓) button on a trade and tick what went wrong. The rollup here shows what breaking your rules actually costs."
+                />
               ) : (
                 <>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-y border-border text-left text-muted-foreground">
-                          <th className="px-2.5 py-2 font-medium">Mistake</th>
-                          <th className="px-2 py-2 text-right font-medium">Trades</th>
-                          <th className="px-2 py-2 text-right font-medium">Net P&L</th>
-                          <th className="px-2.5 py-2 text-right font-medium">Avg / trade</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {mistakes.perTag.map((m) => (
-                          <tr key={m.tag} className="border-b border-rule">
-                            <td className="px-2.5 py-1.5 font-medium">{m.label}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums">{m.trades}</td>
-                            <td className={`px-2 py-1.5 text-right tabular-nums ${pnlCls(m.net)}`}>{inr(m.net, { decimals: 0 })}</td>
-                            <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(m.avgNet)}`}>{inr(m.avgNet, { decimals: 0 })}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ReportTable>
+                    <ReportThead>
+                      <ReportTh>Mistake</ReportTh>
+                      <ReportTh align="right">Trades</ReportTh>
+                      <ReportTh align="right">Net P&L</ReportTh>
+                      <ReportTh align="right">Avg / trade</ReportTh>
+                    </ReportThead>
+                    <tbody>
+                      {mistakes.perTag.map((m) => (
+                        <ReportTr key={m.tag}>
+                          <ReportTd className="font-medium">{m.label}</ReportTd>
+                          <ReportTd align="right">{m.trades}</ReportTd>
+                          <ReportTd align="right" className={pnlCls(m.net)}>{inr(m.net, { decimals: 0 })}</ReportTd>
+                          <ReportTd align="right" className={pnlCls(m.avgNet)}>{inr(m.avgNet, { decimals: 0 })}</ReportTd>
+                        </ReportTr>
+                      ))}
+                    </tbody>
+                  </ReportTable>
                   <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
                     Clean trades average <span className={`font-medium ${pnlCls(mistakes.cleanExpectancy)}`}>{inr(mistakes.cleanExpectancy, { decimals: 0 })}</span>/trade
                     ({mistakes.cleanTrades}); mistake-tagged trades average{" "}
@@ -264,28 +255,24 @@ export default function DisciplineReportPage() {
           <Card className="p-0">
             <CardHeader><CardTitle>Trading by emotion</CardTitle></CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Emotion at entry</th>
-                      <th className="px-2 py-2 text-right font-medium">Trades</th>
-                      <th className="px-2 py-2 text-right font-medium">Win rate</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Net P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {emotions.map((e) => (
-                      <tr key={e.tag} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{e.label}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{e.trades}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{e.winRatePct}%</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnlCls(e.net)}`}>{inr(e.net, { decimals: 0 })}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Emotion at entry</ReportTh>
+                  <ReportTh align="right">Trades</ReportTh>
+                  <ReportTh align="right">Win rate</ReportTh>
+                  <ReportTh align="right">Net P&L</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {emotions.map((e) => (
+                    <ReportTr key={e.tag}>
+                      <ReportTd className="font-medium">{e.label}</ReportTd>
+                      <ReportTd align="right">{e.trades}</ReportTd>
+                      <ReportTd align="right">{e.winRatePct}%</ReportTd>
+                      <ReportTd align="right" className={pnlCls(e.net)}>{inr(e.net, { decimals: 0 })}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             </CardContent>
           </Card>
         )}
@@ -297,36 +284,35 @@ export default function DisciplineReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             {weeks.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No closed dated trades yet.</p>
+              <EmptyState
+                variant="journal"
+                title="No closed dated trades yet"
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Week</th>
-                      <th className="px-2.5 py-2 font-medium">Starting</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Trades</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Risk cap respected</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Daily stop respected</th>
-                      <th className="px-2.5 py-2 text-right font-medium">SL/target planned</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {weeks.map((w) => (
-                      <tr key={w.week} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{w.week}</td>
-                        <td className="px-2.5 py-1.5 text-muted-foreground">{w.weekStart}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums">{w.trades}</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums">{w.riskCapRespectedPct}%</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums">{w.dailyStopRespectedPct}%</td>
-                        <td className="px-2.5 py-1.5 text-right tabular-nums">{w.planningPct}%</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums font-semibold ${scoreColor(w.score)}`}>{w.score}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Week</ReportTh>
+                  <ReportTh>Starting</ReportTh>
+                  <ReportTh align="right">Trades</ReportTh>
+                  <ReportTh align="right">Risk cap respected</ReportTh>
+                  <ReportTh align="right">Daily stop respected</ReportTh>
+                  <ReportTh align="right">SL/target planned</ReportTh>
+                  <ReportTh align="right">Score</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {weeks.map((w) => (
+                    <ReportTr key={w.week}>
+                      <ReportTd className="font-medium">{w.week}</ReportTd>
+                      <ReportTd muted>{w.weekStart}</ReportTd>
+                      <ReportTd align="right">{w.trades}</ReportTd>
+                      <ReportTd align="right">{w.riskCapRespectedPct}%</ReportTd>
+                      <ReportTd align="right">{w.dailyStopRespectedPct}%</ReportTd>
+                      <ReportTd align="right">{w.planningPct}%</ReportTd>
+                      <ReportTd align="right" className={`font-semibold ${scoreColor(w.score)}`}>{w.score}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>

@@ -8,6 +8,8 @@ import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -76,41 +78,38 @@ export default function HarvestPage() {
           </CardHeader>
           <CardContent className="p-0">
             {lossCandidates.length === 0 ? (
-              <p className="p-5 text-sm text-muted-foreground">
-                No open equity positions are showing an unrealised loss. (F&O and intraday are business income and not
-                eligible for capital-gains harvesting.)
-              </p>
+              <EmptyState
+                variant="journal"
+                title="No open equity positions showing an unrealised loss"
+                hint="F&O and intraday are business income and not eligible for capital-gains harvesting."
+              />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-left text-muted-foreground">
-                      <th className="px-2.5 py-2 font-medium">Symbol</th>
-                      <th className="px-2 py-2 font-medium">Term</th>
-                      <th className="px-2 py-2 text-right font-medium">Qty</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Unrealised loss</th>
-                      <th className="px-2.5 py-2 text-right font-medium">Offsets now</th>
-                      <th className="px-2.5 py-2 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lossCandidates.map((c) => (
-                      <tr key={c.id} className="border-b border-rule">
-                        <td className="px-2.5 py-2 font-medium">{c.symbol}</td>
-                        <td className="px-2 py-2"><Badge variant="outline">{c.term}</Badge></td>
-                        <td className="px-2 py-2 text-right tabular-nums">{c.qty}</td>
-                        <td className="px-2.5 py-2 text-right tabular-nums text-loss">{inr(c.loss, { decimals: 0 })}</td>
-                        <td className="px-2.5 py-2 text-right tabular-nums">{c.offsetAmount > 0 ? inr(c.offsetAmount, { decimals: 0 }) : "—"}</td>
-                        <td className="px-2.5 py-2">
-                          <Badge variant={statusBadge[c.status]}>
-                            {c.status === "offsets" ? "harvest — offsets gains" : c.status === "partial" ? "harvest — partial offset" : "harvest — carries forward"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Symbol</ReportTh>
+                  <ReportTh>Term</ReportTh>
+                  <ReportTh align="right">Qty</ReportTh>
+                  <ReportTh align="right">Unrealised loss</ReportTh>
+                  <ReportTh align="right">Offsets now</ReportTh>
+                  <ReportTh>Action</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {lossCandidates.map((c) => (
+                    <ReportTr key={c.id}>
+                      <ReportTd className="font-medium">{c.symbol}</ReportTd>
+                      <ReportTd><Badge variant="outline">{c.term}</Badge></ReportTd>
+                      <ReportTd align="right">{c.qty}</ReportTd>
+                      <ReportTd align="right" className="text-loss">{inr(c.loss, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right">{c.offsetAmount > 0 ? inr(c.offsetAmount, { decimals: 0 }) : "—"}</ReportTd>
+                      <ReportTd>
+                        <Badge variant={statusBadge[c.status]}>
+                          {c.status === "offsets" ? "harvest — offsets gains" : c.status === "partial" ? "harvest — partial offset" : "harvest — carries forward"}
+                        </Badge>
+                      </ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             )}
           </CardContent>
         </Card>

@@ -9,6 +9,8 @@ import { DeleteImportDialog } from "./delete-import-dialog";
 import { BROKER_LABELS, type Broker } from "@/lib/domain/constants";
 import { fmtDate } from "@/lib/format";
 import { Trash2 } from "lucide-react";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export interface ImportBatchRow {
   id: number;
@@ -24,42 +26,40 @@ export interface ImportBatchRow {
 export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
   const [target, setTarget] = React.useState<ImportBatchRow | null>(null);
 
-  if (batches.length === 0) return <p className="text-sm text-muted-foreground">No imports yet.</p>;
+  if (batches.length === 0) return <EmptyState variant="journal" title="No imports yet" />;
 
   return (
     <>
-      <div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="py-2 pr-4 font-medium">When</th>
-            <th className="py-2 pr-4 font-medium">Broker</th>
-            <th className="py-2 pr-4 font-medium">File</th>
-            <th className="py-2 pr-4 text-right font-medium">Rows</th>
-            <th className="py-2 pr-4 text-right font-medium">Added</th>
-            <th className="py-2 pr-4 text-right font-medium">Skipped</th>
-            <th className="py-2 pr-4 text-right font-medium">Trades now</th>
-            <th className="py-2 font-medium" aria-label="Actions" />
-          </tr>
-        </thead>
+      <ReportTable>
+        <ReportThead>
+          <ReportTh>When</ReportTh>
+          <ReportTh>Broker</ReportTh>
+          <ReportTh>File</ReportTh>
+          <ReportTh align="right">Rows</ReportTh>
+          <ReportTh align="right">Added</ReportTh>
+          <ReportTh align="right">Skipped</ReportTh>
+          <ReportTh align="right">Trades now</ReportTh>
+          <ReportTh aria-label="Actions" />
+        </ReportThead>
         <tbody>
           {batches.map((b) => (
-            <tr key={b.id} className="border-b border-rule">
-              <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(b.importedAt)}</td>
-              <td className="py-1.5 pr-4">{BROKER_LABELS[b.broker as Broker] ?? b.broker}</td>
-              <td className="py-1.5 pr-4 font-mono text-xs">{b.fileName}</td>
-              <td className="py-1.5 pr-4 text-right tabular-nums">{b.rowCount}</td>
-              <td className="py-1.5 pr-4 text-right tabular-nums text-profit">{b.addedCount}</td>
-              <td className="py-1.5 pr-4 text-right tabular-nums text-muted-foreground">{b.skippedCount}</td>
-              <td className="py-1.5 pr-4 text-right tabular-nums">{b.tradeCount > 0 ? b.tradeCount : <Badge variant="outline">none</Badge>}</td>
-              <td className="py-1.5 text-right">
+            <ReportTr key={b.id}>
+              <ReportTd muted>{fmtDate(b.importedAt)}</ReportTd>
+              <ReportTd>{BROKER_LABELS[b.broker as Broker] ?? b.broker}</ReportTd>
+              <ReportTd className="font-mono text-xs">{b.fileName}</ReportTd>
+              <ReportTd align="right">{b.rowCount}</ReportTd>
+              <ReportTd align="right" className="text-profit">{b.addedCount}</ReportTd>
+              <ReportTd align="right" muted>{b.skippedCount}</ReportTd>
+              <ReportTd align="right">{b.tradeCount > 0 ? b.tradeCount : <Badge variant="outline">none</Badge>}</ReportTd>
+              <ReportTd className="text-right">
                 <Button size="sm" variant="ghost" title="Delete this import" onClick={() => setTarget(b)}>
                   <Trash2 className="size-3.5 text-loss" />
                 </Button>
-              </td>
-            </tr>
+              </ReportTd>
+            </ReportTr>
           ))}
         </tbody>
-      </table></div>
+      </ReportTable>
       <DeleteImportDialog batch={target} open={target != null} onOpenChange={(v) => !v && setTarget(null)} />
     </>
   );

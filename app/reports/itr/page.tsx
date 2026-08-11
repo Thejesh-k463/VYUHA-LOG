@@ -11,6 +11,10 @@ import { itrScheduleByFy, scheduleExportRows } from "@/lib/analytics/itr-schedul
 import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
 import { inr } from "@/lib/format";
 import { AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +104,12 @@ export default function ItrPackPage() {
         </div>
 
         {packs.length === 0 ? (
-          <Card><CardContent className="p-6 text-sm text-muted-foreground">No closed trades yet — the pack builds itself as you trade.</CardContent></Card>
+          <EmptyState
+            variant="journal"
+            title="No closed trades yet"
+            hint="The pack builds itself as you trade."
+            action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+          />
         ) : (
           packs.map((p) => (
             <Card key={p.fy} className="p-0">
@@ -182,33 +191,29 @@ export default function ItrPackPage() {
                     <span className="text-[0.6875rem] text-muted-foreground">{s.formReason}</span>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
-                          <th className="py-1.5 pr-3 font-medium">Schedule</th>
-                          <th className="py-1.5 pr-3 font-medium">Item</th>
-                          <th className="py-1.5 pr-3 font-medium">Description</th>
-                          <th className="py-1.5 pr-3 text-right font-medium">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {s.lines.map((l, i) => (
-                          <tr key={`${l.code}-${i}`} className={`border-b border-rule ${l.amount === null ? "bg-card-hover/30" : ""}`}>
-                            <td className="py-1.5 pr-3 text-muted-foreground">{l.schedule}</td>
-                            <td className="py-1.5 pr-3 font-mono">{l.code}</td>
-                            <td className="py-1.5 pr-3">
-                              {l.amount === null ? <span className="font-medium">{l.label}</span> : l.label}
-                              {l.note && <p className="text-[10px] text-muted-foreground">{l.note}</p>}
-                            </td>
-                            <td className="py-1.5 pr-3 text-right tabular-nums">
-                              {l.amount === null ? <span className="text-muted-foreground">—</span> : inr(l.amount, { decimals: 0 })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ReportTable>
+                    <ReportThead>
+                      <ReportTh>Schedule</ReportTh>
+                      <ReportTh>Item</ReportTh>
+                      <ReportTh>Description</ReportTh>
+                      <ReportTh align="right">Amount</ReportTh>
+                    </ReportThead>
+                    <tbody>
+                      {s.lines.map((l, i) => (
+                        <ReportTr key={`${l.code}-${i}`} className={l.amount === null ? "bg-card-hover/30" : undefined}>
+                          <ReportTd muted>{l.schedule}</ReportTd>
+                          <ReportTd className="font-mono">{l.code}</ReportTd>
+                          <ReportTd className="whitespace-normal">
+                            {l.amount === null ? <span className="font-medium">{l.label}</span> : l.label}
+                            {l.note && <p className="text-[10px] text-muted-foreground">{l.note}</p>}
+                          </ReportTd>
+                          <ReportTd align="right">
+                            {l.amount === null ? <span className="text-muted-foreground">—</span> : inr(l.amount, { decimals: 0 })}
+                          </ReportTd>
+                        </ReportTr>
+                      ))}
+                    </tbody>
+                  </ReportTable>
 
                   <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
                     {s.cautions.map((c, i) => (

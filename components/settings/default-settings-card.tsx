@@ -10,6 +10,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toaster";
 import { RotateCcw, Save } from "lucide-react";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -22,14 +23,13 @@ const FIELD_LABELS: Record<string, string> = {
 export function DefaultSettingsCard() {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [diff, setDiff] = React.useState<{ fields: string[]; capturedAt: string | null } | null>(null);
 
   const call = (action: "save" | "restore") => {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     fetch("/api/settings-baseline", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) })
       .then((r) => r.json())
-      .then((d) => { setMsg({ ok: !!d.ok, text: d.message ?? "" }); if (d.ok) { setDiff(null); router.refresh(); } })
+      .then((d) => { if (d.ok) toast.success(d.message ?? ""); else toast.error(d.message ?? ""); if (d.ok) { setDiff(null); router.refresh(); } })
       .finally(() => setBusy(false));
   };
 
@@ -70,7 +70,6 @@ export function DefaultSettingsCard() {
             <Save className="mr-1.5 size-3.5" /> Save current as my default
           </Button>
         </div>
-        {msg && <p className={msg.ok ? "text-profit" : "text-loss"}>{msg.text}</p>}
       </CardContent>
     </Card>
   );

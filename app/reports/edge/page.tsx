@@ -14,6 +14,10 @@ import { KpiCard } from "@/components/kpi-card";
 import { getIndexMembershipMap } from "@/lib/queries/instruments";
 import { themeEdge, THEME_MIN_SAMPLE } from "@/lib/analytics/theme-edge";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -82,11 +86,13 @@ function ThemeEdgeCard({ report }: { report: ReturnType<typeof themeEdge> }) {
     return (
       <Card>
         <CardHeader><CardTitle>By NSE theme</CardTitle></CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          No thematic tags yet. Load the bundled NSE map on{" "}
-          <span className="text-foreground">Instruments</span> (one click) — it records which
-          thematic indices each of your symbols belongs to, and this card answers where your
-          expectancy actually lives: Defence, Railways PSU, EV, Digital…
+        <CardContent>
+          <EmptyState
+            variant="chart"
+            title="No thematic tags yet"
+            hint={<>Load the bundled NSE map on <span className="text-foreground">Instruments</span> (one click) — it records which thematic indices each of your symbols belongs to, and this card answers where your expectancy actually lives: Defence, Railways PSU, EV, Digital…</>}
+            action={<Button asChild size="sm" variant="outline"><Link href="/instruments">Open Instruments</Link></Button>}
+          />
         </CardContent>
       </Card>
     );
@@ -102,39 +108,35 @@ function ThemeEdgeCard({ report }: { report: ReturnType<typeof themeEdge> }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="px-2.5 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Theme</th>
-                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Trades</th>
-                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Symbols</th>
-                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Net P&L</th>
-                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Win rate</th>
-                <th className="px-2 py-2 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Expectancy</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.rows.map((r) => (
-                <tr key={r.theme} className="border-b border-rule">
-                  <td className="px-2.5 py-1.5 font-medium">
-                    {r.theme}
-                    {!r.trustworthy && (
-                      <span className="ml-1.5 text-[10px] text-warning" title={`Fewer than ${THEME_MIN_SAMPLE} trades — treat as anecdote, not edge.`}>
-                        thin sample
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{r.trades}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{r.symbols}</td>
-                  <td className={`px-2 py-1.5 text-right tabular-nums ${r.netPnl > 0 ? "text-profit" : r.netPnl < 0 ? "text-loss" : ""}`}>{inr(r.netPnl, { decimals: 0 })}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{num(r.winRate, 1)}%</td>
-                  <td className={`px-2 py-1.5 text-right tabular-nums ${r.expectancy > 0 ? "text-profit" : r.expectancy < 0 ? "text-loss" : ""}`}>{inr(r.expectancy, { decimals: 0 })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ReportTable>
+          <ReportThead>
+            <ReportTh>Theme</ReportTh>
+            <ReportTh align="right">Trades</ReportTh>
+            <ReportTh align="right">Symbols</ReportTh>
+            <ReportTh align="right">Net P&L</ReportTh>
+            <ReportTh align="right">Win rate</ReportTh>
+            <ReportTh align="right">Expectancy</ReportTh>
+          </ReportThead>
+          <tbody>
+            {report.rows.map((r) => (
+              <ReportTr key={r.theme}>
+                <ReportTd className="font-medium">
+                  {r.theme}
+                  {!r.trustworthy && (
+                    <span className="ml-1.5 text-[10px] text-warning" title={`Fewer than ${THEME_MIN_SAMPLE} trades — treat as anecdote, not edge.`}>
+                      thin sample
+                    </span>
+                  )}
+                </ReportTd>
+                <ReportTd align="right">{r.trades}</ReportTd>
+                <ReportTd align="right">{r.symbols}</ReportTd>
+                <ReportTd align="right" className={r.netPnl > 0 ? "text-profit" : r.netPnl < 0 ? "text-loss" : ""}>{inr(r.netPnl, { decimals: 0 })}</ReportTd>
+                <ReportTd align="right">{num(r.winRate, 1)}%</ReportTd>
+                <ReportTd align="right" className={r.expectancy > 0 ? "text-profit" : r.expectancy < 0 ? "text-loss" : ""}>{inr(r.expectancy, { decimals: 0 })}</ReportTd>
+              </ReportTr>
+            ))}
+          </tbody>
+        </ReportTable>
         <p className="text-[0.6875rem] text-muted-foreground">
           Themes <b>overlap</b> — one stock can sit in ten indices, so a trade counts in every theme
           it belongs to and the P&L column deliberately sums to more than your book. Each row is a
@@ -156,9 +158,12 @@ function StopTuningCard({ tuning }: { tuning: ReturnType<typeof stopTuningReport
     return (
       <Card>
         <CardHeader><CardTitle>Stop tuning (MAE in R)</CardTitle></CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Needs closed trades that have BOTH price-history coverage and a recorded risk amount (set an SL
-          when adding trades — risk auto-computes). Nothing qualifies yet.
+        <CardContent>
+          <EmptyState
+            variant="chart"
+            title="Nothing qualifies yet"
+            hint="Needs closed trades that have BOTH price-history coverage and a recorded risk amount (set an SL when adding trades — risk auto-computes)."
+          />
         </CardContent>
       </Card>
     );
@@ -208,11 +213,12 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
       </CardHeader>
       <CardContent className="p-0">
         {report.covered === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            No closed dated trades with price-history coverage yet. Load daily bhavcopies (Portfolio Risk →
-            Auto-MTM) to build the EOD bar history that powers MAE/MFE.
-            {report.undated > 0 && ` ${report.undated} closed trades have no entry/exit dates (aggregated imports) and can never be covered.`}
-          </p>
+          <EmptyState
+            variant="chart"
+            title="No closed dated trades with price-history coverage yet"
+            hint={<>Load daily bhavcopies (Portfolio Risk → Auto-MTM) to build the EOD bar history that powers MAE/MFE.
+              {report.undated > 0 && ` ${report.undated} closed trades have no entry/exit dates (aggregated imports) and can never be covered.`}</>}
+          />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-4">
@@ -221,36 +227,32 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
               <KpiCard label="Covered trades" value={`${report.covered}`} sub={`${report.uncovered} lack bars`} />
               <KpiCard label="Granularity" value="EOD" sub="intraday extremes unseen" />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-y border-border text-left text-muted-foreground">
-                    <th className="px-2.5 py-2 font-medium">Symbol</th>
-                    <th className="px-2 py-2 font-medium">Side</th>
-                    <th className="px-2 py-2 text-right font-medium">Entry → Exit</th>
-                    <th className="px-2 py-2 text-right font-medium">MAE</th>
-                    <th className="px-2 py-2 text-right font-medium">MFE</th>
-                    <th className="px-2 py-2 text-right font-medium">Captured</th>
-                    <th className="px-2 py-2 text-right font-medium">Edge ratio</th>
-                    <th className="px-2.5 py-2 text-right font-medium">Net P&L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.rows.map((r) => (
-                    <tr key={r.id} className="border-b border-rule">
-                      <td className="px-2.5 py-1.5 font-medium">{r.symbol}</td>
-                      <td className="px-2 py-1.5 uppercase text-muted-foreground">{r.side}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{num(r.entry)} → {num(r.exit)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-loss">{inr(-r.maeRs, { decimals: 0 })}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-profit">{inr(r.mfeRs, { decimals: 0 })}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{r.capturedPct != null ? `${r.capturedPct}%` : "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{r.edgeRatio ?? "—"}</td>
-                      <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(r.netPnl)}`}>{inr(r.netPnl, { decimals: 0 })}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportTable>
+              <ReportThead>
+                <ReportTh>Symbol</ReportTh>
+                <ReportTh>Side</ReportTh>
+                <ReportTh align="right">Entry → Exit</ReportTh>
+                <ReportTh align="right">MAE</ReportTh>
+                <ReportTh align="right">MFE</ReportTh>
+                <ReportTh align="right">Captured</ReportTh>
+                <ReportTh align="right">Edge ratio</ReportTh>
+                <ReportTh align="right">Net P&L</ReportTh>
+              </ReportThead>
+              <tbody>
+                {report.rows.map((r) => (
+                  <ReportTr key={r.id}>
+                    <ReportTd className="font-medium">{r.symbol}</ReportTd>
+                    <ReportTd muted className="uppercase">{r.side}</ReportTd>
+                    <ReportTd align="right">{num(r.entry)} → {num(r.exit)}</ReportTd>
+                    <ReportTd align="right" className="text-loss">{inr(-r.maeRs, { decimals: 0 })}</ReportTd>
+                    <ReportTd align="right" className="text-profit">{inr(r.mfeRs, { decimals: 0 })}</ReportTd>
+                    <ReportTd align="right">{r.capturedPct != null ? `${r.capturedPct}%` : "—"}</ReportTd>
+                    <ReportTd align="right">{r.edgeRatio ?? "—"}</ReportTd>
+                    <ReportTd align="right" className={pnl(r.netPnl)}>{inr(r.netPnl, { decimals: 0 })}</ReportTd>
+                  </ReportTr>
+                ))}
+              </tbody>
+            </ReportTable>
             <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
               MAE = worst move against entry over the holding window; MFE = best move in favour; captured = how much
               of the MFE your exit banked. EOD bars only — same-day extremes between entry and exit are approximate.
@@ -272,41 +274,41 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
       </CardHeader>
       <CardContent className="p-0">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No closed trades yet.</p>
+          <EmptyState
+            variant="journal"
+            title="No closed trades yet"
+            action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-y border-border text-left text-muted-foreground">
-                  <th className="px-2.5 py-2 font-medium">{title.includes("setup") ? "Setup" : "Segment"}</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Trades</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Net P&L</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Expectancy</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Win rate</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Avg R</th>
-                  <th className="px-2.5 py-2 text-right font-medium">Charges</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const expectancy = r.count ? r.net / r.count : 0;
-                  return (
-                    <tr key={r.key} className="border-b border-rule">
-                      <td className="px-2.5 py-1.5 font-medium">{labelFor(r.key)}</td>
-                      <td className="px-2.5 py-1.5 text-right tabular-nums">{r.count}</td>
-                      <td className={`px-2.5 py-1.5 text-right tabular-nums font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</td>
-                      <td className={`px-2.5 py-1.5 text-right tabular-nums ${pnl(expectancy)}`}>{num(expectancy, 0)}</td>
-                      <td className="px-2.5 py-1.5 text-right tabular-nums">{(r.winRate * 100).toFixed(1)}%</td>
-                      <td className="px-2.5 py-1.5 text-right tabular-nums">
-                        {r.avgR == null ? "—" : <span className={pnl(r.avgR)}>{r.avgR.toFixed(2)}R</span>}
-                      </td>
-                      <td className="px-2.5 py-1.5 text-right tabular-nums text-muted-foreground">{num(r.charges, 0)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ReportTable>
+            <ReportThead>
+              <ReportTh>{title.includes("setup") ? "Setup" : "Segment"}</ReportTh>
+              <ReportTh align="right">Trades</ReportTh>
+              <ReportTh align="right">Net P&L</ReportTh>
+              <ReportTh align="right">Expectancy</ReportTh>
+              <ReportTh align="right">Win rate</ReportTh>
+              <ReportTh align="right">Avg R</ReportTh>
+              <ReportTh align="right">Charges</ReportTh>
+            </ReportThead>
+            <tbody>
+              {rows.map((r) => {
+                const expectancy = r.count ? r.net / r.count : 0;
+                return (
+                  <ReportTr key={r.key}>
+                    <ReportTd className="font-medium">{labelFor(r.key)}</ReportTd>
+                    <ReportTd align="right">{r.count}</ReportTd>
+                    <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
+                    <ReportTd align="right" className={pnl(expectancy)}>{num(expectancy, 0)}</ReportTd>
+                    <ReportTd align="right">{(r.winRate * 100).toFixed(1)}%</ReportTd>
+                    <ReportTd align="right">
+                      {r.avgR == null ? "—" : <span className={pnl(r.avgR)}>{r.avgR.toFixed(2)}R</span>}
+                    </ReportTd>
+                    <ReportTd align="right" muted>{num(r.charges, 0)}</ReportTd>
+                  </ReportTr>
+                );
+              })}
+            </tbody>
+          </ReportTable>
         )}
       </CardContent>
     </Card>

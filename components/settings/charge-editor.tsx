@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { SEGMENT_LABELS, BROKER_LABELS, type Segment, type Broker } from "@/lib/domain/constants";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
 import type { ChargeConfigRow } from "@/lib/db/schema";
 
 const FIELDS: { key: keyof ChargeConfigRow; label: string }[] = [
@@ -30,7 +30,6 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
   const [id, setId] = React.useState<number>(rows[0]?.id ?? 0);
   const [vals, setVals] = React.useState<Record<string, string>>(() => initVals(rows[0]));
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   function initVals(row: ChargeConfigRow | undefined): Record<string, string> {
     const o: Record<string, string> = {};
@@ -40,13 +39,11 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
 
   function selectRow(next: number) {
     setId(next);
-    setMsg(null);
     setVals(initVals(rows.find((r) => r.id === next)));
   }
 
   async function save() {
     setPending(true);
-    setMsg(null);
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -54,9 +51,11 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
         body: JSON.stringify({ type: "charge", id, ...vals }),
       });
       const json = await res.json();
-      setMsg({ ok: !!json.ok, text: json.message ?? (json.ok ? "Saved." : "Failed.") });
+      const text = json.message ?? (json.ok ? "Saved." : "Failed.");
+      if (json.ok) toast.success(text);
+      else toast.error(text);
     } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -103,12 +102,6 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
             <Button type="button" size="sm" onClick={save} disabled={pending}>
               {pending ? "Saving…" : "Save rate"}
             </Button>
-            {msg && (
-              <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-                {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-                {msg.text}
-              </span>
-            )}
           </div>
           <p className="text-[0.6875rem] text-muted-foreground">
             Rates are fractions of turnover (0.1% → 0.001). Editing a rate affects newly imported / re-tagged trades; existing rows recompute on re-import or re-tag.

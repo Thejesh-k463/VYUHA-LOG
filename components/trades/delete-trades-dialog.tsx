@@ -12,9 +12,10 @@
 
 import * as React from "react";
 import { useActionState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toaster";
 import { deleteTradesAction, type ActionState } from "@/app/trades/actions";
 import { inr } from "@/lib/format";
 import { Trash2, TriangleAlert } from "lucide-react";
@@ -44,6 +45,8 @@ export function DeleteTradesDialog({
     if (state.ok) {
       onOpenChange(false);
       onDone?.();
+    } else if (state.message) {
+      toast.error(state.message);
     }
   }, [state, onOpenChange, onDone]);
 
@@ -95,16 +98,17 @@ export function DeleteTradesDialog({
             </div>
           )}
 
-          {state.message && !state.ok && <p className="text-loss">{state.message}</p>}
         </div>
 
-        <form action={formAction} className="flex justify-end gap-2">
+        <form action={formAction}>
           <input type="hidden" name="ids" value={preview.ids.join(",")} />
           <input type="hidden" name="reason" value={reason} />
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" variant="destructive" disabled={pending || !confirmed}>
-            {pending ? "Deleting…" : `Delete ${preview.count} trade${preview.count === 1 ? "" : "s"}`}
-          </Button>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" variant="destructive" disabled={pending || !confirmed}>
+              {pending ? "Deleting…" : `Delete ${preview.count} trade${preview.count === 1 ? "" : "s"}`}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

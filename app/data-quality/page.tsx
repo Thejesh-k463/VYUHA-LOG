@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Info, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Info, ShieldAlert } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,7 @@ export default function DataQualityPage() {
         <div><p className="text-xs text-muted-foreground">Open issue groups</p><p className="text-2xl font-semibold tabular-nums">{report.issues.length}</p></div>
       </CardContent></Card>
       <Card className="p-0"><CardHeader><CardTitle>Diagnostics</CardTitle></CardHeader><CardContent className="divide-y divide-border/50 p-0">
-        {report.issues.length === 0 ? <div className="flex items-center gap-2 p-5 text-sm text-profit"><CheckCircle2 className="size-4" /> Every quality check passed.</div> : report.issues.map((issue) => {
+        {report.issues.length === 0 ? <EmptyState variant="playbook" title="Every quality check passed" /> : report.issues.map((issue) => {
           const Icon = issue.severity === "critical" ? ShieldAlert : issue.severity === "warning" ? AlertTriangle : Info;
           return <div key={issue.code} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <Icon className={`size-5 shrink-0 ${issue.severity === "critical" ? "text-loss" : issue.severity === "warning" ? "text-warning" : "text-accent"}`} />

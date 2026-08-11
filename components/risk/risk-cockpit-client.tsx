@@ -14,12 +14,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr, inrCompact, num } from "@/lib/format";
 import type { KpiDetail } from "@/components/kpi-card";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
-import { ChevronDown, SlidersHorizontal, CheckCircle2, AlertCircle, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
+import { ChevronDown, SlidersHorizontal, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
 
 const POSITION_EXPORT_COLS = [
   { key: "symbol", label: "Symbol" }, { key: "bucket", label: "Bucket" }, { key: "segment", label: "Segment" },
@@ -507,11 +508,9 @@ function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => vo
   const [mtmPrice, setMtmPrice] = React.useState(String(p.mtm));
   const [impliedVol, setImpliedVol] = React.useState(p.impliedVol == null ? "" : String(p.impliedVol));
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   async function save() {
     setPending(true);
-    setMsg(null);
     try {
       const res = await fetch("/api/positions/risk", {
         method: "POST",
@@ -520,12 +519,13 @@ function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => vo
       });
       const json = await res.json();
       if (json.ok) {
+        toast.success("Risk inputs saved.");
         onSaved();
       } else {
-        setMsg({ ok: false, text: json.message ?? "Failed" });
+        toast.error(json.message ?? "Failed");
       }
     } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message });
+      toast.error((err as Error).message);
     } finally {
       setPending(false);
     }
@@ -548,15 +548,10 @@ function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => vo
           </Fld>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2">
-        {msg && (
-          <span className={`mr-auto flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-            {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}{msg.text}
-          </span>
-        )}
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button type="button" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
-      </div>
+      </DialogFooter>
     </>
   );
 }
@@ -565,7 +560,6 @@ function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => voi
   const [exitPrice, setExitPrice] = React.useState(String(p.mtm));
   const [exitDate, setExitDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
 
   const exit = Number(exitPrice) || 0;
   const isShort = p.side === "short";
@@ -573,7 +567,7 @@ function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => voi
   const estGross = (exit - p.entry) * p.qty * (isShort ? -1 : 1);
 
   async function close() {
-    setPending(true); setMsg(null);
+    setPending(true);
     try {
       const res = await fetch("/api/positions/close", {
         method: "POST",
@@ -581,10 +575,12 @@ function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => voi
         body: JSON.stringify({ tradeId: p.id, exitPrice, exitDate }),
       });
       const json = await res.json();
-      if (json.ok) onClosed();
-      else setMsg(json.message ?? "Failed");
+      if (json.ok) {
+        toast.success(isShort ? "Position covered." : "Position closed.");
+        onClosed();
+      } else toast.error(json.message ?? "Failed");
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -611,11 +607,10 @@ function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => voi
           {isShort ? "Covering" : "Closing"} recomputes full charges{p.segment === "eq_mtf" ? " + MTF interest over the holding period" : ""} and moves this to realised P&amp;L.
         </p>
       </div>
-      <div className="flex items-center justify-end gap-2">
-        {msg && <span className="mr-auto text-xs text-loss">{msg}</span>}
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button type="button" variant="destructive" onClick={close} disabled={pending || exit <= 0}>{pending ? (isShort ? "Covering…" : "Closing…") : isShort ? "Cover position" : "Close position"}</Button>
-      </div>
+      </DialogFooter>
     </>
   );
 }

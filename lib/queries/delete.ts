@@ -119,6 +119,10 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
     if (!safe || safe !== a.storedName) continue; // never delete outside the directory
     try {
       fs.rmSync(path.join(attachmentsDir, safe), { force: true });
+      // New uploads carry a canvas-generated strip thumbnail as a sidecar
+      // (`thumb-<storedName>`, P6 2026-08-11). force:true makes the missing
+      // case (every pre-P6 attachment) a no-op.
+      fs.rmSync(path.join(attachmentsDir, `thumb-${safe}`), { force: true });
     } catch {
       orphaned.push(safe);
     }

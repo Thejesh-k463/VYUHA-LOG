@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, AlertCircle, Copy, KeyRound, Sparkles } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
+import { Copy, KeyRound, Sparkles } from "lucide-react";
 import type { LicenseStatus } from "@/lib/queries/license";
 import { SKU_LABELS, BUY_URL, type Entitlement } from "@/lib/license";
 
@@ -13,11 +15,9 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
   const router = useRouter();
   const [key, setKey] = React.useState("");
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   async function post(payload: object) {
     setPending(true);
-    setMsg(null);
     const res = await fetch("/api/license", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -25,7 +25,8 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     setPending(false);
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "");
+    else toast.error(data.message ?? "");
     if (data.ok) {
       setKey("");
       router.refresh();
@@ -103,12 +104,12 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
               Paste the <code className="rounded bg-card-hover px-1 py-0.5">VYUHA-…</code> key from your purchase
               email. Activation is fully offline — the key is verified on this machine and never sent anywhere.
             </p>
-            <textarea
+            <Textarea
+              mono
               value={key}
               onChange={(e) => setKey(e.target.value)}
               rows={2}
               placeholder="VYUHA-…"
-              className="w-full rounded-md border border-border bg-input p-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <Button size="sm" disabled={pending || !key.trim()} onClick={() => post({ action: "activate", key })}>
               {pending ? "Activating…" : "Activate"}
@@ -130,7 +131,7 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                   variant="outline"
                   onClick={() => {
                     void navigator.clipboard?.writeText(status.machineId);
-                    setMsg({ ok: true, text: "Machine ID copied." });
+                    toast.success("Machine ID copied.");
                   }}
                 >
                   <Copy className="size-3.5" /> Copy
@@ -143,12 +144,6 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
               </p>
             </div>
           </>
-        )}
-        {msg && (
-          <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-            {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-            {msg.text}
-          </span>
         )}
       </CardContent>
     </Card>

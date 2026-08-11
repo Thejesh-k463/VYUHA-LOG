@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { DialogClose } from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
+import { toast } from "@/components/ui/toaster";
 import { BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, type Segment } from "@/lib/domain/constants";
 import { LimitVerdict } from "@/components/risk/limit-verdict";
 import type { LimitResult } from "@/lib/risk/limits";
@@ -15,7 +16,7 @@ import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/m
 import { TradeAttachments } from "@/components/trades/trade-attachments";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
-import { CheckCircle2, AlertCircle, Paperclip } from "lucide-react";
+import { CheckCircle2, Paperclip } from "lucide-react";
 
 interface PreviewResp {
   classification: { segment: Segment; bucket: string; exchange: string; symbol: string; optionType: string | null };
@@ -97,9 +98,15 @@ export function ManualTradeForm({
 
   useEffect(() => {
     // With a tradeId the dialog stays open for the attach-charts step below —
-    // it closes via that step's Done button instead of snapping shut.
-    if (state.ok && !state.tradeId && onDone) onDone();
-  }, [state.ok, state.tradeId, onDone]);
+    // it closes via that step's Done button instead of snapping shut (and that
+    // step shows the success message itself, so no toast for it here).
+    if (state.ok && !state.tradeId) {
+      if (state.message) toast.success(state.message);
+      onDone?.();
+    } else if (!state.ok && state.message) {
+      toast.error(state.message);
+    }
+  }, [state, onDone]);
 
   // Resolve the per-stock MTF margin as broker/symbol settle (debounced; the
   // async .then keeps every setState off the synchronous effect path).
@@ -300,9 +307,9 @@ export function ManualTradeForm({
           Add the chart you traded — it stays with this trade for review. Skip with <b>Done</b>.
         </p>
         <TradeAttachments tradeId={state.tradeId} label="Attach chart screenshots (optional)" />
-        <div className="flex justify-end">
+        <DialogFooter>
           <Button type="button" onClick={() => onDone?.()}>Done</Button>
-        </div>
+        </DialogFooter>
       </div>
     );
   }
@@ -612,22 +619,16 @@ export function ManualTradeForm({
         </span>
       </div>
 
-      <div className="flex items-center gap-3">
+      <DialogFooter>
+        {blocked && <span className="mr-auto text-xs text-loss">Limit breached — you stay in control; saving records the breach on your Discipline scorecard.</span>}
+        <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         {/* Limits are advisory — the trader always has final say. A breach flips
             the button to an explicit override (recorded in rule_violations and
             on the Discipline scorecard) but never disables saving. */}
         <Button type="submit" disabled={pending} variant={blocked ? "destructive" : "default"}>
           {pending ? "Saving…" : blocked ? "Override & add anyway" : open ? "Add open trade" : "Add trade"}
         </Button>
-        <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        {blocked && <span className="text-xs text-loss">Limit breached — you stay in control; saving records the breach on your Discipline scorecard.</span>}
-        {state.message && (
-          <span className={`flex items-center gap-1.5 text-sm ${state.ok ? "text-profit" : "text-loss"}`}>
-            {state.ok ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}
-            {state.message}
-          </span>
-        )}
-      </div>
+      </DialogFooter>
     </form>
   );
 }

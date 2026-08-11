@@ -18,6 +18,8 @@ import {
   AUDIT_CATEGORIES,
   type AuditCategoryId,
 } from "@/lib/domain/audit-categories";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export interface AuditDisplayRow {
   id: number;
@@ -81,49 +83,45 @@ export function AuditLogClient({ rows }: { rows: AuditDisplayRow[] }) {
       <Card className="p-0">
         <CardContent className="p-0">
           {visible.length === 0 ? (
-            <p className="p-5 text-sm text-muted-foreground">Nothing in this category yet.</p>
+            <EmptyState variant="journal" title="Nothing in this category yet" />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-y border-border text-left text-muted-foreground">
-                    <th className="px-2.5 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">When</th>
-                    <th className="px-2 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Entity</th>
-                    <th className="px-2 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Action</th>
-                    <th className="px-2.5 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Summary</th>
-                    <th className="px-2.5 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Changes</th>
-                    <th className="px-2 py-2 text-[0.6875rem] font-semibold uppercase tracking-[0.06em]">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((r) => (
-                    <tr key={r.id} className="border-b border-rule align-top">
-                      <td className="whitespace-nowrap px-2.5 py-1.5 tabular-nums text-muted-foreground">{r.ts}</td>
-                      <td className="px-2 py-1.5">
-                        <Badge variant="outline">{r.entityLabel}</Badge>
-                        {r.entityId != null ? <span className="ml-1 text-muted-foreground">#{r.entityId}</span> : null}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <Badge variant={actionVariant[r.action] ?? "secondary"}>{r.action}</Badge>
-                      </td>
-                      <td className="px-2.5 py-1.5">{r.summary ?? "—"}</td>
-                      <td className="px-2.5 py-1.5 text-muted-foreground">
-                        {r.changes.length === 0
-                          ? "—"
-                          : r.changes.slice(0, 4).map((c) => (
-                              <span key={c.field} className="mr-2 inline-block">
-                                <span className="text-foreground">{c.field}</span>: {c.from} →{" "}
-                                <span className="text-foreground">{c.to}</span>
-                              </span>
-                            ))}
-                        {r.changes.length > 4 ? <span>+{r.changes.length - 4} more</span> : null}
-                      </td>
-                      <td className="px-2 py-1.5 text-muted-foreground">{r.source}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportTable>
+              <ReportThead>
+                <ReportTh>When</ReportTh>
+                <ReportTh>Entity</ReportTh>
+                <ReportTh>Action</ReportTh>
+                <ReportTh>Summary</ReportTh>
+                <ReportTh>Changes</ReportTh>
+                <ReportTh>Source</ReportTh>
+              </ReportThead>
+              <tbody>
+                {visible.map((r) => (
+                  <ReportTr key={r.id} className="align-top">
+                    <ReportTd className="tabular-nums" muted>{r.ts}</ReportTd>
+                    <ReportTd>
+                      <Badge variant="outline">{r.entityLabel}</Badge>
+                      {r.entityId != null ? <span className="ml-1 text-muted-foreground">#{r.entityId}</span> : null}
+                    </ReportTd>
+                    <ReportTd>
+                      <Badge variant={actionVariant[r.action] ?? "secondary"}>{r.action}</Badge>
+                    </ReportTd>
+                    <ReportTd className="whitespace-normal">{r.summary ?? "—"}</ReportTd>
+                    <ReportTd muted className="whitespace-normal">
+                      {r.changes.length === 0
+                        ? "—"
+                        : r.changes.slice(0, 4).map((c) => (
+                            <span key={c.field} className="mr-2 inline-block">
+                              <span className="text-foreground">{c.field}</span>: {c.from} →{" "}
+                              <span className="text-foreground">{c.to}</span>
+                            </span>
+                          ))}
+                      {r.changes.length > 4 ? <span>+{r.changes.length - 4} more</span> : null}
+                    </ReportTd>
+                    <ReportTd muted>{r.source}</ReportTd>
+                  </ReportTr>
+                ))}
+              </tbody>
+            </ReportTable>
           )}
         </CardContent>
       </Card>

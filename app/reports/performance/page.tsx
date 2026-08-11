@@ -18,6 +18,10 @@ import { getBenchmarkCloses, getBenchmarkMeta, DEFAULT_BENCHMARK } from "@/lib/q
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
 import { toPaise, toRupees } from "@/lib/money";
 import { inr } from "@/lib/format";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -153,7 +157,12 @@ export default function PerformancePage() {
       />
       <div className="space-y-5 p-6">
         {p.tradingDays === 0 ? (
-          <Card><CardContent className="p-6 text-sm text-muted-foreground">No closed trades with dates yet — performance needs a realised P&L history.</CardContent></Card>
+          <EmptyState
+            variant="chart"
+            title="No closed trades with dates yet"
+            hint="Performance needs a realised P&L history."
+            action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+          />
         ) : (
           <>
             {/* Coverage, stated before the numbers rather than after. Every
@@ -246,36 +255,32 @@ export default function PerformancePage() {
             <Card className="p-0">
               <CardHeader><CardTitle>Monthly returns</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-y border-border text-muted-foreground">
-                        <th className="px-2.5 py-2 text-left font-medium">Year</th>
-                        {MONTHS.map((m) => <th key={m} className="px-1.5 py-2 text-center font-medium">{m}</th>)}
-                        <th className="px-2.5 py-2 text-right font-medium">Year</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {years.map((y) => {
-                        const yt = yearTotal(y);
-                        return (
-                          <tr key={y} className="border-b border-rule">
-                            <td className="px-2.5 py-1.5 font-medium">{y}</td>
-                            {MONTHS.map((_, i) => {
-                              const ret = byYM.get(`${y}-${i + 1}`);
-                              return (
-                                <td key={i} className="px-1 py-1 text-center tabular-nums" style={{ background: cellColor(ret) }}>
-                                  {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
-                                </td>
-                              );
-                            })}
-                            <td className={`px-2.5 py-1.5 text-right font-semibold tabular-nums ${cls(yt)}`}>{sign(yt)}{yt.toFixed(1)}%</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Year</ReportTh>
+                    {MONTHS.map((m) => <ReportTh key={m} className="px-1.5 text-center">{m}</ReportTh>)}
+                    <ReportTh align="right">Year</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {years.map((y) => {
+                      const yt = yearTotal(y);
+                      return (
+                        <ReportTr key={y}>
+                          <ReportTd className="font-medium">{y}</ReportTd>
+                          {MONTHS.map((_, i) => {
+                            const ret = byYM.get(`${y}-${i + 1}`);
+                            return (
+                              <ReportTd key={i} className="px-1 py-1 text-center tabular-nums" style={{ background: cellColor(ret) }}>
+                                {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
+                              </ReportTd>
+                            );
+                          })}
+                          <ReportTd align="right" className={`font-semibold ${cls(yt)}`}>{sign(yt)}{yt.toFixed(1)}%</ReportTd>
+                        </ReportTr>
+                      );
+                    })}
+                  </tbody>
+                </ReportTable>
               </CardContent>
             </Card>
 

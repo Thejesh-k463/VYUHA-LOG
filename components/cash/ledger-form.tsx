@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LEDGER_TYPES, TYPE_LABEL, type LedgerType } from "@/lib/analytics/ledger";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
 
 const selectCls =
   "h-8 rounded-md border border-border bg-input px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -21,11 +21,9 @@ export function LedgerForm() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function add() {
     setPending(true);
-    setMsg(null);
     const res = await fetch("/api/ledger", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -33,7 +31,8 @@ export function LedgerForm() {
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     setPending(false);
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "");
+    else toast.error(data.message ?? "");
     if (data.ok) {
       setAmount("");
       setNote("");
@@ -86,12 +85,6 @@ export function LedgerForm() {
           Deposits/interest add cash; withdrawals/charges/MTF interest remove it. Realised P&L and adjustments take the
           sign you enter (use − for a loss). Available capital = opening + Σ entries.
         </p>
-        {msg && (
-          <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-            {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-            {msg.text}
-          </span>
-        )}
       </div>
     </div>
   );

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
+import { Trash2 } from "lucide-react";
 import type { InstrumentDisplay } from "@/lib/queries/instruments";
 
 const PLACEHOLDER = `One per line:  SYMBOL, SECTOR, [NAME], [LOT], [ISIN]
@@ -21,11 +23,9 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
   const [text, setText] = useState("");
   const [addAll, setAddAll] = useState(false);
   const [pending, setPending] = useState<"" | "add" | "load" | "clear" | "file">("");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function onFile(file: File) {
     setPending("file");
-    setMsg(null);
     const content = await file.text();
     // fileName lets the server read the index name off an ind_*_list.csv —
     // the constituent files carry no index column, only their filename does.
@@ -34,7 +34,6 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
 
   async function post(payload: object, kind: "add" | "load" | "clear" | "delete" | "file") {
     if (kind !== "delete") setPending(kind);
-    setMsg(null);
     const res = await fetch("/api/instruments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -42,7 +41,8 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     setPending("");
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "");
+    else toast.error(data.message ?? "");
     if (data.ok) {
       if (kind === "add") { setSymbol(""); setSector(""); }
       if (kind === "load") setText("");
@@ -146,12 +146,12 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
       </div>
 
       <div className="space-y-2">
-        <textarea
+        <Textarea
+          mono
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={5}
           placeholder={PLACEHOLDER}
-          className="w-full rounded-md border border-border bg-input p-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" variant="outline" disabled={pending !== "" || !text.trim()} onClick={() => post({ action: "load", text }, "load")}>
@@ -160,12 +160,6 @@ export function InstrumentManager({ rows, nseMapAsOf }: { rows: InstrumentDispla
           <Button size="sm" variant="outline" disabled={pending !== "" || rows.length === 0} onClick={() => { if (confirm("Clear all instruments?")) post({ action: "clear" }, "clear"); }}>
             {pending === "clear" ? "Clearing…" : `Clear${rows.length ? ` (${rows.length})` : ""}`}
           </Button>
-          {msg && (
-            <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-              {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-              {msg.text}
-            </span>
-          )}
         </div>
       </div>
 

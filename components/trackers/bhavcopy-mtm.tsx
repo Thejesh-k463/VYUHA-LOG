@@ -4,7 +4,9 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, CheckCircle2, AlertCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
+import { Upload } from "lucide-react";
 
 interface Result {
   ok: boolean;
@@ -36,6 +38,8 @@ export function BhavcopyMtm() {
     const data = (await r.json().catch(() => ({ ok: false, message: "Request failed" }))) as Result;
     setPending(false);
     setRes(data);
+    if (data.ok) toast.success(data.message);
+    else toast.error(data.message);
     if (data.ok) router.refresh();
   }
 
@@ -58,23 +62,17 @@ export function BhavcopyMtm() {
         />
         <span className="text-[10px] text-muted-foreground">or paste below — NSE/BSE EOD bhavcopy</span>
       </div>
-      <textarea
+      <Textarea
+        mono
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={4}
         placeholder={"SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,...\nRELIANCE,EQ,2900,2950,2890,2940.5,..."}
-        className="w-full rounded-md border border-border bg-input p-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" disabled={pending || !text.trim()} onClick={run}>
           {pending ? "Marking…" : "Auto-MTM open positions"}
         </Button>
-        {res && (
-          <span className={`flex items-center gap-1.5 text-xs ${res.ok ? "text-profit" : "text-loss"}`}>
-            {res.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-            {res.message}
-          </span>
-        )}
       </div>
       {res?.ok && (
         <div className="flex flex-wrap items-center gap-2 text-[0.6875rem]">

@@ -7,21 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { Playbook } from "@/lib/db/schema";
 import type { PlaybookStat } from "@/lib/analytics/behavior";
 import { PRESET_PLAYBOOKS, presetCategories } from "@/lib/domain/preset-playbooks";
 import { toast } from "@/components/ui/toaster";
 import { inr } from "@/lib/format";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Plus, Pencil, Trash2, Archive, ArchiveRestore, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Archive, ArchiveRestore } from "lucide-react";
 
 export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?: Record<number, PlaybookStat> }) {
   const router = useRouter();
   const [addOpen, setAddOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Playbook | null>(null);
-  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
 
   // Command-palette deep link: /playbooks?add=1 — open the dialog once, then clean the URL.
   React.useEffect(() => {
@@ -41,25 +41,18 @@ export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed" }));
     if (data.ok) toast.success(data.message ?? "Saved.");
     else toast.error(data.message ?? "Failed.");
-    setMsg(null);
     if (data.ok) router.refresh();
     return !!data.ok;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        {msg ? (
-          <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-            {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-            {msg.text}
-          </span>
-        ) : <span />}
+      <div className="flex items-center justify-end">
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button size="sm"><Plus className="size-4" /> New playbook</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>New playbook</DialogTitle>
               <DialogDescription>A named setup with the rules you commit to. Tag trades to it from the Trades screen.</DialogDescription>
@@ -117,7 +110,7 @@ export function PlaybookManager({ rows, stats = {} }: { rows: Playbook[]; stats?
       )}
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit playbook</DialogTitle>
             <DialogDescription>{editing?.name}</DialogDescription>
@@ -219,15 +212,14 @@ function PlaybookForm({
       </div>
       <div className="space-y-1">
         <Label>Rules (one per line)</Label>
-        <textarea
+        <Textarea
           value={rules}
           onChange={(e) => setRules(e.target.value)}
           rows={5}
           placeholder={"Wait for the retest\nRisk ≤ 1% of capital\nStop below the breakout level\nNo entries after 2:30pm"}
-          className="w-full rounded-md border border-border bg-input p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
-      <div className="flex items-center justify-end gap-2">
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button
           type="button"
@@ -236,7 +228,7 @@ function PlaybookForm({
         >
           {pending ? "Saving…" : existing ? "Save" : "Create"}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

@@ -141,11 +141,20 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh] backdrop-blur-sm"
+      // Same entrance as every dialog (animate-overlay-in / animate-dialog-in,
+      // token shadow and radius, the panel gradient): Ctrl+K is the most-used
+      // chrome in the app and was the only overlay that popped in hard with a
+      // non-token shadow (2026-08-10 audit). A full Radix Dialog rebuild
+      // (focus trap, scroll lock, role) is the deeper fix — noted, not done
+      // here; the ARIA attributes below carry the semantics meanwhile.
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh] backdrop-blur-sm"
       onClick={close}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        className="animate-dialog-in panel-luxe w-full max-w-lg overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-overlay)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border px-3">
@@ -169,7 +178,7 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
                 key={c.href + c.label}
                 onClick={() => go(c)}
                 onMouseEnter={() => setActive(i)}
-                className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm ${
+                className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors duration-100 motion-reduce:transition-none ${
                   i === active ? "bg-card-hover text-foreground" : "text-muted-foreground"
                 }`}
               >

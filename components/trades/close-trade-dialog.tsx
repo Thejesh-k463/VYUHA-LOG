@@ -5,9 +5,9 @@ import { closeTradeAction, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { DialogClose } from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 
 interface PreviewResp {
@@ -28,8 +28,13 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
   const [preview, setPreview] = useState<PreviewResp | null>(null);
 
   useEffect(() => {
-    if (state.ok) onDone();
-  }, [state.ok, onDone]);
+    if (state.ok) {
+      if (state.message) toast.success(state.message);
+      onDone();
+    } else if (state.message) {
+      toast.error(state.message);
+    }
+  }, [state, onDone]);
 
   useEffect(() => {
     const price = Number(exitPrice) || 0;
@@ -101,18 +106,12 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
         </div>
       )}
 
-      <div className="flex items-center gap-3">
+      <DialogFooter>
+        <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button type="submit" disabled={pending || !(Number(exitPrice) > 0)}>
           {pending ? "Closing…" : isShort ? "Cover & close" : "Sell & close"}
         </Button>
-        <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
-        {state.message && !state.ok && (
-          <span className="flex items-center gap-1.5 text-sm text-loss"><AlertCircle className="size-4" />{state.message}</span>
-        )}
-        {state.ok && (
-          <span className="flex items-center gap-1.5 text-sm text-profit"><CheckCircle2 className="size-4" />{state.message}</span>
-        )}
-      </div>
+      </DialogFooter>
     </form>
   );
 }

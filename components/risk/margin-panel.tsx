@@ -23,7 +23,6 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
   const router = useRouter();
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const rowKey = (r: RateRow) => `${r.broker}|${r.segment}`;
 
@@ -32,7 +31,6 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
     const raw = edits[key];
     if (raw == null || raw === "") return;
     setBusy(key);
-    setMsg(null);
     try {
       const res = await fetch("/api/margin", {
         method: "POST",
@@ -43,13 +41,12 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
       const text = data.message ?? (res.ok ? "Saved." : "Failed.");
       if (res.ok) toast.success(text);
       else toast.error(text);
-      setMsg(null);
       if (res.ok) {
         setEdits((e) => ({ ...e, [key]: "" }));
         router.refresh();
       }
     } catch {
-      setMsg("Network error.");
+      toast.error("Network error.");
     } finally {
       setBusy(null);
     }
@@ -149,7 +146,6 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
               );
             })}
           </div>
-          {msg && <p className="mt-2 text-[0.6875rem] text-muted-foreground">{msg}</p>}
         </details>
 
         {summary.missingRateSegments.length > 0 && (

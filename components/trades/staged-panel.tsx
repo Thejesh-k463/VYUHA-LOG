@@ -13,8 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr } from "@/lib/format";
+import { toast } from "@/components/ui/toaster";
 import { Layers, Plus, Minus, Trash2, TriangleAlert, Info, ShieldAlert, Target } from "lucide-react";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import type { StagedView } from "@/lib/queries/staged";
@@ -321,6 +322,7 @@ function EnableStaged({ trade, onDone }: { trade: Trade; onDone: () => void }) {
   // change) and the dialog stayed open with the form already cleared.
   React.useEffect(() => {
     if (state.ok) onDone();
+    else if (state.message) toast.error(state.message);
   }, [state, onDone]);
 
   return (
@@ -336,7 +338,6 @@ function EnableStaged({ trade, onDone }: { trade: Trade; onDone: () => void }) {
       <Button type="submit" size="sm" className="mt-4" disabled={pending}>
         {pending ? "Enabling…" : "Enable staged mode"}
       </Button>
-      {state.message && !state.ok && <p className="mt-2 text-xs text-loss">{state.message}</p>}
     </form>
   );
 }
@@ -382,8 +383,11 @@ function AddEntryDialog({
   // change) and the dialog stayed open with the form already cleared.
   React.useEffect(() => {
     if (state.ok) {
+      if (state.message) toast.success(state.message);
       onOpenChange(false);
       onDone();
+    } else if (state.message) {
+      toast.error(state.message);
     }
   }, [state, onOpenChange, onDone]);
 
@@ -436,13 +440,10 @@ function AddEntryDialog({
             <Label htmlFor="se-note">Why this add? (optional)</Label>
             <Input id="se-note" name="note" placeholder="e.g. broke out of the flag on volume" />
           </div>
-          {state.message && (
-            <p className={`text-xs ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
             <Button type="submit" disabled={pending}>{pending ? "Adding…" : "Add entry"}</Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -465,8 +466,11 @@ function BookExitDialog({
   // change) and the dialog stayed open with the form already cleared.
   React.useEffect(() => {
     if (state.ok) {
+      if (state.message) toast.success(state.message);
       onOpenChange(false);
       onDone();
+    } else if (state.message) {
+      toast.error(state.message);
     }
   }, [state, onOpenChange, onDone]);
 
@@ -540,13 +544,10 @@ function BookExitDialog({
             <Label htmlFor="sx-note">Note (optional)</Label>
             <Input id="sx-note" name="note" placeholder="e.g. booked half at the first target" />
           </div>
-          {state.message && (
-            <p className={`text-xs ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
             <Button type="submit" disabled={pending}>{pending ? "Booking…" : "Book exit"}</Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -565,8 +566,11 @@ function StopAllDialog({
   // change) and the dialog stayed open with the form already cleared.
   React.useEffect(() => {
     if (state.ok) {
+      if (state.message) toast.success(state.message);
       onOpenChange(false);
       onDone();
+    } else if (state.message) {
+      toast.error(state.message);
     }
   }, [state, onOpenChange, onDone]);
 
@@ -595,13 +599,10 @@ function StopAllDialog({
           <p className="text-[0.6875rem] text-muted-foreground">
             Leave a field blank to clear that stop on every open tranche.
           </p>
-          {state.message && (
-            <p className={`text-xs ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <DialogFooter>
+            <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
             <Button type="submit" disabled={pending}>{pending ? "Applying…" : "Apply to all open"}</Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toaster";
 import { setAcquisitionAction } from "@/app/trades/actions";
 import { inr } from "@/lib/format";
 import { Sparkles, TriangleAlert } from "lucide-react";
@@ -30,6 +31,11 @@ const KINDS: { value: string; label: string; hint: string }[] = [
 
 function Row({ t }: { t: PendingBasisTrade }) {
   const [state, action, pending] = useActionState(setAcquisitionAction, { ok: false, message: "" });
+  useEffect(() => {
+    if (!state.message) return;
+    if (state.ok) toast.success(state.message);
+    else toast.error(state.message);
+  }, [state]);
   const [kind, setKind] = useState(t.acquisition && t.acquisition !== "unknown" ? t.acquisition : "ipo");
   const [price, setPrice] = useState(
     t.acquisitionPrice != null ? String(t.acquisitionPrice) : t.suggestedPrice != null ? String(t.suggestedPrice) : "",
@@ -109,10 +115,6 @@ function Row({ t }: { t: PendingBasisTrade }) {
           <b className={preview >= 0 ? "text-profit" : "text-loss"}>{inr(preview, { decimals: 0 })}</b> net
           after {inr(t.chargesTotal, { decimals: 0 })} of charges.
         </p>
-      )}
-
-      {state.message && (
-        <p className={`text-[0.6875rem] ${state.ok ? "text-profit" : "text-loss"}`}>{state.message}</p>
       )}
     </form>
   );

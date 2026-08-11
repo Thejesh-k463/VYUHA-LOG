@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { DialogClose } from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toaster";
 import {
   MISTAKE_TAGS,
   MISTAKE_LABELS,
@@ -40,7 +42,6 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
   );
   const [notes, setNotes] = React.useState(trade.notes ?? "");
   const [pending, setPending] = React.useState(false);
-  const [msg, setMsg] = React.useState<string | null>(null);
 
   // Archived playbooks stay pickable only when the trade already points at one.
   const options = playbooks.filter((p) => !p.archived || String(p.id) === playbookId);
@@ -66,7 +67,6 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
 
   async function save() {
     setPending(true);
-    setMsg(null);
     try {
       const res = await fetch("/api/trades/journal", {
         method: "POST",
@@ -84,11 +84,12 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
       });
       const data = await res.json();
       if (data.ok) {
+        toast.success("Journal saved.");
         router.refresh();
         onDone();
-      } else setMsg(data.message ?? "Failed");
+      } else toast.error(data.message ?? "Failed");
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -165,20 +166,18 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
 
       <div className="space-y-1">
         <Label>Notes</Label>
-        <textarea
+        <Textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={3}
           placeholder="What happened, what you'd do differently…"
-          className="w-full rounded-md border border-border bg-input p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        {msg && <span className="mr-auto text-xs text-loss">{msg}</span>}
+      <DialogFooter>
         <DialogClose asChild><Button type="button" variant="ghost">Cancel</Button></DialogClose>
         <Button type="button" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save journal"}</Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

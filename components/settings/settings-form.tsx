@@ -13,7 +13,6 @@ import { Switch } from "@/components/ui/switch";
 import type { Settings } from "@/lib/db/schema";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertCircle } from "lucide-react";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -35,7 +34,6 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [defaultSellOrders, setSellOrders] = useState(String(current.defaultSellOrders));
   const [autoMtm, setAutoMtm] = useState(current.autoMtmEnabled);
   const [pending, setPending] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Apply theme / colorblind to <html> instantly for live preview.
   function applyTheme(next: string) {
@@ -65,7 +63,6 @@ export function SettingsForm({ current }: { current: Settings }) {
 
   async function save() {
     setPending(true);
-    setMsg(null);
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -89,9 +86,8 @@ export function SettingsForm({ current }: { current: Settings }) {
       // (rather than letting a server action do it) is what keeps this form's
       // other in-progress edits intact — see AGENTS.md.
       if (json.ok && workspace !== asWorkspace(current.workspace)) router.refresh();
-      setMsg(null);
     } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
+      toast.error((e as Error).message);
     } finally {
       setPending(false);
     }
@@ -256,12 +252,6 @@ export function SettingsForm({ current }: { current: Settings }) {
         <Button type="button" onClick={save} disabled={pending}>
           {pending ? "Saving…" : "Save settings"}
         </Button>
-        {msg && (
-          <span className={`flex items-center gap-1.5 text-sm ${msg.ok ? "text-profit" : "text-loss"}`}>
-            {msg.ok ? <CheckCircle2 className="size-4" /> : <AlertCircle className="size-4" />}
-            {msg.text}
-          </span>
-        )}
       </div>
     </div>
   );

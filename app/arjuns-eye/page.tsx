@@ -12,6 +12,10 @@ import {
 import { SEGMENT_LABELS } from "@/lib/domain/constants";
 import { inr, num } from "@/lib/format";
 import { Eye, TriangleAlert, CheckCircle2, Info, Clock } from "lucide-react";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +24,7 @@ const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-
 /** A horizontal bar whose width is relative to the biggest absolute value in
  *  the set, so small differences stay visible instead of collapsing. */
 function EdgeBar({ rows, empty }: { rows: Bucket[]; empty: string }) {
-  if (rows.length === 0) return <p className="p-4 text-sm text-muted-foreground">{empty}</p>;
+  if (rows.length === 0) return empty ? <EmptyState variant="chart" title={empty} /> : null;
   const max = Math.max(...rows.map((r) => Math.abs(r.expectancy ?? 0)), 1);
 
   return (
@@ -143,17 +147,14 @@ export default function ArjunsEyePage() {
             </Card>
           )}
           {rep.closedTrades === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 p-10 text-center">
-                <Eye className="size-7 text-muted-foreground" />
-                <p className="text-sm font-medium">Nothing to see yet</p>
-                <p className="max-w-md text-xs text-muted-foreground">
-                  Arjun&apos;s Eye reads your closed trades. Import a broker file and come back —
-                  a <b>tradebook</b> import unlocks the time-of-day analysis, which a P&amp;L
-                  statement cannot support.
-                </p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              variant="chart"
+              title="Nothing to see yet"
+              hint={<>Arjun&apos;s Eye reads your closed trades. Import a broker file and come back —
+                a <b>tradebook</b> import unlocks the time-of-day analysis, which a P&amp;L
+                statement cannot support.</>}
+              action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+            />
           ) : (
             <>
               {/* ── What it found ─────────────────────────────────────── */}
@@ -241,39 +242,35 @@ export default function ArjunsEyePage() {
                   <ExportButtons filename="arjuns-eye-segments" columns={segCols} rows={segments} />
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-sm">
-                      <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Segment</th>
-                          <th className="px-3 py-2 text-right">Trades</th>
-                          <th className="px-3 py-2 text-right">Net P&amp;L</th>
-                          <th className="px-3 py-2 text-right">Expectancy</th>
-                          <th className="px-3 py-2 text-right">Win rate</th>
-                          <th className="px-3 py-2 text-right">Charges</th>
-                          <th className="px-3 py-2 text-right">Charge drag</th>
-                          <th className="px-3 py-2 text-right">Avg days</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/50">
-                        {segments.map((s) => (
-                          <tr key={s.key} className="hover:bg-card-hover/50">
-                            <td className="px-3 py-2 font-medium">
-                              {s.label}
-                              {s.thin && <span className="ml-1.5 text-[10px] text-warning">thin</span>}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums">{s.trades}</td>
-                            <td className={`px-3 py-2 text-right font-mono tabular-nums ${pnl(s.netPnl)}`}>{inr(s.netPnl, { decimals: 0 })}</td>
-                            <td className={`px-3 py-2 text-right font-mono tabular-nums ${pnl(s.expectancy ?? 0)}`}>{s.expectancy == null ? "—" : inr(s.expectancy, { decimals: 0 })}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{s.winRate == null ? "—" : `${s.winRate.toFixed(0)}%`}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-warning">{inr(s.charges, { decimals: 0 })}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{s.chargeDragPct == null ? "—" : `${s.chargeDragPct}%`}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{s.avgDaysHeld == null ? "—" : num(s.avgDaysHeld, 1)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ReportTable minWidth={760}>
+                    <ReportThead>
+                      <ReportTh>Segment</ReportTh>
+                      <ReportTh align="right">Trades</ReportTh>
+                      <ReportTh align="right">Net P&amp;L</ReportTh>
+                      <ReportTh align="right">Expectancy</ReportTh>
+                      <ReportTh align="right">Win rate</ReportTh>
+                      <ReportTh align="right">Charges</ReportTh>
+                      <ReportTh align="right">Charge drag</ReportTh>
+                      <ReportTh align="right">Avg days</ReportTh>
+                    </ReportThead>
+                    <tbody>
+                      {segments.map((s) => (
+                        <ReportTr key={s.key}>
+                          <ReportTd className="font-medium">
+                            {s.label}
+                            {s.thin && <span className="ml-1.5 text-[10px] text-warning">thin</span>}
+                          </ReportTd>
+                          <ReportTd align="right">{s.trades}</ReportTd>
+                          <ReportTd align="right" className={pnl(s.netPnl)}>{inr(s.netPnl, { decimals: 0 })}</ReportTd>
+                          <ReportTd align="right" className={pnl(s.expectancy ?? 0)}>{s.expectancy == null ? "—" : inr(s.expectancy, { decimals: 0 })}</ReportTd>
+                          <ReportTd align="right" muted>{s.winRate == null ? "—" : `${s.winRate.toFixed(0)}%`}</ReportTd>
+                          <ReportTd align="right" className="text-warning">{inr(s.charges, { decimals: 0 })}</ReportTd>
+                          <ReportTd align="right" muted>{s.chargeDragPct == null ? "—" : `${s.chargeDragPct}%`}</ReportTd>
+                          <ReportTd align="right" muted>{s.avgDaysHeld == null ? "—" : num(s.avgDaysHeld, 1)}</ReportTd>
+                        </ReportTr>
+                      ))}
+                    </tbody>
+                  </ReportTable>
                 </CardContent>
               </Card>
 

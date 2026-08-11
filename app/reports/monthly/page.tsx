@@ -14,6 +14,10 @@ import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +79,11 @@ export default function MonthlyReportPage() {
       </div>
 
       {p.tradingDays === 0 ? (
-        <Card><CardContent className="p-6 text-sm text-muted-foreground">No closed trades with dates yet.</CardContent></Card>
+        <EmptyState
+          variant="chart"
+          title="No closed trades with dates yet"
+          action={<Button asChild size="sm"><Link href="/import">Import a broker file</Link></Button>}
+        />
       ) : (
         <>
           {/* Scorecard */}
@@ -100,31 +108,27 @@ export default function MonthlyReportPage() {
           <Card className="p-0">
             <CardHeader><CardTitle>Monthly returns</CardTitle></CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-y border-border text-muted-foreground">
-                      <th className="px-2.5 py-2 text-left font-medium">Year</th>
-                      {MONTHS.map((m) => <th key={m} className="px-1.5 py-2 text-center font-medium">{m}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {years.map((y) => (
-                      <tr key={y} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{y}</td>
-                        {MONTHS.map((_, i) => {
-                          const ret = byYM.get(`${y}-${i + 1}`);
-                          return (
-                            <td key={i} className={`px-1 py-1 text-center tabular-nums ${ret == null ? "" : cls(ret)}`}>
-                              {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Year</ReportTh>
+                  {MONTHS.map((m) => <ReportTh key={m} className="px-1.5 text-center">{m}</ReportTh>)}
+                </ReportThead>
+                <tbody>
+                  {years.map((y) => (
+                    <ReportTr key={y}>
+                      <ReportTd className="font-medium">{y}</ReportTd>
+                      {MONTHS.map((_, i) => {
+                        const ret = byYM.get(`${y}-${i + 1}`);
+                        return (
+                          <ReportTd key={i} className={`px-1 py-1 text-center tabular-nums ${ret == null ? "" : cls(ret)}`}>
+                            {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
+                          </ReportTd>
+                        );
+                      })}
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
             </CardContent>
           </Card>
 
@@ -133,25 +137,25 @@ export default function MonthlyReportPage() {
             <Card className="p-0">
               <CardHeader><CardTitle>Top playbooks</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <div className="overflow-x-auto"><table className="w-full text-xs">
+                <ReportTable>
                   <tbody>
                     {pbStats.slice(0, 5).map((s) => (
-                      <tr key={s.playbookId ?? "untagged"} className="border-b border-rule">
-                        <td className="px-2.5 py-1.5 font-medium">{s.name}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{s.trades} trades</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{s.winRatePct}%</td>
-                        <td className={`px-2.5 py-1.5 text-right tabular-nums font-medium ${cls(s.net)}`}>{inr(s.net, { decimals: 0 })}</td>
-                      </tr>
+                      <ReportTr key={s.playbookId ?? "untagged"}>
+                        <ReportTd className="font-medium">{s.name}</ReportTd>
+                        <ReportTd align="right">{s.trades} trades</ReportTd>
+                        <ReportTd align="right">{s.winRatePct}%</ReportTd>
+                        <ReportTd align="right" className={`font-medium ${cls(s.net)}`}>{inr(s.net, { decimals: 0 })}</ReportTd>
+                      </ReportTr>
                     ))}
                   </tbody>
-                </table></div>
+                </ReportTable>
               </CardContent>
             </Card>
             <Card className="p-0">
               <CardHeader><CardTitle>Mistake economics</CardTitle></CardHeader>
-              <CardContent className="p-4 text-xs text-muted-foreground">
+              <CardContent className={mistakes.mistakeTrades === 0 ? "p-4" : "p-4 text-xs text-muted-foreground"}>
                 {mistakes.mistakeTrades === 0 ? (
-                  <p>No mistakes tagged in this period.</p>
+                  <EmptyState variant="journal" title="No mistakes tagged in this period" />
                 ) : (
                   <p>
                     <span className={`font-semibold ${cls(mistakes.mistakeNet)}`}>{inr(mistakes.mistakeNet, { decimals: 0 })}</span>{" "}

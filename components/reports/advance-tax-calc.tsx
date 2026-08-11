@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { KpiCard } from "@/components/kpi-card";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
 import { inr, fmtDate } from "@/lib/format";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 
 export function AdvanceTaxCalc({
   initialGains,
@@ -70,52 +71,48 @@ export function AdvanceTaxCalc({
       <Card className="p-0">
         <CardHeader><CardTitle>Instalment schedule — {plan.fyLabel}</CardTitle></CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-y border-border text-left text-muted-foreground">
-                  <th className="px-2.5 py-2 font-medium">Due by</th>
-                  <th className="px-2 py-2 text-right font-medium">Cumulative</th>
-                  <th className="px-2 py-2 text-right font-medium">Cum. required</th>
-                  <th className="px-2 py-2 text-right font-medium">This instalment</th>
-                  <th className="px-2 py-2 text-right font-medium">Shortfall</th>
-                  <th className="px-2 py-2 text-right font-medium">234C</th>
-                  <th className="px-2.5 py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plan.instalments.map((i) => {
-                  const isNext = plan.nextDue?.quarter === i.quarter;
-                  return (
-                    <tr key={i.quarter} className={`border-b border-rule ${isNext ? "bg-accent/5" : ""}`}>
-                      <td className="px-2.5 py-2 font-medium">
-                        {i.label}
-                        <span className="ml-1 text-[10px] text-muted-foreground">{fmtDate(i.dueDate)}</span>
-                      </td>
-                      <td className="px-2 py-2 text-right tabular-nums">{i.cumPct}%</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{inr(i.cumRequired, { decimals: 0 })}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{inr(i.instalmentAmount, { decimals: 0 })}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${i.shortfall > 0 ? "text-loss" : ""}`}>
-                        {i.shortfall > 0 ? inr(i.shortfall, { decimals: 0 }) : "—"}
-                      </td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${i.interest234C > 0 ? "text-loss" : ""}`}>
-                        {i.interest234C > 0 ? inr(i.interest234C, { decimals: 0 }) : "—"}
-                      </td>
-                      <td className="px-2.5 py-2">
-                        {!i.isDue ? (
-                          <Badge variant={isNext ? "accent" : "secondary"}>{isNext ? "next" : "upcoming"}</Badge>
-                        ) : i.shortfall > 0 ? (
-                          <Badge variant="loss">short</Badge>
-                        ) : (
-                          <Badge variant="profit">met</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ReportTable>
+            <ReportThead>
+              <ReportTh>Due by</ReportTh>
+              <ReportTh align="right">Cumulative</ReportTh>
+              <ReportTh align="right">Cum. required</ReportTh>
+              <ReportTh align="right">This instalment</ReportTh>
+              <ReportTh align="right">Shortfall</ReportTh>
+              <ReportTh align="right">234C</ReportTh>
+              <ReportTh>Status</ReportTh>
+            </ReportThead>
+            <tbody>
+              {plan.instalments.map((i) => {
+                const isNext = plan.nextDue?.quarter === i.quarter;
+                return (
+                  <ReportTr key={i.quarter} className={isNext ? "bg-accent/5" : undefined}>
+                    <ReportTd className="font-medium">
+                      {i.label}
+                      <span className="ml-1 text-[10px] text-muted-foreground">{fmtDate(i.dueDate)}</span>
+                    </ReportTd>
+                    <ReportTd align="right">{i.cumPct}%</ReportTd>
+                    <ReportTd align="right">{inr(i.cumRequired, { decimals: 0 })}</ReportTd>
+                    <ReportTd align="right">{inr(i.instalmentAmount, { decimals: 0 })}</ReportTd>
+                    <ReportTd align="right" className={i.shortfall > 0 ? "text-loss" : undefined}>
+                      {i.shortfall > 0 ? inr(i.shortfall, { decimals: 0 }) : "—"}
+                    </ReportTd>
+                    <ReportTd align="right" className={i.interest234C > 0 ? "text-loss" : undefined}>
+                      {i.interest234C > 0 ? inr(i.interest234C, { decimals: 0 }) : "—"}
+                    </ReportTd>
+                    <ReportTd>
+                      {!i.isDue ? (
+                        <Badge variant={isNext ? "accent" : "secondary"}>{isNext ? "next" : "upcoming"}</Badge>
+                      ) : i.shortfall > 0 ? (
+                        <Badge variant="loss">short</Badge>
+                      ) : (
+                        <Badge variant="profit">met</Badge>
+                      )}
+                    </ReportTd>
+                  </ReportTr>
+                );
+              })}
+            </tbody>
+          </ReportTable>
         </CardContent>
       </Card>
 

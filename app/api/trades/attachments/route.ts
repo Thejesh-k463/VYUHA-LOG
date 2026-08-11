@@ -50,10 +50,16 @@ export async function GET(req: Request) {
     const row = db.select().from(tradeAttachments).where(eq(tradeAttachments.id, Number(id))).all()[0];
     if (!row) return NextResponse.json({ ok: false, message: "Not found" }, { status: 404 });
     try {
-      const bytes = fs.readFileSync(filePathFor(row.storedName));
+      // ?thumb=1: serve the browser-generated sidecar when one exists (new
+      // uploads write it; P6 2026-08-11). Absent sidecar = fall back to the
+      // original byte-for-byte — old attachments keep working unchanged.
+      const wantThumb = url.searchParams.get("thumb") === "1";
+      const thumbPath = filePathFor(`thumb-${row.storedName}`);
+      const useThumb = wantThumb && fs.existsSync(thumbPath);
+      const bytes = fs.readFileSync(useThumb ? thumbPath : filePathFor(row.storedName));
       return new NextResponse(new Uint8Array(bytes), {
         headers: {
-          "Content-Type": row.mime,
+          "Content-Type": useThumb ? "image/jpeg" : row.mime,
           "Content-Disposition": `inline; filename="${row.fileName.replace(/[^\w.\- ]/g, "_")}"`,
           "Cache-Control": "private, max-age=3600",
         },
@@ -81,6 +87,11 @@ export async function POST(req: Request) {
         fs.unlinkSync(filePathFor(row.storedName));
       } catch {
         /* row removed; a missing file is fine */
+      }
+      try {
+        fs.unlinkSync(filePathFor(`thumb-${row.storedName}`));
+      } catch {
+        /* older uploads have no sidecar */
       }
       recordAudit({
         entity: "trade",
@@ -113,6 +124,16 @@ export async function POST(req: Request) {
   const storedName = `${crypto.randomBytes(16).toString("hex")}${ext}`;
   fs.mkdirSync(attachmentsDir, { recursive: true });
   fs.writeFileSync(filePathFor(storedName), Buffer.from(await file.arrayBuffer()));
+
+  // Optional strip thumbnail, generated client-side (canvas). A sidecar by
+  // NAMING CONVENTION — no schema change: `thumb-<storedName>`. Backup copies
+  // the directory wholesale, so sidecars ride along; an orphaned sidecar is
+  // invisible and reclaimable (invariant 10). Capped well under the original
+  // limit — a "thumbnail" larger than that is not one, and gets dropped.
+  const thumb = form.get("thumb");
+  if (thumb instanceof File && thumb.type === "image/jpeg" && thumb.size > 0 && thumb.size < 512 * 1024) {
+    fs.writeFileSync(filePathFor(`thumb-${storedName}`), Buffer.from(await thumb.arrayBuffer()));
+  }
 
   const inserted = db
     .insert(tradeAttachments)

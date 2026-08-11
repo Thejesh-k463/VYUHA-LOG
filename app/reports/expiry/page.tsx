@@ -6,6 +6,8 @@ import { getTrades } from "@/lib/queries/trades";
 import { computeExpiryStats, type ExpiryBucket } from "@/lib/analytics/expiry-stats";
 import { inr, fmtDate } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +48,11 @@ export default function ExpiryPage() {
       <div className="space-y-5 p-6">
         <ProGate>
         {closedFno === 0 && s.upcoming.length === 0 ? (
-          <Card><CardContent className="p-6 text-sm text-muted-foreground">No F&O trades yet — this view activates once you trade derivatives.</CardContent></Card>
+          <EmptyState
+            variant="chart"
+            title="No F&O trades yet"
+            hint="This view activates once you trade derivatives."
+          />
         ) : (
           <>
             <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -73,30 +79,29 @@ export default function ExpiryPage() {
               </CardHeader>
               <CardContent className="p-0">
                 {s.upcoming.length === 0 ? (
-                  <p className="p-5 text-sm text-muted-foreground">No open F&O positions with a future expiry.</p>
+                  <EmptyState
+                    variant="journal"
+                    title="No open F&O positions with a future expiry"
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-y border-border text-left text-muted-foreground">
-                          <th className="px-2.5 py-2 font-medium">Expiry</th>
-                          <th className="px-2 py-2 text-right font-medium">In</th>
-                          <th className="px-2.5 py-2 text-right font-medium">Open positions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {s.upcoming.map((u) => (
-                          <tr key={u.date} className="border-b border-rule">
-                            <td className="px-2.5 py-2 font-medium">{fmtDate(u.date)}</td>
-                            <td className="px-2 py-2 text-right">
-                              <Badge variant={u.dte <= 3 ? "loss" : u.dte <= 7 ? "warning" : "secondary"}>{u.dte}d</Badge>
-                            </td>
-                            <td className="px-2.5 py-2 text-right tabular-nums">{u.positions}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ReportTable>
+                    <ReportThead>
+                      <ReportTh>Expiry</ReportTh>
+                      <ReportTh align="right">In</ReportTh>
+                      <ReportTh align="right">Open positions</ReportTh>
+                    </ReportThead>
+                    <tbody>
+                      {s.upcoming.map((u) => (
+                        <ReportTr key={u.date}>
+                          <ReportTd className="font-medium">{fmtDate(u.date)}</ReportTd>
+                          <ReportTd className="text-right">
+                            <Badge variant={u.dte <= 3 ? "loss" : u.dte <= 7 ? "warning" : "secondary"}>{u.dte}d</Badge>
+                          </ReportTd>
+                          <ReportTd align="right">{u.positions}</ReportTd>
+                        </ReportTr>
+                      ))}
+                    </tbody>
+                  </ReportTable>
                 )}
               </CardContent>
             </Card>

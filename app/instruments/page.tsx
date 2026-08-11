@@ -5,6 +5,7 @@ import { InstrumentManager } from "@/components/system/instrument-manager";
 import { getInstruments } from "@/lib/queries/instruments";
 import { getPriceHistoryMeta } from "@/lib/queries/price-history";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default function InstrumentsPage() {
           <CardHeader>
             <CardTitle>Price history (EOD)</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
+          <CardContent className={ph.rows > 0 ? "text-sm text-muted-foreground" : undefined}>
             {ph.rows > 0 ? (
               <p>
                 {ph.rows.toLocaleString("en-IN")} OHLC bars across {ph.symbols.toLocaleString("en-IN")} symbols
@@ -42,11 +43,13 @@ export default function InstrumentsPage() {
                 <span className="text-foreground">Portfolio Risk → Auto-MTM from bhavcopy</span>.
               </p>
             ) : (
-              <p>
-                No price history yet. Import an NSE/BSE bhavcopy on <span className="text-foreground">Portfolio Risk → Auto-MTM
-                from bhavcopy</span> — each import saves the day&apos;s OHLC here, building the series for performance, benchmarking
-                and (later) VaR.
-              </p>
+              <EmptyState
+                variant="chart"
+                title="No price history yet"
+                hint={<>Import an NSE/BSE bhavcopy on <span className="text-foreground">Portfolio Risk → Auto-MTM
+                  from bhavcopy</span> — each import saves the day&apos;s OHLC here, building the series for performance, benchmarking
+                  and (later) VaR.</>}
+              />
             )}
           </CardContent>
         </Card>

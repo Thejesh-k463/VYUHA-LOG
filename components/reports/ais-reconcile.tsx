@@ -5,9 +5,11 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
 import { inr } from "@/lib/format";
 import type { AisReconciliation, ReconStatus } from "@/lib/analytics/ais";
+import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 
 const STATUS_LABEL: Record<ReconStatus, string> = {
   matched: "Matched",
@@ -31,12 +33,10 @@ interest, SBI Savings, 2026-27, 4210`;
 export function AisReconcile() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [recon, setRecon] = useState<AisReconciliation | null>(null);
 
   async function run(payload?: { jsonText: string }) {
     setBusy(true);
-    setErr(null);
     try {
       const res = await fetch("/api/ais", {
         method: "POST",
@@ -45,9 +45,9 @@ export function AisReconcile() {
       });
       const data = await res.json();
       if (data.ok) setRecon(data.recon);
-      else setErr(data.message ?? "Failed");
+      else toast.error(data.message ?? "Failed");
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -95,7 +95,6 @@ export function AisReconcile() {
               {busy ? "Reading…" : "Upload AIS JSON"}
             </span>
           </label>
-          {err && <span className="text-xs text-loss">{err}</span>}
           {recon && (
             <span className="text-xs text-muted-foreground">
               <span className="text-profit">{recon.counts.matched} matched</span>
@@ -119,63 +118,55 @@ export function AisReconcile() {
           )}
 
           {recon.dividends.length > 0 && (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="px-2.5 py-2 font-medium">Dividend — company · FY</th>
-                    <th className="px-2 py-2 text-right font-medium">AIS gross</th>
-                    <th className="px-2 py-2 text-right font-medium">AIS TDS</th>
-                    <th className="px-2 py-2 text-right font-medium">Journal gross</th>
-                    <th className="px-2 py-2 text-right font-medium">Journal TDS</th>
-                    <th className="px-2 py-2 text-right font-medium">Δ</th>
-                    <th className="px-2.5 py-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recon.dividends.map((d) => (
-                    <tr key={d.key} className="border-b border-rule">
-                      <td className="px-2.5 py-1.5 font-medium">{d.key}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.aisGross)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.aisTds)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.journalGross)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(d.journalTds)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{d.delta !== 0 ? amt(d.delta) : "—"}</td>
-                      <td className={`px-2.5 py-1.5 ${STATUS_CLS[d.status]}`}>{STATUS_LABEL[d.status]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportTable>
+              <ReportThead>
+                <ReportTh>Dividend — company · FY</ReportTh>
+                <ReportTh align="right">AIS gross</ReportTh>
+                <ReportTh align="right">AIS TDS</ReportTh>
+                <ReportTh align="right">Journal gross</ReportTh>
+                <ReportTh align="right">Journal TDS</ReportTh>
+                <ReportTh align="right">Δ</ReportTh>
+                <ReportTh>Status</ReportTh>
+              </ReportThead>
+              <tbody>
+                {recon.dividends.map((d) => (
+                  <ReportTr key={d.key}>
+                    <ReportTd className="font-medium">{d.key}</ReportTd>
+                    <ReportTd align="right">{amt(d.aisGross)}</ReportTd>
+                    <ReportTd align="right">{amt(d.aisTds)}</ReportTd>
+                    <ReportTd align="right">{amt(d.journalGross)}</ReportTd>
+                    <ReportTd align="right">{amt(d.journalTds)}</ReportTd>
+                    <ReportTd align="right">{d.delta !== 0 ? amt(d.delta) : "—"}</ReportTd>
+                    <ReportTd className={STATUS_CLS[d.status]}>{STATUS_LABEL[d.status]}</ReportTd>
+                  </ReportTr>
+                ))}
+              </tbody>
+            </ReportTable>
           )}
 
           {recon.fyTotals.length > 0 && (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="px-2.5 py-2 font-medium">Securities — FY · type</th>
-                    <th className="px-2 py-2 text-right font-medium">AIS</th>
-                    <th className="px-2 py-2 text-right font-medium">Journal</th>
-                    <th className="px-2 py-2 text-right font-medium">Δ</th>
-                    <th className="px-2.5 py-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recon.fyTotals.map((t) => (
-                    <tr key={`${t.fy}-${t.kind}`} className="border-b border-rule">
-                      <td className="px-2.5 py-1.5 font-medium">
-                        {t.fy} <Badge variant="outline" className="ml-1">{t.kind}</Badge>
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(t.ais)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{amt(t.journal)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{t.delta !== 0 ? amt(t.delta) : "—"}</td>
-                      <td className={`px-2.5 py-1.5 ${STATUS_CLS[t.status]}`}>{STATUS_LABEL[t.status]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ReportTable>
+              <ReportThead>
+                <ReportTh>Securities — FY · type</ReportTh>
+                <ReportTh align="right">AIS</ReportTh>
+                <ReportTh align="right">Journal</ReportTh>
+                <ReportTh align="right">Δ</ReportTh>
+                <ReportTh>Status</ReportTh>
+              </ReportThead>
+              <tbody>
+                {recon.fyTotals.map((t) => (
+                  <ReportTr key={`${t.fy}-${t.kind}`}>
+                    <ReportTd className="font-medium">
+                      {t.fy} <Badge variant="outline" className="ml-1">{t.kind}</Badge>
+                    </ReportTd>
+                    <ReportTd align="right">{amt(t.ais)}</ReportTd>
+                    <ReportTd align="right">{amt(t.journal)}</ReportTd>
+                    <ReportTd align="right">{t.delta !== 0 ? amt(t.delta) : "—"}</ReportTd>
+                    <ReportTd className={STATUS_CLS[t.status]}>{STATUS_LABEL[t.status]}</ReportTd>
+                  </ReportTr>
+                ))}
+              </tbody>
+            </ReportTable>
           )}
 
           {recon.interest.length > 0 && (

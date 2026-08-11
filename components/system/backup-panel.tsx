@@ -3,37 +3,35 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Download, Upload, Database, CheckCircle2, AlertCircle, ShieldCheck } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
+import { Download, Upload, Database, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export function BackupPanel() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [password, setPassword] = useState("");
 
   async function onExport() {
     setBusy(true);
-    setMsg(null);
     const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "export", password, includeAttachments: true }) });
     const data = await res.json().catch(() => ({ ok: false, message: "Backup failed." }));
     setBusy(false);
-    if (!data.ok) return setMsg({ ok: false, text: data.message });
+    if (!data.ok) return toast.error(data.message);
     const blob = new Blob([JSON.stringify(data.payload)], { type: "application/json" });
     const href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href; a.download = data.fileName; a.click(); URL.revokeObjectURL(href);
-    setMsg({ ok: true, text: `Complete backup downloaded${password ? " with AES-256 encryption" : ""}.` });
+    toast.success(`Complete backup downloaded${password ? " with AES-256 encryption" : ""}.`);
   }
 
   async function onRestoreFile(file: File) {
-    setMsg(null);
     let dump: unknown;
     try {
       dump = JSON.parse(await file.text());
     } catch {
-      setMsg({ ok: false, text: "That file isn't valid JSON." });
+      toast.error("That file isn't valid JSON.");
       return;
     }
     setBusy(true);
@@ -46,12 +44,13 @@ export function BackupPanel() {
       body: JSON.stringify({ action: "preview", dump, password: restorePassword }),
     });
     const preview = await previewRes.json().catch(() => ({ ok: false, message: "Preview failed" }));
-    if (!preview.ok) { setBusy(false); setMsg({ ok: false, text: preview.message }); return; }
+    if (!preview.ok) { setBusy(false); toast.error(preview.message); return; }
     if (!confirm(`Restore snapshot from ${preview.createdAt ?? "unknown date"}?\n\n${preview.totalRows} rows and ${preview.attachments} attachment files will replace current data.`)) { setBusy(false); return; }
     const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", dump, password: restorePassword }) });
     const data = await res.json().catch(() => ({ ok: false, message: "Restore failed" }));
     setBusy(false);
-    setMsg({ ok: !!data.ok, text: data.message ?? "" });
+    if (data.ok) toast.success(data.message ?? "");
+    else toast.error(data.message ?? "");
     if (data.ok) router.refresh();
   }
 
@@ -85,12 +84,6 @@ export function BackupPanel() {
         <ShieldCheck className="size-4 shrink-0 text-accent" />
         <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Optional password (8+ characters encrypts the backup)" />
       </div>
-      {msg && (
-        <span className={`flex items-center gap-1.5 text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>
-          {msg.ok ? <CheckCircle2 className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-          {msg.text}
-        </span>
-      )}
       <p className="text-[0.6875rem] text-muted-foreground">
         Complete backups include every database table and chart attachment. A password encrypts the entire portable
         file with AES-256-GCM; keep it safe because an offline encrypted backup cannot be recovered without it.
