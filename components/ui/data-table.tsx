@@ -106,6 +106,14 @@ export function DataTable<T>({
   onReorder,
   virtual = false,
 }: DataTableProps<T>) {
+  // Opt this ONE component out of the React Compiler. The eslint-disable on
+  // the useReactTable line silences the LINTER; it does not reach the
+  // compiler. TanStack's table instance mutates internally without changing
+  // identity, so compiler-memoized JSX keyed on `table` would stop
+  // re-rendering on sort — no error, just a dead header, the same silent
+  // failure class as the historical view-select break. This is the
+  // TanStack-documented answer, and it gates the tracker tables too.
+  "use no memo";
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
   // Left offset of each pinned column = sum of the declared widths before it.

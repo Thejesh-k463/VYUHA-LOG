@@ -27,6 +27,49 @@ Format:
 
 ---
 
+## 2026-08-11 — React Compiler: attempted, bisect-proven harmful on this toolchain, rolled back
+
+**Context:** Wave 2 of the performance program. `babel-plugin-react-compiler`
+sat in devDependencies and the codebase's comments were written assuming the
+compiler was on — but `next.config.ts` never enabled it. This was the
+deliberate, isolated enablement attempt (a wave with no other client change,
+so anything that broke would bisect to the flag).
+
+**Measured / found:**
+- `reactCompiler: true` (top-level Next 16 key) compiles and passes the full
+  unit suite + build. The failure is at HYDRATION: SSR and the client bundle
+  collapse JSX source whitespace differently at `</b>` + newline-indented-text
+  boundaries. Server rendered `" of realised P&L sits…"` (leading space),
+  client rendered `"of realised P&L sits…"` — a one-character disagreement
+  that throws "Hydration failed" and REGENERATES THE ENTIRE CLIENT TREE on
+  every visit to an affected page.
+- **Bisect:** same route, same DB — 3 hydration errors with the flag on,
+  0 with it off. Unambiguously compiler-caused.
+- Fixing the first site (dashboard equity-curve note, moving the space into an
+  explicit string expression) just surfaced a SECOND identical site
+  (calendar-heatmap's "and cannot appear on any day…"). The pattern —
+  an inline element followed by newline-indented text — is everywhere in this
+  codebase; enumerating and rewriting every site to dodge an upstream bug was
+  rejected as whack-a-mole that would also make the JSX worse to read.
+- The three compiler-sensitive surfaces themselves (TanStack sorting under
+  "use no memo", the sidebar's deferred mount-restore, the debounced charge
+  preview) all PASSED under the compiler — the codebase's effect discipline
+  held. The whitespace bug is the only blocker, and it is not ours.
+
+**Decision:** `reactCompiler: false`, with the reason in next.config.ts.
+KEPT: DataTable's `"use no memo"` (inert without the compiler, mandatory with
+it) and `e2e/z-compiler-protocol.spec.ts` (guards the silent-failure surfaces
+against any future retry or memoization refactor). Also kept: the
+dashboard-client string-expression form — inert now, correct later.
+
+**Invalidated if:** babel-plugin-react-compiler releases past 1.0.0 with a
+whitespace fix, or Next/Turbopack aligns the two pipelines' JSX text
+normalisation — retry by flipping the flag and running
+`z-compiler-protocol.spec.ts` plus a hydration-error grep of a dashboard
+visit's server log (the exact procedure above).
+
+---
+
 ## 2026-08-10 — /trades at scale: slim projection + row virtualization, with numbers
 
 **Context:** Wave 1 of the performance program. At 252 real trades the full

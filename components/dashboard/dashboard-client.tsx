@@ -303,12 +303,18 @@ export function DashboardClient({
           </CardHeader>
           <CardContent>
             {curve.length > 0 ? <EquityCurve data={curve} /> : <Empty />}
+            {/* The space after </b> below lives INSIDE a string expression,
+                not in JSX source whitespace: the React Compiler's Babel pass
+                collapsed the newline-indent differently between the SSR and
+                client outputs here, and the one-character disagreement threw a
+                hydration mismatch that regenerated the whole tree on every
+                dashboard load (caught by e2e, 2026-08-11, compiler-off
+                bisect). An explicit string cannot be normalised two ways. */}
             {undatedCount > 0 && (
               <p className="mt-2 text-xs text-warning">
                 {undatedCount} closed trades carry no exit date and cannot be plotted —{" "}
-                <b>{inr(undatedNet, { decimals: 0 })}</b> of realised P&amp;L sits outside this curve
-                but inside the Net P&amp;L above. Aggregated broker P&amp;L files have no per-trade
-                dates; a tradebook import does.
+                <b>{inr(undatedNet, { decimals: 0 })}</b>
+                {" of realised P&L sits outside this curve but inside the Net P&L above. Aggregated broker P&L files have no per-trade dates; a tradebook import does."}
               </p>
             )}
           </CardContent>
