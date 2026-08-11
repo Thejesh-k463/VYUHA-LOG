@@ -36,7 +36,10 @@ test("bundled NSE map: load, sectors appear, theme card comes alive", async ({ p
 
   // Second click must be a clean idempotent re-apply, not a duplicate pile-up.
   await page.getByRole("button", { name: /Load NSE sector map/i }).click();
-  await expect(page.getByText(/applied to \d+ symbols/i)).toBeVisible({ timeout: 30_000 });
+  // .first(): since the toast migration the recap appears as BOTH a transient
+  // toast and the persistent status line — the message being visible is the
+  // contract; its multiplicity is the toaster stacking by design.
+  await expect(page.getByText(/applied to \d+ symbols/i).first()).toBeVisible({ timeout: 30_000 });
 
   // The Edge report now has the theme lens — with its overlap disclosure.
   await page.goto("/reports/edge");

@@ -28,6 +28,13 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.60 — built for the ten-thousand-trade book, dressed to match.** Three engineering
+> releases: the Trades table now virtualizes and ships 44% less data (measured — an ~10k-trade
+> book stays instant), the hottest queries went from filesort to index scan, and every report
+> screen now wears the same table chrome, feedback voice and empty-state language as the rest of
+> the app. Print pagination works, dialogs keep Save on screen, a fresh install greets you with a
+> next step instead of five ₹0 tiles.
+>
 > **v2.99.45 — it remembers how you trade, and it survived a forensic audit.** Every feature was
 > audited against real journal data before this build — money identities across every row, all 40
 > screens rendered live, an adversarial read of every changed file — and the three defects found

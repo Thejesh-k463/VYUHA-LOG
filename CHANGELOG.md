@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.99.60 — every screen speaks the same language
+
+The cosmetic wave. Nothing about what the app computes changed; everything
+about how it carries itself did:
+
+- **Every table wears the same chrome.** Thirty-seven hand-rolled tables —
+  the tax pack, discipline, edge, ITR, surveillance, sessions, the audit log,
+  the ledger — now share the trades table's treatment: tracked-caps header
+  bands, sticky headers, readable sans-serif prose with tabular numbers, row
+  hover. The reports no longer look like a different application.
+- **One feedback voice.** Thirty-one components' inline messages became
+  toasts — and the six forms that used to save SILENTLY (journal, IPO, risk
+  edits, position close, limit check, AIS) now confirm. Persistent results
+  (parse recaps, limit verdicts) stay where they belong, on the page.
+- **Empty screens tell you what to do next.** Thirty-three empty states share
+  the illustrated treatment, with a real next step wherever one exists — and
+  a brand-new install now greets you with "Nothing journalled yet — import a
+  broker file", not five ₹0 tiles and advice to clear a filter you never set.
+- **Dialogs keep their bearings.** Sticky titles and footers — Save can no
+  longer scroll out of reach in the tall forms — and the close button finally
+  has a focus ring.
+- **Print works everywhere.** Report cards no longer split across page
+  breaks, and buttons/headers stay off the paper.
+- **Screenshots got light.** New chart uploads carry a browser-generated
+  thumbnail, so a screenshot-heavy journal no longer decodes hundreds of MB
+  to paint a film-strip. Existing attachments are untouched and keep working.
+- Loading skeletons now match what they stand in for (no more 12px jump on
+  every navigation), captions scale with the Comfortable density setting
+  again (151 fixes), the command palette animates like every other overlay,
+  the last unguarded animation respects reduced-motion, and the flagship PDF
+  header can never render a tofu box again.
+
+
 ## v2.99.55 — fewer questions asked, none answered twice
 
 Performance wave two — the server side:

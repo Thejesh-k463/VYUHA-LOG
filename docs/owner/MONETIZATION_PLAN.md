@@ -10,7 +10,21 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.45
+## 0. What you are actually selling, as of v2.99.60
+
+> ### v2.99.60 marketing note — the screenshots are the release
+>
+> Three releases (.50/.55/.60) shipped no new feature and every one of them
+> sells: the app now handles a 10,000-trade book (a real objection from F&O
+> intraday prospects — "will it choke on my history?" now has a measured
+> no), and every report screen finally looks like the trades screen. The
+> LISTING SCREENSHOTS ARE STALE: retake the tax pack, discipline, edge and
+> surveillance shots — the header-band tables are the single biggest visual
+> upgrade since the Dark Luxe foundation. The first-run screen is also new
+> and worth showing in the onboarding section of the deck: "Nothing
+> journalled yet — Import a broker file" is the product teaching itself.
+
+
 
 > ### v2.99.40 marketing note — the trial's first five minutes got safer
 >
