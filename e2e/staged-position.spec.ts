@@ -16,6 +16,13 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
   await page.goto("/trades");
   await expect(page.locator("tbody tr").first()).toBeVisible();
 
+  // Narrow to the Open view FIRST. The table is virtualized now, and open
+  // positions (null sellDate) sort to the BOTTOM of the default DESC order —
+  // below the rendered window at a 122-row book, where a row locator finds
+  // nothing. Filtering brings the target into the window and drops the
+  // order-of-the-book fragility in the same stroke.
+  await page.locator("select").filter({ hasText: "All trades" }).selectOption("open");
+
   // Pick an OPEN position — simply because enabling staged mode is the flow
   // under test here. Nothing in the panel is disabled by position state; see
   // the "never blocks" test below.
@@ -95,6 +102,10 @@ test("staged panel never disables an action because of position state", async ({
   await ensureTrades(page);
   await page.goto("/trades");
   await expect(page.locator("tbody tr").first()).toBeVisible();
+
+  // Same virtualization note as above: open rows live below the window in the
+  // default sort — narrow first.
+  await page.locator("select").filter({ hasText: "All trades" }).selectOption("open");
 
   const row = page.locator("tbody tr").filter({ has: page.locator('button[title*="tranches"], button[title*="Staged position"]') }).first();
   await expect(row, "no staged-capable row in the fixture").toBeVisible();

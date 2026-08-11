@@ -37,12 +37,19 @@ test("trades: status/outcome views filter, and their counts reconcile", async ({
   expect(profit + lossC).toBeLessThanOrEqual(closed);
 
   // Choosing a view returns exactly the number it advertised.
+  //
+  // Read the "N of M" counter, NOT tbody row counts: the table is virtualized
+  // (data-table.tsx `virtual`), so the DOM holds only the window + overscan —
+  // rendered rows < population is CORRECT behaviour now. The counter is
+  // data.length over the full filtered array, which is the same population the
+  // dropdown counted; asserting it keeps the reconcile contract honest.
   for (const [value, expected] of [["open", open], ["closed", closed], ["closed-loss", lossC]] as const) {
     await view.selectOption(value);
     await expect
-      .poll(async () => (await page.locator("tbody tr").allTextContents()).filter((t) => t.trim()).length, {
-        timeout: 15_000,
-      })
+      .poll(async () => {
+        const counter = await page.getByText(/\d+\s+of\s+\d+/).first().textContent();
+        return Number(counter?.match(/^(\d+)/)?.[1] ?? -1);
+      }, { timeout: 15_000 })
       .toBe(expected);
   }
 });

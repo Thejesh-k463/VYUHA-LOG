@@ -14,6 +14,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GripVertical } from "lucide-react";
 import { useListDrag } from "@/components/layout/use-list-drag";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { EmptyState } from "@/components/ui/empty-state";
 
 interface DataTableProps<T> {
@@ -34,6 +35,14 @@ interface DataTableProps<T> {
    * did before the feature existed.
    */
   onReorder?: (from: number, to: number) => void;
+  /**
+   * Windows the rows: only what fits the scroll container (plus overscan)
+   * reaches the DOM. Omitted, every branch below is inert and the table
+   * renders exactly as it did before the feature existed — the tracker
+   * tables depend on that. Windowing is y-only, so the sticky header and
+   * the sticky-left columns are untouched by construction.
+   */
+  virtual?: boolean;
   /** Override the table-guard budget (px). Only needed when a table's columns
    *  are far wider or narrower than the defaults below. */
   minWidth?: number;
@@ -95,6 +104,7 @@ export function DataTable<T>({
   stickyColumns = 0,
   minWidth,
   onReorder,
+  virtual = false,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
@@ -153,6 +163,68 @@ export function DataTable<T>({
     return null;
   };
 
+  // ── Row windowing ───────────────────────────────────────────────────────
+  // The hook is called UNconditionally (rules of hooks); `count: 0` keeps it
+  // fully inert for the tracker tables. Rows are a 3.125rem FLOOR that grows
+  // for two-line cells and scales with the density root font-size, so the 50px
+  // here is only the first estimate — `measureElement` corrects every row.
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const rows = table.getRowModel().rows;
+  const virtualizer = useVirtualizer({
+    count: virtual ? rows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 50,
+    overscan: 12,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const padTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const padBottom =
+    virtualItems.length > 0
+      ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
+      : 0;
+
+  /** One real `<tr>`, shared verbatim by both render paths below. */
+  const renderRow = (row: (typeof rows)[number], vIndex?: number) => (
+    // border-rule, not border-border/40: the old separator measured
+    // 1.08:1 against the row surface — invisible. See --color-rule.
+    // 3.125rem = 50px at the compact root (v3 §4.2 wants 50–52px);
+    // `height` on a row is a floor, so two-line instrument cells still
+    // grow past it. Hover = 5% teal wash + a 2px teal left edge.
+    <tr
+      key={row.id}
+      data-index={vIndex}
+      ref={vIndex !== undefined ? virtualizer.measureElement : undefined}
+      className="group h-[3.125rem] border-b border-rule transition-[background-color,box-shadow] duration-150 hover:bg-primary/5 hover:shadow-[inset_2px_0_0_0_var(--color-primary)] motion-reduce:transition-none"
+    >
+      {row.getVisibleCells().map((cell, i) => {
+        const meta = cell.column.columnDef.meta as ColMeta | undefined;
+        const raw = cell.getValue();
+        return (
+          <td
+            key={cell.id}
+            // Full value on hover for truncated cells.
+            title={meta?.truncate && typeof raw === "string" ? raw : undefined}
+            className={cn(
+              "whitespace-nowrap px-2.5 py-2 align-middle",
+              meta?.align === "right" && "text-right tabular-nums",
+              // Truncate long labels (option tradingsymbols) instead of
+              // forcing the whole table wide enough for the longest one.
+              meta?.truncate && "max-w-[18ch] overflow-hidden text-ellipsis",
+              // Sticky cells need an opaque bg; the row's own 5% teal
+              // wash paints BEHIND them, so they mix the same tint into
+              // the surface themselves instead of going dead on hover.
+              i < stickyColumns &&
+                "sticky z-[1] bg-surface group-hover:bg-[color-mix(in_oklab,var(--color-primary)_5%,var(--color-surface))]",
+            )}
+            style={stickyStyle(i)}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </td>
+        );
+      })}
+    </tr>
+  );
+
   return (
     // bg-surface on the WRAPPER so header and rows share one surface — the
     // header used to sit on bg-surface while rows showed the page background
@@ -163,6 +235,7 @@ export function DataTable<T>({
     // one) — this is that branch: light mode drops the image and keeps the
     // flat --color-surface underneath.
     <div
+      ref={scrollRef}
       className="table-luxe overflow-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-[var(--shadow-card-float)] [html.theme-light_&]:bg-none"
       style={{ maxHeight }}
     >
@@ -280,45 +353,25 @@ export function DataTable<T>({
                 <EmptyState variant="chart" title="Nothing here yet" hint={emptyMessage} />
               </td>
             </tr>
+          ) : virtual ? (
+            <>
+              {/* Spacer rows keep table semantics (and therefore the sticky
+                  header/left cells) intact; their height is the off-screen
+                  region's measured size. aria-hidden: they are geometry. */}
+              {padTop > 0 && (
+                <tr aria-hidden style={{ height: padTop }}>
+                  <td colSpan={columns.length} className="border-0 p-0" />
+                </tr>
+              )}
+              {virtualItems.map((vi) => renderRow(rows[vi.index], vi.index))}
+              {padBottom > 0 && (
+                <tr aria-hidden style={{ height: padBottom }}>
+                  <td colSpan={columns.length} className="border-0 p-0" />
+                </tr>
+              )}
+            </>
           ) : (
-            table.getRowModel().rows.map((row) => (
-              // border-rule, not border-border/40: the old separator measured
-              // 1.08:1 against the row surface — invisible. See --color-rule.
-              // 3.125rem = 50px at the compact root (v3 §4.2 wants 50–52px);
-              // `height` on a row is a floor, so two-line instrument cells still
-              // grow past it. Hover = 5% teal wash + a 2px teal left edge.
-              <tr
-                key={row.id}
-                className="group h-[3.125rem] border-b border-rule transition-[background-color,box-shadow] duration-150 hover:bg-primary/5 hover:shadow-[inset_2px_0_0_0_var(--color-primary)] motion-reduce:transition-none"
-              >
-                {row.getVisibleCells().map((cell, i) => {
-                  const meta = cell.column.columnDef.meta as ColMeta | undefined;
-                  const raw = cell.getValue();
-                  return (
-                    <td
-                      key={cell.id}
-                      // Full value on hover for truncated cells.
-                      title={meta?.truncate && typeof raw === "string" ? raw : undefined}
-                      className={cn(
-                        "whitespace-nowrap px-2.5 py-2 align-middle",
-                        meta?.align === "right" && "text-right tabular-nums",
-                        // Truncate long labels (option tradingsymbols) instead of
-                        // forcing the whole table wide enough for the longest one.
-                        meta?.truncate && "max-w-[18ch] overflow-hidden text-ellipsis",
-                        // Sticky cells need an opaque bg; the row's own 5% teal
-                        // wash paints BEHIND them, so they mix the same tint into
-                        // the surface themselves instead of going dead on hover.
-                        i < stickyColumns &&
-                          "sticky z-[1] bg-surface group-hover:bg-[color-mix(in_oklab,var(--color-primary)_5%,var(--color-surface))]",
-                      )}
-                      style={stickyStyle(i)}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
+            rows.map((row) => renderRow(row))
           )}
         </tbody>
       </table>

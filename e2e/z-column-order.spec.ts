@@ -157,3 +157,31 @@ test("trades: the pinned columns offer no grip, and the tracker table has none a
   await expect(page.locator("table thead th").first()).toBeVisible();
   expect(await page.locator(GRIP).count()).toBe(0);
 });
+
+test("trades: virtualization — the far end renders on scroll, select-all counts the whole book", async ({ page }) => {
+  await freshTrades(page);
+
+  const counter = await page.getByText(/\d+\s+of\s+\d+/).first().textContent();
+  const total = Number(counter?.match(/^(\d+)/)?.[1] ?? 0);
+  expect(total).toBeGreaterThan(30); // the fixture book must exceed the window
+
+  // The DOM holds a WINDOW, not the book — that is the feature. (+2 spacers)
+  const rendered = await page.locator("tbody tr").count();
+  expect(rendered).toBeLessThan(total);
+
+  // Scroll the container to the bottom: the last rows materialise.
+  const container = page.locator("div.table-luxe");
+  await container.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect
+    .poll(async () => {
+      const texts = await page.locator("tbody tr").allTextContents();
+      return texts.length > 0 && (await container.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 5));
+    })
+    .toBe(true);
+  await expect(page.locator("tbody tr:not([aria-hidden])").last()).toBeVisible();
+
+  // Select-all selects the FULL filtered population, not the rendered window.
+  await page.locator('thead input[type="checkbox"]').check();
+  await expect(page.getByText(new RegExp(`${total}\\s+selected`))).toBeVisible();
+  await page.getByRole("button", { name: /Clear selection/ }).click();
+});

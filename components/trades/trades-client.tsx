@@ -556,6 +556,7 @@ export function TradesClient({
           data={data}
           stickyColumns={PINNED_COLUMNS}
           onReorder={reorderColumns}
+          virtual
           emptyMessage="No trades yet — import a broker file or add one manually."
         />
         <DeleteTradesDialog
