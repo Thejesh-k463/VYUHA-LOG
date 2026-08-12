@@ -23,6 +23,10 @@ this is about catching it before the push, not instead of CI.
 2. **Pure modules stay pure.** `lib/{engine,analytics,risk,domain}` import no DB and no React, so
    they can be exhaustively unit-tested. DB access lives behind `lib/queries/*` (server-only).
    Write the maths there first, unit-test it, then wrap it for the UI.
+   **The one deliberate exception is `lib/engine/rates-db.ts`** — it is `server-only` and reads
+   `charge_config` so the engine can be fed real rates (invariant 3). It is named `-db.ts` for
+   exactly that reason; the pure half is `lib/engine/rates.ts`. Do not add a second exception
+   without renaming it the same way.
 3. **The charges engine reads rates ONLY from `charge_config`** (broker × segment × exchange).
    Never hard-code a statutory rate in logic. STT/CTT and stamp duty round to the rupee.
 4. **Staged positions: weighted-average pricing, FIFO quantity consumption, R frozen at the first
@@ -81,7 +85,9 @@ this is about catching it before the push, not instead of CI.
 - **Tailwind v4 theme overrides must live inside `@layer base`.** Unlayered custom-property
   overrides are dropped by Lightning CSS. The light theme and colorblind palette in
   `app/globals.css` are layered for this reason.
-- **`lib/import/detect.ts` is the ONLY source of truth for what can be imported.** The dropzone
+- **`lib/import/registry-meta.ts` is the ONLY source of truth for what can be imported**, and
+  `lib/import/detect.ts` re-exports it (`IMPORT_SOURCES`, `dropzoneHint`) — so import from
+  whichever reads better, but change only the registry. The dropzone
   hint is generated from the registry (`dropzoneHint()`), never hand-written — two literal strings
   had drifted until the screen advertised three brokers while the code read five, and a user
   reasonably reported the feature as broken. `tests/import-registry.test.ts` fails if the copy stops
@@ -154,9 +160,13 @@ specs must not assume they run first (see `e2e/helpers.ts`). Two rules learned t
   and the failure then surfaces somewhere else entirely. This reddened CI for six releases.
 - **Never compare a page count against a whole-database figure.** The trades table is
   account-scoped and view-filtered; a backup dump is every row in every account.
-- **A spec that seeds via `ensureTrades` is `z-` prefixed.** Specs run alphabetically, and whichever
-  runs first is the one that gets to see "Imported 122 trades" — an unprefixed seeding spec steals
-  that moment from `import-dashboard.spec.ts` and fails it on a side effect.
+- **A spec that seeds via `ensureTrades` must sort AFTER `import-dashboard.spec.ts`.** Specs run
+  alphabetically, and whichever runs first is the one that gets to see "Imported 122 trades" — a
+  seeding spec that sorts earlier steals that moment and fails it on a side effect. A `z-` prefix
+  is the blunt way to guarantee it, but six existing specs seed without one and are fine purely
+  because their names already sort later (`import-split-cockpit`, `nse-map`, `rom-and-drilldown`,
+  `staged-position`, `trade-views`, `v297-surfaces`). If you add a spec whose name sorts before
+  `import-dashboard`, prefix it.
 - **Assert client-restored state with `expect.poll`, never once after `networkidle`.** Saved column
   orders, calculator snapshots and the like are applied by client code after hydration, and
   `networkidle` says nothing about hydration — a single assert reads the default and looks exactly
@@ -212,8 +222,10 @@ declared "no-mtf", not omitted.
 - **The updater signing key is `.secrets/vyuha-updater.key`, and nothing else.** Its public half
   must equal `plugins.updater.pubkey` in `tauri.conf.json` (currently key id `4FF85F3BBE1DA21D`).
   `scripts/tauri-build.mjs` resolves it automatically — **do not set
-  `TAURI_SIGNING_PRIVATE_KEY` by hand to route around it.** The repo previously carried a stale
-  `updater-private.key` at its root from a key rotation at v2.91.0 (old id `8FFAF1B491EAD2F0`);
+  `TAURI_SIGNING_PRIVATE_KEY` by hand to route around it.** ⚠ A stale `updater-private.key` from
+  the v2.91.0 key rotation (old id `8FFAF1B491EAD2F0`) is **still sitting in the repo root** —
+  untracked and gitignored, so it never reached GitHub, but present on disk and one careless
+  `--private-key` away from being used;
   signing with it produces a `.sig` the build reports as valid while every installed copy rejects
   the update. The CI secret `TAURI_SIGNING_PRIVATE_KEY` must hold the `.secrets` key for the same
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".

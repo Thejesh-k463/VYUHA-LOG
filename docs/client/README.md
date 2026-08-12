@@ -189,7 +189,7 @@ states it outright and you are never asked again.
 Everything lives in one SQLite file on your machine:
 
 ```
-%LOCALAPPDATA%\Vyuha\data\vyuha.sqlite
+%APPDATA%\in.vyuha.tradejournal\vyuha.sqlite
 ```
 
 **Back it up** from Backup & Restore inside the app. The backup includes the complete

@@ -6,7 +6,7 @@
  * ── Why this exists ───────────────────────────────────────────────────────
  *
  * Vyuha ships hand-written parsers for the brokers whose export formats we
- * have actually seen. That will always be a subset: Kotak Neo, Paytm Money and
+ * have actually seen. That will always be a subset: Kotak Neo and
  * Sahi publish no column specification anywhere — not in their own docs, and
  * not in the third-party journals that support them, which ask users to email
  * a sample file. Writing a parser against guessed header names is the worst

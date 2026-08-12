@@ -1,10 +1,10 @@
 # Vyuha — Installation & Getting-Started Guide
 
 **Vyuha** is a local-first trading journal for the Indian market. Everything runs **on your own
-computer** — your trades never leave your machine. No account, no cloud, no internet required
-after download.
+computer** — your trades never leave your machine. No account, no cloud, and nothing about you or
+your trades is ever uploaded.
 
-- **Platform:** Windows 10 / 11 (64-bit)
+- **Platform:** Windows 10 / 11 (64-bit), or macOS (Apple silicon and Intel builds both ship)
 - **Disk:** ~200 MB
 - **Internet:** not needed to use Vyuha. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
@@ -37,8 +37,10 @@ When you buy:
 2. Paste the **license key** from your purchase email (one line, starts with `VYUHA-`).
 3. Click **Activate**. You'll see **"Licensed to <your email>"**, your SKU, and a **Key ID** like
    `A1B2-C3D4-E5`.
-4. Activation is **offline** — verified on your machine against a signature. No internet needed,
-   ever, and nothing about you is transmitted.
+4. Activation is **offline** — verified on your machine against a signature. Your key is never sent
+   anywhere and nothing about you is transmitted. (Vyuha still makes the one download-only launch
+   check described at the top. A licence withdrawn after a refund or chargeback stops working
+   through that check, and only after a dated warning period shown in the app.)
 
 **Quote the Key ID, never the key, when contacting support.** The Key ID identifies your licence
 without exposing the credential itself.

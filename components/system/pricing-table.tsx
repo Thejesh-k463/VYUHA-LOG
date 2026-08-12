@@ -65,7 +65,7 @@ export function PricingTable({ compact }: { compact?: boolean }) {
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {PRICING.map((sku) => (
           <Card key={sku.id} className={`flex flex-col p-5 ${sku.featured ? "border-accent/40" : ""}`}>
             <div className="flex items-center justify-between">

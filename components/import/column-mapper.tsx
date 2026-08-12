@@ -19,7 +19,7 @@ import { AlertCircle, Wand2 } from "lucide-react";
  *
  * Shown when no hand-written parser recognises a file. This is what makes the
  * importer work with brokers whose export format nobody has published —
- * Kotak Neo, Paytm Money and Sahi document theirs nowhere, and guessing at
+ * Kotak Neo and Sahi document theirs nowhere, and guessing at
  * their column names would import quantity into the price field and call it a
  * trade. Asking is the only honest way to read a file we have never seen.
  *

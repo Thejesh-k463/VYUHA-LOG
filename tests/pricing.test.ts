@@ -109,6 +109,44 @@ describe("the buy message carries the quote", () => {
   });
 });
 
+describe("the emailable standalone landing page", () => {
+  /**
+   * `docs/sales/landing-page.standalone.html` is GENERATED from
+   * landing-page.html by scripts/build-landing.mjs (npm run landing:build) and
+   * is gitignored — so it exists on the seller's machine and not in CI, and
+   * this block skips when it is absent.
+   *
+   * It is checked because it is the file actually EMAILED to a prospect, and
+   * it silently rotted for four releases: it was still quoting ₹1,499 /
+   * ₹4,999 / ₹499 and a retired SKU long after the v2.99.76 reprice, and still
+   * carried the pre-v2.99.91 "no network activity" answer. landing-page.html
+   * was pinned by the tests above the whole time; nothing looked at its
+   * generated twin, because regenerating was a manual step nobody had written
+   * down.
+   */
+  const standalone = path.join(process.cwd(), "docs", "sales", "landing-page.standalone.html");
+  const exists = fs.existsSync(standalone);
+
+  it.skipIf(!exists)("quotes the SAME prices as the pricing module — regenerate it if this fails", () => {
+    const html = fs.readFileSync(standalone, "utf8");
+    for (const sku of PRICING) {
+      expect(
+        html,
+        `${sku.name} (${priceLabel(sku)}) is missing — run: npm run landing:build`,
+      ).toContain(formatInr(sku.amountInr));
+    }
+  });
+
+  it.skipIf(!exists)("carries no retired price and no superseded network claim", () => {
+    const html = fs.readFileSync(standalone, "utf8");
+    // The exact numbers it was stuck on, and the sentence v2.99.91 corrected.
+    for (const dead of ["₹1,499", "₹4,999", "₹499/yr"]) {
+      expect(html, `retired price ${dead} still present — run: npm run landing:build`).not.toContain(dead);
+    }
+    expect(html, "pre-v2.99.91 network answer — run: npm run landing:build").toContain("download-only");
+  });
+});
+
 describe("launch configuration guard", () => {
   it("block enforcement never ships without a price to show", () => {
     // Same spirit as the dead-buy-link guard in tests/license.test.ts: a
