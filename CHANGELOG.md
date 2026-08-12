@@ -27,6 +27,29 @@ machine for the first time here.
   for every installed copy without a single visible symptom, because the
   updater is deliberately fail-open. Found and fixed the same day; the runbook
   now carries the one-line check that makes it visible.
+- **The Node version is pinned, because a floating one broke the build.**
+  `node-version: 22` resolves to the newest 22.x at run time, and the runner
+  moved to 22.23.2 mid-afternoon. `better-sqlite3` then reported "No prebuilt
+  binaries found": its installer, `prebuild-install`, is unmaintained and
+  resolves the download name from a bundled table, so a Node newer than that
+  table is a 404 rather than a fallback — and the fallback cannot rescue it,
+  because `node-gyp` reads the image's Visual Studio 18 as `unknown version
+  "undefined"`. A routine runner-image update broke the Windows release build
+  hours after the identical commit had built fine. Both workflows now pin
+  22.17.0, and `npm ci` retries three times for the genuinely transient case.
+- **CI now builds on Windows — it never did.** Every CI job was Ubuntu or
+  macOS, and the only Windows build in the pipeline was the release workflow,
+  which runs *after* a tag is pushed. So every Windows-only breakage was
+  guaranteed to be discovered as a broken release, and three were in a row.
+  A new job runs the install, typecheck and unit tests on `windows-latest` on
+  every push, so the next one fails a commit instead of a release.
+- **The release verifier can no longer bless an incomplete release.** It
+  printed "✓ every signature matches… Safe to publish" for a build with no
+  Windows installer at all — every signature it inspected was genuinely
+  correct, and the release was still unshippable. It now checks that all five
+  expected artefacts exist *before* checking signatures, names what is missing,
+  and exits non-zero. A verifier that cannot see an absent platform is worse
+  than none, because its ✓ reads as "complete".
 
 ## v2.99.91 — a withdrawn licence now stops working before the next release
 
