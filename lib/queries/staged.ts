@@ -12,6 +12,7 @@ import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { getMarginPct } from "@/lib/queries/margin";
 import { recordAudit } from "@/lib/audit";
+import { getSelectedAccountId } from "./accounts";
 import {
   summarise,
   markToMarket,
@@ -66,6 +67,26 @@ export interface DbLegRow {
 }
 
 /** Rows straight from the DB, in execution order. */
+/**
+ * The trade behind a MUTATION — only if the user's view can reach it.
+ *
+ * Enforced here, not trusted from the caller, exactly like
+ * `deleteTradesByIds` (invariant 8): a stale panel or a hand-made request
+ * carries a raw trade id, and until 2026-08-12 every leg mutation in this
+ * file accepted it unchecked — the one query module that touched an
+ * account-scoped table without the guard (defect D17). Reads stay unscoped
+ * (a view over ids the caller already resolved); WRITES go through this.
+ */
+function loadOwnTrade(tradeId: number) {
+  const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
+  if (!t) return null;
+  const accountId = getSelectedAccountId();
+  if (accountId !== 0 && t.accountId !== accountId) return null;
+  return t;
+}
+
+const NOT_YOURS = { ok: false as const, message: "That trade is not in the account you are viewing." };
+
 export function loadLegs(tradeId: number): DbLegRow[] {
   return db
     .select()
@@ -421,8 +442,8 @@ export interface LegMutationResult {
  * rejected exit never leaves a half-applied position behind.
  */
 export function addLeg(input: AddLegInput): LegMutationResult {
-  const t = db.select().from(tradesTable).where(eq(tradesTable.id, input.tradeId)).get();
-  if (!t) return { ok: false, message: "Trade not found." };
+  const t = loadOwnTrade(input.tradeId);
+  if (!t) return NOT_YOURS;
 
   const existing = toDomainLegs(loadLegs(input.tradeId));
   const seq = existing.reduce((m, l) => Math.max(m, l.seq), 0) + 1;
@@ -484,6 +505,7 @@ export function updateLeg(
 ): LegMutationResult {
   const row = db.select().from(tradeLegs).where(eq(tradeLegs.id, legId)).get();
   if (!row) return { ok: false, message: "Leg not found." };
+  if (!loadOwnTrade(row.tradeId)) return NOT_YOURS;
 
   const existing = toDomainLegs(loadLegs(row.tradeId));
   const prospective = existing.map((l) =>
@@ -525,6 +547,7 @@ export function updateLeg(
 export function deleteLeg(legId: number, direction?: Direction): LegMutationResult {
   const row = db.select().from(tradeLegs).where(eq(tradeLegs.id, legId)).get();
   if (!row) return { ok: false, message: "Leg not found." };
+  if (!loadOwnTrade(row.tradeId)) return NOT_YOURS;
 
   const remaining = toDomainLegs(loadLegs(row.tradeId)).filter((l) => l.id !== legId);
   if (remaining.length > 0) {
@@ -573,6 +596,7 @@ export function applyStopToOpenTranches(
   stop: { slPlanned?: number | null; trailingSl?: number | null },
   direction?: Direction,
 ): LegMutationResult {
+  if (!loadOwnTrade(tradeId)) return NOT_YOURS;
   const rows = loadLegs(tradeId);
   const legs = toDomainLegs(rows);
   const pos = summarise(legs, direction ?? "long");
@@ -611,8 +635,8 @@ export function applyStopToOpenTranches(
  * ladder must aggregate back to itself.
  */
 export function convertToStaged(tradeId: number): LegMutationResult {
-  const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
-  if (!t) return { ok: false, message: "Trade not found." };
+  const t = loadOwnTrade(tradeId);
+  if (!t) return NOT_YOURS;
   if (t.staged) return { ok: true, message: "Already a staged position." };
   if (loadLegs(tradeId).length > 0) return { ok: true, message: "Already has legs." };
 

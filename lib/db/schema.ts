@@ -251,38 +251,6 @@ export const tradeLegs = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
-// positions — open holdings/positions (persisted for MTF interest accrual)
-// ---------------------------------------------------------------------------
-export const positions = sqliteTable(
-  "positions",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    accountId: integer("account_id").notNull().default(1),
-    broker: text("broker").notNull(),
-    bucket: text("bucket").notNull(),
-    segment: text("segment").notNull(),
-    symbol: text("symbol").notNull(),
-    tradingsymbol: text("tradingsymbol"),
-    // option fields for ACTIVE positions display
-    expiry: text("expiry"),
-    strike: real("strike"),
-    optionType: text("option_type"),
-    qty: real("qty").notNull().default(0),
-    avgPrice: real("avg_price").notNull().default(0),
-    isMtf: integer("is_mtf", { mode: "boolean" }).notNull().default(false),
-    fundedAmount: real("funded_amount").notNull().default(0),
-    pledgeDate: text("pledge_date"),
-    interestRate: real("interest_rate").notNull().default(0), // blended annual rate applied
-    accruedInterest: real("accrued_interest").notNull().default(0),
-    lastMtmPrice: real("last_mtm_price"),
-    mtmUpdatedAt: text("mtm_updated_at"),
-    createdAt: text("created_at").notNull().default(now),
-    updatedAt: text("updated_at").notNull().default(now),
-  },
-  (t) => [index("positions_bucket_idx").on(t.bucket)],
-);
-
-// ---------------------------------------------------------------------------
 // capital_snapshots
 // ---------------------------------------------------------------------------
 export const capitalSnapshots = sqliteTable("capital_snapshots", {
@@ -948,7 +916,6 @@ export const regulatoryRulePacks = sqliteTable("regulatory_rule_packs", {
 export type Trade = typeof trades.$inferSelect;
 export type Playbook = typeof playbooks.$inferSelect;
 export type NewTrade = typeof trades.$inferInsert;
-export type Position = typeof positions.$inferSelect;
 export type ChargeConfigRow = typeof chargeConfig.$inferSelect;
 export type RiskConfigRow = typeof riskConfig.$inferSelect;
 export type Settings = typeof settings.$inferSelect;

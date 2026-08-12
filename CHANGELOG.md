@@ -1,5 +1,45 @@
 # Changelog
 
+## v2.99.77 — the boundary holds everywhere
+
+The integrity sweep. Eleven defects from the 2026-08-12 register, most of
+them one disease: code touching an account-scoped table without resolving
+which account it was in. None of them looked broken on screen — which is
+exactly why they were dangerous.
+
+- **Every write now resolves its account at the point of touch.** Sessions no
+  longer accept a client-supplied account id (a stale tab could silently MOVE
+  a plan across accounts); IPOs added from the All-accounts view land in the
+  resolved account instead of always account 1, and IPO edit/delete refuse
+  ids outside the account being viewed; every staged-position leg mutation
+  now runs the same own-account check the delete engine has always had.
+- **IPO exit charges come from the charges engine.** The rates were
+  hard-coded — STT, exchange, SEBI, stamp, DP, GST, frozen in source where no
+  budget change could reach them — and they fed real net P&L into capital
+  compounding. Exits now price through charge_config like any delivery sell,
+  with the allotment as a zero-brokerage buy side; the old constants survive
+  only as the documented fallback for an IPO that names no broker.
+- **Deleting a playbook now does what it always claimed.** "Its trades fall
+  back to Untagged" was false — trades kept a dead id, session plans kept
+  ghost references, and the journal dialog rendered a select with no matching
+  option. The references are nulled in the same transaction and the message
+  reports the real counts.
+- **Archiving the selected account no longer strands you.** Selection moves
+  to a live account the moment its account is archived, and one live + one
+  archived account reads as a single-account book, not an aggregate.
+- **The guard tests can now fail.** The account-isolation registry maps each
+  scoped table to owner files and fails unless each owner actually resolves
+  the account — on its first run it correctly distinguished a route that
+  delegates from a route that forgets. The reconciliation diagnostics assert
+  their figures exist instead of ending in expect(true). The dead `positions`
+  table — 28 columns, zero readers, faithfully backed up empty for months —
+  is dropped (migration 0045).
+- The honest one: exercise STT (0.125% on intrinsic) stays a named constant.
+  It is a different statute from the premium STT charge_config carries, feeds
+  one advisory figure, and inventing a config column no computation uses
+  would be worse — recorded in DECISIONS.md.
+
+
 ## v2.99.76 — the price becomes the positioning
 
 Supersedes v2.99.75 within the hour — that build shipped with the launch-era

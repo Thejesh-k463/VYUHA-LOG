@@ -22,8 +22,11 @@ export function getAccounts() { return db.select().from(accounts).orderBy(asc(ac
 export const getSelectedAccountId = cache((): number => {
   const raw = db.select({ id: settings.selectedAccountId }).from(settings).limit(1).get()?.id ?? 0;
   if (raw > 0) return raw;
-  const all = db.select({ id: accounts.id }).from(accounts).all();
-  return all.length === 1 ? all[0].id : 0;
+  // LIVE accounts only: one live + one archived is a single-account book, not
+  // an aggregate — counting the archived one silently dropped such users into
+  // the All-accounts view nobody asked for (defect D8, 2026-08-12).
+  const live = db.select({ id: accounts.id }).from(accounts).where(eq(accounts.archived, false)).all();
+  return live.length === 1 ? live[0].id : 0;
 });
 
 /** True when the user is genuinely looking at more than one account at once. */

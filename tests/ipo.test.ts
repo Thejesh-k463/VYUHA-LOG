@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeIpo, summariseIpos, ipoSellCharges, ipoTaxEstimate, type IpoInput } from "@/lib/analytics/ipo";
+import { computeCharges } from "@/lib/engine/charges";
+import type { ChargeRates } from "@/lib/engine/types";
 
 function ipo(p: Partial<IpoInput>): IpoInput {
   return {
@@ -8,6 +10,50 @@ function ipo(p: Partial<IpoInput>): IpoInput {
     allotted: false, allottedQty: 0, listingPrice: null, exitPrice: null, ...p,
   };
 }
+
+describe("the charger is injected — invariant 3, defect D4", () => {
+  it("an injected charger's figure lands in netPnl, replacing the static estimate", () => {
+    // The server injects a charge_config-backed charger; the hard-coded rates
+    // in ipoSellCharges are now only the no-broker fallback.
+    const flat = () => 100;
+    const c = computeIpo(ipo({ allotted: true, allottedQty: 50, exitPrice: 140 }), flat);
+    expect(c.charges).toBe(100);
+    expect(c.netPnl).toBe(2000 - 100);
+  });
+
+  it("without an injection the fallback estimate still applies", () => {
+    const c = computeIpo(ipo({ allotted: true, allottedQty: 50, exitPrice: 140 }));
+    expect(c.charges).toBe(ipoSellCharges(140 * 50, 5000));
+  });
+
+  it("engine parity: a real rates row prices the exit like any delivery sell with no buy brokerage", () => {
+    // Mirrors lib/queries/ipos.ts chargerFor — allotment is the buy side
+    // (stamp on allotted value) but carries zero buy orders, so a flat-fee
+    // broker contributes only sell-side brokerage.
+    const rates: ChargeRates = {
+      broker: "zerodha", plan: "default", planLabel: null, subscriptionMonthly: 0,
+      segment: "eq_delivery", exchange: "NSE",
+      brokerageFlat: 20, brokeragePct: 0, brokerageCap: null, brokerageFloor: 0,
+      sttPct: 0.001, sttSide: "sell", exchangeTxnPct: 0.0000297, sebiPct: 0.000001,
+      stampPct: 0.00015, ipftPct: 0, gstPct: 0.18,
+      dpCharge: 15.34, dpPct: 0, dpGstApplicable: false, dpMinValue: 0,
+      mtfInterestAnnual: 0, mtfRateUnknown: false, mtfTiers: null,
+      pledgeCharge: 0, unpledgeCharge: 0,
+    };
+    const engine = computeCharges(
+      { segment: "eq_delivery", buyValue: 5000, sellValue: 7000, buyQty: 1, sellQty: 1, buyOrderCount: 0, sellOrderCount: 1 },
+      rates,
+    );
+    expect(engine.brokerage).toBe(20); // sell side only — no buy order
+    expect(engine.stampDuty).toBe(Math.round(0.00015 * 5000)); // on the allotment
+    const c = computeIpo(
+      ipo({ allotted: true, allottedQty: 50, exitPrice: 140 }),
+      (sellValue, allottedValue) =>
+        computeCharges({ segment: "eq_delivery", buyValue: allottedValue, sellValue, buyQty: 1, sellQty: 1, buyOrderCount: 0, sellOrderCount: 1 }, rates).total,
+    );
+    expect(c.charges).toBe(engine.total);
+  });
+});
 
 describe("computeIpo", () => {
   it("exited IPO: realised net P&L after sell charges", () => {

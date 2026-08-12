@@ -2,11 +2,41 @@ import "server-only";
 import { db } from "@/lib/db";
 import { ipos } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { computeIpo, summariseIpos, type IpoComputed, type IpoSummary } from "@/lib/analytics/ipo";
+import { computeIpo, ipoSellCharges, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
+import { computeCharges } from "@/lib/engine/charges";
+import { findRates } from "@/lib/engine/rates";
+import { loadRatesMap } from "@/lib/engine/rates-db";
+import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getSelectedAccountId } from "./accounts";
+
+/**
+ * Exit charges from the SAME engine and charge_config rates every other trade
+ * uses (invariant 3). The allotment is the buy side — its stamp duty computes
+ * on the allotted value, but with buyOrderCount 0 there is no buy brokerage,
+ * because an allotment is not a brokered order. Only an IPO that names no
+ * broker (or a broker with no rates row) falls back to the pure static
+ * estimate, which the analytics module documents as exactly that.
+ */
+function chargerFor(broker: string | null, exchange: string, ratesMap: ReturnType<typeof loadRatesMap>): IpoSellCharger {
+  if (!broker) return ipoSellCharges;
+  let rates;
+  try {
+    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange);
+  } catch {
+    return ipoSellCharges;
+  }
+  return (sellValue, allottedValue) => {
+    if (sellValue <= 0) return 0;
+    return computeCharges(
+      { segment: "eq_delivery", buyValue: allottedValue, sellValue, buyQty: 1, sellQty: 1, buyOrderCount: 0, sellOrderCount: 1 },
+      rates,
+    ).total;
+  };
+}
 
 export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } {
   const accountId=getSelectedAccountId(); const q=db.select().from(ipos); const raw=(accountId>0?q.where(eq(ipos.accountId,accountId)):q).orderBy(desc(ipos.createdAt)).all();
+  const ratesMap = loadRatesMap();
   const rows = raw.map((r) =>
     computeIpo({
       id: r.id,
@@ -28,7 +58,7 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
       listingDate: r.listingDate,
       exitDate: r.exitDate,
       notes: r.notes,
-    }),
+    }, chargerFor(r.broker, r.exchange, ratesMap)),
   );
   return { rows, summary: summariseIpos(rows) };
 }

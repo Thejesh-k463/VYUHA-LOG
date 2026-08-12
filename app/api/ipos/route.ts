@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { ipos, trades } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { tradePatchFromIpo } from "@/lib/analytics/ipo-link";
-import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
 
@@ -128,7 +128,14 @@ export async function POST(req: Request) {
 
   const id = Number(body.id);
   if (Number.isFinite(id) && id > 0) {
+    // Scoped like every other account-bound mutation (invariant 8): an IPO id
+    // from an account the user is not viewing reads as "not found", never as
+    // something a stale tab can edit across the boundary.
     const before = db.select().from(ipos).where(eq(ipos.id, id)).get();
+    const viewing = getSelectedAccountId();
+    if (!before || (viewing > 0 && before.accountId !== viewing)) {
+      return NextResponse.json({ ok: false, message: "That IPO is not in the account you are viewing." }, { status: 404 });
+    }
     db.update(ipos)
       .set({
         ...values,
@@ -153,7 +160,10 @@ export async function POST(req: Request) {
 
   const row = db
     .insert(ipos)
-    .values({ accountId: getSelectedAccountId() || 1, ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
+    // getWriteAccountId, not `getSelectedAccountId() || 1`: 0 is a view, not a
+    // place (invariant 9), and the old fallback silently filed every IPO added
+    // from the All-accounts view into account 1 (defect D9, 2026-08-12).
+    .values({ accountId: getWriteAccountId(), ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
     .returning({ id: ipos.id })
     .get();
   if (linkedTradeId) syncLinkedTrade(linkedTradeId, values);
@@ -164,6 +174,13 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const id = Number(new URL(req.url).searchParams.get("id"));
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, message: "Bad id" }, { status: 400 });
+  // Account enforcement mirrors lib/queries/delete.ts: the aggregate view may
+  // delete anywhere it can see, a single-account view only inside itself.
+  const row = db.select({ accountId: ipos.accountId }).from(ipos).where(eq(ipos.id, id)).get();
+  const viewing = getSelectedAccountId();
+  if (!row || (viewing > 0 && row.accountId !== viewing)) {
+    return NextResponse.json({ ok: false, message: "That IPO is not in the account you are viewing." }, { status: 404 });
+  }
   db.delete(ipos).where(eq(ipos.id, id)).run();
   revalidate();
   return NextResponse.json({ ok: true, message: "IPO deleted." });

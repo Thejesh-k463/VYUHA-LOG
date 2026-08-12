@@ -1,0 +1,16 @@
+-- Drop the dead `positions` table.
+--
+-- 28 columns, an index, an account_id — and not one reader or writer
+-- anywhere in the codebase. Its stated purpose ("persisted for MTF interest
+-- accrual") has been served by lib/jobs/mtf-accrual.ts reading `trades`
+-- for as long as that job has existed. The only code that ever touched it
+-- was backup, which faithfully dumped and restored an always-empty table,
+-- and tests/account-isolation.test.ts, which called it "a known, scoped
+-- one" — a claim about a table nothing scoped because nothing queried it
+-- (defect D19, 2026-08-12).
+--
+-- No data-loss consideration applies: nothing writes to it, so every copy
+-- in the field is empty. A v2/v3 backup that carries a `positions` array is
+-- restored fine — restoreDatabase iterates BACKUP_TABLES, which no longer
+-- lists it, so the (empty) payload is simply ignored.
+DROP TABLE IF EXISTS `positions`;

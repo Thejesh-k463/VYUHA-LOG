@@ -62,13 +62,21 @@ describe("Reconciliation — Dhan P&L", () => {
     reco.brokerage + agg.sttCtt + agg.exchangeTxn + agg.sebi + agg.stampDuty +
     agg.ipft + recomputedGst + agg.dpCharges + agg.mtfInterest + agg.pledgeCharges;
 
-  it("prints a reconciliation report", () => {
+  it("prints a reconciliation report over a fixture that actually parsed", () => {
     console.log("\n── Dhan reconciliation ──");
     console.log(reportLine("Gross P&L", gross, reco.grossPnl));
     console.log(reportLine("Brokerage", agg.brokerage, reco.brokerage) + "  ← engine 2-order vs actual (underivable)");
     console.log(reportLine("Total charges", totalWithReportedBrokerage, reco.totalCharges) + "  ← using reported brokerage");
     console.log(`  Net P&L (gross − total): ${(gross - totalWithReportedBrokerage).toFixed(2)}  (reported ${reco.netPnl})`);
-    expect(true).toBe(true);
+    // This used to end `expect(true).toBe(true)` — a diagnostic that printed
+    // blanks forever if the fixture stopped parsing. The figures it reports
+    // must at least EXIST (defect D20, 2026-08-12); the tolerance itself is
+    // asserted by the sibling tests.
+    for (const [label, v] of Object.entries({ gross, brokerage: agg.brokerage, total: totalWithReportedBrokerage, reported: reco.totalCharges })) {
+      expect(Number.isFinite(v), `${label} is not a number — the fixture stopped parsing`).toBe(true);
+    }
+    expect(Math.abs(gross)).toBeGreaterThan(0);
+    expect(reco.totalCharges).toBeGreaterThan(0);
   });
 
   it("gross P&L ties out exactly (±₹1)", () => {
@@ -108,7 +116,12 @@ describe("Reconciliation — Groww P&L", () => {
     console.log(reportLine("SEBI", agg.sebi, reco.sebi));
     console.log(reportLine("Brokerage", agg.brokerage, reco.brokerage) + "  ← order counts hidden in aggregated file");
     console.log(`  (MTF interest ${reco.mtfInterest}, pledge ${reco.mtfPledge}+${reco.mtfUnpledge}, DP ${reco.cdslDp}+${reco.growwDp} not derivable from trade rows)`);
-    expect(true).toBe(true);
+    // Same repair as the Dhan report above (D20): the diagnostic now fails if
+    // the fixture stops producing numbers, instead of printing NaN forever.
+    for (const [label, v] of Object.entries({ realised: grossRealised, unrealised: unreal, stt: agg.sttCtt, reportedStt: reco.stt })) {
+      expect(Number.isFinite(v), `${label} is not a number — the fixture stopped parsing`).toBe(true);
+    }
+    expect(Math.abs(grossRealised)).toBeGreaterThan(0);
   });
 
   it("realised & unrealised P&L tie out exactly (±₹1)", () => {

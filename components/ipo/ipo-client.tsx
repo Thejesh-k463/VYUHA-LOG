@@ -55,7 +55,21 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
 
   async function del(id: number) {
     if (!confirm("Delete this IPO entry?")) return;
-    await fetch(`/api/ipos?id=${id}`, { method: "DELETE" });
+    // The response is READ, not assumed: a 404/500 used to look exactly like
+    // success — the row just reappeared on refresh with no explanation
+    // (defect D16, 2026-08-12). Same pattern as the import client.
+    try {
+      const res = await fetch(`/api/ipos?id=${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        toast.error(data?.message ?? "The IPO could not be deleted.");
+        return;
+      }
+      toast.success(data.message ?? "IPO deleted.");
+    } catch (e) {
+      toast.error(`Could not reach the app — ${e instanceof Error ? e.message : "unknown error"}.`);
+      return;
+    }
     router.refresh();
   }
 

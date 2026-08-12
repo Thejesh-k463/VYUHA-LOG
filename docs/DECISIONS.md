@@ -706,4 +706,53 @@ know", empty means "known empty".
 **Invalidated if:** a table is deliberately excluded from backups — it goes on
 the test's EXCLUDED list with a written reason, which is the point.
 
+## 2026-08-12 — Integrity sweep (v2.99.77): the account boundary is enforced where the table is touched
+
+**Context:** The defect register (this file, above) left eleven items after the
+v2.99.75/76 releases. Nine were variations of one disease: code that touches an
+account-scoped table without resolving the account through
+`getSelectedAccountId`/`getWriteAccountId`.
+**Measured / found:** Sessions accepted a client-supplied accountId verbatim
+and could MOVE a session across accounts on update; IPO inserts used
+`getSelectedAccountId() || 1` (every aggregate-view IPO landed in account 1)
+and IPO DELETE was entirely unscoped; every leg mutation in
+`lib/queries/staged.ts` took a raw trade id unchecked; archiving the selected
+account stranded the user pointing at an account the switcher no longer
+showed; and the guard test that should have caught all of this asserted only a
+LIST OF TABLE NAMES — including "positions", a 28-column table nothing had
+ever read or written.
+**Decision:** One pattern everywhere: writes resolve the account at the point
+of touch (`getWriteAccountId` for inserts, an explicit own-account check for
+mutations by id), reads keep the `accountId > 0 ? filter : all` shape, and the
+registry test now maps each account-scoped table to OWNER FILES and fails
+unless each owner invokes a resolver. The dead `positions` table is dropped
+(migration 0045). IPO exit charges now come from the charges engine +
+`charge_config` via an injected charger; the hard-coded rates survive only as
+the documented no-broker fallback.
+**Why not the obvious thing:** Trusting route-level fixes alone. The registry
+test proved the point immediately: it flagged `app/api/capital/route.ts` as an
+owner that never resolves the account — correctly, because D1's fix had moved
+that responsibility into `compoundRealised()`. A name-list test can never make
+that distinction; an owner-map test just did, on its first run.
+**Invalidated if:** A future table's boundary is legitimately owned by a file
+that delegates resolution (like the capital route) — declare the DELEGATE as
+owner, not the route.
+
+## 2026-08-12 — Exercise STT stays a named constant; futures STT moves to charge_config
+
+**Context:** D18 — `lib/analytics/settlement.ts` hard-coded `exerciseSttPct`
+(0.125% on intrinsic at option exercise) and `futExitSttPct` (0.02% futures
+sell), with only the delivery rate read from `charge_config`.
+**Measured / found:** `futExitSttPct` is exactly `charge_config`'s `sttPct`
+for the `future` segment — same statute, same shape. `exerciseSttPct` is NOT:
+config's option-segment `sttPct` is the premium-sell rate; exercise STT
+applies to intrinsic value under a different rule, and no column carries it.
+**Decision:** Futures STT now reads from config (any broker's row — statutory
+rates are broker-invariant). Exercise STT remains a named default in
+`DEFAULT_SETTLEMENT_RATES`, deliberately: it feeds one advisory figure on the
+physical-settlement panel, and adding a `charge_config` column for it would
+put a rate in the editor that no charge computation ever uses.
+**Invalidated if:** exercise STT starts feeding a booked charge rather than an
+advisory — then it earns the column.
+
 <!-- First entry goes here. -->

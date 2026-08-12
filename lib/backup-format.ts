@@ -19,7 +19,6 @@ export const BACKUP_TABLES = [
   "capital_snapshots",
   "import_batches",
   "trades",
-  "positions",
   "classification_overrides",
   "mtm_prices",
   "ipos",

@@ -193,11 +193,57 @@ describe("account selection", () => {
   });
 });
 
+describe("staged mutations respect the account boundary (D17)", () => {
+  it("a leg mutation on another account's trade is refused, not applied", async () => {
+    const staged = await import("@/lib/queries/staged");
+    const row = t.db
+      .insert(t.schema.trades)
+      .values(tradeRow({ accountId: SWING, symbol: "GUARDED", tradingsymbol: "GUARDED", buyQty: 10, avgBuyPrice: 100, buyValue: 1000, buyDate: "2026-07-01", isOpen: true }))
+      .returning({ id: t.schema.trades.id })
+      .get();
+
+    // Viewing PRIMARY: the SWING trade's id is real but out of reach — the
+    // exact stale-panel shape the guard exists for.
+    selectAccount(PRIMARY);
+    const refused = staged.convertToStaged(row.id);
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toMatch(/not in the account/i);
+    expect(t.db.select().from(t.schema.tradeLegs).all().filter((l) => l.tradeId === row.id)).toHaveLength(0);
+
+    // Viewing its own account (or the aggregate), the same call works.
+    selectAccount(SWING);
+    expect(staged.convertToStaged(row.id).ok).toBe(true);
+    expect(t.db.select().from(t.schema.tradeLegs).all().filter((l) => l.tradeId === row.id).length).toBeGreaterThan(0);
+  });
+});
+
 describe("account-scoped table registry", () => {
-  it("every table carrying account_id is a known, scoped one", () => {
-    // Introspect the real schema rather than trusting a hand-kept list. This is
-    // the test that catches the NEXT table, not just today's eight: adding
-    // account_id somewhere new fails here until the query layer scopes it.
+  /**
+   * table → the source files that OWN its account boundary. The old version of
+   * this test asserted only the list of table NAMES, which is how a dead table
+   * ("positions") sat here labelled "a known, scoped one" while nothing
+   * queried it at all, and how two API routes wrote unscoped for months
+   * (defects D9/D15, 2026-08-12). Now each table must name its owners, and
+   * each owner must actually invoke the account resolver.
+   */
+  const OWNERS: Record<string, string[]> = {
+    trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts"],
+    import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts"],
+    ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts"],
+    ledger_entries: ["lib/queries/ledger.ts"],
+    trading_sessions: ["lib/queries/sessions.ts", "app/api/sessions/route.ts"],
+    // app/api/capital/route.ts delegates wholly to compoundRealised() here,
+    // so the query module owns the boundary and the route never touches the
+    // table — which is the shape D1's fix deliberately produced.
+    capital_snapshots: ["lib/queries/capital.ts"],
+    broker_connections: ["app/api/import/broker/route.ts"],
+    panel_dismissals: ["lib/queries/dismissals.ts"],
+  };
+
+  it("every table carrying account_id has a declared owner", () => {
+    // Introspect the real schema rather than trusting a hand-kept list — this
+    // catches the NEXT table: adding account_id anywhere fails here until an
+    // owner is declared below AND that owner resolves the account.
     const rows = t.sqlite
       .prepare(
         `SELECT m.name AS tbl FROM sqlite_master m
@@ -207,16 +253,22 @@ describe("account-scoped table registry", () => {
       )
       .all() as { tbl: string }[];
 
-    expect(rows.map((r) => r.tbl)).toEqual([
-      "broker_connections",
-      "capital_snapshots",
-      "import_batches",
-      "ipos",
-      "ledger_entries",
-      "panel_dismissals",
-      "positions",
-      "trades",
-      "trading_sessions",
-    ]);
+    expect(rows.map((r) => r.tbl)).toEqual(Object.keys(OWNERS).sort());
+  });
+
+  it("every declared owner actually resolves the account", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    for (const [tbl, files] of Object.entries(OWNERS)) {
+      for (const rel of files) {
+        const full = path.join(process.cwd(), rel);
+        expect(fs.existsSync(full), `${tbl}: owner file ${rel} is gone — re-point the registry`).toBe(true);
+        const src = fs.readFileSync(full, "utf8");
+        expect(
+          /getSelectedAccountId|getWriteAccountId/.test(src),
+          `${tbl}: ${rel} touches an account-scoped table but never resolves the account (invariant 8)`,
+        ).toBe(true);
+      }
+    }
   });
 });

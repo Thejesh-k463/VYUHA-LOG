@@ -316,6 +316,13 @@
       "when": 1786600000000,
       "tag": "0044_per-account-rolled-in",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1786600001000,
+      "tag": "0045_drop-dead-positions",
+      "breakpoints": true
     }
   ]
 }

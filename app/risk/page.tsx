@@ -60,12 +60,14 @@ const DERIVATIVE_SEGMENTS = new Set([
   "commodity_option",
 ]);
 
-/** Statutory equity-delivery STT, read from charge_config (not hard-coded). */
-function deliverySttFromConfig(): number {
+/** A statutory STT rate read from charge_config (invariant 3), by segment.
+ *  Statutory rates are identical across brokers, so any row with the segment
+ *  answers; the pure default is only the no-config fallback. */
+function sttFromConfig(segment: string, fallback: number): number {
   for (const r of loadRatesMap().values()) {
-    if (r.segment === "eq_delivery" && r.sttPct > 0) return r.sttPct;
+    if (r.segment === segment && r.sttPct > 0) return r.sttPct;
   }
-  return DEFAULT_SETTLEMENT_RATES.deliverySttPct;
+  return fallback;
 }
 
 function daysBetween(a: string | null, b: string): number | null {
@@ -287,7 +289,16 @@ export default function RiskPage() {
     });
   const settlement = computeSettlement(
     settlementInputs,
-    { ...DEFAULT_SETTLEMENT_RATES, deliverySttPct: deliverySttFromConfig() },
+    {
+      ...DEFAULT_SETTLEMENT_RATES,
+      deliverySttPct: sttFromConfig("eq_delivery", DEFAULT_SETTLEMENT_RATES.deliverySttPct),
+      // Futures sell STT fits charge_config's own shape, so it comes from
+      // there too (defect D18). exerciseSttPct stays a named default: STT on
+      // EXERCISE (0.125% of intrinsic) is a different rate from the premium
+      // STT charge_config carries for option segments, and inventing a column
+      // for one advisory figure would be worse — recorded in DECISIONS.md.
+      futExitSttPct: sttFromConfig("future", DEFAULT_SETTLEMENT_RATES.futExitSttPct),
+    },
     today,
   );
 

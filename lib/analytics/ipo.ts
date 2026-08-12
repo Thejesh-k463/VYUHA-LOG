@@ -81,7 +81,24 @@ export interface IpoComputed extends IpoInput {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const rRupee = (n: number) => Math.round(n);
 
-/** Delivery-sell charge estimate for IPO shares (no brokerage; primary acquisition). */
+/**
+ * How exit charges are computed, injectable by the caller.
+ *
+ * This module is PURE (invariant 2) and so cannot read `charge_config` itself
+ * — but invariant 3 says statutory rates live ONLY there. The resolution:
+ * the server caller (`lib/queries/ipos.ts`) injects a charger built on the
+ * real engine + the IPO's broker's configured rates, and this pure FALLBACK
+ * is used only when no broker is recorded on the IPO or the broker has no
+ * rates row. It existed first as the ONLY path — which meant every exited
+ * IPO's net P&L was computed from rates the user could not edit, and that
+ * number flowed into realised-net and capital compounding (defect D4,
+ * 2026-08-12).
+ */
+export type IpoSellCharger = (sellValue: number, allottedValue: number) => number;
+
+/** FALLBACK delivery-sell estimate (no brokerage; primary acquisition).
+ *  Rates frozen at the 2026 budget's statutory values — used only when the
+ *  IPO names no broker; the UI labels the result an estimate. */
 export function ipoSellCharges(sellValue: number, allottedValue: number): number {
   if (sellValue <= 0) return 0;
   const stt = rRupee(0.001 * sellValue); // 0.1% delivery sell
@@ -115,7 +132,7 @@ export function ipoTaxEstimate(
   };
 }
 
-export function computeIpo(i: IpoInput): IpoComputed {
+export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = ipoSellCharges): IpoComputed {
   const board: IpoBoard = i.board === "sme" ? "sme" : "mainboard";
   const discountPerShare = Math.max(0, i.discountPerShare ?? 0);
   const effectiveCost = Math.max(0, r2(i.appliedPrice - discountPerShare));
@@ -139,7 +156,7 @@ export function computeIpo(i: IpoInput): IpoComputed {
 
   if (status === "exited" && i.exitPrice != null) {
     grossPnl = r2((i.exitPrice - effectiveCost) * allottedQty);
-    charges = ipoSellCharges(i.exitPrice * allottedQty, investedAllotted);
+    charges = sellCharger(i.exitPrice * allottedQty, investedAllotted);
     netPnl = r2(grossPnl - charges);
     realised = true;
     returnPct = investedAllotted > 0 ? r2((netPnl / investedAllotted) * 100) : null;

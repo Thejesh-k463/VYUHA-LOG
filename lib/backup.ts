@@ -32,7 +32,6 @@ const TABLE_MAP: Record<BackupTable, any> = {
   capital_snapshots: schema.capitalSnapshots,
   import_batches: schema.importBatches,
   trades: schema.trades,
-  positions: schema.positions,
   classification_overrides: schema.classificationOverrides,
   mtm_prices: schema.mtmPrices,
   ipos: schema.ipos,

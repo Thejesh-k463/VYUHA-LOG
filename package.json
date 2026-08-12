@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.99.76",
+  "version": "2.99.77",
   "private": true,
   "scripts": {
     "dev": "next dev",
