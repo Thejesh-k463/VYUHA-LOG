@@ -893,4 +893,45 @@ the fetch rides on it and would need its own posture decision; or a future list
 needs to name something other than a key id, which would change the canonical
 bytes and invalidate every signature already published.
 
+---
+
+## 2026-08-12 — The revocation list's own release must be a PRERELEASE, or it steals `releases/latest` and kills auto-update
+
+**Context:** v2.99.91 publishes the signed revocation list to a permanent
+`revocations` release rather than to the app release, because `releases/latest`
+re-points at every new version and would silently 404 the list. That reasoning
+was right and is unchanged. What it missed is the hazard in the other
+direction.
+**Measured / found:** `gh release create revocations` (no flags) was run at
+18:09 UTC. Querying `/repos/…/releases/latest` immediately after returned
+`tag_name: "revocations"`, `assets: [revocations.json]`, **no latest.json** —
+GitHub resolves "latest release" as the most recent non-draft, non-prerelease
+release **by creation date across every tag**, not by semver and not only over
+version-shaped tags. `plugins.updater.endpoints` in `tauri.conf.json` is
+`https://…/releases/latest/download/latest.json`, so that URL began 404ing:
+auto-update was dead for every installed copy, and **silently**, because the
+updater is deliberately fail-open (`Err(e) => eprintln!` and return). Nothing on
+any screen would ever have said so. `gh release edit revocations --prerelease`
+restored it; the direct
+`releases/download/revocations/revocations.json` URL returned HTTP 200 with
+byte-identical content throughout — the prerelease flag does not touch it.
+**Decision:** `--prerelease` is mandatory on that release and is now in the
+publisher script's header and printed instructions, `LICENSE_OPERATIONS.md` §4,
+and the `REVOCATIONS_URL` doc comment in `src-tauri/src/lib.rs`. The runbook
+also carries the post-hoc check, because the failure is invisible without it:
+`gh api repos/…/releases/latest --jq .tag_name` must print a `v…` version.
+**Why not the obvious thing:** Repointing the updater at an explicit versioned
+URL would remove the coupling, but every ALREADY-INSTALLED copy has
+`releases/latest/…` baked into its binary — the fix would reach nobody who
+needs it. The endpoint has to keep resolving.
+**The general lesson, which is the reason this entry exists:** two fail-open
+mechanisms were stacked without anyone asking what their silence adds up to.
+The updater fails open so an offline user is not nagged; revocation fails open
+so an offline user is not locked out. Both are right individually. Together
+they mean a totally broken update path produces no error, no dialog, and no log
+a user would ever see — it is indistinguishable from "no update available".
+Any future fail-open path needs a deliberate way to be *observed* failing.
+**Invalidated if:** GitHub changes how `/releases/latest` resolves, or the
+updater endpoint stops using the `latest` alias.
+
 <!-- First entry goes here. -->

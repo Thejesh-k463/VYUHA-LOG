@@ -13,8 +13,19 @@
 // 404 the list (un-revoking everyone) the first time a release shipped without
 // someone remembering to re-upload it. One-time setup:
 //
-//   gh release create revocations --title "Licence revocations" \
+//   gh release create revocations --prerelease \
+//     --title "Licence revocations" \
 //     --notes "Signed revocation list fetched by installed copies at launch."
+//
+// ⚠ `--prerelease` IS NOT OPTIONAL. GitHub picks "latest release" as the most
+// recent non-draft, NON-PRERELEASE release by creation date — across every tag,
+// not just version-shaped ones. Created without the flag, this release becomes
+// `releases/latest`, and the updater endpoint baked into tauri.conf.json
+// (`releases/latest/download/latest.json`) 404s on it: auto-update dies for
+// every installed copy, silently, because the updater fails open. That
+// happened for real on 2026-08-12 and was caught only by checking
+// /releases/latest afterwards. The flag does NOT affect the direct
+// `releases/download/revocations/revocations.json` URL this feature uses.
 //
 // The desktop shell downloads it during the version check it already performs
 // at launch, caches it in the app-data directory, and lib/revocation.ts
@@ -107,5 +118,6 @@ console.error(`  locks on   : ${graceDays > 0 ? `${effectiveFrom} (${graceDays}-
 console.error(`  signed with: license-private.pem — verified in-app by the same key that verifies licences`);
 console.error(`\n  Publish it to the permanent "revocations" release, asset name exactly "revocations.json":`);
 console.error(`    gh release upload revocations "${outPath}" --clobber`);
-console.error(`  (First time only: gh release create revocations --title "Licence revocations" --notes "Signed revocation list.")`);
+console.error(`  (First time only, and --prerelease is REQUIRED or this becomes releases/latest and breaks the updater:`);
+console.error(`     gh release create revocations --prerelease --title "Licence revocations" --notes "Signed revocation list.")`);
 console.error(`  Installed copies pick it up at their next launch. Offline copies do not — this fails open.\n`);

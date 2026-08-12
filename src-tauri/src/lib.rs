@@ -25,6 +25,14 @@ const PORT: u16 = 3000;
 /// screen to show for it. A dedicated, permanent `revocations` release holds
 /// exactly one asset that app releases cannot disturb, and publishing is one
 /// `--clobber` upload to a tag that never moves.
+///
+/// That release MUST be marked PRERELEASE, and the reverse hazard is why:
+/// GitHub resolves "latest release" across EVERY tag by creation date, so a
+/// plain one steals `releases/latest` from the app — and
+/// `plugins.updater.endpoints` in tauri.conf.json points at
+/// `releases/latest/download/latest.json`, which then 404s and silently kills
+/// auto-update everywhere. Happened for real on 2026-08-12. The flag does not
+/// affect the direct URL below. See docs/owner/LICENSE_OPERATIONS.md §4.
 const REVOCATIONS_URL: &str =
     "https://github.com/Thejesh-k463/VYUHA-LOG/releases/download/revocations/revocations.json";
 

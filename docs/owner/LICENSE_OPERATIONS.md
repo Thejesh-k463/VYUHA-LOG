@@ -114,13 +114,29 @@ v2.99.91 it fetches the list in the same breath.
 **One-time setup**, before the first revocation ever needs publishing:
 
 ```bash
-gh release create revocations --title "Licence revocations" --notes "Signed revocation list fetched by installed copies at launch."
+gh release create revocations --prerelease --title "Licence revocations" --notes "Signed revocation list fetched by installed copies at launch. Do not delete."
 ```
 
 That tag is permanent and holds exactly one asset. It is deliberately **not** the app release and
 deliberately **not** `releases/latest/…`: `latest` re-points at every new version, so a list
 uploaded to v2.99.91 would 404 the moment v2.99.92 shipped without someone re-uploading it — a
 revocation quietly un-revoking itself, with nothing on screen to show for it.
+
+> ⚠ **`--prerelease` is not optional, and it is not cosmetic.** GitHub picks "latest release" as
+> the most recent non-draft, **non-prerelease** release by creation date — across *every* tag, not
+> just version-shaped ones. Without the flag this release becomes `releases/latest`, and the
+> updater endpoint baked into `tauri.conf.json`
+> (`releases/latest/download/latest.json`) 404s on it. Auto-update then dies for every installed
+> copy, **silently**, because the updater fails open by design. This happened on 2026-08-12 and was
+> caught only by querying `/releases/latest` afterwards. The flag does not affect the direct
+> `releases/download/revocations/revocations.json` URL the feature actually uses.
+>
+> After creating or editing it, always confirm:
+> ```bash
+> gh api repos/Thejesh-k463/VYUHA-LOG/releases/latest --jq .tag_name
+> ```
+> That must print a `v…` app version. If it prints `revocations`, run
+> `gh release edit revocations --prerelease` and check again.
 
 Then, per revocation:
 
