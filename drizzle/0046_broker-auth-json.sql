@@ -1,0 +1,12 @@
+-- Broker-specific extra credentials for API sync (v2.99.90, Angel One first).
+--
+-- Angel One's SmartAPI login needs client code + PIN + TOTP secret alongside
+-- the API key — three fields the two existing columns cannot hold. They land
+-- as ONE JSON blob, encrypted by the v2.99.80 vault before it is written
+-- (the column never sees plaintext: the route encrypts on save, and there is
+-- no pre-existing data to sweep because the column is new).
+--
+-- A blob rather than three columns because every broker's extra shape will
+-- differ and every field in it is a secret — one venc: envelope covers the
+-- lot, and the backup redaction treats it exactly like api_key/access_token.
+ALTER TABLE `broker_connections` ADD COLUMN `auth_json` text;

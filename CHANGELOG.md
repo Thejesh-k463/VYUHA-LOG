@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.99.90 — the first broker that connects itself every morning
+
+Angel One joins the API pulls — and unlike Zerodha (daily browser login) or
+Dhan (24-hour tokens), nothing about it expires on you: the day's login code
+is minted from your TOTP secret at pull time, unattended.
+
+- **Connect once with four credentials** — SmartAPI key, client code, PIN and
+  the TOTP *secret* (the base32 behind the enrollment QR). All four live
+  encrypted in the v2.99.80 vault; the extras travel as one sealed blob in a
+  new column, a broken vault refuses the save outright, and backups carry
+  none of it. Pasting the 6-digit code where the secret belongs is caught at
+  save with an explanation, not at tomorrow's pull as a broker rejection.
+- **The TOTP engine is forty lines of node:crypto, pinned to RFC 6238's own
+  test vectors** — no new dependency, and this app's six digits and your
+  authenticator's six digits cannot silently diverge.
+- **Read-only by construction.** The Angel One module exports login and the
+  trade book — no order, no funds, no modification — and the export list is
+  pinned in tests, so a trading capability cannot be added without failing
+  CI. A leaked pull path cannot trade.
+- Pulls fetch today's fills, aggregate them per symbol + product with every
+  execution preserved, and run the same preview → classify → charges → dedup
+  pipeline as every file import. Re-pulls are idempotent.
+- The honest one: the login contract is verified against Angel One's docs,
+  but the trade-book row shape is inferred from their examples — the pull's
+  own warnings say so, unreadable fills are refused and counted rather than
+  guessed, and the first live pull should be previewed against a contract
+  note once. The connect card also stops claiming credentials are stored
+  "in plain text" — that sentence outlived the vault by one release.
+
+
 ## v2.99.80 — what the database file knows, it no longer tells
 
 Secrets at rest. Until now the licence key and the broker API credentials

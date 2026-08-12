@@ -812,9 +812,17 @@ export const brokerConnections = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     accountId: integer("account_id").notNull().default(1),
-    broker: text("broker").notNull(), // zerodha | dhan | groww
+    broker: text("broker").notNull(), // zerodha | dhan | angelone | …
     apiKey: text("api_key").notNull(),
     accessToken: text("access_token").notNull(),
+    /**
+     * Broker-specific extra credentials as ONE vault-encrypted JSON blob
+     * (Angel One: { clientCode, pin, totpSecret }). A blob rather than
+     * columns because each broker's shape differs and every field in it is a
+     * secret anyway — one venc: envelope covers them all. Redacted from
+     * backups with the other credential columns.
+     */
+    authJson: text("auth_json"),
     lastPullAt: text("last_pull_at"), // ISO datetime of the last successful pull
     updatedAt: text("updated_at").notNull().default(now),
   },

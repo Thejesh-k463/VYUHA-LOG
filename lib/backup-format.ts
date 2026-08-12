@@ -63,7 +63,7 @@ export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockH
  * plus a re-connect prompt is the honest shape. Rows redacted to "" are
  * DROPPED on restore: a connection without credentials is not a connection.
  */
-export const BROKER_SECRET_COLUMNS = ["apiKey", "accessToken"] as const;
+export const BROKER_SECRET_COLUMNS = ["apiKey", "accessToken", "authJson"] as const;
 
 export type BackupTable = (typeof BACKUP_TABLES)[number];
 

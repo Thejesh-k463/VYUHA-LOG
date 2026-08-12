@@ -6,6 +6,8 @@ import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
 import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
+import { looksLikeTotpSecret } from "@/lib/totp";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { encryptSecret, readSecret, sweepPlaintextSecrets } from "@/lib/vault";
@@ -21,17 +23,28 @@ export const runtime = "nodejs";
 // delivery because the two carry identical STT and stamp duty while financing
 // interest lives in the ledger. `productType: "MTF"` ends that guessing.
 
-/** Brokers with a working API pull, and what each needs in the two fields. */
-const API_BROKERS: Record<string, { label: string; keyLabel: string; note: string }> = {
+/** Brokers with a working API pull, and what each needs.
+ *  `needsToken` brokers use the two classic columns; `extraFields` land as one
+ *  vault-encrypted JSON blob in auth_json. */
+const API_BROKERS: Record<string, { label: string; keyLabel: string; note: string; needsToken: boolean; extraFields?: readonly string[] }> = {
   zerodha: {
     label: "Zerodha (Kite Connect)",
     keyLabel: "API key",
     note: "Kite access tokens expire daily — re-paste after each login.",
+    needsToken: true,
   },
   dhan: {
     label: "Dhan (DhanHQ v2)",
     keyLabel: "Client ID",
     note: "Dhan access tokens are issued from web.dhan.co → DhanHQ Trading APIs and are valid for 24 hours by default.",
+    needsToken: true,
+  },
+  angelone: {
+    label: "Angel One (SmartAPI)",
+    keyLabel: "API key",
+    note: "Login is unattended: the TOTP secret mints the day's code at pull time, so nothing expires on you.",
+    needsToken: false,
+    extraFields: ["clientCode", "pin", "totpSecret"],
   },
 };
 
@@ -75,23 +88,45 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    if (!apiKey || !accessToken) {
-      return NextResponse.json({ ok: false, message: `${spec.keyLabel} and access token are required.` }, { status: 400 });
+    if (!apiKey || (spec.needsToken && !accessToken)) {
+      return NextResponse.json({ ok: false, message: `${spec.keyLabel}${spec.needsToken ? " and access token are" : " is"} required.` }, { status: 400 });
     }
+
+    // Angel One's extras: client code + PIN + TOTP SECRET, one encrypted blob.
+    let authPlain: string | null = null;
+    if (spec.extraFields) {
+      const clientCode = String(body.clientCode ?? "").trim();
+      const pin = String(body.pin ?? "").trim();
+      const totpSecret = String(body.totpSecret ?? "").trim();
+      if (!clientCode || !pin || !totpSecret) {
+        return NextResponse.json({ ok: false, message: "Client code, PIN and TOTP secret are all required." }, { status: 400 });
+      }
+      // Catch the classic paste error AT SAVE, with a message — not at
+      // tomorrow's pull as a cryptic broker rejection.
+      if (!looksLikeTotpSecret(totpSecret)) {
+        return NextResponse.json(
+          { ok: false, message: "That does not look like a TOTP secret. Paste the base32 SECRET shown at SmartAPI 2FA enrollment (behind the QR code) — not the 6-digit code it generates." },
+          { status: 400 },
+        );
+      }
+      authPlain = JSON.stringify({ clientCode, pin, totpSecret });
+    }
+
     // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather
     // than quietly storing a live credential in plaintext.
-    let encKey: string, encToken: string;
+    let encKey: string, encToken: string, encAuth: string | null;
     try {
       encKey = encryptSecret(apiKey);
-      encToken = encryptSecret(accessToken);
+      encToken = encryptSecret(accessToken || "");
+      encAuth = authPlain ? encryptSecret(authPlain) : null;
     } catch (e) {
       return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : "The secrets vault is unavailable." }, { status: 500 });
     }
     db.insert(brokerConnections)
-      .values({ accountId, broker, apiKey: encKey, accessToken: encToken })
+      .values({ accountId, broker, apiKey: encKey, accessToken: encToken, authJson: encAuth })
       .onConflictDoUpdate({
         target: [brokerConnections.accountId, brokerConnections.broker],
-        set: { apiKey: encKey, accessToken: encToken, updatedAt: new Date().toISOString() },
+        set: { apiKey: encKey, accessToken: encToken, authJson: encAuth, updatedAt: new Date().toISOString() },
       })
       .run();
     recordAudit({
@@ -133,7 +168,22 @@ export async function POST(req: Request) {
 
     let parsed;
     try {
-      if (broker === "dhan") {
+      if (broker === "angelone") {
+        // The extras live in auth_json as one encrypted JSON blob.
+        const authRead = readSecret(conn.authJson);
+        if (!authRead.ok || !authRead.value) {
+          return NextResponse.json(
+            { ok: false, message: "The saved Angel One credentials cannot be read — re-enter the API key, client code, PIN and TOTP secret." },
+            { status: 400 },
+          );
+        }
+        const auth = JSON.parse(authRead.value) as { clientCode: string; pin: string; totpSecret: string };
+        const creds = { apiKey: keyRead.value, clientCode: auth.clientCode, pin: auth.pin, totpSecret: auth.totpSecret };
+        const { jwtToken } = await angelOneLogin(creds);
+        const today = new Date().toISOString().slice(0, 10);
+        const { trades, refused } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
+        parsed = angelToParsedFile(trades, refused);
+      } else if (broker === "dhan") {
         // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
         // came first. Renaming it would need a migration for no behavioural gain.
         const source = dhanImportSource({ clientId: keyRead.value, accessToken: tokenRead.value });

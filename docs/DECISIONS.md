@@ -788,4 +788,38 @@ malware: no user-mode design does, keychain included. The claim is exactly
 **Invalidated if:** The Tauri shell grows a secrets IPC — then DPAPI/KDF
 becomes the fallback and the OS keychain the primary, changing only `wrapDek`.
 
+## 2026-08-12 — Angel One sync (v2.99.90): the first unattended pull, and why it is safe to be
+
+**Context:** The broker-API roadmap said Angel One first — free, TOTP-automatable,
+and reconcilable against the Tax P&L importer already shipped. The prerequisite
+(v2.99.80 encryption at rest) exists; the posture precedent (Broker Connect is
+explicit opt-in, pulls are user-clicked, nothing runs in the background) was set
+by the Kite/Dhan connections and is unchanged here.
+**Measured / found:** SmartAPI's login contract (loginByPassword with clientcode
++ PIN + TOTP, jwt to midnight) is VERIFIED against published docs; the
+trade-book ROW shape is INFERRED from doc examples — mapped defensively with
+candidate field names and refuse-don't-coerce, flagged in the pull's own
+warnings until a live pull is reconciled once. TOTP is RFC 6238 SHA-1/30s/6 —
+implemented in ~40 lines of node:crypto and pinned to the RFC's own test
+vectors, because `otplib` would mean touching the lockfile minefield for an
+HMAC.
+**Decision:** Three security properties, each enforced structurally, not by
+convention: (1) all four credentials — API key, client code, PIN, TOTP secret —
+live vault-encrypted, the extras as ONE venc: JSON blob in the new
+`broker_connections.auth_json` (migration 0046), and a broken vault REFUSES the
+save; (2) the module surface is READ-ONLY — login + trade book and nothing
+else, with the export list pinned in tests so an order method is a CI failure;
+(3) the classic paste error (the 6-digit CODE where the SECRET belongs) is
+rejected at save time with an explanation, because it would otherwise surface
+tomorrow as an inscrutable broker rejection.
+**Why not the obvious thing:** Storing the day's jwt and refreshing it — a
+session to midnight is worth nothing tomorrow, so each pull logs in fresh from
+the TOTP secret instead; one fewer secret class to hold. And no background
+scheduler: the trade book covers only the current day, but an unattended timer
+contacting a broker is a posture change the user has not asked for — the pull
+stays a button.
+**Invalidated if:** A live pull shows field names outside the candidate set —
+extend the row mapping and move the trade-book shape from INFERRED to VERIFIED
+in this entry.
+
 <!-- First entry goes here. -->
