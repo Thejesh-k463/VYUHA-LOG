@@ -115,15 +115,20 @@ function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
   if (h < 0) return namedInFile ? 0.3 : 0;
 
   const cells = rows[h].map(norm);
+  // Only a string that NAMES the broker qualifies as a fingerprint. This used
+  // to accept a bare `clientcode`/`clientid` column — generic broker
+  // vocabulary that let a no-name file with a Client ID column score 0.8 as
+  // Upstox (measured 2026-08-12). Those columns are refinement now, below.
   const fingerprint =
-    (broker === "angelone" && cells.some((c) => c.includes("angel") || c === "clientcode")) ||
-    (broker === "upstox" && cells.some((c) => c.includes("upstox") || c === "clientid"));
+    (broker === "angelone" && cells.some((c) => c.includes("angel"))) ||
+    (broker === "upstox" && cells.some((c) => c.includes("upstox")));
 
   // No name, no claim.
   if (!namedInFile && !fingerprint) return 0;
 
   let score = namedInFile ? 0.4 : 0;
   if (fingerprint) score += 0.1;
+  if (cells.includes("clientcode") || cells.includes("clientid")) score += 0.05;
   const hasSymbol = cells.some((c) => ["symbol", "tradingsymbol", "scrip", "scripname", "instrument"].includes(c));
   if (hasSymbol) score += 0.2;
   // Side column (tradebook) or an aggregated buy/sell pair (P&L report).

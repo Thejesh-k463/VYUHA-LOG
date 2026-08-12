@@ -3,13 +3,15 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { verifyLicenseKey, SKU_LABELS } from "@/lib/license";
+import { verifyLicenseKey, SKU_LABELS, ENTITLEMENT_PATHS } from "@/lib/license";
 import { recordAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
+// Every entitlement-dependent route, derived in lib/license.ts — the
+// hand-written list this replaced covered 4 of 17 Pro screens.
 function revalidate() {
-  for (const p of ["/settings", "/reports/tax", "/risk", "/reports/broker-compare"]) revalidatePath(p);
+  for (const p of ENTITLEMENT_PATHS) revalidatePath(p);
 }
 
 export async function POST(req: Request) {

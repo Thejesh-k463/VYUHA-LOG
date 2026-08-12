@@ -154,16 +154,19 @@ export function resolveDeleteScope(candidates: DeletableTrade[], scope: DeleteSc
   const open = hit.filter((t) => t.isOpen).length;
   const staged = hit.filter((t) => t.staged).length;
 
+  // The warnings describe what LEAVES the journal and what comes back. Both
+  // halves matter: overstating the danger trains people to click past it, and
+  // understating it is how a year's notes go missing.
   const warnings: string[] = [];
   if (hit.length > 0) {
-    warnings.push("Deleting a trade removes its journal notes, tags, rule checklist and chart attachments with it. This cannot be undone from inside the app.");
+    warnings.push("Deleting a trade removes its journal notes, tags, rule checklist and chart attachments with it.");
     if (open > 0) {
       warnings.push(`${open} of these ${open === 1 ? "is an open position" : "are open positions"} — your live risk and exposure figures will change.`);
     }
     if (staged > 0) {
       warnings.push(`${staged} ${staged === 1 ? "is a staged position" : "are staged positions"}; every tranche and partial exit goes with ${staged === 1 ? "it" : "them"}.`);
     }
-    warnings.push("Restore from Backup & Restore is the only way back, so export first if you are unsure.");
+    warnings.push("A snapshot is saved first: these trades can be put back from Backup & Restore → Deleted items. Reports and exports you have already produced are not revised.");
   }
 
   return {
@@ -191,6 +194,176 @@ export interface BatchGroup {
   count: number;
   scope: DeleteScope;
   sub?: string;
+}
+
+/**
+ * The date a trade is filed under when it is being placed on a calendar.
+ *
+ * Exit for a closed trade, ENTRY for an open one — the same rule the trades
+ * table's own date filter applies (`trades-client.tsx`). `sellDate ?? buyDate`
+ * looks equivalent and is not: it hands an open position its exit date whenever
+ * a partial exit has recorded one, which files a still-open holding under the
+ * month it was partly sold in.
+ */
+export function effectiveDateOf(t: DeletableTrade): string | null {
+  return t.isOpen ? t.buyDate : t.sellDate;
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "2026-08" → "August 2026". Deliberately not `Intl`: the label is asserted
+ *  in tests and must not move with the machine's locale. */
+export function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-");
+  const idx = Number(m) - 1;
+  return MONTH_NAMES[idx] ? `${MONTH_NAMES[idx]} ${y}` : ym;
+}
+
+/** What the grouping view knows about an import batch. */
+export interface ImportFileMeta {
+  id: number;
+  fileName: string;
+  broker: string;
+  importedAt: string;
+}
+
+/**
+ * Trades grouped by the file they arrived in, newest import first.
+ *
+ * Three kinds of group come out of this, and the third is the reason it is not
+ * a one-line `groupBy`:
+ *
+ *   1. a batch that still has its `import_batches` row — labelled by file name;
+ *   2. a batch id whose record is GONE. Deleting an import with "keep the
+ *      trades" removes the batch row and leaves `trades.import_batch_id`
+ *      pointing at nothing. Those trades are real and must not vanish from a
+ *      view whose whole job is "show me what this file produced", so they get
+ *      an honest group rather than being silently folded into hand-entered;
+ *   3. everything with no batch id at all — typed in by hand.
+ *
+ * Groups 1 and 2 delete via `importBatch`, whose predicate is the same equality
+ * this function grouped on. Group 3 carries its own ids, because "not from an
+ * import" is not a scope the resolver can re-derive from a batch id.
+ */
+export function importFileGroups(
+  candidates: DeletableTrade[],
+  batches: ImportFileMeta[],
+): BatchGroup[] {
+  const meta = new Map(batches.map((b) => [b.id, b]));
+  const byBatch = new Map<number, DeletableTrade[]>();
+  const manual: DeletableTrade[] = [];
+
+  for (const t of candidates) {
+    if (t.importBatchId == null) {
+      manual.push(t);
+      continue;
+    }
+    const l = byBatch.get(t.importBatchId) ?? [];
+    l.push(t);
+    byBatch.set(t.importBatchId, l);
+  }
+
+  const known: BatchGroup[] = [];
+  const orphaned: BatchGroup[] = [];
+
+  for (const [batchId, ts] of byBatch) {
+    const b = meta.get(batchId);
+    if (b) {
+      known.push({
+        key: `batch:${batchId}`,
+        label: b.fileName,
+        sub: `${b.broker} · ${b.importedAt.slice(0, 10)}`,
+        count: ts.length,
+        scope: { kind: "importBatch", batchId },
+      });
+    } else {
+      orphaned.push({
+        key: `batch:${batchId}`,
+        label: "Import record removed",
+        sub: `batch #${batchId} — the file it came from is no longer on record`,
+        count: ts.length,
+        scope: { kind: "importBatch", batchId },
+      });
+    }
+  }
+
+  // Newest import first, using the batch record's own timestamp. Ids happen to
+  // be monotonic today, but sorting on the recorded time is what the column
+  // actually means.
+  known.sort((a, b) => (meta.get(batchIdOf(b))?.importedAt ?? "").localeCompare(meta.get(batchIdOf(a))?.importedAt ?? ""));
+  orphaned.sort((a, b) => batchIdOf(b) - batchIdOf(a));
+
+  const out = [...known, ...orphaned];
+  if (manual.length > 0) {
+    out.push({
+      key: "manual",
+      label: "Entered by hand",
+      sub: "not from any import file",
+      count: manual.length,
+      scope: { kind: "filter", ids: manual.map((t) => t.id), label: "Entered by hand" },
+    });
+  }
+  return out;
+}
+
+function batchIdOf(g: BatchGroup): number {
+  return g.scope.kind === "importBatch" ? g.scope.batchId : -1;
+}
+
+/**
+ * Trades grouped by calendar month, newest first.
+ *
+ * The scope carries the group's OWN ids rather than a `dateRange` over the
+ * month. A range would be a different question: `dateRange` with basis
+ * "either" also matches a trade bought in August and sold in September, which
+ * this view files under September. Handing the dialog the ids the group is
+ * built from is the only way the confirmation count and the group count are the
+ * same number by construction rather than by coincidence.
+ */
+export function monthGroups(candidates: DeletableTrade[]): BatchGroup[] {
+  const byMonth = new Map<string, DeletableTrade[]>();
+  const undated: DeletableTrade[] = [];
+
+  for (const t of candidates) {
+    const d = effectiveDateOf(t);
+    if (!d) {
+      undated.push(t);
+      continue;
+    }
+    const ym = d.slice(0, 7);
+    const l = byMonth.get(ym) ?? [];
+    l.push(t);
+    byMonth.set(ym, l);
+  }
+
+  const out: BatchGroup[] = [...byMonth.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([ym, ts]) => {
+      const label = monthLabel(ym);
+      return {
+        key: `month:${ym}`,
+        label,
+        sub: `${[...new Set(ts.map((t) => t.symbol))].length} symbols`,
+        count: ts.length,
+        scope: { kind: "filter", ids: ts.map((t) => t.id), label } as DeleteScope,
+      };
+    });
+
+  // An open position with no buy date, or a closed one with no sell date, has
+  // no month. Dropping it would make the groups fail to add up to the book.
+  if (undated.length > 0) {
+    out.push({
+      key: "month:undated",
+      label: "No date",
+      sub: "no entry or exit date on record",
+      count: undated.length,
+      scope: { kind: "filter", ids: undated.map((t) => t.id), label: "No date" },
+    });
+  }
+  return out;
 }
 
 /** Manual-entry sessions, newest first — trades typed in, grouped by the day. */

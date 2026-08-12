@@ -1,12 +1,19 @@
 // P0.4 — backup envelope format (PURE, no DB). Shared by the dump/restore engine
 // and validated before any destructive restore.
 
-export const BACKUP_VERSION = 2;
+// v3 (2026-08-12): four tables the list had silently fallen behind on —
+// instrument_indices, mtf_margins, settings_baseline, panel_dismissals. A
+// backup taken on v2 restored with every uploaded MTF margin list and all NSE
+// index membership gone, and the guard test could not see it because it
+// asserted a COUNT of 26 rather than the schema. v3 also redacts licence and
+// trial state out of the settings row on dump (see lib/backup.ts).
+export const BACKUP_VERSION = 3;
 
 // Order is insert-order for restore (parents-ish first); delete runs in reverse.
 export const BACKUP_TABLES = [
   "accounts",
   "settings",
+  "settings_baseline",
   "charge_config",
   "risk_config",
   "capital_snapshots",
@@ -23,6 +30,8 @@ export const BACKUP_TABLES = [
   "symbol_aliases",
   "benchmark_prices",
   "instruments",
+  "instrument_indices",
+  "mtf_margins",
   "price_history",
   "corporate_actions",
   "playbooks",
@@ -31,7 +40,20 @@ export const BACKUP_TABLES = [
   "broker_connections",
   "trading_sessions",
   "regulatory_rule_packs",
+  "panel_dismissals",
 ] as const;
+
+/**
+ * settings columns REDACTED on dump and PRESERVED through restore.
+ *
+ * A backup travels — that is its purpose — and these three are not journal
+ * data: the licence key is the buyer's entitlement (a shared backup was a
+ * shared key), and the trial/ratchet pair is security state (restoring an old
+ * backup lowered the clock high-water mark, defeating the tamper ratchet).
+ * `lib/domain/settings-baseline.ts` already excluded all three from "restore
+ * defaults" for the same reason — the backup path was the one left unguarded.
+ */
+export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockHighWaterMark"] as const;
 
 export type BackupTable = (typeof BACKUP_TABLES)[number];
 

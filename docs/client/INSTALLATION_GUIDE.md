@@ -66,8 +66,10 @@ You have two paths — use either or both:
 ### A. Import a broker file (fastest)
 1. Go to **Journal → Import**.
 2. Drag in your broker export. Supported today: **Zerodha** (tradebook / Console P&L), **Dhan**
-   (CSV), **Groww** (XLSX), **Angel One** and **Upstox** (tradebook *or* aggregated P&L export),
-   and broker **PDF** statements.
+   (P&L CSV and the Global Transaction Report), **Groww** (stocks P&L and order history),
+   **Angel One** (tradebook, P&L, and the tax P&L), **Upstox** (tradebook or P&L),
+   **Paytm Money** (tradebook), and broker **PDF** statements. Any other broker's CSV/XLSX
+   imports through the column mapper — Vyuha asks once and remembers.
    *Tradebook exports list every individual fill, so a position you scaled into arrives with its
    real entry ladder instead of one blended average — see Staged positions below.*
 3. Vyuha auto-detects the broker, parses the trades, recomputes charges from your rate card, and
@@ -132,7 +134,7 @@ database migration).
 | Antivirus flags the new .exe | Whitelist it — false positive common for new unsigned binaries |
 | Numbers look wrong | Check **Settings → charge config** matches your broker's real rates |
 | F&O shows as equity after import | Re-tag in **Journal → Trades** (segment/strike/expiry/CE-PE) |
-| Import didn't detect my broker | Confirm it's Zerodha/Dhan/Groww/PDF; else add trades manually |
+| Import didn't detect my broker | Six brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money) plus PDF; any other CSV/XLSX goes through the column mapper — Vyuha asks what the columns mean rather than refusing |
 | Lost everything after a reset | **System → Backup & Restore → Restore** your last export |
 
 ## 10. Support

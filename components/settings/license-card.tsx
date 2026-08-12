@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toaster";
 import { Copy, KeyRound, Sparkles } from "lucide-react";
+import { PricingTable } from "@/components/system/pricing-table";
 import type { LicenseStatus } from "@/lib/queries/license";
 import { SKU_LABELS, BUY_URL, type Entitlement } from "@/lib/license";
 
@@ -34,7 +35,11 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
   }
 
   return (
-    <Card>
+    // The id is the landing point for every "/settings#license" deep link (the
+    // locked Open-trade button, the Lenses banner). It lives on the Card, not
+    // on a wrapper in page.tsx, so reordering the settings page cannot orphan
+    // the links again. scroll-mt clears the sticky page header.
+    <Card id="license" className="scroll-mt-20">
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2"><KeyRound className="size-4" /> License</CardTitle>
         {status.licensed ? (
@@ -100,6 +105,9 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                 <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Renew</a>
               </p>
             )}
+            {/* What it costs, right where the key is pasted — the question the
+                funnel never answered in-app before 2026-08-12. */}
+            <PricingTable compact />
             <p className="text-xs text-muted-foreground">
               Paste the <code className="rounded bg-card-hover px-1 py-0.5">VYUHA-…</code> key from your purchase
               email. Activation is fully offline — the key is verified on this machine and never sent anywhere.

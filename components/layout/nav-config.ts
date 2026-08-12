@@ -38,6 +38,7 @@ import {
   LibraryBig,
   GitBranch,
   Sigma,
+  Columns3,
 } from "lucide-react";
 
 export type NavItem = {
@@ -59,6 +60,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/surveillance", label: "Surveillance", icon: ShieldAlert, group: "Risk" },
   { href: "/calculator", label: "Trade Calculator", icon: Calculator, group: "Risk" },
   { href: "/trades", label: "Trades", icon: ListOrdered, group: "Journal" },
+  { href: "/lenses", label: "Lenses", icon: Columns3, group: "Journal" },
   { href: "/sessions", label: "Session Plan", icon: ClipboardCheck, group: "Journal" },
   { href: "/arjuns-eye", label: "Arjun's Eye", icon: Eye, group: "Journal" },
   { href: "/playbooks", label: "Playbooks", icon: BookOpen, group: "Journal" },

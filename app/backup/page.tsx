@@ -2,7 +2,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BackupPanel } from "@/components/system/backup-panel";
+import { DeletedItemsPanel, DeletedItemsBadge } from "@/components/system/deleted-items-panel";
 import { dbCounts } from "@/lib/backup";
+import { listTrashSnapshots } from "@/lib/trash";
 import { BACKUP_TABLES } from "@/lib/backup-format";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +41,7 @@ const TABLE_LABEL: Record<string, string> = {
 export default function BackupPage() {
   const counts = dbCounts();
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
+  const snapshots = listTrashSnapshots();
 
   return (
     <>
@@ -62,6 +65,18 @@ export default function BackupPage() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Deleted items. Sits here rather than on the Trades screen because
+            this is the page people reach for when something is missing. */}
+        <Card id="deleted-items">
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Deleted items</CardTitle>
+            <DeletedItemsBadge snapshots={snapshots} />
+          </CardHeader>
+          <CardContent>
+            <DeletedItemsPanel snapshots={snapshots} />
           </CardContent>
         </Card>
 

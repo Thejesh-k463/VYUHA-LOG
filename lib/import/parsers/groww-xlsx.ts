@@ -8,18 +8,31 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/** Confidence this is a Groww stocks P&L XLSX. */
+/** Confidence this is a Groww stocks P&L XLSX.
+ *
+ *  The fingerprint is BOTH sheet names together. One matching sheet used to
+ *  score 0.4 on its own — enough to beat the generic mapper — and the parser
+ *  then reads FIXED column indices (`r[0]..r[10]`), so a false claim produces
+ *  wrong numbers, not just a wrong broker label. Any workbook can contain one
+ *  sheet named "Trade Level"; a workbook with Groww's exact pair and no name
+ *  anywhere is, on everything verified so far, Groww's stocks P&L
+ *  (docs/BROKER_FORMATS.md). `stocks_pnl` is Groww's own filename pattern. */
 export function detectGrowwXlsx(ctx: ParseContext): number {
   if (!ctx.buffer) return 0;
-  let score = 0;
-  if (/groww|stocks_pnl/i.test(ctx.filename)) score += 0.4;
+  const named = /groww|stocks_pnl/i.test(ctx.filename);
+  let sheets: string[];
   try {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer", bookSheets: true });
-    if (wb.SheetNames.includes("Trade Level")) score += 0.4;
-    if (wb.SheetNames.includes("Scrip Level")) score += 0.2;
+    sheets = XLSX.read(ctx.buffer, { type: "buffer", bookSheets: true }).SheetNames;
   } catch {
     return 0;
   }
+  const both = sheets.includes("Trade Level") && sheets.includes("Scrip Level");
+  const one = sheets.includes("Trade Level") || sheets.includes("Scrip Level");
+  if (!named && !both) return 0; // No name, no full fingerprint, no claim.
+
+  let score = named ? 0.4 : 0;
+  if (both) score += 0.55;
+  else if (one) score += 0.2; // named file with a half-matching workbook
   return Math.min(1, score);
 }
 

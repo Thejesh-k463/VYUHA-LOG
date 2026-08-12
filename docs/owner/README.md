@@ -28,9 +28,12 @@ All three are gitignored and have **never been committed** — verified by
 ## Cutting a release
 
 ```bash
-npm run verify          # typecheck + lint + 892 tests + production build
-npm run test:e2e        # 14 browser flows
-npm run bump-version 2.98.0
+npm run verify          # typecheck + lint + 1550 tests + production build
+npm run test:e2e        # 41 browser flows
+npm run bump-version 2.99.75
+# then BY HAND (bump-version does not touch them — see AGENTS.md):
+#   package-lock.json — BOTH "version" fields (root and packages."")
+#   src-tauri/Cargo.lock — the [[package]] vyuha version
 npm run desktop:build   # builds, signs, and REFUSES to ship unsigned
 ```
 

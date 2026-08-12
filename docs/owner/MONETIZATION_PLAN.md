@@ -10,7 +10,42 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.70
+## 0. What you are actually selling, as of v2.99.75
+
+> ### v2.99.75 marketing note — trust features are conversion features
+>
+> Four things shipped that map straight onto the objections that kill sales:
+>
+> **"Does it work with MY broker?" now answers six, and the Paytm story got
+> BETTER, not weaker.** v2.99.30 sold the refusal — "Paytm publishes no
+> format, so we ask instead of guessing." A real Paytm export has since pinned
+> the layout, and the parser shipped. The line to sell is the full arc:
+> *"we refused to guess at your broker's file for a year — then we got a real
+> export, verified every column, and built it properly. That is how every
+> format here earned its place."* Same for Angel One's tax P&L (the only
+> export that states MTF directly) and Groww's order history. Kotak Neo and
+> Sahi remain ask-first, which keeps the refusal story true.
+>
+> **"What if I delete something?" is now a feature, not a fear.** Every delete
+> snapshots first and restores from Backup & Restore → Deleted items. Demo
+> line that lands: *delete an entire import file, then put it back, in under
+> ten seconds.* No rival journal shows deletion this reversible.
+>
+> **The price is finally IN the product.** The trial-expired panel, the
+> licence card and a new /pricing page all quote real numbers with an "as of"
+> date, and the WhatsApp message embeds the quoted price — so a stale build
+> can never silently misquote you. The funnel's biggest leak (prospects who
+> would not DM just to learn a price) is closed.
+>
+> **Lenses is the new demo opener.** "Here is the same book by month… by
+> broker… by the exact file you imported" is a 15-second wow that also shows
+> the free/Pro line honestly on screen: grouping free, edge locked with a
+> visible Pro chip — the paywall itself becomes a product tour.
+>
+> Screenshots to retake: the Lenses tab strip (both licensed and with lock
+> chips visible), the Deleted-items panel mid-restore, and the pricing page.
+
+## 0.1 Earlier release notes (v2.99.70 and before)
 
 > ### v2.99.70 marketing note — seven skins is a personalisation pitch, not a colour pitch
 >
@@ -280,6 +315,14 @@ five-broker import (incl. Angel One ≈15% of India's active accounts), clickabl
 
 ## 2. The offer & pricing (₹, India retail)
 
+> **⚠ These ranges are STRATEGY, not shipped prices.** The numbers the app and
+> the landing page actually quote live in **`lib/domain/pricing.ts`** (single
+> source of truth, seeded from the landing page: App ₹1,499 · Toolkit ₹4,999
+> (list ₹9,999) · Annual ₹499/yr as of 2026-08-12). `tests/pricing.test.ts`
+> pins the module to the landing page, so changing a price means editing BOTH
+> in one commit — which is the point. "Fixing" the code to match the ranges
+> below will fail CI.
+
 | SKU | What | Price (launch) | Price (list) | Tooling |
 |---|---|---|---|---|
 | **Trader's Toolkit** (hero) | App lifetime + both indicators (invite-only) | **₹4,999–7,999** | ₹9,999 | `license-issue.mjs <email> toolkit` |
@@ -328,7 +371,9 @@ every morning, which is exactly what a trial needs to demonstrate in 7 days.
 | Basic option fields | Seller cohort analytics and adjustment-family comparisons | Capture is portable; comparative insight is the product. |
 | Aggregate account totals | Cross-account allocation, exposure, and tax/entity reports | Serious multi-book analysis is a clear advanced-user boundary. |
 
-**Recommended commercial test:** keep the lifetime app SKU during the founding-trader phase, but
+**Recommended commercial test (NOT shipped — shipped prices are in
+`lib/domain/pricing.ts`; adopt this by changing that file + the landing page
+together):** keep the lifetime app SKU during the founding-trader phase, but
 make **₹799/year** the visually recommended app-only offer and lifetime the **₹2,999 anchor**.
 Measure activation→paid conversion, 30-day session-plan retention, and annual-plan share before
 changing list prices. Do not claim conversion uplift until the funnel records it.
@@ -417,9 +462,9 @@ the same SKU on the same day get completely different keys.
    (`components/system/pro-gate.tsx`), driven by the `PRO_FEATURES` registry in `lib/license.ts`
    (Portfolio Risk, Tax Summary, ITR Pack, Broker Costs). Currently **"banner" mode**: trial
    users see a countdown strip; unlicensed copies see an informational banner; nothing blocked.
-   **To start charging: flip `LICENSE_ENFORCEMENT` to `"block"` in `lib/license.ts` and set
-   `BUY_URL` to the live Razorpay/landing page** — the upsell panel then replaces Pro content
-   after the trial. Product principle enforced in code: the core journal (trades, imports,
+   **✅ DONE (2026-07-22): `LICENSE_ENFORCEMENT` is `"block"` and `BUY_URL` points at the live
+   WhatsApp channel** — the upsell panel replaces Pro content after the trial, and since
+   v2.99.75 it also shows the real prices with an as-of date. Product principle enforced in code: the core journal (trades, imports,
    dashboard, playbooks, backups) is NEVER gated — analytics are the product, the user's data
    is not. Anti-casual-sharing only, by design — the buyer email shown in-app is the real
    deterrent.
@@ -459,10 +504,10 @@ the same SKU on the same day get completely different keys.
 Everything technical is now BUILT — the sequence is pure go-to-market:
 
 1. **Week 1** — publish the 2 indicators invite-only; stand up the Razorpay Payment Page;
-   put up the landing page. **The only code changes left for launch day are two constants in
-   `lib/license.ts`: `BUY_URL` → the Razorpay/landing page, and `LICENSE_ENFORCEMENT` →
-   `"block"`.** (Do NOT flip enforcement before the payment page is live — trial-expired users
-   would hit a dead buy link.)
+   put up the landing page. **✅ The two launch-day code flips are DONE** (`BUY_URL` live,
+   `LICENSE_ENFORCEMENT` = `"block"`, both shipped; v2.99.75 added in-app prices on top). The
+   Razorpay Payment Page remains the open item — until it exists, the WhatsApp funnel is the
+   checkout, and `lib/domain/pricing.ts` embeds the quoted price in each pre-filled message.
 2. **Week 2** — publish a GitHub release so the auto-updater ships the gated build; announce
    the 7-day-trial framing everywhere ("try everything free, journal free forever").
 3. **Week 3–4** — content engine on your own X/YouTube (record the getting-started deck as a

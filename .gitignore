@@ -76,3 +76,10 @@ updater-private.key
 
 # Corrected release artefacts staged for manual upload — never version binaries.
 /release-2.98.0-corrected/
+
+# Un-redacted broker exports used as local test inputs. These are real
+# statements: they carry account numbers and actual trade history, and this
+# repo has a GitHub remote. Anything committed here is public forever, since
+# deleting a file later does not remove it from git history. Redacted
+# fixtures belong in tests/fixtures/ and are committed normally.
+/tests/fixtures/private/

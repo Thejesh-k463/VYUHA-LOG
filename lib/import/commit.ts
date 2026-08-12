@@ -407,7 +407,19 @@ export function commitParsedFile(
 
     const batch = tx
       .insert(importBatches)
-      .values({ accountId, broker: parsed.broker, fileName, rowCount: parsed.trades.length, status: "completed" })
+      .values({
+        accountId,
+        broker: parsed.broker,
+        fileName,
+        rowCount: parsed.trades.length,
+        status: "completed",
+        // When the parser paired statement lines into positions, record the
+        // line count so the imports table can show "92 lines → 73 trades".
+        notes:
+          parsed.sourceRows != null && parsed.sourceRows !== parsed.trades.length
+            ? `${parsed.sourceRows} source lines`
+            : null,
+      })
       .returning({ id: importBatches.id })
       .get();
     const batchId = batch!.id;

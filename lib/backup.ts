@@ -7,6 +7,7 @@ import { attachmentsDir } from "@/lib/db";
 import {
   BACKUP_VERSION,
   BACKUP_TABLES,
+  SETTINGS_MACHINE_COLUMNS,
   ENCRYPTED_BACKUP_VERSION,
   SCRYPT_PARAMS_V2,
   scryptMaxmem,
@@ -25,6 +26,7 @@ import {
 const TABLE_MAP: Record<BackupTable, any> = {
   accounts: schema.accounts,
   settings: schema.settings,
+  settings_baseline: schema.settingsBaseline,
   charge_config: schema.chargeConfig,
   risk_config: schema.riskConfig,
   capital_snapshots: schema.capitalSnapshots,
@@ -41,6 +43,8 @@ const TABLE_MAP: Record<BackupTable, any> = {
   symbol_aliases: schema.symbolAliases,
   benchmark_prices: schema.benchmarkPrices,
   instruments: schema.instruments,
+  instrument_indices: schema.instrumentIndices,
+  mtf_margins: schema.mtfMargins,
   price_history: schema.priceHistory,
   corporate_actions: schema.corporateActions,
   playbooks: schema.playbooks,
@@ -49,6 +53,7 @@ const TABLE_MAP: Record<BackupTable, any> = {
   broker_connections: schema.brokerConnections,
   trading_sessions: schema.tradingSessions,
   regulatory_rule_packs: schema.regulatoryRulePacks,
+  panel_dismissals: schema.panelDismissals,
 };
 
 /** Full JSON dump of every table. */
@@ -56,7 +61,17 @@ export function dumpDatabase(includeAttachments = true): BackupEnvelope {
   const tables: Record<string, unknown[]> = {};
   const counts: Record<string, number> = {};
   for (const name of BACKUP_TABLES) {
-    const rows = db.select().from(TABLE_MAP[name]).all();
+    let rows = db.select().from(TABLE_MAP[name]).all() as Record<string, unknown>[];
+    // Licence and trial state never leave the machine in a backup: a shared
+    // file was a shared key, and restoring an old one lowered the tamper
+    // ratchet (v3, see SETTINGS_MACHINE_COLUMNS in backup-format.ts).
+    if (name === "settings") {
+      rows = rows.map((r) => {
+        const clean = { ...r };
+        for (const col of SETTINGS_MACHINE_COLUMNS) clean[col] = null;
+        return clean;
+      });
+    }
     tables[name] = rows;
     counts[name] = rows.length;
   }
@@ -162,13 +177,28 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
   }
 
   // ---- 2. swap the tables ---------------------------------------------------
+  // THIS machine's licence and trial state, read before the wipe and re-applied
+  // after: the backup does not carry them (v3 redacts; older files that do are
+  // ignored), because an entitlement and a tamper ratchet belong to the
+  // machine, not to the journal being restored.
+  const machineSettings = db.select().from(schema.settings).all()[0] as Record<string, unknown> | undefined;
+
   let result: { ok: boolean; message: string; restored: number };
   try {
     result = db.transaction((tx) => {
-      for (const name of [...BACKUP_TABLES].reverse()) tx.delete(TABLE_MAP[name]).run();
+      for (const name of [...BACKUP_TABLES].reverse()) {
+        // A table the envelope does not KNOW (an older backup version) is left
+        // exactly as it is — wiping it would destroy data the backup never
+        // claimed to hold, e.g. a v2 file zeroing today's MTF margin uploads.
+        // An empty array is different: the backup knew the table and it was
+        // empty, so empty is the restored truth.
+        if (tables[name] === undefined) continue;
+        tx.delete(TABLE_MAP[name]).run();
+      }
       let restored = 0;
       for (const name of BACKUP_TABLES) {
-        const rows = (tables[name] ?? []) as Record<string, unknown>[];
+        if (tables[name] === undefined) continue;
+        const rows = tables[name] as Record<string, unknown>[];
         for (const r of rows) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tx.insert(TABLE_MAP[name]).values(r as any).run();
@@ -176,6 +206,19 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
         }
       }
       if ((tables.accounts ?? []).length === 0) tx.insert(schema.accounts).values({ id: 1, name: "Primary", isDefault: true }).run();
+
+      // Re-apply the machine's own licence/trial state over whatever the
+      // envelope carried — restoring a journal must neither install someone
+      // else's key nor reopen this machine's trial.
+      if (machineSettings) {
+        const restored0 = tx.select().from(schema.settings).all()[0] as Record<string, unknown> | undefined;
+        if (restored0) {
+          const keep: Record<string, unknown> = {};
+          for (const col of SETTINGS_MACHINE_COLUMNS) keep[col] = machineSettings[col] ?? null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tx.update(schema.settings).set(keep as any).run();
+        }
+      }
       return { ok: true, message: `Restored ${restored} rows across ${BACKUP_TABLES.length} tables.`, restored };
     });
   } catch (e) {

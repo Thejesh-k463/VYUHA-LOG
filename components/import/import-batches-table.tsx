@@ -11,6 +11,7 @@ import { fmtDate } from "@/lib/format";
 import { Trash2 } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import type { DeletePreview } from "@/lib/domain/delete-scope";
 
 export interface ImportBatchRow {
   id: number;
@@ -21,6 +22,12 @@ export interface ImportBatchRow {
   skippedCount: number;
   importedAt: string;
   tradeCount: number;
+  /** Statement lines read from the file when the parser paired them into
+   *  fewer positions (Dhan GTR). Null when rows === trades. */
+  sourceRows: number | null;
+  /** Resolved server-side so the dialog shows the real blast radius, not a
+   *  count. Null when the batch has no trades left. */
+  preview: DeletePreview | null;
 }
 
 export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
@@ -47,7 +54,9 @@ export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
               <ReportTd muted>{fmtDate(b.importedAt)}</ReportTd>
               <ReportTd>{BROKER_LABELS[b.broker as Broker] ?? b.broker}</ReportTd>
               <ReportTd className="font-mono text-xs">{b.fileName}</ReportTd>
-              <ReportTd align="right">{b.rowCount}</ReportTd>
+              <ReportTd align="right" title={b.sourceRows ? `${b.sourceRows} statement lines paired into ${b.rowCount} positions` : undefined}>
+                {b.sourceRows ? `${b.sourceRows} → ${b.rowCount}` : b.rowCount}
+              </ReportTd>
               <ReportTd align="right" className="text-profit">{b.addedCount}</ReportTd>
               <ReportTd align="right" muted>{b.skippedCount}</ReportTd>
               <ReportTd align="right">{b.tradeCount > 0 ? b.tradeCount : <Badge variant="outline">none</Badge>}</ReportTd>
@@ -60,7 +69,12 @@ export function ImportBatchesTable({ batches }: { batches: ImportBatchRow[] }) {
           ))}
         </tbody>
       </ReportTable>
-      <DeleteImportDialog batch={target} open={target != null} onOpenChange={(v) => !v && setTarget(null)} />
+      <DeleteImportDialog
+        batch={target}
+        preview={target?.preview ?? null}
+        open={target != null}
+        onOpenChange={(v) => !v && setTarget(null)}
+      />
     </>
   );
 }

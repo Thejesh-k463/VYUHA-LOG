@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { getImportBatches } from "@/lib/queries/trades";
 import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
 import { ImportBatchesTable } from "@/components/import/import-batches-table";
-import { tradesInBatch } from "@/lib/queries/delete";
+import { tradesInBatch, previewImportBatchDelete } from "@/lib/queries/delete";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +33,18 @@ export default function ImportPage() {
           </CardHeader>
           <CardContent>
             <ImportBatchesTable
-              batches={batches.map((b) => ({
-                id: b.id, broker: b.broker, fileName: b.fileName, rowCount: b.rowCount,
-                addedCount: b.addedCount, skippedCount: b.skippedCount, importedAt: b.importedAt,
-                tradeCount: tradesInBatch(b.id),
-              }))}
+              batches={batches.map((b) => {
+                const preview = previewImportBatchDelete(b.id);
+                // "92 source lines" in notes → the Rows cell reads 92 → 73.
+                const sourceRows = Number(b.notes?.match(/^(\d+) source lines$/)?.[1] ?? 0) || null;
+                return {
+                  id: b.id, broker: b.broker, fileName: b.fileName, rowCount: b.rowCount,
+                  addedCount: b.addedCount, skippedCount: b.skippedCount, importedAt: b.importedAt,
+                  tradeCount: tradesInBatch(b.id),
+                  sourceRows,
+                  preview: preview.empty ? null : preview,
+                };
+              })}
             />
           </CardContent>
         </Card>

@@ -26,9 +26,12 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
   // Pick an OPEN position — simply because enabling staged mode is the flow
   // under test here. Nothing in the panel is disabled by position state; see
   // the "never blocks" test below.
-  const openRow = page.locator("tbody tr").filter({ has: page.locator('button[title="Close position"]') }).first();
+  // Role + accessible NAME, not [title=]: v2.99.70 moved these buttons onto
+  // Radix <Tip> + aria-label, and the old title-attribute locators matched
+  // nothing — both tests in this file were red for six releases' worth of runs.
+  const openRow = page.locator("tbody tr").filter({ has: page.getByRole("button", { name: "Close position" }) }).first();
   await expect(openRow, "fixture has no open trade to stage").toBeVisible();
-  await openRow.locator('button[title*="tranches"], button[title*="Staged position"]').click();
+  await openRow.getByRole("button", { name: /tranches|Staged position/ }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Staged position" });
   await expect(dialog).toBeVisible();
 
@@ -107,9 +110,9 @@ test("staged panel never disables an action because of position state", async ({
   // default sort — narrow first.
   await page.locator("select").filter({ hasText: "All trades" }).selectOption("open");
 
-  const row = page.locator("tbody tr").filter({ has: page.locator('button[title*="tranches"], button[title*="Staged position"]') }).first();
+  const row = page.locator("tbody tr").filter({ has: page.getByRole("button", { name: /tranches|Staged position/ }) }).first();
   await expect(row, "no staged-capable row in the fixture").toBeVisible();
-  await row.locator('button[title*="tranches"], button[title*="Staged position"]').click();
+  await row.getByRole("button", { name: /tranches|Staged position/ }).click();
 
   const dialog = page.getByRole("dialog").filter({ hasText: "Staged position" });
   await expect(dialog).toBeVisible();

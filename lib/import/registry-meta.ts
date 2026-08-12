@@ -28,9 +28,12 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   { sourceId: "dhan-gtr", label: "Dhan Global Transaction Report (CSV)", broker: "dhan", tab: "transactions", hint: "Dhan transaction report" },
   { sourceId: "dhan-csv", label: "Dhan P&L (CSV)", broker: "dhan", tab: "pnl", hint: "Dhan CSV" },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", broker: "groww", tab: "pnl", hint: "Groww XLSX" },
+  { sourceId: "groww-orders", label: "Groww Stocks Order History (XLSX)", broker: "groww", tab: "transactions", hint: "Groww order history" },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", broker: "zerodha", tab: "both", hint: "Zerodha tradebook / Console" },
   { sourceId: "angelone", label: "Angel One Tradebook / P&L (CSV/XLSX)", broker: "angelone", tab: "both", hint: "Angel One" },
+  { sourceId: "angelone-taxpnl", label: "Angel One Tax P&L (XLSX)", broker: "angelone", tab: "pnl", hint: "Angel One tax P&L" },
   { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", broker: "upstox", tab: "both", hint: "Upstox" },
+  { sourceId: "paytm-tradebook", label: "Paytm Money Tradebook (XLSX)", broker: "paytm", tab: "transactions", hint: "Paytm Money tradebook" },
   { sourceId: "pdf", label: "Broker P&L (PDF)", broker: null, tab: "pnl", hint: "PDF statement" },
   { sourceId: "generic-table", label: "Any other broker — map the columns (CSV/XLSX)", broker: null, tab: "both", hint: "any other broker (map columns)" },
 ];

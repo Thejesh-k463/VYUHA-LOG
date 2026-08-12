@@ -120,6 +120,23 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["journal", "add trade", "delete", "bulk", "select", "filter", "unmarked"],
   },
   {
+    href: "/lenses",
+    title: "Lenses",
+    answers: "Where do these trades come from, and which slice of the book is actually working?",
+    body: [
+      "The same journal cut six ways — by month, broker, trade type, import file, setup and outcome. A tab strip switches the cut without leaving the page; each group carries its own net P&L and charges, and — with a Pro licence — win rate, profit factor, expectancy and average R.",
+      "Open a group to see the trades behind it and the figures for that group alone. This is the fastest way to see exactly what one imported file produced, in isolation, when an import has gone wrong.",
+      "Every cut is a partition: each trade appears in exactly one group and the groups add up to the whole book. Trades with no usable date, no setup recorded, or an import record that has since been deleted get their own honest group rather than being dropped.",
+      "Any group can be deleted from here. The confirmation shows the same resolved set the group counted, and a snapshot is saved first so it can be undone from Backup & Restore.",
+    ],
+    keywords: ["group", "by month", "by broker", "by import", "breakdown", "tabs", "setup", "outcome", "segment", "per-file"],
+    refusals: [
+      "Overlapping cuts are not offered here. One trade belongs to several NSE themes and can carry several mistake tags, so those totals exceed the book by design — they live in their own reports, labelled as lenses rather than breakdowns.",
+      "Win rate, profit factor and expectancy are blank for a group with nothing closed, rather than shown as zero — and a LOCKED figure looks like a Pro chip, never like a blank, so \"not entitled\" can never be mistaken for \"no data\".",
+      "Grouping, counts, P&L and deleting a group are free on every tier: isolating and undoing a bad import is journal hygiene, not analytics.",
+    ],
+  },
+  {
     href: "/sessions",
     title: "Session Plan",
     answers: "Did I trade the plan I wrote before the open?",

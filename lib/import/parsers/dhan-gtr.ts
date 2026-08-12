@@ -360,6 +360,9 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     format: "transactions",
     trades,
     reported,
+    // Bill lines as read, BEFORE pairing — so the UI can say
+    // "92 lines → 73 trades" instead of a count that looks like loss.
+    sourceRows: rows.length,
     warnings,
   };
 }

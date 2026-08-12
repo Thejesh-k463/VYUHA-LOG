@@ -24,7 +24,10 @@ test("attachments: upload, view in-app, navigate, and Escape leaves the edit dia
   await page.waitForLoadState("networkidle");
 
   // Open the first row's full edit dialog — one of the three mount points.
-  await page.getByTitle(/Edit trade — qty\/prices/).first().click();
+  // Role + accessible name, not getByTitle: v2.99.70 moved this button onto
+  // Radix <Tip> + aria-label, and the title locator hung the click for the
+  // full 90 s test timeout (click() has no action timeout of its own).
+  await page.getByRole("button", { name: /Edit trade — qty\/prices/ }).first().click();
   const editDialog = page.getByRole("dialog").filter({ hasText: /Edit trade —/ });
   await expect(editDialog).toBeVisible();
 

@@ -16,6 +16,7 @@
 
 import { verify as edVerify, createHash } from "node:crypto";
 import { machineMatches } from "@/lib/machine-id";
+import { buyMessageFor, skuById, type PricingSkuId } from "@/lib/domain/pricing";
 
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
@@ -186,6 +187,18 @@ export const BUY_URL = WHATSAPP_NUMBER
   : "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
 
 /**
+ * A per-SKU buy link: same WhatsApp channel, but the pre-filled message names
+ * the SKU and EMBEDS the price this build displayed (lib/domain/pricing.ts) —
+ * the honest answer to prices going stale in an offline build: the seller
+ * sees at first contact exactly what the buyer was quoted.
+ */
+export function buyUrlFor(skuId?: PricingSkuId): string {
+  if (!WHATSAPP_NUMBER) return "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
+  const text = skuId ? buyMessageFor(skuById(skuId)) : BUY_MESSAGE;
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+}
+
+/**
  * The Pro surface — the list shown on the upsell card.
  *
  * THIS REGISTRY IS DISPLAY-ONLY. `ProGate` takes no feature argument: it
@@ -202,10 +215,15 @@ export const BUY_URL = WHATSAPP_NUMBER
  * journal-side exception is ADDING AN OPEN TRADE: tracking a live position
  * with SL/target/risk is forward-looking tooling, not record-keeping.
  */
-export const PRO_FEATURES: { href: string; label: string }[] = [
+export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // Positions & risk
   { href: "/risk", label: "Portfolio Risk cockpit (VaR, Greeks, margin, settlement radar, breach alerts)" },
-  { href: "/trades?add=open", label: "Open-trade tracking — live positions with SL/TSL/target and risk" },
+  // `partial: true` — a Pro CAPABILITY inside an otherwise-free page. The page
+  // itself must NOT be wrapped in <ProGate> (that would gate the core journal);
+  // it must check `getEntitlement()` and gate just the capability. The tests
+  // enforce both directions.
+  { href: "/trades?add=open", label: "Open-trade tracking — live positions with SL/TSL/target and risk", partial: true },
+  { href: "/lenses", label: "Lenses — per-group win rate, profit factor, expectancy and avg R (grouping, counts and cleanup stay free)", partial: true },
   // Deep analytics
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
   { href: "/reports/edge", label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
@@ -224,7 +242,32 @@ export const PRO_FEATURES: { href: string; label: string }[] = [
   // Costs, data & exports
   { href: "/reports/broker-compare", label: "Broker cost comparison + cross-broker MTF margins" },
   { href: "/reports/charges", label: "Charges & MTF Leak — where the money actually goes" },
-  { href: "/reports/monthly", label: "PDF reports — monthly, and any selection of trades" },
+  { href: "/reports/monthly", label: "PDF reports — monthly, per broker and financial year" },
+  // Gated since the print rework but never advertised here — a user was
+  // blocked by something the upsell card never told them they would get.
+  // CSV/JSON export of the same trades stays free (the label says so out
+  // loud): what is sold is the typeset artefact, not the data.
+  { href: "/trades/report", label: "Selected-trades PDF — print any hand-picked set (CSV/JSON export stays free)" },
+];
+
+/**
+ * Every route whose RENDER depends on entitlement — the set to revalidate the
+ * moment a key is activated or removed.
+ *
+ * DERIVED from PRO_FEATURES so it cannot drift: the previous hand-written list
+ * in app/api/license/route.ts covered 4 of 17 Pro screens and nobody noticed,
+ * because activation still *looked* fine (every gated page is force-dynamic
+ * and the licence card refreshes its own route). Derivation plus the test in
+ * tests/pro-gating.test.ts makes the next Pro screen self-registering.
+ */
+export const ENTITLEMENT_PATHS: readonly string[] = [
+  ...new Set<string>([
+    "/", // dashboard reflects trial state
+    "/settings", // the licence card itself
+    "/trades", // open-trade + export-PDF buttons read `pro`
+    "/lenses", // per-group edge columns are Pro (hybrid)
+    ...PRO_FEATURES.map((f) => f.href.split("?")[0]),
+  ]),
 ];
 
 export type EntitlementState = "licensed" | "trial" | "expired-key" | "unlicensed";

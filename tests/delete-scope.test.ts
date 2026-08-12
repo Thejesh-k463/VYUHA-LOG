@@ -165,11 +165,15 @@ describe("the preview a user confirms against", () => {
     expect(r.symbolCount).toBe(20);
   });
 
-  it("always warns that attachments and journal notes go too", () => {
+  it("always warns that attachments and journal notes go too, and says where they can be recovered", () => {
+    // The copy changed when deletes started writing a recovery snapshot
+    // (lib/trash.ts). It must not still claim the delete is irreversible —
+    // a warning the user learns is false is worse than none.
     const r = resolveDeleteScope([t({ id: 1 })], { kind: "ids", ids: [1] });
     expect(r.warnings.join(" ")).toMatch(/attachments/i);
-    expect(r.warnings.join(" ")).toMatch(/cannot be undone/i);
-    expect(r.warnings.join(" ")).toMatch(/Backup/i);
+    expect(r.warnings.join(" ")).toMatch(/snapshot is saved first/i);
+    expect(r.warnings.join(" ")).toMatch(/Deleted items/i);
+    expect(r.warnings.join(" ")).not.toMatch(/cannot be undone/i);
   });
 
   it("warns specifically when open or staged positions are in scope", () => {

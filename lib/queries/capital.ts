@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { capitalSnapshots } from "@/lib/db/schema";
+import { accounts, capitalSnapshots } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { Bucket } from "@/lib/domain/constants";
 import { getSettings } from "./settings";
@@ -30,7 +30,11 @@ export function getCapitalSummary(): CapitalSummary {
   const activeRealised = r2(closed.filter((t) => t.bucket === "active").reduce((a, t) => a + t.netPnl, 0));
   const ipoRealised = r2(getIpoRealisedNet());
   const totalRealised = r2(equityRealised + activeRealised + ipoRealised);
-  const rolledIn = s?.pnlRolledIn ?? 0;
+  // Rolled-in is PER-ACCOUNT (migration 0044): the aggregate view sums every
+  // account's marker, matching how its realised figures are themselves sums.
+  const rolledIn =
+    account?.pnlRolledIn ??
+    r2(db.select({ v: accounts.pnlRolledIn }).from(accounts).all().reduce((a, r) => a + r.v, 0));
   return {
     equityCapital: account?.equityCapital ?? s?.equityCapital ?? 0,
     activeCapital: account?.activeCapital ?? s?.activeCapital ?? 0,
@@ -86,4 +90,76 @@ export function getOpeningSnapshot(bucket: Bucket) {
 
 export function getTradeCount(): number {
   return getTrades().length;
+}
+
+export interface CompoundResult {
+  ok: boolean;
+  message: string;
+  added?: number;
+  bucket?: Bucket;
+}
+
+/**
+ * Compound this account's un-compounded realised P&L into its bucket capital.
+ *
+ * PER-ACCOUNT on both sides (migration 0044). The old implementation wrote
+ * the GLOBAL settings row while `getCapitalSummary` read the account row
+ * first — "Compounded +₹X", no visible change, and the global rolled-in
+ * marker burned every other account's un-compounded P&L with it.
+ *
+ * The aggregate view is refused, not resolved: its `available` sums EVERY
+ * account's realised P&L, and compounding a cross-account figure into any
+ * single account would move money between books (invariant 9).
+ */
+export function compoundRealised(bucket: Bucket): CompoundResult {
+  const accountId = getSelectedAccountId();
+  if (accountId === 0) {
+    return {
+      ok: false,
+      message: "Compounding needs a single account — its realised P&L would land in that account's capital. Pick one in the sidebar first.",
+    };
+  }
+
+  const account = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+  const s = getSettings();
+  if (!account || !s) return { ok: false, message: "Account or settings not found" };
+
+  // getCapitalSummary is scoped through the same getSelectedAccountId, so
+  // `available` here is THIS account's un-compounded P&L only.
+  const summary = getCapitalSummary();
+  const add = summary.available;
+  if (Math.abs(add) < 0.005) return { ok: false, message: "No new realised P&L to compound." };
+
+  // The account may not carry its own capital yet (NULL falls back to the
+  // settings figure on reads). Compounding materialises it onto the account,
+  // which is where the read will look next render.
+  const baseEquity = account.equityCapital ?? s.equityCapital;
+  const baseActive = account.activeCapital ?? s.activeCapital;
+  const newEquity = bucket === "equity" ? r2(baseEquity + add) : baseEquity;
+  const newActive = bucket === "active" ? r2(baseActive + add) : baseActive;
+
+  db.update(accounts)
+    .set({ equityCapital: newEquity, activeCapital: newActive, pnlRolledIn: summary.totalRealised })
+    .where(eq(accounts.id, accountId))
+    .run();
+
+  // A capital checkpoint for history — scoped to the account it belongs to.
+  db.insert(capitalSnapshots)
+    .values({
+      accountId,
+      bucket,
+      asOfDate: new Date().toISOString().slice(0, 10),
+      openingCapital: bucket === "equity" ? newEquity : newActive,
+      deployed: 0,
+      available: bucket === "equity" ? newEquity : newActive,
+      realisedPnlToDate: summary.totalRealised,
+    })
+    .run();
+
+  return {
+    ok: true,
+    message: `Compounded ${add >= 0 ? "+" : ""}₹${Math.round(add).toLocaleString("en-IN")} into ${bucket} capital.`,
+    added: add,
+    bucket,
+  };
 }

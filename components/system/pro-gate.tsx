@@ -2,6 +2,7 @@ import Link from "next/link";
 import { KeyRound, Sparkles, Lock, ShieldCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PricingTable } from "@/components/system/pricing-table";
 import { getEntitlement } from "@/lib/queries/license";
 import { PRO_FEATURES, BUY_URL, SKU_LABELS, TRIAL_DAYS } from "@/lib/license";
 
@@ -89,12 +90,19 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             </li>
           ))}
         </ul>
+        {/* The panel is the top of the funnel — it must answer "how much?".
+            Until 2026-08-12 it did not, and every prospect had to open a
+            WhatsApp chat to learn the price. */}
+        <PricingTable compact />
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <Button asChild>
             <a href={BUY_URL} target="_blank" rel="noreferrer">Get the Trader&apos;s Toolkit</a>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/settings">Activate a key</Link>
+            <Link href="/pricing">Compare plans</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/settings#license">Activate a key</Link>
           </Button>
         </div>
         <p className="text-[0.6875rem] text-muted-foreground">

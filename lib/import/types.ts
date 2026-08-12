@@ -10,6 +10,14 @@ export interface ParsedFile {
   trades: NormalizedTrade[];
   /** Broker-reported aggregate totals (footer/summary), for reconciliation. */
   reported?: Record<string, number>;
+  /**
+   * Statement lines actually read from the file, when that differs from
+   * `trades.length` because the parser PAIRS lines into positions (the Dhan
+   * GTR turns 92 bill lines into 73 positions). Shown as "92 lines → 73
+   * trades" so the difference reads as pairing, not as rows going missing —
+   * which is exactly how it read the first time (2026-08-12).
+   */
+  sourceRows?: number;
   warnings: string[];
   /** Raw text (PDF) when a guided manual mapping is needed. */
   rawText?: string;

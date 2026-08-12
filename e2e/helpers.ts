@@ -21,6 +21,27 @@ export async function gotoImportReady(page: Page): Promise<void> {
 
 
 /**
+ * Navigate and wait until the ROOT LAYOUT's client islands are live.
+ *
+ * `page.goto` resolves on `load`, and `networkidle` says nothing about
+ * hydration (AGENTS.md). CommandPalette binds Ctrl+K on `window` in a mount
+ * effect (components/system/command-palette.tsx) and renders NO DOM while
+ * closed — so a chord pressed too early is a silent no-op, and the failure
+ * reads as "dialog not visible", i.e. a broken palette rather than a fast test.
+ *
+ * The sidebar's MarketClock is the gate: it renders null until its effect
+ * fires and defers its first write a microtask (sidebar.tsx MarketClock), so
+ * its HH:MM text cannot paint before the palette's listener is attached —
+ * same React root, same passive-effect flush, no Suspense boundary between
+ * them (app/layout.tsx). Clock visible ⟹ every root-layout listener is live.
+ */
+export async function gotoHydrated(page: Page, path: string): Promise<void> {
+  await page.goto(path);
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator("aside").getByText(/\d{2}:\d{2} IST/)).toBeVisible({ timeout: 20_000 });
+}
+
+/**
  * Make sure the e2e database has trades, without assuming which spec ran first.
  *
  * The suite shares one database across the whole run, and imports are

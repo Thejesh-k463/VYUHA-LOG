@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/schema";
+import { accounts, chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { getWriteAccountId } from "@/lib/queries/accounts";
+import { getWriteAccountId, getSelectedAccountId } from "@/lib/queries/accounts";
 import { WORKSPACES } from "@/lib/domain/workspace";
 
 export const runtime = "nodejs";
@@ -138,6 +138,20 @@ export async function POST(req: Request) {
     }
     const v = parsed.data;
     const existing = db.select().from(settings).limit(1).all()[0];
+
+    // Capital is read account-first (lib/queries/capital.ts:35), so it must be
+    // WRITTEN account-first too: with an account selected, saving here used to
+    // update the global settings row that nothing was reading — "Settings
+    // saved." while the number on screen never moved. The remaining fields
+    // stay global; only capital is per-account.
+    const selectedForCapital = getSelectedAccountId();
+    if (selectedForCapital > 0) {
+      db.update(accounts)
+        .set({ equityCapital: v.equityCapital, activeCapital: v.activeCapital, updatedAt: now })
+        .where(eq(accounts.id, selectedForCapital))
+        .run();
+    }
+
     const values = {
       goLiveDate: v.goLiveDate,
       equityCapital: v.equityCapital,

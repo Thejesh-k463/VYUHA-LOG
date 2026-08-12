@@ -864,6 +864,10 @@ export const accounts = sqliteTable("accounts", {
   taxIdentity: text("tax_identity"),
   equityCapital: real("equity_capital"),
   activeCapital: real("active_capital"),
+  /** Realised P&L already compounded into THIS account's capital. Lives here,
+   *  not on settings: a global marker made compounding in one account mark
+   *  every other account's P&L as rolled in (migration 0044). */
+  pnlRolledIn: real("pnl_rolled_in").notNull().default(0),
   isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull().default(now),

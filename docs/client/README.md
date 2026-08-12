@@ -3,11 +3,21 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.75
+
+| Upgrade | What it gives you |
+|---|---|
+| **Six brokers recognised automatically** | Paytm Money joins Dhan, Groww, Zerodha, Angel One and Upstox — its tradebook imports with the broker's own charge figures, per execution. Angel One's tax P&L (with its explicit MTF quantities) and Groww's order history now import too. And recognition got stricter: a file has to prove which broker it came from before Vyuha reads it as that broker, so the wrong broker's rates can never be applied by accident. |
+| **Deleting is no longer forever** | Every delete first saves a snapshot of exactly what is being removed — trades, staged entries, chart screenshots and all. Put it back any time from Backup & Restore → Deleted items. You can also delete by date range, by import file, by broker, or exactly what the table is showing — always with a preview of the precise set and count first. |
+| **Lenses — your book, six ways** | A new screen that regroups the same trades by month, broker, trade type, import file, setup or outcome. When an import looks wrong, one click shows exactly what that file produced, in isolation — and you can delete just that group from right there. |
+| **A back button that knows where it goes** | The header grows a back control whenever there is an in-app screen to return to, labelled with where it will take you. Alt+← and the mouse's back button work too. |
+| **Prices, in the app** | What a licence costs is now shown where you'd need it — no more asking on WhatsApp just to learn the number. |
+
 ## New in v2.99.30
 
 | Upgrade | What it gives you |
 |---|---|
-| **Import from any broker** | Five brokers are recognised automatically. For every other one — Kotak Neo, Paytm Money, Sahi, or one that launches next year — drop the CSV or XLSX and Vyuha asks you to match the columns once, then remembers it for that broker. Nothing is guessed: a layout Vyuha doesn't know produces a question, never a trade with the quantity in the price column. |
+| **Import from any broker** | Six brokers are recognised automatically (Paytm Money joined in v2.99.75). For every other one — Kotak Neo, Sahi, or one that launches next year — drop the CSV or XLSX and Vyuha asks you to match the columns once, then remembers it for that broker. Nothing is guessed: a layout Vyuha doesn't know produces a question, never a trade with the quantity in the price column. |
 | **A new look** | A darker, calmer canvas; panels with depth instead of flat fills; and a colour language you can rely on — teal is something you can click, gold is money leaving your account, violet is a statistic about your trading. |
 | **A new mark** | Three arcs in those same three colours around the व, with a ₹ coin. You'll see it on the installer, the taskbar or dock, the browser tab, and the cards you share. |
 | **Readable tables** | Company names, brokers and segments now use a proper text face instead of the monospaced one meant for digits — far easier to scan. Your numbers stay monospaced, so the columns still line up. |
@@ -97,8 +107,10 @@ Vyuha can tell you.
 
 | Your file | What Vyuha can do with it |
 |---|---|
-| **Transaction / tradebook** (recommended) | Everything. Real dates, product type, and — for Zerodha/Angel One/Upstox — execution times, which unlock the time-of-day analysis in Arjun's Eye. |
+| **Transaction / tradebook** (recommended) | Everything. Real dates, product type, and — for Zerodha/Angel One/Upstox/Paytm Money — execution times, which unlock the time-of-day analysis in Arjun's Eye. Paytm Money's tradebook also carries the broker's own per-trade charges, which Vyuha stores as the truth. |
 | **Dhan Global Transaction Report** | Real dates and per-row broker charges. Delivery vs intraday is read from the charge rates themselves. No fill times (the column is a settlement stamp). |
+| **Angel One Tax P&L** | Intraday, delivery, buyback, F&O — with the broker's own charges per row, and the only export that states **MTF quantity** directly, so funded positions tag themselves. |
+| **Groww Order History** | Every executed order with dates and times. It has no price column (Vyuha derives price from value ÷ quantity, and says so) and no charges (estimated from Groww's rate card). |
 | **P&L statement** | Totals only. No dates and no product column, so Vyuha asks you once which rows were delivery vs MTF, and the equity curve cannot plot them. |
 | **Ledger** (Cash & Ledger) | Your **real MTF interest**, which appears in no other file. |
 

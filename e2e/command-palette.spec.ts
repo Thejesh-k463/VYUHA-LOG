@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { gotoHydrated } from "./helpers";
 
 /**
  * Command palette on Radix Dialog (v2.99.70). The palette used to be a bare
@@ -6,11 +7,18 @@ import { test, expect } from "@playwright/test";
  * (Ctrl+K toggle, arrows, Enter) while gaining what Radix supplies: focus
  * trapped in the dialog, Escape closing only the palette, outside click
  * dismissing. No seeding — safe at any position in the run.
+ *
+ * Every test goes through `gotoHydrated`, never bare `goto`: the palette binds
+ * Ctrl+K in a mount effect and renders no DOM while closed, so a chord pressed
+ * before hydration is a silent no-op. A retry loop is NOT the answer here —
+ * Ctrl+K TOGGLES, so pressing an unknown number of times would make the
+ * palette's state a function of how many polls elapsed, and the toggle test
+ * below would be meaningless.
  */
 
 test.describe("command palette", () => {
   test("Ctrl+K opens, Enter navigates, palette closes", async ({ page }) => {
-    await page.goto("/");
+    await gotoHydrated(page, "/");
     await page.keyboard.press("Control+k");
 
     const dialog = page.getByRole("dialog", { name: "Command palette" });
@@ -27,7 +35,7 @@ test.describe("command palette", () => {
   });
 
   test("Escape closes without navigating; Ctrl+K toggles", async ({ page }) => {
-    await page.goto("/trades");
+    await gotoHydrated(page, "/trades");
     await page.keyboard.press("Control+k");
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog).toBeVisible();
@@ -44,7 +52,7 @@ test.describe("command palette", () => {
   });
 
   test("focus stays trapped inside the palette", async ({ page }) => {
-    await page.goto("/");
+    await gotoHydrated(page, "/");
     await page.keyboard.press("Control+k");
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog).toBeVisible();

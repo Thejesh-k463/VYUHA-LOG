@@ -458,4 +458,252 @@ structure — they do nothing to separate row 180 from row 181.
 **Invalidated if:** The panel background lightens materially, or tables stop
 rendering more than ~50 rows.
 
+## 2026-08-12 — A lens group carries its own ids, not a predicate that "should" match
+
+**Context:** The Lenses page groups the book six ways and offers to delete any
+group. Both `monthGroups` and the hand-entered group could have been expressed
+as a scope the resolver re-derives (`dateRange` over the month; "everything with
+no import batch").
+**Measured / found:** They do not agree. A trade bought 20 Aug and sold 4 Sep is
+filed under **September** by the month lens (exit date for a closed trade), but
+`dateRange 2026-08-01→2026-08-31` with basis `either` **also matches it**. The
+group would say 1 and the delete would remove 2. `tests/lenses.test.ts` pins
+this on the real case.
+**Decision:** Month and hand-entered groups carry `{kind:"filter", ids}` — the
+group's own ids. Broker, segment and import-file groups keep their predicate
+scopes, because there the predicate IS the grouping key and the two are the same
+set by construction.
+**Why not the obvious thing:** A predicate scope is smaller and reads better.
+It is also how a confirmation dialog comes to show a number that is not what
+gets deleted, which is the one failure `lib/domain/delete-scope.ts` exists to
+prevent.
+**Invalidated if:** `effectiveDateOf` stops being "exit for closed, entry for
+open", or `DateBasis` gains a mode that matches the month lens exactly.
+
+## 2026-08-12 — Delete writes a snapshot first, and aborts if it cannot
+
+**Context:** Deletion grew from "the rows I selected" to whole import files and
+date ranges. `restoreDatabase` is whole-database wipe-and-reload, so it can undo
+one delete only by discarding everything since.
+**Measured / found:** No undo, soft-delete or recycle concept existed anywhere
+(`grep -rn "undo|soft.?delete|deletedAt|trash"` over app/ components/ lib/
+returned only prose). The per-trade `audit_log.beforeJson` snapshot covers the
+trade row **only** — not its legs, not its attachment rows, and the attachment
+bytes were `rmSync`ed outright, which was the one genuinely irreversible step.
+**Decision:** `lib/trash.ts` writes a scoped JSON snapshot before the
+transaction and MOVES attachment bytes into it after the commit instead of
+unlinking them. If the snapshot cannot be written, the delete does not happen.
+Snapshots live beside the database (not inside it, not in backups) and are never
+auto-purged.
+**Why not the obvious thing:** A `deleted_trades` table is the conventional
+answer. It sits inside the database the user may be about to restore, and it
+travels inside backups — so restoring a backup would resurrect its own trash.
+Auto-purge was rejected outright: a scheduled job destroying the last copy of
+deleted work, on a schedule nobody chose, is a worse failure than a folder that
+grows.
+**Invalidated if:** Attachment volumes make unbounded retention impractical —
+at which point the answer is a size report and a prompt, not a silent sweeper.
+
+## 2026-08-12 — Back navigation: an in-app route stack, not `history.length`
+
+**Context:** The app needed a back affordance. Assessed three shapes against the
+actual route tree: browser-style global history, per-feature breadcrumbs, and
+back-on-drill-downs.
+**Measured / found:** The tree is **flat — 40 routes, zero dynamic segments**.
+`reports/` and `targets/` have no index page, so a breadcrumb would render
+"Reports › Monthly" where "Reports" is not a page. The only nested route,
+`/trades/report`, opens via `window.open(…, "_blank")`, where back means
+nothing. `grep -rn "router\.back"` over app/ and components/ returned **zero
+matches**. The real gap is the Tauri shell, which has no browser chrome at all.
+**Decision:** A module-level pathname stack (`components/layout/nav-history.ts`)
+decides whether to offer the control and what to call it; `router.back()` still
+performs the navigation. Breadcrumbs rejected. The Alt+← and mouse-button-4
+handlers call `preventDefault()`.
+**Why not the obvious thing:** `history.length` counts whatever preceded the app
+in that tab, is browser-capped and never decreases — it cannot answer "is there
+an earlier screen of THIS app". And binding the gestures without
+`preventDefault` risks the worst outcome: on the web the browser goes back and
+so do we, landing the user two screens away.
+**Invalidated if:** The route tree gains real drill-downs with a nameable
+hierarchy — breadcrumbs become the better answer at that point.
+
+## 2026-08-12 — Import detection: a broker detector must present evidence, and shape is not evidence
+
+**Context:** A Groww stocks order-history export imported as broker "zerodha" —
+111 rows added, priced at Zerodha's rates, reported as success.
+**Measured / found:** Running all seven real exports through the live registry
+found not one misroute but two: `detectZerodha` claimed the Groww file at 0.30
+on `symbol`+`isin` column shape, and claimed the Paytm Money tradebook at 0.35
+because its filename contains the English word "tradebook". Zerodha's own
+Console P&L, meanwhile, won only by a filename clamp at 0.30 — its trade table
+starts past row 25 and at column B, where the header scan never looked. No
+test asserted any detector REFUSES a foreign file; the kotakish regression
+fixture stayed green only because it lacked an `isin` column. The generic
+mapper scores a constant 0.05 and `detectParser`'s bar is `> 0`, so any
+detector returning 0.06 on a foreign file steals it from the mapper.
+**Decision:** Every broker detector must qualify on the broker's NAME (filename)
+or a verified in-content fingerprint before shape adds anything; unqualified →
+0 → the mapper asks. Fingerprints per format live in docs/BROKER_FORMATS.md,
+each verified against a real export; `tests/import-detection-matrix.test.ts`
+runs redacted copies of those exports through the registry and pins the full
+cross-broker refusal matrix.
+**Why not the obvious thing:** Raising the generic mapper's 0.05, or a global
+threshold. Both treat the symptom: a detector that scores foreign files at all
+will eventually outscore any constant. The rule has to live where the evidence
+is read.
+**Invalidated if:** A broker ships an export that genuinely carries no
+distinctive content and no name — at which point that format belongs to the
+generic mapper permanently, not to a weaker fingerprint.
+
+## 2026-08-12 — Dhan GTR "73 rows, 0 trades": the import was innocent
+
+**Context:** A GTR batch showed 73 rows / 73 added / 0 skipped while the trades
+table showed none of them — rows in, nothing out, silently.
+**Measured / found:** The same real GTR file replayed end-to-end (detect →
+parse → commit) into a scratch DB: detected at 0.98, parsed to exactly 73
+paired positions (92 bill lines pair down — `rowCount` counts positions, not
+file lines), committed with added=73 and 73 trades tagged with the batch id.
+`added++` sits on the line after the insert inside one transaction, so the
+count and the rows cannot diverge at commit. The divergence was POST-commit:
+trades removed later by a non-batch delete scope or a restore, with the batch
+row left standing — the mirror of the "Import record removed" seam the Lenses
+page surfaces.
+**Decision:** No commit-path change. The pairing arithmetic is now visible
+instead of alarming: parsers that pair set `sourceRows`, and the imports table
+shows "92 → 73" with the pairing explained on hover.
+**Invalidated if:** A future batch reproduces added > 0 with zero tagged trades
+in a database whose audit log shows no delete and no restore between.
+
+## 2026-08-12 — Paytm Money gets a parser: the unpublished-format rule, deliberately set aside
+
+**Context:** AGENTS.md forbids inventing a parser for a format nobody has
+published — written when Kotak Neo, Paytm Money and Sahi documented their
+export columns nowhere, so any parser would have been guesswork with silent
+failure modes.
+**Measured / found:** A real Paytm Money tradebook export now pins the layout:
+metadata rows 1–4 (`UCC`/`Name`/`PAN Number`/`Period`), header on row 5, one
+row per execution WITH a full charge breakdown (Brokerage, ETT, GST, STT,
+SEBI, Stamp Duty) — richer than Zerodha's tradebook, which carries no charges.
+The sample held zero data rows: headers and fingerprints are VERIFIED, value
+semantics are INFERRED and tested against synthetic rows only.
+**Decision:** Build `paytm-tradebook.ts` — the rule's reason (unpublished ⇒
+guesswork) no longer holds for this one format. The parser refuses any row it
+cannot read rather than coercing, and its warnings say charges are stated, not
+computed. Kotak Neo and Sahi remain unpublished and remain with the generic
+mapper; the detection matrix proves no parser claims their files.
+**Invalidated if:** A populated Paytm export contradicts the inferred value
+semantics — reconcile the first live import against a contract note before
+trusting the charge figures.
+
+## 2026-08-12 — Broker API research: recorded so it is not re-derived, NOT built
+
+**Context:** Researched direct broker-API sync for the journal. Nothing here is
+implemented; this entry exists so the findings and the risks survive.
+**Measured / found (per-broker access instruments — CORRECTED 2026-08-12 in a
+second pass against live vendor docs; three items in the first recording were
+wrong and are struck through here so the correction itself is on the record):**
+- **Upstox** — "Analytics Token": 1-year validity, READ-ONLY (cannot place
+  orders). **BUT the Portfolio and Trade-P&L endpoints — exactly what a journal
+  reads — require a whitelisted STATIC IP** (one primary + one secondary per
+  user, set in the developer console). Home broadband is dynamic, so the one
+  broker with a year-long token is the HARDEST to reach from a desktop app.
+- **Dhan** — ~~validity configurable 8 hours–30 days; TTOP secret for 1-year
+  read-only data~~ → access tokens are **24 hours** (renewable via
+  `POST /v2/RenewToken`); the **12-month** validity belongs to the API
+  key/secret pair, not the token; no long-lived read-only token exists in the
+  public docs. TOTP is an auth step, not a token class. Trading APIs free;
+  only market-data APIs are paid. Re-verify against the owner's own account
+  before building — recollection and public docs disagreed once already.
+- **Angel One** — SmartAPI is **free**; api_key + clientId + PIN + TOTP secret;
+  fully automatable; session to midnight with a refreshToken; requires
+  `X-PrivateKey` / `X-ClientLocalIP` / `X-ClientPublicIP` / `X-MACAddress`
+  headers on every call.
+- **Groww** — API key + secret + TOTP; daily expiry; automatable;
+  **₹499+tax/month** — the only broker charging for basic access.
+- **Zerodha** — ~~implicitly the costly one~~ → the **Personal tier is FREE**
+  and covers orders/trades/holdings/portfolio; paid Connect (₹500/mo) adds only
+  market data, which a journal does not need. request_token via browser
+  redirect expires at midnight and automating that login is outside ToS.
+Four of five can run unattended; Zerodha needs a human daily. The first
+recording concluded Upstox's year-long token was "the correct instrument" —
+right on security (a leaked token cannot trade), wrong on reachability: without
+a static IP it cannot serve a home desktop user at all. **Build order that
+follows from the corrected facts: Angel One first** (free, unattended, and its
+Tax P&L export is already parsed, so API results reconcile against a
+known-good file import), then Dhan, then Zerodha as assisted-sync, with
+Upstox/Groww last (blocked on static IP / on paying).
+**Two prerequisites recorded as blockers, not follow-ups:**
+1. AGENTS.md declares this journal single-user and OFFLINE. API sync or
+   mailbox polling changes that posture and must be a deliberate recorded
+   decision, not drift.
+2. Credentials currently live in the local DB in plain text. Defensible for
+   one daily-expiry token; NOT defensible for a 30-day token, a TOTP secret (a
+   permanent second factor), or mailbox credentials. Encryption at rest comes
+   FIRST.
+**Decision:** Record only. `lib/import/types.ts` already carries the
+`ApiImportSource` seam (`kind: "api"`, `fetchTrades()`), so none of this
+requires re-architecture when it is deliberately taken up.
+**Invalidated if:** A broker changes its token model or pricing — re-verify
+against the broker's own docs before building anything on this table.
+
+## 2026-08-12 — Lenses is HYBRID-gated, and the gate is field omission, not CSS
+
+**Context:** The new Lenses page sat on the free/Pro line: its grouping is
+journal hygiene, its per-group win rate/profit factor/expectancy/avg R is the
+intelligence layer the licence sells.
+**Measured / found:** The client computed `computeKpis` itself, so any
+client-side lock would have been decoration — the numbers were already in the
+browser. Verified after the fix by fetching `/lenses` unlicensed: the words
+`winRate`/`expectancy` appear ZERO times anywhere in the SSR+RSC payload, and
+reappear the moment the key is restored.
+**Decision:** Grouping, counts, net P&L, charges and the per-group DELETE stay
+free (deleting a bad import is the recovery path from an import bug — gating it
+turns a product defect into a hostage situation). The edge object is computed
+server-side (`lib/domain/lens-edge.ts`) through an ALLOW-LIST split and shipped
+as `edge: null` when unlicensed. Three visually distinct cell states: a number;
+"—" = cannot be computed (invariant 6); a Pro chip = computed, not yours yet.
+**Why not the obvious thing:** Wrapping the page in ProGate — that gates the
+free half and breaks invariant 7. Or blurring client-side — that ships the
+numbers and pretends not to. Field omission is the only version that survives
+devtools.
+**Invalidated if:** `Kpis` gains a field — it lands on NEITHER side until a
+human adds it to one allow-list, and `tests/lens-gating.test.ts` pins the split.
+
+## 2026-08-12 — Per-account capital: the write path now lands where the read looks
+
+**Context:** "Compounded +₹X" while the number on screen never changed.
+**Measured / found:** `getCapitalSummary` reads `account.equityCapital ??
+settings`; both writers wrote ONLY the settings row, and `pnlRolledIn` was
+global — compounding in account A marked account B's realised P&L rolled in.
+Pinned by a failing-first temp-DB test.
+**Decision:** Migration 0044 moves `pnl_rolled_in` onto accounts, back-filling
+the legacy global value into the DEFAULT account (single-account installs —
+the overwhelming case — are exactly right; multi-account history is genuinely
+ambiguous and the default account is the least-wrong owner). Compounding
+refuses the aggregate view outright: its `available` sums every account, and
+compounding a cross-account figure into one account moves money between books
+(invariant 9).
+**Invalidated if:** capital ever becomes bucket-per-account-per-bucket rows —
+re-derive the rolled-in ownership then.
+
+## 2026-08-12 — Backups: introspected coverage, and licence/trial state stays on the machine
+
+**Context:** Restore silently lost MTF margin uploads and NSE index membership;
+a shared backup shared the buyer's licence key; restoring an old backup lowered
+the clock ratchet.
+**Measured / found:** `BACKUP_TABLES` listed 26 of 30 schema tables, and the
+guard test asserted a COUNT of 26 — structurally unable to notice a missing
+table. The settings dump carried `license_key`, `trial_started_at`,
+`clock_high_water_mark` verbatim; `settings-baseline.ts` had already excluded
+all three from "restore defaults", so the asymmetry was an oversight, not a
+policy.
+**Decision:** v3 envelope: all 30 tables; the guard test now enumerates the
+schema (`is(v, SQLiteTable)`), so table 31 cannot ship unbacked-up. Dump
+REDACTS the three machine columns; restore PRESERVES this machine's values
+whatever the envelope carries; and a table ABSENT from an older envelope is
+left untouched rather than wiped — absent means "the backup never claimed to
+know", empty means "known empty".
+**Invalidated if:** a table is deliberately excluded from backups — it goes on
+the test's EXCLUDED list with a written reason, which is the point.
+
 <!-- First entry goes here. -->

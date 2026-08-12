@@ -89,15 +89,21 @@ this is about catching it before the push, not instead of CI.
 - **A broker-named parser must see the broker's NAME before it claims a file.** Tradebook *shape*
   (a symbol column, a side column, buy/sell values) is common to every Indian broker, so scoring on
   shape alone makes a parser claim other brokers' files: `detectFor` in `angelone-upstox.ts` used to
-  return 0.2 for any CSV with a "Scrip" column, so a Kotak Neo tradebook imported as Angel One
-  trades priced at Angel One's rates. Require the filename or a fingerprint cell. A file that names
-  no broker belongs to the generic column mapper, where the user says whose it is — a question is
-  always better than a confident wrong answer.
-- **Never invent a parser for a format nobody has published.** Kotak Neo, Paytm Money and Sahi
-  document their export columns nowhere (their own help pages and third-party journals both ask
-  users to send a sample). `lib/import/generic-map.ts` exists so those files import correctly by
-  asking; it refuses a row it cannot read rather than coercing a bad cell to 0, because a trade for
-  zero shares at zero rupees is worse than no trade.
+  return 0.2 for any CSV with a "Scrip" column, and `detectZerodha` scored the word "tradebook" in a
+  filename plus `symbol`+`isin` shape — which imported a Groww order history as Zerodha, priced at
+  Zerodha's rates (2026-08-12). Require the filename or an in-content fingerprint; the verified
+  fingerprint per format lives in `docs/BROKER_FORMATS.md`, and
+  `tests/import-detection-matrix.test.ts` pins the full cross-broker refusal matrix against
+  redacted copies of real exports. A file that names no broker belongs to the generic column
+  mapper, where the user says whose it is — a question is always better than a confident wrong
+  answer.
+- **Never invent a parser for a format nobody has published — a VERIFIED REAL EXPORT is what
+  "published" means.** Kotak Neo and Sahi still document their export columns nowhere, so their
+  files belong to `lib/import/generic-map.ts`, which asks; it refuses a row it cannot read rather
+  than coercing a bad cell to 0, because a trade for zero shares at zero rupees is worse than no
+  trade. Paytm Money moved OFF this list on 2026-08-12 when a real export pinned its layout —
+  a deliberate exception recorded in docs/DECISIONS.md, with the caveat that its sample was
+  schema-only: the first live import should be reconciled against a contract note.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.

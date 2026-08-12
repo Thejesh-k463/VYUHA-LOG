@@ -59,3 +59,8 @@ export { schema, sqlite };
 // Attachments live next to the DB file (project data/ in dev, OS app-data on
 // desktop via VYUHA_DB_PATH) so they survive reinstalls with the journal.
 export const attachmentsDir = path.join(path.dirname(dbPath), "attachments");
+
+// Deleted-trade snapshots (lib/trash.ts). Beside the database rather than
+// inside it, so a snapshot survives a restore of the database it came from and
+// never travels inside a backup of it.
+export const trashDir = path.join(path.dirname(dbPath), "trash");

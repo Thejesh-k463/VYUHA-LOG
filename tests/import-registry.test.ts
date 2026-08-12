@@ -68,9 +68,10 @@ describe("every broker can get its trades in", () => {
 
   it("names which brokers auto-detect, so the docs can never overstate it", () => {
     // A tripwire, not a wish: if a parser is added or removed this fails and
-    // whoever changed it must update the README's "five brokers" claim too.
+    // whoever changed it must update the README's broker-count claim too.
+    // paytm joined 2026-08-12 (tradebook parser, from a verified real export).
     expect(brokersWithNativeParser().sort()).toEqual(
-      ["angelone", "dhan", "groww", "upstox", "zerodha"].sort(),
+      ["angelone", "dhan", "groww", "paytm", "upstox", "zerodha"].sort(),
     );
   });
 });
@@ -117,6 +118,22 @@ describe("the generic source never outranks a real parser", () => {
       expect(ranked.find((r) => r.sourceId === id)!.confidence, `${id} claimed an unnamed file`).toBe(0);
     }
     expect(detectParser(kotakish)?.sourceId).toBe("generic-table");
+  });
+
+  it("HARDENED: symbol+isin shape and a 'tradebook' filename still claim nothing", () => {
+    // The 2026-08-12 incident, distilled. detectZerodha used to award 0.35 for
+    // the English word "tradebook" in a filename and 0.30 for symbol+isin —
+    // either alone beat generic's 0.05. The old kotakish fixture stayed green
+    // only because it happened to lack an `isin` column.
+    const body =
+      "Symbol,ISIN,Trade Date,Trade Type,Order ID,Quantity,Price,Realised P&L\n" +
+      "ACME,INE000000000,01-04-2026,BUY,OD1,10,100,0\n";
+    const shaped = buildContext("kotak_tradebook.csv", Buffer.from(body, "utf8"));
+    const ranked = rankParsers(shaped);
+    for (const id of ["zerodha", "angelone", "upstox", "groww-orders", "paytm-tradebook"]) {
+      expect(ranked.find((r) => r.sourceId === id)!.confidence, `${id} claimed a shape-only file`).toBe(0);
+    }
+    expect(detectParser(shaped)?.sourceId).toBe("generic-table");
   });
 
   it("still recognises a real Angel One / Upstox file by name", () => {

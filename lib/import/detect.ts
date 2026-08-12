@@ -5,9 +5,12 @@ import type { ParseContext, ParsedFile } from "./types";
 import { detectDhanCsv, parseDhanCsv } from "./parsers/dhan-csv";
 import { detectDhanGtr, parseDhanGtr } from "./parsers/dhan-gtr";
 import { detectGrowwXlsx, parseGrowwXlsx } from "./parsers/groww-xlsx";
+import { detectGrowwOrders, parseGrowwOrders } from "./parsers/groww-orders";
 import { detectZerodha, parseZerodha } from "./parsers/zerodha";
 import { detectPdf, parsePdf } from "./parsers/pdf";
 import { detectAngelOne, parseAngelOne, detectUpstox, parseUpstox } from "./parsers/angelone-upstox";
+import { detectAngelOneTaxPnl, parseAngelOneTaxPnl } from "./parsers/angelone-taxpnl";
+import { detectPaytmTradebook, parsePaytmTradebook } from "./parsers/paytm-tradebook";
 import { detectGenericTable, parseGenericTable } from "./parsers/generic-table";
 
 export interface DetectedParser {
@@ -44,9 +47,12 @@ const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | Parse
   "dhan-gtr": parseDhanGtr,
   "dhan-csv": parseDhanCsv,
   "groww-xlsx": parseGrowwXlsx,
+  "groww-orders": parseGrowwOrders,
   zerodha: parseZerodha,
   angelone: parseAngelOne,
+  "angelone-taxpnl": parseAngelOneTaxPnl,
   upstox: parseUpstox,
+  "paytm-tradebook": parsePaytmTradebook,
   pdf: parsePdf,
   "generic-table": parseGenericTable,
 };
@@ -63,9 +69,12 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "dhan-gtr": detectDhanGtr,
   "dhan-csv": detectDhanCsv,
   "groww-xlsx": detectGrowwXlsx,
+  "groww-orders": detectGrowwOrders,
   zerodha: detectZerodha,
   angelone: detectAngelOne,
+  "angelone-taxpnl": detectAngelOneTaxPnl,
   upstox: detectUpstox,
+  "paytm-tradebook": detectPaytmTradebook,
   pdf: detectPdf,
   "generic-table": detectGenericTable,
 };

@@ -309,6 +309,13 @@
       "when": 1786070000000,
       "tag": "0043_trades-hot-path-index",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1786600000000,
+      "tag": "0044_per-account-rolled-in",
+      "breakpoints": true
     }
   ]
 }

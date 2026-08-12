@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1242%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-20%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-1550%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-41%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -27,6 +27,19 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 ## Why Vyuha?
 
 Most journals tell you your P&L. **Vyuha tells you why.**
+
+> **v2.99.75 — six brokers auto-detect, deletion grows an undo, and the book gets lenses.**
+> Import detection was rebuilt on **in-content fingerprints** after a real misroute — every
+> broker parser must now prove whose file it holds before it claims one, and a file that names
+> no broker gets a question, never a guess. That rebuild carried three new formats in with it:
+> **Paytm Money tradebook** (per-execution with the broker's own charges), **Angel One tax
+> P&L** (seven sub-tables, explicit MTF quantities), and **Groww order history**. Deleting
+> became something you can reason about: every delete now writes a **snapshot first** — trades,
+> legs, chart attachments and all — restorable from Backup & Restore → Deleted items, and new
+> scopes (date range, current view, one broker, one file) all pass through the same
+> show-exactly-what-goes confirmation. The new **Lenses** screen cuts the same book six ways —
+> month, broker, trade type, import file, setup, outcome — with per-group performance, and the
+> app finally answers "how much?" in-app: real prices on the upsell panel and a pricing page.
 
 > **v2.99.70 — seven skins, and the chrome grows reflexes.** Three new accent skins — **Royal**
 > (regal violet), **Sapphire** (electric indigo with orchid analytics), **Aurora** (fuchsia with
@@ -153,12 +166,14 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 | ♾ Free forever | 🔑 Pro |
 |---|---|
 | Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
-| All five broker importers + duplicate detection | Portfolio Risk cockpit — VaR, Greeks, margin, breach alerts |
+| All six broker importers + duplicate detection | Portfolio Risk cockpit — VaR, Greeks, margin, breach alerts |
 | Dashboard, P&L calendar with day drill-down & streaks | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
 | Staged positions, playbooks, sessions, calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
 | Chart screenshots, symbol aliases, corporate actions | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
 | Backup & restore, full CSV/JSON export, audit log | Broker-cost + cross-broker MTF comparison, Charges & MTF Leak |
-| Workspace mode, sidebar layout, themes, multi-account | PDF reports — monthly, and any selection of trades |
+| Workspace mode, sidebar layout, themes, multi-account | PDF reports — monthly, and any hand-picked selection of trades |
+| **Lenses grouping** — by month/broker/type/file, with delete | **Lenses edge** — per-group win rate, profit factor, expectancy |
+| **Recoverable delete** — every delete snapshots first, restorable | |
 
 Every fresh install starts a **7-day full-Pro trial** — offline, no signup, no card. When it ends,
 **every trade you have already recorded stays readable, editable and exportable without a key,
@@ -169,7 +184,10 @@ forever.** Your own record of your trading is never held hostage.
 ## ✨ Feature tour
 
 ### 📒 Journal every leg, effortlessly
-- **Import from ANY broker.** Five are auto-detected — Dhan CSV, Groww XLSX, Zerodha CSV/XLSX, **Angel One** and **Upstox** (tradebook *or* aggregated P&L export), plus PDF. For every other broker — **Kotak Neo, Paytm Money, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping for that broker. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite** and **Dhan** API pulls too.
+- **Import from ANY broker.** Six are auto-detected — **Dhan** (P&L *and* the charge-carrying Global Transaction Report), **Groww** (stocks P&L *and* order history), **Zerodha** (tradebook and Console P&L), **Angel One** (tradebook, P&L, *and* the seven-section tax P&L with explicit MTF quantities), **Upstox**, and **Paytm Money** (per-execution tradebook with the broker's own charge breakdown) — plus PDF. Detection keys on **in-content fingerprints**, never on filename or column shape: every parser must prove whose file it holds before claiming it, and a cross-broker refusal matrix in the test suite keeps it that way. For every other broker — **Kotak Neo, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Zerodha **Kite** and **Dhan** API pulls too.
+- **Lenses — the same book, cut six ways.** One tab strip re-groups every trade by month, broker, trade type, import file, setup or outcome — so "what exactly did that one file produce?" is one click, in isolation, with that group's own P&L and charges (and, with Pro, its win rate, profit factor, expectancy and average R). Any group can be deleted from right there.
+- **Deletion you can reason about — and undo.** Delete by date range, by import file, by broker, by trade type, or exactly what the table is showing; every path goes through one confirmation that shows the precise set, counts and net P&L before anything happens, with type-to-confirm past ten trades. And every delete writes a **snapshot first** — trades, staged legs, chart attachments and all — restorable from **Backup & Restore → Deleted items**. Snapshots are never auto-purged.
+- **Back, everywhere it means something.** A back control appears in the header only when there is an in-app screen to return to (labelled with where it goes), Alt+← and the mouse's back button work in the desktop shell, and drill-downs carry their own in-page back.
 - **Add / open / close / edit any trade, any time** — with a live charge preview from the same engine that books it, so what you see is exactly what gets saved.
 - **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
 - Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.
@@ -345,7 +363,7 @@ macOS ships **two separate builds rather than one universal binary on purpose** 
 
 > **macOS Gatekeeper:** the builds are not yet notarised with an Apple Developer ID, so the first launch shows *"Vyuha cannot be opened because the developer cannot be verified."* Right-click the app → **Open** → **Open**, once. Nothing about the app changes; macOS simply asks before running software it cannot attribute.
 
-**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all five broker importers, the dashboard, staged positions, playbooks, the trade calculator and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
+**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
 
 **New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
@@ -407,7 +425,7 @@ lines.
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
 | `npm test` | Vitest unit + integration suite (1147 tests) |
-| `npm run test:e2e` | Playwright e2e — 19 flows incl. the Dhan transaction report, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm run test:e2e` | Playwright e2e — 41 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

@@ -1,5 +1,65 @@
 # Changelog
 
+## v2.99.75 — the file proves itself, the delete forgives, the price speaks
+
+The trust wave: three different promises the app was quietly breaking — about
+whose file it was reading, about what delete meant, and about what it costs —
+each rebuilt to be provable.
+
+- **Import detection was rebuilt on in-content fingerprints, after a real
+  misroute.** A Groww order-history export imported as broker "Zerodha" — 111
+  rows, priced at Zerodha's rates, reported as success. The probe that
+  diagnosed it found a second live misroute the same day: Paytm's tradebook,
+  claimed because its filename contains the English word "tradebook". Every
+  broker parser now has to prove whose file it holds — Zerodha by its Auction
+  column or its "- Z" charge heads, Groww by its own metadata phrasing, Paytm
+  by UCC + its misspelt "Script" column — and a file that names no broker gets
+  the column-mapping question, never a guess. A cross-broker refusal matrix
+  runs redacted copies of real exports through the registry in CI.
+- **Three new import formats, from verified real exports.** Paytm Money
+  tradebook (per-execution WITH the broker's own charge breakdown — richer
+  than Zerodha's), Angel One tax P&L (seven independently-headed sub-tables,
+  futures and options, and the only export examined that states MTF quantity
+  directly), and Groww stocks order history (no price column — price is
+  derived, and the file says so). Six brokers now auto-detect.
+- **Every delete writes a snapshot first.** Trades, staged legs and chart
+  attachment bytes move into a per-delete snapshot beside the database,
+  restorable from Backup & Restore → Deleted items — under their original ids,
+  so nothing that pointed at them is orphaned, and never restored as a
+  duplicate if the same trades came back by re-import. New delete scopes —
+  date range, current view, one broker, one type, one file, one hand-entered
+  day — all resolve through the same confirmation that shows the exact set
+  before anything happens. Nothing is auto-purged.
+- **Lenses.** One screen, six cuts of the same book — month, broker, trade
+  type, import file, setup, outcome — each group with its own P&L, charges
+  and (with Pro) win rate, profit factor, expectancy and average R. Built for
+  the question "what exactly did that one import produce?", and every group
+  can be deleted from where you see it.
+- **The app finally answers "how much?".** Real prices on the trial-expired
+  panel, the licence card and a new in-app pricing page, each carrying the
+  date they were true and embedding the quoted figure in the WhatsApp message
+  — an offline build cannot check for a price change, so the quote travels
+  with the conversation instead of pretending to be live.
+- **Money now lands where the screen reads.** Compounding realised P&L wrote a
+  global row while the summary read the per-account one: "Compounded +₹X",
+  no visible change, and the rolled-in marker burned every other account's
+  un-compounded P&L. Capital and its marker are per-account now, and the
+  aggregate view refuses to compound rather than move money between books.
+- **Backups carry all thirty tables, and nothing that isn't yours.** Four
+  tables had silently fallen out of the backup list — restoring lost every
+  uploaded MTF margin sheet — and the guard test counted to 26 instead of
+  reading the schema, so it could not notice. It reads the schema now. Licence
+  key and trial state no longer travel in a backup at all: a shared file is no
+  longer a shared key, and restoring an old backup no longer rewinds the
+  clock ratchet.
+- **The honest one.** Three e2e specs had been red since v2.99.70 — that
+  release renamed the row-action tooltips and the specs kept querying the old
+  attribute, one of them burning its full 90-second timeout every run. Four
+  locator lines. The suite is genuinely green again, and the two "guard" tests
+  that could not fail (a table count and a name list) were rebuilt to
+  introspect what they claim to protect.
+
+
 ## v2.99.70 — three new skins, and the chrome grows reflexes
 
 - **Three new accent skins: Royal, Sapphire, Aurora.** Violet-led and regal;

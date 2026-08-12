@@ -30,10 +30,16 @@ function toMatrix(ctx: ParseContext): string[][] {
   return [];
 }
 
-/** Find the header row index (first row that contains a recognizable column). */
+/** Find the header row index (first row that contains a recognizable column).
+ *
+ *  Scans 100 rows, not 25: the Console P&L opens with a preamble, a summary
+ *  block and the full charges ledger before its trade table, and on a real
+ *  export (verified 2026-08-12) the header sits past row 25. At 25 this
+ *  function missed it, detection fell into the no-header clamp, and Zerodha's
+ *  own P&L was claimed at 0.30 by accident of its filename. */
 function findHeader(rows: string[][]): number {
   const wanted = ["symbol", "tradingsymbol", "trade type", "trade_type", "isin", "quantity"];
-  for (let i = 0; i < Math.min(rows.length, 25); i++) {
+  for (let i = 0; i < Math.min(rows.length, 100); i++) {
     const cells = rows[i].map(norm);
     if (wanted.some((w) => cells.includes(norm(w)))) return i;
   }
@@ -51,18 +57,57 @@ function colFinder(header: string[]) {
   };
 }
 
+/**
+ * Detection. THE RULE (AGENTS.md): a broker-named parser must see the broker's
+ * NAME before it claims a file — in the filename or as an in-content
+ * fingerprint no other broker emits. This detector used to score on column
+ * SHAPE (`symbol`+`isin` = 0.30, the word "tradebook" in a filename = 0.35),
+ * and on 2026-08-12 that claimed a Groww order-history export AND a Paytm
+ * Money tradebook as Zerodha, importing one of them priced at Zerodha's
+ * rates. Shape is common to every Indian broker; it now only refines a score
+ * after the file has qualified.
+ *
+ * Fingerprints, each verified against a real export (docs/BROKER_FORMATS.md):
+ *   - Tradebook: the `Auction` column — no other broker emits it — or the
+ *     `Trade ID` + `Order ID` pair.
+ *   - Console P&L: charge account heads suffixed "- Z" ("Brokerage - Z",
+ *     "Central GST - Z", … 9 heads on a real export).
+ */
 export function detectZerodha(ctx: ParseContext): number {
-  let score = 0;
-  if (/zerodha|tradebook|console|kite/i.test(ctx.filename)) score += 0.35;
+  // Only strings that actually name the broker. "tradebook" and "console" are
+  // generic English — Paytm's export is literally called "… - Tradebook.xlsx".
+  const named = /zerodha|kite/i.test(ctx.filename);
   const rows = toMatrix(ctx);
   const h = findHeader(rows);
-  if (h < 0) return score > 0 ? Math.min(score, 0.3) : 0;
+  if (h < 0) {
+    // A named file with no readable table still routes here so the parser can
+    // say "no recognizable header" by name, rather than the mapper offering
+    // columns that do not exist.
+    return named ? 0.3 : 0;
+  }
   const cells = rows[h].map(norm);
+
+  const tradebookFp =
+    cells.includes("auction") || (cells.includes("tradeid") && cells.includes("orderid"));
+  // The "- Z" heads live in the charges block, one per ROW ("Brokerage - Z" /
+  // "Central GST - Z" / …), not in the trade-table header — so this counts
+  // across the sheet, bounded. Two are required: one "- Z"-suffixed label
+  // could be anyone's abbreviation; a column of them is Zerodha's Console.
+  const consoleFp =
+    rows
+      .slice(0, 100)
+      .flat()
+      .filter((c) => /\s-\s?Z$/.test(String(c).trim())).length >= 2;
+
+  if (!named && !tradebookFp && !consoleFp) return 0; // No name, no fingerprint, no claim.
+
+  let score = named ? 0.35 : 0;
+  if (tradebookFp) score += 0.4;
+  if (consoleFp) score += 0.4;
+  // Shape refines a qualified score; it can no longer create one.
   if (cells.includes("tradingsymbol") || (cells.includes("symbol") && cells.includes("isin")))
-    score += 0.3;
-  if (cells.includes("tradetype") && cells.includes("orderid")) score += 0.3; // tradebook
-  if (cells.some((c) => c.includes("realizedprofit") || c === "realizedpnl" || c.includes("realised")))
-    score += 0.2; // console P&L
+    score += 0.15;
+  if (cells.includes("tradetype") && cells.includes("orderid")) score += 0.1;
   return Math.min(1, score);
 }
 

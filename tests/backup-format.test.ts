@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { getTableName, is } from "drizzle-orm";
+import { SQLiteTable } from "drizzle-orm/sqlite-core";
+import * as schema from "@/lib/db/schema";
 import { validateBackup, BACKUP_VERSION, BACKUP_TABLES, isEncryptedBackup } from "@/lib/backup-format";
 
 describe("validateBackup", () => {
@@ -29,9 +32,24 @@ describe("validateBackup", () => {
     expect(validateBackup({ vyuhaBackup: true, version: 1, tables: { trades: 42 } }).ok).toBe(false);
   });
 
-  it("covers every v2 operational table, including legs and attachments", () => {
-    expect(BACKUP_TABLES).toEqual(expect.arrayContaining(["accounts", "trade_legs", "playbooks", "price_history", "trade_attachments", "broker_connections", "trading_sessions", "regulatory_rule_packs"]));
-    expect(BACKUP_TABLES).toHaveLength(26);
+  it("covers EVERY table the schema defines — introspected, not counted", () => {
+    // The previous version of this test asserted a count of 26 and a sample of
+    // 8 names. Four tables (instrument_indices, mtf_margins, settings_baseline,
+    // panel_dismissals) were then added to the schema and silently never backed
+    // up — a restore lost every uploaded MTF margin list, and the "coverage"
+    // test stayed green because 26 still equalled 26. Enumerating the schema
+    // means table 31 cannot ship unbacked-up: someone must either add it here
+    // or put it on the exclusion list below with a reason.
+    const allTables = Object.values(schema)
+      .filter((v) => is(v, SQLiteTable))
+      .map((tbl) => getTableName(tbl as SQLiteTable));
+
+    // Tables deliberately NOT in a backup. Currently none — every table
+    // travels. An entry here needs a written reason, not just a name.
+    const EXCLUDED: string[] = [];
+
+    const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();
+    expect([...BACKUP_TABLES].sort()).toEqual(expected);
   });
 
   it("recognises the encrypted envelope without treating arbitrary JSON as encrypted", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
 import { applyColumnOrder, movableKeys, parseStoredOrder } from "@/lib/domain/column-order";
@@ -19,7 +20,8 @@ import { ManualTradeForm } from "./manual-trade-form";
 import type { WriteAccountOption } from "@/components/system/write-account-picker";
 import { CloseTradeDialog } from "./close-trade-dialog";
 import { DeleteTradesDialog } from "./delete-trades-dialog";
-import { resolveDeleteScope, type DeletableTrade } from "@/lib/domain/delete-scope";
+import { DeleteScopeDialog } from "./delete-scope-dialog";
+import { resolveDeleteScope, type DeletableTrade, type DeletePreview } from "@/lib/domain/delete-scope";
 import { EditTradeDialog } from "./edit-trade-dialog";
 import { StagedPanel } from "./staged-panel";
 import { overrideTrade, deleteTrade } from "@/app/trades/actions";
@@ -198,6 +200,25 @@ export function TradesClient({
     if (visibleSelected.size === 0) return null;
     return resolveDeleteScope(data.map(toDeletable), { kind: "ids", ids: [...visibleSelected] });
   }, [visibleSelected, data, toDeletable]);
+
+  // "Delete by…" — the scopes the engine has always understood but nothing
+  // could reach. Its candidates are the WHOLE account-scoped book, not `data`:
+  // a date-range delete must be able to name a trade the current filter is
+  // hiding, or the count it shows is not the truth about that range.
+  const [scopeOpen, setScopeOpen] = React.useState(false);
+  const [scoped, setScoped] = React.useState<{ preview: DeletePreview; reason: string } | null>(null);
+  const allDeletable = React.useMemo(() => trades.map(toDeletable), [trades, toDeletable]);
+  const viewIds = React.useMemo(() => data.map((t) => t.id), [data]);
+  const viewLabel = React.useMemo(() => {
+    const bits = [
+      TRADE_VIEWS.find((v) => v.value === view)?.label ?? "All trades",
+      broker && (BROKER_LABELS[broker as keyof typeof BROKER_LABELS] ?? broker),
+      segment && (SEGMENT_LABELS[segment as Segment] ?? segment),
+      search.trim() && `“${search.trim()}”`,
+      from && to ? `${from} → ${to}` : from ? `from ${from}` : to ? `to ${to}` : "",
+    ].filter(Boolean);
+    return bits.join(" · ");
+  }, [view, broker, segment, search, from, to]);
 
   /**
    * Counts for the dropdown, computed AFTER the other filters but BEFORE the
@@ -485,6 +506,11 @@ export function TradesClient({
               </Button>
             </Tip>
           )}
+          <Tip label="Delete by date range, this view, broker, trade type or a day's hand-entered trades">
+            <Button size="sm" variant="ghost" className="text-xs" onClick={() => setScopeOpen(true)}>
+              <Trash2 className="size-3.5 text-loss" /> Delete by…
+            </Button>
+          </Tip>
           {/* Pro: tracking a LIVE position (SL/TSL/target, risk, Portfolio Risk
               feed) is the forward-looking half of the journal. Recording a
               completed trade stays free — the user's own record of what they
@@ -492,12 +518,13 @@ export function TradesClient({
               button says what it unlocks rather than disappearing. */}
           {!pro ? (
             <Tip label="Pro — tracking live positions with SL/target and risk. Recording closed trades stays free.">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => { window.location.href = "/settings#license"; }}
-              >
-                <Lock className="size-3.5" /> Open trade
+              {/* Client-side Link, not window.location: a full-document
+                  navigation inside the Tauri shell reboots the whole app and
+                  discards column order, filters and selection. */}
+              <Button size="sm" variant="secondary" asChild>
+                <Link href="/settings#license">
+                  <Lock className="size-3.5" /> Open trade
+                </Link>
               </Button>
             </Tip>
           ) : (
@@ -555,14 +582,28 @@ export function TradesClient({
             <span className="flex items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear selection</Button>
               {/* Print-ready report of exactly these rows; the route re-checks
-                  every id against the account-scoped journal. */}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => window.open(`/trades/report?ids=${[...visibleSelected].join(",")}`, "_blank")}
-              >
-                <Printer className="mr-1 size-3.5" /> Export PDF ({visibleSelected.size})
-              </Button>
+                  every id against the account-scoped journal. Locked, not
+                  hidden, when unlicensed — opening a new tab whose entire
+                  content is a paywall rendered inside the PRINT layout was the
+                  old behaviour, and it read as a bug, not an offer. The page's
+                  own <ProGate> stays as the enforcement for a typed URL. */}
+              {pro ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => window.open(`/trades/report?ids=${[...visibleSelected].join(",")}`, "_blank")}
+                >
+                  <Printer className="mr-1 size-3.5" /> Export PDF ({visibleSelected.size})
+                </Button>
+              ) : (
+                <Tip label="Pro — print-ready PDF of any selection. CSV/JSON export stays free.">
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href="/settings#license">
+                      <Lock className="mr-1 size-3.5" /> Export PDF
+                    </Link>
+                  </Button>
+                </Tip>
+              )}
               <Button size="sm" variant="destructive" onClick={() => setDeleting(true)}>
                 <Trash2 className="mr-1 size-3.5" /> Delete selected…
               </Button>
@@ -585,6 +626,32 @@ export function TradesClient({
           onDone={() => setSelected(new Set())}
         />
       </Card>
+
+      {/* Chooser, then the same confirmation every other delete passes
+          through. The chooser closes as the confirmation opens, so there is
+          never a scope control sitting behind a confirm dialog for the user to
+          change under it. */}
+      <DeleteScopeDialog
+        candidates={allDeletable}
+        viewIds={viewIds}
+        viewLabel={viewLabel}
+        open={scopeOpen}
+        onOpenChange={setScopeOpen}
+        onCommit={(preview, reason) => {
+          setScopeOpen(false);
+          setScoped({ preview, reason });
+        }}
+      />
+      <DeleteTradesDialog
+        preview={scoped?.preview ?? null}
+        reason={scoped?.reason ?? ""}
+        open={scoped != null}
+        onOpenChange={(v) => !v && setScoped(null)}
+        onDone={() => {
+          setScoped(null);
+          setSelected(new Set());
+        }}
+      />
 
       {/* Override dialog */}
       <Dialog open={!!journaling} onOpenChange={(o) => !o && setJournaling(null)}>

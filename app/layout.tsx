@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
+import { NavHistoryTracker } from "@/components/layout/nav-history-tracker";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings } from "@/lib/queries/settings";
@@ -85,6 +86,8 @@ export default function RootLayout({
             <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
           </div>
           <CommandPalette workspace={workspace} />
+          {/* Mounted once, so each navigation is recorded exactly once. */}
+          <NavHistoryTracker />
         </TooltipProvider>
         <Toaster />
       </body>
