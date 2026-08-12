@@ -755,4 +755,37 @@ put a rate in the editor that no charge computation ever uses.
 **Invalidated if:** exercise STT starts feeding a booked charge rather than an
 advisory — then it earns the column.
 
+## 2026-08-12 — Secrets at rest (v2.99.80): envelope encryption, DPAPI-wrapped on Windows, no new dependency
+
+**Context:** The broker-API roadmap ends with stored TOTP secrets — permanent
+second factors. Prerequisite recorded earlier today: encryption at rest comes
+BEFORE the first such credential field exists. Live plaintext already existed:
+`settings.license_key` and `broker_connections.api_key`/`access_token` (the
+shipped Kite/Dhan pulls).
+**Measured / found:** The Tauri shell and the Node sidecar are separate
+processes, so an OS-keychain design needs an IPC channel that does not exist;
+`tauri-plugin` routes also do nothing for `npm run dev` and CI. Windows
+PowerShell's `-Command` glues trailing argv into the command string instead of
+populating `$args` — the first DPAPI implementation silently fell back to the
+KDF wrap on every Windows box, caught by the suite's provider assertion; blobs
+now travel in environment variables.
+**Decision:** One AES-256-GCM data-encryption key per install, stored WRAPPED
+in `vault.key` beside the DB — DPAPI (CurrentUser) on Windows via PowerShell,
+scrypt over the machine identity elsewhere. Column values wear a `venc:`
+envelope; reads accept both forms and a lazy sweep upgrades pre-vault
+plaintext (SQL migrations cannot run crypto — a migration file claiming to
+encrypt would lie). Unreadable vault = honest degradation: licence reads
+unlicensed with "re-paste the key from your purchase email", broker pulls ask
+to re-enter credentials; new-secret WRITES refuse loudly rather than storing
+plaintext beside a broken vault. Backups now redact broker credentials the way
+they already redact the licence key; secretless connection rows are dropped on
+restore.
+**Why not the obvious thing:** An npm keychain/DPAPI module — this repo's
+lockfile is a minefield (see "Adding a dependency") and `node:crypto` +
+PowerShell covers every runtime. And no claim of defending against same-user
+malware: no user-mode design does, keychain included. The claim is exactly
+"the database file alone carries nothing usable off this machine."
+**Invalidated if:** The Tauri shell grows a secrets IPC — then DPAPI/KDF
+becomes the fallback and the OS keychain the primary, changing only `wrapDek`.
+
 <!-- First entry goes here. -->

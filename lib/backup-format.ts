@@ -54,6 +54,17 @@ export const BACKUP_TABLES = [
  */
 export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockHighWaterMark"] as const;
 
+/**
+ * Broker credential columns, redacted from every dump for the same reason the
+ * licence key is: a backup is a JOURNAL, and credentials belong to the
+ * machine. Since v2.99.80 the stored values are vault ciphertext anyway —
+ * unreadable off the machine — but carrying unreadable bytes into a backup
+ * would only manufacture a "restore looks broken" report; a redacted column
+ * plus a re-connect prompt is the honest shape. Rows redacted to "" are
+ * DROPPED on restore: a connection without credentials is not a connection.
+ */
+export const BROKER_SECRET_COLUMNS = ["apiKey", "accessToken"] as const;
+
 export type BackupTable = (typeof BACKUP_TABLES)[number];
 
 export interface BackupEnvelope {

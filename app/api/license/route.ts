@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
 import { verifyLicenseKey, SKU_LABELS, ENTITLEMENT_PATHS } from "@/lib/license";
+import { encryptSecret } from "@/lib/vault";
 import { recordAudit } from "@/lib/audit";
 
 export const runtime = "nodejs";
@@ -22,7 +23,17 @@ export async function POST(req: Request) {
     const key = String(body.key ?? "").trim();
     const check = verifyLicenseKey(key);
     if (!check.valid) return NextResponse.json({ ok: false, message: check.reason ?? "Invalid key." }, { status: 400 });
-    db.update(settings).set({ licenseKey: key, updatedAt: sql`(datetime('now'))` }).run();
+    // Stored encrypted at rest (v2.99.80). encryptSecret THROWS on a broken
+    // vault — surfaced as an error rather than silently storing plaintext,
+    // because a new secret written beside a broken vault would downgrade the
+    // guarantee without anyone choosing to.
+    let stored: string;
+    try {
+      stored = encryptSecret(key);
+    } catch (e) {
+      return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : "The secrets vault is unavailable." }, { status: 500 });
+    }
+    db.update(settings).set({ licenseKey: stored, updatedAt: sql`(datetime('now'))` }).run();
     recordAudit({
       entity: "settings",
       entityId: null,

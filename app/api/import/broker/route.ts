@@ -8,6 +8,7 @@ import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import
 import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { encryptSecret, readSecret, sweepPlaintextSecrets } from "@/lib/vault";
 
 export const runtime = "nodejs";
 
@@ -37,16 +38,22 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
 
 export async function GET() {
+  sweepPlaintextSecrets(); // upgrade any pre-vault plaintext rows (v2.99.80)
   const selected=getSelectedAccountId(); const accountId=selected||1;
   const rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
   return NextResponse.json({
     ok: true,
-    connections: rows.map((r) => ({
-      broker: r.broker,
-      apiKeyMasked: mask(r.apiKey),
-      lastPullAt: r.lastPullAt,
-      updatedAt: r.updatedAt,
-    })),
+    connections: rows.map((r) => {
+      // Decrypt only to mask — the plaintext never leaves this handler. An
+      // unreadable secret masks as bullets rather than leaking ciphertext.
+      const key = readSecret(r.apiKey);
+      return {
+        broker: r.broker,
+        apiKeyMasked: key.ok && key.value ? mask(key.value) : "••••",
+        lastPullAt: r.lastPullAt,
+        updatedAt: r.updatedAt,
+      };
+    }),
   });
 }
 
@@ -71,11 +78,20 @@ export async function POST(req: Request) {
     if (!apiKey || !accessToken) {
       return NextResponse.json({ ok: false, message: `${spec.keyLabel} and access token are required.` }, { status: 400 });
     }
+    // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather
+    // than quietly storing a live credential in plaintext.
+    let encKey: string, encToken: string;
+    try {
+      encKey = encryptSecret(apiKey);
+      encToken = encryptSecret(accessToken);
+    } catch (e) {
+      return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : "The secrets vault is unavailable." }, { status: 500 });
+    }
     db.insert(brokerConnections)
-      .values({ accountId, broker, apiKey, accessToken })
+      .values({ accountId, broker, apiKey: encKey, accessToken: encToken })
       .onConflictDoUpdate({
         target: [brokerConnections.accountId, brokerConnections.broker],
-        set: { apiKey, accessToken, updatedAt: new Date().toISOString() },
+        set: { apiKey: encKey, accessToken: encToken, updatedAt: new Date().toISOString() },
       })
       .run();
     recordAudit({
@@ -101,15 +117,29 @@ export async function POST(req: Request) {
     const conn = db.select().from(brokerConnections).where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker))).all()[0];
     if (!conn) return NextResponse.json({ ok: false, message: "No saved connection — save the API key + access token first." }, { status: 400 });
 
+    // Decrypted only here, at the moment of use. Pre-vault plaintext rows
+    // still read (the sweep upgrades them); an unreadable vault asks for the
+    // credential again instead of failing cryptically inside the fetch.
+    const keyRead = readSecret(conn.apiKey);
+    const tokenRead = readSecret(conn.accessToken);
+    if (!keyRead.ok || !tokenRead.ok) {
+      const reason = !keyRead.ok ? (keyRead as { reason: string }).reason : (tokenRead as { reason: string }).reason;
+      const keyLabel = API_BROKERS[broker]?.keyLabel ?? "API key";
+      return NextResponse.json(
+        { ok: false, message: `The saved credentials cannot be read: ${reason}. Re-enter the ${keyLabel} and access token.` },
+        { status: 400 },
+      );
+    }
+
     let parsed;
     try {
       if (broker === "dhan") {
         // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
         // came first. Renaming it would need a migration for no behavioural gain.
-        const source = dhanImportSource({ clientId: conn.apiKey, accessToken: conn.accessToken });
+        const source = dhanImportSource({ clientId: keyRead.value, accessToken: tokenRead.value });
         parsed = dhanToParsedFile(await source.fetchTrades({}));
       } else {
-        const source = kiteImportSource({ apiKey: conn.apiKey, accessToken: conn.accessToken });
+        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: tokenRead.value });
         parsed = kiteToParsedFile(await source.fetchTrades({}));
       }
     } catch (e) {

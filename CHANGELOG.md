@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.99.80 — what the database file knows, it no longer tells
+
+Secrets at rest. Until now the licence key and the broker API credentials
+sat in SQLite as plaintext — defensible for daily-expiry tokens, and
+exactly the thing that had to change before longer-lived credentials
+(a TOTP secret is a permanent second factor) ever arrive.
+
+- **Every stored secret is now encrypted with a key the database does not
+  hold.** One AES-256-GCM vault key per install, wrapped by Windows DPAPI
+  (bound to your user profile) or a machine-identity KDF on macOS/Linux,
+  living beside the database — so the .sqlite file alone, copied, synced or
+  shared, carries nothing usable. Built on node:crypto only; no new
+  dependency.
+- **Nothing changes for you until something goes wrong, and then it says
+  so.** Existing plaintext upgrades itself on first read. On a new machine
+  the app asks you to re-paste the licence key from your purchase email and
+  to re-connect brokers — never a crash, never a silently lost journal.
+  Saving a NEW credential while the vault is broken refuses loudly instead
+  of quietly storing plaintext.
+- **Backups stop carrying credentials entirely.** Broker connections travel
+  as names only, the way the licence key has been redacted since v2.99.75;
+  a restored journal prompts you to re-connect.
+- The honest one: this defends the file at rest, not a compromised machine —
+  no user-mode design defends secrets from other code running as you, the
+  OS keychain included. The claim is narrower and true: your database alone
+  tells nothing.
+
+
 ## v2.99.77 — the boundary holds everywhere
 
 The integrity sweep. Eleven defects from the 2026-08-12 register, most of

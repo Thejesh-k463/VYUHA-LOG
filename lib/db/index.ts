@@ -64,3 +64,8 @@ export const attachmentsDir = path.join(path.dirname(dbPath), "attachments");
 // inside it, so a snapshot survives a restore of the database it came from and
 // never travels inside a backup of it.
 export const trashDir = path.join(path.dirname(dbPath), "trash");
+
+// The wrapped data-encryption key for secrets at rest (lib/vault.ts). Beside
+// the database, never inside it: the whole point is that the .sqlite file
+// alone carries nothing usable.
+export const vaultKeyFile = path.join(path.dirname(dbPath), "vault.key");

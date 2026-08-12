@@ -8,6 +8,7 @@ import {
   BACKUP_VERSION,
   BACKUP_TABLES,
   SETTINGS_MACHINE_COLUMNS,
+  BROKER_SECRET_COLUMNS,
   ENCRYPTED_BACKUP_VERSION,
   SCRYPT_PARAMS_V2,
   scryptMaxmem,
@@ -68,6 +69,16 @@ export function dumpDatabase(includeAttachments = true): BackupEnvelope {
       rows = rows.map((r) => {
         const clean = { ...r };
         for (const col of SETTINGS_MACHINE_COLUMNS) clean[col] = null;
+        return clean;
+      });
+    }
+    // Broker credentials never leave the machine either (v2.99.80) — the
+    // rows travel so the user can see WHICH brokers were connected, but the
+    // secrets are blanked and such rows are dropped on restore.
+    if (name === "broker_connections") {
+      rows = rows.map((r) => {
+        const clean = { ...r };
+        for (const col of BROKER_SECRET_COLUMNS) clean[col] = "";
         return clean;
       });
     }
@@ -199,6 +210,10 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
         if (tables[name] === undefined) continue;
         const rows = tables[name] as Record<string, unknown>[];
         for (const r of rows) {
+          // A redacted broker connection is a name without a credential —
+          // restoring it would render a connection that cannot pull and can
+          // only confuse. The user re-connects on the Import screen instead.
+          if (name === "broker_connections" && !r.apiKey) continue;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tx.insert(TABLE_MAP[name]).values(r as any).run();
           restored++;
