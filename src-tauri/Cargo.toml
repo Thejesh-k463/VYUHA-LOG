@@ -1,6 +1,6 @@
 [package]
 name = "vyuha"
-version = "2.99.90"
+version = "2.99.91"
 description = "Vyuha — local trade journal"
 edition = "2021"
 rust-version = "1.77.2"
@@ -18,3 +18,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Fetching the signed revocation list during the launch version check
+# (see check_for_updates in src/lib.rs). reqwest 0.13 with the rustls backend
+# is ALREADY in this build's dependency tree via tauri-plugin-updater, so this
+# adds a direct handle to an existing crate rather than new compilation.
+# Matching its TLS backend deliberately: mixing in native-tls here would build
+# a second stack and drag OpenSSL onto Linux CI for no benefit.
+# NB: reqwest 0.13 renamed the backend feature to plain `rustls` — `rustls-tls`
+# is the 0.12 spelling and fails resolution outright.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }

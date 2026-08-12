@@ -15,6 +15,80 @@ struct ServerProcess(Mutex<Option<Child>>);
 
 const PORT: u16 = 3000;
 
+/// The signed revocation list. Fetched in the SAME launch task as the version
+/// check, so this adds no new host, no new call pattern and no new timing
+/// signal — but deliberately NOT from `releases/latest/download/`.
+///
+/// `latest` re-points at every new app release, so a list uploaded to v2.99.91
+/// would 404 the moment v2.99.92 shipped without someone remembering to
+/// re-upload it — a revocation silently un-revoking itself, with nothing on
+/// screen to show for it. A dedicated, permanent `revocations` release holds
+/// exactly one asset that app releases cannot disturb, and publishing is one
+/// `--clobber` upload to a tag that never moves.
+const REVOCATIONS_URL: &str =
+    "https://github.com/Thejesh-k463/VYUHA-LOG/releases/download/revocations/revocations.json";
+
+/// Download the signed revocation list and cache it beside the database.
+///
+/// PULL ONLY. There is no request body, no identifier in the URL and no
+/// header carrying anything about this install — the app fetches a small
+/// public file the way a browser fetches a certificate revocation list. That
+/// is what lets every "your data never leaves this machine" claim stay true
+/// while still giving the vendor a way to withdraw a refunded or leaked key.
+///
+/// Verification happens on the OTHER side of the wall: this writes bytes, and
+/// lib/revocation.ts checks the vendor's Ed25519 signature before believing a
+/// single entry. So a corrupted download, a captive-portal login page, or a
+/// hostile proxy substituting a file are all inert here — the worst case is a
+/// cached blob the TypeScript side refuses.
+///
+/// Silent on every failure, by design: offline is the normal state of an
+/// offline-first journal, and a dialog about a licence list the user never
+/// asked about would be both alarming and useless.
+async fn fetch_revocation_list(data_dir: std::path::PathBuf) {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[vyuha] revocation client unavailable: {e}");
+            return;
+        }
+    };
+    let body = match client.get(REVOCATIONS_URL).send().await {
+        Ok(r) if r.status().is_success() => match r.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("[vyuha] revocation list unreadable: {e}");
+                return;
+            }
+        },
+        // A 404 is the normal state when nothing has ever been revoked.
+        Ok(r) => {
+            eprintln!("[vyuha] revocation list not published ({})", r.status());
+            return;
+        }
+        Err(e) => {
+            eprintln!("[vyuha] revocation check skipped: {e}");
+            return;
+        }
+    };
+    // Cheap sanity gate so a proxy's HTML error page never lands in the cache
+    // and never replaces a good list already there.
+    if !body.trim_start().starts_with('{') || !body.contains("vyuhaRevocations") {
+        eprintln!("[vyuha] revocation list did not look like one; ignored");
+        return;
+    }
+    // Write via a temp file + rename so a half-written download can never be
+    // read as a truncated list by the sidecar starting up alongside us.
+    let final_path = data_dir.join("revocations.json");
+    let tmp_path = data_dir.join("revocations.json.part");
+    if std::fs::write(&tmp_path, body.as_bytes()).is_ok() {
+        let _ = std::fs::rename(&tmp_path, &final_path);
+    }
+}
+
 /// Startup update check (runs in the background; never blocks the journal).
 /// The webview navigates away to the local Next server, so Tauri IPC is not
 /// available to the web app — the whole flow stays in Rust with native dialogs.
@@ -23,6 +97,12 @@ fn check_for_updates(handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
         use tauri_plugin_updater::UpdaterExt;
+
+        // Same task, same host, same launch. Runs BEFORE the update prompt so
+        // a user who sits on the dialog still gets the list cached.
+        if let Ok(dir) = handle.path().app_data_dir() {
+            fetch_revocation_list(dir).await;
+        }
 
         let updater = match handle.updater() {
             Ok(u) => u,

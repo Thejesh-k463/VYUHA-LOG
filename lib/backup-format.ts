@@ -52,7 +52,7 @@ export const BACKUP_TABLES = [
  * `lib/domain/settings-baseline.ts` already excluded all three from "restore
  * defaults" for the same reason — the backup path was the one left unguarded.
  */
-export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockHighWaterMark"] as const;
+export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockHighWaterMark", "revocationListIssuedAt"] as const;
 
 /**
  * Broker credential columns, redacted from every dump for the same reason the

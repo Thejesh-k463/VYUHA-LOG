@@ -69,3 +69,8 @@ export const trashDir = path.join(path.dirname(dbPath), "trash");
 // the database, never inside it: the whole point is that the .sqlite file
 // alone carries nothing usable.
 export const vaultKeyFile = path.join(path.dirname(dbPath), "vault.key");
+
+// The signed revocation list the desktop shell caches during its launch
+// version check (src-tauri/src/lib.rs). Read-only from this side — lib/
+// revocation.ts never fetches, it only opens this file.
+export const revocationFile = path.join(path.dirname(dbPath), "revocations.json");

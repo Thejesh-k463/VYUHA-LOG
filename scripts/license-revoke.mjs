@@ -8,17 +8,20 @@
 // Writes the ID into scripts/license-revoked.mjs AND into the REVOKED_KEY_IDS
 // array in lib/license.ts, which is what actually ships.
 //
-// READ THIS BEFORE RELYING ON IT
-// ------------------------------
-// Vyuha is offline by design: there is no server for the app to ask "is this
-// key still good?". Revocation is therefore a BUILD-TIME list. A revoked key
-// keeps working on machines already running an older build, and only stops
-// working once the user installs a build issued after the revocation.
+// THIS IS HALF OF REVOCATION — READ BEFORE RELYING ON IT
+// ------------------------------------------------------
+// This script writes the BUILD-TIME half: a key listed here stops activating
+// in every build issued after the edit, and a machine already running an older
+// build is untouched until the user updates. Slow, permanent, tamper-proof.
 //
-// That makes this useful for what it is — stopping a leaked or refunded key
-// from activating new installs — and useless as an instant kill switch. Adding
-// a real kill switch would mean phoning home on launch, which is the one thing
-// this product promises never to do.
+// The other half, since v2.99.91, is scripts/revocation-publish.mjs — a SIGNED
+// list the desktop shell downloads during its launch version check. That half
+// reaches an existing install within a launch or two and warns for a grace
+// period before it locks. It is pull-only: the list comes down, nothing about
+// the user goes up, and it fails open when the machine is offline.
+//
+// Use both for a refund or a leak: publish the signed list so the key stops
+// working soon, and run this script so it never comes back in a later build.
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

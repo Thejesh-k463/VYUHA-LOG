@@ -69,12 +69,23 @@ export function licenseKeyId(key: string): string {
  * Keys that must stop working — refunds, chargebacks, or a key found posted
  * publicly. Add the ID (not the key) via `node scripts/license-revoke.mjs`.
  *
- * HONEST LIMIT: this is a build-time list in an offline app. A revoked key
- * keeps working until the user installs a build that contains the revocation.
- * There is no remote kill switch and adding one would mean a server call on
- * launch, which is exactly the promise this product is sold on. Revocation is
- * therefore a slow, honest tool: it stops resale of a leaked key to future
- * installs, it does not reach back into a machine already running.
+ * This is the BUILD-TIME half: baked into the binary, so it only reaches a
+ * user who installs this build or later. Since v2.99.91 it is backed by a
+ * SIGNED REVOCATION LIST (lib/revocation-format.ts) that the desktop shell
+ * caches during the version check it already performs at launch — that half
+ * reaches an install without requiring an update, which is the gap this list
+ * alone could never close.
+ *
+ * Both halves are consulted. Keep adding IDs here via
+ * `node scripts/license-revoke.mjs` — the build-time copy is the durable
+ * record and the one that protects future installs even if a machine never
+ * fetches a list.
+ *
+ * HONEST LIMITS of the pair, unchanged in spirit: the signed list fails OPEN
+ * (an offline app cannot tell "unreachable" from "blocked"), it never travels
+ * upward — no key, machine id or usage is ever transmitted — and neither half
+ * survives a patched binary. This reaches the lapsed and the casual. It is
+ * not DRM and must not be sold as such.
  */
 export const REVOKED_KEY_IDS: readonly string[] = [];
 
@@ -278,6 +289,13 @@ export interface Entitlement {
   payload: LicensePayload | null; // set for licensed AND expired-key
   trialDaysLeft: number; // 0 when over / not applicable
   reason?: string; // invalid-key reason, when a key exists but fails
+  /**
+   * Set while a licence is on the signed revocation list but still inside its
+   * GRACE window (v2.99.91). Pro stays unlocked — this is a warning the UI
+   * shows on every Pro screen, so a mistaken revocation is recoverable and the
+   * buyer has time to reach the vendor before anything is taken away.
+   */
+  revocationWarning?: { daysLeft: number; effectiveFrom: string; message: string };
 }
 
 const dayMs = 86_400_000;

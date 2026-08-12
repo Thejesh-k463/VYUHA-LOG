@@ -486,6 +486,13 @@ export const settings = sqliteTable("settings", {
   // max(system clock, this) so winding the clock back cannot renew a trial or
   // revive an expired key. Ratchet, not a lock — see lib/license.ts#effectiveToday.
   clockHighWaterMark: text("clock_high_water_mark"),
+  /**
+   * The issue date of the newest signed revocation list this install has
+   * accepted. A ratchet, like clock_high_water_mark above and for the same
+   * reason: without it, replaying an older list would undo a revocation.
+   * Redacted from backups with the other machine-state columns.
+   */
+  revocationListIssuedAt: text("revocation_list_issued_at"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });

@@ -446,13 +446,18 @@ the same SKU on the same day get completely different keys.
    key to one computer. Off by default. Binding needs the buyer's Machine ID first (they copy it
    from Settings → License), so it is a two-step delivery — which fits the email-a-ZIP model
    well. Full guidance on when it is worth the friction in `LICENSE_OPERATIONS.md` §6.
-5. **Revocation — ✅ BUILT (v2.86)**: `node scripts/license-revoke.mjs <KEY-ID> "refunded"` adds
-   the ID to `REVOKED_KEY_IDS` in `lib/license.ts`; that key then refuses to activate.
-   **Read the limit honestly:** this is a *build-time* list in an offline app. A revoked key keeps
-   working on machines already running an older build and only dies once the user installs a build
-   released after the revocation. It stops a leaked key spreading to new installs; it is not a kill
-   switch. Adding a real one means phoning home on launch — the one thing this product promises
-   never to do.
+5. **Revocation — ✅ BUILT (v2.86), reaches live installs since v2.99.91**: two halves, and a
+   refund or a leak deserves both.
+   `node scripts/license-revoke.mjs <KEY-ID> "refunded"` adds the ID to `REVOKED_KEY_IDS` in
+   `lib/license.ts` — permanent, but *build-time*, so it only bites once the user installs a build
+   released after the revocation.
+   `node scripts/revocation-publish.mjs --add <KEY-ID> --message "…"` signs and publishes a list
+   the desktop shell downloads during its existing launch update check. That reaches an install
+   within a launch or two: the user sees a countdown banner for the grace window (14 days by
+   default), then the key stops. It is pull-only — the list comes down, nothing about the user goes
+   up — and publishing a newer list without the ID un-revokes.
+   **Read the limits honestly:** it fails open on a machine kept offline, and it does not survive
+   someone patching the binary. It raises the cost of copying; it is not DRM.
 2. **Offline validation in-app** — done. Signature verified against the public key baked into
    `lib/license.ts`; the stored key is re-verified on every read. Activation UI at
    **Settings → License**; shows "Licensed to <email>", expiry state, and trial countdown.

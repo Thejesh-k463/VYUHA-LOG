@@ -822,4 +822,75 @@ stays a button.
 extend the row mapping and move the trade-book shape from INFERRED to VERIFIED
 in this entry.
 
+---
+
+## 2026-08-12 — Remote revocation (v2.99.91): the list travels down, nothing travels up — and four "no kill switch" promises were retired
+
+**Context:** The owner sells annual licences and wanted a way to withdraw one
+from a buyer who keeps using it past what they paid for, after three warnings
+and a grace period. Four places in this repo promised in writing that no such
+mechanism would ever exist, on the grounds that it "would mean phoning home".
+**Measured / found:** That premise was already false. `check_for_updates` in
+`src-tauri/src/lib.rs` runs a `tauri-plugin-updater` check at every launch —
+unconditional, not opt-in, not surfaced. So the network posture did not change
+with this feature; only the honesty of the copy did. Three published claims
+were checked and were wrong as shipped: `docs/sales/landing-page.html` ("the
+only network activity is optional and explicit… Both can be left off"),
+`README.md` ("except the two things you explicitly allow"), and
+`docs/client/INSTALLATION_GUIDE.md`, whose internet-needs list omitted the
+launch check entirely. Also found: `reqwest` with the rustls backend is already
+in the dependency tree via the updater plugin, so the fetch adds a direct
+handle to an existing crate rather than a new TLS stack (0.13 renamed the
+feature to plain `rustls`; `rustls-tls` is the 0.12 spelling and fails
+resolution).
+**Decision:** An Ed25519-signed list, fetched by the Rust shell inside the
+existing update check and written to app-data; the web app reads the cached
+file and never makes the request itself. Five properties, each pinned by a
+test: (1) **pull-only** — the request carries no key id, no machine id, no
+account, nothing; the same public file is served to everyone, and which key it
+names is decided before the download, not by it; (2) **warn, then lock** — an
+entry's `effectiveFrom` opens a grace window (14 days by default) during which
+every Pro screen shows a countdown banner and *nothing* is withheld, so nobody
+discovers a withdrawal as a dead screen; (3) **anti-rollback** — the accepted
+`issuedAt` ratchets in `settings.revocation_list_issued_at`, so restoring an
+older list cannot undo a newer one, and a REJECTED list must not advance the
+ratchet (else a forgery locks the machine out of the genuine list that
+follows); (4) **reversible** — publishing a newer list without the id
+un-revokes, without shipping a build; (5) **fails open** — no list, a corrupt
+file, a captive-portal HTML page, or any signature failure all resolve to
+"active". The build-time `REVOKED_KEY_IDS` list stays as the permanent half:
+publish the signed list so a key stops soon, run `license-revoke.mjs` so it
+never returns in a later build.
+**Why not the obvious thing:** A malformed `effectiveFrom` fails CLOSED — the
+one deliberate inversion. Treating an unparseable date as "grace forever" means
+a typo in a published list silently grants a permanent reprieve, and the
+publisher would never learn. The signature already makes a malformed date the
+vendor's own mistake, and re-publishing fixes it in a launch. Also rejected:
+adding an opt-out toggle for the update check to make the old copy true again.
+The check is how a signed release and a revocation both reach a user; making it
+optional would make the feature optional. The copy was corrected instead — all
+four "no kill switch" promises rewritten, in `lib/license.ts`,
+`scripts/license-revoke.mjs`, `docs/owner/LICENSE_OPERATIONS.md` and
+`README.md`, and the three false network claims restated to say plainly that
+one download-only check runs at launch and cannot be turned off.
+**Where it is published, and why not the obvious place:** a permanent GitHub
+release tagged `revocations` holding one asset — NOT `releases/latest/download/`
+beside `latest.json`, which was the first design. `latest` re-points at every
+new app release, so a list uploaded to v2.99.91 would 404 the moment v2.99.92
+shipped without someone remembering to re-upload it: a revocation silently
+un-revoking itself, with nothing on screen and no error anywhere. A tag that
+never moves makes publishing one `--clobber` upload and makes app releases
+incapable of disturbing it.
+**Two limits stated rather than hidden** (they are in the module header, the
+owner docs and the sales copy): a machine kept permanently offline never
+receives the list, and nothing here survives someone patching the binary. This
+raises the cost of copying; it is not DRM. A third, smaller one is in
+`lib/revocation.ts`: deleting the cached file un-revokes until the next launch
+re-downloads it — the ratchet defends against an OLDER list displacing a newer
+one, not against someone with write access to their own disk.
+**Invalidated if:** The updater launch check is ever made optional or removed —
+the fetch rides on it and would need its own posture decision; or a future list
+needs to name something other than a key id, which would change the canonical
+bytes and invalidate every signature already published.
+
 <!-- First entry goes here. -->

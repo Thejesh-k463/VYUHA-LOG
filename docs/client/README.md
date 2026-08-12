@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.91
+
+| Upgrade | What it gives you |
+|---|---|
+| **Straight talk about the one network call** | Vyuha has always asked GitHub at launch whether a newer signed release exists. Some of our own wording implied that was optional — it is not, so we fixed the wording rather than the app. It is download-only, sends nothing about you or your trades, skips silently when you are offline, and is the only thing Vyuha contacts unless *you* switch on the bhavcopy download or connect a broker. |
+| **A licence problem now warns you first** | If a licence ever has to be withdrawn — a refund, a chargeback, a key posted publicly — the Pro screens show a dated countdown for a grace period *before* anything stops, with a message explaining why. You will never find a screen simply dead. |
+| **A locked screen now tells you why** | If a Pro screen is ever locked, it now shows the actual reason — a key registered to a different computer, a licence this machine cannot read, or a message from us — instead of always saying "your annual license has expired". Fewer support round-trips to find out what happened. |
+| **Your journal is never the hostage** | Whatever happens to a licence, your trades, imports, backups and exports keep working exactly as they do on a free copy. That has always been the rule and it does not change here. |
+
 ## New in v2.99.90
 
 | Upgrade | What it gives you |

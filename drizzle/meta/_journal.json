@@ -330,6 +330,13 @@
       "when": 1786600002000,
       "tag": "0046_broker-auth-json",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1786600003000,
+      "tag": "0047_revocation-ratchet",
+      "breakpoints": true
     }
   ]
 }

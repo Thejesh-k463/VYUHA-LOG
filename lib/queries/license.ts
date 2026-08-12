@@ -5,7 +5,11 @@ import { settings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getMachineId } from "@/lib/machine-id.server";
 import { readSecret, sweepPlaintextSecrets } from "@/lib/vault";
+import { loadRevocationList } from "@/lib/revocation";
+import { revocationStateFor } from "@/lib/revocation-format";
 import {
+  effectiveToday,
+  trialDaysLeft,
   verifyLicenseKey,
   licenseKeyId,
   evaluateEntitlement,
@@ -107,8 +111,34 @@ export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICE
     getMachineId(),
     mark,
   );
+
+  // ── Signed revocation list (v2.99.91) ────────────────────────────────────
+  //
+  // Applied HERE rather than inside the pure evaluator because it needs the
+  // cached file, and lib/license.ts must stay DB-free and fs-free (invariant
+  // 2). It runs against the CLOCK-RATCHETED date, so winding the clock back
+  // buys no extra grace — the same defence the trial and expiry already have.
+  //
+  // Grace is deliberately generous in shape: while it lasts, `pro` is
+  // untouched and the user only sees a warning. Nothing is taken away until
+  // the effective date, which is what makes a mistaken revocation survivable.
+  let revocation: Partial<Entitlement> = {};
+  if (base.payload && usableKey) {
+    const state = revocationStateFor(licenseKeyId(usableKey), loadRevocationList(), effectiveToday(now, mark));
+    if (state.status === "revoked") {
+      // Pro locks; the journal does not. Invariant 7 holds under revocation
+      // too — a withdrawn licence must never lock someone out of their own
+      // record, only out of the analytics they stopped paying for.
+      const days = trialDaysLeft(trialStartedAt, effectiveToday(now, mark));
+      revocation = { state: "expired-key", pro: false, trialDaysLeft: days, reason: state.message };
+    } else if (state.status === "warning") {
+      revocation = { revocationWarning: { daysLeft: state.daysLeft, effectiveFrom: state.effectiveFrom, message: state.message } };
+    }
+  }
+
   return {
     ...base,
+    ...revocation,
     ...(row?.licenseKey && !keyRead.ok
       ? { reason: `Your licence is stored encrypted and ${keyRead.reason} — paste the key from your purchase email to re-activate.` }
       : {}),

@@ -87,10 +87,13 @@ Four habits that matter once you are past a handful of customers:
    Settings → License, so delivery becomes two-step.
 3. **A `--note` per sale** (invoice number, WhatsApp handle) so a support
    thread resolves with one `grep`.
-4. **Revocation is build-time.** A revoked key keeps working until the client
-   installs a build containing the revocation. There is no kill switch, and
-   adding one would mean a server call on launch — which is the opposite of
-   what this product is sold on. Know this before promising a refund policy.
+4. **Revocation has two speeds — use both.**
+   `node scripts/revocation-publish.mjs --add <KEY-ID> --message "…"` publishes a
+   signed list the app downloads during its launch update check: the user gets a
+   14-day countdown banner, then the key stops. `node scripts/license-revoke.mjs
+   <KEY-ID>` bakes it into future builds so it can never come back. The signed
+   list **fails open offline** and does not survive a patched binary — know both
+   limits before you write a refund policy.
 
 Full operational detail: [`LICENSE_OPERATIONS.md`](LICENSE_OPERATIONS.md).
 

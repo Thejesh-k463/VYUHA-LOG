@@ -6,7 +6,7 @@ after download.
 
 - **Platform:** Windows 10 / 11 (64-bit)
 - **Disk:** ~200 MB
-- **Internet:** only needed to download the installer (and optionally to paste EOD/bhavcopy/VIX data)
+- **Internet:** not needed to use Vyuha. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
 ---
 

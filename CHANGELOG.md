@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.99.91 — a withdrawn licence now stops working before the next release
+
+Revocation used to be a build-time list: a refunded or leaked key kept working
+until the user happened to install a newer build. It now also travels as a
+signed list the app picks up during the version check it already ran at every
+launch — which means the honest thing to do was also fix four places that
+promised no such mechanism would ever exist, and three that described this
+app's network activity inaccurately.
+
+- **The list travels down; nothing travels up.** The request carries no key
+  id, no machine id, no account — the same public file is served to everyone,
+  and which key it names was decided before the download, not by it. It is a
+  plain fetch of a signed file, Ed25519-verified against the same vendor key
+  as the licences themselves; an unsigned, altered or older list is ignored.
+- **Three warnings and a grace period, then it locks.** An entry names the
+  date it takes effect. Until then every Pro screen carries a countdown — "14
+  days left", with your message — and *nothing* is withheld, so a withdrawal
+  is never discovered as a dead screen. Your journal is untouched either way:
+  trades, imports, backups and exports keep working after that date, as they
+  do for any unlicensed copy.
+- **Reversible, and it fails open.** Publishing a newer list without the id
+  un-revokes, with no build to ship. No list, a corrupt file, a captive-portal
+  login page or an offline machine all resolve to "keep working" — the
+  alternative is locking out a paying user whose internet is down.
+- **An older list cannot undo a newer one.** The accepted issue date ratchets
+  in the database, so keeping yesterday's copy and restoring it changes
+  nothing — and a *rejected* list deliberately does not advance that ratchet,
+  or a forgery could lock a machine out of the genuine list behind it.
+- **A blocked screen now says why it is blocked.** The entitlement has always
+  carried a specific reason — a key locked to a different computer, a licence
+  that cannot be decrypted on this machine, and now a revocation message — and
+  it was computed and then rendered nowhere. Every locked Pro screen said "your
+  annual license has expired", which for those cases is untrue and tells the
+  user nothing they can act on. It now shows the actual reason, and stops
+  claiming an expiry when nothing expired.
+- **The copy was corrected, not the feature softened.** The desktop app has
+  always asked GitHub for a newer signed release at every launch — that was
+  never optional, and three published claims said or implied it was. They now
+  state plainly that one download-only check runs at launch, sends nothing
+  about you, and cannot be switched off. The two real limits are written down
+  in the same places: a permanently offline machine never receives the list,
+  and none of this survives a patched binary.
+
 ## v2.99.90 — the first broker that connects itself every morning
 
 Angel One joins the API pulls — and unlike Zerodha (daily browser login) or

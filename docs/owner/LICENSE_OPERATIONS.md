@@ -102,22 +102,81 @@ node scripts/license-revoke.mjs --list
 node scripts/license-revoke.mjs --undo A1B2-C3D4-E5
 ```
 
-This writes the ID into `lib/license.ts`, which ships. **Then bump, build and publish** — the
-revocation only reaches users who install that build or later.
+This writes the ID into `lib/license.ts`, which ships. **Then bump, build and publish** — this half
+of revocation only reaches users who install that build or later.
+
+### The other half: the signed list (v2.99.91+)
+
+For a key that needs to stop working *now* rather than at the next release, publish the signed
+revocation list. The desktop shell already contacts GitHub at launch for the update check; since
+v2.99.91 it fetches the list in the same breath.
+
+**One-time setup**, before the first revocation ever needs publishing:
+
+```bash
+gh release create revocations --title "Licence revocations" --notes "Signed revocation list fetched by installed copies at launch."
+```
+
+That tag is permanent and holds exactly one asset. It is deliberately **not** the app release and
+deliberately **not** `releases/latest/…`: `latest` re-points at every new version, so a list
+uploaded to v2.99.91 would 404 the moment v2.99.92 shipped without someone re-uploading it — a
+revocation quietly un-revoking itself, with nothing on screen to show for it.
+
+Then, per revocation:
+
+```bash
+node scripts/revocation-publish.mjs --add A1B2-C3D4-E5 --message "Refunded 2026-07-22 — contact support to re-purchase."
+gh release upload revocations <the path it printed> --clobber
+```
+
+- `--grace-days N` sets the warning window (default **14**). The user sees a countdown banner on
+  every Pro screen for those days; the key keeps working throughout.
+- Re-run with the ID removed to **un-revoke** — a newer list supersedes an older one, so a mistake
+  is recoverable without shipping a build.
+- The list is Ed25519-signed with the same vendor key as the licences themselves. An unsigned or
+  tampered list is ignored, and an **older** list can never displace a newer one.
+
+**Do both** for a refund or a leak: publish the signed list so the key stops soon, and run
+`license-revoke.mjs` so it never returns in a later build.
+
+### The procedure for a paid period someone kept using past its end
+
+The tooling supports a warn-first process; it does not replace one. Contacting the customer is
+still your job, and doing it in this order means nobody is ever surprised:
+
+| Step | You do | They see |
+|---|---|---|
+| 1 — expiry notice | Email/WhatsApp when the paid period ends. `node scripts/license-list.mjs --expiring 30` is the reminder list | The app already shows their key's expiry in Settings → License |
+| 2 — reminder | A second note ~a week later, with the renewal price and link | Nothing new — Pro is still fully working |
+| 3 — final notice | A third note stating the date the licence stops, matching the `--grace-days` you are about to publish | Nothing new yet |
+| 4 — publish | `revocation-publish.mjs --add <ID> --grace-days 14 --message "…"` then `gh release upload revocations … --clobber` | A dated countdown on every Pro screen — "14 days left" plus your message. **Nothing is withheld yet** |
+| 5 — it takes effect | Nothing | Pro screens show your message and lock. Their **journal is untouched**: trades, imports, backups and exports keep working, exactly as on a free copy |
+
+Two things to hold onto. **Grace is not a formality** — the `--message` is the only sentence the
+person gets in-app, so write it as if it is the whole conversation: why, and how to fix it.
+And **step 4 is reversible**: re-publish without the ID and they are un-revoked at their next
+launch, no build required. Revoking in error costs a launch, not a customer.
+
+Only the licence key is ever named. Nothing about the customer, their trades, their machine or
+their usage is transmitted at any point — you are publishing a public list of key ids, and the app
+is downloading it. Whatever customer details you keep are yours, kept by you, outside this app.
 
 ### Be honest with yourself about what revocation is
 
-Vyuha is offline by design: the app never asks a server whether a key is still good. So:
+- ✅ Stops a leaked key activating on **new** installs (build-time half).
+- ✅ Reaches an **existing** install within a launch or two, after a stated grace period
+  (signed-list half).
+- ✅ Reversible — publishing a newer list un-revokes.
+- ❌ **Fails open.** A machine kept permanently offline never receives the list, and revocation
+  never takes effect there. This is deliberate: the alternative is locking out a paying user whose
+  internet is down.
+- ❌ Does **not** survive a patched binary. Someone willing to edit the executable can delete the
+  check; the licence system raises the cost of copying, it does not make it impossible.
 
-- ✅ It stops a leaked key activating on **new** installs.
-- ✅ It stops someone reselling a refunded key.
-- ❌ It does **not** reach a machine already running an older build.
-- ❌ It is **not** instant, and there is no kill switch.
-
-A real kill switch requires a launch-time server call, which would break the privacy promise the
-whole product is sold on. That trade is deliberate. Price and market the product as if
-determined copying is possible, because it is — the deterrent is social (the buyer's email is
-displayed in-app), not cryptographic.
+Nothing about the user travels upward on any of these paths — no account, no identifier, no
+telemetry. The request is a plain download of a public file. Price and market the product as if
+determined copying is possible, because it is; the deterrent is social (the buyer's email is
+displayed in-app) plus a revocation that now actually arrives, not DRM.
 
 ---
 

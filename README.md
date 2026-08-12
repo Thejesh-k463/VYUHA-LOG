@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1591%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1616%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-41%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -28,6 +28,19 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.91 — a withdrawn licence now stops working before the next release.** Revocation
+> was a build-time list: a refunded or leaked key kept working until the user happened to
+> install a newer build. It now also travels as an **Ed25519-signed list** the app picks up
+> during the version check it already ran at every launch. The list goes **down and nothing
+> goes up** — no key id, no machine id, no account in the request; the same public file is
+> served to everyone. It **warns before it locks** (a dated countdown on the Pro screens for
+> the grace window, with nothing withheld), it is **reversible** by publishing a newer list,
+> an **older list can never undo a newer one**, and it **fails open** offline. Two limits are
+> written down rather than hidden: a permanently offline machine never receives it, and none
+> of this survives a patched binary. Shipping it meant retiring four in-repo promises that no
+> such mechanism would exist and correcting three published claims that described the launch
+> update check as optional — [see below](#-local-first-by-design).
+>
 > **v2.99.90 — the first broker that connects itself every morning.** **Angel One** joins
 > Zerodha and Dhan for live API pulls — and unlike either, nothing expires on you: each pull
 > mints the day's login code from your enrolled **TOTP secret**, so one click after the close
@@ -365,26 +378,31 @@ IPO tracker with allotment P&L · capital compounding (double-count-safe) · cas
 ## 🔑 Licensing (for the maintainer)
 
 Vyuha ships with an **offline licence gate** — an Ed25519 signature verified on the user's own
-machine, with no server call, ever. Every fresh install begins a **7-day full-Pro trial**; the core
-journal is free forever.
+machine. Activation itself makes no server call and never has. Every fresh install begins a
+**7-day full-Pro trial**; the core journal is free forever.
 
 Vendor tooling lives in `scripts/`:
 
 ```bash
 node scripts/license-issue.mjs buyer@email.com app              # mint a Lifetime key (also records it)
 node scripts/license-issue.mjs buyer@email.com app --years 1    # ...or a Pro Annual key
-node scripts/license-issue.mjs buyer@email.com app --years 1    # annual SKU
 node scripts/license-issue.mjs buyer@email.com app --machine ABCD-EF12-3456       # lock to one PC
 node scripts/license-list.mjs --expiring 30                     # renewals due
-node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"         # stop a leaked/refunded key
+node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"         # bake into future builds
+node scripts/revocation-publish.mjs --add A1B2-C3D4-E5 --message "Refunded — contact support."
+                                                                # signed list; reaches live installs
 ```
 
 Each key embeds the buyer's email in its signed payload, so no two are alike, and the app shows
 "Licensed to &lt;email&gt;". Keys can optionally be **bound to one computer** via a hardware-derived
 fingerprint — Windows `MachineGuid`, macOS `IOPlatformUUID`, or Linux
 `/etc/machine-id`, each namespaced so the same value on two platforms cannot
-collide. Revocation is a build-time list — honest about being a slow tool
-rather than a kill switch, because a kill switch would mean phoning home. Full procedures:
+collide. Revocation has two halves: a build-time list baked into each release, and
+since v2.99.91 a **signed list fetched during the launch version check**, so a
+refunded or leaked key stops working without waiting for the user to update. It
+travels one way only — the list comes down, nothing about the user goes up — it
+warns for a grace period before it locks, and it fails open when offline, which
+is stated rather than hidden. Full procedures:
 [`docs/owner/LICENSE_OPERATIONS.md`](docs/owner/LICENSE_OPERATIONS.md).
 
 ---
@@ -392,7 +410,7 @@ rather than a kill switch, because a kill switch would mean phoning home. Full p
 ## 🔒 Local-first by design
 
 No login. No cloud. No telemetry. No analytics SDKs.
-Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. The desktop app talks to `127.0.0.1` and nothing else (except the two things you explicitly allow: update checks and opt-in bhavcopy fetches).
+Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. The desktop app talks to `127.0.0.1` and nothing else, with two download-only exceptions: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off — plus the opt-in bhavcopy fetch, which is off by default. Nothing about you or your trades is ever uploaded, by any path.
 
 ---
 

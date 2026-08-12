@@ -181,4 +181,18 @@ describe("Pro gating — the registry and the real gates agree", () => {
     const hrefs = PRO_FEATURES.map((f) => f.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
+
+  it("the gate SHOWS the entitlement's reason, in both locked branches", () => {
+    // `Entitlement.reason` carries the only sentence that tells a blocked user
+    // what actually happened: a revocation message (v2.99.91), a key locked to
+    // another computer, an unreadable vault. It was produced and never
+    // rendered anywhere — a revoked buyer read "Your annual license has
+    // expired", which is untrue and unactionable, and the message the vendor
+    // wrote with the list never arrived. Both locked branches must surface it.
+    const gate = read(path.join(ROOT, "components/system/pro-gate.tsx"));
+    const mentions = gate.split("ent.reason").length - 1;
+    expect(mentions, "pro-gate.tsx must render ent.reason in the banner AND block branches").toBeGreaterThanOrEqual(3);
+    // …and the heading must not assert an expiry story over a reason that says otherwise.
+    expect(gate).toMatch(/ent\.reason \? "This licence is no longer active"/);
+  });
 });

@@ -1,0 +1,13 @@
+-- Anti-rollback ratchet for the signed revocation list (v2.99.91).
+--
+-- The desktop shell caches a signed `revocations.json` during the version
+-- check it already performs at launch. This column remembers the ISSUE DATE
+-- of the newest list this install has accepted, so dropping yesterday's copy
+-- back into the data directory cannot undo a revocation — the same reasoning
+-- as `clock_high_water_mark`, which stops a wound-back clock reviving an
+-- expired key.
+--
+-- Machine state, not journal data: redacted from backups alongside
+-- license_key, trial_started_at and clock_high_water_mark, so restoring a
+-- backup taken before a revocation does not reset the ratchet either.
+ALTER TABLE `settings` ADD COLUMN `revocation_list_issued_at` text;

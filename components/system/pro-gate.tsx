@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { KeyRound, Sparkles, Lock, ShieldCheck } from "lucide-react";
+import { KeyRound, Sparkles, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PricingTable } from "@/components/system/pricing-table";
@@ -23,6 +23,33 @@ import { PRO_FEATURES, BUY_URL, SKU_LABELS, TRIAL_DAYS } from "@/lib/license";
  */
 export function ProGate({ children }: { children: React.ReactNode }) {
   const ent = getEntitlement();
+
+  // A licence inside its revocation GRACE window (v2.99.91). Nothing is taken
+  // away yet — this is the warning that makes the countdown visible on every
+  // Pro screen, so nobody discovers a withdrawal by finding a screen locked.
+  // Deliberately loud (loss colour, days remaining) and deliberately
+  // non-blocking: it renders ABOVE the real content, which still works.
+  if (ent.revocationWarning) {
+    const w = ent.revocationWarning;
+    return (
+      <>
+        <div className="flex items-start gap-2 rounded-md border border-loss/40 bg-loss/5 p-3 text-xs">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-loss" />
+          <div>
+            <span className="font-medium text-foreground">
+              This licence is scheduled to stop working on {w.effectiveFrom} —{" "}
+              {w.daysLeft} day{w.daysLeft === 1 ? "" : "s"} left.
+            </span>{" "}
+            {w.message}{" "}
+            <span className="text-muted-foreground">
+              Your journal is not affected: trades, imports, backups and exports keep working after that date.
+            </span>
+          </div>
+        </div>
+        {children}
+      </>
+    );
+  }
 
   if (ent.state === "licensed") return <>{children}</>;
 
@@ -58,8 +85,16 @@ export function ProGate({ children }: { children: React.ReactNode }) {
           <KeyRound className="size-4 shrink-0 text-accent" />
           <div>
             <span className="font-medium text-foreground">
-              Pro feature — {ent.state === "expired-key" ? "your annual key has expired." : "unlicensed copy."}
+              Pro feature —{" "}
+              {ent.state === "expired-key"
+                ? ent.reason ? "this licence is no longer active." : "your annual key has expired."
+                : "unlicensed copy."}
             </span>{" "}
+            {/* The specific reason, when there is one — a revocation message, a
+                key locked to another machine, an unreadable vault. Without this
+                a revoked buyer reads "expired", which is both wrong and
+                unactionable, and the message the vendor wrote never arrives. */}
+            {ent.reason ? <span className="text-foreground">{ent.reason}</span> : null}{" "}
             This screen is part of Vyuha Pro. Already bought it? Activate your key in{" "}
             <Link href="/settings" className="text-accent underline-offset-2 hover:underline">Settings → License</Link>.
           </div>
@@ -75,8 +110,19 @@ export function ProGate({ children }: { children: React.ReactNode }) {
       <CardContent className="mx-auto max-w-2xl space-y-4 p-8">
         <div className="flex items-center gap-2 text-base font-semibold">
           <Lock className="size-4 text-accent" />
-          {ent.state === "expired-key" ? "Your annual license has expired" : `Your ${TRIAL_DAYS}-day Pro trial has ended`}
+          {ent.state === "expired-key"
+            // A revoked key is "expired-key" too, but nothing about it expired
+            // — the reason line below says what actually happened, so the
+            // heading must not assert a date-based story over it.
+            ? (ent.reason ? "This licence is no longer active" : "Your annual license has expired")
+            : `Your ${TRIAL_DAYS}-day Pro trial has ended`}
         </div>
+        {/* Same reason as the banner branch: a revoked or machine-locked key
+            has something specific to say, and "your annual license has
+            expired" is the wrong sentence to show that buyer. */}
+        {ent.reason ? (
+          <p className="rounded-md border border-loss/40 bg-loss/5 p-3 text-sm text-foreground">{ent.reason}</p>
+        ) : null}
         <p className="text-sm text-muted-foreground">
           This screen is part of <span className="text-foreground">Vyuha Pro</span>. Your
           journal keeps working forever — trades, imports, dashboard, playbooks, backups are never locked, and
