@@ -315,13 +315,15 @@ five-broker import (incl. Angel One ≈15% of India's active accounts), clickabl
 
 ## 2. The offer & pricing (₹, India retail)
 
-> **⚠ These ranges are STRATEGY, not shipped prices.** The numbers the app and
-> the landing page actually quote live in **`lib/domain/pricing.ts`** (single
-> source of truth, seeded from the landing page: App ₹1,499 · Toolkit ₹4,999
-> (list ₹9,999) · Annual ₹499/yr as of 2026-08-12). `tests/pricing.test.ts`
-> pins the module to the landing page, so changing a price means editing BOTH
-> in one commit — which is the point. "Fixing" the code to match the ranges
-> below will fail CI.
+> **⚠ These ranges are HISTORICAL STRATEGY, superseded 2026-08-12 by an owner
+> reprice.** Shipped prices live in **`lib/domain/pricing.ts`** (single source
+> of truth): **Pro — Annual ₹9,999/yr (recommended)** and **Journal — Lifetime
+> ₹29,999**, clean numbers with no anchor and no scarcity framing. Two SKUs
+> only — the Toolkit/indicators bundle came off every pricing surface;
+> indicators remain a WhatsApp conversation. `tests/pricing.test.ts` pins the
+> module to the landing page, so changing a price means editing BOTH in one
+> commit — which is the point. "Fixing" the code to match the ranges below
+> will fail CI.
 
 | SKU | What | Price (launch) | Price (list) | Tooling |
 |---|---|---|---|---|

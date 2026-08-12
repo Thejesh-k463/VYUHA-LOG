@@ -1,5 +1,27 @@
 # Changelog
 
+## v2.99.76 — the price becomes the positioning
+
+Supersedes v2.99.75 within the hour — that build shipped with the launch-era
+prices baked in, and an offline app quoting a price is making a promise the
+seller has to keep.
+
+- **Repriced: Pro — Annual ₹9,999/yr (recommended) and Journal — Lifetime
+  ₹29,999.** Two SKUs, clean numbers. The strike-through anchor and the
+  "first 100 buyers" scarcity banner are gone — at this price point the
+  credibility is the pitch, and manufactured urgency undercuts it. The
+  TradingView-indicators bundle came off every pricing surface; indicators
+  remain a conversation, not a card.
+- **Every surface moved together, held by a test.** The in-app pricing module,
+  the upsell panel, the licence card, /pricing, the landing page and the
+  brochure all quote the same two numbers, and CI pins the code to the
+  landing page's own price cells — the two things a prospect can compare
+  side by side cannot drift apart.
+- The brochure's third card now shows the **free tier** (₹0, forever) instead
+  of an indicators price — the free journal is the honest third offer, and it
+  sells the paid ones.
+
+
 ## v2.99.75 — the file proves itself, the delete forgives, the price speaks
 
 The trust wave: three different promises the app was quietly breaking — about

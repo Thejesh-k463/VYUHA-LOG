@@ -30,7 +30,7 @@
 // Zero imports — this file is read by client components through lib/license.ts
 // and must stay browser-safe (see AGENTS.md on `npm run verify`).
 
-export type PricingSkuId = "app" | "toolkit" | "annual";
+export type PricingSkuId = "lifetime" | "annual";
 
 export interface PricingSku {
   id: PricingSkuId;
@@ -56,51 +56,40 @@ export const PRICING_AS_OF = "2026-08-12";
 /** After this many days, rendered prices say "confirm before paying". */
 export const PRICING_STALE_AFTER_DAYS = 120;
 
+// Repriced 2026-08-12 (owner decision, same day as the first in-app pricing
+// shipped): two SKUs, clean numbers, no strike-through anchor and no scarcity
+// framing — at a premium price the credibility is the pitch. The TradingView
+// indicators bundle came OFF the pricing surfaces entirely; indicators remain
+// a WhatsApp conversation. Annual is the featured entry; lifetime sits above
+// it as the commitment offer.
 export const PRICING: readonly PricingSku[] = [
-  {
-    id: "app",
-    licenseSku: "app",
-    name: "App only",
-    amountInr: 1499,
-    term: "lifetime",
-    blurb: "one-time · lifetime licence",
-    includes: [
-      "The full Vyuha desktop app",
-      "Every Pro analytics screen",
-      "All broker importers",
-      "Free updates",
-    ],
-  },
-  {
-    id: "toolkit",
-    licenseSku: "toolkit",
-    name: "Trader's Toolkit",
-    amountInr: 4999,
-    wasInr: 9999,
-    term: "lifetime",
-    featured: true,
-    blurb: "one-time · lifetime licence",
-    includes: [
-      "Everything in App only",
-      "Both TradingView indicators (invite-only)",
-      "Staged positions & risk cockpit",
-      "Full tax suite + ITR Pack",
-      "Priority support on WhatsApp",
-      "Free updates, forever",
-    ],
-  },
   {
     id: "annual",
     licenseSku: "app",
-    name: "Annual",
-    amountInr: 499,
+    name: "Pro — Annual",
+    amountInr: 9999,
     term: "annual",
-    blurb: "renews yearly · cancel any time",
+    featured: true,
+    blurb: "per year · renews with a fresh key",
     includes: [
-      "The full app, all Pro screens",
-      "Lowest entry price",
-      "Upgrade to lifetime any time",
-      "Indicators not included",
+      "The full Vyuha desktop app",
+      "Every Pro analytics screen — risk, edge, discipline, options, full tax pack",
+      "All broker importers and free updates through the year",
+      "Upgrade to lifetime any time — the year you paid counts toward it",
+    ],
+  },
+  {
+    id: "lifetime",
+    licenseSku: "app",
+    name: "Journal — Lifetime",
+    amountInr: 29999,
+    term: "lifetime",
+    blurb: "one-time · lifetime licence",
+    includes: [
+      "Everything in Pro, forever — no renewal, ever",
+      "Every Pro analytics screen, all broker importers",
+      "Free updates for the life of the product",
+      "Priority support on WhatsApp",
     ],
   },
 ];

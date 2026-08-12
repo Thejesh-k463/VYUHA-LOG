@@ -41,7 +41,12 @@ describe("shape", () => {
 
   it("skuById throws on an unknown id rather than quoting nothing", () => {
     expect(() => skuById("nope" as never)).toThrow(/unknown/);
-    expect(featuredSku().id).toBe("toolkit");
+    // Repriced 2026-08-12: Annual is the recommended entry, Lifetime the
+    // commitment offer above it. Two SKUs; the indicators bundle came off
+    // the pricing surfaces entirely.
+    expect(featuredSku().id).toBe("annual");
+    expect(skuById("lifetime").amountInr).toBe(29999);
+    expect(skuById("annual").amountInr).toBe(9999);
   });
 });
 
@@ -53,7 +58,7 @@ describe("anti-drift — the app and the landing page quote the same numbers", (
   const amtBlocks = [...html.matchAll(/<div class="amt">([\s\S]*?)<\/div>/g)].map((m) => m[1]);
 
   it("found the landing page's price cells at all", () => {
-    expect(amtBlocks.length).toBeGreaterThanOrEqual(3);
+    expect(amtBlocks.length).toBeGreaterThanOrEqual(2);
   });
 
   it("every in-app amount (and anchor) appears in a landing-page price cell", () => {
@@ -83,12 +88,12 @@ describe("staleness is a fact about a date, not a vibe", () => {
 
 describe("the buy message carries the quote", () => {
   it("names the SKU, the price and the as-of date", () => {
-    const msg = buyMessageFor(skuById("toolkit"));
-    expect(msg).toContain("Trader's Toolkit");
-    expect(msg).toContain("₹4,999");
+    const msg = buyMessageFor(skuById("lifetime"));
+    expect(msg).toContain("Journal — Lifetime");
+    expect(msg).toContain("₹29,999");
     expect(msg).toContain(PRICING_AS_OF);
-    // Annual quotes per-year, so nobody pays ₹499 expecting lifetime.
-    expect(buyMessageFor(skuById("annual"))).toContain("₹499/yr");
+    // Annual quotes per-year, so nobody pays ₹9,999 expecting lifetime.
+    expect(buyMessageFor(skuById("annual"))).toContain("₹9,999/yr");
   });
 
   it("buyUrlFor() with no SKU is byte-identical to the frozen BUY_URL", () => {
@@ -100,7 +105,7 @@ describe("the buy message carries the quote", () => {
   it("per-SKU links stay on the same WhatsApp channel and embed the price", () => {
     const url = buyUrlFor("annual");
     expect(url).toMatch(/^https:\/\/wa\.me\/\d+\?text=/);
-    expect(decodeURIComponent(url)).toContain("₹499/yr");
+    expect(decodeURIComponent(url)).toContain("₹9,999/yr");
   });
 });
 
