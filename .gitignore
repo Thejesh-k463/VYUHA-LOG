@@ -91,3 +91,6 @@ updater-private.key
 
 # Insert/cleanup state written by scripts/demo-ind7.mjs.
 scripts/.demo-ind7.json
+
+# Trend artifact from npm run test:load — a measurement, not source.
+/load-results.json
