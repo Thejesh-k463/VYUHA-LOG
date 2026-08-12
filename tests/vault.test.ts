@@ -170,6 +170,20 @@ describe("degradation — the vault another machine cannot open", () => {
 });
 
 describe.skipIf(process.platform !== "win32")("DPAPI (win32 only)", () => {
+  /**
+   * 60s, not vitest's default 5s. This is the ONE test in the suite that spawns
+   * a real process — two cold `powershell.exe` starts (wrap, then unwrap) to
+   * reach the OS DPAPI. On a warm dev machine that is well under a second; on a
+   * cold GitHub windows-latest runner the two starts alone can exceed 5s, and
+   * the release gate then fails with "Test timed out" on a test that is not
+   * broken. That is exactly what happened on the v2.99.91 tag: macOS built and
+   * published while the Windows job died here, leaving a release with no
+   * Windows installer and a latest.json missing its windows-x86_64 entry.
+   *
+   * Do NOT "fix" a recurrence by skipping this on CI — proving the DPAPI
+   * round-trip on a real Windows box is the entire point of the test, and CI is
+   * the only Windows machine most contributors have.
+   */
   it("wraps and unwraps the DEK through the OS", async () => {
     // A separate key path so the forced-machine vault above is untouched.
     const prev = process.env.VYUHA_VAULT_PROVIDER;
@@ -187,5 +201,5 @@ describe.skipIf(process.platform !== "win32")("DPAPI (win32 only)", () => {
       fs.rmSync(vaultKeyFile, { force: true });
       vault.resetVaultCache();
     }
-  });
+  }, 60_000);
 });
