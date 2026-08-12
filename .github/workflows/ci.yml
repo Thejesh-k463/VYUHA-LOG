@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.17.0   # PINNED — see the note in release.yml
           cache: npm
 
       - name: Install dependencies
@@ -35,6 +35,50 @@ jobs:
 
       - name: Next.js build
         run: npm run build
+
+  # WHY THIS JOB EXISTS.
+  #
+  # Until 2026-08-12 nothing in CI ran on Windows: the jobs here are ubuntu and
+  # macOS, and the only Windows build in the whole pipeline was the release
+  # workflow — which runs AFTER a tag is pushed. So every Windows-only breakage
+  # was guaranteed to be discovered as a broken release, and three were, in a
+  # row: a DPAPI test timing out on a cold runner (v2.99.91), a transient
+  # prebuild download (v2.99.92), and a runner-image Node bump that left
+  # better-sqlite3 with no prebuilt binary and no working node-gyp fallback
+  # (v2.99.92 again). Each shipped a release with no Windows installer.
+  #
+  # This job is the cheap half of the release gate — npm ci, typecheck, unit
+  # tests — on the same OS the installer is built on. It is deliberately NOT
+  # the full build: the point is to fail on a push, on the thing that actually
+  # keeps failing, which is installing native dependencies on Windows.
+  windows-gate:
+    name: Windows install + tests (what the release job needs)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0   # PINNED — see the note in release.yml
+          cache: npm
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            echo "::warning::npm ci failed (attempt $attempt of 3) — retrying"
+            rm -rf node_modules || true
+            sleep 15
+          done
+          echo "::error::npm ci failed three times — this is not a transient download"
+          exit 1
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
 
   e2e:
     name: Playwright e2e (${{ matrix.os }})
@@ -55,7 +99,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.17.0   # PINNED — see the note in release.yml
           cache: npm
 
       - name: Install dependencies
@@ -97,7 +141,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.17.0   # PINNED — see the note in release.yml
           cache: npm
 
       - name: Install dependencies
