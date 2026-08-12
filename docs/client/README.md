@@ -3,6 +3,36 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.90
+
+| Upgrade | What it gives you |
+|---|---|
+| **Angel One connects itself** | Angel One joins Zerodha and Dhan for live API pulls (Import → Connect broker) — and unlike the other two, nothing expires on you. Enter the SmartAPI key, client code, PIN and your TOTP *secret* once; each pull mints the day's login code itself. One click after market close brings in the day's fills through the same preview → charges → de-duplication pipeline as a file import. SmartAPI is free. |
+| **The connection cannot trade** | The Angel One integration can log in and read your trade book — nothing else. There is no order, transfer or modification capability in it at all, and the test suite pins that. |
+| **Mistakes are caught when you make them** | Pasting the 6-digit authenticator code where the TOTP *secret* belongs is refused at save with an explanation — not discovered tomorrow as a cryptic login failure. |
+
+## New in v2.99.80
+
+| Upgrade | What it gives you |
+|---|---|
+| **Your secrets are encrypted at rest** | Your licence key and any broker API credentials are now stored encrypted, with a key bound to this machine and your Windows user profile. The database file alone — copied, synced, or shared — carries nothing usable. |
+| **Backups carry no credentials** | A backup file holds your journal, never your keys: broker credentials and the licence are left out, and a restored journal simply asks you to re-connect. Sharing a backup no longer means sharing a credential. |
+| **On a new computer, it asks — never breaks** | Move to a new machine and Vyuha plainly asks you to re-paste the licence key from your purchase email and re-connect brokers. Your journal itself opens untouched. |
+
+## New in v2.99.77
+
+| Upgrade | What it gives you |
+|---|---|
+| **Multi-account edges sealed** | Every write now lands in exactly the account you are looking at: session plans can no longer drift across accounts from a stale tab, IPOs added in the All-accounts view go where you'd expect, and archiving your selected account moves you to a live one instead of stranding the screen. |
+| **IPO exit charges use your rate card** | Exited IPOs are now priced by the same charges engine as every other delivery sell — from the editable rate config, not fixed numbers — so a budget change reaches them too. |
+| **Deleting a playbook keeps its word** | "Its trades fall back to Untagged" is now literally what happens, and the confirmation tells you how many trades and session plans were touched. |
+
+## New in v2.99.76
+
+| Upgrade | What it gives you |
+|---|---|
+| **Clear pricing, in the app** | Two plans, stated plainly where you need them: **Pro — Annual ₹9,999/yr** (recommended) and **Journal — Lifetime ₹29,999**. The free tier remains free forever — recording trades, every importer, backups. Prices shown in-app carry the date they were set, and the WhatsApp message quotes exactly what you saw. |
+
 ## New in v2.99.75
 
 | Upgrade | What it gives you |

@@ -68,7 +68,10 @@ You have two paths — use either or both:
 2. Drag in your broker export. Supported today: **Zerodha** (tradebook / Console P&L), **Dhan**
    (P&L CSV and the Global Transaction Report), **Groww** (stocks P&L and order history),
    **Angel One** (tradebook, P&L, and the tax P&L), **Upstox** (tradebook or P&L),
-   **Paytm Money** (tradebook), and broker **PDF** statements. Any other broker's CSV/XLSX
+   **Paytm Money** (tradebook), and broker **PDF** statements. Live **API pulls** work for
+   Zerodha, Dhan and Angel One (Import → Connect broker) — Angel One runs unattended from your
+   TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
+   nowhere except the broker itself. Any other broker's CSV/XLSX
    imports through the column mapper — Vyuha asks once and remembers.
    *Tradebook exports list every individual fill, so a position you scaled into arrives with its
    real entry ladder instead of one blended average — see Staged positions below.*

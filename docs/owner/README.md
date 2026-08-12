@@ -28,14 +28,24 @@ All three are gitignored and have **never been committed** — verified by
 ## Cutting a release
 
 ```bash
-npm run verify          # typecheck + lint + 1550 tests + production build
-npm run test:e2e        # 41 browser flows
-npm run bump-version 2.99.75
+npm run verify          # typecheck + lint + full test suite + production build
+npm run test:e2e        # full browser-flow suite
+npm run bump-version x.y.z
 # then BY HAND (bump-version does not touch them — see AGENTS.md):
 #   package-lock.json — BOTH "version" fields (root and packages."")
 #   src-tauri/Cargo.lock — the [[package]] vyuha version
 npm run desktop:build   # builds, signs, and REFUSES to ship unsigned
+node scripts/build-client-package.mjs   # rebuild the client ZIP
 ```
+
+**EVERY release updates the client package — no exceptions.** Before building
+the ZIP: prepend a buyer-voice "New in vX.Y.Z" table to `docs/client/README.md`,
+sync `docs/client/INSTALLATION_GUIDE.md` (supported imports, API pulls,
+security claims) and check `GETTING_STARTED_DECK.html` for retired SKU names or
+stale prices. The ZIP packs those three files fresh at build time (WHATS_NEW.md
+inside the package IS `docs/client/README.md`), so stale docs ship to a buyer
+if this step is skipped. The docs and the package drifted apart across four
+releases once (2026-08-12) — that is why this paragraph exists.
 
 `desktop:build` now fails rather than producing an unsigned installer. Two
 guards stand behind that, both added after real incidents:

@@ -105,6 +105,23 @@ const readme = [
 ].join("\n");
 const checksums = ["# SHA-256 checksums", `${sha256(installer)}  ${installerName}`, `${sha256(signature)}  ${installerName}.sig`, ""].join("\n");
 const files = [{ name: installerName, data: installer }, { name: `${installerName}.sig`, data: signature }, { name: "START_HERE.md", data: readme }, { name: "CHECKSUMS.txt", data: checksums }];
+// The buyer-facing docs travel INSIDE the package, read fresh from
+// docs/client/ at build time — so the zip can never ship without the current
+// "New in" notes, install guide and deck. (Added 2026-08-12 after the docs
+// and the package drifted apart across four releases.)
+const clientDocs = [
+  ["docs/client/README.md", "WHATS_NEW.md"],
+  ["docs/client/INSTALLATION_GUIDE.md", "INSTALLATION_GUIDE.md"],
+  ["docs/client/GETTING_STARTED_DECK.html", "GETTING_STARTED_DECK.html"],
+];
+for (const [src, name] of clientDocs) {
+  const p = path.join(root, src);
+  if (!existsSync(p)) {
+    console.error(`Missing ${src} — the client package must carry the current docs.`);
+    process.exit(1);
+  }
+  files.push({ name, data: readFileSync(p) });
+}
 if (license) files.push({ name: "LICENSE.txt", data: `${license}\n` });
 mkdirSync(outputDir, { recursive: true });
 const archiveName = `Vyuha_${version}_Client_Package${license ? "_Licensed" : ""}.zip`;
