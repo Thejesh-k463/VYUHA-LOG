@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1550%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1591%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-41%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -28,6 +28,36 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.90 — the first broker that connects itself every morning.** **Angel One** joins
+> Zerodha and Dhan for live API pulls — and unlike either, nothing expires on you: each pull
+> mints the day's login code from your enrolled **TOTP secret**, so one click after the close
+> brings in the day's fills. The integration is **read-only by construction** — it can log in
+> and read the trade book, nothing else, and the test suite pins that export list so a trading
+> capability cannot be added without failing CI. The TOTP engine is forty lines of `node:crypto`
+> pinned to **RFC 6238's own test vectors**; no new dependency.
+>
+> **v2.99.80 — what the database file knows, it no longer tells.** Every stored secret — the
+> licence key and all broker credentials — is now encrypted with a key the database does not
+> hold: **DPAPI-wrapped** to your Windows profile, or a machine-identity KDF on macOS/Linux. The
+> `.sqlite` file alone, copied or synced or shared, carries nothing usable. Backups stop
+> carrying credentials entirely, and on a new machine the app asks you to re-paste rather than
+> breaking. The honest boundary, stated in the docs: this defends the file at rest, not a
+> compromised machine — no user-mode design does, keychains included.
+>
+> **v2.99.77 — the boundary holds everywhere.** Eleven defects, most of them one disease: code
+> touching an account-scoped table without resolving which account it was in. Session plans can
+> no longer drift across accounts from a stale tab; IPOs land where you'd expect and refuse
+> cross-account edits; every staged-leg mutation runs the delete engine's own-account guard.
+> IPO exit charges now price through the **charges engine and your editable rate card** instead
+> of rates frozen in source. And the guard tests can now *fail*: the account registry maps every
+> scoped table to owner files that must resolve the account, catching a real distinction on its
+> first run.
+>
+> **v2.99.76 — the price becomes the positioning.** Two plans, stated plainly in-app for the
+> first time: **Pro — Annual ₹9,999/yr** and **Journal — Lifetime ₹29,999**, with the free tier
+> free forever. Prices carry the date they were set and the buy message quotes exactly what you
+> saw, because an offline app quoting a price is a promise the seller has to keep.
+>
 > **v2.99.75 — six brokers auto-detect, deletion grows an undo, and the book gets lenses.**
 > Import detection was rebuilt on **in-content fingerprints** after a real misroute — every
 > broker parser must now prove whose file it holds before it claims one, and a file that names
@@ -163,6 +193,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 
 **Your record is free. The intelligence about it is paid.**
 
+<img src="docs/screenshots/pricing.png" alt="Pricing — Pro Annual and Journal Lifetime plans shown in-app" width="900" />
+
 | ♾ Free forever | 🔑 Pro |
 |---|---|
 | Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
@@ -191,6 +223,20 @@ forever.** Your own record of your trading is never held hostage.
 - **Add / open / close / edit any trade, any time** — with a live charge preview from the same engine that books it, so what you see is exactly what gets saved.
 - **Risk auto-computes from your SL** (|entry − SL| × qty), with manual override. **Current R** (live) and **Target R:R** (planned) side by side on every view.
 - Chart **screenshot attachments**, emotion tags, mistake tags, notes — the full behavioral journal.
+
+### 🔭 Lenses — the same book, cut six ways
+<img src="docs/screenshots/lenses.png" alt="Lenses — the book grouped by month, with trades, open count, net P&L, charges, win rate, profit factor, expectancy and average R per group" width="900" />
+
+- **One tab strip, six regroupings** — by month, broker, trade type, import file, setup or outcome — each showing that group's own **net P&L, charges, win rate, profit factor, expectancy and average R**. When an import looks wrong, the *Import file* tab shows exactly what that one file produced, in isolation, and deletes just that group from where you are standing.
+- **Every cut is a partition, and the tests prove it**: each trade lands in exactly one group and the groups add up to the whole book. Trades with no usable date, no setup recorded, or an import record that was deleted get their own honest group rather than being quietly dropped.
+- What a group **counts** is what deleting it **removes** — the confirmation resolves the same ids the group was built from, so the number you read is the number that goes.
+
+### 🔌 Connect a broker — and Angel One connects itself
+<img src="docs/screenshots/broker-connect.png" alt="Connect broker — Zerodha, Dhan and Angel One tabs with the Angel One credential fields" width="900" />
+
+- **Three live API pulls.** Zerodha (today's executions with fill times), Dhan (the only Dhan source that states **MTF** outright), and **Angel One** — the one that needs no daily attention, because each pull mints its own login code from your TOTP secret.
+- **Credentials are encrypted at rest**, bound to this machine, redacted from backups, and sent nowhere except the broker. A broken vault refuses to save a credential rather than quietly storing it in the clear.
+- Pasting the 6-digit authenticator **code** where the **secret** belongs is caught at save with an explanation — not discovered the next morning as a cryptic login failure.
 
 ### 🪜 Staged positions — build in tranches, scale out in parts
 <img src="docs/screenshots/staged-position.png" alt="Staged position — entry ladder with a stop per tranche, partial exits and per-leg R" width="900" />
@@ -397,7 +443,7 @@ docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
   sales/     public marketing assets (landing page, brochure)
-  screenshots/
+  screenshots/        # dashboard, lenses, pricing, broker-connect, skins, reports
 scripts/     build, release, and the vendor licence tooling
 ```
 
