@@ -327,7 +327,7 @@ five-broker import (incl. Angel One ≈15% of India's active accounts), clickabl
 
 | SKU | What | Price (launch) | Price (list) | Tooling |
 |---|---|---|---|---|
-| **Trader's Toolkit** (hero) | App lifetime + both indicators (invite-only) | **₹4,999–7,999** | ₹9,999 | `license-issue.mjs <email> toolkit` |
+| ~~**Trader's Toolkit** (hero)~~ RETIRED v2.99.76 | App lifetime + both indicators (invite-only) | ~~₹4,999–7,999~~ | ~~₹9,999~~ | *legacy — do not issue; sku `toolkit` still verifies for keys already sold* |
 | App only | Lifetime license | ₹1,499–2,999 | — | `license-issue.mjs <email> app` |
 | Indicators only | Both, invite-only lifetime | ₹6,000–12,000 | — | TradingView invite-only |
 | App annual — **✅ BUILT (v2.80)** | Recurring option; expiry is inside the signed key | ₹499–799/yr | — | `license-issue.mjs <email> app --years 1` |
@@ -429,7 +429,7 @@ without breaking the signature, and is displayed in-app as "Licensed to <email>"
 the same SKU on the same day get completely different keys.
 
 1. **Key issuance (vendor side)** — one command per sale:
-   `node scripts/license-issue.mjs <buyer-email> [toolkit|app|indicators] [--years 1 | --expires YYYY-MM-DD]`
+   `node scripts/license-issue.mjs <buyer-email> app [--years 1 | --expires YYYY-MM-DD]` — sku `app` for both plans on sale; the EXPIRY is what separates Annual from Lifetime.
    → prints the `VYUHA-…` key to stdout (pipe it straight into the delivery email) and appends a
    row to **`license-ledger.jsonl`**. No expiry flag = lifetime; `--years 1` mints the **annual
    SKU** (expiry is inside the signed payload). *(Future: a Razorpay `payment.captured` webhook

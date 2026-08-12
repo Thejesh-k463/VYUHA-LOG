@@ -171,10 +171,10 @@ export const TRIAL_DAYS = 7;
 export const WHATSAPP_NUMBER: string = "917393673714";
 
 /** Pre-filled first message, so a buyer never has to work out what to type. */
-const BUY_MESSAGE = "Hi, I'd like to buy the Vyuha Trader's Toolkit";
+const BUY_MESSAGE = "Hi, I'd like to buy Vyuha Pro";
 
 /**
- * Where every "Get the Toolkit" / "Renew" button points.
+ * Where every "Get Vyuha Pro" / "Renew" button points.
  *
  * Derived, never hand-edited: set WHATSAPP_NUMBER above and this follows. The
  * fallback matters — in "block" enforcement this link is the ONLY route a

@@ -93,7 +93,7 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                 <span>
                   Every Pro screen is unlocked for {entitlement.trialDaysLeft} more day{entitlement.trialDaysLeft === 1 ? "" : "s"} while you
                   evaluate. Your journal itself is free forever — only advanced analytics need a key after the trial.{" "}
-                  <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get the Toolkit</a>
+                  <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</a>
                 </span>
               </p>
             )}

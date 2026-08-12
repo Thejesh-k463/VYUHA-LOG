@@ -371,9 +371,10 @@ journal is free forever.
 Vendor tooling lives in `scripts/`:
 
 ```bash
-node scripts/license-issue.mjs buyer@email.com toolkit          # mint a key (also records it)
+node scripts/license-issue.mjs buyer@email.com app              # mint a Lifetime key (also records it)
+node scripts/license-issue.mjs buyer@email.com app --years 1    # ...or a Pro Annual key
 node scripts/license-issue.mjs buyer@email.com app --years 1    # annual SKU
-node scripts/license-issue.mjs buyer@email.com toolkit --machine ABCD-EF12-3456   # lock to one PC
+node scripts/license-issue.mjs buyer@email.com app --machine ABCD-EF12-3456       # lock to one PC
 node scripts/license-list.mjs --expiring 30                     # renewals due
 node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"         # stop a leaked/refunded key
 ```

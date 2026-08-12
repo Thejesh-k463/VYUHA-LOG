@@ -28,25 +28,30 @@ batch of sales. This is a five-minute task that has no substitute.
 
 ## 1. A sale comes in
 
+> **The plan is the EXPIRY, not the SKU.** `sku` is display-only — it feeds
+> `SKU_LABELS` on the buyer's Settings screen and gates nothing. What the
+> entitlement engine actually reads is `expires`: absent means lifetime
+> (`isKeyExpired` in `lib/license.ts`). Both plans on sale are sku **`app`**.
+
 ```bash
-node scripts/license-issue.mjs buyer@email.com toolkit
+node scripts/license-issue.mjs buyer@email.com app            # Lifetime
 ```
 
-| SKU | Command |
+| Plan (v2.99.76 pricing) | Command |
 |---|---|
-| Trader's Toolkit (hero, lifetime) | `node scripts/license-issue.mjs buyer@email.com toolkit` |
-| App only (lifetime) | `node scripts/license-issue.mjs buyer@email.com app` |
-| App annual | `node scripts/license-issue.mjs buyer@email.com app --years 1` |
+| **Journal — Lifetime ₹29,999** | `node scripts/license-issue.mjs buyer@email.com app` |
+| **Pro — Annual ₹9,999/yr** | `node scripts/license-issue.mjs buyer@email.com app --years 1` |
 | Custom expiry | `node scripts/license-issue.mjs buyer@email.com app --expires 2027-03-31` |
-| Locked to one computer | `… toolkit --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
+| Locked to one computer | `… app --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
+| *Legacy bundle (do not issue)* | `… toolkit` — the app+indicators SKU retired at v2.99.76. Old keys still verify; issuing one today labels the buyer's Settings screen "Trader's Toolkit (app + indicators)" for a product that no longer includes indicators. The script warns if you do. |
 
-The **key** goes to stdout (so `… > key.txt` or a pipe works); the **key ID, buyer and ledger
-reminder** go to stderr so they never contaminate the key itself.
+The **key** goes to stdout (so `… > key.txt` or a pipe works); the **plan, key ID, buyer and
+ledger reminder** go to stderr so they never contaminate the key itself.
 
 Optional note recorded in the ledger:
 
 ```bash
-VYUHA_LICENSE_NOTE="razorpay pay_ABC123" node scripts/license-issue.mjs buyer@email.com toolkit
+VYUHA_LICENSE_NOTE="razorpay pay_ABC123" node scripts/license-issue.mjs buyer@email.com app
 ```
 
 Then email the buyer the key + the download link. The key is bound to their email and shows as
@@ -134,7 +139,7 @@ displayed in-app), not cryptographic.
 `"banner"` in `lib/license.ts`, rebuild and ship. Keys already issued are unaffected either way.
 
 **What a trial-expired, unlicensed user now sees:** every Pro page shows the upsell panel with a
-"Get the Trader's Toolkit" button that opens WhatsApp to your business number with the message
+"Get Vyuha Pro" button that opens WhatsApp to your business number with the message
 pre-filled. Test this path yourself before you send the first ZIP — it is now the entire top of
 your funnel.
 
@@ -157,7 +162,8 @@ checkout. With email delivery that is barely extra work:
 4. You mint the bound key:
 
 ```bash
-node scripts/license-issue.mjs buyer@email.com toolkit --machine EB42-FA73-9AD5
+node scripts/license-issue.mjs buyer@email.com app --machine EB42-FA73-9AD5            # Lifetime, bound
+node scripts/license-issue.mjs buyer@email.com app --years 1 --machine EB42-FA73-9AD5  # Annual, bound
 ```
 
 The key then refuses to activate on any other computer, with a message telling the buyer to send

@@ -3,8 +3,22 @@
 // Usage:
 //   node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N]
 //                                                      [--machine ABCD-EF12-3456]
-//   sku: toolkit | app | indicators (default toolkit)
-//   No expiry flag = lifetime key. --years N = annual SKU expiring N years from today.
+//
+// THE TWO PLANS SOLD TODAY (v2.99.76 reprice) — both are sku `app`; what
+// separates them is the EXPIRY, because that is the only thing the entitlement
+// engine reads. `sku` is display-only: it feeds SKU_LABELS in Settings and
+// gates nothing.
+//
+//   Journal — Lifetime (₹29,999):  license-issue.mjs buyer@x.com app
+//   Pro — Annual      (₹9,999/yr): license-issue.mjs buyer@x.com app --years 1
+//
+//   sku: app | toolkit | indicators (default app)
+//   `toolkit` is LEGACY — the app-plus-indicators bundle retired at v2.99.76.
+//   It still verifies so old keys keep working, but issuing one today labels
+//   the buyer's Settings screen "Trader's Toolkit (app + indicators)" for a
+//   product that no longer includes indicators.
+//
+//   No expiry flag = lifetime key. --years N = annual, expiring N years out.
 //
 //   --machine LOCKS the key to one computer. The buyer reads their Machine ID
 //   from Settings → License and sends it to you; the key then refuses to
@@ -30,9 +44,14 @@ for (let i = args.length - 1; i >= 0; i--) {
     args.splice(i, 2);
   }
 }
-const [email, sku = "toolkit"] = args;
+// Defaults to `app` — the SKU both plans on sale use. It defaulted to
+// `toolkit` until 2026-08-12, which silently mislabelled every key issued
+// after the v2.99.76 reprice retired that bundle.
+const [email, sku = "app"] = args;
 if (!email || !email.includes("@")) {
-  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [toolkit|app|indicators] [--expires YYYY-MM-DD | --years N]");
+  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] [--expires YYYY-MM-DD | --years N] [--machine ABCD-EF12-3456]");
+  console.error("  Lifetime ₹29,999 : license-issue.mjs buyer@x.com app");
+  console.error("  Annual   ₹9,999  : license-issue.mjs buyer@x.com app --years 1");
   process.exit(1);
 }
 if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) {
@@ -44,8 +63,13 @@ if (machine && !/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/.test(machine)) {
   process.exit(1);
 }
 if (!["toolkit", "app", "indicators"].includes(sku)) {
-  console.error(`Unknown sku "${sku}" — use toolkit | app | indicators`);
+  console.error(`Unknown sku "${sku}" — use app (both plans on sale) | toolkit (legacy) | indicators`);
   process.exit(1);
+}
+if (sku === "toolkit") {
+  console.error(`  ! "toolkit" is the retired app+indicators bundle (v2.99.76). The buyer's`);
+  console.error(`    Settings screen will read "Trader's Toolkit (app + indicators)". Use "app"`);
+  console.error(`    unless you are deliberately reissuing an old bundle key.\n`);
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,6 +107,7 @@ appendFileSync(path.join(root, "license-ledger.jsonl"), ledgerLine);
 // and you can pipe it straight into an email. Everything else is stderr.
 console.log(key);
 console.error(`\n  key id : ${keyId}`);
-console.error(`  buyer  : ${email}  (${sku}${expires ? `, expires ${expires}` : ", lifetime"})`);
+console.error(`  plan   : ${expires ? `Pro — Annual, expires ${expires}` : "Journal — Lifetime"}  (sku ${sku})`);
+console.error(`  buyer  : ${email}`);
 console.error(`  machine: ${machine ?? "unbound — activates on any computer"}`);
 console.error(`  ledger : license-ledger.jsonl — back this up with license-private.pem`);

@@ -71,7 +71,8 @@ Details: [`CODE_SIGNING.md`](CODE_SIGNING.md).
 ## Selling to a client
 
 ```bash
-node scripts/license-issue.mjs buyer@mail.com toolkit --years 1 --machine ABCD-EF12-3456
+node scripts/license-issue.mjs buyer@mail.com app --years 1 --machine ABCD-EF12-3456   # Annual
+node scripts/license-issue.mjs buyer@mail.com app --machine ABCD-EF12-3456             # Lifetime
 node scripts/license-list.mjs --expiring 30      # renewals due
 node scripts/license-list.mjs buyer@mail.com     # find one buyer
 node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"

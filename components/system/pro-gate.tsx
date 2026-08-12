@@ -40,7 +40,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
               <>Your {SKU_LABELS[ent.payload.sku] ?? ent.payload.sku} key expired {ent.payload.expires}. </>
             ) : null}
             Everything stays unlocked while you evaluate.{" "}
-            <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get the Toolkit</a>
+            <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</a>
             {" "}·{" "}
             <Link href="/settings" className="text-accent underline-offset-2 hover:underline">Activate a key</Link>
           </span>
@@ -60,7 +60,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             <span className="font-medium text-foreground">
               Pro feature — {ent.state === "expired-key" ? "your annual key has expired." : "unlicensed copy."}
             </span>{" "}
-            This screen is part of the paid toolkit. Already bought it? Activate your key in{" "}
+            This screen is part of Vyuha Pro. Already bought it? Activate your key in{" "}
             <Link href="/settings" className="text-accent underline-offset-2 hover:underline">Settings → License</Link>.
           </div>
         </div>
@@ -78,7 +78,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
           {ent.state === "expired-key" ? "Your annual license has expired" : `Your ${TRIAL_DAYS}-day Pro trial has ended`}
         </div>
         <p className="text-sm text-muted-foreground">
-          This screen is part of the paid <span className="text-foreground">Trader&apos;s Toolkit</span>. Your
+          This screen is part of <span className="text-foreground">Vyuha Pro</span>. Your
           journal keeps working forever — trades, imports, dashboard, playbooks, backups are never locked, and
           your data never leaves this machine either way.
         </p>
@@ -96,7 +96,11 @@ export function ProGate({ children }: { children: React.ReactNode }) {
         <PricingTable compact />
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <Button asChild>
-            <a href={BUY_URL} target="_blank" rel="noreferrer">Get the Trader&apos;s Toolkit</a>
+            {/* Named for the plans actually on sale. This said "Get the
+                Trader's Toolkit" until 2026-08-12 — an app+indicators bundle
+                retired by the v2.99.76 reprice, so the funnel's primary CTA
+                was offering a product that no longer existed. */}
+            <a href={BUY_URL} target="_blank" rel="noreferrer">Get Vyuha Pro</a>
           </Button>
           <Button asChild variant="outline">
             <Link href="/pricing">Compare plans</Link>
@@ -105,8 +109,11 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             <Link href="/settings#license">Activate a key</Link>
           </Button>
         </div>
+        {/* "Lifetime license" flatly until 2026-08-12 — untrue of the annual
+            plan the reprice introduced, and it sat directly under a table
+            offering both. */}
         <p className="text-[0.6875rem] text-muted-foreground">
-          Lifetime license, verified fully offline — activation never phones home. One key per trader; it shows
+          Annual or lifetime, verified fully offline — activation never phones home. One key per trader; it shows
           your email in-app.
         </p>
       </CardContent>
