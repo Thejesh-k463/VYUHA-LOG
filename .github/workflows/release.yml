@@ -90,8 +90,28 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
+      # Retried, because on Windows a single transient download is a HARD
+      # failure rather than a slow path. better-sqlite3 installs via
+      # `prebuild-install || node-gyp rebuild`, and the fallback half cannot
+      # work on the current windows-latest image: node-gyp 11.5.0 reads the
+      # bundled Visual Studio 18 as `unknown version "undefined"` and concludes
+      # it "could not find a version of Visual Studio 2017 or newer". So when
+      # prebuild-install hit a socket hang up on the v2.99.92 tag, npm ci
+      # failed outright and the release shipped with no Windows installer —
+      # the second time in two releases that this job alone blocked it.
+      # Retrying fixes the trigger; fixing the fallback would mean pinning an
+      # msvs_version the image may not carry.
       - name: Install dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            echo "::warning::npm ci failed (attempt $attempt of 3) — retrying"
+            rm -rf node_modules || true
+            sleep 15
+          done
+          echo "::error::npm ci failed three times — this is not a transient download"
+          exit 1
 
       - name: Typecheck + unit tests (release gate)
         run: |

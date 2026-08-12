@@ -60,9 +60,41 @@ try {
   process.exit(1);
 }
 
-const assets = JSON.parse(assetsJson).assets.filter((a) => a.name.endsWith(".sig"));
+const allAssets = JSON.parse(assetsJson).assets;
+const assets = allAssets.filter((a) => a.name.endsWith(".sig"));
 if (assets.length === 0) {
   console.error("No .sig assets on that release. Nothing to verify — do NOT publish.");
+  process.exit(1);
+}
+
+/**
+ * COMPLETENESS, checked before signatures.
+ *
+ * This script used to answer only "are the signatures present correct?", and
+ * on v2.99.92 it printed "✓ Safe to publish" for a release whose Windows job
+ * had failed — two macOS signatures verified, and no Windows installer existed
+ * at all. Every signature it looked at was genuinely fine; the release was
+ * still unshippable. A verifier that cannot see an ABSENT platform is worse
+ * than none, because its ✓ reads as "complete".
+ *
+ * One entry per platform the release workflow's matrix builds.
+ */
+const REQUIRED = [
+  { label: "Windows installer", match: (n) => /_x64-setup\.exe$/.test(n) },
+  { label: "Windows signature", match: (n) => /_x64-setup\.exe\.sig$/.test(n) },
+  { label: "macOS Apple silicon", match: (n) => /aarch64\.app\.tar\.gz$/.test(n) },
+  { label: "macOS Intel", match: (n) => /_x64\.app\.tar\.gz$/.test(n) || /^Vyuha_x64\.app\.tar\.gz$/.test(n) },
+  { label: "updater manifest", match: (n) => n === "latest.json" },
+];
+const names = allAssets.map((a) => a.name);
+const missing = REQUIRED.filter((r) => !names.some((n) => r.match(n)));
+if (missing.length > 0) {
+  console.error(`✗ INCOMPLETE RELEASE — ${missing.length} expected artefact(s) absent. DO NOT PUBLISH.\n`);
+  for (const m of missing) console.error(`  missing: ${m.label}`);
+  console.error(`\n  present: ${names.join(", ") || "(nothing)"}`);
+  console.error(`\n  A platform job failed. Check: gh run view <run-id> --log-failed`);
+  console.error(`  Publishing now ships latest.json without that platform, and its users`);
+  console.error(`  silently stop receiving updates — the updater fails open by design.`);
   process.exit(1);
 }
 
