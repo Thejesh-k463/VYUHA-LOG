@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.99.92 — the same app as v2.99.91, shipped by a pipeline that now works
+
+**No behaviour changed since v2.99.91.** This release exists because v2.99.91's
+did not reach you: its Windows job died on the release gate, so it published
+with macOS assets only and no `Vyuha_x64-setup.exe` at all. Everything described
+under v2.99.91 below — the signed revocation list, the grace countdown, the
+locked-screen reason line, the corrected network claims — reaches a Windows
+machine for the first time here.
+
+- **Windows CI no longer fails a test that is not broken.** The DPAPI
+  round-trip is the one test in the suite that spawns a real process — two cold
+  `powershell.exe` starts to reach the OS keystore. That takes well under a
+  second on a developer's machine and can exceed vitest's 5-second default on a
+  cold CI runner. It now gets 60 seconds, so a slow runner reports a slow test
+  instead of a broken build.
+- **A release-tooling script stopped leaving a file behind.** The signature
+  verifier wrote a scratch `.sigcheck.tmp` beside the source and never removed
+  it; one got committed. It is now cleaned up in a `finally` and ignored, so a
+  crashed run cannot leave a blob for the next commit to sweep up.
+- **The revocation list's own release must be a prerelease** — written down in
+  the three places that would have caught it. GitHub resolves "latest release"
+  across every tag by creation date, so publishing that list without the flag
+  makes it the latest release, and the updater's
+  `releases/latest/download/latest.json` endpoint 404s. Auto-update then stops
+  for every installed copy without a single visible symptom, because the
+  updater is deliberately fail-open. Found and fixed the same day; the runbook
+  now carries the one-line check that makes it visible.
+
 ## v2.99.91 — a withdrawn licence now stops working before the next release
 
 Revocation used to be a build-time list: a refunded or leaked key kept working

@@ -3,6 +3,12 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.92
+
+| Upgrade | What it gives you |
+|---|---|
+| **This is the Windows build of v2.99.91** | v2.99.91 never shipped a Windows installer — our build for it failed after the Mac builds had already gone out. Nothing about the app changed since; everything listed under v2.99.91 below arrives here. If you are on Windows, this is the version to install. |
+
 ## New in v2.99.91
 
 | Upgrade | What it gives you |

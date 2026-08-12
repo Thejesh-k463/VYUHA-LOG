@@ -83,3 +83,8 @@ updater-private.key
 # deleting a file later does not remove it from git history. Redacted
 # fixtures belong in tests/fixtures/ and are committed normally.
 /tests/fixtures/private/
+
+# Scratch file written by scripts/verify-release-signatures.mjs while decoding
+# each .sig. The script removes it, but a crashed run must not leave a blob
+# that the next `git add -A` commits (it did once, at v2.99.91).
+/.sigcheck.tmp

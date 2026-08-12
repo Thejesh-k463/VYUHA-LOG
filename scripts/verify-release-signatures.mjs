@@ -20,7 +20,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -66,14 +66,22 @@ if (assets.length === 0) {
   process.exit(1);
 }
 
+// Scratch file for each downloaded .sig. It lives in the repo root because gh
+// needs a concrete -O path, and it is removed in the `finally` below — an
+// earlier version left it behind, and a later `git add -A` committed a
+// signature blob into the repo as `.sigcheck.tmp`.
+const tmp = path.join(root, ".sigcheck.tmp");
 let bad = 0;
-for (const a of assets) {
-  const tmp = path.join(root, ".sigcheck.tmp");
-  execFileSync("gh", ["release", "download", tag, "-p", a.name, "-O", tmp, "--clobber", "-R", "Thejesh-k463/VYUHA-LOG"]);
-  const id = keyIdFromSigFile(readFileSync(tmp, "utf8"));
-  const ok = id === expected;
-  if (!ok) bad++;
-  console.log(`${ok ? "✓" : "✗"} ${a.name.padEnd(46)} ${id}`);
+try {
+  for (const a of assets) {
+    execFileSync("gh", ["release", "download", tag, "-p", a.name, "-O", tmp, "--clobber", "-R", "Thejesh-k463/VYUHA-LOG"]);
+    const id = keyIdFromSigFile(readFileSync(tmp, "utf8"));
+    const ok = id === expected;
+    if (!ok) bad++;
+    console.log(`${ok ? "✓" : "✗"} ${a.name.padEnd(46)} ${id}`);
+  }
+} finally {
+  rmSync(tmp, { force: true });
 }
 
 console.log("");

@@ -28,6 +28,12 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **v2.99.92 — the same app as v2.99.91, shipped by a pipeline that now works.** No behaviour
+> changed. v2.99.91's Windows job died on the release gate, so it published with macOS assets
+> only and no `Vyuha_x64-setup.exe`; everything below reaches a Windows machine for the first
+> time here. The cause was a DPAPI round-trip test — the one test that spawns a real process,
+> two cold `powershell.exe` starts — timing out against vitest's 5s default on a cold runner.
+>
 > **v2.99.91 — a withdrawn licence now stops working before the next release.** Revocation
 > was a build-time list: a refunded or leaked key kept working until the user happened to
 > install a newer build. It now also travels as an **Ed25519-signed list** the app picks up
