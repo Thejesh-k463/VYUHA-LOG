@@ -296,6 +296,51 @@ export interface Entitlement {
    * buyer has time to reach the vendor before anything is taken away.
    */
   revocationWarning?: { daysLeft: number; effectiveFrom: string; message: string };
+  /**
+   * Set while an ANNUAL licence is inside its final stretch — the renewal
+   * countdown (v2.99.94).
+   *
+   * There was no warning of any kind before this. `isKeyExpired` is a binary
+   * check, so 17 Pro screens locked overnight and the buyer's first signal was
+   * a locked screen; the owner-side reminder (`license-list.mjs --expiring 30`)
+   * only ever told the SELLER. On a plan whose entire economics are renewals,
+   * the customer was the one person not told.
+   *
+   * Deliberately shaped like `revocationWarning`: Pro stays fully unlocked and
+   * the UI shows a countdown, because a renewal is a decision the buyer should
+   * make with notice, not a wall they walk into.
+   */
+  expiryWarning?: { daysLeft: number; expires: string };
+}
+
+/**
+ * How long before an annual key expires the countdown starts.
+ *
+ * 30 days matches `license-list.mjs --expiring 30`, which the runbook already
+ * calls the renewal campaign — so the seller's reminder and the buyer's
+ * reminder now fire on the same day rather than only one of them existing.
+ */
+export const RENEWAL_NOTICE_DAYS = 30;
+
+/**
+ * Whole days until an annual key expires, or null when there is nothing to warn
+ * about: a lifetime key (no `expires`), an already-expired one (that is the
+ * expired-key state, not a warning), or one further out than the notice window.
+ *
+ * Pure, so it takes the clock-ratcheted date like every other entitlement
+ * decision — winding the system clock back must not extend the notice.
+ */
+export function renewalDaysLeft(
+  payload: LicensePayload,
+  today: Date = new Date(),
+  noticeDays: number = RENEWAL_NOTICE_DAYS,
+): number | null {
+  if (!payload.expires) return null;
+  const end = new Date(payload.expires + "T23:59:59").getTime();
+  if (Number.isNaN(end)) return null;
+  const left = Math.ceil((end - today.getTime()) / dayMs);
+  if (left <= 0 || left > noticeDays) return null;
+  return left;
 }
 
 const dayMs = 86_400_000;

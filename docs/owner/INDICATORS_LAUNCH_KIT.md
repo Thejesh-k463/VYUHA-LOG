@@ -508,7 +508,7 @@ Since these ship free with the Toolkit rather than being sold separately on Trad
 3. Add their TradingView username to **both** scripts' Manage-access pages.
 4. Record the username in your ledger note so a refund is a clean reversal:
    ```bash
-   VYUHA_LICENSE_NOTE="tv:their_username" node scripts/license-issue.mjs buyer@email.com app
+   VYUHA_LICENSE_NOTE="tv:their_username, UTR …" node scripts/license-issue.mjs buyer@email.com app --lifetime
    ```
 5. Refund → revoke the licence key **and** remove the TradingView access. Both, or you have given
    away half the bundle.

@@ -19,7 +19,7 @@ keys, and licence ledger.
 3. Issue their machine-bound app key:
 
    ```powershell
-   node scripts/license-issue.mjs buyer@example.com app --machine ABCD-EF12-3456
+   VYUHA_LICENSE_NOTE="UTR …" node scripts/license-issue.mjs buyer@example.com app --years 1 --machine ABCD-EF12-3456
    ```
 
 4. Send the key separately in the purchase email.

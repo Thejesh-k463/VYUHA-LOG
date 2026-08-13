@@ -72,6 +72,58 @@ if (sku === "toolkit") {
   console.error(`    unless you are deliberately reissuing an old bundle key.\n`);
 }
 
+/**
+ * TERM MUST BE STATED, not defaulted.
+ *
+ * `--years` is parsed positionally and its absence silently meant "lifetime".
+ * So a ₹9,999 annual sale where the flag was forgotten minted a ₹29,999
+ * LIFETIME key — signed, valid, and unrecoverable except by revoking a customer
+ * who paid you. Nothing printed a warning, because nothing was wrong as far as
+ * the script was concerned.
+ *
+ * Lifetime is now opt-IN via `--lifetime`. Both plans on sale name their term
+ * explicitly, and neither can be reached by omission.
+ */
+const wantsLifetime = args.includes("--lifetime");
+if (wantsLifetime) args.splice(args.indexOf("--lifetime"), 1);
+if (!expires && !wantsLifetime) {
+  console.error(`Refusing to mint: no term given.\n`);
+  console.error(`  Pro — Annual (₹9,999/yr) :  --years 1`);
+  console.error(`  Journal — Lifetime (₹29,999) :  --lifetime\n`);
+  console.error(`  Omitting the term used to mint a LIFETIME key silently, so a forgotten`);
+  console.error(`  --years 1 gave away a ₹29,999 licence for a ₹9,999 payment.`);
+  process.exit(1);
+}
+if (expires && wantsLifetime) {
+  console.error(`--lifetime and --years/--expires contradict each other. Pick one.`);
+  process.exit(1);
+}
+
+/**
+ * EVERY PAID KEY CARRIES ITS PAYMENT REFERENCE.
+ *
+ * `VYUHA_LICENSE_NOTE` already existed and was optional — and `note` is null on
+ * both keys ever issued, so the habit docs/owner/README.md calls essential was
+ * not being kept at n=2. The ledger is the only record that a sale happened;
+ * without a payment reference it cannot answer "did this person actually pay?",
+ * which is the question a refund or a chargeback asks.
+ *
+ * Set VYUHA_LICENSE_NOTE to the UTR / transaction id (and anything else useful),
+ * or pass --no-payment for a genuine freebie: a review copy, a replacement for a
+ * lost key, or your own machine.
+ */
+const freebie = args.includes("--no-payment");
+if (freebie) args.splice(args.indexOf("--no-payment"), 1);
+const note = process.env.VYUHA_LICENSE_NOTE ?? null;
+if (!note && !freebie) {
+  console.error(`Refusing to mint: no payment reference.\n`);
+  console.error(`  VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-13" \\`);
+  console.error(`    node scripts/license-issue.mjs buyer@email.com app --years 1\n`);
+  console.error(`  Not a sale? Pass --no-payment (review copy, reissue, your own machine).`);
+  console.error(`  See docs/owner/RECEIPT_TEMPLATE.md — the receipt and the ledger must agree.`);
+  process.exit(1);
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privPem = readFileSync(path.join(root, "license-private.pem"), "utf8");
 
@@ -99,7 +151,7 @@ const ledgerLine = JSON.stringify({
   expires: expires ?? null,
   machine: machine ?? null,
   key,
-  note: process.env.VYUHA_LICENSE_NOTE ?? null,
+  note: note ?? (freebie ? "no payment (--no-payment)" : null),
 }) + "\n";
 appendFileSync(path.join(root, "license-ledger.jsonl"), ledgerLine);
 

@@ -113,6 +113,14 @@ const clientDocs = [
   ["docs/client/README.md", "WHATS_NEW.md"],
   ["docs/client/INSTALLATION_GUIDE.md", "INSTALLATION_GUIDE.md"],
   ["docs/client/GETTING_STARTED_DECK.html", "GETTING_STARTED_DECK.html"],
+  // The commercial paperwork. Added 2026-08-13: a ₹29,999 purchase shipped with
+  // no refund policy, no terms and no privacy statement — the three documents a
+  // buyer looks for before paying, and the three a disputed charge is settled
+  // with. They travel IN the package so the copy a buyer holds always matches
+  // the version they bought, exactly like the notes above.
+  ["docs/client/REFUND_POLICY.md", "REFUND_POLICY.md"],
+  ["docs/client/TERMS.md", "TERMS.md"],
+  ["docs/client/PRIVACY.md", "PRIVACY.md"],
 ];
 for (const [src, name] of clientDocs) {
   const p = path.join(root, src);

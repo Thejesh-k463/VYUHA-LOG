@@ -34,7 +34,12 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   { sourceId: "angelone-taxpnl", label: "Angel One Tax P&L (XLSX)", broker: "angelone", tab: "pnl", hint: "Angel One tax P&L" },
   { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", broker: "upstox", tab: "both", hint: "Upstox" },
   { sourceId: "paytm-tradebook", label: "Paytm Money Tradebook (XLSX)", broker: "paytm", tab: "transactions", hint: "Paytm Money tradebook" },
-  { sourceId: "pdf", label: "Broker P&L (PDF)", broker: null, tab: "pnl", hint: "PDF statement" },
+  // PDF is a TEXT EXTRACTOR, not an importer, and the copy has to say so:
+  // lib/import/parsers/pdf.ts returns `trades: []` on every path because no
+  // broker PDF layout has been calibrated yet. It was labelled "Broker P&L
+  // (PDF)" and sold alongside the six real parsers, so a buyer reasonably
+  // expected trades out of it and got none.
+  { sourceId: "pdf", label: "PDF statement — reads the text, does not import trades", broker: null, tab: "pnl", hint: "PDF (text only, no trades)" },
   { sourceId: "generic-table", label: "Any other broker — map the columns (CSV/XLSX)", broker: null, tab: "both", hint: "any other broker (map columns)" },
 ];
 

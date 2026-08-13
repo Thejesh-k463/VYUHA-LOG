@@ -12,6 +12,7 @@ import {
   trialDaysLeft,
   verifyLicenseKey,
   licenseKeyId,
+  renewalDaysLeft,
   evaluateEntitlement,
   REVOKED_KEY_IDS,
   LICENSE_PUBLIC_KEY_PEM,
@@ -122,6 +123,17 @@ export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICE
   // Grace is deliberately generous in shape: while it lasts, `pro` is
   // untouched and the user only sees a warning. Nothing is taken away until
   // the effective date, which is what makes a mistaken revocation survivable.
+  // Renewal countdown for an annual key (v2.99.94). Computed against the same
+  // clock-ratcheted date as everything else, and only while the licence is
+  // actually valid — an expired one is already the expired-key state.
+  let expiry: Partial<Entitlement> = {};
+  if (base.state === "licensed" && base.payload) {
+    const daysLeft = renewalDaysLeft(base.payload, effectiveToday(now, mark));
+    if (daysLeft !== null && base.payload.expires) {
+      expiry = { expiryWarning: { daysLeft, expires: base.payload.expires } };
+    }
+  }
+
   let revocation: Partial<Entitlement> = {};
   if (base.payload && usableKey) {
     const state = revocationStateFor(licenseKeyId(usableKey), loadRevocationList(), effectiveToday(now, mark));
@@ -138,6 +150,7 @@ export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICE
 
   return {
     ...base,
+    ...expiry,
     ...revocation,
     ...(row?.licenseKey && !keyRead.ok
       ? { reason: `Your licence is stored encrypted and ${keyRead.reason} — paste the key from your purchase email to re-activate.` }

@@ -4,7 +4,9 @@
 computer** — your trades never leave your machine. No account, no cloud, and nothing about you or
 your trades is ever uploaded.
 
-- **Platform:** Windows 10 / 11 (64-bit), or macOS (Apple silicon and Intel builds both ship)
+- **Platform:** Windows 10 / 11 (64-bit). macOS builds (Apple silicon and Intel) are produced for
+  every release and available on request — they are not code-signed or notarised yet, so macOS will
+  ask you to right-click → Open the first time.
 - **Disk:** ~200 MB
 - **Internet:** not needed to use Vyuha. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
@@ -12,7 +14,8 @@ your trades is ever uploaded.
 
 ## 1. Download & install (2 minutes)
 
-1. Download **`Vyuha_x.x.x_x64-setup.exe`** from the link in your purchase email.
+1. Download **`Vyuha_x.x.x_x64-setup.exe`** from the private link in your purchase email (it is
+   around 35 MB — too large to attach to an email). On macOS, ask for the `.dmg` instead.
 2. Double-click it.
 3. **Windows SmartScreen may warn you** ("Windows protected your PC"). This is normal for a new
    independent app that isn't yet code-signed — it is **not** a virus warning.
@@ -70,7 +73,8 @@ You have two paths — use either or both:
 2. Drag in your broker export. Supported today: **Zerodha** (tradebook / Console P&L), **Dhan**
    (P&L CSV and the Global Transaction Report), **Groww** (stocks P&L and order history),
    **Angel One** (tradebook, P&L, and the tax P&L), **Upstox** (tradebook or P&L),
-   **Paytm Money** (tradebook), and broker **PDF** statements. Live **API pulls** work for
+   **Paytm Money** (tradebook). A broker **PDF** can be opened too, but it only extracts the
+   text for you to enter by hand — it does not import trades. Live **API pulls** work for
    Zerodha, Dhan and Angel One (Import → Connect broker) — Angel One runs unattended from your
    TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
    nowhere except the broker itself. Any other broker's CSV/XLSX
@@ -139,7 +143,7 @@ database migration).
 | Antivirus flags the new .exe | Whitelist it — false positive common for new unsigned binaries |
 | Numbers look wrong | Check **Settings → charge config** matches your broker's real rates |
 | F&O shows as equity after import | Re-tag in **Journal → Trades** (segment/strike/expiry/CE-PE) |
-| Import didn't detect my broker | Six brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money) plus PDF; any other CSV/XLSX goes through the column mapper — Vyuha asks what the columns mean rather than refusing |
+| Import didn't detect my broker | Six brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money); any other CSV/XLSX goes through the column mapper — Vyuha asks what the columns mean rather than refusing |
 | Lost everything after a reset | **System → Backup & Restore → Restore** your last export |
 
 ## 10. Support

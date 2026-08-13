@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { KeyRound, Sparkles, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
+import { KeyRound, Sparkles, Lock, ShieldCheck, TriangleAlert, CalendarClock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PricingTable } from "@/components/system/pricing-table";
@@ -44,6 +44,33 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             <span className="text-muted-foreground">
               Your journal is not affected: trades, imports, backups and exports keep working after that date.
             </span>
+          </div>
+        </div>
+        {children}
+      </>
+    );
+  }
+
+  // An annual licence inside its last 30 days (v2.99.94). Nothing is gated —
+  // this is the renewal notice that did not exist, and without it 17 Pro
+  // screens locked overnight with the buyer's first signal being a locked
+  // screen. Deliberately calmer than the revocation banner: nothing is being
+  // taken away, a decision is simply due.
+  if (ent.state === "licensed" && ent.expiryWarning) {
+    const w = ent.expiryWarning;
+    return (
+      <>
+        <div className="flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs">
+          <CalendarClock className="mt-0.5 size-4 shrink-0 text-accent" />
+          <div>
+            <span className="font-medium text-foreground">
+              Your Pro licence renews on {w.expires} — {w.daysLeft} day{w.daysLeft === 1 ? "" : "s"} left.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              Nothing changes today. After that date the Pro analytics lock, and your journal —
+              trades, imports, backups and exports — keeps working exactly as it does now.
+            </span>{" "}
+            <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Renew</a>
           </div>
         </div>
         {children}

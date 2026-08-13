@@ -33,26 +33,50 @@ batch of sales. This is a five-minute task that has no substitute.
 > entitlement engine actually reads is `expires`: absent means lifetime
 > (`isKeyExpired` in `lib/license.ts`). Both plans on sale are sku **`app`**.
 
+### Step 0 — take the payment, and write down what you took
+
+**Do this before minting anything.** Nothing in the system knows a sale happened
+except the ledger line you are about to write, and `license-issue.mjs` now
+**refuses to mint without a payment reference** for exactly that reason.
+
+1. Send the amount and your UPI handle. Quote the plan by name — "Pro — Annual,
+   ₹9,999 for one year" — so the term is agreed in writing before it is signed
+   into a key.
+2. Wait for the transfer, and ask for the **UTR / transaction id**. That string
+   is the payment reference; it is what settles a dispute months later.
+3. Send the **payment receipt** — `docs/owner/RECEIPT_TEMPLATE.md`. Two minutes,
+   and it is the difference between a ₹29,999 UPI transfer that feels like a
+   purchase and one that feels like a gamble. It is a receipt, **not a tax
+   invoice**: there is no GSTIN, so it must never carry one.
+
 ```bash
-node scripts/license-issue.mjs buyer@email.com app            # Lifetime
+VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-13" \
+  node scripts/license-issue.mjs buyer@email.com app --years 1
 ```
 
 | Plan (v2.99.76 pricing) | Command |
 |---|---|
-| **Journal — Lifetime ₹29,999** | `node scripts/license-issue.mjs buyer@email.com app` |
-| **Pro — Annual ₹9,999/yr** | `node scripts/license-issue.mjs buyer@email.com app --years 1` |
-| Custom expiry | `node scripts/license-issue.mjs buyer@email.com app --expires 2027-03-31` |
+| **Journal — Lifetime ₹29,999** | `… buyer@email.com app --lifetime` |
+| **Pro — Annual ₹9,999/yr** | `… buyer@email.com app --years 1` |
+| Custom expiry | `… buyer@email.com app --expires 2027-03-31` |
 | Locked to one computer | `… app --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
 | *Legacy bundle (do not issue)* | `… toolkit` — the app+indicators SKU retired at v2.99.76. Old keys still verify; issuing one today labels the buyer's Settings screen "Trader's Toolkit (app + indicators)" for a product that no longer includes indicators. The script warns if you do. |
 
 The **key** goes to stdout (so `… > key.txt` or a pipe works); the **plan, key ID, buyer and
 ledger reminder** go to stderr so they never contaminate the key itself.
 
-Optional note recorded in the ledger:
-
-```bash
-VYUHA_LICENSE_NOTE="razorpay pay_ABC123" node scripts/license-issue.mjs buyer@email.com app
-```
+> ⚠ **Two things the script now refuses, and why.**
+>
+> **No term → refused.** `--years` was positional and its absence meant lifetime,
+> so one forgotten flag on a ₹9,999 annual sale minted a ₹29,999 **lifetime** key
+> — signed, valid, and undoable only by revoking someone who had just paid you.
+> Lifetime is now opt-in: `--lifetime`.
+>
+> **No payment reference → refused.** `VYUHA_LICENSE_NOTE` was optional, and
+> `note` is `null` on both keys ever issued — the habit was already not being
+> kept at n=2. For a genuine freebie (review copy, reissue after a lost key,
+> your own machine) pass `--no-payment`, which records that reason in the ledger
+> rather than leaving a blank.
 
 Then email the buyer the key + the download link. The key is bound to their email and shows as
 "Licensed to <email>" in the app — that is the anti-sharing mechanism.
@@ -237,8 +261,8 @@ checkout. With email delivery that is barely extra work:
 4. You mint the bound key:
 
 ```bash
-node scripts/license-issue.mjs buyer@email.com app --machine EB42-FA73-9AD5            # Lifetime, bound
-node scripts/license-issue.mjs buyer@email.com app --years 1 --machine EB42-FA73-9AD5  # Annual, bound
+VYUHA_LICENSE_NOTE="UTR …" node scripts/license-issue.mjs buyer@email.com app --lifetime --machine EB42-FA73-9AD5  # Lifetime, bound
+VYUHA_LICENSE_NOTE="UTR …" node scripts/license-issue.mjs buyer@email.com app --years 1 --machine EB42-FA73-9AD5  # Annual, bound
 ```
 
 The key then refuses to activate on any other computer, with a message telling the buyer to send
