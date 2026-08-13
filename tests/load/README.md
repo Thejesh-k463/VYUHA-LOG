@@ -61,25 +61,27 @@ fixture (122) and a decade of ~2,470 trading sessions.
 | import_batches | 120 | 600 | 3,000 |
 | staged legs (depth) | 4 | 10 | 500 |
 
-## Written
+## Written, and what each one found
 
-- **`a1-cross-source.load.ts`** — import preview overlap detection.
-  **Found and fixed a real defect**: `detectCrossSourceDuplicates` filtered the
-  whole book per incoming row with `norm()` inside the predicate. HEAVY tier
-  went **8,003 ms → ~20 ms (364×)**. Budget: 2,000 ms, ~90× headroom.
+| # | Test | Outcome |
+|---|---|---|
+| **A1** | `a1-cross-source.load.ts` | **Real defect, fixed.** `detectCrossSourceDuplicates` filtered the whole book per incoming row with `norm()` inside the predicate. HEAVY tier **8,003 ms → ~20 ms (364×)**. Budget 2,000 ms, ~90× headroom |
+| **A2** | `a2-data-quality.load.ts` | **Real defect, fixed** — but not the one predicted. With symbols that match, `.some()` short-circuits and it ran in 555 ms; with symbols that were never marked (an F&O book against equity-only bhavcopy) nothing short-circuits and it took **10.3 s** on a `force-dynamic` page. Indexing the marks once: **10,276 ms → 329 ms (31×)**. Also fixed a case-sensitivity bug that reported fresh marks stale |
+| **A3** | `a3-delete-scale.load.ts` | **Two real defects, fixed.** Deleting 32,816 trades threw `too many SQL variables` — reachable from "delete everything in this account". All eight `inArray` sites now chunk. Same test caught **4,010 statements for a 2,000-trade delete**; now 29, via a chunked bulk audit insert and by replacing a per-id IPO loop with the single statement the line below it already used |
+| **A4** | `a4-backup-attachments.load.ts` | **Silent data loss, fixed.** Screenshot thumbnails (`thumb-<storedName>`, sidecars with no row) were never enveloped, and restore rebuilds the attachment directory from the envelope — so **every thumbnail was destroyed by any attachment-carrying restore**, including the automatic pre-migration one. The comment at the write site claimed the opposite |
+| **A5** | `a5-staged-depth.load.ts` | **Atomicity defect, fixed.** `lib/queries/staged.ts` had **zero** transactions; a 500-leg rebuild was 501 separate commits, so an interruption left legs repriced against a stale parent — invariant 5 broken invisibly. Now one transaction. The test injects a failure at leg 10 and asserts rollback, and was **verified to fail** with the transaction removed |
+| **A6** | `a6-broker-compare.load.ts` | **No defect.** 25,000 trades × 16 broker-plan pairs = 400,000 charge computations in **187 ms**, scaling linearly in brokers (1.9× for 2×). The O(trades × pairs) shape is inherent to the question; the test pins it so adding a broker cannot quietly go quadratic |
+
+Two of the six predictions were wrong in an instructive way. A2's cost was
+real but came from a different input shape than expected, and A6 was fine.
+Measuring is what separated them.
 
 ## Designed, not yet written
 
-Ordered by likelihood of finding a real defect. Each names the code that
-worries it, so none of this needs re-deriving.
+Each names the code that worries it, so none of this needs re-deriving.
 
 | # | Test | Target | Predicted finding |
 |---|---|---|---|
-| A2 | `data-quality.load.ts` | `lib/queries/data-quality.ts:15-16` | O(trades × mtm_prices) with two `toUpperCase()` per comparison, and the `latestBySymbol` Map materialised **inside** the filter predicate — a fresh array per open trade. `/data-quality` is `force-dynamic`. Expect >30 s at HEAVY |
-| A3 | `delete-scale.load.ts` | `lib/queries/delete.ts` (8 unchunked `inArray` sites), `lib/trash.ts:251` | `SQLITE_MAX_VARIABLE_NUMBER` (32,766) exceeded — "too many SQL variables" on an account-scope delete above that many trades. Read the real limit from the linked build, don't hard-code |
-| A4 | `backup-attachments.load.ts` | `lib/backup.ts:89-94`, `:248-249` | **Confirmed data loss, not a prediction.** `attachments/route.ts:130` claims "Backup copies the directory wholesale, so sidecars ride along". It does not: `backup.ts:90` iterates `trade_attachments` **rows**, and `thumb-*` files are a naming convention with no row. Restore renames the live dir away and promotes a staging dir built only from enveloped files — **every thumbnail is destroyed by any attachment-carrying restore** |
-| A5 | `staged-depth.load.ts` | `lib/queries/staged.ts:325-336` | The module has **zero** `db.transaction` calls; `rebuildStagedTrade` issues one UPDATE per leg. Perf *and* atomicity: a crash mid-rebuild leaves legs repriced and the parent aggregate stale — silently breaking invariant 5 |
-| A6 | `broker-compare.load.ts` | `lib/analytics/broker-compare.ts:116-120` | O(trades × broker-plan pairs) full charge computations per render, unmemoised, `force-dynamic`. ~250k at HEAVY |
 | B1 | `lenses-grouping.load.ts` | `lib/domain/lenses.ts:231-235` | Re-filters the book per group; import-batch groups are unbounded. Gating does not save the work — `lens-edge.ts:66` masks at output |
 | B2 | `entitlement-cost.load.ts` | `lib/queries/license.ts:95-97` | A SQLite **UPDATE on essentially every Pro page render** (guard is `now > mark`, true after 1 ms) — the app's most frequent writer. Plus a duplicated SHA-256 at `:127` and a PEM re-parsed per verify |
 | B5 | `backup-restore.load.ts` | `lib/backup.ts:271-274` | `dbCounts()` selects every row of all 29 tables purely for `.length`, on **every `/backup` render** |

@@ -321,19 +321,32 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction): Rebu
   const agg = parentAggregate(withCharges, dir);
 
   // 3) Persist per-leg figures.
+  //
+  // ATOMICITY, not speed. This loop and the parent collapse at the end of the
+  // function were previously unwrapped writes — this module had NO transaction
+  // at all — so a crash, a kill, or a power loss between them left the legs
+  // repriced and the parent aggregate stale. That silently breaks invariant 5
+  // ("the parent trades row always holds the aggregate"), and nothing on screen
+  // looks wrong: every report reads the flat parent row, which would be quietly
+  // describing a ladder that no longer exists. A 500-leg position is 501
+  // separate commits, each its own fsync, with 500 windows to be interrupted in.
+  //
+  // The whole rebuild is now one transaction: the legs and the aggregate they
+  // roll up into either both land or neither does.
   const fillByLeg = new Map(pos.fills.map((f) => [f.legId, f]));
-  for (const row of rows) {
-    const fill = fillByLeg.get(row.id);
-    db.update(tradeLegs)
-      .set({
-        chargesTotal: chargeByLeg.get(row.id) ?? 0,
-        netPnl: fill ? fill.netPnl : 0,
-        avgCostAtExit: fill ? fill.avgCostAtExit : null,
-        updatedAt: sql`(datetime('now'))`,
-      })
-      .where(eq(tradeLegs.id, row.id))
-      .run();
-  }
+  db.transaction((tx) => {
+    for (const row of rows) {
+      const fill = fillByLeg.get(row.id);
+      tx.update(tradeLegs)
+        .set({
+          chargesTotal: chargeByLeg.get(row.id) ?? 0,
+          netPnl: fill ? fill.netPnl : 0,
+          avgCostAtExit: fill ? fill.avgCostAtExit : null,
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(eq(tradeLegs.id, row.id))
+        .run();
+    }
 
   // 4) Collapse into the parent. Charges are summed from the legs rather than
   //    recomputed on the aggregate — a position filled in five tranches really
@@ -364,7 +377,7 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction): Rebu
   const realisedPct = agg.buyValue > 0 ? Math.round((grossPnl / agg.buyValue) * 10000) / 100 : null;
   const rMultiple = pos.initialRisk && pos.initialRisk > 0 ? r2(netPnl / pos.initialRisk) : null;
 
-  db.update(tradesTable)
+    tx.update(tradesTable)
     .set({
       staged: true,
       buyQty: agg.buyQty,
@@ -405,6 +418,7 @@ export function rebuildStagedTrade(tradeId: number, direction?: Direction): Rebu
     })
     .where(eq(tradesTable.id, tradeId))
     .run();
+  });
 
   return { ok: true, problems: [] };
 }
