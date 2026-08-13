@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.99.93 — five things that only showed up under load, two of which lost data
+
+A load and stress suite now exists, and the first six tests written against it
+found five real defects. Two of those were quietly destroying or refusing your
+data, not merely being slow — and neither would ever have produced an error
+message. **The thumbnail fix only protects backups taken from this version
+onward**, so take a fresh one after updating.
+
+- **Screenshot thumbnails no longer vanish when you restore.** Thumbnails are
+  saved beside each screenshot under a companion name with no database row of
+  its own — so the backup, which walks the attachment records, never included
+  one, and a restore rebuilds the folder from the backup and deletes what was
+  there. Your screenshots survived and every preview silently went blank. This
+  also fires on the automatic backup Vyuha takes before a database upgrade, so
+  it could happen without you restoring anything on purpose.
+- **Deleting a large account no longer fails.** "Delete everything in this
+  account" hands the whole list of trades to the database in one statement, and
+  SQLite refuses more than 32,766 values at once — so above roughly that many
+  trades the delete threw an error instead of running. The same fix cut a
+  2,000-trade delete from 4,010 database statements to 29.
+- **A staged position can no longer be left half-repriced.** Rebuilding a
+  ladder wrote each tranche separately and then updated the parent trade, with
+  no transaction around them: an interruption at the wrong moment left the
+  tranches repriced and the headline figures stale, and nothing on screen would
+  have looked wrong, because every report reads the parent row. It is now one
+  all-or-nothing write.
+- **Import preview is 364× faster on a large book.** Checking a new file
+  against trades you already have compared every incoming row with every
+  existing one. On a 25,000-trade book a 5,000-row import took **8 seconds**
+  before the preview appeared — during which the whole app was frozen, so it
+  looked like a hang worth retrying. Now about 20 ms.
+- **Data Quality is 31× faster when your symbols are not price-marked.** The
+  check for unmarked positions scanned the whole price table for every trade,
+  and the scan only ended early when a symbol matched. With an F&O book against
+  equity-only bhavcopy marks nothing matched, and the page took **10 seconds**
+  every time it was opened. The same rewrite fixes a smaller wrong answer:
+  marks written with different capitalisation counted as different symbols, so
+  a fresh price could still be reported stale.
+
+Also: the emailable one-page brochure and the standalone landing page were
+several releases out of date on price and on what is included, and the
+installation guide pointed at the wrong folder for your database file. All
+corrected, with a test that now fails if the sales copy drifts from the app's
+own prices again.
+
 ## v2.99.92 — the same app as v2.99.91, shipped by a pipeline that now works
 
 **No behaviour changed since v2.99.91.** This release exists because v2.99.91's

@@ -3,6 +3,19 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.93
+
+> **Take a fresh backup after updating.** One of the fixes below repairs what
+> goes *into* a backup, so it can only protect files saved from this version on.
+
+| Upgrade | What it gives you |
+|---|---|
+| **Your screenshot thumbnails survive a restore** | Thumbnails were saved beside each screenshot without a record of their own, so a backup never captured them — and restoring rebuilt the folder and removed them. Screenshots came back; every preview came back blank. This also happened during the automatic backup Vyuha takes before a database upgrade, so it could occur without you restoring anything deliberately. |
+| **Deleting a large account works** | "Delete everything in this account" failed outright above roughly 32,000 trades — the database refuses that many values in one statement. It now deletes in batches, and a 2,000-trade delete does a fraction of the database work it used to. |
+| **A staged position can't be left half-updated** | Rebuilding a tranche ladder wrote each tranche and then the headline figures separately. An interruption between them left the two disagreeing, with nothing on screen to show for it. It is now a single all-or-nothing write. |
+| **Import preview stops looking like it hung** | On a 25,000-trade book, previewing a 5,000-row import took about 8 seconds with the app frozen throughout. Now roughly 20 ms. |
+| **Data Quality opens instantly again** | If your traded symbols had no price marks — an F&O book against equity-only bhavcopy data — the page took about 10 seconds every time. Now under a third of a second. Prices written with different capitalisation are also no longer treated as different symbols, which could report a fresh price as stale. |
+
 ## New in v2.99.92
 
 | Upgrade | What it gives you |
