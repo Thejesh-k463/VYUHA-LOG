@@ -2,7 +2,7 @@ import "server-only";
 import { inArray, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades, tradeLegs, tradeAttachments, importBatches, ipos, ledgerEntries } from "@/lib/db/schema";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { resolveDeleteScope, type DeletePreview } from "@/lib/domain/delete-scope";
 import { getSelectedAccountId } from "./accounts";
@@ -56,6 +56,36 @@ export interface DeleteResult {
 }
 
 /**
+ * Largest id list handed to a single `inArray(...)`.
+ *
+ * Drizzle expands `inArray` to one bound parameter per element, and SQLite has
+ * a hard per-statement ceiling (`SQLITE_MAX_VARIABLE_NUMBER`). Past it the
+ * statement does not run slowly — it throws "too many SQL variables", which is
+ * what a bulk delete used to do above ~32,766 trades. That is reachable from
+ * the UI: "delete everything in this account" and the by-broker scope resolve
+ * client-side to a full id list, so nothing bounds it but the size of the book.
+ *
+ * 900 rather than the build's actual ceiling: better-sqlite3 vendors its own
+ * SQLite and the limit is a compile-time choice, so the safe number is one that
+ * clears the most conservative build (999) rather than one probed from this
+ * machine's. The extra statements are a rounding error next to the per-trade
+ * audit write this same transaction already makes.
+ */
+const ID_CHUNK = 900;
+
+function forEachIdChunk(ids: number[], run: (chunk: number[]) => void): void {
+  for (let i = 0; i < ids.length; i += ID_CHUNK) run(ids.slice(i, i + ID_CHUNK));
+}
+
+/** The same chunking for reads, concatenating each chunk's rows. */
+function collectIdChunks<T>(ids: number[], run: (chunk: number[]) => T[]): T[] {
+  if (ids.length <= ID_CHUNK) return run(ids);
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) out.push(...run(ids.slice(i, i + ID_CHUNK)));
+  return out;
+}
+
+/**
  * Delete trades by id.
  *
  * @param ids the exact ids from the confirmation preview — never a re-derived
@@ -71,7 +101,10 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
   // Account scoping is enforced HERE, not trusted from the caller: a stale tab
   // or a hand-made request must not reach into a book the user is not in.
   const accountId = getSelectedAccountId();
-  const rows = db.select().from(trades).where(inArray(trades.id, unique)).all();
+  // Chunked like the writes below: the read side hits the same parameter
+  // ceiling, and it is the FIRST statement to hit it — a whole-account delete
+  // threw here before it reached the transaction.
+  const rows = collectIdChunks(unique, (chunk) => db.select().from(trades).where(inArray(trades.id, chunk)).all());
   const allowed = rows.filter((r) => accountId === 0 || r.accountId === accountId);
   const allowedIds = allowed.map((r) => r.id);
 
@@ -79,18 +112,20 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
     return { ok: false, deleted: 0, legs: 0, attachments: 0, orphanedFiles: [], snapshotId: null, message: "Those trades are not in the account you are viewing." };
   }
 
-  const attachRows = db.select().from(tradeAttachments).where(inArray(tradeAttachments.tradeId, allowedIds)).all();
-  const legRows = db.select().from(tradeLegs).where(inArray(tradeLegs.tradeId, allowedIds)).all();
+  const attachRows = collectIdChunks(allowedIds, (chunk) => db.select().from(tradeAttachments).where(inArray(tradeAttachments.tradeId, chunk)).all());
+  const legRows = collectIdChunks(allowedIds, (chunk) => db.select().from(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).all());
   // Ledger entries pointing at these trades. They are UNLINKED, never deleted:
   // a ledger row records money that really moved (a charge, an interest debit,
   // a realised-P&L credit), and that stays true whether or not the trade row
   // survives — the same reasoning that keeps the IPO record. The link is
   // snapshotted so a restore can re-point them.
-  const ledgerRefRows = db
-    .select({ ledgerId: ledgerEntries.id, tradeId: ledgerEntries.refTradeId })
-    .from(ledgerEntries)
-    .where(inArray(ledgerEntries.refTradeId, allowedIds))
-    .all() as { ledgerId: number; tradeId: number }[];
+  const ledgerRefRows = collectIdChunks(allowedIds, (chunk) =>
+    db
+      .select({ ledgerId: ledgerEntries.id, tradeId: ledgerEntries.refTradeId })
+      .from(ledgerEntries)
+      .where(inArray(ledgerEntries.refTradeId, chunk))
+      .all(),
+  ) as { ledgerId: number; tradeId: number }[];
 
   // The recovery, before anything is touched. See the header: no snapshot, no
   // delete.
@@ -116,29 +151,32 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
     result = db.transaction((tx) => {
       // Audit BEFORE the row is gone — the before-snapshot is the only record
       // of what was deleted, and it is what a restore-by-hand would work from.
-      for (const t of allowed) {
-        recordAudit({
-          entity: "trade",
+      // Batched: one row per trade is correct, one STATEMENT per trade was not
+      // (2,000 of the 2,029 statements a 2,000-trade delete used to issue).
+      recordAuditMany(
+        allowed.map((t) => ({
+          entity: "trade" as const,
           entityId: t.id,
-          action: "delete",
+          action: "delete" as const,
           summary: `${t.tradingsymbol} — ${reason}`,
           before: t as unknown as Record<string, unknown>,
           source,
-        });
-      }
+        })),
+      );
 
-      tx.delete(tradeLegs).where(inArray(tradeLegs.tradeId, allowedIds)).run();
-      tx.delete(tradeAttachments).where(inArray(tradeAttachments.tradeId, allowedIds)).run();
-      // Unlink IPOs rather than deleting them — see the header.
-      for (const id of allowedIds) {
-        tx.update(ipos).set({ tradeId: null }).where(eq(ipos.tradeId, id)).run();
-      }
+      forEachIdChunk(allowedIds, (chunk) => tx.delete(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).run());
+      forEachIdChunk(allowedIds, (chunk) => tx.delete(tradeAttachments).where(inArray(tradeAttachments.tradeId, chunk)).run());
+      // Unlink IPOs rather than deleting them — see the header. This was a loop
+      // issuing one UPDATE per id, which is what the ledger unlink below already
+      // does in a single statement; on a 2,000-trade delete it was 2,000 of the
+      // 4,010 statements the operation took.
+      forEachIdChunk(allowedIds, (chunk) => tx.update(ipos).set({ tradeId: null }).where(inArray(ipos.tradeId, chunk)).run());
       // Unlink ledger entries the same way. Leaving the id in place looked
       // harmless — there are no real foreign keys, nothing crashes — but a
       // dangling ref is a link to a trade that does not exist, and the next
       // feature to follow it renders a hole. The snapshot carries the pairs.
-      tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, allowedIds)).run();
-      tx.delete(trades).where(inArray(trades.id, allowedIds)).run();
+      forEachIdChunk(allowedIds, (chunk) => tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, chunk)).run());
+      forEachIdChunk(allowedIds, (chunk) => tx.delete(trades).where(inArray(trades.id, chunk)).run());
 
       return {
         ok: true,

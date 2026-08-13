@@ -88,8 +88,33 @@ export function dumpDatabase(includeAttachments = true): BackupEnvelope {
   const attachments: NonNullable<BackupEnvelope["attachments"]> = [];
   if (includeAttachments && fs.existsSync(attachmentsDir)) {
     for (const row of db.select().from(schema.tradeAttachments).all()) {
-      const file = path.join(attachmentsDir, path.basename(row.storedName));
-      if (fs.existsSync(file)) attachments.push({ storedName: path.basename(row.storedName), mime: row.mime, dataBase64: fs.readFileSync(file).toString("base64") });
+      const stored = path.basename(row.storedName);
+      const file = path.join(attachmentsDir, stored);
+      if (fs.existsSync(file)) attachments.push({ storedName: stored, mime: row.mime, dataBase64: fs.readFileSync(file).toString("base64") });
+
+      /**
+       * The thumbnail sidecar, which has NO ROW of its own.
+       *
+       * Thumbnails are `thumb-<storedName>` by naming convention (see
+       * app/api/trades/attachments/route.ts). Because this loop is driven by
+       * `trade_attachments` rows, they were never enveloped — and restore
+       * rebuilds the attachment directory purely from envelope entries, then
+       * deletes the retired original. So every thumbnail on the machine was
+       * destroyed by any attachment-carrying restore, including the automatic
+       * pre-migration cycle: screenshots survived, previews silently went
+       * blank. The comment at the write site asserted the opposite.
+       *
+       * Enveloping it by name needs nothing on the restore side — staging
+       * writes each entry by `path.basename(storedName)`, and `thumb-…` is
+       * already a safe basename. An older backup simply carries no thumbnail
+       * entries, which is exactly today's behaviour, so this is backward
+       * compatible in both directions and needs no BACKUP_VERSION bump.
+       */
+      const thumbName = `thumb-${stored}`;
+      const thumbFile = path.join(attachmentsDir, thumbName);
+      if (fs.existsSync(thumbFile)) {
+        attachments.push({ storedName: thumbName, mime: "image/jpeg", dataBase64: fs.readFileSync(thumbFile).toString("base64") });
+      }
     }
   }
   return { vyuhaBackup: true, version: BACKUP_VERSION, createdAt: new Date().toISOString(), counts, tables, attachments };

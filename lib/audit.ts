@@ -42,18 +42,39 @@ export interface AuditInput {
 }
 
 export function recordAudit(e: AuditInput): void {
+  recordAuditMany([e]);
+}
+
+/**
+ * Audit many entities in as few statements as possible.
+ *
+ * A bulk delete audits one row per trade, and calling `recordAudit` in a loop
+ * meant one INSERT per trade: a 2,000-trade delete issued 2,029 statements, of
+ * which 2,000 were audit writes. The rows themselves are genuinely per-trade
+ * (each carries that trade's before-image), so the fix is one multi-row INSERT,
+ * not fewer rows.
+ *
+ * Chunked because a multi-row INSERT binds columns × rows parameters, and
+ * SQLite's per-statement ceiling applies here exactly as it does to `inArray`
+ * — the bug this batching was written alongside.
+ */
+export function recordAuditMany(entries: AuditInput[]): void {
+  if (entries.length === 0) return;
+  const values = entries.map((e) => ({
+    entity: e.entity,
+    entityId: e.entityId ?? null,
+    action: e.action,
+    summary: e.summary ?? null,
+    beforeJson: e.before ?? null,
+    afterJson: e.after ?? null,
+    source: e.source ?? "ui",
+  }));
+  // 7 columns per row; 100 rows = 700 parameters, comfortably under any build.
+  const CHUNK = 100;
   try {
-    db.insert(auditLog)
-      .values({
-        entity: e.entity,
-        entityId: e.entityId ?? null,
-        action: e.action,
-        summary: e.summary ?? null,
-        beforeJson: e.before ?? null,
-        afterJson: e.after ?? null,
-        source: e.source ?? "ui",
-      })
-      .run();
+    for (let i = 0; i < values.length; i += CHUNK) {
+      db.insert(auditLog).values(values.slice(i, i + CHUNK)).run();
+    }
   } catch {
     /* auditing is best-effort; never throw into the caller */
   }

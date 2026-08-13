@@ -126,10 +126,19 @@ export async function POST(req: Request) {
   fs.writeFileSync(filePathFor(storedName), Buffer.from(await file.arrayBuffer()));
 
   // Optional strip thumbnail, generated client-side (canvas). A sidecar by
-  // NAMING CONVENTION — no schema change: `thumb-<storedName>`. Backup copies
-  // the directory wholesale, so sidecars ride along; an orphaned sidecar is
-  // invisible and reclaimable (invariant 10). Capped well under the original
-  // limit — a "thumbnail" larger than that is not one, and gets dropped.
+  // NAMING CONVENTION — no schema change: `thumb-<storedName>`. An orphaned
+  // sidecar is invisible and reclaimable (invariant 10). Capped well under the
+  // original limit — a "thumbnail" larger than that is not one, and gets
+  // dropped.
+  //
+  // ⚠ Because it has no row, anything that walks `trade_attachments` will miss
+  // it. This comment used to claim "Backup copies the directory wholesale, so
+  // sidecars ride along" — it does not, and did not: dumpDatabase is row-driven
+  // and restore rebuilds the directory from the envelope, so every thumbnail
+  // was destroyed by any attachment-carrying restore. lib/backup.ts now
+  // envelopes `thumb-<storedName>` explicitly, and
+  // tests/load/a4-backup-attachments.load.ts fails if that stops happening.
+  // Add a second sidecar convention and you must teach both places about it.
   const thumb = form.get("thumb");
   if (thumb instanceof File && thumb.type === "image/jpeg" && thumb.size > 0 && thumb.size < 512 * 1024) {
     fs.writeFileSync(filePathFor(`thumb-${storedName}`), Buffer.from(await thumb.arrayBuffer()));
