@@ -64,7 +64,26 @@ Deliberate unsigned build: `VYUHA_ALLOW_UNSIGNED=1 npm run desktop:build`.
 **Upload BOTH `Vyuha_x.y.z_x64-setup.exe` and its `.sig`** to the GitHub
 release. An installer without its signature is the same silent failure again.
 
-Details: [`CODE_SIGNING.md`](CODE_SIGNING.md).
+### After publishing — two minutes, every release
+
+The installer is **not** code-signed (a recorded decision), and SmartScreen
+reputation accrues **per file hash** — so every release starts cold no matter
+how many people installed the last one. At this project's release cadence that
+means essentially every buyer meets a cold warning. Two free mitigations, both
+of which must happen *after* the release is public:
+
+1. **`npm run winget:manifest`** → then
+   `wingetcreate submit --token <gh-token> release-packages/winget/<version>`.
+   Once the listing exists, `winget install ThejeshK.Vyuha` installs with no
+   SmartScreen prompt at all, because winget fetches without the
+   mark-of-the-web. Put that command in the purchase email as the recommended
+   path.
+2. **Submit the .exe to Microsoft** at
+   <https://www.microsoft.com/en-us/wdsi/filesubmission> (Software developer →
+   false positive). Seeds reputation for that hash before buyers download it.
+   A web form; there is no API.
+
+Details and the reasoning: [`CODE_SIGNING.md`](CODE_SIGNING.md).
 
 ---
 

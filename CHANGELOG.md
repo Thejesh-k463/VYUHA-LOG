@@ -1,5 +1,41 @@
 # Changelog
 
+## v2.99.94 — the renewal you were never warned about, and four claims that were not true
+
+Almost none of this is new capability. It is the product telling the truth about
+itself, and one long-standing hole in the plan that is meant to renew.
+
+- **Your annual licence now warns you before it lapses.** There was no notice of
+  any kind: the key was valid, and then one morning seventeen Pro screens were
+  locked. The only reminder in the whole system pointed at the seller, not at
+  you. From 30 days out, every Pro screen carries a dated countdown and a renew
+  link, and nothing is withheld while it counts down. Your journal is unaffected
+  either way — trades, imports, backups and exports keep working after expiry
+  exactly as they do on a free copy.
+- **PDF is no longer described as an importer.** It never was one: opening a
+  broker PDF extracts the text so you can enter trades by hand, and produces no
+  trades of its own. The import screen and the guide now say that plainly
+  instead of listing PDF beside the six brokers that really do auto-detect.
+- **Prices no longer claim to include tax.** No GST is charged or collected on
+  these sales, so the line saying otherwise was wrong and is gone.
+- **The download promise matches reality.** The installer is around 35 MB — too
+  large to attach to an email — so the page now says you get a private download
+  link, which is what actually happens.
+- **macOS is described honestly.** Mac builds are produced for every release and
+  available on request; they are not code-signed or notarised yet, so macOS asks
+  you to right-click → Open the first time. Previously the page implied a Mac
+  download that was not being packaged.
+- **A refund policy, terms of use and a privacy statement now ship with the
+  app**, inside the download. The FAQ used to ask "Is there a refund policy?"
+  and then answer a different question.
+
+For the seller, licence issuing gained two guards after a near-miss reading of
+the tooling: a licence term must now be stated explicitly (omitting it used to
+mint a lifetime key silently), and a paid licence cannot be issued without
+recording its payment reference. Release day also gained a winget manifest
+generator and a documented Microsoft file submission — the two free ways to stop
+Windows warning buyers about an unsigned installer.
+
 ## v2.99.93 — five things that only showed up under load, two of which lost data
 
 A load and stress suite now exists, and the first six tests written against it

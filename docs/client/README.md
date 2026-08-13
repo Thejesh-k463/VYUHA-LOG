@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.94
+
+| Upgrade | What it gives you |
+|---|---|
+| **Your annual licence warns you before it lapses** | There was no warning at all — the key worked, and then one morning the Pro screens were locked. From 30 days out you now get a dated countdown and a renew link on every Pro screen, with nothing withheld while it counts down. If you do let it lapse, your journal is untouched: trades, imports, backups and exports keep working exactly as on a free copy. |
+| **Your paperwork is in the download** | A refund policy, terms of use and a privacy statement now ship alongside the installer, so the copy you hold matches the version you bought. |
+| **Straight answers about PDF, tax and macOS** | Opening a broker PDF extracts its text for you to enter by hand — it never imported trades, and we no longer list it as though it did. No GST is charged on these sales, so the "inclusive of taxes" line is gone. Mac builds are made every release and available on request; they are not notarised yet, so macOS will ask you to right-click → Open. |
+| **A download link, not an email attachment** | The installer is around 35 MB, which is too large to email. You get a private link — which is what was always actually sent. |
+
 ## New in v2.99.93
 
 > **Take a fresh backup after updating.** One of the fixes below repairs what

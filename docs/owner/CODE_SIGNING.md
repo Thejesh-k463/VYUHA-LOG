@@ -11,6 +11,56 @@ signing makes reputation accrue to your *certificate* across releases instead of
 
 ---
 
+## ✅ Do these two on every release day (2026-08-13)
+
+Both are built and cost nothing. They are the whole of what a ₹0 signing budget
+can buy, and they matter *more* the faster you ship — see item 4 below.
+
+### 1. winget manifest — `npm run winget:manifest`
+
+```bash
+npm run winget:manifest          # after desktop:build, reads the local installer
+npm run winget:manifest -- --sha <SHA256>   # or from the release page's hash
+```
+
+Writes the three-file manifest set to `release-packages/winget/<version>/` and
+prints the submission command. It does **not** publish — that is a pull request
+to `microsoft/winget-pkgs`, reviewed by a human:
+
+```bash
+wingetcreate submit --token <gh-token> release-packages/winget/<version>
+```
+
+The **first** submission is the slow one (a few days, hand-reviewed). After it
+lands, put this in the purchase email as the *recommended* install path, with
+the `.exe` as fallback:
+
+```
+winget install ThejeshK.Vyuha
+```
+
+`winget` fetches without the browser's mark-of-the-web, so a buyer who installs
+that way **never sees the SmartScreen interstitial at all**.
+
+⚠ The release must be **published and public** before you submit — the manifest
+carries a live `InstallerUrl` and a SHA-256 that must match those exact bytes.
+Submit after `npm run release:verify`, not before.
+
+### 2. Submit the installer to Microsoft — 2 minutes, release day
+
+<https://www.microsoft.com/en-us/wdsi/filesubmission> → **Software developer**.
+Upload `Vyuha_<version>_x64-setup.exe`, say it is a false positive, and give the
+GitHub release URL as the source.
+
+This clears Defender false positives and seeds SmartScreen/Defender reputation
+**for that file hash** before your buyers download it. Do it on release day —
+the point is to get there first, ahead of the customer.
+
+There is no API and no automation for this; it is a web form. It stays a manual
+checklist item, which is why it is written here rather than in a script.
+
+---
+
 ## Free mitigations (no certificate) — what actually helps
 
 There is **no free Authenticode certificate** for a commercial product. (SignPath Foundation

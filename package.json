@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.99.93",
+  "version": "2.99.94",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -27,7 +27,8 @@
     "release:verify": "node scripts/verify-release-signatures.mjs",
     "release:revocations": "node scripts/revocation-publish.mjs",
     "landing:build": "node scripts/build-landing.mjs",
-    "test:load": "vitest run --config vitest.load.config.ts"
+    "test:load": "vitest run --config vitest.load.config.ts",
+    "winget:manifest": "node scripts/winget-manifest.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.5",
