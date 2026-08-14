@@ -103,10 +103,12 @@ Its public half must equal `plugins.updater.pubkey` in `tauri.conf.json`.
 | Live key id | `4FF85F3BBE1DA21D` |
 | Stale key id (v2.91.0 rotation) | `8FFAF1B491EAD2F0` |
 
-⚠ **A stale `updater-private.key` is still sitting in the repo root.** Untracked
-and gitignored, so it never reached GitHub — but present on disk and one
-careless `--private-key` away from being used. Signing with it produces a `.sig`
-**the build reports as valid while every installed copy rejects the update.**
+The stale root `updater-private.key` was **deleted on 2026-08-14** — verified
+first that nothing read it, that all 31 `.sig` files on disk carry
+`4FF85F3BBE1DA21D`, and that `scripts/tauri-build.mjs:35` resolves only the
+`.secrets` key. If a copy ever reappears from a backup, **delete it again**:
+signing with it produces a `.sig` the build reports as valid **while every
+installed copy rejects the update**, which is exactly what it did to v2.98.0.
 
 - `scripts/tauri-build.mjs` resolves the correct key automatically. **Do not set
   `TAURI_SIGNING_PRIVATE_KEY` by hand to route around it.**

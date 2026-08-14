@@ -199,18 +199,31 @@ literal colours, asserted by `tests/skin.test.ts`.
 
 ## 7. Live hazards — check these before a release
 
-⚠ **A stale `updater-private.key` sits in the repo root.** Confirmed present on disk
-2026-08-14, alongside the correct `.secrets/vyuha-updater.key`. It is from the v2.91.0 key
-rotation (old id `8FFAF1B491EAD2F0`); the live key id is `4FF85F3BBE1DA21D`. It is untracked
-and gitignored so it never reached GitHub, but it is one careless `--private-key` away from
-producing a `.sig` that the build reports as valid **while every installed copy rejects the
-update**. Verify a release by decoding the signature's key id — never by trusting "✓ signed".
-Deleting it would remove the hazard entirely; that is the owner's call.
+✅ **The stale `updater-private.key` was DELETED on 2026-08-14.** The repo root now holds no
+signing key, and `.secrets/vyuha-updater.key` (348 bytes) is the only one left on disk.
 
-⚠ **A session transcript records that key being "moved out of the repo root to `~/VyuhaKeys`"
-after it caused a v2.98.0 release no installed copy would accept. It is back, or never left** —
-`Test-Path` confirmed it present at the repo root on 2026-08-14. Trust the filesystem, not the
-transcript, and re-check before every release.
+Evidence gathered before deleting, worth keeping because it is the procedure to re-run if a
+copy ever reappears from a backup:
+
+- `tauri.conf.json` → `plugins.updater.pubkey` decodes to **`4FF85F3BBE1DA21D`**.
+- **All 31 `.sig` files on disk** — every MSI and NSIS bundle from v2.98.0 through v2.99.94 —
+  carry key id `4FF85F3BBE1DA21D`. A minisign signature stores its key id in cleartext, so
+  this reads without any password.
+- `scripts/tauri-build.mjs:35` resolves **only** `.secrets/vyuha-updater.key`. Since every
+  artifact it produced is signed `4FF85F3BBE1DA21D`, that file *is* the live key.
+- A repo-wide grep found **nothing** — no script, workflow or config — reading
+  `updater-private.key`. Only prose warnings referenced it.
+- The two key files differed (SHA-256 `5CDFA6BD…` vs `2AEE211C…`), so the deleted one was not
+  a copy of the live key.
+
+The deleted key was from the v2.91.0 rotation (old id `8FFAF1B491EAD2F0`) and had **negative**
+value: signing with it produced a `.sig` the build reported as valid **while every installed
+copy rejected the update** — which is what it did to v2.98.0. A session transcript claimed it
+had already been "moved out of the repo root to `~/VyuhaKeys`"; it had not. If it reappears,
+delete it again rather than keeping it "just in case".
+
+**The rule that outlives it: verify a release by decoding the signature's key id, never by
+trusting "✓ signed".**
 
 ✅ **PDF parser — checked 2026-08-14, NOT a defect, no action needed.** It returns `trades: []`
 **by design**: `lib/import/registry-meta.ts:37-42` labels it *"PDF statement — reads the text,

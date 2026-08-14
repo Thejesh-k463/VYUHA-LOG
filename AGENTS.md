@@ -222,12 +222,12 @@ declared "no-mtf", not omitted.
 - **The updater signing key is `.secrets/vyuha-updater.key`, and nothing else.** Its public half
   must equal `plugins.updater.pubkey` in `tauri.conf.json` (currently key id `4FF85F3BBE1DA21D`).
   `scripts/tauri-build.mjs` resolves it automatically — **do not set
-  `TAURI_SIGNING_PRIVATE_KEY` by hand to route around it.** ⚠ A stale `updater-private.key` from
-  the v2.91.0 key rotation (old id `8FFAF1B491EAD2F0`) is **still sitting in the repo root** —
-  untracked and gitignored, so it never reached GitHub, but present on disk and one careless
-  `--private-key` away from being used;
-  signing with it produces a `.sig` the build reports as valid while every installed copy rejects
-  the update. The CI secret `TAURI_SIGNING_PRIVATE_KEY` must hold the `.secrets` key for the same
+  `TAURI_SIGNING_PRIVATE_KEY` by hand to route around it.** The stale `updater-private.key` from
+  the v2.91.0 key rotation (old id `8FFAF1B491EAD2F0`) sat in the repo root until **2026-08-14,
+  when it was deleted** — untracked and gitignored, so it never reached GitHub, and a repo-wide
+  grep confirmed nothing read it. Signing with it produced a `.sig` the build reported as valid
+  while every installed copy rejected the update, which is what it did to v2.98.0. **If a copy
+  reappears from a backup, delete it again rather than keeping it "just in case".** The CI secret `TAURI_SIGNING_PRIVATE_KEY` must hold the `.secrets` key for the same
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".
 - Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json, Cargo.toml and
   the sidebar footer — but **not `src-tauri/Cargo.lock`**, which needs a `cargo` invocation, and
