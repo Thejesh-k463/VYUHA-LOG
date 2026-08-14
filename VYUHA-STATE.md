@@ -212,10 +212,13 @@ after it caused a v2.98.0 release no installed copy would accept. It is back, or
 `Test-Path` confirmed it present at the repo root on 2026-08-14. Trust the filesystem, not the
 transcript, and re-check before every release.
 
-⚠ **`lib/import/parsers/pdf.ts` returns `trades: []` on every path** (lines 42, 56, 69) and is
-still registered as an import source. v2.99.94 removed the *marketing* claim that PDF imports
-trades; the non-functional parser itself was never removed. Either delete it or give it a reason
-to exist.
+✅ **PDF parser — checked 2026-08-14, NOT a defect, no action needed.** It returns `trades: []`
+**by design**: `lib/import/registry-meta.ts:37-42` labels it *"PDF statement — reads the text,
+does not import trades"*, with a comment recording that no broker PDF layout has been calibrated
+and that it was previously mis-sold beside the six real parsers. It still exports
+`detectBrokerFromText`, consumed by `lib/import/detect.ts`, and `tests/import-registry.test.ts`
+pins the behaviour. A session transcript flagged this as a dead parser left registered — that
+reading was wrong. **Do not delete it.**
 
 ⚠ **Paytm Money's parser was built from a schema-only sample.** It was a deliberate exception
 to the never-invent-a-parser rule (DECISIONS.md 2026-08-12). **The first live Paytm import
@@ -291,9 +294,11 @@ install steps on a deck that claims Windows + macOS.
   Kite historical API (~₹2k/mo, **breaks the no-cloud promise**) vs user-pasted CSV.
 - **First-run onboarding flow** — was the explicit #1 next-cycle pick, since trial→paid is the
   bottleneck and nothing guides a fresh install through import → mark → first review. Never built.
-- **Dangling `v2.99.0` tag** *(verified present)* after its draft release was deleted. Delete or
-  keep — never decided. Note `v2.97.0` was **deliberately never released**; tags jump
-  v2.96.0 → v2.98.0 *(verified)*.
+- **`v2.99.0` tag — checked 2026-08-14, KEEP it.** It points at `54c6a7c`, a real release commit
+  on `main`, and matches a real CHANGELOG entry ("Vyuha runs on a Mac, and the seller journal
+  grows up"). Only its GitHub *draft release* was deleted; the tag itself is legitimate history.
+  An earlier session asked whether to delete it — the answer is no. `v2.97.0` was
+  **deliberately never released**, so tags jump v2.96.0 → v2.98.0 *(verified)*.
 - One commit on `main` **bypassed branch protection** (2 of 2 required checks skipped).
 - A dead/unhydrated preview pane at the last session's end was disproven by real-browser e2e and
   **never root-caused**.
@@ -306,10 +311,11 @@ install steps on a deck that claims Windows + macOS.
 ### 8.5 Open questions the owner never answered
 
 Which delivery link · refund-policy and terms sign-off · whether to collapse "theme" and
-"accent skin" into one list (7 skins × light/dark keeps multiplying axes) · whether to delete
-the `v2.99.0` tag · whether to publish v2.99.94.
+"accent skin" into one list (7 skins × light/dark keeps multiplying axes) · whether to publish
+v2.99.94.
 
-*(Pro annual pricing was on this list; resolved 2026-08-14 — see §8.1.)*
+*(Three items left this list on 2026-08-14: Pro annual pricing — ₹9,999 confirmed, §8.1; the
+`v2.99.0` tag — keep it, §8.4; the PDF parser — working as designed, §7.)*
 
 ### 8.6 Explicit non-goals — do not propose these
 
