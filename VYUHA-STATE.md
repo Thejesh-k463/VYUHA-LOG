@@ -30,27 +30,28 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.94** |
-| Branch | `main`, working tree **DIRTY — uncommitted launch-pricing changes (2026-08-15, verified green, not yet committed/released)** |
-| History | 133 commits, 55 tags, first commit 2026-07-01 |
-| Latest | `198e542` — renewal notice, honest claims, two free SmartScreen fixes |
-| Unit tests | **1,627 passing / 116 files, 10.2s** (verified 2026-08-15, full `npm run verify` EXIT:0 incl. build) |
-| Typecheck | **PASS** |
-| e2e | 41 Playwright flows across 16 specs (not run in this pass — needs a build) |
-| TODO/FIXME/HACK in app code | **zero** |
+| Version | **v2.99.95** — committed `3861ca6`, tagged, pushed 2026-08-15 |
+| Branch | `main`, working tree clean apart from this file |
+| Latest | `3861ca6` — launch pricing, comparison tables, v3 mark on sales surfaces, macOS selling removed |
+| Unit tests | **1,627 passing / 116 files** (full `npm run verify` EXIT:0 incl. build, 2026-08-15) |
+| CI | **green on `3861ca6` incl. the Windows job, BEFORE tagging**; Release workflow triggered by the tag |
+| Installer | `Vyuha_2.99.95_x64-setup.exe` + MSI, both `.sig` key ids decoded to **`4FF85F3BBE1DA21D`** (live key) |
+| Client ZIP | `release-packages/Vyuha_2.99.95_Client_Package.zip` (33.9M), installer SHA-256 `9DBECFF9…E91123` |
+| e2e | 41 Playwright flows across 16 specs — **still not run**; run before publishing |
+| Not done | §7 install-on-non-build-machine (owner's hands); winget + MS submission (need a public release) |
 
-**Uncommitted work (2026-08-15) — launch pricing + comparison + deck fixes.** Owner-approved:
-anchors ₹13,000/yr and ₹35,999 are COMMITTED 2027-01-01 list prices (offer end date deliberately
-not shown in-app; recorded in DECISIONS.md 2026-08-15 ×2 and MONETIZATION_PLAN §2). Percentages
-are derived AND FLOORED via `offerPct()`: **23% / 16%** (owner asked for 30%/20%; did not survive
-division — review pass also caught 17% as a round-UP of 16.67%). `featured` moved to lifetime.
-New: `lib/domain/pricing-comparison.ts` + `components/system/pricing-comparison.tsx` (7-competitor
-table, sourced 2026-08-15, † = third-party-sourced). Landing page + brochure + standalone
-regenerated; client deck fixed (v2.99.94 chip, 6 brokers, full Pro list incl. Lenses, macOS
-steps, corrected import slide). `/pricing` render verified live in-browser, zero console errors.
-**Client ZIP deliberately NOT rebuilt:** the 2.99.94 installer predates the in-app pricing
-changes — rebuilding now would ship docs describing an offer the bundled app doesn't show. The
-next release (desktop build → installer → ZIP) is the vehicle; follow the release skill.
+**v2.99.95 content (all verified 2026-08-15):** launch-offer anchors ₹13,000/yr and ₹35,999 are
+COMMITTED 2027-01-01 list prices (end date deliberately not in-app; DECISIONS.md 2026-08-15 ×2,
+MONETIZATION_PLAN §2). Savings derived AND FLOORED via `offerPct()`: **23% / 16%** — the
+requested 30%/20% did not survive division, and a review pass caught 17% as a round-UP of
+16.67%. `featured` = lifetime. New `lib/domain/pricing-comparison.ts` +
+`components/system/pricing-comparison.tsx` (7 competitors, sourced 2026-08-15, † =
+third-party-sourced). Roadmap copy: "every future upgrade at no extra cost — exciting, useful
+features on the roadmap" (owner chose to drop the "planned, not yet shipped" label; "roadmap"
+itself carries the future tense). v3 mark + favicon replaced the retired flat tile on
+landing/brochure/deck; the deck's long-standing stray `</div>` was removed (tag-balance
+verified). REFUND_POLICY gained the owner-discretion/tampering note (small text, literal \*…\*).
+macOS selling removed everywhere — see §7.5 for the re-add map.
 
 Code volume (excluding `src-tauri` vendored Rust deps):
 
@@ -322,9 +323,9 @@ winget is the intended fix.
 launch-pricing changeset): version chips now v2.99.94, all 6 brokers named, import slide lists
 the 6 parsers + column mapper + 3 API pulls (PDF no longer sold as an import path), Pro list
 carries Lenses/Expiry/RoM/Scaling/selected-trades PDF, and macOS install + SmartScreen notes
-added. One pre-existing stray `</div>` at ~line 248 remains (byte-identical at HEAD, browsers
-recover; sits between base64 blobs — fix only with a tag-balance check in hand). The remaining
-staleness items from the 17-item list (recorded 2026-08-13) have not been re-audited.
+added. The pre-existing stray `</div>` was REMOVED on 2026-08-15 (v2.99.95), verified by a
+div tag-balance check (no negatives, final depth 0). The remaining staleness items from the
+17-item list (recorded 2026-08-13) have not been re-audited.
 
 ### 8.4 Engineering backlog
 
