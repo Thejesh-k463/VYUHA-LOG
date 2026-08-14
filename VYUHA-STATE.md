@@ -37,7 +37,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 | CI | **green on `3861ca6` incl. the Windows job, BEFORE tagging**; Release workflow triggered by the tag |
 | Installer | `Vyuha_2.99.95_x64-setup.exe` + MSI, both `.sig` key ids decoded to **`4FF85F3BBE1DA21D`** (live key) |
 | Client ZIP | `release-packages/Vyuha_2.99.95_Client_Package.zip` (33.9M), installer SHA-256 `9DBECFF9…E91123` |
-| e2e | 41 Playwright flows across 16 specs — **still not run**; run before publishing |
+| e2e | **41/41 passed (2.3m), 2026-08-15, on the v2.99.95 tree** — exit 0, full suite |
 | Not done | §7 install-on-non-build-machine (owner's hands); winget + MS submission (need a public release) |
 
 **v2.99.95 content (all verified 2026-08-15):** launch-offer anchors ₹13,000/yr and ₹35,999 are
