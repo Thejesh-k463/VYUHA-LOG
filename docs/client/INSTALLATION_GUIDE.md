@@ -4,9 +4,7 @@
 computer** — your trades never leave your machine. No account, no cloud, and nothing about you or
 your trades is ever uploaded.
 
-- **Platform:** Windows 10 / 11 (64-bit). macOS builds (Apple silicon and Intel) are produced for
-  every release and available on request — they are not code-signed or notarised yet, so macOS will
-  ask you to right-click → Open the first time.
+- **Platform:** Windows 10 / 11 (64-bit).
 - **Disk:** ~200 MB
 - **Internet:** not needed to use Vyuha. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
@@ -15,7 +13,7 @@ your trades is ever uploaded.
 ## 1. Download & install (2 minutes)
 
 1. Download **`Vyuha_x.x.x_x64-setup.exe`** from the private link in your purchase email (it is
-   around 35 MB — too large to attach to an email). On macOS, ask for the `.dmg` instead.
+   around 35 MB — too large to attach to an email).
 2. Double-click it.
 3. **Windows SmartScreen may warn you** ("Windows protected your PC"). This is normal for a new
    independent app that isn't yet code-signed — it is **not** a virus warning.

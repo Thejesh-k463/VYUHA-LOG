@@ -31,13 +31,26 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 | | |
 |---|---|
 | Version | **v2.99.94** |
-| Branch | `main`, working tree **clean** |
+| Branch | `main`, working tree **DIRTY — uncommitted launch-pricing changes (2026-08-15, verified green, not yet committed/released)** |
 | History | 133 commits, 55 tags, first commit 2026-07-01 |
 | Latest | `198e542` — renewal notice, honest claims, two free SmartScreen fixes |
-| Unit tests | **1,626 passing / 116 files, 10.7s** |
+| Unit tests | **1,627 passing / 116 files, 10.2s** (verified 2026-08-15, full `npm run verify` EXIT:0 incl. build) |
 | Typecheck | **PASS** |
 | e2e | 41 Playwright flows across 16 specs (not run in this pass — needs a build) |
 | TODO/FIXME/HACK in app code | **zero** |
+
+**Uncommitted work (2026-08-15) — launch pricing + comparison + deck fixes.** Owner-approved:
+anchors ₹13,000/yr and ₹35,999 are COMMITTED 2027-01-01 list prices (offer end date deliberately
+not shown in-app; recorded in DECISIONS.md 2026-08-15 ×2 and MONETIZATION_PLAN §2). Percentages
+are derived AND FLOORED via `offerPct()`: **23% / 16%** (owner asked for 30%/20%; did not survive
+division — review pass also caught 17% as a round-UP of 16.67%). `featured` moved to lifetime.
+New: `lib/domain/pricing-comparison.ts` + `components/system/pricing-comparison.tsx` (7-competitor
+table, sourced 2026-08-15, † = third-party-sourced). Landing page + brochure + standalone
+regenerated; client deck fixed (v2.99.94 chip, 6 brokers, full Pro list incl. Lenses, macOS
+steps, corrected import slide). `/pricing` render verified live in-browser, zero console errors.
+**Client ZIP deliberately NOT rebuilt:** the 2.99.94 installer predates the in-app pricing
+changes — rebuilding now would ship docs describing an offer the bundled app doesn't show. The
+next release (desktop build → installer → ZIP) is the vehicle; follow the release skill.
 
 Code volume (excluding `src-tauri` vendored Rust deps):
 
@@ -245,6 +258,21 @@ must be reconciled against a contract note** before the parser is trusted.
 
 ---
 
+## 7.5 macOS is not sold — where the copy was removed (owner decision 2026-08-15)
+
+macOS selling copy was removed from every buyer-facing surface; the Mac builds themselves,
+CI matrix, and technical platform code are untouched. **To sell macOS later, restore copy at:**
+`docs/sales/landing-page.html` (hero pill, pricing footnote, move-machines FAQ, footer);
+`docs/sales/brochure.html` (hero pill, contact block); `docs/client/GETTING_STARTED_DECK.html`
+(title chip, install step 1, data-path line); `docs/client/README.md` (feature rows);
+`docs/client/INSTALLATION_GUIDE.md` (Platform bullet, download step);
+`scripts/build-client-package.mjs` (START_HERE "Honest security boundary" fingerprint list);
+root `README.md` (platform badge, install table, Gatekeeper note, universal-binary note).
+Kept as-is: historical changelog facts, `lib/machine-id*`/vault darwin code, `.github/workflows`
+release matrix, `docs/owner/*`. Before re-adding, check notarisation in
+`docs/owner/CODE_SIGNING.md` — the unnotarised "developer cannot be verified" prompt was part of
+why selling stopped.
+
 ## 8. Open work and future upgrades
 
 Sections 8.1–8.5 were **recovered from the two build-session transcripts** (2026-08-05 → 08-13)
@@ -288,13 +316,15 @@ winget is the intended fix.
 - **macOS notarisation not purchased** (Apple Developer ID ~₹8,300/yr). Mac users still hit
   "developer cannot be verified"; `notarytool` wiring waits on it.
 
-### 8.3 Documentation staleness — 17 items open as of 2026-08-13
+### 8.3 Documentation staleness — worst offender FIXED 2026-08-15
 
-Worst offender: **`docs/client/GETTING_STARTED_DECK.html`** — says "v2.99" (lines 113, 116,
-*verified*) against a shipped 2.99.94; title chips list 3 of 6 brokers (Angel One, Upstox and
-Paytm appear zero times); the import slide omits three parsers and two API pulls; the Pro list
-omits Lenses although `lib/license.ts:237` ships `/lenses` as Pro; and it gives Windows-only
-install steps on a deck that claims Windows + macOS.
+✅ **`docs/client/GETTING_STARTED_DECK.html` was fixed on 2026-08-15** (in the uncommitted
+launch-pricing changeset): version chips now v2.99.94, all 6 brokers named, import slide lists
+the 6 parsers + column mapper + 3 API pulls (PDF no longer sold as an import path), Pro list
+carries Lenses/Expiry/RoM/Scaling/selected-trades PDF, and macOS install + SmartScreen notes
+added. One pre-existing stray `</div>` at ~line 248 remains (byte-identical at HEAD, browsers
+recover; sits between base64 blobs — fix only with a tag-balance check in hand). The remaining
+staleness items from the 17-item list (recorded 2026-08-13) have not been re-audited.
 
 ### 8.4 Engineering backlog
 

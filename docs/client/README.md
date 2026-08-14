@@ -3,13 +3,25 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.95
+
+| Upgrade | What it gives you |
+|---|---|
+| **Launch pricing, shown honestly** | The list prices are **₹13,000/yr** (Pro — Annual) and **₹35,999** (Journal — Lifetime). Until the launch offer ends you pay **₹9,999/yr (23% off)** or **₹29,999 (16% off)** — the struck-out figures are the real prices these become, not decoration, and the savings percentages are computed from the numbers and floored, never rounded up (lifetime's true 16.67% displays as 16, not 17). Lifetime is now the recommended plan. |
+| **How Vyuha compares, on the pricing page** | A factual table of seven other trade journals — pricing, where your data lives, Indian broker support, statutory charges — every cell read from public pages on 2026-08-15, with "not stated" wherever a claim could not be verified. |
+| **Lifetime carries the roadmap** | Lifetime includes every future upgrade at no extra cost — exciting, useful features are on the roadmap. |
+| **This deck caught up with the product** | The getting-started deck now names all six brokers, the column mapper and the three broker-API pulls, lists the full Pro screen set (Lenses included), and carries the SmartScreen note next to the install steps. |
+| **The refreshed mark, everywhere** | The landing page, brochure and this deck now carry the current Vyuha mark — the older flat tile is retired. |
+| **Windows-only, said plainly** | This package sells and supports the Windows desktop app. A macOS edition will be offered separately later. |
+| **The refund policy states its edges** | A closing note now says refunds beyond the two named exceptions are at the owner's discretion, and that verified tampering or replication of Vyuha forfeits them. |
+
 ## New in v2.99.94
 
 | Upgrade | What it gives you |
 |---|---|
 | **Your annual licence warns you before it lapses** | There was no warning at all — the key worked, and then one morning the Pro screens were locked. From 30 days out you now get a dated countdown and a renew link on every Pro screen, with nothing withheld while it counts down. If you do let it lapse, your journal is untouched: trades, imports, backups and exports keep working exactly as on a free copy. |
 | **Your paperwork is in the download** | A refund policy, terms of use and a privacy statement now ship alongside the installer, so the copy you hold matches the version you bought. |
-| **Straight answers about PDF, tax and macOS** | Opening a broker PDF extracts its text for you to enter by hand — it never imported trades, and we no longer list it as though it did. No GST is charged on these sales, so the "inclusive of taxes" line is gone. Mac builds are made every release and available on request; they are not notarised yet, so macOS will ask you to right-click → Open. |
+| **Straight answers about PDF and tax** | Opening a broker PDF extracts its text for you to enter by hand — it never imported trades, and we no longer list it as though it did. No GST is charged on these sales, so the "inclusive of taxes" line is gone. |
 | **A download link, not an email attachment** | The installer is around 35 MB, which is too large to email. You get a private link — which is what was always actually sent. |
 
 ## New in v2.99.93
@@ -68,7 +80,7 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 
 | Upgrade | What it gives you |
 |---|---|
-| **Clear pricing, in the app** | Two plans, stated plainly where you need them: **Pro — Annual ₹9,999/yr** (recommended) and **Journal — Lifetime ₹29,999**. The free tier remains free forever — recording trades, every importer, backups. Prices shown in-app carry the date they were set, and the WhatsApp message quotes exactly what you saw. |
+| **Clear pricing, in the app** | Two plans, stated plainly where you need them: **Pro — Annual ₹9,999/yr** (recommended then; Lifetime is now the recommended plan) and **Journal — Lifetime ₹29,999**. The free tier remains free forever — recording trades, every importer, backups. Prices shown in-app carry the date they were set, and the WhatsApp message quotes exactly what you saw. |
 
 ## New in v2.99.75
 
@@ -124,7 +136,6 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 
 | Workspace | What it gives you |
 |---|---|
-| **macOS** | Vyuha now ships native builds for Apple silicon and Intel Macs, alongside Windows. Pick the build matching your Mac; first launch needs right-click → Open (the builds are not yet notarised). |
 | **Help Desk** | Every screen described — what it answers, its honesty rules, and what it deliberately won't do — searchable, with a direct link to each. |
 | **Delete, honestly** | Select trades to delete, remove an imported file (you choose whether its trades go too), or clear by date/broker/segment. Every delete shows exactly what will go before it goes, and the audit log keeps the full record. |
 | **Import overlap warning** | Importing a P&L export after a transaction report used to record the same trades twice. The preview now names the overlapping rows and the file they came from, before anything commits. |

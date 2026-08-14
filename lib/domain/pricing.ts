@@ -53,45 +53,56 @@ export interface PricingSku {
 }
 
 /** The date these numbers were last confirmed against the landing page. */
-export const PRICING_AS_OF = "2026-08-12";
+export const PRICING_AS_OF = "2026-08-15";
 
 /** After this many days, rendered prices say "confirm before paying". */
 export const PRICING_STALE_AFTER_DAYS = 120;
 
-// Repriced 2026-08-12 (owner decision, same day as the first in-app pricing
-// shipped): two SKUs, clean numbers, no strike-through anchor and no scarcity
-// framing — at a premium price the credibility is the pitch. The TradingView
-// indicators bundle came OFF the pricing surfaces entirely; indicators remain
-// a WhatsApp conversation. Annual is the featured entry; lifetime sits above
-// it as the commitment offer.
+// Repriced 2026-08-12 (owner decision): two SKUs, clean numbers. The
+// TradingView indicators bundle came OFF the pricing surfaces entirely;
+// indicators remain a WhatsApp conversation.
+//
+// Launch offer, 2026-08-15 (owner decision, recorded in docs/DECISIONS.md):
+// the anchors below are the REAL list prices the owner has committed to
+// charging from 2027-01-01 — ₹13,000/yr and ₹35,999 — not invented
+// strike-throughs. The offer's end date is deliberately NOT rendered in-app
+// (owner's call); it lives here and in the owner docs so the claim stays
+// auditable. The savings percentages are DERIVED (offerPct), never hand-typed:
+// 13,000→9,999 is 23%, 35,999→29,999 is 16% — the owner's requested "30%/20%"
+// labels did not survive division and were corrected, not displayed.
+// Lifetime is now the featured entry — the owner sells lifetime first.
 export const PRICING: readonly PricingSku[] = [
-  {
-    id: "annual",
-    licenseSku: "app",
-    name: "Pro — Annual",
-    amountInr: 9999,
-    term: "annual",
-    featured: true,
-    blurb: "per year · renews with a fresh key",
-    includes: [
-      "The full Vyuha desktop app",
-      "Every Pro analytics screen — risk, edge, discipline, options, full tax pack",
-      "All broker importers and free updates through the year",
-      "Upgrade to lifetime any time — the year you paid counts toward it",
-    ],
-  },
   {
     id: "lifetime",
     licenseSku: "app",
     name: "Journal — Lifetime",
     amountInr: 29999,
+    wasInr: 35999,
     term: "lifetime",
+    featured: true,
     blurb: "one-time · lifetime licence",
     includes: [
       "Everything in Pro, forever — no renewal, ever",
       "Every Pro analytics screen, all broker importers",
-      "Free updates for the life of the product",
+      "Every future upgrade at no extra cost — exciting, useful features on the roadmap",
+      "Charges computed to the rupee, on your machine — nothing you enter ever leaves it",
       "Priority support on WhatsApp",
+    ],
+  },
+  {
+    id: "annual",
+    licenseSku: "app",
+    name: "Pro — Annual",
+    amountInr: 9999,
+    wasInr: 13000,
+    term: "annual",
+    blurb: "per year · renews with a fresh key",
+    includes: [
+      "The full Vyuha desktop app",
+      "Every Pro analytics screen — risk, edge, discipline, options, full tax pack",
+      "The charges engine verified within 0.69% of a real broker report",
+      "All broker importers and free updates through the year",
+      "Upgrade to lifetime any time — the year you paid counts toward it",
     ],
   },
 ];
@@ -106,9 +117,20 @@ export function featuredSku(): PricingSku {
   return PRICING.find((s) => s.featured) ?? PRICING[0];
 }
 
-/** ₹1,499 / ₹499⁄yr — en-IN grouping, matching the landing page exactly. */
+/** ₹29,999 / ₹9,999 — en-IN grouping, matching the landing page exactly. */
 export function formatInr(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+/**
+ * Launch-offer savings, DERIVED from the anchor so a displayed percentage can
+ * never disagree with the arithmetic. Null when no anchor is advertised.
+ * Floor, not round: 16.67% displayed as "17% off" overstates the discount,
+ * and a discount claim must never overstate. Understating by <1% is fine.
+ */
+export function offerPct(sku: PricingSku): number | null {
+  if (sku.wasInr == null || sku.wasInr <= sku.amountInr) return null;
+  return Math.floor((1 - sku.amountInr / sku.wasInr) * 100);
 }
 
 export function priceLabel(sku: PricingSku): string {

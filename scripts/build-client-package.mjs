@@ -98,7 +98,7 @@ const readme = [
   "Compare the installer SHA-256 below before running it. The .sig file is the update signature for this installer and should stay alongside it when stored or published.",
   "",
   "## Honest security boundary",
-  "This package contains no build source or vendor private keys. Signed licences deter sharing, and machine-bound keys restrict normal use to one computer — Windows, macOS and Linux fingerprints are all supported. Like any offline desktop software, copying or reverse engineering cannot be made mathematically impossible.",
+  "This package contains no build source or vendor private keys. Signed licences deter sharing, and machine-bound keys restrict normal use to one computer. Like any offline desktop software, copying or reverse engineering cannot be made mathematically impossible.",
   "",
   "Vyuha is a record-keeping and analytics product, not investment advice.",
   "",

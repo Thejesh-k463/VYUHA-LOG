@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { PricingTable } from "@/components/system/pricing-table";
+import { PricingComparison } from "@/components/system/pricing-comparison";
 import { getEntitlement } from "@/lib/queries/license";
 import { Card, CardContent } from "@/components/ui/card";
 import { BadgeCheck } from "lucide-react";
@@ -34,6 +35,8 @@ export default function PricingPage() {
         )}
 
         <PricingTable />
+
+        <PricingComparison />
 
         <p className="text-xs text-muted-foreground">
           Every purchase is a WhatsApp conversation, not a checkout — the key is issued personally and shows your

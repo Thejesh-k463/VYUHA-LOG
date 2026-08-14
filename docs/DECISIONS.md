@@ -27,6 +27,22 @@ Format:
 
 ---
 
+## 2026-08-15 — Launch-offer anchors are committed 2027 list prices, and the advertised percentages are derived, not the ones the owner asked for
+
+**Context:** Owner requested strike-through launch pricing ("₹13,000 → ₹9,999, 30% off"; "₹35,999 → ₹29,999, 20% off, best value") plus a competitor table on /pricing.
+**Measured / found:** 9,999/13,000 = 23.08% off and 29,999/35,999 = 16.67% off — the requested "30%/20%" labels do not survive division. A first cut used `Math.round`, and the review pass caught 16.67 → "17% off": rounded UP, overstating the discount. Anchors previously did not exist anywhere in the repo (grep for 13,000/35,999: zero hits); `wasInr` existed in the type, unused, and both `PricingTable` variants already rendered it.
+**Decision:** Owner confirmed ₹13,000/yr and ₹35,999 as the REAL list prices effective **2027-01-01** (recorded here and in MONETIZATION_PLAN §2; deliberately NOT rendered in-app — owner's call). Percentages ship as the derived-and-FLOORED **23% / 16%** via `offerPct()` in `lib/domain/pricing.ts` — floor, not round, because a discount claim must never overstate; understating by <1% is fine. `featured` moved from annual to lifetime — the owner sells lifetime first. Lifetime's roadmap line (mutual funds, gold) is labelled "planned, not yet shipped".
+**Why not the obvious thing:** Shipping the requested 30%/20% — a stated percentage that fails division is a false claim of exactly the kind v2.99.94 retired, and a fabricated anchor is a CCPA-2023 dark pattern. The alternative anchor (₹14,299 to make 30% true) was offered; the owner kept ₹13,000.
+**Invalidated if:** The offer is still running past 2027-01-01 (the anchors then stop being true and must come off every surface), or the owner repriced again.
+
+## 2026-08-15 — Competitor comparison cells are sourced-or-"Not stated", with † for third-party pricing
+
+**Context:** Building the /pricing and landing-page comparison tables (owner approved the full 7-product version, cheap Indian journals included).
+**Measured / found:** Official pricing pages read 2026-08-15: TradeZella $315/yr base, Edgewonk $197/yr, TradesViz ₹12,600/yr (their own ₹), OneTradeJournal ₹1,999–2,499/yr (two figures on their own page), TradeDiary ₹999/yr. TraderSync (HTTP 403) and Tradervue (404) pricing came from agreeing third-party 2026 reviews → flagged † on every surface. No competitor page states an independent Indian statutory-charges engine; none advertises local-only storage.
+**Decision:** Data lives in `lib/domain/pricing-comparison.ts` (pure, zero imports) with `COMPARISON_AS_OF = "2026-08-15"`; unverifiable cells say "Not stated", never a guess; "why Vyuha" rows are architecture/arithmetic only — no outcome claims (SEBI posture).
+**Why not the obvious thing:** Omitting the ₹999–2,499 Indian competitors would make the table look better and be exactly the selective honesty the product positions against; a buyer who googles finds them anyway.
+**Invalidated if:** Any competitor repricing (recheck the sources before a release that touches pricing copy), or TraderSync/Tradervue pages become fetchable — replace the † cells with primary figures.
+
 ## 2026-08-11 — Royal/Sapphire/Aurora skin triples: measured before written, floors matched to the shipping four
 
 **Context:** v2.99.70 adds three "more vibrant, luxurious" accent skins next to Luxe/Mono/Ice/Tape.

@@ -6,7 +6,7 @@
 > "final after that" line — are commercial decisions, not technical ones.
 > Change them here and nowhere else; this file ships inside the client ZIP.
 
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-15
 
 ## Try it first — that is the point of the trial
 
@@ -57,3 +57,10 @@ copy. We do not hold your own data hostage — not at purchase, not at refund.
 An annual licence stops at its expiry date. **It does not auto-renew, and there
 is nothing to cancel** — no card is stored, because no card was ever taken. If
 you do nothing, it simply lapses and the core journal keeps working forever.
+
+---
+
+<small>\*Beyond the two exceptions above, refunds are granted at the owner's
+discretion. If tampering with the software, changes that replicate Vyuha, or any
+other malpractice is verified, no refund will be provided and the licence may be
+revoked.\*</small>

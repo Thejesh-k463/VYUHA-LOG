@@ -7,6 +7,7 @@ import {
   formatInr,
   priceLabel,
   featuredSku,
+  offerPct,
   skuById,
   pricingIsStale,
   buyMessageFor,
@@ -41,12 +42,25 @@ describe("shape", () => {
 
   it("skuById throws on an unknown id rather than quoting nothing", () => {
     expect(() => skuById("nope" as never)).toThrow(/unknown/);
-    // Repriced 2026-08-12: Annual is the recommended entry, Lifetime the
-    // commitment offer above it. Two SKUs; the indicators bundle came off
-    // the pricing surfaces entirely.
-    expect(featuredSku().id).toBe("annual");
+    // Launch offer 2026-08-15: Lifetime is now the featured (best value)
+    // entry — the owner sells lifetime first. The anchors are the committed
+    // 2027-01-01 list prices, not invented strike-throughs.
+    expect(featuredSku().id).toBe("lifetime");
     expect(skuById("lifetime").amountInr).toBe(29999);
     expect(skuById("annual").amountInr).toBe(9999);
+    expect(skuById("lifetime").wasInr).toBe(35999);
+    expect(skuById("annual").wasInr).toBe(13000);
+  });
+
+  it("savings percentages are derived from the anchors, never hand-typed", () => {
+    // The owner's requested "30% / 20%" labels did not survive division —
+    // these are the honest figures, and they come out of offerPct() so a
+    // displayed percentage can never disagree with the arithmetic. Floored:
+    // lifetime's true 16.67% must display as 16, never round up to 17 —
+    // a discount claim never overstates.
+    expect(offerPct(skuById("annual"))).toBe(23);
+    expect(offerPct(skuById("lifetime"))).toBe(16);
+    expect(offerPct({ ...skuById("annual"), wasInr: undefined })).toBeNull();
   });
 });
 
@@ -82,7 +96,12 @@ describe("staleness is a fact about a date, not a vibe", () => {
   it("PRICING_AS_OF parses and is not in the future", () => {
     const t = new Date(`${PRICING_AS_OF}T00:00:00Z`).getTime();
     expect(Number.isFinite(t)).toBe(true);
-    expect(t).toBeLessThanOrEqual(Date.now());
+    // The as-of value is a CALENDAR date with no timezone. Comparing its UTC
+    // midnight straight against Date.now() rejected an honest same-day date
+    // set on an IST morning (00:31 IST is still "yesterday" in UTC). Accept
+    // any date that has begun somewhere on Earth (UTC+14) — a date that is
+    // tomorrow everywhere is still post-dated and still fails.
+    expect(t - 14 * 3_600_000).toBeLessThanOrEqual(Date.now());
   });
 });
 

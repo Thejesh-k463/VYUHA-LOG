@@ -316,10 +316,20 @@ five-broker import (incl. Angel One ≈15% of India's active accounts), clickabl
 ## 2. The offer & pricing (₹, India retail)
 
 > **⚠ These ranges are HISTORICAL STRATEGY, superseded 2026-08-12 by an owner
-> reprice.** Shipped prices live in **`lib/domain/pricing.ts`** (single source
-> of truth): **Pro — Annual ₹9,999/yr (recommended)** and **Journal — Lifetime
-> ₹29,999**, clean numbers with no anchor and no scarcity framing. Two SKUs
-> only — the Toolkit/indicators bundle came off every pricing surface;
+> reprice and again 2026-08-15 by the launch offer.** Shipped prices live in
+> **`lib/domain/pricing.ts`** (single source of truth).
+>
+> **Current (2026-08-15, owner decision):** list prices are **₹13,000/yr**
+> (Pro — Annual) and **₹35,999** (Journal — Lifetime) — the owner has committed
+> to charging these from **2027-01-01**, which is what makes the strike-through
+> honest. Until then the launch offer sells at **₹9,999/yr (23% off)** and
+> **₹29,999 (16% off, featured/best-value — the owner sells lifetime first)**.
+> The offer end date is deliberately NOT shown in-app (owner's call); it lives
+> here and in `docs/DECISIONS.md`. The percentages are DERIVED via `offerPct()`
+> and FLOORED (16.67% shows as 16, never 17 — a discount claim never
+> overstates) — the requested "30%/20%" labels did not survive division and
+> were corrected.
+> Two SKUs only — the Toolkit/indicators bundle came off every pricing surface;
 > indicators remain a WhatsApp conversation. `tests/pricing.test.ts` pins the
 > module to the landing page, so changing a price means editing BOTH in one
 > commit — which is the point. "Fixing" the code to match the ranges below

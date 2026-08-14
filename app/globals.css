@@ -538,6 +538,9 @@
 @utility animate-fade-up {
   animation: fade-up 300ms ease-out both;
 }
+@utility animate-badge-pop {
+  animation: badge-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
 
 @keyframes shimmer {
   from { background-position: 200% 0; }
@@ -555,6 +558,10 @@
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes badge-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
 @keyframes pulse-dot {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-profit) 45%, transparent); }
   50% { box-shadow: 0 0 0 4px transparent; }
@@ -564,6 +571,7 @@
   .animate-overlay-in,
   .animate-dialog-in,
   .animate-fade-up,
+  .animate-badge-pop,
   .skeleton {
     animation: none;
   }

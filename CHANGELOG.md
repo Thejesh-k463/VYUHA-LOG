@@ -1,5 +1,44 @@
 # Changelog
 
+## v2.99.95 — launch pricing that survives division, and a comparison that hides nothing
+
+The price became the pitch. Everything in this release is commercial surface,
+and every number on it is derived, sourced, or floored — never asserted.
+
+- **Launch pricing, with honest anchors.** The list prices are ₹13,000/yr
+  (Pro — Annual) and ₹35,999 (Journal — Lifetime) — committed prices, effective
+  2027-01-01, not decorative strike-throughs. Until then the launch offer sells
+  at ₹9,999/yr and ₹29,999. The savings badges are computed from the numbers
+  and floored: **23% off** and **16% off**. The owner asked for "30%/20%";
+  those labels did not survive division and were corrected. Lifetime's true
+  16.67% is shown as 16, never rounded up to 17 — a discount claim on this
+  product does not overstate.
+- **Lifetime is now the featured plan.** "Best value" moved from Annual to
+  Lifetime, in-app and on every sales surface, and Lifetime lists the roadmap:
+  every future upgrade at no extra cost.
+- **How Vyuha compares.** The pricing page and landing page now carry a
+  seven-product comparison — pricing, where your data lives, Indian broker
+  support, statutory charges — every cell read from public pages on 2026-08-15,
+  "not stated" wherever a claim could not be verified, and a † wherever the
+  official page was unreachable and third-party 2026 reviews had to stand in.
+  The ₹999–₹2,499 Indian competitors are in the table; hiding them would be the
+  selective honesty this product positions against.
+- **The current mark, everywhere.** The landing page, brochure and
+  getting-started deck were still carrying the retired flat-tile mark (and an
+  old favicon); all three now embed the current design.
+- **macOS is no longer sold here.** Every macOS selling claim came off the
+  landing page, brochure, deck, client docs and README — the Mac edition will
+  be offered separately later. The builds, CI matrix and platform code are
+  unchanged; only the advertising is gone.
+- **The refund policy states its edges.** A closing note: beyond the two
+  named exceptions, refunds are at the owner's discretion, and verified
+  tampering, replication of Vyuha, or other malpractice forfeits them.
+- **The getting-started deck caught up.** All six brokers named, the column
+  mapper and three broker-API pulls listed, the full Pro screen set (Lenses
+  included), the SmartScreen note beside the install steps — and one stray
+  `</div>` that had survived since the deck was written is gone, verified by a
+  tag-balance check.
+
 ## v2.99.94 — the renewal you were never warned about, and four claims that were not true
 
 Almost none of this is new capability. It is the product telling the truth about

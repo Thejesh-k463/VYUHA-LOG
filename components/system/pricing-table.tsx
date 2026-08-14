@@ -7,6 +7,7 @@ import {
   PRICING,
   PRICING_AS_OF,
   formatInr,
+  offerPct,
   priceLabel,
   pricingIsStale,
 } from "@/lib/domain/pricing";
@@ -55,6 +56,9 @@ export function PricingTable({ compact }: { compact?: boolean }) {
               <span className={sku.featured ? "font-medium text-accent" : "text-muted-foreground"}>{sku.name}</span>
               <span className="font-mono font-semibold tabular-nums">{priceLabel(sku)}</span>
               {sku.wasInr && <s className="text-[10px] text-muted-foreground">{formatInr(sku.wasInr)}</s>}
+              {offerPct(sku) != null && (
+                <span className="text-[10px] font-semibold text-accent">−{offerPct(sku)}%</span>
+              )}
             </span>
           ))}
         </div>
@@ -67,16 +71,31 @@ export function PricingTable({ compact }: { compact?: boolean }) {
     <div className="space-y-3">
       <div className="grid gap-4 md:grid-cols-2">
         {PRICING.map((sku) => (
-          <Card key={sku.id} className={`flex flex-col p-5 ${sku.featured ? "border-accent/40" : ""}`}>
-            <div className="flex items-center justify-between">
+          <Card
+            key={sku.id}
+            className={`animate-fade-up flex flex-col p-5 ${sku.featured ? "border-accent/40" : ""}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
               <div className="text-sm font-semibold">{sku.name}</div>
-              {sku.featured && <Badge variant="secondary">Best value</Badge>}
+              <div className="flex items-center gap-1.5">
+                {offerPct(sku) != null && (
+                  <span className="animate-badge-pop inline-flex items-center rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-foreground">
+                    Launch offer · {offerPct(sku)}% off
+                  </span>
+                )}
+                {sku.featured && <Badge variant="secondary">Best value</Badge>}
+              </div>
             </div>
             <div className="mt-2 font-mono text-2xl font-bold tabular-nums">
               {priceLabel(sku)}
               {sku.wasInr && <s className="ml-2 text-sm font-normal text-muted-foreground">{formatInr(sku.wasInr)}</s>}
             </div>
             <div className="text-xs text-muted-foreground">{sku.blurb}</div>
+            {sku.wasInr && (
+              <div className="mt-1 text-[0.6875rem] font-medium text-accent">
+                Save {formatInr(sku.wasInr - sku.amountInr)} at launch pricing — for a limited period.
+              </div>
+            )}
             <ul className="mt-3 flex-1 space-y-1.5 text-xs">
               {sku.includes.map((line) => (
                 <li key={line} className="flex items-start gap-1.5">

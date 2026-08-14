@@ -7,9 +7,9 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1616%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1627%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-41%20flows-2ea44f)](e2e)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](#-get-it)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
 [![Built for](https://img.shields.io/badge/built%20for-Indian%20retail%20traders-ff9933)](#why-vyuha)
@@ -427,12 +427,6 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
-| **macOS** (Apple silicon) | `Vyuha_x.y.z_aarch64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
-| **macOS** (Intel) | `Vyuha_x.y.z_x64.dmg` | `~/Library/Application Support/in.vyuha.tradejournal` |
-
-macOS ships **two separate builds rather than one universal binary on purpose** — the app bundles a Node runtime, and a universal app would carry a single-architecture Node that fails on the other machine. Take the one matching your Mac.
-
-> **macOS Gatekeeper:** the builds are not yet notarised with an Apple Developer ID, so the first launch shows *"Vyuha cannot be opened because the developer cannot be verified."* Right-click the app → **Open** → **Open**, once. Nothing about the app changes; macOS simply asks before running software it cannot attribute.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
 
