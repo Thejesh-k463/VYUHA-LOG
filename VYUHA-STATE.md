@@ -71,6 +71,7 @@ cost win in this repo.
 | Pricing, packaging, launch plan | `docs/owner/MONETIZATION_PLAN.md` |
 | Signing, notarization, SmartScreen | `docs/owner/CODE_SIGNING.md` + `AGENTS.md` § Desktop build |
 | What a buyer receives | `docs/client/` |
+| How do I open a new session here? | `docs/SESSION_PROMPT.md` — short + full copy-paste openers |
 
 Two **project-scoped skills** exist in `.claude/skills/` and override the global ones for
 this repo: `decision-log` (append a measured fact) and `prove-it` (verification before
