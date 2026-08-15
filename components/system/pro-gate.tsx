@@ -4,7 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PricingTable } from "@/components/system/pricing-table";
 import { getEntitlement } from "@/lib/queries/license";
-import { PRO_FEATURES, BUY_URL, SKU_LABELS, TRIAL_DAYS } from "@/lib/license";
+import { BuyDialog } from "@/components/system/buy-dialog";
+import { PRO_FEATURES, SKU_LABELS, TRIAL_DAYS } from "@/lib/license";
 
 /**
  * Monetization v2 — the single gate every Pro screen sits behind. Server
@@ -70,7 +71,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
               Nothing changes today. After that date the Pro analytics lock, and your journal —
               trades, imports, backups and exports — keeps working exactly as it does now.
             </span>{" "}
-            <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Renew</a>
+            <BuyDialog trigger={<button type="button" className="text-accent underline-offset-2 hover:underline">Renew</button>} />
           </div>
         </div>
         {children}
@@ -94,7 +95,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
               <>Your {SKU_LABELS[ent.payload.sku] ?? ent.payload.sku} key expired {ent.payload.expires}. </>
             ) : null}
             Everything stays unlocked while you evaluate.{" "}
-            <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</a>
+            <BuyDialog trigger={<button type="button" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</button>} />
             {" "}·{" "}
             <Link href="/settings" className="text-accent underline-offset-2 hover:underline">Activate a key</Link>
           </span>
@@ -168,13 +169,13 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             WhatsApp chat to learn the price. */}
         <PricingTable compact />
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <Button asChild>
-            {/* Named for the plans actually on sale. This said "Get the
-                Trader's Toolkit" until 2026-08-12 — an app+indicators bundle
-                retired by the v2.99.76 reprice, so the funnel's primary CTA
-                was offering a product that no longer existed. */}
-            <a href={BUY_URL} target="_blank" rel="noreferrer">Get Vyuha Pro</a>
-          </Button>
+          {/* Named for the plans actually on sale. This said "Get the
+              Trader's Toolkit" until 2026-08-12 — an app+indicators bundle
+              retired by the v2.99.76 reprice, so the funnel's primary CTA
+              was offering a product that no longer existed. A dialog, not a
+              target="_blank" anchor, since 2026-08-15: the desktop webview
+              cannot open an external link (buy-dialog.tsx). */}
+          <BuyDialog trigger={<Button>Get Vyuha Pro</Button>} />
           <Button asChild variant="outline">
             <Link href="/pricing">Compare plans</Link>
           </Button>

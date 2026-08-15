@@ -9,8 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toaster";
 import { Copy, KeyRound, Sparkles } from "lucide-react";
 import { PricingTable } from "@/components/system/pricing-table";
+import { BuyDialog } from "@/components/system/buy-dialog";
 import type { LicenseStatus } from "@/lib/queries/license";
-import { SKU_LABELS, BUY_URL, type Entitlement } from "@/lib/license";
+import { SKU_LABELS, type Entitlement } from "@/lib/license";
 
 export function LicenseCard({ status, entitlement }: { status: LicenseStatus; entitlement?: Entitlement }) {
   const router = useRouter();
@@ -93,7 +94,7 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                 <span>
                   Every Pro screen is unlocked for {entitlement.trialDaysLeft} more day{entitlement.trialDaysLeft === 1 ? "" : "s"} while you
                   evaluate. Your journal itself is free forever — only advanced analytics need a key after the trial.{" "}
-                  <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</a>
+                  <BuyDialog trigger={<button type="button" className="text-accent underline-offset-2 hover:underline">Get Vyuha Pro</button>} />
                 </span>
               </p>
             )}
@@ -102,7 +103,7 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                 Your {SKU_LABELS[entitlement.payload.sku] ?? entitlement.payload.sku} key for{" "}
                 <span className="font-medium">{entitlement.payload.email}</span> expired on{" "}
                 {entitlement.payload.expires}. Renew to keep Pro screens after the grace trial.{" "}
-                <a href={BUY_URL} target="_blank" rel="noreferrer" className="text-accent underline-offset-2 hover:underline">Renew</a>
+                <BuyDialog trigger={<button type="button" className="text-accent underline-offset-2 hover:underline">Renew</button>} />
               </p>
             )}
             {/* What it costs, right where the key is pasted — the question the

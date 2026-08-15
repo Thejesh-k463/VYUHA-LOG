@@ -205,8 +205,30 @@ export const BUY_URL = WHATSAPP_NUMBER
  */
 export function buyUrlFor(skuId?: PricingSkuId): string {
   if (!WHATSAPP_NUMBER) return "https://github.com/Thejesh-k463/VYUHA-LOG/releases";
-  const text = skuId ? buyMessageFor(skuById(skuId)) : BUY_MESSAGE;
+  const text = buyMessageText(skuId);
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * The plain (un-encoded) pre-filled message behind buyUrlFor(skuId) — what
+ * the buy dialog shows and copies. Same string the link carries, so the buyer
+ * who types the number by hand sends the same quote as the one who taps.
+ */
+export function buyMessageText(skuId?: PricingSkuId): string {
+  return skuId ? buyMessageFor(skuById(skuId)) : BUY_MESSAGE;
+}
+
+/**
+ * WHATSAPP_NUMBER as a human reads it: "917393673714" → "+91 73936 73714".
+ * Indian numbers (91 + ten digits) split 5/5; anything else is just "+digits".
+ * Pure string work — the desktop webview cannot open wa.me, so the number
+ * has to be readable and copyable on screen.
+ */
+export function formatWhatsAppNumber(digits: string = WHATSAPP_NUMBER): string {
+  const d = digits.replace(/\D/g, "");
+  if (!d) return "";
+  if (d.length === 12 && d.startsWith("91")) return `+91 ${d.slice(2, 7)} ${d.slice(7)}`;
+  return `+${d}`;
 }
 
 /**

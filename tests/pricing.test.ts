@@ -13,7 +13,14 @@ import {
   buyMessageFor,
   upgradeCredit,
 } from "@/lib/domain/pricing";
-import { buyUrlFor, BUY_URL, LICENSE_ENFORCEMENT } from "@/lib/license";
+import {
+  buyUrlFor,
+  BUY_URL,
+  LICENSE_ENFORCEMENT,
+  WHATSAPP_NUMBER,
+  buyMessageText,
+  formatWhatsAppNumber,
+} from "@/lib/license";
 
 /**
  * The prices the app shows are a claim the seller has to honour. Two things
@@ -213,5 +220,77 @@ describe("launch configuration guard", () => {
       expect(PRICING.length).toBeGreaterThan(0);
       expect(priceLabel(featuredSku())).toMatch(/^₹/);
     }
+  });
+});
+
+describe("the buy step is a dialog, never a bare target=_blank anchor", () => {
+  /**
+   * In the Tauri desktop webview (WebView2, no opener/shell plugin) an
+   * external `target="_blank"` anchor does NOTHING — every "Get Vyuha Pro" /
+   * "Get {plan}" / "Renew" CTA was such an anchor, so a desktop buyer clicked
+   * Get and nothing happened. 2026-08-15: every CTA opens BuyDialog, which
+   * shows the number and the message to copy; the wa.me anchor survives only
+   * INSIDE the dialog as the browser-case shortcut. String-level guard.
+   */
+  const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+  const CTA_SURFACES = [
+    "components/system/pricing-table.tsx",
+    "components/system/pro-gate.tsx",
+    "components/settings/license-card.tsx",
+  ];
+  // A JSX anchor whose href is a buy link and which opens a new tab.
+  const BARE_BUY_ANCHOR = /<a\s[^>]*href=\{(?:BUY_URL|buyUrlFor\([^)]*\))\}[^>]*target="_blank"/;
+
+  it("no CTA surface renders a bare buy anchor; each renders BuyDialog", () => {
+    for (const rel of CTA_SURFACES) {
+      const src = read(rel);
+      expect(src, `${rel} still has a target=_blank buy anchor`).not.toMatch(BARE_BUY_ANCHOR);
+      expect(src, `${rel} does not render <BuyDialog`).toContain("<BuyDialog");
+    }
+  });
+
+  it("buy-dialog.tsx keeps exactly one wa.me anchor, inside the dialog, and is a client component", () => {
+    const src = read("components/system/buy-dialog.tsx");
+    expect(src.startsWith('"use client"')).toBe(true);
+    const anchors = src.match(/<a\s[^>]*target="_blank"/g) ?? [];
+    expect(anchors, "one secondary Open WhatsApp anchor").toHaveLength(1);
+    expect(src.indexOf("<DialogContent")).toBeLessThan(src.indexOf('target="_blank"'));
+    // No window.open() race before the dialog — in the webview it no-ops.
+    expect(src).not.toContain("window.open(");
+    // The number and the message are shown via the pure helpers, and the copy
+    // buttons plus the offline reassurance are present.
+    expect(src).toContain("formatWhatsAppNumber(");
+    expect(src).toContain("buyMessageText(");
+    expect(src).toContain("Copy number");
+    expect(src).toContain("Copy message");
+    expect(src).toContain("Vyuha is fully offline");
+  });
+
+  it("the number reads as +91 XXXXX XXXXX and carries exactly WHATSAPP_NUMBER's digits", () => {
+    expect(formatWhatsAppNumber("917393673714")).toBe("+91 73936 73714");
+    const shown = formatWhatsAppNumber();
+    expect(shown).toMatch(/^\+91 \d{5} \d{5}$/);
+    expect(shown.replace(/\D/g, "")).toBe(WHATSAPP_NUMBER);
+    // Non-Indian or oddly-sized numbers still render, just unformatted.
+    expect(formatWhatsAppNumber("4471234567")).toBe("+4471234567");
+    expect(formatWhatsAppNumber("")).toBe("");
+  });
+
+  it("the copyable message is byte-identical to what the wa.me link carries", () => {
+    for (const skuId of [undefined, "lifetime", "annual"] as const) {
+      const url = new URL(buyUrlFor(skuId));
+      expect(url.searchParams.get("text")).toBe(buyMessageText(skuId));
+    }
+    expect(buyMessageText("lifetime")).toContain("₹29,999");
+  });
+
+  it("the compact pills are buttons that open the plan's card, not inert spans", () => {
+    const src = read("components/system/pricing-table.tsx");
+    expect(src).toContain("Show plan details");
+    expect(src).toContain("<DialogTrigger asChild>");
+    // One card body for both the grid and the popup — they cannot drift.
+    expect(src.match(/<SkuCardBody /g) ?? []).toHaveLength(2);
+    // Server-renderable: pro-gate.tsx (a server component) imports it.
+    expect(src.startsWith('"use client"')).toBe(false);
   });
 });
