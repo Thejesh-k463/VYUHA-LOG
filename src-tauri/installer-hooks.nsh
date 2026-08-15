@@ -31,6 +31,53 @@
 ; with /NS) must not have one appear because they updated. Creating shortcuts
 ; nobody asked for is exactly the behaviour people uninstall software over.
 
+; ── Stopping the sidecar before install / uninstall (2026-08-15) ──────────
+;
+; Uninstall + reinstall of v2.99.96 failed with
+;   "Error opening file for writing: …\AppData\Local\Vyuha\server\node\node.exe"
+; The app is a Node sidecar (server\node\node.exe) spawned by vyuha.exe. Tauri's
+; generated installer only checks for and kills ${MAINBINARYNAME}.exe; it knows
+; nothing about the child. If vyuha.exe died without reaping it (crash, task
+; manager, an exit path that skipped the window-destroy handler) an orphaned
+; node.exe keeps running, and Windows will not let the installer overwrite or
+; delete an executable that is mapped into a live process.
+;
+; VYUHA_KILL_SIDECAR stops ONLY node.exe / vyuha.exe processes whose
+; ExecutablePath lies under $INSTDIR. It is deliberately NOT `taskkill /IM
+; node.exe`: the user may well have their own Node running (a dev server, an
+; Electron app that ships one, VS Code extensions), and an installer that kills
+; those would be doing far more damage than the bug it fixes.
+;
+; Quoting: $INSTDIR is handed to PowerShell through an environment variable
+; rather than spliced into the command line, so a path with spaces, quotes or
+; wildcard characters needs no escaping at all — the process's environment is
+; inherited by nsExec's child. `$$` is NSIS for a literal `$`, so `$$_` and
+; `$$d` reach PowerShell as `$_` and `$d`. StartsWith() rather than -like so
+; `[` in a path is not read as a wildcard. Verified 2026-08-15 with -WhatIf
+; against "C:\Program Files\nodejs" (matched) and a fake spaced dir (no match).
+;
+; The prefix ends with a backslash so "…\Vyuha" never matches "…\Vyuha2".
+; Errors are swallowed on purpose: a machine without PowerShell or without WMI
+; must still be able to install — the worst case is the original error.
+!macro VYUHA_KILL_SIDECAR
+  System::Call 'kernel32::SetEnvironmentVariable(t "VYUHA_INSTDIR", t "$INSTDIR")'
+  ; Backtick-delimited NSIS string so the ' and " inside need no NSIS escaping.
+  nsExec::ExecToLog `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d=$$env:VYUHA_INSTDIR.TrimEnd('\')+'\'; Get-CimInstance Win32_Process | Where-Object { ($$_.Name -eq 'node.exe' -or $$_.Name -eq '${MAINBINARYNAME}.exe') -and $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith($$d,[StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $0
+  ; Give the kernel a moment to release the image mapping before we write.
+  Sleep 500
+!macroend
+
+; Both hooks run BEFORE the template's own CheckIfAppIsRunning, so by the time
+; Tauri looks for vyuha.exe there is nothing left holding node.exe either.
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro VYUHA_KILL_SIDECAR
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro VYUHA_KILL_SIDECAR
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ${If} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
     ; Delete before recreating. Overwriting the .lnk in place leaves Explorer

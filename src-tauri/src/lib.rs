@@ -148,6 +148,13 @@ fn check_for_updates(handle: tauri::AppHandle) {
             return;
         }
 
+        // Stop the sidecar BEFORE the installer runs. The NSIS installer must
+        // overwrite server\node\node.exe, and Windows refuses to write an image
+        // that is mapped into a live process; the generated installer kills
+        // vyuha.exe but knows nothing about its node child. An orphaned node.exe
+        // is exactly what produced "Error opening file for writing: …\node.exe"
+        // on a reinstall (2026-08-15). The window is going away anyway.
+        stop_sidecar(&handle);
         match update.download_and_install(|_, _| {}, || {}).await {
             // On Windows the installer takes over and the app exits by itself;
             // restart() is the cross-platform fallback for other targets.
@@ -177,6 +184,37 @@ fn open_sidecar_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
         .create(true)
         .open(logs.join("sidecar.log"))
         .ok()
+}
+
+/// Kill the Node sidecar and REAP it. Idempotent: the first caller takes the
+/// child out of the mutex, later callers find None and return.
+///
+/// `wait()` after `kill()` matters: without it the process object may still
+/// be closing when the caller proceeds — the updater launching the installer,
+/// or the shell exiting — and node.exe's image stays mapped for a beat, which
+/// is enough for NSIS to fail to open the file for writing. Killing without
+/// waiting also leaves a zombie handle on Windows until the parent exits.
+///
+/// Called from three places, because a sidecar left running after vyuha.exe
+/// is gone is what caused the reinstall lock error of 2026-08-15:
+///   * WindowEvent::Destroyed — the normal close path,
+///   * RunEvent::ExitRequested / RunEvent::Exit — every other way the app
+///     leaves the run loop (app.exit(), OS shutdown, an exit with no window),
+///   * before update.download_and_install — so the installer can overwrite
+///     node.exe (handle.restart() bypasses the run loop entirely).
+fn stop_sidecar(handle: &tauri::AppHandle) {
+    let Some(state) = handle.try_state::<ServerProcess>() else {
+        return;
+    };
+    let child = match state.0.lock() {
+        Ok(mut guard) => guard.take(),
+        // A poisoned lock still holds the child; take it anyway.
+        Err(poisoned) => poisoned.into_inner().take(),
+    };
+    if let Some(mut child) = child {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -274,13 +312,23 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Stop the Node sidecar when the window is closed.
             if matches!(event, WindowEvent::Destroyed) {
-                if let Some(state) = window.app_handle().try_state::<ServerProcess>() {
-                    if let Some(mut child) = state.0.lock().unwrap().take() {
-                        let _ = child.kill();
-                    }
-                }
+                stop_sidecar(window.app_handle());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Vyuha");
+        .build(tauri::generate_context!())
+        .expect("error while building Vyuha")
+        .run(|handle, event| {
+            // The window-destroy handler above is not the only way out of the
+            // run loop: app.exit(), a Windows shutdown/logoff, or an exit while
+            // no window exists all bypass it and used to leave node.exe running
+            // as an orphan — which then held the file lock that broke the next
+            // reinstall (2026-08-15). Catch both exit events; stop_sidecar is
+            // idempotent, so double-calling is free.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                stop_sidecar(handle);
+            }
+        });
 }
