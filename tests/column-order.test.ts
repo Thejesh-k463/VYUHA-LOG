@@ -78,6 +78,30 @@ describe("applyColumnOrder — the pinned prefix is unreachable", () => {
     expect(out).toHaveLength(COLS.length);
   });
 
+  it("a saved order from before Buy/Sell became Qty/Invested/Entry/Exit still applies", () => {
+    // The real Trades shape after the v2.99.96 column change, against an
+    // order persisted by an earlier build that still names buyValue/sellValue.
+    const cols: ColumnLike[] = [
+      { id: "select" }, { accessorKey: "symbol" },
+      { accessorKey: "broker" }, { accessorKey: "segment" }, { accessorKey: "exchange" },
+      { id: "qty" }, { id: "invested" }, { id: "entryPrice" }, { id: "exitPrice" },
+      { accessorKey: "netPnl" }, { id: "actions" },
+    ];
+    const legacy = ["netPnl", "broker", "segment", "exchange", "buyValue", "sellValue", "actions"];
+    const out = keys(applyColumnOrder(cols, legacy, PINNED));
+    expect(out.slice(0, 2)).toEqual(["select", "symbol"]);
+    expect(out).not.toContain("buyValue");
+    expect(out).not.toContain("sellValue");
+    for (const k of ["qty", "invested", "entryPrice", "exitPrice"]) expect(out).toContain(k);
+    // The new columns keep their default relative order and sit right after
+    // their default neighbour (exchange), not at the end and not nowhere.
+    expect(out.slice(out.indexOf("exchange") + 1, out.indexOf("exchange") + 5))
+      .toEqual(["qty", "invested", "entryPrice", "exitPrice"]);
+    // The user's own move (Net to the front) survives.
+    expect(out[2]).toBe("netPnl");
+    expect(new Set(out).size).toBe(cols.length);
+  });
+
   it("null / empty / garbage give the default order", () => {
     for (const s of [null, undefined, []]) {
       expect(keys(applyColumnOrder(COLS, s, PINNED))).toEqual(keys(COLS));

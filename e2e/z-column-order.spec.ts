@@ -91,6 +91,10 @@ test("trades: a column drags to a new position, persists, and resets", async ({ 
   const before = await headers(page);
   expect(before).toContain("SEGMENT");
   expect(before).toContain("BROKER");
+  // The v2.99.96 column set: Buy/Sell value totals gave way to these four.
+  for (const h of ["QTY", "INVESTED", "ENTRY", "EXIT"]) expect(before, `header ${h}`).toContain(h);
+  expect(before).not.toContain("BUY");
+  expect(before).not.toContain("SELL");
   expect(before.indexOf("SEGMENT")).toBeGreaterThan(before.indexOf("BROKER"));
 
   const midDrag = await dragColumn(page, "Segment", "Broker");

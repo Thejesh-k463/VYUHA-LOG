@@ -37,6 +37,7 @@ import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade";
 import { JournalDialog, type PlaybookOption } from "@/components/behavior/journal-dialog";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
+import { entryExitPrices, investedSummary, tradeQty } from "@/lib/domain/trade-columns";
 import {
   TRADE_VIEWS, matchesView, countViews, countForView, type TradeView,
 } from "@/lib/analytics/trade-status";
@@ -331,8 +332,39 @@ export function TradesClient({
     { accessorKey: "broker", header: "Broker", cell: ({ getValue }) => <Badge variant="secondary">{BROKER_LABELS[getValue() as never] ?? String(getValue())}</Badge> },
     { accessorKey: "segment", header: "Segment", cell: ({ getValue }) => <span className="text-muted-foreground">{SEGMENT_LABELS[getValue() as Segment]}</span> },
     { accessorKey: "exchange", header: "Exch" },
-    { accessorKey: "buyValue", header: "Buy", meta: { align: "right" }, cell: ({ getValue }) => num(getValue() as number, 0) },
-    { accessorKey: "sellValue", header: "Sell", meta: { align: "right" }, cell: ({ getValue }) => num(getValue() as number, 0) },
+    // Qty / Invested / Entry / Exit replaced the raw Buy / Sell value totals:
+    // a trader reads a row as "how many, at what, for how much" — the maths
+    // lives in lib/domain/trade-columns.ts. Missing sides come back as
+    // `undefined` (not 0, not null) so `sortUndefined: "last"` keeps open rows
+    // at the bottom of an Exit sort and the cell renders "—".
+    { id: "qty", header: "Qty", meta: { align: "right" }, accessorFn: (t) => tradeQty(t), cell: ({ getValue }) => num(getValue() as number, 0) },
+    {
+      id: "invested", header: "Invested", meta: { align: "right" },
+      accessorFn: (t) => investedSummary(t).amount,
+      cell: ({ row }) => {
+        const s = investedSummary(row.original);
+        return (
+          <div title={s.hint ?? undefined}>
+            <div>{num(s.amount, 0)}</div>
+            {s.mtf && s.hint && (
+              <div className="text-[10px] text-muted-foreground">
+                {s.ownPct == null ? "MTF · unresolved" : `MTF · ${s.ownPct}% own`}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: "entryPrice", header: "Entry", meta: { align: "right" }, sortUndefined: "last",
+      accessorFn: (t) => entryExitPrices(t).entry ?? undefined,
+      cell: ({ getValue }) => { const v = getValue() as number | undefined; return v == null ? <span className="text-muted-foreground/50">—</span> : num(v, 2); },
+    },
+    {
+      id: "exitPrice", header: "Exit", meta: { align: "right" }, sortUndefined: "last",
+      accessorFn: (t) => entryExitPrices(t).exit ?? undefined,
+      cell: ({ getValue }) => { const v = getValue() as number | undefined; return v == null ? <span className="text-muted-foreground/50">—</span> : num(v, 2); },
+    },
     { accessorKey: "grossPnl", header: "Gross", meta: { align: "right" }, cell: ({ getValue }) => <span className={pnlClass(getValue() as number)}>{num(getValue() as number, 0)}</span> },
     { accessorKey: "chargesTotal", header: "Charges", meta: { align: "right" }, cell: ({ getValue }) => <span className="text-muted-foreground">{num(getValue() as number, 0)}</span> },
     { accessorKey: "mtfInterest", header: "MTF int.", meta: { align: "right" }, cell: ({ getValue }) => { const v = getValue() as number; return v > 0 ? <span className="text-warning">{num(v, 0)}</span> : <span className="text-muted-foreground/50">—</span>; } },
