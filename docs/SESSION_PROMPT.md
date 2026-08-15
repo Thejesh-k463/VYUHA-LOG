@@ -31,7 +31,9 @@ TASK: <what you want done>
 - Run `npm run verify` before saying anything is done, and report the numbers
   you actually saw.
 - Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag;
-  the PDF parser returning trades: [] is by design.
+  the PDF parser returning trades: [] is by design; the `revocations` prerelease
+  exists (do not create it); annual→lifetime is full credit within the year;
+  delivery is manual mail/WhatsApp for now; intraday data is not required.
 ```
 
 ---
@@ -65,7 +67,9 @@ How I want you to work:
 8. If this touches a release, follow the release skill start to finish, and update
    the client package — that is a standing rule for every release.
 9. Already settled, do not re-open: Pro annual is ₹9,999; keep the v2.99.0 tag; the
-   PDF parser returning trades: [] is by design.
+   PDF parser returning trades: [] is by design; the `revocations` prerelease exists
+   (do not create it); annual→lifetime is full credit within the year; delivery is
+   manual mail/WhatsApp for now; intraday data is not required.
 10. When the task is done, update VYUHA-STATE.md with verified numbers and tell me
     it's a good point to /clear.
 ```

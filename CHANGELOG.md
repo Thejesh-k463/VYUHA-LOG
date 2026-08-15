@@ -1,5 +1,53 @@
 # Changelog
 
+## v2.99.96 — the table says what you paid, eight skins that differ, and the terminal that goes away
+
+A batch of things the owner asked for after using the app: columns that answer
+the question a trader actually has, skins that are distinct instead of
+permutations, and a desktop shell that stops leaking a console window. Under it,
+seven load tests found five real defects and fixed them.
+
+- **Trades table: Qty, Invested, Entry price, Exit price.** The Buy/Sell rupee
+  values are gone; in their place the quantity, what you put in, and the two
+  prices. Every import path — six broker parsers, the column mapper and the three
+  API pulls — already produced weighted-average prices, so the columns are
+  universal. An open trade shows "—" for its exit, never ₹0. On MTF rows Invested
+  is *your* contribution with the broker-funded amount alongside; when the
+  funding is not yet resolved it says so rather than inventing a percentage.
+- **Options Seller Journal opens up.** The four seller KPIs and the outcome mix
+  now open the same breakdown dialog the Dashboard uses — per-underlying counts,
+  realised vs open, best and worst contract, capture arithmetic in one sentence —
+  each row a deep link into the trades it counts. An outcome-mix bar and section
+  headers give the screen a shape.
+- **Eight skins that are actually different.** Ice shared Sapphire's analytics
+  colour and Royal's primary was Luxe's analytics colour; both are retired (a
+  saved choice becomes Sapphire) and Lime, Rose and Ember join. Coloured skins now
+  tint card, border and background subtly instead of only the accents, and a
+  test asserts no two skins share a primary hex. Light-theme primaries measure
+  5.16–5.58:1.
+- **No more background terminal.** The desktop app spawned its Node server with
+  inherited stdio from a GUI-subsystem shell, so Windows allocated it a console.
+  It now runs hidden and logs to `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log`.
+- **Load tests, second batch (B1, B2, B5, B6, B7, C2, C7).** Lens grouping on a
+  40k book was going quadratic (14.3× per 4× — now 5.2×); the licence check wrote
+  a mark to SQLite on essentially every Pro screen (200 writes per 200 reads — now
+  0 unless a day has passed); the backup page materialised 125,195 rows to count
+  29 tables (now 29 rows, 421 ms → 1 ms); an encrypted restore derived its scrypt
+  key twice (now once); import detection decoded a workbook 15 times (now 8, with
+  ≤2 pinned as a follow-up); a generic import left `sourceRows` unset. Two
+  predictions were wrong — the skipped-row warning already existed, and 250k
+  trades of float P&L do not drift — and both are recorded as such.
+- **Licensing operations.** `license-upgrade.mjs` implements the promised
+  annual→lifetime upgrade as full credit within the year (dry-run first,
+  `--confirm` needs a UTR, the old key is revoked); `license-issue.mjs --save-dir`
+  archives every key and a ledger snapshot; `license-backup.mjs` bundles the
+  private key and ledger into an AES-256-GCM file. Legacy SKU labels no longer
+  advertise indicators; the landing page's indicator FAQ is gone.
+- **Paperwork that says the right version.** TERMS and PRIVACY apply-to lines are
+  guarded by a test against `package.json`; a second test keeps indicator copy off
+  buyer surfaces. New owner guides: refund/terms sign-off, winget + SmartScreen
+  submission, and a per-release doc audit list.
+
 ## v2.99.95 — launch pricing that survives division, and a comparison that hides nothing
 
 The price became the pitch. Everything in this release is commercial surface,

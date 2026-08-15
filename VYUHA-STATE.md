@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything below was verified against the repo on 2026-08-14, not recalled.
+Everything below was verified against the repo on 2026-08-15 (v2.99.96 session), not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -26,19 +26,29 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-14
+## 2. Current state — verified 2026-08-15
 
 | | |
 |---|---|
-| Version | **v2.99.95** — committed `3861ca6`, tagged, pushed 2026-08-15 |
-| Branch | `main`, working tree clean apart from this file |
-| Latest | `3861ca6` — launch pricing, comparison tables, v3 mark on sales surfaces, macOS selling removed |
-| Unit tests | **1,627 passing / 116 files** (full `npm run verify` EXIT:0 incl. build, 2026-08-15) |
-| CI | **green on `3861ca6` incl. the Windows job, BEFORE tagging**; Release workflow triggered by the tag |
-| Installer | `Vyuha_2.99.95_x64-setup.exe` + MSI, both `.sig` key ids decoded to **`4FF85F3BBE1DA21D`** (live key) |
-| Client ZIP | `release-packages/Vyuha_2.99.95_Client_Package.zip` (33.9M), installer SHA-256 `9DBECFF9…E91123` |
-| e2e | **41/41 passed (2.3m), 2026-08-15, on the v2.99.95 tree** — exit 0, full suite |
-| Not done | §7 install-on-non-build-machine (owner's hands); winget + MS submission (need a public release) |
+| Version | **v2.99.96** — see §2.1 for the release evidence line (filled at the end of the release) |
+| Branch | `main` |
+| Previous | **v2.99.95 is PUBLISHED** (`gh api …/releases/latest` → `v2.99.95`, 2026-08-15T05:51Z) — the "unpublished draft" note in older copies of this file is stale |
+| Unit tests | **1,679 passing / 119 files** after wave 1 (`npm run verify` EXIT:0 incl. build, 2026-08-15); +13 doc-guard tests added after that count |
+| e2e | **41/41 passed (2.1m), 2026-08-15, on the wave-1 tree** (Trades columns + skins changed) — exit 0 |
+| Load tests | **13 of 13 built** (A1–A6 + B1, B2, B5, B6, B7, C2, C7); B7's ≤2-decode target pinned as `it.fails` follow-up |
+| Not done | §7 install-on-non-build-machine (owner's hands); winget + MS submission — guide now in `docs/owner/WINGET_AND_SMARTSCREEN.md` |
+
+**v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
+Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing
+Buy/Sell values (`lib/domain/trade-columns.ts`, 15 tests); Options Seller Journal KPI drill-downs
+via `KpiCard detail` + outcome-mix recharts bar; **8 skins** (`luxe, mono, tape, sapphire,
+aurora, lime, rose, ember` — ice/royal retired → sapphire via `asSkin`; surface tints;
+hex-distinctness test); sidecar console hidden (`CREATE_NO_WINDOW`, log at
+`<data_dir>/logs/sidecar.log`); load-test batch 2 with five fixes (numbers in DECISIONS.md
+2026-08-15); `scripts/license-upgrade.mjs` (annual→lifetime full credit), `license-issue.mjs
+--save-dir`, `license-backup.mjs` (AES-256-GCM); SKU labels + landing FAQ no longer mention
+indicators; TERMS/PRIVACY apply-to guarded by `tests/client-docs-version.test.ts`;
+`docs/owner/{REFUND_TERMS_SIGNOFF,WINGET_AND_SMARTSCREEN,DOC_AUDIT}.md`.
 
 **v2.99.95 content (all verified 2026-08-15):** launch-offer anchors ₹13,000/yr and ₹35,999 are
 COMMITTED 2027-01-01 list prices (end date deliberately not in-app; DECISIONS.md 2026-08-15 ×2,
@@ -286,21 +296,26 @@ The owner's chosen priority at the last session's close was **"make it sellable 
 further engineering. The reframing finding: **131 commits and 53 tags in six days produced 2
 licence keys, zero of them annual.** The featured SKU has never been sold end to end.
 
-- **v2.99.94 is built, tagged, pushed, CI-green on all three platforms and signed — but sits as
-  an UNPUBLISHED DRAFT with 9 assets.** That is deliberate: publishing is the owner's
-  per-release decision, never automatic.
+- ✅ **v2.99.95 is PUBLISHED and is `releases/latest`** (verified 2026-08-15). Publishing stays
+  the owner's per-release decision. Older drafts still unpublished: v2.99.75/.55/.50/.40/.30.
+- ✅ **The `revocations` prerelease EXISTS** (created 2026-08-12, `prerelease: true`, one
+  asset `revocations.json`) — verified 2026-08-15; do not create it again.
+- **Owner answers 2026-08-15:** delivery link = mail/WhatsApp, owner sends the package after
+  verifying payment; payment = owner shares details, buyer pays via any medium; both to be
+  automated later. Two purchases (1 Pro, 1 Lifetime) expected within days.
 - **Pricing — RESOLVED 2026-08-14: ₹9,999 is correct.** The repo already ships it
   (`lib/domain/pricing.ts:72`, *verified*), recorded as an "Owner reprice" at v2.99.76. An
   earlier session captured "₹7,999" from conversation; the owner has confirmed that figure is
   superseded. **No code change needed — do not "correct" the price back down.**
-- **Delivery mechanism undecided** — GitHub release vs Drive vs WeTransfer.
-  `docs/owner/CLIENT_DELIVERY.md` has **zero references repo-wide**.
-- **`REFUND_POLICY.md` and `TERMS.md` ship inside the client ZIP carrying an owner-confirm
-  banner that has not been read.** A buyer would receive them as drafted. The 7-day refund
-  window was drafted conservatively and awaits sign-off.
-- **Annual→Lifetime upgrade is advertised** (`lib/domain/pricing.ts:80`,
-  `docs/sales/landing-page.html:329`) with **no proration, procedure or tooling**. Flagged as
-  "build the procedure or remove the promise" — neither happened.
+- **`REFUND_POLICY.md` and `TERMS.md` still ship inside the client ZIP carrying the ⚠️ OWNER
+  banner.** The sign-off walkthrough is now `docs/owner/REFUND_TERMS_SIGNOFF.md` — the owner
+  works through it, deletes the two banners, rebuilds the ZIP.
+- ✅ **Annual→Lifetime upgrade — BUILT 2026-08-15** as full credit within the year:
+  `scripts/license-upgrade.mjs` + `LICENSE_OPERATIONS.md` §1.5; copy aligned across
+  `pricing.ts`, landing page and brochure (pinned by `tests/pricing.test.ts`).
+- **No key backup taken yet** (owner, 2026-08-15 — testing with friends/colleagues). Tooling
+  now exists: `license-issue.mjs --save-dir` / `VYUHA_KEY_ARCHIVE_DIR` and
+  `license-backup.mjs` — run the backup before the first real sale.
 
 **Recommended first move:** sell one annual licence end to end — payment, receipt, mint,
 deliver, activate.
@@ -310,9 +325,9 @@ deliver, activate.
 - `npm run winget:manifest` → `wingetcreate` submit PR to `microsoft/winget-pkgs`.
 - Microsoft false-positive file submission.
 
-Both need the release public first. This matters more than it looks: **SmartScreen reputation
+The release IS public now (v2.99.95). This matters more than it looks: **SmartScreen reputation
 accrues per FILE HASH**, so a 53-tag cadence guarantees every buyer meets a cold warning.
-winget is the intended fix.
+winget is the intended fix. Step-by-step: `docs/owner/WINGET_AND_SMARTSCREEN.md` (2026-08-15).
 
 - **macOS notarisation not purchased** (Apple Developer ID ~₹8,300/yr). Mac users still hit
   "developer cannot be verified"; `notarytool` wiring waits on it.
@@ -325,13 +340,20 @@ the 6 parsers + column mapper + 3 API pulls (PDF no longer sold as an import pat
 carries Lenses/Expiry/RoM/Scaling/selected-trades PDF, and macOS install + SmartScreen notes
 added. The pre-existing stray `</div>` was REMOVED on 2026-08-15 (v2.99.95), verified by a
 div tag-balance check (no negatives, final depth 0). The remaining staleness items from the
-17-item list (recorded 2026-08-13) have not been re-audited.
+17-item list (recorded 2026-08-13) were never written down and are unrecoverable; on 2026-08-15
+TERMS/PRIVACY apply-to lines, deck chips, client README, INSTALLATION_GUIDE were brought to
+v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guarded by
+`tests/client-docs-version.test.ts` and `tests/no-indicators-in-client-docs.test.ts`.
 
 ### 8.4 Engineering backlog
 
-- **Load testing is 6 of 13.** A1–A6 built; **B1, B2, B5–B7, C2, C7** remain designed-but-unbuilt
-  in `tests/load/README.md`, each naming the code it suspects.
+- ✅ **Load testing is 13 of 13** (2026-08-15). Five defects fixed (B1, B2, B5, B6, C2-adjacent),
+  B7 half-fixed (15→8 decodes; ≤2 needs parsers to share a parsed workbook — `it.fails` pin),
+  C7 no defect. Numbers in `tests/load/README.md` and DECISIONS.md 2026-08-15.
 - **PDF parser is dead but registered** — see §7 *(verified)*.
+- **Broker files + API keys (Paytm, Zerodha, Upstox)** — owner will supply in 1–2 days
+  (2026-08-15); then reconcile Paytm against a contract note (§7) and wire the API-pull client
+  details. **Intraday data integration is NOT required** (owner, 2026-08-15).
 - **Zerodha F&O symbol grammar** — blocked on 3–5 real tradingsymbol rows the owner said he
   would supply; never delivered. The private tradebook on disk appears equity-only.
 - **Intraday bar import** — named repeatedly as *the* analytical ceiling: MAE/MFE, trade replay
@@ -345,22 +367,25 @@ div tag-balance check (no negatives, final depth 0). The remaining staleness ite
   An earlier session asked whether to delete it — the answer is no. `v2.97.0` was
   **deliberately never released**, so tags jump v2.96.0 → v2.98.0 *(verified)*.
 - One commit on `main` **bypassed branch protection** (2 of 2 required checks skipped).
-- A dead/unhydrated preview pane at the last session's end was disproven by real-browser e2e and
-  **never root-caused**.
+- ✅ **"Dead preview pane" — CLOSED 2026-08-15.** It was the dev-tool browser pane on a `/trades`
+  dev build, unhydrated seconds after load; root cause and guard are DECISIONS.md 2026-08-10
+  ("networkidle is not hydration") + `e2e/helpers.ts gotoHydrated`. No app defect.
 - Option-seller depth round 3 — scoped, never started.
 - B1 share-card funnel and B2 referral codes wired into the licence scripts — planned as the
   "highest-leverage builds", never built.
-- Retake the Settings skin-picker screenshot (seven swatches is a new listing surface).
-- e2e suite not run in this pass; run `npm run test:e2e` before the next release.
+- Retake the Settings skin-picker screenshot (**eight** swatches now; `docs/screenshots/skin-royal.png`
+  shows a retired skin — replace with lime/rose/ember).
+- Intraday data: NOT required (owner 2026-08-15) — drop from the ceiling list until reopened.
 
 ### 8.5 Open questions the owner never answered
 
-Which delivery link · refund-policy and terms sign-off · whether to collapse "theme" and
-"accent skin" into one list (7 skins × light/dark keeps multiplying axes) · whether to publish
-v2.99.94.
+Refund-policy and terms sign-off (guide exists, decision pending) · whether to collapse "theme"
+and "accent skin" into one list (8 skins × light/dark keeps multiplying axes) · whether to
+publish v2.99.96 once built.
 
-*(Three items left this list on 2026-08-14: Pro annual pricing — ₹9,999 confirmed, §8.1; the
-`v2.99.0` tag — keep it, §8.4; the PDF parser — working as designed, §7.)*
+*(Left this list 2026-08-14: Pro annual pricing — ₹9,999; the `v2.99.0` tag — keep; the PDF
+parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
+revocations prerelease exists; annual→lifetime — full credit within the year; intraday — not needed.)*
 
 ### 8.6 Explicit non-goals — do not propose these
 
