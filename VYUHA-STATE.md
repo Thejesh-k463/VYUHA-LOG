@@ -30,13 +30,21 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.96** — committed `9290717`, tagged `v2.99.96`, pushed 2026-08-15 |
-| Branch | `main`, clean apart from this file |
-| CI | **green on `9290717` — all 5 jobs incl. "Windows install + tests" — BEFORE tagging** (run 31874680057) |
-| Installer | `Vyuha_2.99.96_x64-setup.exe` + MSI; both `.sig` key ids decode to **`4FF85F3BBE1DA21D`** = `tauri.conf.json` pubkey; `BUILD_ID` 2026-08-15T13:55; bundle carries `skin-rose` + "funding not yet resolved" markers |
-| Client ZIP | `release-packages/Vyuha_2.99.96_Client_Package.zip`, installer SHA-256 `801613AC…28D4F5` |
-| GitHub release | Release workflow run 31874857023 **success**; `v2.99.96` sits as a **DRAFT with 9 assets** (owner publishes); `release:verify v2.99.96` → all 3 `.sig` = `4FF85F3BBE1DA21D`; `releases/latest` still `v2.99.95` |
-| Release tests | **1,692 / 121 files** on the release tree; e2e 41/41 on the wave-1 tree |
+| Version | **v2.99.97** — bump committed after `5b58ba6`, tag pushed once CI is green (see §2.1 evidence, filled at release end) |
+| Branch | `main` |
+| Unit tests | **1,743 passed / 0 failed** on the v2.99.97 tree (`npm run verify` EXIT 0 incl. build, 2026-08-15) |
+| e2e | 43 passed + `z-appearance.spec.ts` 4/4 after an assertion fix (React serialises inline style without a space) — **44/44 effective**, 2026-08-15 |
+| Installer | `Vyuha_2.99.97_x64-setup.exe` + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 18:15; bundle carries `appearance-tick`; generated `installer.nsi` inserts `NSIS_HOOK_PREINSTALL`/`PREUNINSTALL` |
+| Previous | v2.99.96 built, CI-green, tagged; its GitHub release is a **DRAFT with 9 assets** (owner publishes) — `releases/latest` was still `v2.99.95` |
+
+**v2.99.97 content (all verified 2026-08-15):** installer node.exe lock fixed (`stop_sidecar()` on
+Destroyed / ExitRequested / Exit / before update; NSIS pre-install/pre-uninstall hooks stop only
+processes under `$INSTDIR`); every buy CTA opens `components/system/buy-dialog.tsx` (WhatsApp
++91 73936 73714, copy buttons) because the webview blocks external `_blank`; Settings → License
+pills open the plan card; **Appearance**: `lib/domain/appearance.ts` → inline literal tokens on
+`<html>` (`app/layout.tsx`), tint intensity 0–100, panel style flat/soft/luxe/glow, 9th skin
+`custom` (7 fields × dark/light, WCAG badges), wallpaper upload (`app/api/appearance/wallpaper`,
+`<data>/wallpaper/`, outside backups) with scrim slider; migration **0048**.
 | Previous | **v2.99.95 is PUBLISHED** (`gh api …/releases/latest` → `v2.99.95`, 2026-08-15T05:51Z) — the "unpublished draft" note in older copies of this file is stale |
 | Unit tests | **1,679 passing / 119 files** after wave 1 (`npm run verify` EXIT:0 incl. build, 2026-08-15); +13 doc-guard tests added after that count |
 | e2e | **41/41 passed (2.1m), 2026-08-15, on the wave-1 tree** (Trades columns + skins changed) — exit 0 |
