@@ -6,7 +6,7 @@
 // SQLite database lives in the OS app-data dir (seeded from the bundled template on first
 // run by `desktop-server.mjs`).
 use std::net::TcpStream;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Manager, WindowEvent};
@@ -166,6 +166,19 @@ fn check_for_updates(handle: tauri::AppHandle) {
     });
 }
 
+/// Open `<data_dir>/logs/sidecar.log` in append mode (creating the directory and file
+/// as needed). Returns None on any failure so the caller can fall back to a null stdio
+/// instead of refusing to start the server over a log file.
+fn open_sidecar_log(data_dir: &std::path::Path) -> Option<std::fs::File> {
+    let logs = data_dir.join("logs");
+    std::fs::create_dir_all(&logs).ok()?;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(logs.join("sidecar.log"))
+        .ok()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -189,12 +202,37 @@ pub fn run() {
             } else {
                 std::path::PathBuf::from("node")
             };
-            let child = Command::new(&node_cmd)
-                .arg(&entry)
+            let mut cmd = Command::new(&node_cmd);
+            cmd.arg(&entry)
                 .current_dir(&server_dir)
                 .env("VYUHA_DATA_DIR", &data_dir)
                 .env("PORT", PORT.to_string())
-                .env("HOSTNAME", "127.0.0.1")
+                .env("HOSTNAME", "127.0.0.1");
+            // The sidecar's stdout/stderr go to <data_dir>/logs/sidecar.log rather than
+            // being inherited: on Windows this shell is a GUI-subsystem exe with no console,
+            // and node.exe is a console-subsystem exe, so an inherited-stdio spawn makes
+            // Windows allocate a brand-new console — the stray terminal window that sat in
+            // the taskbar next to the Vyuha icon. CREATE_NO_WINDOW (below) suppresses that
+            // console, which also detaches the child's stdio, so the `[vyuha]` server logs
+            // would otherwise vanish; the file keeps them readable. Nothing reads the child's
+            // stdout for readiness — the TCP poll below does that — so redirecting is safe.
+            // Done on every platform (harmless off Windows, and one place to look for logs).
+            // A log that cannot be opened must never stop the journal from starting.
+            let (out, err) = match open_sidecar_log(&data_dir) {
+                Some(f) => match f.try_clone() {
+                    Ok(f2) => (Stdio::from(f), Stdio::from(f2)),
+                    Err(_) => (Stdio::from(f), Stdio::null()),
+                },
+                None => (Stdio::null(), Stdio::null()),
+            };
+            cmd.stdin(Stdio::null()).stdout(out).stderr(err);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                // CREATE_NO_WINDOW: the child gets no console window of its own.
+                cmd.creation_flags(0x0800_0000);
+            }
+            let child = cmd
                 .spawn()
                 .map_err(|e| {
                     format!(
