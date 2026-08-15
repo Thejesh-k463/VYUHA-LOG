@@ -90,6 +90,16 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > month, broker, trade type, import file, setup, outcome — with per-group performance, and the
 > app finally answers "how much?" in-app: real prices on the upsell panel and a pricing page.
 
+> **v2.99.97 — Appearance becomes a set of dials.** A **tint intensity** slider (0–100, Subtle /
+> Balanced / Vivid) decides how much of the skin's hue the canvas, sidebar, cards and borders
+> wear — tuned so every skin holds ≥9:1 (dark) / ≥7:1 (light) body-text contrast even at 100.
+> A **panel style** (Flat / Soft / Luxe / Glow), a **wallpaper** (PNG/JPEG/WebP ≤12 MB, kept out
+> of backups, scrimmed per theme, never printed) and a ninth skin, **Custom** — seven colours ×
+> dark/light with a readability badge on each, seeded from any built-in skin. The tokens are
+> computed by a pure engine and injected inline on `<html>`, so there is no flash and charts
+> stay literal-colour. Also: the buy buttons open a copyable WhatsApp dialog inside the desktop
+> shell, and reinstalling over a running copy no longer errors on `node.exe`.
+>
 > **v2.99.96 — eight skins that tint the whole screen.** Ice and Royal are retired (they shared
 > hexes with Sapphire and Luxe/Aurora and were telling only by their buttons; a stored choice
 > maps to Sapphire). In their place **Lime**, **Rose** and **Ember** — and every coloured skin

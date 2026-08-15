@@ -1,5 +1,54 @@
 # Changelog
 
+## v2.99.97 — skins you can feel, a theme you can build, and a buy button that answers
+
+Appearance grows from "pick a skin" into a set of dials, the buy buttons stop
+being dead in the desktop shell, and the installer stops tripping over the
+app's own server.
+
+- **Tint intensity.** A 0–100 slider (default 50; presets Subtle 25 / Balanced
+  50 / Vivid 75; −/+ step 10) tints canvas, sidebar surface, card, card-top,
+  card-hover, border, rule and header band toward the skin hue. The engine is
+  the pure module `lib/domain/appearance.ts`; `app/layout.tsx` injects the
+  resulting literal tokens inline on `<html>` so there is no first-paint flash
+  and no class-specificity fight, and charts re-theme through an
+  `appearance-tick` class toggle because lightweight-charts observes classes,
+  not inline properties. The spec curves for card-top / card-hover / surface
+  (0.20 / 0.22 / 0.14) were cut to 0.13 / 0.11 / 0.11 after Lime and Luxe
+  measured 8.5:1 and 11.9:1 at intensity 100; every skin now holds dark
+  canvas/card/surface ≥12:1, card-top/hover ≥9:1, and light ≥7:1 body-text
+  contrast at 100.
+- **Panel style.** Flat / Soft / Luxe (default) / Glow as `html.panel-*`
+  classes, overrides in `@layer utilities` at (0,2,1) specificity. Terminal +
+  Glow degrades to a flat shadow by design.
+- **Custom theme.** A ninth skin, `custom`: seven fields × dark/light (accent,
+  analytics, money, sidebar, cards, borders, canvas), derived shades computed in
+  code, a per-row WCAG badge that warns and never blocks, "Start from <skin>"
+  seeding from the computed tokens; saved only with the form and only while
+  Custom is selected. Stored `ice` / `royal` still map to `sapphire`.
+- **Wallpaper.** PNG/JPEG/WebP ≤12 MB, magic-byte sniffed, stored in
+  `<data>/wallpaper/` outside backups (the Backup screen says so), drawn as a
+  fixed cover behind `<main>` under a theme-aware scrim
+  `rgb(ch / var(--wallpaper-scrim))` (not `color-mix()`), with an opacity slider;
+  removed in print. Migration 0048 adds `tint_intensity`, `panel_style`,
+  `custom_theme`, `wallpaper_stored_name`, `wallpaper_opacity`.
+- **Buy CTAs that work in the shell.** The desktop webview blocks external
+  `target=_blank` and the shell carries no opener plugin on purpose (zero runtime
+  Tauri deps). Every "Get …" now opens a dialog: +91 73936 73714, the pre-filled
+  message, Copy number / Copy message, an Open WhatsApp link for browsers, and
+  the offline note. Settings → License pills open the plan card in a popup, no
+  comparison table.
+- **Installer: no more "Error opening file for writing … node.exe".** The Node
+  sidecar was killed only on `WindowEvent::Destroyed`, so an in-app update, a
+  crash or a Task-Manager kill orphaned it and it held the lock; Tauri's NSIS
+  template stops `vyuha.exe` only. Now `stop_sidecar()` (kill + wait) runs on
+  Destroyed, `RunEvent::ExitRequested` / `Exit`, and before
+  `update.download_and_install`; NSIS PREINSTALL / PREUNINSTALL hooks stop
+  `node.exe` / `vyuha.exe` whose `ExecutablePath` is under `$INSTDIR` only
+  (`Get-CimInstance` filter — never `taskkill /IM node.exe`), with `$INSTDIR`
+  passed via an environment variable to avoid quoting. Ignoring the old error
+  was harmless (same Node 22.17.0 bytes); it just looked alarming.
+
 ## v2.99.96 — the table says what you paid, eight skins that differ, and the terminal that goes away
 
 A batch of things the owner asked for after using the app: columns that answer

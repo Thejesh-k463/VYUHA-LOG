@@ -22,6 +22,10 @@ your trades is ever uploaded.
 5. Launch **Vyuha**. It opens as a normal desktop window. From v2.99.96 **no black terminal /
    console window should appear** behind it — if you are ever asked for a log, it is at
    `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log`.
+   From v2.99.97, reinstalling over a copy that is still running no longer shows
+   "Error opening file for writing … node.exe" — the installer stops Vyuha's own server first
+   (and only Vyuha's; no other Node process on your PC is touched). If you see that message on an
+   older version, **Ignore** is safe: the file it could not replace is identical.
 
 > Your data lives in a local database file on your PC. Nothing is uploaded anywhere.
 

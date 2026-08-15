@@ -3,6 +3,17 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.97
+
+| Upgrade | What it gives you |
+|---|---|
+| **Tint intensity — how much of the skin's colour the screen wears** | Settings → Appearance has a **Tint intensity** slider (0–100, default 50) with **Subtle / Balanced / Vivid** presets and −/+ buttons that step by 10. It tints the canvas, sidebar, cards, borders and header band toward the skin's hue. Every skin keeps its text readable at any setting, including 100 — the curves were tuned so no combination drops below the contrast the app has always held. |
+| **Panel style — Flat, Soft, Luxe or Glow** | Choose how cards sit on the page: no shadow, a soft lift, the default Luxe depth, or a coloured glow in the skin's hue. (Terminal + Glow deliberately falls back to a flat shadow — a glow on a monochrome skin just smears.) |
+| **Build your own skin** | A ninth skin, **Custom**: seven colours (accent, analytics, money, sidebar, cards, borders, canvas), each for dark and light. Pick **Start from <skin>** to seed it from any built-in skin, then change what you like. Every colour shows a small readability badge — it warns, it never blocks. Your custom colours are saved with the form, and only while Custom is the selected skin. |
+| **Wallpaper** | Put a PNG, JPEG or WebP (up to 12 MB) behind the app, with an opacity slider and a theme-aware scrim so text stays readable on both themes. It never prints. The image lives in your data folder **outside backups** — the Backup screen says so — so re-add it on a new machine. |
+| **The Buy buttons answer inside the desktop app** | Every "Get Pro / Get Lifetime" button now opens a small dialog with the WhatsApp number **+91 73936 73714**, the pre-filled message, **Copy number** / **Copy message** buttons, an *Open WhatsApp* link (for when you are in a browser) and the offline note. Previously the desktop app swallowed the click silently. Settings → License plan pills open the plan card in a popup. |
+| **Reinstalling over a running copy no longer errors** | Upgrading from v2.99.96 could show "Error opening file for writing … node.exe" if the app's server was still running from an earlier crash or in-app update. Clicking *Ignore* was always harmless (the file was identical), but from v2.99.97 the installer and the app stop that server first — and only *ours*, never any other Node process on your PC. |
+
 ## New in v2.99.96
 
 | Upgrade | What it gives you |
