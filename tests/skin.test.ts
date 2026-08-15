@@ -68,7 +68,7 @@ describe("every skin is fully described", () => {
   });
 
   it("is exactly the approved roster", () => {
-    expect([...SKINS]).toEqual(["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember"]);
+    expect([...SKINS]).toEqual(["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember", "custom"]);
   });
 });
 
@@ -76,7 +76,9 @@ describe("skins are DISTINCT — the reason Ice and Royal were retired", () => {
   // Ice reused Sapphire's analytics hex, Royal reused Luxe's analytics as its
   // primary; with only the accent tokens recoloured, three of seven skins were
   // near-duplicates. These assertions make that impossible to reintroduce.
-  const coloured = SKINS.filter((s) => s !== "mono");
+  // "custom" has no CSS block — its tokens are the user's hexes, applied inline
+  // by lib/domain/appearance.ts — so it is exempt from every CSS assertion here.
+  const coloured = SKINS.filter((s) => s !== "mono" && s !== "custom");
   const token = (b: string, name: string): string | undefined =>
     b.match(new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{6})`))?.[1]?.toLowerCase();
   // Luxe has no block — its values ARE the @theme (dark) / html.theme-light values.
@@ -113,8 +115,9 @@ describe("skins are DISTINCT — the reason Ice and Royal were retired", () => {
     });
   }
 
-  it("SKIN_META swatch primary is the CSS dark --color-primary (mono inherits Luxe's)", () => {
+  it("SKIN_META swatch primary is the CSS dark --color-primary (mono inherits Luxe's; custom has no CSS)", () => {
     for (const s of SKINS) {
+      if (s === "custom") continue;
       const cssPrimary = s === "mono" ? primaryOf("luxe", "dark") : primaryOf(s, "dark");
       expect(SKIN_META[s].swatch.primary.toLowerCase(), `${s} swatch`).toBe(cssPrimary);
     }
@@ -133,7 +136,7 @@ describe("skins are DISTINCT — the reason Ice and Royal were retired", () => {
 });
 
 describe("the CSS answers both themes for every skin", () => {
-  const themed = SKINS.filter((s): s is Exclude<Skin, "luxe"> => s !== "luxe");
+  const themed = SKINS.filter((s): s is Exclude<Skin, "luxe" | "custom"> => s !== "luxe" && s !== "custom");
 
   it("a token overridden in dark is also overridden in light", () => {
     // A token answered only for dark leaks a dark value onto a near-white

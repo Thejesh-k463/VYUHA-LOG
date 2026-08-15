@@ -56,7 +56,10 @@
 // `--color-profit` / `--color-loss`. Those belong to the colourblind-safe mode,
 // and a skin that redefined them would silently defeat it.
 
-export const SKINS = ["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember"] as const;
+// "custom" (last) has NO CSS block: its tokens are the user's own hexes, derived
+// in lib/domain/appearance.ts and applied inline on <html>. tests/skin.test.ts
+// exempts it from the CSS-block assertions for that reason.
+export const SKINS = ["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember", "custom"] as const;
 export type Skin = (typeof SKINS)[number];
 
 export interface SkinMeta {
@@ -130,6 +133,15 @@ export const SKIN_META: Record<Skin, SkinMeta> = {
     hint: "Orange-led. Like Tape, money moves to violet and analytics goes teal — orange cannot share a screen with gold.",
     moneyLabel: "violet",
     swatch: { primary: "#fb923c", money: "#c084fc", analytics: "#5eead4" },
+  },
+  custom: {
+    id: "custom",
+    label: "Custom",
+    hint: "Your own colours — build it below.",
+    moneyLabel: "gold",
+    // Luxe-derived, the same values as DEFAULT_CUSTOM_THEME.dark in
+    // lib/domain/appearance.ts (kept literal here so skin.ts stays leaf-level).
+    swatch: { primary: "#2dd4bf", money: "#f0b429", analytics: "#a78bfa" },
   },
 };
 

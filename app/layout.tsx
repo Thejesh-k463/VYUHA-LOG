@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
@@ -11,6 +12,17 @@ import { cn } from "@/lib/utils";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { asWorkspace, type Workspace } from "@/lib/domain/workspace";
 import { asSkin, skinClass, type Skin } from "@/lib/domain/skin";
+import {
+  appearanceClasses,
+  appearanceVars,
+  asPanelStyle,
+  clampIntensity,
+  parseCustomTheme,
+  DEFAULT_TINT_INTENSITY,
+  DEFAULT_WALLPAPER_OPACITY,
+  type CustomTheme,
+  type PanelStyle,
+} from "@/lib/domain/appearance";
 
 // C1 typography — self-hosted at build time (next/font), so the shipped app
 // stays fully offline. Inter carries the UI; JetBrains Mono carries every
@@ -48,6 +60,10 @@ export default function RootLayout({
   let density = "compact";
   let workspace: Workspace = "both";
   let skin: Skin = "luxe";
+  let intensity = DEFAULT_TINT_INTENSITY;
+  let panelStyle: PanelStyle = "luxe";
+  let customTheme: CustomTheme | null = null;
+  let wallpaper: { storedName: string | null; opacity: number } = { storedName: null, opacity: DEFAULT_WALLPAPER_OPACITY };
   try {
     const s = getSettings();
     colorblind = s?.colorblindSafe ?? false;
@@ -55,9 +71,19 @@ export default function RootLayout({
     density = s?.density ?? "compact";
     workspace = asWorkspace(s?.workspace);
     skin = asSkin(s?.accentSkin);
+    intensity = clampIntensity(s?.tintIntensity);
+    panelStyle = asPanelStyle(s?.panelStyle);
+    customTheme = parseCustomTheme(s?.customTheme);
+    wallpaper = { storedName: s?.wallpaperStoredName ?? null, opacity: clampIntensity(s?.wallpaperOpacity ?? DEFAULT_WALLPAPER_OPACITY) };
   } catch {
     // DB not migrated yet — render with defaults.
   }
+  const themeSide = theme === "light" ? "light" : "dark";
+  // Literal --color-* tokens (chrome tint / custom theme / wallpaper) applied
+  // inline so they win over every class-level token — and so the chart canvas,
+  // which reads them via getComputedStyle, gets parseable colours.
+  // See lib/domain/appearance.ts.
+  const appearanceStyle = appearanceVars({ skin, theme: themeSide, intensity, panelStyle, customTheme, wallpaper }) as CSSProperties;
 
   return (
     <html
@@ -72,8 +98,12 @@ export default function RootLayout({
         // Accent skin (restored in v4 as a coordinated TRIPLE — see
         // lib/domain/skin.ts). Luxe emits no class; it IS the default.
         skinClass(skin),
+        // Panel style (panel-flat / panel-soft / panel-glow; luxe = none) and
+        // the "wallpaper" flag when a wallpaper file is stored.
+        ...appearanceClasses({ panelStyle, wallpaper }),
         density === "comfortable" && "density-comfortable",
       )}
+      style={appearanceStyle}
     >
       <body className="min-h-full font-sans antialiased">
         {/* One tooltip provider for the whole app — this is what makes moving

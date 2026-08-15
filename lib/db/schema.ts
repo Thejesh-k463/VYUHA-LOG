@@ -461,6 +461,19 @@ export const settings = sqliteTable("settings", {
   // compact | comfortable — one root font-size (16px vs 17px); everything is
   // rem-sized so the whole interface scales together (app/globals.css).
   density: text("density").notNull().default("compact"),
+  // ── Appearance (v2.99.97, migration 0048) — see lib/domain/appearance.ts ──
+  // 0–100: how far the skin's hue is mixed into the chrome (canvas, sidebar,
+  // card, border, rule). 50 = the shipped look; 0 = near-neutral; 100 = vivid.
+  tintIntensity: integer("tint_intensity").notNull().default(50),
+  // flat | soft | luxe | glow — panel gradient/glow treatment (html class).
+  panelStyle: text("panel_style").notNull().default("luxe"),
+  // JSON {dark:{accent,analytics,money,surface,card,border,background}, light:{…}}
+  // of #rrggbb, only read when accent_skin = "custom"; parseCustomTheme() narrows.
+  customTheme: text("custom_theme"),
+  // Wallpaper: the stored file name under the app-data wallpaper dir (set by
+  // the upload route, never by the settings form) and 0–100 image visibility.
+  wallpaperStoredName: text("wallpaper_stored_name"),
+  wallpaperOpacity: integer("wallpaper_opacity").notNull().default(35),
   // both | equity | fno — which book the user trades. Hides the other book's
   // screens and sets bucket defaults; never gates a route or a total.
   // See lib/domain/workspace.ts.

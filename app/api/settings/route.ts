@@ -7,6 +7,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { getWriteAccountId, getSelectedAccountId } from "@/lib/queries/accounts";
 import { WORKSPACES } from "@/lib/domain/workspace";
+import { PANEL_STYLES, parseCustomTheme, serializeCustomTheme } from "@/lib/domain/appearance";
 
 export const runtime = "nodejs";
 
@@ -59,10 +60,37 @@ const SettingsSchema = z.object({
   // "ice" and "royal" were retired in v2.99.96 (near-duplicates of Sapphire /
   // Luxe+Aurora) but stay ACCEPTED for the same restored-backup reason;
   // asSkin() maps both to Sapphire. Lime / Rose / Ember replaced them.
+  // "custom" (v2.99.97) renders the user's own hexes from `customTheme`.
   accentSkin: z
-    .enum(["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember", "ice", "royal", "terminal"])
+    .enum(["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember", "custom", "ice", "royal", "terminal"])
     .default("terminal"),
   density: z.enum(["compact", "comfortable"]).default("compact"),
+  // ── Appearance (lib/domain/appearance.ts) ──
+  // Each is OPTIONAL: a body that omits a field keeps the stored value (a form
+  // that only knows the older fields must not reset someone's tint or wipe
+  // their custom theme). A fresh row takes the column defaults (50 / luxe /
+  // NULL / 35).
+  tintIntensity: z.coerce.number().int().min(0).max(100).optional(),
+  panelStyle: z.enum(PANEL_STYLES).optional(),
+  // Stored as JSON text; the object or its string are both accepted, and each
+  // of the 14 hexes must be a strict #rrggbb — anything else is a 400, never a
+  // half-parsed theme in the column. Explicit null / "" clears it; absent keeps.
+  customTheme: z
+    .unknown()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined) return undefined;
+      if (v === null || v === "") return null;
+      const t = parseCustomTheme(v);
+      if (!t) {
+        ctx.addIssue({ code: "custom", message: "Custom theme needs a #rrggbb for every colour in both themes." });
+        return z.NEVER;
+      }
+      return serializeCustomTheme(t);
+    }),
+  wallpaperOpacity: z.coerce.number().int().min(0).max(100).optional(),
+  // wallpaperStoredName is deliberately NOT accepted here — the wallpaper
+  // upload route owns that column.
   workspace: z.enum(WORKSPACES).default("both"),
   fyStartMonth: z.coerce.number().int().min(1).max(12),
   defaultBuyOrders: z.coerce.number().int().min(1).max(50),
@@ -164,6 +192,10 @@ export async function POST(req: Request) {
       theme: v.theme,
       accentSkin: v.accentSkin,
       density: v.density,
+      ...(v.tintIntensity !== undefined && { tintIntensity: v.tintIntensity }),
+      ...(v.panelStyle !== undefined && { panelStyle: v.panelStyle }),
+      ...(v.customTheme !== undefined && { customTheme: v.customTheme }),
+      ...(v.wallpaperOpacity !== undefined && { wallpaperOpacity: v.wallpaperOpacity }),
       workspace: v.workspace,
       fyStartMonth: v.fyStartMonth,
       defaultBuyOrders: v.defaultBuyOrders,

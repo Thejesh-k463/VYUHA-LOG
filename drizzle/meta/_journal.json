@@ -337,6 +337,13 @@
       "when": 1786600003000,
       "tag": "0047_revocation-ratchet",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1786600004000,
+      "tag": "0048_appearance",
+      "breakpoints": true
     }
   ]
 }
