@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optionsSellerReport, type SellerTrade } from "@/lib/analytics/options-seller";
+import { optionsSellerReport, sellerKpiDetails, orderedOutcomes, OUTCOME_COLORS, type SellerTrade } from "@/lib/analytics/options-seller";
 
 /**
  * B1 — option sellers are India's dominant retail F&O cohort, and their
@@ -149,5 +149,99 @@ describe("options seller — population and outcomes", () => {
   it("sums net P&L across the seller book", () => {
     const r = optionsSellerReport([seller({ id: 1, netPnl: 2900 }), seller({ id: 2, netPnl: -1100 })]);
     expect(r.netPnl).toBe(1800);
+  });
+});
+
+/**
+ * KPI drill-downs. The card popups are built server-side from these plain
+ * objects, so the tests pin (a) that every row is a string, never a number
+ * or a function that would fail RSC serialization, (b) that hrefs deep-link
+ * with the exact params the trades page reads (symbol, segment, realised),
+ * and (c) the same honesty rule as the report — a missing denominator shows
+ * as an em dash rather than a 0.
+ */
+describe("options seller — KPI drill-downs", () => {
+  const book: SellerTrade[] = [
+    seller({ id: 1, symbol: "NIFTY", tradingsymbol: "NIFTY24AUG25000CE", segment: "index_option", netPnl: 2900, expiryOutcome: "expired_worthless" }),
+    seller({ id: 2, symbol: "NIFTY", tradingsymbol: "NIFTY24AUG24500PE", segment: "index_option", netPnl: -1100, hedgeStatus: "unhedged", expiryOutcome: "squared_off" }),
+    seller({ id: 3, symbol: "BANKNIFTY", tradingsymbol: "BANKNIFTY24AUG50000CE", segment: "index_option", netPnl: 500, isOpen: true, hedgeStatus: null, expiryOutcome: null }),
+    seller({ id: 4, symbol: "RELIANCE", tradingsymbol: "RELIANCE24AUG3000CE", segment: "stock_option", netPnl: 700, expiryOutcome: "assigned" }),
+  ];
+  const report = optionsSellerReport(book);
+  const d = sellerKpiDetails(book, report);
+
+  it("keeps every detail serializable — strings only, no functions", () => {
+    for (const detail of Object.values(d)) {
+      expect(typeof detail.title).toBe("string");
+      for (const r of detail.rows) {
+        expect(typeof r.label).toBe("string");
+        expect(typeof r.value).toBe("string");
+        if (r.href) expect(r.href.startsWith("/trades")).toBe(true);
+      }
+    }
+  });
+
+  it("trades: one row per underlying, most active first, deep-linked by symbol + segment", () => {
+    expect(d.trades.rows.map((r) => r.label)).toEqual(["NIFTY", "BANKNIFTY", "RELIANCE"]);
+    expect(d.trades.rows[0].value).toBe("2");
+    expect(d.trades.rows[0].href).toBe("/trades?symbol=NIFTY&segment=index_option");
+    expect(d.trades.rows[2].href).toBe("/trades?symbol=RELIANCE&segment=stock_option");
+    expect(d.trades.rows[1].hint).toBe("1 still open");
+    expect(d.trades.summary).toContain("4 sell-side contracts across 3 underlyings");
+  });
+
+  it("trades: caps at the top 8 underlyings and says so", () => {
+    const wide = Array.from({ length: 10 }, (_, i) => seller({ id: 100 + i, symbol: `SYM${i}` }));
+    const w = sellerKpiDetails(wide, optionsSellerReport(wide));
+    expect(w.trades.rows).toHaveLength(8);
+    expect(w.trades.note).toContain("Top 8 of 10");
+  });
+
+  it("net P&L: splits realised from open and links best/worst by contract", () => {
+    const rows = Object.fromEntries(d.netPnl.rows.map((r) => [r.label, r]));
+    expect(rows["Realised"].value).toBe("₹2,500");
+    expect(rows["Realised"].tone).toBe("profit");
+    expect(rows["Open (marked)"].value).toBe("₹500");
+    expect(rows["Best: NIFTY24AUG25000CE"].href).toBe("/trades?symbol=NIFTY24AUG25000CE&segment=index_option");
+    expect(rows["Worst: NIFTY24AUG24500PE"].tone).toBe("loss");
+    expect(d.netPnl.footerHref).toBe("/trades?realised=1");
+  });
+
+  it("capture: reports collected, kept and the rate, with the formula in the note", () => {
+    const rows = Object.fromEntries(d.capture.rows.map((r) => [r.label, r.value]));
+    expect(rows["Premium collected"]).toBe("₹20,000"); // 4 × 100 × 50
+    expect(rows["Premium kept"]).toBe("₹12,000"); // 4 × (100 − 40) × 50
+    expect(rows["Capture rate"]).toBe("60%");
+    expect(d.capture.note).toMatch(/÷ premium collected/);
+  });
+
+  it("capture: never invents a denominator — em dashes when nothing was sold", () => {
+    const none = [seller({ sellQty: 0, buyQty: 50, avgSellPrice: 0 })];
+    const e = sellerKpiDetails(none, optionsSellerReport(none));
+    expect(e.capture.rows.every((r) => r.value === "—")).toBe(true);
+    expect(e.netPnl.rows.find((r) => r.label === "Realised")?.value).toBe("—");
+    expect(e.trades.rows).toEqual([]);
+  });
+
+  it("hedged: counts hedged, unhedged and not-recorded out of ALL seller contracts", () => {
+    const rows = Object.fromEntries(d.hedged.rows.map((r) => [r.label, r.value]));
+    expect(rows["Fully hedged"]).toBe("2");
+    expect(rows["Unhedged"]).toBe("1");
+    expect(rows["Not recorded"]).toBe("1");
+    expect(d.hedged.summary).toContain("50%");
+  });
+
+  it("outcomes: one row per outcome with count and share, in a stable order", () => {
+    expect(d.outcomes.rows.map((r) => r.label)).toEqual(["expired worthless", "squared off", "assigned", "unclassified"]);
+    expect(d.outcomes.rows[0].value).toBe("1 · 25%");
+    expect(d.outcomes.rows[3].hint).toBe("no expiry outcome recorded yet");
+    expect(d.outcomes.footerHref).toBe("/trades");
+  });
+
+  it("orderedOutcomes: known keys first, unknown keys after, literal hex colours only", () => {
+    const o = orderedOutcomes({ zzz_custom: 1, rolled: 2, expired_worthless: 3 });
+    expect(o.map((s) => s.key)).toEqual(["expired_worthless", "rolled", "zzz_custom"]);
+    for (const s of o) expect(s.color).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(o[2].color).toBe(OUTCOME_COLORS.unclassified);
   });
 });

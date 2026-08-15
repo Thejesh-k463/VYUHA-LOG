@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard } from "@/components/kpi-card";
 import { OptionsJournalEditor } from "@/components/behavior/options-journal-editor";
-import { optionsSellerReport } from "@/lib/analytics/options-seller";
+import { OutcomeMixBar } from "@/components/behavior/outcome-mix-bar";
+import { optionsSellerReport, sellerKpiDetails, orderedOutcomes } from "@/lib/analytics/options-seller";
 import { dteReport, hedgeReport, rollReport, ivRankReport, thetaEfficiency } from "@/lib/analytics/options-seller-depth";
 import { inr } from "@/lib/format";
 import { getTrades } from "@/lib/queries/trades";
@@ -10,9 +12,24 @@ import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
 
+/** Section eyebrow — the same 10.5px tracked caps the KPI cards use for their
+ *  label, with a short accent rule so the eye finds each block on a long page. */
+function Eyebrow({ children, hint }: { children: ReactNode; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2.5 pt-1">
+      <span aria-hidden className="h-px w-5 shrink-0 self-center bg-primary/70" />
+      <span className="text-[10.5px] font-medium uppercase tracking-[0.13em] text-muted-foreground">{children}</span>
+      {hint && <span className="text-[0.6875rem] text-muted-foreground/70">{hint}</span>}
+    </div>
+  );
+}
+
 export default function OptionsJournalPage() {
   const options = getTrades().filter((t) => t.instrumentType === "option");
   const seller = optionsSellerReport(options);
+  const details = sellerKpiDetails(options, seller);
+  const outcomeSlices = orderedOutcomes(seller.outcomes);
+  const dominant = outcomeSlices.slice().sort((a, b) => b.count - a.count)[0];
   // Round two: the questions a seller actually changes behaviour over.
   const dte = dteReport(options);
   const hedge = hedgeReport(options);
@@ -23,17 +40,27 @@ export default function OptionsJournalPage() {
     <PageHeader title="Options Seller Journal" description="Premium capture, IV change, hedge state, DTE, adjustments and expiry outcomes." />
     <div className="space-y-5 p-6">
         <ProGate>
-      <div className="grid gap-3 sm:grid-cols-4">
-        <KpiCard label="Seller trades" valueNum={seller.count} format="int" />
-        <KpiCard label="Net P&L" valueNum={seller.netPnl} />
-        <KpiCard label="Premium captured" value={seller.capturePct == null ? "—" : `${seller.capturePct}%`} />
-        <KpiCard label="Fully hedged" value={seller.hedgedPct == null ? "—" : `${seller.hedgedPct}%`} />
+      <Eyebrow hint="click any card for the breakdown">The book</Eyebrow>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label="Seller trades" valueNum={seller.count} format="int" sub={`${seller.closed} closed · ${seller.count - seller.closed} open`} detail={details.trades} />
+        {/* Hero on the one number that outranks the band — KpiCard allows one per screen. */}
+        <KpiCard label="Net P&L" valueNum={seller.netPnl} hero detail={details.netPnl} valueClassName={seller.netPnl > 0 ? "text-profit" : seller.netPnl < 0 ? "text-loss" : undefined} />
+        <KpiCard label="Premium captured" value={seller.capturePct == null ? "—" : `${seller.capturePct}%`} sub="of premium sold, kept" detail={details.capture} />
+        <KpiCard label="Fully hedged" value={seller.hedgedPct == null ? "—" : `${seller.hedgedPct}%`} sub="of seller contracts, as recorded" detail={details.hedged} />
       </div>
-      <Card><CardHeader><CardTitle>Outcome mix</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
-        {Object.entries(seller.outcomes).map(([k, v]) => <div key={k} className="rounded-md border border-border px-3 py-2 text-xs"><span className="text-muted-foreground">{k.replaceAll("_", " ")}</span><p className="text-lg font-semibold tabular-nums">{v}</p></div>)}
-      </CardContent></Card>
+      {/* Outcome mix: a KPI card (dominant outcome) carrying the stacked bar in
+          its sub-line. The bar is a true partition — every contract lands in
+          exactly one outcome — which is why a single stacked bar is honest here
+          where a theme chart would not be. */}
+      <KpiCard
+        label="Outcome mix"
+        value={dominant && dominant.count ? <span className="capitalize">{dominant.label} <span className="text-muted-foreground">· {dominant.count}</span></span> : "—"}
+        sub={outcomeSlices.some((s) => s.count > 0) ? <div className="mt-2"><OutcomeMixBar slices={outcomeSlices} /></div> : "No seller contracts yet."}
+        detail={details.outcomes}
+      />
       {/* Round two: DTE band, hedging, rolls, IV rank, theta efficiency. */}
-      <Card><CardHeader><CardTitle>Where the edge is — by days to expiry</CardTitle></CardHeader><CardContent className="space-y-2">
+      <Eyebrow hint="closed trades only, small samples flagged">Where the edge is</Eyebrow>
+      <Card><CardHeader><CardTitle>By days to expiry</CardTitle></CardHeader><CardContent className="space-y-2">
         <div className="overflow-x-auto"><table className="w-full text-xs">
           <thead><tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
             <th className="py-1.5 pr-3 font-medium">Band</th>
@@ -59,6 +86,7 @@ export default function OptionsJournalPage() {
         </p>
       </CardContent></Card>
 
+      <Eyebrow hint="each against what was actually available, never a model">Hedging and adjustments</Eyebrow>
       <div className="grid gap-3 lg:grid-cols-2">
         <Card><CardHeader><CardTitle>Does hedging pay?</CardTitle></CardHeader><CardContent className="space-y-2 text-xs">
           {[hedge.hedged, hedge.unhedged].map((a) => (
@@ -90,6 +118,7 @@ export default function OptionsJournalPage() {
         </CardContent></Card>
       </div>
 
+      <Eyebrow hint="IV is what you or the broker recorded, never inferred">Volatility and time</Eyebrow>
       <div className="grid gap-3 lg:grid-cols-2">
         <Card><CardHeader><CardTitle>Selling into rich or cheap IV</CardTitle></CardHeader><CardContent className="space-y-2 text-xs">
           <div className="grid grid-cols-2 gap-2">
@@ -117,6 +146,7 @@ export default function OptionsJournalPage() {
         </CardContent></Card>
       </div>
 
+      <Eyebrow hint="the drill-downs above read what you record here">Contract journal</Eyebrow>
       <Card className="p-0"><CardHeader><CardTitle>Contract journal</CardTitle></CardHeader><CardContent className="p-0">
         <OptionsJournalEditor trades={options.map((t) => ({ id: t.id, symbol: t.symbol, tradingsymbol: t.tradingsymbol, entryIv: t.entryIv, exitIv: t.exitIv, entryDte: t.entryDte, hedgeStatus: t.hedgeStatus, expiryOutcome: t.expiryOutcome, adjustmentGroup: t.adjustmentGroup, isOpen: t.isOpen }))} />
         {!options.length && <p className="p-4 text-sm text-muted-foreground">No option trades yet.</p>}
