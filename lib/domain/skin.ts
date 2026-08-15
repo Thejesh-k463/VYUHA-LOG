@@ -16,24 +16,47 @@
 // It is not a fixable mapping. Gold owns 41°, loss red owns 352°, profit green
 // owns 157°; sweeping every warm hue from 10° to 75° shows none of them clears
 // all three by a readable margin (best case 34°, a yellow-green). So a warm
-// PRIMARY forces the money hue to move. In Tape it moves to violet, and
-// analytics takes teal.
+// PRIMARY forces the money hue to move. In Tape, Lime and Ember it moves to
+// violet, and analytics takes teal.
 //
-// Measured role-to-role hue separation (the pairing that actually failed):
+// ── The roster, and why Ice and Royal were retired ────────────────────────
 //
-//   Luxe   83° dark / 89° light   ← the palette shipping today, the benchmark
-//   Ice    95° / 93°
-//   Tape   98° / 97°              ← the widest separation of the three
+// Ice (#4cc2f1 + orchid analytics) and Sapphire (#7196ff + orchid analytics)
+// differed by one hex, and Royal (#a78bfa primary) reused Luxe's analytics
+// violet as its primary and Aurora's cyan/teal family as its analytics — so
+// with only ~9 accent tokens recoloured, three of seven skins were near-
+// duplicates. Both were removed; `asSkin` maps a stored "ice"/"royal" to
+// Sapphire (the closest survivor) so a restored backup never 400s or falls
+// back to Luxe by surprise. Lime, Rose and Ember replaced them, and every
+// coloured skin now also tints the surfaces (canvas, card-top, border) so two
+// skins can no longer share a screen by hex.
+//
+// Role-to-role hue separation and the WCAG floor, per skin (dark / light):
+//
+//   Luxe      83° / 89°    primary #2dd4bf   money gold    analytics violet
+//   Tape      98° / 97°    primary #e8b006   money VIOLET  analytics teal
+//   Sapphire  68° / 70°    primary #7196ff   money gold    analytics orchid
+//   Aurora   109° / 105°   primary #e879f9   money gold    analytics teal
+//   Lime      —            primary #a3e635   money VIOLET  analytics teal
+//   Rose      —            primary #f472b6   money gold    analytics violet
+//   Ember     —            primary #fb923c   money VIOLET  analytics teal
 //
 // Every colour in every skin clears WCAG AA on its own canvas (worst 4.81:1 on
-// the light canvas #f4f6f9, worst 7.36:1 on dark #05080f).
+// the light canvas #f4f6f9, worst 7.16:1 on dark #05080f). Measured for the
+// v2.99.96 additions and retunes: light primaries Lime #46700f 5.41:1, Rose
+// #be185d 5.58:1, Ember #b93e0c 5.16:1; light teal #0d7269 5.35:1, light
+// orchid #b31fc4 4.96:1; dark primaries Lime 13.29:1, Rose 7.57:1, Ember 8.85:1.
+//
+// tests/skin.test.ts asserts DISTINCTNESS: no two coloured skins share a
+// --color-primary, and no skin's primary equals another skin's analytics hue,
+// in either theme.
 //
 // ── What a skin must never touch ──────────────────────────────────────────
 //
 // `--color-profit` / `--color-loss`. Those belong to the colourblind-safe mode,
 // and a skin that redefined them would silently defeat it.
 
-export const SKINS = ["luxe", "mono", "ice", "tape", "royal", "sapphire", "aurora"] as const;
+export const SKINS = ["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember"] as const;
 export type Skin = (typeof SKINS)[number];
 
 export interface SkinMeta {
@@ -43,8 +66,8 @@ export interface SkinMeta {
   hint: string;
   /**
    * Which hue carries "money" in this skin. Shown in the picker because in
-   * Tape it is NOT gold — and a user who learned "gold = money" from every
-   * other screen deserves to be told, not left to work it out.
+   * Tape, Lime and Ember it is NOT gold — and a user who learned "gold = money"
+   * from every other screen deserves to be told, not left to work it out.
    */
   moneyLabel: string;
   /** Swatch colours for the picker, dark-theme values. */
@@ -66,46 +89,47 @@ export const SKIN_META: Record<Skin, SkinMeta> = {
     moneyLabel: "gold",
     swatch: { primary: "#2dd4bf", money: "#f0b429", analytics: "#a78bfa" },
   },
-  ice: {
-    id: "ice",
-    label: "Ice",
-    hint: "Blue-led. Analytics moves to orchid so it stays clear of the blue.",
-    moneyLabel: "gold",
-    swatch: { primary: "#4cc2f1", money: "#f0b429", analytics: "#e879f9" },
-  },
   tape: {
     id: "tape",
     label: "Tape",
     hint: "Amber-led. Money moves to violet — amber is 4° from gold, so gold cannot stay the money colour here.",
     moneyLabel: "violet",
-    swatch: { primary: "#e8b006", money: "#c084fc", analytics: "#2dd4bf" },
-  },
-  // ── The v2.99.70 trio — measured like the first three (see header):
-  //   royal    min role-sep 67°/70°, primary 97°/89° clear of P&L
-  //   sapphire min role-sep 68°/70°, primary 67° clear of P&L
-  //   aurora   min role-sep 109°/105°, primary 60°/57° clear of P&L
-  // Worst contrast anywhere: 4.81:1 (aurora light analytics on #f4f6f9) —
-  // exactly the worst case the first three already shipped.
-  royal: {
-    id: "royal",
-    label: "Royal",
-    hint: "Violet-led and regal. Analytics moves to cyan so violet is free to lead.",
-    moneyLabel: "gold",
-    swatch: { primary: "#a78bfa", money: "#f0b429", analytics: "#22d3ee" },
+    swatch: { primary: "#e8b006", money: "#c084fc", analytics: "#5eead4" },
   },
   sapphire: {
     id: "sapphire",
     label: "Sapphire",
-    hint: "Electric indigo-blue with orchid analytics — deeper and more saturated than Ice.",
+    hint: "Electric indigo-blue with orchid analytics, on a cool navy canvas.",
     moneyLabel: "gold",
-    swatch: { primary: "#7196ff", money: "#f0b429", analytics: "#e879f9" },
+    swatch: { primary: "#7196ff", money: "#f0b429", analytics: "#f0abfc" },
   },
   aurora: {
     id: "aurora",
     label: "Aurora",
     hint: "Fuchsia-led, the most vibrant of the set. Analytics returns to teal.",
     moneyLabel: "gold",
-    swatch: { primary: "#e879f9", money: "#f0b429", analytics: "#2dd4bf" },
+    swatch: { primary: "#e879f9", money: "#f0b429", analytics: "#5eead4" },
+  },
+  lime: {
+    id: "lime",
+    label: "Lime",
+    hint: "Lime-led. Money moves to violet — lime sits too close to gold to keep it — and analytics goes teal.",
+    moneyLabel: "violet",
+    swatch: { primary: "#a3e635", money: "#c084fc", analytics: "#5eead4" },
+  },
+  rose: {
+    id: "rose",
+    label: "Rose",
+    hint: "Hot-pink-led with violet analytics. Gold stays the money colour.",
+    moneyLabel: "gold",
+    swatch: { primary: "#f472b6", money: "#f0b429", analytics: "#a78bfa" },
+  },
+  ember: {
+    id: "ember",
+    label: "Ember",
+    hint: "Orange-led. Like Tape, money moves to violet and analytics goes teal — orange cannot share a screen with gold.",
+    moneyLabel: "violet",
+    swatch: { primary: "#fb923c", money: "#c084fc", analytics: "#5eead4" },
   },
 };
 
@@ -118,11 +142,16 @@ export const SKIN_META: Record<Skin, SkinMeta> = {
  * restyle every existing user, including anyone restoring a pre-v3 backup.
  * The flat skin therefore got a new id rather than reusing the old word.
  *
- * `"tape"` and `"ice"` DO map to the new Tape and Ice: a user who once chose
- * amber chose amber, and giving it back is the point of this feature.
+ * `"ice"` and `"royal"` (retired — see header) map to SAPPHIRE, the nearest
+ * surviving blue/violet skin, so a stored preference degrades to the closest
+ * look rather than snapping back to the default.
+ *
+ * `"tape"` DOES map to Tape: a user who once chose amber chose amber, and
+ * giving it back is the point of this feature.
  */
 export function asSkin(v: unknown): Skin {
   if (v === "terminal") return "luxe";
+  if (v === "ice" || v === "royal") return "sapphire";
   return SKINS.includes(v as Skin) ? (v as Skin) : "luxe";
 }
 

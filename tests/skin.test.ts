@@ -24,10 +24,12 @@ describe("asSkin", () => {
   });
 
   it("gives back the skin a user actually chose", () => {
-    expect(asSkin("tape")).toBe("tape");
-    expect(asSkin("ice")).toBe("ice");
-    expect(asSkin("mono")).toBe("mono");
-    expect(asSkin("luxe")).toBe("luxe");
+    for (const s of SKINS) expect(asSkin(s)).toBe(s);
+  });
+
+  it("maps the retired 'ice' and 'royal' to Sapphire, the nearest survivor — never a 400, never a surprise Luxe", () => {
+    expect(asSkin("ice")).toBe("sapphire");
+    expect(asSkin("royal")).toBe("sapphire");
   });
 
   it("falls back to Luxe for anything else — a bad column never breaks the app", () => {
@@ -57,9 +59,76 @@ describe("every skin is fully described", () => {
     }
   });
 
-  it("names its money colour — Tape's is NOT gold, and the picker must say so", () => {
+  it("names its money colour — the warm-led skins' is NOT gold, and the picker must say so", () => {
     expect(SKIN_META.tape.moneyLabel).toBe("violet");
+    expect(SKIN_META.lime.moneyLabel).toBe("violet");
+    expect(SKIN_META.ember.moneyLabel).toBe("violet");
     expect(SKIN_META.luxe.moneyLabel).toBe("gold");
+    expect(SKIN_META.rose.moneyLabel).toBe("gold");
+  });
+
+  it("is exactly the approved roster", () => {
+    expect([...SKINS]).toEqual(["luxe", "mono", "tape", "sapphire", "aurora", "lime", "rose", "ember"]);
+  });
+});
+
+describe("skins are DISTINCT — the reason Ice and Royal were retired", () => {
+  // Ice reused Sapphire's analytics hex, Royal reused Luxe's analytics as its
+  // primary; with only the accent tokens recoloured, three of seven skins were
+  // near-duplicates. These assertions make that impossible to reintroduce.
+  const coloured = SKINS.filter((s) => s !== "mono");
+  const token = (b: string, name: string): string | undefined =>
+    b.match(new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{6})`))?.[1]?.toLowerCase();
+  // Luxe has no block — its values ARE the @theme (dark) / html.theme-light values.
+  const themeBlock = css.slice(css.indexOf("@theme static {"), css.indexOf("\n}", css.indexOf("@theme static {")));
+  const lightBlock = block("html.theme-light");
+  const primaryOf = (s: Skin, theme: "dark" | "light") =>
+    s === "luxe"
+      ? token(theme === "dark" ? themeBlock : lightBlock, "--color-primary")
+      : token(block(theme === "dark" ? `html.skin-${s}` : `html.theme-light.skin-${s}`), "--color-primary");
+  const analyticsOf = (s: Skin, theme: "dark" | "light") =>
+    s === "luxe"
+      ? token(theme === "dark" ? themeBlock : lightBlock, "--color-violet")
+      : token(block(theme === "dark" ? `html.skin-${s}` : `html.theme-light.skin-${s}`), "--color-violet");
+
+  for (const theme of ["dark", "light"] as const) {
+    it(`no two coloured skins share a --color-primary (${theme})`, () => {
+      const seen = new Map<string, Skin>();
+      for (const s of coloured) {
+        const p = primaryOf(s, theme);
+        expect(p, `${s} ${theme} primary`).toMatch(/^#[0-9a-f]{6}$/);
+        expect(seen.get(p!), `${s} and ${seen.get(p!)} share primary ${p} (${theme})`).toBeUndefined();
+        seen.set(p!, s);
+      }
+    });
+
+    it(`no coloured skin's primary is another skin's analytics colour (${theme})`, () => {
+      for (const a of coloured) {
+        expect(analyticsOf(a, theme), `${a} ${theme} analytics`).toMatch(/^#[0-9a-f]{6}$/);
+        for (const b of coloured) {
+          if (a === b) continue;
+          expect(primaryOf(a, theme), `${a} primary == ${b} analytics (${theme})`).not.toBe(analyticsOf(b, theme));
+        }
+      }
+    });
+  }
+
+  it("SKIN_META swatch primary is the CSS dark --color-primary (mono inherits Luxe's)", () => {
+    for (const s of SKINS) {
+      const cssPrimary = s === "mono" ? primaryOf("luxe", "dark") : primaryOf(s, "dark");
+      expect(SKIN_META[s].swatch.primary.toLowerCase(), `${s} swatch`).toBe(cssPrimary);
+    }
+  });
+
+  it("every coloured skin except Luxe tints its surfaces, in both themes", () => {
+    for (const s of coloured.filter((x) => x !== "luxe")) {
+      for (const sel of [`html.skin-${s}`, `html.theme-light.skin-${s}`]) {
+        const t = tokensIn(block(sel));
+        for (const need of ["--color-background", "--color-card-top", "--color-border"]) {
+          expect(t, `${sel} lacks ${need}`).toContain(need);
+        }
+      }
+    }
   });
 });
 

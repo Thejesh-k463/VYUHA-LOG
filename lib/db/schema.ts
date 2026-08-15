@@ -454,8 +454,9 @@ export const settings = sqliteTable("settings", {
   // meanings (money / analytics) and a swappable amber primary collided with
   // the gold role. The column stays because dropping it buys nothing and costs
   // a migration that would have to rewrite every existing settings row; stored
-  // "tape"/"ice" values are simply never turned into a class (app/layout.tsx),
-  // so those users fall back to Terminal with no error and no data loss.
+  // values are narrowed by lib/domain/skin.ts asSkin() (v4 brought skins back
+  // as measured triples; "terminal" → Luxe, retired "ice"/"royal" → Sapphire),
+  // so no stored string ever errors or loses data.
   accentSkin: text("accent_skin").notNull().default("terminal"),
   // compact | comfortable — one root font-size (16px vs 17px); everything is
   // rem-sized so the whole interface scales together (app/globals.css).

@@ -90,8 +90,15 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > month, broker, trade type, import file, setup, outcome — with per-group performance, and the
 > app finally answers "how much?" in-app: real prices on the upsell panel and a pricing page.
 
+> **v2.99.96 — eight skins that tint the whole screen.** Ice and Royal are retired (they shared
+> hexes with Sapphire and Luxe/Aurora and were telling only by their buttons; a stored choice
+> maps to Sapphire). In their place **Lime**, **Rose** and **Ember** — and every coloured skin
+> now tints canvas, panels and borders in its own hue, so the roster is Luxe, Terminal, Tape,
+> Sapphire, Aurora, Lime, Rose, Ember, with a test that no two share a primary or an
+> analytics-vs-primary hex.
+>
 > **v2.99.70 — seven skins, and the chrome grows reflexes.** Three new accent skins — **Royal**
-> (regal violet), **Sapphire** (electric indigo with orchid analytics), **Aurora** (fuchsia with
+> (regal violet, since retired), **Sapphire** (electric indigo with orchid analytics), **Aurora** (fuchsia with
 > teal) — each a measured triple like the original four: same contrast floors on both themes,
 > money/analytics roles kept far apart on the hue wheel, P&L colours untouched. Around them the
 > chrome sharpened: real 300 ms tooltips replace the browser's slow title bubbles on the hot
@@ -99,7 +106,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > count-up numbers rolled out from the dashboard to the report and tracker screens.
 
 <p align="center">
-<img src="docs/screenshots/skin-royal.png" alt="Royal skin — violet-led dashboard" width="290" />
+<img src="docs/screenshots/skin-royal.png" alt="Royal skin (retired in v2.99.96 — stored choices map to Sapphire) — violet-led dashboard" width="290" />
 <img src="docs/screenshots/skin-sapphire.png" alt="Sapphire skin — electric indigo dashboard" width="290" />
 <img src="docs/screenshots/skin-aurora.png" alt="Aurora skin — fuchsia dashboard" width="290" />
 </p>
@@ -122,7 +129,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > Sensex 20…) and which exchange each index calls home. Surveillance now reads NSE's own files:
 > drop `fo_secban.csv` or the `REG_IND` indicator file and ban/ASM/GSM/ESM land in the right
 > categories with the date read from the file itself. Chart screenshots open in an in-app viewer.
-> Trades columns reorder by drag. Four coordinated skins — Luxe, Terminal, Ice, Tape — in dark and
+> Trades columns reorder by drag. Four coordinated skins — Luxe, Terminal, Ice (since retired → Sapphire), Tape — in dark and
 > light. And the installer wears the Vyuha mark end to end, not the NSIS globe.
 >
 > *v2.99.9 — every broker's MTF list, compared.* 10,501 per-stock own-margin percentages across

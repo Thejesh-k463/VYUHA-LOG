@@ -176,7 +176,7 @@
      that cost you money" became the same colour. See lib/domain/skin.ts for the
      measured separations.
 
-     PLACEMENT IS LOAD-BEARING. `html.skin-ice` and `html.theme-light` have the
+     PLACEMENT IS LOAD-BEARING. `html.skin-tape` and `html.theme-light` have the
      SAME specificity (0,1,1) — only source order separates them. These blocks
      therefore sit AFTER the light theme, and every skin answers BOTH themes,
      with the light branch selected by `html.theme-light.skin-*` (0,2,1) so it
@@ -220,37 +220,24 @@
     --shadow-hero: none;
   }
 
-  /* Ice — blue-led. Analytics moves off violet to orchid: violet (255°) sits
-     only 58° from a blue primary, orchid (292°) restores the gap to 95°. */
-  html.skin-ice {
-    --color-primary: #4cc2f1;        /* 8.14:1 on #05080f */
-    --color-primary-deep: #2aa8db;
-    --color-primary-foreground: #04121a;
-    --color-violet: #e879f9;         /* analytics */
-    --color-violet-deep: #c026d3;
-    --color-accent: #e879f9;
-    --color-ring: #4cc2f1;
-    --shadow-primary-glow: 0 4px 18px -6px rgb(76 194 241 / 0.5);
-    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(76 194 241 / 0.4);
-  }
-  html.theme-light.skin-ice {
-    --color-primary: #0369a1;        /* 4.95:1 on #f4f6f9 */
-    --color-primary-deep: #075985;
-    --color-primary-foreground: #ffffff;
-    --color-violet: #a21caf;
-    --color-violet-deep: #86198f;
-    --color-accent: #a21caf;
-    --color-ring: #0369a1;
-    --shadow-primary-glow: 0 4px 18px -6px rgb(3 105 161 / 0.35);
-    --shadow-hero: 0 0 30px -12px rgb(3 105 161 / 0.3);
-  }
+  /* SURFACE TINTS. From v2.99.96 every coloured skin also tints the canvas,
+     the panel-gradient start and the border, in the skin's own hue — a skin
+     that recolours only ~9 accent tokens is telling by its buttons alone, and
+     two such skins with neighbouring primaries looked identical at a glance
+     (Ice vs Sapphire, Royal vs Luxe/Aurora — both pairs retired for it; a
+     stored "ice"/"royal" now maps to Sapphire, see lib/domain/skin.ts). Luxe
+     keeps the @theme navy; Terminal (mono) stays flat and untinted. Every
+     dark surface token is answered in light too, per the rule above. */
 
-  /* Tape — amber-led, and the one skin where GOLD IS NOT THE MONEY COLOUR.
+  /* Tape — amber-led, and the first skin where GOLD IS NOT THE MONEY COLOUR.
      No warm hue clears gold (41°), loss (352°) and profit (157°) at once, so
      an amber primary forces money to move; it takes violet and analytics takes
      teal. Role-to-role separation is 98° — wider than the shipping Luxe's 83°.
      The Settings picker names the money colour for this reason. */
   html.skin-tape {
+    --color-background: #0f0c06;
+    --color-card-top: #2a2414;
+    --color-border: rgba(232, 176, 6, 0.15);
     --color-primary: #e8b006;        /* 7.58:1 on #05080f */
     --color-primary-deep: #c08f04;
     --color-primary-foreground: #1a1300;
@@ -258,14 +245,17 @@
     --color-gold-bright: #d8b4fe;
     --color-gold-deep: #9333ea;
     --color-warning: #c084fc;
-    --color-violet: #2dd4bf;         /* analytics */
+    --color-violet: #5eead4;         /* analytics — lighter than Luxe's #2dd4bf primary so no skin's primary is another's analytics */
     --color-violet-deep: #14b8a6;
-    --color-accent: #2dd4bf;
+    --color-accent: #5eead4;
     --color-ring: #e8b006;
     --shadow-primary-glow: 0 4px 18px -6px rgb(232 176 6 / 0.5);
     --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(232 176 6 / 0.4);
   }
   html.theme-light.skin-tape {
+    --color-background: #faf8f5;
+    --color-card-top: #ffffff;
+    --color-border: #e4e0d2;
     --color-primary: #8a6508;        /* 4.81:1 on #f4f6f9 */
     --color-primary-deep: #6f4b05;
     --color-primary-foreground: #ffffff;
@@ -273,91 +263,182 @@
     --color-gold-bright: #9333ea;
     --color-gold-deep: #6b21a8;
     --color-warning: #7e22ce;
-    --color-violet: #0b7a70;
+    --color-violet: #0d7269;
     --color-violet-deep: #0a6a61;
-    --color-accent: #0b7a70;
+    --color-accent: #0d7269;
     --color-ring: #8a6508;
     --shadow-primary-glow: 0 4px 18px -6px rgb(138 101 8 / 0.35);
     --shadow-hero: 0 0 30px -12px rgb(138 101 8 / 0.3);
   }
 
-  /* ── The v2.99.70 trio (Royal / Sapphire / Aurora) ──────────────────────
-     Same contract as the first three: literal colours only (the chart canvas
-     cannot parse color-mix), both themes answered for every token, and
-     --color-profit / --color-loss never touched (they belong to colourblind
-     mode). Contrast + hue separations measured before these numbers were
-     written — see lib/domain/skin.ts. */
-
-  html.skin-royal {
-    --color-primary: #a78bfa;        /* 7.36:1 on #05080f */
-    --color-primary-deep: #8b5cf6;
-    --color-primary-foreground: #120a24;
-    --color-violet: #22d3ee;         /* analytics → cyan; violet leads now */
-    --color-violet-deep: #06b6d4;
-    --color-accent: #22d3ee;
-    --color-ring: #a78bfa;
-    --shadow-primary-glow: 0 4px 18px -6px rgb(167 139 250 / 0.5);
-    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(167 139 250 / 0.4);
-  }
-
-  html.theme-light.skin-royal {
-    --color-primary: #6d28d9;        /* 6.56:1 on #f4f6f9 */
-    --color-primary-deep: #5b21b6;
-    --color-primary-foreground: #ffffff;
-    --color-violet: #0e7490;
-    --color-violet-deep: #155e75;
-    --color-accent: #0e7490;
-    --color-ring: #6d28d9;
-    --shadow-primary-glow: 0 4px 18px -6px rgb(109 40 217 / 0.35);
-    --shadow-hero: 0 0 30px -12px rgb(109 40 217 / 0.3);
-  }
-
+  /* Sapphire — electric indigo-blue, orchid analytics (#f0abfc: lifted from
+     Aurora's #e879f9 primary so the two never share a hex). Same contract as
+     Tape: literal colours only, both themes answered, P&L never touched. */
   html.skin-sapphire {
+    --color-background: #06080f;
+    --color-card-top: #121a30;
+    --color-border: rgba(113, 150, 255, 0.175);
     --color-primary: #7196ff;        /* 7.16:1 on #05080f */
     --color-primary-deep: #4f74f5;
     --color-primary-foreground: #060d24;
-    --color-violet: #e879f9;         /* analytics → orchid */
+    --color-violet: #f0abfc;         /* analytics → orchid */
     --color-violet-deep: #c026d3;
-    --color-accent: #e879f9;
+    --color-accent: #f0abfc;
     --color-ring: #7196ff;
     --shadow-primary-glow: 0 4px 18px -6px rgb(113 150 255 / 0.5);
     --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(113 150 255 / 0.4);
   }
-
   html.theme-light.skin-sapphire {
+    --color-background: #f5f6fa;
+    --color-card-top: #ffffff;
+    --color-border: #d2d7e4;
     --color-primary: #1d4ed8;        /* 6.19:1 on #f4f6f9 */
     --color-primary-deep: #1e40af;
     --color-primary-foreground: #ffffff;
-    --color-violet: #a21caf;
+    --color-violet: #b31fc4;
     --color-violet-deep: #86198f;
-    --color-accent: #a21caf;
+    --color-accent: #b31fc4;
     --color-ring: #1d4ed8;
     --shadow-primary-glow: 0 4px 18px -6px rgb(29 78 216 / 0.35);
     --shadow-hero: 0 0 30px -12px rgb(29 78 216 / 0.3);
   }
 
+  /* Aurora — fuchsia-led, teal analytics. */
   html.skin-aurora {
+    --color-background: #0e060f;
+    --color-card-top: #27142a;
+    --color-border: rgba(232, 121, 249, 0.17);
     --color-primary: #e879f9;        /* 8.14:1 on #05080f */
     --color-primary-deep: #d946ef;
     --color-primary-foreground: #1c0a1f;
-    --color-violet: #2dd4bf;         /* analytics → teal */
+    --color-violet: #5eead4;         /* analytics → teal */
     --color-violet-deep: #14b8a6;
-    --color-accent: #2dd4bf;
+    --color-accent: #5eead4;
     --color-ring: #e879f9;
     --shadow-primary-glow: 0 4px 18px -6px rgb(232 121 249 / 0.5);
     --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(232 121 249 / 0.4);
   }
-
   html.theme-light.skin-aurora {
+    --color-background: #f9f5fa;
+    --color-card-top: #ffffff;
+    --color-border: #e2d2e4;
     --color-primary: #a21caf;        /* 5.84:1 on #f4f6f9 */
     --color-primary-deep: #86198f;
     --color-primary-foreground: #ffffff;
-    --color-violet: #0b7a70;         /* 4.81:1 — the set's worst, = Tape's shipping worst */
+    --color-violet: #0d7269;
     --color-violet-deep: #0a6a61;
-    --color-accent: #0b7a70;
+    --color-accent: #0d7269;
     --color-ring: #a21caf;
     --shadow-primary-glow: 0 4px 18px -6px rgb(162 28 175 / 0.35);
     --shadow-hero: 0 0 30px -12px rgb(162 28 175 / 0.3);
+  }
+
+  /* ── The v2.99.96 trio (Lime / Rose / Ember) — replacing Ice and Royal ────
+     Lime and Ember are warm-led like Tape and inherit its rule: money moves to
+     violet (Tape's exact gold-slot values), analytics goes teal. Rose is cool
+     enough to keep gold as money and violet as analytics. */
+
+  html.skin-lime {
+    --color-background: #0b0f06;
+    --color-card-top: #212a14;
+    --color-border: rgba(163, 230, 53, 0.13);
+    --color-primary: #a3e635;
+    --color-primary-deep: #84cc16;
+    --color-primary-foreground: #0f1a02;
+    --color-gold: #c084fc;           /* money → violet, as in Tape */
+    --color-gold-bright: #d8b4fe;
+    --color-gold-deep: #9333ea;
+    --color-warning: #c084fc;
+    --color-violet: #5eead4;         /* analytics → teal */
+    --color-violet-deep: #14b8a6;
+    --color-accent: #5eead4;
+    --color-ring: #a3e635;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(163 230 53 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(163 230 53 / 0.4);
+  }
+  html.theme-light.skin-lime {
+    --color-background: #f8faf5;
+    --color-card-top: #ffffff;
+    --color-border: #dde4d2;
+    --color-primary: #46700f;
+    --color-primary-deep: #3f6212;
+    --color-primary-foreground: #ffffff;
+    --color-gold: #7e22ce;
+    --color-gold-bright: #9333ea;
+    --color-gold-deep: #6b21a8;
+    --color-warning: #7e22ce;
+    --color-violet: #0d7269;
+    --color-violet-deep: #0a6a61;
+    --color-accent: #0d7269;
+    --color-ring: #46700f;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(70 112 15 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(70 112 15 / 0.3);
+  }
+
+  html.skin-rose {
+    --color-background: #0f060a;
+    --color-card-top: #2a141f;
+    --color-border: rgba(244, 114, 182, 0.18);
+    --color-primary: #f472b6;
+    --color-primary-deep: #ec4899;
+    --color-primary-foreground: #2a0716;
+    --color-violet: #a78bfa;         /* analytics stays violet; gold stays money */
+    --color-violet-deep: #7c3aed;
+    --color-accent: #a78bfa;
+    --color-ring: #f472b6;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(244 114 182 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(244 114 182 / 0.4);
+  }
+  html.theme-light.skin-rose {
+    --color-background: #faf5f7;
+    --color-card-top: #ffffff;
+    --color-border: #e4d2dc;
+    --color-primary: #be185d;
+    --color-primary-deep: #9d174d;
+    --color-primary-foreground: #ffffff;
+    --color-violet: #6d28d9;
+    --color-violet-deep: #5b21b6;
+    --color-accent: #6d28d9;
+    --color-ring: #be185d;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(190 24 93 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(190 24 93 / 0.3);
+  }
+
+  html.skin-ember {
+    --color-background: #0f0a06;
+    --color-card-top: #2a1d14;
+    --color-border: rgba(251, 146, 60, 0.165);
+    --color-primary: #fb923c;
+    --color-primary-deep: #f97316;
+    --color-primary-foreground: #2a1203;
+    --color-gold: #c084fc;           /* money → violet, as in Tape */
+    --color-gold-bright: #d8b4fe;
+    --color-gold-deep: #9333ea;
+    --color-warning: #c084fc;
+    --color-violet: #5eead4;         /* analytics → teal */
+    --color-violet-deep: #14b8a6;
+    --color-accent: #5eead4;
+    --color-ring: #fb923c;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(251 146 60 / 0.5);
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 0 30px -12px rgb(251 146 60 / 0.4);
+  }
+  html.theme-light.skin-ember {
+    --color-background: #faf7f5;
+    --color-card-top: #ffffff;
+    --color-border: #e4dad2;
+    --color-primary: #b93e0c;
+    --color-primary-deep: #9a3412;
+    --color-primary-foreground: #ffffff;
+    --color-gold: #7e22ce;
+    --color-gold-bright: #9333ea;
+    --color-gold-deep: #6b21a8;
+    --color-warning: #7e22ce;
+    --color-violet: #0d7269;
+    --color-violet-deep: #0a6a61;
+    --color-accent: #0d7269;
+    --color-ring: #b93e0c;
+    --shadow-primary-glow: 0 4px 18px -6px rgb(185 62 12 / 0.35);
+    --shadow-hero: 0 0 30px -12px rgb(185 62 12 / 0.3);
   }
 
   /* Display density. Everything in the app is sized in rem, so one root
@@ -385,8 +466,9 @@
      @theme above; there is nothing left to override here. The settings.accent_skin
      COLUMN deliberately survives (see lib/db/schema.ts): dropping it would mean
      a migration that rewrites every existing row for a preference nobody can
-     set any more. Stored 'tape'/'ice' values are simply never turned into a
-     class — see app/layout.tsx. */
+     set any more — until v4 brought skins back as measured TRIPLES (see the
+     Accent skins section above). Stored 'ice'/'royal' values now map to
+     Sapphire via lib/domain/skin.ts asSkin(). */
 
   /* Thin terminal scrollbars */
   * {
