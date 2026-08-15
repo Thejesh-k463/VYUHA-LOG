@@ -223,3 +223,22 @@ describe("lens kinds", () => {
     expect(new Set(LENSES.map((l) => l.kind)).size).toBe(LENSES.length);
   });
 });
+
+describe("groupIds index (B1 load fix)", () => {
+  // groupIds indexes the candidate array once (WeakMap on the array's
+  // identity) instead of re-filtering the book per group. Two things must
+  // still hold: ids come back in candidate order, exactly as the filter did;
+  // and an array grown IN PLACE is re-indexed rather than answered stale.
+  it("returns predicate-scope ids in candidate order and re-indexes a mutated array", () => {
+    const book = [t({ broker: "zerodha" }), t({ broker: "dhan" }), t({ broker: "zerodha" })];
+    const groups = lensGroups("broker", book, { batches: [], playbooks: [] });
+    const z = groups.find((g) => g.key === "broker:zerodha")!;
+    expect(groupIds(z, book)).toEqual([book[0].id, book[2].id]);
+
+    book.push(t({ broker: "zerodha" }));
+    expect(groupIds(z, book)).toEqual([book[0].id, book[2].id, book[3].id]);
+
+    // A group whose predicate matches nothing in a different book is empty, not undefined.
+    expect(groupIds(z, [t({ broker: "groww" })])).toEqual([]);
+  });
+});

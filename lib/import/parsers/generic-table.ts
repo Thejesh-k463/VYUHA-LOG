@@ -126,6 +126,12 @@ export function parseGenericTable(ctx: ParseContext): ParsedFile {
     format: mapping.side !== undefined ? "tradebook" : "pnl",
     trades: applied.trades,
     warnings: applied.warnings,
+    // Lines actually read, so a paired execution file shows "6,491 lines →
+    // 4,226 trades" in the imports table instead of a bare 4,226 that reads
+    // as rows going missing (the same field the Dhan GTR and Groww order
+    // parsers set; tests/load/c2-pathological-import.load.ts). Skipped rows
+    // are excluded here because the warning above already counts them.
+    sourceRows: rows.length - applied.skipped,
     table: {
       headers,
       sampleRows: rows.slice(0, 5),

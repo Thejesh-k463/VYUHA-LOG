@@ -72,6 +72,10 @@ describe("a broker nobody has a parser for, imported end to end", () => {
     expect(parsed.format).toBe("tradebook");
     // GMBREW's buy and sell pair into ONE closed trade; TCS stays open.
     expect(parsed.trades).toHaveLength(2);
+    // Three lines were read and paired into two positions — the parser says
+    // so, like the Dhan GTR and Groww order parsers do, so the imports table
+    // shows "3 → 2" rather than a bare 2 that looks like a lost row.
+    expect(parsed.sourceRows).toBe(3);
 
     const gm = parsed.trades.find((t) => t.tradingsymbol === "GMBREW")!;
     expect(gm.buyQty).toBe(650);

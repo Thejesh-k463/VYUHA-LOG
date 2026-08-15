@@ -228,12 +228,51 @@ export function groupIds(group: BatchGroup, candidates: LensTrade[]): number[] {
     case "ids":
       return s.ids;
     case "broker":
-      return candidates.filter((t) => t.broker === s.broker).map((t) => t.id);
+      return predicateIndex(candidates).broker.get(s.broker) ?? [];
     case "segment":
-      return candidates.filter((t) => t.segment === s.segment).map((t) => t.id);
+      return predicateIndex(candidates).segment.get(s.segment) ?? [];
     case "importBatch":
-      return candidates.filter((t) => t.importBatchId === s.batchId).map((t) => t.id);
+      return predicateIndex(candidates).batch.get(s.batchId) ?? [];
     default:
       return [];
   }
+}
+
+/**
+ * One pass over the book, then O(1) per group.
+ *
+ * The Lenses page calls `groupIds` once per group of every lens against the
+ * same candidate array. Filtering the book inside each call is O(groups ×
+ * trades), and import-batch groups grow WITH the book, so that was quadratic
+ * (tests/load/b1-lenses-grouping.load.ts measured t(4n)/t(n) = 14.3). The
+ * index is keyed on the array's identity in a WeakMap: a new array (a new
+ * request, a re-scoped book) is a new index, and nothing is retained past
+ * the array's own lifetime. Ids keep candidate order, exactly as the filter
+ * did, so a drill-down shows the same rows in the same order.
+ */
+interface PredicateIndex {
+  /** Length at indexing time — an array grown in place is re-indexed. */
+  n: number;
+  broker: Map<string, number[]>;
+  segment: Map<string, number[]>;
+  batch: Map<number, number[]>;
+}
+const indexCache = new WeakMap<LensTrade[], PredicateIndex>();
+
+function predicateIndex(candidates: LensTrade[]): PredicateIndex {
+  const hit = indexCache.get(candidates);
+  if (hit && hit.n === candidates.length) return hit;
+  const idx: PredicateIndex = { n: candidates.length, broker: new Map(), segment: new Map(), batch: new Map() };
+  const push = <K,>(m: Map<K, number[]>, k: K, id: number) => {
+    const l = m.get(k);
+    if (l) l.push(id);
+    else m.set(k, [id]);
+  };
+  for (const t of candidates) {
+    push(idx.broker, t.broker, t.id);
+    push(idx.segment, t.segment, t.id);
+    if (t.importBatchId != null) push(idx.batch, t.importBatchId, t.id);
+  }
+  indexCache.set(candidates, idx);
+  return idx;
 }

@@ -1,7 +1,8 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { db, sqlite, schema } from "@/lib/db";
 import { attachmentsDir } from "@/lib/db";
 import {
@@ -141,6 +142,38 @@ export function encryptBackup(dump: BackupEnvelope, password: string): Encrypted
   };
 }
 
+/**
+ * The last few derived restore keys, by (salt, params, password).
+ *
+ * A restore is TWO requests from the panel — `preview`, then `restore` with
+ * the same file and password — and each derived the key from scratch: at
+ * N=2^17 that is ~500 ms of blocked event loop, twice, for one key
+ * (tests/load/b6-encrypted-backup.load.ts). The salt is per-file and random,
+ * so the cache can only ever serve the same file with the same password
+ * again; a different file or a mistyped password derives as before. Entries
+ * are few, expire quickly, and hold a derived key — a secret already
+ * equivalent to what the request body carried in plaintext moments earlier.
+ */
+const DERIVED_KEY_TTL_MS = 5 * 60 * 1000;
+const DERIVED_KEY_MAX = 4;
+const derivedKeys = new Map<string, { key: Buffer; at: number }>();
+
+function deriveRestoreKey(password: string, salt: Buffer, params: ReturnType<typeof paramsOf>): Buffer {
+  const id = createHash("sha256")
+    .update(salt)
+    .update(`|${params.N}|${params.r}|${params.p}|`)
+    .update(password, "utf8")
+    .digest("base64");
+  const now = Date.now();
+  for (const [k, v] of derivedKeys) if (now - v.at > DERIVED_KEY_TTL_MS) derivedKeys.delete(k);
+  const hit = derivedKeys.get(id);
+  if (hit) return hit.key;
+  const key = scryptSync(password, salt, 32, { ...params, maxmem: scryptMaxmem(params) });
+  if (derivedKeys.size >= DERIVED_KEY_MAX) derivedKeys.delete(derivedKeys.keys().next().value!);
+  derivedKeys.set(id, { key, at: now });
+  return key;
+}
+
 export function decryptBackup(value: unknown, password: string): unknown {
   if (!isEncryptedBackup(value)) return value;
   try {
@@ -149,7 +182,7 @@ export function decryptBackup(value: unknown, password: string): unknown {
     // Read the cost the file was SEALED with, not the current one, so raising
     // the cost never strands a backup already sitting on someone's disk.
     const params = paramsOf(value);
-    const key = scryptSync(password, salt, 32, { ...params, maxmem: scryptMaxmem(params) });
+    const key = deriveRestoreKey(password, salt, params);
     const decipher = createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(Buffer.from(value.tag, "base64"));
     const raw = Buffer.concat([decipher.update(Buffer.from(value.ciphertext, "base64")), decipher.final()]);
@@ -293,8 +326,20 @@ export function readSqliteFile(): Buffer {
   return fs.readFileSync(sqlite.name);
 }
 
+/**
+ * Row count per table, for the /backup page.
+ *
+ * `COUNT(*)`, not `.all().length`: the previous form materialised every row of
+ * all 29 tables through Drizzle on every render of a force-dynamic page —
+ * 125,195 rows and ~420 ms for a HEAVY-tier book, to print 29 numbers
+ * (tests/load/b5-backup-restore.load.ts). SQLite answers a bare COUNT(*) from
+ * the table's B-tree without decoding a row.
+ */
 export function dbCounts(): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const name of BACKUP_TABLES) counts[name] = db.select().from(TABLE_MAP[name]).all().length;
+  for (const name of BACKUP_TABLES) {
+    const row = db.select({ n: sql<number>`count(*)` }).from(TABLE_MAP[name]).get();
+    counts[name] = Number(row?.n ?? 0);
+  }
   return counts;
 }

@@ -84,10 +84,31 @@ export function importSources(): readonly DetectedParser[] {
   return REGISTRY;
 }
 
+/**
+ * Detection is memoised per ParseContext OBJECT.
+ *
+ * The upload route asks twice — `rankParsers(ctx)` for the candidate list and
+ * `detectParser(ctx)` for the winner — and every fingerprinting detector opens
+ * the workbook itself, so the second ask re-decoded a 1.4 MB tradebook seven
+ * more times (tests/load/b7-import-parse-count.load.ts: 14 full XLSX.read
+ * calls before a single trade was parsed, ~1.3 s). The cache is keyed on the
+ * context's identity AND on the fields a detector reads, so a context whose
+ * bytes, name or mapping changed is scored afresh, and a fresh context — a
+ * new request — is never served another file's ranking. Scores themselves
+ * are untouched: this returns exactly what the detectors returned.
+ */
+const rankCache = new WeakMap<ParseContext, { filename: string; text?: string; buffer?: Buffer; generic?: unknown; ranked: DetectedParser[] }>();
+
 /** Rank all parsers by confidence for the given file. Highest first. */
 export function rankParsers(ctx: ParseContext): DetectedParser[] {
-  return REGISTRY.map((p) => ({ ...p, confidence: DETECTORS[p.sourceId]!(ctx) }))
+  const hit = rankCache.get(ctx);
+  if (hit && hit.filename === ctx.filename && hit.text === ctx.text && hit.buffer === ctx.buffer && hit.generic === ctx.generic) {
+    return hit.ranked.map((p) => ({ ...p }));
+  }
+  const ranked = REGISTRY.map((p) => ({ ...p, confidence: DETECTORS[p.sourceId]!(ctx) }))
     .sort((a, b) => b.confidence - a.confidence);
+  rankCache.set(ctx, { filename: ctx.filename, text: ctx.text, buffer: ctx.buffer, generic: ctx.generic, ranked });
+  return ranked.map((p) => ({ ...p }));
 }
 
 /** Pick the best parser (or null if nothing is confident). */

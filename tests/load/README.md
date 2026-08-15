@@ -76,19 +76,30 @@ Two of the six predictions were wrong in an instructive way. A2's cost was
 real but came from a different input shape than expected, and A6 was fine.
 Measuring is what separated them.
 
+### Second batch (2026-08-15) — B1, B2, B5, B6, B7, C2, C7
+
+| # | Test | Outcome |
+|---|---|---|
+| **B1** | `b1-lenses-grouping.load.ts` | **Real defect, fixed.** `groupIds()` re-filtered the whole book once per import-batch group; batches grow with the book, so the page loop was quadratic: **t(4n)/t(n) = 14.3** (55 ms at 10k trades → 794 ms at 40k). Now indexed once per candidate array (WeakMap on the array's identity, re-indexed if it grows in place): **69 ms at 80k → 347 ms at 320k, ratio 5.1–5.3** (n log n from two sorting lenses + GC at 320k objects). Assertion is `< 8`, between the two |
+| **B2** | `b2-entitlement-cost.load.ts` | **Real defect, fixed.** The clock high-water mark's guard was `now > mark`, so **200 entitlement reads spaced 1 ms apart = 200 UPDATEs, 400 statements**. (Back-to-back calls understate it 10× — 16 UPDATEs for 200 calls in 15 ms — so the test spaces them.) Now written at day granularity: **200 reads → 0 UPDATEs, 200 statements**; pure read 65 → 56 µs/call. The mark still advances when the day changes (asserted). The duplicated SHA-256 and per-verify PEM parse are in `lib/license.ts` (pure, out of this batch's file scope) — reported, not fixed |
+| **B5** | `b5-backup-restore.load.ts` | **Real defect, fixed.** `dbCounts()` materialised **125,195 rows in 421 ms** (25k trades + 100k audit) to print 29 numbers, on every `/backup` render. Now `COUNT(*)`: **29 rows, 1 ms**. Instrument is rows returned by `Statement#all/get` — statement count is 29 either way and cannot see this. Restore of the same book: **9.6 s, 125,227 statements** (one INSERT per row inside one transaction) — reported, not asserted: linear, correct, and paid once deliberately |
+| **B6** | `b6-encrypted-backup.load.ts` | **Real defect, fixed.** The panel's restore is two requests (`preview`, then `restore`) and each derived the scrypt key: **2 derivations, 498 + 527 ms of blocked event loop** for one restore. `decryptBackup` now keeps the last 4 derived keys for 5 min by (salt, params, password) — the salt is per-file, so only the same file with the same password is served: **1 derivation, 495 + 30 ms**. A wrong password still derives and is refused; two files with one password still derive twice (both asserted) |
+| **B7** | `b7-import-parse-count.load.ts` | **Real defect, half fixed.** The route calls `rankParsers` and then `detectParser` (which ranks again), and seven detectors each `XLSX.read` the file: **15 full decodes per upload, 1,331 ms** to detect a 1.4 MB Zerodha tradebook (parse itself: 97 ms). `rankParsers` is now memoised per ParseContext object (keyed on identity + the fields detectors read; scores unchanged, detection matrix green): **8 decodes, 802 ms**. Getting to the designed ≤2 needs the parsers to share one parsed workbook — `lib/import/parsers/*` is outside this batch's file scope, so that target is pinned as an `it.fails` in the file and will flip red-to-green when someone does it |
+| **C2** | `c2-pathological-import.load.ts` | **Prediction wrong; adjacent defect found and fixed.** The skipped count is NOT dropped — `applyMapping` already puts "2434 rows skipped … 962 of those had an unreadable date" into `warnings`, and the parser forwards them (asserted, 10k-row file, 35 % unreadable). What WAS missing: the executions shape pairs legs into positions and set no `sourceRows`, so the imports table showed a bare **4,226** for **6,491 readable lines** — exactly the "rows went missing" reading DECISIONS 2026-08-12 records. `generic-table.ts` now sets `sourceRows = rows − skipped` |
+| **C7** | `c7-money-boundary.load.ts` | **No defect.** 250,000 trades summed as `paise/100` doubles: naive fold drift **5.0 × 10⁻⁴ paise** before rounding, **0 paise** after, against `SUM(net_pnl_paise)` (net ₹1,26,22,92,870.17); 20 random 25k slices: worst 0 paise. Two-decimal rounding absorbs it by five orders of magnitude at ABUSIVE tier; kept as a guard. `getTradeStats` over 250k rows: 3.1 s, all of it `getTrades()` materialising the book — reported |
+
+Two of these seven predictions were wrong (C2's mechanism, C7 entirely), one
+was right but bigger than predicted (B7: 15, not 7–8, because the route ranks
+twice), and B2 needed the calls spaced a millisecond apart before it would
+show at all.
+
 ## Designed, not yet written
 
 Each names the code that worries it, so none of this needs re-deriving.
 
 | # | Test | Target | Predicted finding |
 |---|---|---|---|
-| B1 | `lenses-grouping.load.ts` | `lib/domain/lenses.ts:231-235` | Re-filters the book per group; import-batch groups are unbounded. Gating does not save the work — `lens-edge.ts:66` masks at output |
-| B2 | `entitlement-cost.load.ts` | `lib/queries/license.ts:95-97` | A SQLite **UPDATE on essentially every Pro page render** (guard is `now > mark`, true after 1 ms) — the app's most frequent writer. Plus a duplicated SHA-256 at `:127` and a PEM re-parsed per verify |
-| B5 | `backup-restore.load.ts` | `lib/backup.ts:271-274` | `dbCounts()` selects every row of all 29 tables purely for `.length`, on **every `/backup` render** |
-| B6 | `encrypted-backup.load.ts` | `backup-format.ts:98-103`, `api/backup/route.ts:47` | `scryptSync` at N=2^17 (~134 MB, synchronous) run **twice per restore** |
-| B7 | `import-parse-count.load.ts` | `lib/import/detect.ts:89` | All 11 detectors run per upload, most re-parsing the file — ~7-8 full `XLSX.read` per import. Assert ≤2 |
-| C2 | `pathological-import.load.ts` | `generic-table.ts:113-131` | Skipped-row counts are computed then **dropped** — only `warnings` is forwarded, so a user is never told how many rows vanished |
-| C7 | `money-boundary.load.ts` | `schema.ts:21`, `trades.ts:52-54` | `fromDriver` hands back floats; summing 250k of them drifts. Compare against `SELECT SUM(net_pnl_paise)` in integer paise |
+| B7b | (extend `b7-import-parse-count.load.ts`) | `lib/import/parsers/*.ts` (`XLSX.read` at 7 sites + `groww-xlsx.ts:25`) | Share one parsed workbook across detectors and the parser (a lazy `workbookOf(ctx)` beside `buildContext`); flip the `it.fails` pin to a plain assertion of ≤2 |
 
 ## Writing a new one
 

@@ -21,6 +21,9 @@ import {
   type LicensePayload,
 } from "@/lib/license";
 
+/** How far the clock high-water mark may lag `now` before it is rewritten. */
+const MARK_WRITE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 export interface LicenseStatus {
   licensed: boolean;
   payload: LicensePayload | null;
@@ -91,9 +94,18 @@ export const getEntitlement = cache((): Entitlement & { enforcement: typeof LICE
   // Advance the clock high-water mark. Only ever forwards: a system clock behind
   // the mark is disbelieved for entitlement purposes rather than written down,
   // so a rollback cannot lower the ratchet and then renew anything.
+  //
+  // Written at DAY granularity. The guard used to be `now > mark`, which is
+  // true one millisecond after the previous write — so every Pro render was a
+  // SQLite UPDATE, the app's most frequent writer (tests/load/
+  // b2-entitlement-cost.load.ts: 200 reads → 200 UPDATEs). The ratchet exists
+  // to catch a clock wound back by days (CLOCK_TOLERANCE_DAYS), so a mark up
+  // to a day stale defends exactly as well; a null or unparseable mark is
+  // still stamped at once.
   const now = new Date();
   const mark = row?.clockHighWaterMark ?? null;
-  if (row && (mark == null || now.getTime() > new Date(mark).getTime())) {
+  const markMs = mark == null ? NaN : new Date(mark).getTime();
+  if (row && (Number.isNaN(markMs) || now.getTime() - markMs >= MARK_WRITE_INTERVAL_MS)) {
     db.update(settings).set({ clockHighWaterMark: now.toISOString() }).where(eq(settings.id, row.id)).run();
   }
 
