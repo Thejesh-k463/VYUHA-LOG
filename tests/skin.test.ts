@@ -179,3 +179,73 @@ describe("the CSS answers both themes for every skin", () => {
     }
   });
 });
+
+describe("appearance CSS — panel styles and wallpaper (lib/domain/appearance.ts sets the classes)", () => {
+  // The classes app/layout.tsx puts on <html>: panel-flat / panel-soft /
+  // panel-glow (luxe = no class) and wallpaper. Each must have CSS behind it,
+  // or the setting is a no-op that nothing on screen reports.
+  const panelSelectors = ["html.panel-flat", "html.panel-soft", "html.panel-glow"] as const;
+  const themed = SKINS.filter((s) => s !== "luxe" && s !== "custom");
+
+  it("every panel style has both a token block (base) and a recipe override (utilities)", () => {
+    for (const sel of panelSelectors) {
+      // The utilities-layer override — the only thing that can beat @utility panel-luxe.
+      expect(css, `${sel} .panel-luxe override missing`).toContain(`${sel} .panel-luxe`);
+    }
+    // Flat and soft set shadow tokens in @layer base; glow composes from the
+    // skin's own --shadow-primary-glow and needs no token block.
+    expect(block("html.panel-flat")).toContain("--shadow-hero: none");
+    expect(block("html.panel-flat")).toContain("--shadow-primary-glow: none");
+    expect(block("html.theme-light.panel-flat")).toContain("--shadow-hero: none");
+    expect(block("html.panel-soft")).toContain("--shadow-hero:");
+    expect(block("html.theme-light.panel-soft")).toContain("--shadow-hero:");
+  });
+
+  it("the panel-style token blocks come AFTER every skin block — same specificity, order decides", () => {
+    const lastSkin = Math.max(...themed.map((s) => css.indexOf(`html.theme-light.skin-${s} {`)));
+    for (const sel of ["html.panel-flat {", "html.theme-light.panel-flat {", "html.panel-soft {", "html.theme-light.panel-soft {"]) {
+      expect(css.indexOf(sel), `${sel} must follow the skin blocks`).toBeGreaterThan(lastSkin);
+    }
+  });
+
+  it("the recipe overrides live in a LAYERED utilities block, so print (unlayered) still flattens them", () => {
+    const at = css.indexOf("html.panel-flat .panel-luxe");
+    const layerOpen = css.lastIndexOf("@layer utilities {", at);
+    expect(layerOpen, "panel overrides must sit inside @layer utilities").toBeGreaterThan(0);
+    // No `@utility` or unlayered rule opens between the layer and the override.
+    expect(css.slice(layerOpen, at)).not.toContain("@utility");
+    // The C10 print block is the LAST @media print in the file (text-grad-gold nests an earlier one).
+    expect(css.lastIndexOf("@media print")).toBeGreaterThan(at);
+  });
+
+  it("wallpaper paints on body, behind the scrim, and is reset on paper", () => {
+    expect(css).toContain("html.wallpaper body {");
+    const body = block("html.wallpaper body");
+    expect(body).toContain("var(--wallpaper)");
+    expect(body).toContain("var(--wallpaper-scrim");
+    expect(body).toContain("--wallpaper-scrim-rgb");
+    expect(body).toContain("background-size: cover");
+    // Scrim channels are theme-answered.
+    expect(css).toMatch(/--wallpaper-scrim-rgb:\s*5 8 15/);
+    expect(block("html.theme-light")).toMatch(/--wallpaper-scrim-rgb:\s*244 246 249/);
+    // Print reset — inside the @media print block, after it opens.
+    // The C10 print block is the LAST @media print in the file (text-grad-gold
+    // nests an earlier one). CRLF-tolerant: the file is checked out with \r\n.
+    const print = css.lastIndexOf("@media print {");
+    const reset = css.search(/html\.wallpaper body \{\r?\n\s+background-image: none !important;/);
+    expect(reset).toBeGreaterThan(print);
+  });
+
+  it("none of the appearance blocks use color-mix() — same rule as the skins", () => {
+    // Token blocks (base) — extracted by exact selector.
+    for (const sel of ["html.panel-flat", "html.theme-light.panel-flat", "html.panel-soft", "html.theme-light.panel-soft", "html.wallpaper body"]) {
+      expect(block(sel), `${sel} uses color-mix`).not.toContain("color-mix");
+    }
+    // The utilities-layer overrides — the whole `@layer utilities { … }` block
+    // that holds the html.panel-* recipes.
+    const at = css.indexOf("html.panel-flat .panel-luxe");
+    const open = css.lastIndexOf("@layer utilities {", at);
+    const close = at + css.slice(at).search(/\r?\n\}/); // the layer's own closing brace (column 0)
+    expect(css.slice(open, close), "panel recipe overrides use color-mix").not.toContain("color-mix");
+  });
+});

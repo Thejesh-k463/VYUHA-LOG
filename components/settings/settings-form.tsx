@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { WORKSPACE_LABELS, asWorkspace, type Workspace } from "@/lib/domain/workspace";
-import { SKINS, SKIN_META, asSkin, skinClass, type Skin } from "@/lib/domain/skin";
+import { SKINS, SKIN_META, asSkin, type Skin } from "@/lib/domain/skin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,22 @@ import { Switch } from "@/components/ui/switch";
 import type { Settings } from "@/lib/db/schema";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_CUSTOM_THEME,
+  DEFAULT_WALLPAPER_OPACITY,
+  appearanceVars,
+  asPanelStyle,
+  clampIntensity,
+  parseCustomTheme,
+  type CustomTheme,
+  type PanelStyle,
+  type Theme,
+} from "@/lib/domain/appearance";
+import { TintControl } from "@/components/settings/appearance/tint-control";
+import { PanelStyleSelect } from "@/components/settings/appearance/panel-style-select";
+import { CustomThemeBuilder } from "@/components/settings/appearance/custom-theme-builder";
+import { WallpaperPicker } from "@/components/settings/appearance/wallpaper-picker";
+import { adoptServerVars, applyAppearancePreview } from "@/components/settings/appearance/live-preview";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -34,24 +50,106 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [defaultSellOrders, setSellOrders] = useState(String(current.defaultSellOrders));
   const [autoMtm, setAutoMtm] = useState(current.autoMtmEnabled);
   const [pending, setPending] = useState(false);
+  // ── Appearance (lib/domain/appearance.ts) ──
+  const [tintIntensity, setTint] = useState(clampIntensity(current.tintIntensity));
+  const [panelStyle, setPanelStyle] = useState<PanelStyle>(asPanelStyle(current.panelStyle));
+  const [customTheme, setCustomTheme] = useState<CustomTheme>(
+    parseCustomTheme(current.customTheme) ?? DEFAULT_CUSTOM_THEME,
+  );
+  const [wallpaperStoredName, setWallpaperName] = useState<string | null>(current.wallpaperStoredName ?? null);
+  const [wallpaperOpacity, setWallpaperOpacity] = useState(
+    clampIntensity(current.wallpaperOpacity ?? DEFAULT_WALLPAPER_OPACITY),
+  );
+  // The last built-in skin picked — the seed for the custom builder's "Start from …".
+  const [sourceSkin, setSourceSkin] = useState<Skin>(() => {
+    const s = asSkin(current.accentSkin);
+    return s === "custom" ? "luxe" : s;
+  });
+
+  const themeSide: Theme = theme === "light" ? "light" : "dark";
+
+  /**
+   * One live-preview path for everything that lands on <html>: the inline
+   * --color-* / --wallpaper vars (the same appearanceVars() app/layout.tsx
+   * server-renders) plus the skin / panel / wallpaper classes. Every appearance
+   * handler funnels through here with its own field overridden, so a skin
+   * change re-applies the chrome at the current intensity, a theme change
+   * re-derives the custom side, and switching to Terminal REMOVES the tint.
+   */
+  function preview(next: {
+    skin?: Skin;
+    theme?: Theme;
+    intensity?: number;
+    panelStyle?: PanelStyle;
+    customTheme?: CustomTheme;
+    wallpaper?: { storedName: string | null; opacity: number };
+  } = {}) {
+    adoptServerVars();
+    const s = next.skin ?? skin;
+    const wp = next.wallpaper ?? { storedName: wallpaperStoredName, opacity: wallpaperOpacity };
+    applyAppearancePreview(
+      appearanceVars({
+        skin: s,
+        theme: next.theme ?? themeSide,
+        intensity: next.intensity ?? tintIntensity,
+        customTheme: next.customTheme ?? customTheme,
+        wallpaper: wp,
+      }),
+      { skin: s, panel: next.panelStyle ?? panelStyle, wallpaper: Boolean(wp.storedName) },
+    );
+  }
 
   // Apply theme / colorblind to <html> instantly for live preview.
   function applyTheme(next: string) {
     setTheme(next);
     document.documentElement.classList.toggle("theme-light", next === "light");
+    // The chrome tint and the custom theme are per-side: re-derive them.
+    preview({ theme: next === "light" ? "light" : "dark" });
   }
   /** Live preview — same mechanism as applyTheme, so the picker shows the real
-   *  thing rather than a swatch approximation. */
+   *  thing rather than a swatch approximation. The skin class AND the skin's
+   *  chrome tint at the current intensity go on together, so two skins never
+   *  share a canvas by hex in the picker either. */
   function applySkin(next: Skin) {
     setSkin(next);
-    const el = document.documentElement;
-    for (const s of SKINS) {
-      const c = skinClass(s);
-      if (c) el.classList.remove(c);
-    }
-    const c = skinClass(next);
-    if (c) el.classList.add(c);
+    if (next !== "custom") setSourceSkin(next);
+    preview({ skin: next });
   }
+  function applyTint(next: number) {
+    setTint(next);
+    preview({ intensity: next });
+  }
+  function applyPanelStyle(next: PanelStyle) {
+    setPanelStyle(next);
+    preview({ panelStyle: next });
+  }
+  function applyCustomTheme(next: CustomTheme) {
+    setCustomTheme(next);
+    preview({ customTheme: next });
+  }
+  function applyWallpaperOpacity(next: number) {
+    setWallpaperOpacity(next);
+    preview({ wallpaper: { storedName: wallpaperStoredName, opacity: next } });
+  }
+  function onWallpaperUploaded(storedName: string) {
+    setWallpaperName(storedName);
+    preview({ wallpaper: { storedName, opacity: wallpaperOpacity } });
+    // The upload route wrote the column itself; the layout must learn the new
+    // file so a hard reload after "Save" (or without it) shows the same thing.
+    router.refresh();
+  }
+  function onWallpaperRemoved() {
+    setWallpaperName(null);
+    preview({ wallpaper: { storedName: null, opacity: wallpaperOpacity } });
+    router.refresh();
+  }
+
+  const tintDisabledReason =
+    skin === "mono"
+      ? "Terminal is deliberately flat — it takes no tint."
+      : skin === "custom"
+        ? "Custom theme sets its own chrome; the tint curve does not apply."
+        : null;
   function applyColorblind(next: boolean) {
     setColorblind(next);
     document.documentElement.classList.toggle("cb-safe", next);
@@ -69,12 +167,15 @@ export function SettingsForm({ current }: { current: Settings }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           type: "settings",
-          // accentSkin is not sent: the skin picker was retired in v3. The API
-          // still accepts the field (defaulting to "terminal"), so a saved
-          // "tape"/"ice" row quietly normalises the next time this form saves.
           goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
+          // Appearance. customTheme goes only while the Custom skin is selected
+          // ("Save as my theme" is explicit); otherwise it is omitted and the
+          // stored theme is kept. wallpaperStoredName is NOT sent — the upload
+          // route owns that column.
+          tintIntensity, panelStyle, wallpaperOpacity,
+          ...(skin === "custom" && { customTheme }),
         }),
       });
       const json = await res.json();
@@ -82,10 +183,11 @@ export function SettingsForm({ current }: { current: Settings }) {
       if (json.ok) toast.success(text);
       else toast.error(text);
       // The sidebar and command palette live in the root layout, so a changed
-      // workspace only reaches them on a server re-render. Refreshing here
+      // workspace only reaches them on a server re-render — and the appearance
+      // vars/classes on <html> are server-rendered there too. Refreshing here
       // (rather than letting a server action do it) is what keeps this form's
       // other in-progress edits intact — see AGENTS.md.
-      if (json.ok && workspace !== asWorkspace(current.workspace)) router.refresh();
+      if (json.ok) router.refresh();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -145,9 +247,9 @@ export function SettingsForm({ current }: { current: Settings }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Preferences</CardTitle>
+          <CardTitle>Appearance</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid gap-4 sm:grid-cols-2" data-testid="appearance-section">
           <div className="sm:col-span-2 space-y-2">
             <Label>Accent skin</Label>
             <div className="flex flex-wrap gap-2">
@@ -201,6 +303,45 @@ export function SettingsForm({ current }: { current: Settings }) {
               <option value="comfortable">Comfortable (larger type)</option>
             </Select>
           </Field>
+
+          <TintControl value={tintIntensity} onChange={applyTint} disabledReason={tintDisabledReason} />
+          <PanelStyleSelect value={panelStyle} onChange={applyPanelStyle} />
+
+          {skin === "custom" && (
+            <div className="sm:col-span-2">
+              <CustomThemeBuilder
+                value={customTheme}
+                onChange={applyCustomTheme}
+                activeTheme={themeSide}
+                sourceSkin={sourceSkin}
+                intensity={tintIntensity}
+              />
+            </div>
+          )}
+
+          <div className="sm:col-span-2">
+            <WallpaperPicker
+              storedName={wallpaperStoredName}
+              opacity={wallpaperOpacity}
+              onOpacityChange={applyWallpaperOpacity}
+              onUploaded={onWallpaperUploaded}
+              onRemoved={onWallpaperRemoved}
+            />
+          </div>
+
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            Everything above previews at once and is kept by{" "}
+            <span className="text-foreground">Save settings</span> below. Leave without saving and the app
+            reverts to what was stored.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Preferences</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="Financial year starts">
             <Select value={fyStartMonth} onChange={(e) => setFy(e.target.value)}>
               {MONTHS.map((m, i) => (

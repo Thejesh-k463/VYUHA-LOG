@@ -82,6 +82,12 @@
      dialog/toast overlays reference them by name. */
   --shadow-card-hover: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 4px 16px -4px rgb(0 0 0 / 0.5);
   --shadow-overlay: inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 16px 48px -12px rgb(0 0 0 / 0.65);
+
+  /* Wallpaper scrim colour as bare RGB channels (see APPEARANCE below): the
+     canvas navy for dark, answered by html.theme-light. Channels, not a colour,
+     so `rgb(var(--wallpaper-scrim-rgb) / var(--wallpaper-scrim))` can take the
+     user's alpha without color-mix(). */
+  --wallpaper-scrim-rgb: 5 8 15;
 }
 
 @layer base {
@@ -167,6 +173,7 @@
     --shadow-hero: 0 0 30px -12px rgb(11 122 112 / 0.3);
     --shadow-card-hover: 0 4px 12px -2px rgb(16 24 40 / 0.12);
     --shadow-overlay: 0 16px 48px -12px rgb(16 24 40 / 0.28);
+    --wallpaper-scrim-rgb: 244 246 249; /* the light canvas, as channels */
   }
 
   /* ── Accent skins ────────────────────────────────────────────────────────
@@ -441,6 +448,73 @@
     --shadow-hero: 0 0 30px -12px rgb(185 62 12 / 0.3);
   }
 
+  /* ── APPEARANCE: panel style + wallpaper ────────────────────────────────
+     How the pieces fit (lib/domain/appearance.ts owns the maths):
+       • CHROME TINT (skin × intensity) and the CUSTOM theme arrive as literal
+         --color-* values INLINE on <html> from app/layout.tsx. Inline beats
+         every class-level token here, so this file never encodes intensity —
+         and never sets --color-card-top to var(--color-card) to flatten a
+         panel, because the inline value would win anyway.
+       • PANEL STYLE arrives as a class: html.panel-flat / .panel-soft /
+         .panel-glow. Luxe = no class = the @theme + @utility look. The
+         gradient recipes are @utility (utilities layer), which ALWAYS beats
+         @layer base, so the per-style gradients live in an `@layer utilities`
+         block further down, on `html.panel-* .panel-luxe` (0,2,1) — higher
+         specificity than `.panel-luxe` (0,1,0) inside the same layer, so
+         source order is irrelevant. Only the shadow TOKENS are set here.
+       • WALLPAPER arrives as html.wallpaper with inline --wallpaper (a url())
+         and --wallpaper-scrim (0..1 = how much canvas colour covers the image;
+         opacity 35 → scrim 0.65). The scrim is `rgb(<channels> / <alpha>)`,
+         NOT color-mix(): the channels token is theme-answered above and the
+         alpha is the user's number, so no mixing function is needed — and the
+         chart canvas never sees any of it (it is a body background-image, not
+         a token). Cards stay opaque (bg-card is a literal), and the sidebar
+         paints an opaque surface→background gradient, so the image shows
+         through the main canvas only.
+     PLACEMENT: these token blocks sit AFTER every skin block. `html.panel-flat`
+     is (0,1,1) like `html.skin-tape`, and `html.theme-light.panel-flat` is
+     (0,2,1) like `html.theme-light.skin-tape` — order is what lets the panel
+     style win over the skin's own shadows. Values stay LITERAL (chart rule). */
+
+  /* Flat — no gradient (utilities block), no glow, no halo. Same shadow
+     values Terminal (mono) uses, so mono+flat and luxe+flat agree. */
+  html.panel-flat {
+    --shadow-primary-glow: none;
+    --shadow-hero: none;
+  }
+  html.theme-light.panel-flat {
+    --shadow-primary-glow: none;
+    --shadow-hero: none;
+  }
+  /* Soft — a shorter gradient run (utilities block) and the halo dropped from
+     the hero shadow, keeping only the 1px inner top highlight. */
+  html.panel-soft {
+    --shadow-hero: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+  html.theme-light.panel-soft {
+    /* Light has no inner highlight to keep — the hero shadow simply goes. */
+    --shadow-hero: none;
+  }
+  /* Glow — tokens unchanged; the stronger halo is composed in the utilities
+     block from --shadow-primary-glow (each skin's own hue) + --shadow-card. */
+
+  /* Wallpaper: scrim (theme-coloured, user alpha) over the image, over the
+     canvas colour. `fixed` + `cover` so the image neither tiles nor scrolls
+     with the main pane. --wallpaper carries the url() inline. */
+  html.wallpaper body {
+    background-color: var(--color-background);
+    background-image:
+      linear-gradient(
+        rgb(var(--wallpaper-scrim-rgb, 5 8 15) / var(--wallpaper-scrim, 0.65)),
+        rgb(var(--wallpaper-scrim-rgb, 5 8 15) / var(--wallpaper-scrim, 0.65))
+      ),
+      var(--wallpaper);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
   /* Display density. Everything in the app is sized in rem, so one root
      font-size scales type, paddings and gaps together — Comfortable is the
      whole interface at 17/16 scale, not a second set of sizes to maintain.
@@ -589,6 +663,69 @@
     0 0 28px -10px color-mix(in oklab, var(--color-primary) 30%, transparent);
 }
 
+/* ---------------------------------------------------------------------------
+ * APPEARANCE — panel styles (see the APPEARANCE note in @layer base above).
+ * A plain `@layer utilities` block, deliberately NOT @utility: these are not
+ * classes anyone applies, they re-skin the recipes above when <html> carries
+ * panel-flat / panel-soft / panel-glow. Same cascade layer as the @utility
+ * rules, so `html.panel-* .panel-luxe` (0,2,1) beats `.panel-luxe` (0,1,0) on
+ * specificity alone; and still LAYERED, so the unlayered @media print block at
+ * the end keeps flattening every panel on paper — an unlayered rule here
+ * would have beaten print's `.panel-luxe { box-shadow: none }` instead.
+ * Luxe = no class = the recipes exactly as declared above.
+ * ------------------------------------------------------------------------- */
+@layer utilities {
+  /* Flat: solid panels. background-color repeats the Card's bg-card for the
+     hero/table recipes, which are not guaranteed to carry one. */
+  html.panel-flat .panel-luxe,
+  html.panel-flat .panel-hero,
+  html.panel-flat .table-luxe {
+    background-image: none;
+    background-color: var(--color-card);
+  }
+  /* Soft: same stops, shorter run — the gradient settles onto the card
+     colour by 45% instead of 100%, so most of the panel is one tone. The
+     --panel-wash layer (card-hero) is kept, as in the luxe recipe. */
+  html.panel-soft .panel-luxe {
+    background-image:
+      var(--panel-wash),
+      linear-gradient(165deg, var(--color-card-top) 0%, var(--color-card) 45%);
+  }
+  html.panel-soft .panel-hero {
+    background-image: linear-gradient(165deg, #13202c 0%, #0c1420 45%);
+  }
+  html.panel-soft .table-luxe {
+    background-image: linear-gradient(180deg, #0e1522 0%, #0a101a 45%);
+  }
+  /* Glow: the gradient runs longer (card-top holds until 70%) and every
+     panel wears the skin's primary halo (--shadow-primary-glow, literal per
+     skin) on top of its elevation. Hover keeps the lift. On Terminal (mono),
+     --shadow-primary-glow is `none`, which makes the list invalid — the
+     declaration is dropped and the card keeps its flat shadow, which is what
+     Terminal means. */
+  html.panel-glow .panel-luxe {
+    background-image:
+      var(--panel-wash),
+      linear-gradient(165deg, var(--color-card-top) 0%, var(--color-card) 70%);
+    box-shadow: var(--shadow-primary-glow), var(--shadow-card);
+  }
+  html.panel-glow .panel-luxe:hover {
+    box-shadow: var(--shadow-primary-glow), var(--shadow-card-hover);
+  }
+  html.panel-glow .panel-hero {
+    background-image: linear-gradient(165deg, #13202c 0%, #0c1420 70%);
+  }
+  html.panel-glow .table-luxe {
+    background-image: linear-gradient(180deg, #0e1522 0%, #0a101a 70%);
+  }
+  /* Light theme: a halo on every white card reads as smudge, not glow — keep
+     the light theme sane by limiting Glow to the hero shadow. */
+  html.theme-light.panel-glow .panel-luxe,
+  html.theme-light.panel-glow .panel-luxe:hover {
+    box-shadow: var(--shadow-hero);
+  }
+}
+
 /* Table-row hover lift (C5) — used by DataTable + report tables. */
 @utility row-hover {
   transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
@@ -716,5 +853,9 @@
   .table-luxe {
     background-image: none;
     box-shadow: none;
+  }
+  /* A wallpaper is a screen surface. Paper gets the plain white canvas. */
+  html.wallpaper body {
+    background-image: none !important;
   }
 }
