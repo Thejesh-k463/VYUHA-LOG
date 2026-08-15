@@ -139,9 +139,9 @@ export function verifyLicenseKey(
 }
 
 export const SKU_LABELS: Record<string, string> = {
-  toolkit: "Trader's Toolkit (app + indicators)",
+  toolkit: "Vyuha app (legacy bundle key)",
   app: "Vyuha app",
-  indicators: "Indicators bundle",
+  indicators: "Legacy indicators key",
 };
 
 // ---------------------------------------------------------------------------

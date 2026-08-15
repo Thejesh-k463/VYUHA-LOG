@@ -102,10 +102,28 @@ export const PRICING: readonly PricingSku[] = [
       "Every Pro analytics screen — risk, edge, discipline, options, full tax pack",
       "The charges engine verified within 0.69% of a real broker report",
       "All broker importers and free updates through the year",
-      "Upgrade to lifetime any time — the year you paid counts toward it",
+      "Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price",
     ],
   },
 ];
+
+/**
+ * Annual → Lifetime upgrade, owner decision 2026-08-15: FULL CREDIT within the
+ * year. While the annual key is unexpired, the buyer owes the lifetime launch
+ * price minus what they ACTUALLY paid for the year — not the list price, not a
+ * pro-rata slice. An expired annual key gets no credit (sell lifetime at the
+ * current price). Pure so scripts/license-upgrade.mjs and the receipt can be
+ * pinned to the same arithmetic; `due` never goes below zero.
+ */
+export function upgradeCredit({ lifetime, paidForYear }: { lifetime: number; paidForYear: number }): {
+  credit: number;
+  due: number;
+} {
+  if (!Number.isFinite(lifetime) || lifetime <= 0) throw new Error("upgradeCredit: lifetime price must be > 0");
+  if (!Number.isFinite(paidForYear) || paidForYear < 0) throw new Error("upgradeCredit: paidForYear must be >= 0");
+  const credit = Math.min(paidForYear, lifetime);
+  return { credit, due: lifetime - credit };
+}
 
 export function skuById(id: PricingSkuId): PricingSku {
   const sku = PRICING.find((s) => s.id === id);

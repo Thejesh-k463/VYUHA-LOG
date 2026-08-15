@@ -24,6 +24,40 @@ Both sit at the repo root. Both are **gitignored**. Neither is in any installer.
 secure-file slot or an encrypted archive in personal cloud storage. Do it again after each
 batch of sales. This is a five-minute task that has no substitute.
 
+### Archive every key: `--save-dir` / `VYUHA_KEY_ARCHIVE_DIR`
+
+Set the env once (a synced, private folder) and every key `license-issue.mjs` or
+`license-upgrade.mjs` mints is written there as `<keyId>_<email>.txt` — the key on
+line 1, then plan / issued / expires / machine / note — with a ledger snapshot
+`license-ledger.<date>.jsonl` beside it. It **refuses to overwrite** an existing key file.
+The ledger stays the record; the archive is the copy you hand back after "I lost the email".
+
+```bash
+export VYUHA_KEY_ARCHIVE_DIR="D:/Vyuha-keys"          # or per run: … --save-dir D:/Vyuha-keys
+VYUHA_LICENSE_NOTE="UTR …" node scripts/license-issue.mjs buyer@email.com app --years 1
+```
+
+### Encrypted backup: `license-backup.mjs`
+
+Bundles the `.pem` and the ledger into ONE file, AES-256-GCM under a passphrase you choose
+(scrypt N=2^15 — see the comment in `scripts/lib/keybundle.mjs` for why it is cheaper than
+the trade-database backup). Refuses to overwrite. Same day, same name — rename the old one
+if you want two.
+
+```bash
+node scripts/license-backup.mjs D:/Vyuha-keys                       # prompts for a passphrase twice
+VYUHA_BACKUP_PASSPHRASE="…" node scripts/license-backup.mjs D:/Vyuha-keys   # scripted
+node scripts/license-backup.mjs --inspect D:/Vyuha-keys/vyuha-keys-2026-08-15.vkb   # what is inside, no passphrase
+node scripts/license-backup.mjs --restore D:/Vyuha-keys/vyuha-keys-2026-08-15.vkb --out D:/restore-check
+```
+
+Copy the `.vkb` somewhere that is not this machine. **The passphrase has no recovery** — put it
+in the password manager, not in the same folder as the bundle.
+
+> Path overrides for tests and smoke runs only: `VYUHA_LICENSE_PEM`, `VYUHA_LICENSE_LEDGER`
+> (read by every licence script via `scripts/lib/license-mint.mjs`), `VYUHA_REVOKED_MJS`,
+> `VYUHA_LICENSE_TS` (`license-revoke.mjs`). Leave them unset for real sales.
+
 ---
 
 ## 1. A sale comes in
@@ -60,7 +94,7 @@ VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-13" \
 | **Pro — Annual ₹9,999/yr** | `… buyer@email.com app --years 1` |
 | Custom expiry | `… buyer@email.com app --expires 2027-03-31` |
 | Locked to one computer | `… app --machine EB42-FA73-9AD5` (see §6 — needs the buyer's Machine ID first) |
-| *Legacy bundle (do not issue)* | `… toolkit` — the app+indicators SKU retired at v2.99.76. Old keys still verify; issuing one today labels the buyer's Settings screen "Trader's Toolkit (app + indicators)" for a product that no longer includes indicators. The script warns if you do. |
+| *Legacy bundle (do not issue)* | `… toolkit` — the app+indicators SKU retired at v2.99.76. Old keys still verify; issuing one today labels the buyer's Settings screen "Vyuha app (legacy bundle key)". The script warns if you do. |
 
 The **key** goes to stdout (so `… > key.txt` or a pipe works); the **plan, key ID, buyer and
 ledger reminder** go to stderr so they never contaminate the key itself.
@@ -80,6 +114,52 @@ ledger reminder** go to stderr so they never contaminate the key itself.
 
 Then email the buyer the key + the download link. The key is bound to their email and shows as
 "Licensed to <email>" in the app — that is the anti-sharing mechanism.
+
+---
+
+## 1.5 Annual → Lifetime upgrade
+
+**The rule (owner decision 2026-08-15): full credit within the year.** While the annual key is
+unexpired, the buyer owes the **lifetime launch price minus what they actually paid for the
+year** — ₹29,999 − ₹9,999 = **₹20,000** at today's prices; the arithmetic is
+`upgradeCredit()` in `lib/domain/pricing.ts` and the script reads the price from there, so a
+reprice changes the quote without touching the script. An **expired** annual key gets no
+credit — sell lifetime at the current price with `license-issue.mjs … --lifetime`.
+
+**1. Quote (dry run — writes nothing).** Name the key id, or the email if the buyer has only one
+annual key. `--paid` is what they actually paid, from the ledger note / their receipt.
+
+```bash
+node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 9999
+#   lifetime price : ₹29,999    credit : ₹9,999    AMOUNT DUE : ₹20,000
+```
+
+**2. Collect the amount due**, get the UTR, send the upgrade receipt (`RECEIPT_TEMPLATE.md`,
+upgrade variant — it shows the credit and the amount due).
+
+**3. Confirm.** `--confirm` MUST carry the payment reference; nothing mints without it.
+
+```bash
+node scripts/license-upgrade.mjs A1B2-C3D4-E5 --paid 9999   --confirm "UTR 123456789012, ₹20,000 UPI 2026-08-15"        # add --machine … if their old key was bound and they moved
+```
+
+This mints a **lifetime** key for the same email (same machine binding as the old key unless
+`--machine` says otherwise), ledger note `upgrade from A1B2-C3D4-E5; annual paid ₹9,999
+credited; UTR …`, archives it if `VYUHA_KEY_ARCHIVE_DIR` is set, and **revokes the old key**
+through `license-revoke.mjs` (the build-time half — same code path, same files). The new key is
+on stdout; email it with the receipt.
+
+**4. The other half — publish the signed list**, so the old key stops working on the install
+they already have. The script prints these exact commands; they are not run for you because they
+publish:
+
+```bash
+node scripts/revocation-publish.mjs --add A1B2-C3D4-E5 --message "Upgraded to lifetime — use your new key" --grace-days 14
+gh release upload revocations release-packages/revocations.json --clobber
+```
+
+Then release as normal so the build-time list ships (§4). Refusals: expired key, already
+lifetime, an email with two annual keys (name the id), `--confirm` without a reference.
 
 ---
 

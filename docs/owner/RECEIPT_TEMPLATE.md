@@ -48,6 +48,25 @@ Refund policy and terms of use are included in your download.
 Thejesh K · <support email> · WhatsApp +91 73936 73714
 ```
 
+### Upgrade receipt (Annual → Lifetime)
+
+Same block, with the item, term and amount lines replaced by these. The credit is what the
+buyer actually paid for the year (§1.5 of `LICENSE_OPERATIONS.md`); the amount due is what
+`license-upgrade.mjs` quoted. Quote both key IDs.
+
+```
+Item           Vyuha — Journal (Lifetime), upgraded from Pro (Annual)
+Licence term   perpetual
+Licence Key ID F6A7-B8C9-D0            (new lifetime key)
+Replaces       A1B2-C3D4-E5            (annual key, retired on upgrade)
+
+Lifetime price ₹29,999
+Credit         − ₹9,999                 (paid for the year on <date of annual receipt>, receipt VY-2026-00X)
+Amount paid    ₹20,000
+Paid via       UPI
+Payment ref    <UTR / txn id — the buyer's own reference>
+```
+
 ---
 
 ## Rules

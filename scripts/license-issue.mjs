@@ -3,6 +3,17 @@
 // Usage:
 //   node scripts/license-issue.mjs <buyer-email> [sku] [--expires YYYY-MM-DD | --years N]
 //                                                      [--machine ABCD-EF12-3456]
+//                                                      [--save-dir <folder>]
+//
+//   --save-dir (or env VYUHA_KEY_ARCHIVE_DIR) ARCHIVES the key after minting:
+//   writes <keyId>_<email>.txt (key on line 1, then plan/issued/expires/machine/
+//   note) and copies the ledger beside it as license-ledger.<date>.jsonl. It
+//   refuses to overwrite an existing key file. Set the env once and every key
+//   you ever mint lands in that folder — the ledger is the record of a sale,
+//   the archive is the copy you can hand back after a lost email.
+//
+//   Paths: license-private.pem and license-ledger.jsonl at the repo root, or
+//   VYUHA_LICENSE_PEM / VYUHA_LICENSE_LEDGER when set (tests and smoke runs).
 //
 // THE TWO PLANS SOLD TODAY (v2.99.76 reprice) — both are sku `app`; what
 // separates them is the EXPIRY, because that is the only thing the entitlement
@@ -15,8 +26,7 @@
 //   sku: app | toolkit | indicators (default app)
 //   `toolkit` is LEGACY — the app-plus-indicators bundle retired at v2.99.76.
 //   It still verifies so old keys keep working, but issuing one today labels
-//   the buyer's Settings screen "Trader's Toolkit (app + indicators)" for a
-//   product that no longer includes indicators.
+//   the buyer's Settings screen "Vyuha app (legacy bundle key)". Prefer `app`.
 //
 //   No expiry flag = lifetime key. --years N = annual, expiring N years out.
 //
@@ -26,16 +36,17 @@
 //   the default and what every key issued before this flag existed does.
 //   Trade-off: binding means you cannot pre-issue at checkout — you need the
 //   buyer's Machine ID first, so it is a two-step delivery.
-import { sign, createPrivateKey, createHash } from "node:crypto";
-import { readFileSync, appendFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import {
+  mintKey, ledgerLine, appendLedger, archiveKey, defaultPemPath, defaultLedgerPath,
+} from "./lib/license-mint.mjs";
 
 const args = process.argv.slice(2);
 let expires = null;
 let machine = null;
+let saveDir = process.env.VYUHA_KEY_ARCHIVE_DIR || null;
 for (let i = args.length - 1; i >= 0; i--) {
   if (args[i] === "--machine" && args[i + 1]) { machine = args[i + 1].trim().toUpperCase(); args.splice(i, 2); }
+  else if (args[i] === "--save-dir" && args[i + 1]) { saveDir = args[i + 1]; args.splice(i, 2); }
   else if (args[i] === "--expires" && args[i + 1]) { expires = args[i + 1]; args.splice(i, 2); }
   else if (args[i] === "--years" && args[i + 1]) {
     const d = new Date();
@@ -49,7 +60,7 @@ for (let i = args.length - 1; i >= 0; i--) {
 // after the v2.99.76 reprice retired that bundle.
 const [email, sku = "app"] = args;
 if (!email || !email.includes("@")) {
-  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] [--expires YYYY-MM-DD | --years N] [--machine ABCD-EF12-3456]");
+  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] [--expires YYYY-MM-DD | --years N] [--machine ABCD-EF12-3456] [--save-dir <folder>]");
   console.error("  Lifetime ₹29,999 : license-issue.mjs buyer@x.com app");
   console.error("  Annual   ₹9,999  : license-issue.mjs buyer@x.com app --years 1");
   process.exit(1);
@@ -68,7 +79,7 @@ if (!["toolkit", "app", "indicators"].includes(sku)) {
 }
 if (sku === "toolkit") {
   console.error(`  ! "toolkit" is the retired app+indicators bundle (v2.99.76). The buyer's`);
-  console.error(`    Settings screen will read "Trader's Toolkit (app + indicators)". Use "app"`);
+  console.error(`    Settings screen will read "Vyuha app (legacy bundle key)". Use "app"`);
   console.error(`    unless you are deliberately reissuing an old bundle key.\n`);
 }
 
@@ -124,42 +135,53 @@ if (!note && !freebie) {
   process.exit(1);
 }
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const privPem = readFileSync(path.join(root, "license-private.pem"), "utf8");
+const pemPath = defaultPemPath();
+const ledgerPath = defaultLedgerPath();
 
-const body = { email, sku, issued: new Date().toISOString().slice(0, 10) };
-if (expires) body.expires = expires;
-if (machine) body.machine = machine;
-const payload = Buffer.from(JSON.stringify(body), "utf8");
-const signature = sign(null, payload, createPrivateKey(privPem));
-const key = `VYUHA-${payload.toString("base64url")}.${signature.toString("base64url")}`;
-
-// Short, stable ID — must match lib/license.ts#licenseKeyId exactly.
-const hex = createHash("sha256").update(key).digest("hex").slice(0, 10).toUpperCase();
-const keyId = `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 10)}`;
+const { key, keyId, payload: body } = mintKey({ email, sku, expires, machine, pemPath });
 
 // Append to the vendor ledger. WITHOUT this you have no record of what you
 // sold: keys are signed, not registered, so nothing else in the system knows a
 // key exists. Needed to reissue after a lost email, to answer "did this person
 // actually buy?", and to revoke by ID after a refund or leak.
 // GITIGNORED (contains buyer emails) — back it up privately with the .pem.
-const ledgerLine = JSON.stringify({
+const record = ledgerLine({
   keyId,
   email,
   sku,
   issued: body.issued,
-  expires: expires ?? null,
-  machine: machine ?? null,
+  expires,
+  machine,
   key,
   note: note ?? (freebie ? "no payment (--no-payment)" : null),
-}) + "\n";
-appendFileSync(path.join(root, "license-ledger.jsonl"), ledgerLine);
+});
+appendLedger(ledgerPath, record);
+
+// Archive AFTER the ledger append: the ledger is the record; the archive is a
+// convenience copy, and a refused overwrite must not lose the ledger line.
+let archived = null;
+if (saveDir) {
+  try {
+    archived = archiveKey({ dir: saveDir, record, ledgerPath });
+  } catch (e) {
+    console.error(`
+  ! archive failed: ${e.message}`);
+    console.error(`    The key WAS minted and IS in the ledger — copy it from there.`);
+  }
+}
 
 // The KEY goes to stdout alone, so `license-issue.mjs … > key.txt` still works
 // and you can pipe it straight into an email. Everything else is stderr.
 console.log(key);
-console.error(`\n  key id : ${keyId}`);
+console.error(`
+  key id : ${keyId}`);
 console.error(`  plan   : ${expires ? `Pro — Annual, expires ${expires}` : "Journal — Lifetime"}  (sku ${sku})`);
 console.error(`  buyer  : ${email}`);
 console.error(`  machine: ${machine ?? "unbound — activates on any computer"}`);
-console.error(`  ledger : license-ledger.jsonl — back this up with license-private.pem`);
+console.error(`  ledger : ${ledgerPath} — back this up with ${pemPath}`);
+if (archived) {
+  console.error(`  archive: ${archived.keyFile}`);
+  console.error(`  ledger snapshot: ${archived.snapshot}`);
+} else if (!saveDir) {
+  console.error(`  archive: none — pass --save-dir <folder> or set VYUHA_KEY_ARCHIVE_DIR to keep a copy of every key`);
+}

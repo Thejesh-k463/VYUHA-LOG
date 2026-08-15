@@ -11,6 +11,7 @@ import {
   skuById,
   pricingIsStale,
   buyMessageFor,
+  upgradeCredit,
 } from "@/lib/domain/pricing";
 import { buyUrlFor, BUY_URL, LICENSE_ENFORCEMENT } from "@/lib/license";
 
@@ -125,6 +126,44 @@ describe("the buy message carries the quote", () => {
     const url = buyUrlFor("annual");
     expect(url).toMatch(/^https:\/\/wa\.me\/\d+\?text=/);
     expect(decodeURIComponent(url)).toContain("₹9,999/yr");
+  });
+});
+
+describe("annual → lifetime upgrade — one sentence, one formula, every surface", () => {
+  // Owner decision 2026-08-15: full credit within the year. The sentence the
+  // buyer reads must be the same on the pricing screen (module), the landing
+  // page and the brochure, and it must describe what upgradeCredit() computes.
+  const UPGRADE_COPY =
+    "Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price";
+
+  it("the module carries the sentence and no older phrasing", () => {
+    const annual = skuById("annual");
+    expect(annual.includes).toContain(UPGRADE_COPY);
+    expect(annual.includes.join(" ")).not.toContain("counts toward");
+  });
+
+  it("the landing page and the brochure carry it verbatim, and the indicators FAQ is gone", () => {
+    const landing = fs.readFileSync(path.join(process.cwd(), "docs", "sales", "landing-page.html"), "utf8");
+    expect(landing).toContain(UPGRADE_COPY);
+    expect(landing).not.toContain("counts toward it");
+    expect(landing).not.toContain("Do the indicators tell me what to buy?");
+    const brochure = fs.readFileSync(path.join(process.cwd(), "docs", "sales", "brochure.html"), "utf8");
+    expect(brochure).toContain("Upgrade to lifetime any time before your year ends");
+    expect(brochure).not.toMatch(/INDICATORS|Indicators band|indicator names/);
+    const standalone = path.join(process.cwd(), "docs", "sales", "landing-page.standalone.html");
+    if (fs.existsSync(standalone)) {
+      expect(fs.readFileSync(standalone, "utf8"), "run: npm run landing:build").toContain(UPGRADE_COPY);
+    }
+  });
+
+  it("upgradeCredit: due = lifetime − paid, never negative, at today's prices ₹20,000", () => {
+    const life = skuById("lifetime").amountInr;
+    const year = skuById("annual").amountInr;
+    expect(upgradeCredit({ lifetime: life, paidForYear: year })).toEqual({ credit: year, due: life - year });
+    expect(upgradeCredit({ lifetime: 29999, paidForYear: 9999 }).due).toBe(20000);
+    expect(upgradeCredit({ lifetime: 100, paidForYear: 500 })).toEqual({ credit: 100, due: 0 });
+    expect(() => upgradeCredit({ lifetime: 0, paidForYear: 1 })).toThrow();
+    expect(() => upgradeCredit({ lifetime: 100, paidForYear: -1 })).toThrow();
   });
 });
 

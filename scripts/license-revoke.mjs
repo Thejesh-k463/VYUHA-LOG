@@ -27,8 +27,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const revokedPath = path.join(root, "scripts", "license-revoked.mjs");
-const libPath = path.join(root, "lib", "license.ts");
+// VYUHA_REVOKED_MJS / VYUHA_LICENSE_TS: test/smoke overrides only, so
+// license-upgrade.mjs (which spawns this script) can be exercised against
+// throwaway copies. Leave unset in production.
+const revokedPath = process.env.VYUHA_REVOKED_MJS || path.join(root, "scripts", "license-revoked.mjs");
+const libPath = process.env.VYUHA_LICENSE_TS || path.join(root, "lib", "license.ts");
 
 const ID_RE = /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{2}$/;
 
