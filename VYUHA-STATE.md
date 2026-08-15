@@ -30,8 +30,13 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.96** — see §2.1 for the release evidence line (filled at the end of the release) |
-| Branch | `main` |
+| Version | **v2.99.96** — committed `9290717`, tagged `v2.99.96`, pushed 2026-08-15 |
+| Branch | `main`, clean apart from this file |
+| CI | **green on `9290717` — all 5 jobs incl. "Windows install + tests" — BEFORE tagging** (run 31874680057) |
+| Installer | `Vyuha_2.99.96_x64-setup.exe` + MSI; both `.sig` key ids decode to **`4FF85F3BBE1DA21D`** = `tauri.conf.json` pubkey; `BUILD_ID` 2026-08-15T13:55; bundle carries `skin-rose` + "funding not yet resolved" markers |
+| Client ZIP | `release-packages/Vyuha_2.99.96_Client_Package.zip`, installer SHA-256 `801613AC…28D4F5` |
+| GitHub release | Release workflow run 31874857023 **success**; `v2.99.96` sits as a **DRAFT with 9 assets** (owner publishes); `release:verify v2.99.96` → all 3 `.sig` = `4FF85F3BBE1DA21D`; `releases/latest` still `v2.99.95` |
+| Release tests | **1,692 / 121 files** on the release tree; e2e 41/41 on the wave-1 tree |
 | Previous | **v2.99.95 is PUBLISHED** (`gh api …/releases/latest` → `v2.99.95`, 2026-08-15T05:51Z) — the "unpublished draft" note in older copies of this file is stale |
 | Unit tests | **1,679 passing / 119 files** after wave 1 (`npm run verify` EXIT:0 incl. build, 2026-08-15); +13 doc-guard tests added after that count |
 | e2e | **41/41 passed (2.1m), 2026-08-15, on the wave-1 tree** (Trades columns + skins changed) — exit 0 |
