@@ -30,8 +30,11 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.97** — bump committed after `5b58ba6`, tag pushed once CI is green (see §2.1 evidence, filled at release end) |
-| Branch | `main` |
+| Version | **v2.99.97** — committed `815e203`, tagged `v2.99.97`, pushed 2026-08-15 |
+| Branch | `main`, clean apart from this file |
+| CI | **green on `815e203` — all 5 jobs incl. Windows — BEFORE tagging** (run 31885698273); Release workflow 31885887802 **success** |
+| GitHub release | `v2.99.97` is a **DRAFT with 9 assets** (owner publishes); `release:verify v2.99.97` → all `.sig` = `4FF85F3BBE1DA21D`; `releases/latest` = **`v2.99.96`** (owner published it 2026-08-15) |
+| Client ZIP | `release-packages/Vyuha_2.99.97_Client_Package.zip`, installer SHA-256 `B1FE606B…B927C8` |
 | Unit tests | **1,743 passed / 0 failed** on the v2.99.97 tree (`npm run verify` EXIT 0 incl. build, 2026-08-15) |
 | e2e | 43 passed + `z-appearance.spec.ts` 4/4 after an assertion fix (React serialises inline style without a space) — **44/44 effective**, 2026-08-15 |
 | Installer | `Vyuha_2.99.97_x64-setup.exe` + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 18:15; bundle carries `appearance-tick`; generated `installer.nsi` inserts `NSIS_HOOK_PREINSTALL`/`PREUNINSTALL` |
