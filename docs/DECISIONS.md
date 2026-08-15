@@ -27,6 +27,69 @@ Format:
 
 ---
 
+## 2026-08-15 — Trades table shows Entry/Exit PRICE, not Buy/Sell VALUE; qty 0 → "—", never ₹0; MTF own-% is derived or absent
+
+**Context:** v2.99.96 replaces the Buy value / Sell value columns on /trades with Qty, Invested, Entry price, Exit price.
+**Measured / found:** Every import path fills `avgBuyPrice`/`avgSellPrice` — `NormalizedTrade` (`lib/engine/types.ts:47–64`) declares both non-optional, so the 6 broker parsers, the generic column mapper and the 3 API pulls (Kite, Dhan, Angel One) cannot produce a row without them; nothing on this surface can be undefined. An open trade has one side with qty 0 and price 0.
+**Decision:** a side whose qty is 0 renders "—", never ₹0 (a zero price is not a fact about the trade). Invested on an MTF row shows the trader's own contribution % computed as `(buyValue − mtfFundedAmount) / buyValue`, and the funded amount beside it; when `mtfFundedAmount` is null the cell says "funding not yet resolved" — no default margin is substituted (invariant 6).
+**Why not the obvious thing:** keeping "Buy value" — a value is qty × price and hides the level the trader actually acted on; showing ₹0 for the missing side of an open trade reads as a fill at zero.
+**Invalidated if:** `NormalizedTrade` ever makes either price optional (the "—" rule then needs a null branch too), or a parser starts writing legs without the aggregate on the parent row (invariant 5).
+
+## 2026-08-15 — Skins v2.99.96: the hue wheel is nearly full; Lime 83° / Rose 329° / Ember chosen, Ice and Royal retired, surface tints ~1.30:1
+
+**Context:** eight skins that tint canvas/card/border, and a test that no two skins share a primary or an analytics-vs-primary hex.
+**Measured / found:** hues already taken: gold 42°, tape 45°, profit 157°, luxe 172°, cb-profit 217°, sapphire 224°, violet 255°, aurora 292°, loss 352°, cb-loss 38°. Rejected: coral (~16°, only 24° from loss), emerald (= profit), indigo (8° from Sapphire), sky (~198°, Ice reborn). Chosen: **Lime 83°** (13.29:1 dark / 5.41 light), **Rose 329°** (7.57 / 5.58), **Ember** (8.85 / 5.16 — 11° from the colour-blind-safe loss hue, accepted on Tape's precedent of 7° from gold). Ice ≈ Sapphire — identical analytics hex, distinguishable only by the primary; Royal's primary was Luxe's analytics hex. Surface tints composite the border at ~1.30:1 against the card (was 1.24) — note the 1.48:1 floor in the 2026-08-09 entry is for `--color-rule` (row separators), not `--color-border`.
+**Decision:** SKINS = luxe, mono, tape, sapphire, aurora, lime, rose, ember; `asSkin` maps a stored "ice"/"royal" → "sapphire". To let the hex-distinctness test hold, Tape/Aurora analytics retuned #2dd4bf → #5eead4 and Sapphire analytics #e879f9 → #f0abfc.
+**Why not the obvious thing:** keeping ten skins — two of them were the same skin twice, and a "choose your accent" list where two entries look alike is a bug the user files, not a feature. Picking coral/sky by eye lands inside the P&L or an existing skin's hue band, which is how Tape's money had to move (2026-08-11).
+**Invalidated if:** the canvases or `--color-profit`/`--color-loss` hues change, or a ninth skin is proposed — measure its hue against this wheel first.
+
+## 2026-08-15 — The desktop app's phantom console: node.exe is console-subsystem; fixed with CREATE_NO_WINDOW + a log file, readiness never depended on stdout
+
+**Context:** buyers saw a second, blank terminal window behind the desktop app.
+**Measured / found:** the Tauri shell is a GUI-subsystem process; the Node sidecar (`node.exe`) is console-subsystem. A GUI parent spawning a console child with inherited stdio makes Windows allocate a fresh console for the child. Sidecar readiness was always the TCP poll on the loopback port — stdout was never read for it.
+**Decision:** spawn with `creation_flags(0x0800_0000)` (CREATE_NO_WINDOW) and point the child's stdout/stderr at `<data_dir>/logs/sidecar.log` (append; `src-tauri/src/lib.rs`). The log path is now in the client README and INSTALLATION_GUIDE.
+**Why not the obvious thing:** DETACHED_PROCESS also hides the window but detaches the child from job/console lifetime; piping stdout into the parent needs a reader thread or the pipe buffer fills and blocks the sidecar. A file is the least machinery that keeps every line.
+**Invalidated if:** the sidecar becomes a GUI-subsystem binary (then no console is allocated regardless), or the shell starts reading the sidecar's stdout for anything.
+
+## 2026-08-15 — Load tests batch 2: five defects fixed with numbers, one prediction wrong, one non-defect proven
+
+**Context:** `tests/load/` batch 2 (B1–B7, C2, C7) on synthetic books of 10k–320k trades.
+**Measured / found:**
+- **B1 lens grouping** — growth ratio 14.3 (55 ms @10k → 794 ms @40k). After a per-array index: 5.1–5.3 (69 ms @80k → 347 ms @320k). Test asserts ratio < 8.
+- **B2 entitlement** — 200 spaced licence reads did 200 UPDATEs (the "last seen" mark rewritten every read). Now the mark is written only when ≥ 24 h past the stored mark → 0 UPDATEs across the run; a pure read 65 → 56 µs.
+- **B5 `dbCounts`** — read 125,195 rows in 421 ms to count them; now `COUNT(*)`: 29 rows / 1 ms.
+- **B6 encrypted restore** — two scrypt derivations (498 + 527 ms) → one (495 + 30 ms) via a derived-key cache: 5-minute TTL, 4 entries, keyed by sha256(salt | params | password).
+- **B7 import detect** — 15 full XLSX decodes / 1,331 ms → 8 / 802 ms by memoising `rankParsers` per `ParseContext`. Getting to ≤ 2 needs the parsers to share one parsed workbook — pinned as an `it.fails` follow-up, not claimed.
+- **C2** — prediction WRONG: the skipped-row warning was already emitted. Adjacent defect found instead: executions-shaped generic imports left `sourceRows` unset (6,491 lines → 4,226 positions reported as if 4,226 rows); now `sourceRows = rows − skipped`.
+- **C7** — no defect: over 250k trades a naive float fold drifts 5.0e-4 paise pre-rounding and 0 after, against `SUM(net_pnl_paise)`. `getTradeStats` over 250k = 3.1 s, reported not fixed.
+**Decision:** each fix ships with its load test asserting the new bound; C7's 3.1 s is recorded as the current cost, not a target.
+**Why not the obvious thing:** "make it faster" without the ratio — B1's absolute time at 10k was fine; only the growth exponent showed the defect.
+**Invalidated if:** the synthetic-book generator changes shape, or the entitlement mark's 24 h threshold is changed (B2's 0-UPDATE assertion depends on it).
+
+## 2026-08-15 — Annual → Lifetime upgrade: full credit within the year, not pro-rata
+
+**Context:** an annual buyer wants Lifetime part-way through the year (tooling: `scripts/license-upgrade.mjs`).
+**Measured / found:** due = lifetime launch price − annual amount paid (₹29,999 − ₹9,999 = ₹20,000 at launch prices), for any upgrade inside the annual term.
+**Decision:** full credit of the annual payment within its year — owner decision 2026-08-15. The same sentence appears on the pricing screen, landing page and brochure (`tests/pricing.test.ts` pins them verbatim).
+**Why not the obvious thing:** pro-rata (credit × months remaining / 12) is "fairer" on paper and impossible to explain in one line on a pricing page; a buyer who cannot predict the number does not upgrade.
+**Invalidated if:** the launch prices end (2027-01-01) — the credit then applies against the list price and the copy must say so.
+
+## 2026-08-15 — Licence key archive: per-key plaintext to an owner-chosen folder, plus an AES-256-GCM bundle at scrypt N=2^15
+
+**Context:** losing the signing PEM or the ledger means every issued key is unverifiable; the owner needs a backup that is not the working folder.
+**Measured / found:** `license-issue.mjs --save-dir <folder>` writes each issued key as its own plaintext file to a folder the owner picks (an external drive, a synced folder). `scripts/license-backup.mjs` bundles the PEM + ledger with AES-256-GCM, key from scrypt N=2^15.
+**Decision:** N=2^15 rather than the backup-format's 2^17 because this runs interactively on the owner's machine once per session, not per customer restore; the ~4× cheaper derivation is fine for a passphrase the owner chose.
+**Why not the obvious thing:** reusing `lib/backup.ts`'s format — it is built for a customer's database and pulls the app's schema in; the key archive needs zero app imports so it still runs when the app does not.
+**Invalidated if:** the PEM moves to a hardware key or a KMS, in which case the bundle carries only the ledger.
+
+## 2026-08-15 — "Preview pane" defect closed: it was the dev-tool browser pane on the /trades dev build, not the app
+
+**Context:** an item on the open list said the trades preview pane rendered blank.
+**Measured / found:** the report came from the IDE browser pane against `next dev` on /trades — the same "networkidle is not hydration" behaviour recorded 2026-08-10. Nothing reproduces in the desktop build or a real browser.
+**Decision:** closed, no app change.
+**Why not the obvious thing:** chasing a rendering fix in `trades-client.tsx` for a symptom the pane manufactures.
+**Invalidated if:** a user reports it from the desktop app with the sidecar log attached.
+
 ## 2026-08-15 — Launch-offer anchors are committed 2027 list prices, and the advertised percentages are derived, not the ones the owner asked for
 
 **Context:** Owner requested strike-through launch pricing ("₹13,000 → ₹9,999, 30% off"; "₹35,999 → ₹29,999, 20% off, best value") plus a competitor table on /pricing.

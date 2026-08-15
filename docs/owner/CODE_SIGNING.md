@@ -18,6 +18,8 @@ can buy, and they matter *more* the faster you ship — see item 4 below.
 
 ### 1. winget manifest — `npm run winget:manifest`
 
+Field-by-field walkthrough of both actions (token scope, `wingetcreate submit`/`update`, what the PR bot and reviewer check, the WDSI form, how to verify on a clean PC): [`WINGET_AND_SMARTSCREEN.md`](WINGET_AND_SMARTSCREEN.md).
+
 ```bash
 npm run winget:manifest          # after desktop:build, reads the local installer
 npm run winget:manifest -- --sha <SHA256>   # or from the release page's hash

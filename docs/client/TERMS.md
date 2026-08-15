@@ -6,7 +6,7 @@
 > maximally protective, and it is **not legal advice** — have it read by someone
 > qualified before you sell at volume. This file ships inside the client ZIP.
 
-**Last updated:** 2026-08-13 · **Applies to:** Vyuha v2.99.93 and later
+**Last updated:** 2026-08-15 · **Applies to:** Vyuha v2.99.96 and later
 
 ## 1. What you are buying
 

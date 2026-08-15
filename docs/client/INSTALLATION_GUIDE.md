@@ -19,7 +19,9 @@ your trades is ever uploaded.
    independent app that isn't yet code-signed — it is **not** a virus warning.
    → Click **More info** → **Run anyway**.
 4. Follow the installer. Vyuha installs and adds a Start-menu shortcut.
-5. Launch **Vyuha**. It opens as a normal desktop window.
+5. Launch **Vyuha**. It opens as a normal desktop window. From v2.99.96 **no black terminal /
+   console window should appear** behind it — if you are ever asked for a log, it is at
+   `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log`.
 
 > Your data lives in a local database file on your PC. Nothing is uploaded anywhere.
 

@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.96
+
+| Upgrade | What it gives you |
+|---|---|
+| **The Trades table shows what you actually put in** | New **Qty** and **Invested** columns. On an MTF row, Invested shows **your own contribution %** and the **broker-funded amount** beside it; when the funding has not been resolved yet it says so ("funding not yet resolved") rather than guessing. **Entry price** and **Exit price** replace the old Buy value / Sell value columns — an open trade shows "—" for the side that has not happened yet, never ₹0. |
+| **The Options Seller Journal explains its numbers** | Every KPI card now opens a breakdown, the same way the Dashboard cards do, and there is an outcome-mix bar (expired worthless / squared off / assigned / rolled / unclassified) plus section headers so the page reads top to bottom. |
+| **Eight skins, and each one tints the whole screen** | Settings → Appearance now offers **Luxe, Terminal, Tape, Sapphire, Aurora, Lime, Rose, Ember**. Ice and Royal are retired — they were only telling by their buttons — and a saved Ice or Royal choice becomes Sapphire automatically. Every coloured skin now tints the canvas, cards and borders subtly in its own hue instead of only recolouring the accents. |
+| **No more background terminal window** | The desktop app used to open a second, blank console window behind the main one. It no longer does. Its server log now goes to `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — that is the file to send if you are ever asked for a log. |
+| **Faster on big books** | Lens grouping no longer slows down disproportionately as the journal grows; the backup page counts rows without reading them; an encrypted restore derives its key once instead of twice; and the licence check no longer writes to the database on every Pro screen you open. |
+
 ## New in v2.99.95
 
 | Upgrade | What it gives you |

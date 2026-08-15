@@ -129,6 +129,9 @@ Full operational detail: [`LICENSE_OPERATIONS.md`](LICENSE_OPERATIONS.md).
 | [`PINE_SCRIPT_INVITE_ONLY.md`](PINE_SCRIPT_INVITE_ONLY.md) | Invite-only publication mechanics |
 | [`HOW_TO_EDIT_SALES_ASSETS.md`](HOW_TO_EDIT_SALES_ASSETS.md) | Editing the landing page and brochure in `docs/sales/` |
 | [`CODE_SIGNING.md`](CODE_SIGNING.md) | Updater signing, and what the guards enforce |
+| [`WINGET_AND_SMARTSCREEN.md`](WINGET_AND_SMARTSCREEN.md) | The two release-day actions: winget submission and the Microsoft file submission, field by field |
+| [`DOC_AUDIT.md`](DOC_AUDIT.md) | Per-release checklist of every buyer-facing doc surface, and the test that guards each |
+| [`REFUND_TERMS_SIGNOFF.md`](REFUND_TERMS_SIGNOFF.md) | Clause-by-clause sign-off of the refund policy and terms before the first paid sale |
 | `updater-public-key.txt` | The CURRENT updater public key, matching `tauri.conf.json` |
 
 ### A note on the updater key
