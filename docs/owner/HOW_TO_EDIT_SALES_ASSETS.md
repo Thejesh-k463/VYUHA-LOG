@@ -1,114 +1,114 @@
 # How to Edit the Sales Assets (Landing Page + Brochure)
 
-Both `landing-page.html` and `brochure.html` are plain HTML files with **`[[TOKEN]]`**
-placeholders. You fill them in with a text editor — no coding needed. This guide lists every token,
-what to put, and where it shows up, plus how to add images and export.
+`docs/sales/landing-page.html` and `docs/sales/brochure.html` are plain HTML files — no build
+tooling needed to edit them, no `[[TOKEN]]` placeholders left to fill (those were retired with the
+old bundle pricing). Prices, competitor cells and the "why it wins" numbers are **pinned by tests**,
+so the safe way to change a number is to change it at its source and let the tests tell you what
+else to touch.
 
-> **Golden rule:** use the **same values in both files** so your landing page and brochure match.
+> **Golden rule:** the app, the landing page and the brochure must quote the same numbers.
+> `tests/pricing.test.ts` fails if they drift.
 
 ---
 
-## 1. How to edit (2 minutes)
+## 1. Where the facts come from
 
-1. Open the file in any text editor (VS Code, Notepad++, even Notepad).
-2. Use **Find & Replace** (Ctrl+H) for each token below — replace **all occurrences**.
-3. Save. Double-click the file to preview in your browser.
-4. Repeat for the second file.
-
-> Tip: replace the token **including** the brackets. Search `[[PRICE_APP]]`, not `PRICE_APP`.
-
-## 2. Token map — fill every one of these
-
-| Token | Put this | Example | Landing | Brochure |
-|---|---|---|---|---|
-| `[[IND1]]` | Indicator #1 name | `Vyuha Momentum Pro` | ✅ | ✅ |
-| `[[IND2]]` | Indicator #2 name | `Vyuha Trend Radar` | ✅ | ✅ |
-| `[[PRICE_BUNDLE]]` | Toolkit launch price (number only, with commas) | `4,999` | ✅ | ✅ |
-| `[[PRICE_LIST]]` | Struck-through "was" price (higher) | `9,999` | ✅ | ✅ |
-| `[[PRICE_APP]]` | Journal-only price | `2,499` | ✅ | ✅ |
-| `[[PRICE_IND]]` | Indicators-only price | `4,999` | ✅ | ✅ |
-| `[[WHATSAPP]]` | Support link or number | `wa.me/9198XXXXXXXX` | ✅ | ✅ |
-| `[[RZP_LINK]]` | Razorpay page for **bundle + app** | `razorpay.me/@vyuha` | ✅ | — |
-| `[[RZP_INDICATORS]]` | Razorpay page for **indicators only** | `razorpay.me/@vyuha-ind` | ✅ | — |
-| `[[TV_PROFILE]]` | Your TradingView profile URL | `tradingview.com/u/yourname` | ✅ | — |
-| `[[LANDING_URL]]` | Your live landing-page URL (shown on the brochure CTA) | `vyuha.in` | — | ✅ |
-
-> **Don't type `₹` inside price tokens** — the `₹` is already in the template right before each
-> token. Just put the number (e.g. `4,999`). Keep prices short (a number, not a sentence) so the
-> layout stays tight.
-
-## 3. Text placeholders (not tokens) — replace these too
-
-These are in **square brackets without the double-bracket** — search for them and replace:
-
-| Placeholder | Where | Replace with |
+| What | Source of truth | Pinned by |
 |---|---|---|
-| `[one-line]` (appears twice) | Indicators section, next to `[[IND1]]`/`[[IND2]]` | A short description of each indicator, e.g. *"spots momentum shifts on any timeframe"* |
-| `[ QR to landing / Razorpay ]` | Brochure, bottom-left box | A QR image — see §4 |
+| SKU prices and anchors (₹9,999 / ₹13,000 · ₹29,999 / ₹35,999) | `lib/domain/pricing.ts` (`PRICING`) | `tests/pricing.test.ts` — every amount must appear inside a `<div class="amt">` on the landing page |
+| The annual → lifetime upgrade sentence | `lib/domain/pricing.ts` (annual `includes`) | same test — must appear **verbatim** on the landing page, brochure and standalone |
+| Competitor table, "Features vs cost" summary, hero "why it wins" strip | `lib/domain/pricing-comparison.ts` (`COMPETITORS`, `VYUHA_ROW`, `WHY_VYUHA`, `COMPARISON_AS_OF`) | owner review — re-read the module when you edit any of those cells |
+| Feature copy (imports, skins, screens) | `docs/client/README.md` for the current release | `tests/no-indicators-in-client-docs.test.ts` forbids "indicator / TradingView / Pine" wording anywhere on the page |
+| WhatsApp number / email | the comment block at the top of `landing-page.html` | — |
 
-## 4. Adding images (QR code + optional screenshots)
+Rules that apply to every sentence: no returns, accuracy or win-rate promises (SEBI posture — it
+is an analytical tool, not advice); Windows only (never advertise macOS on a selling surface);
+"Not stated" in a competitor cell means exactly that.
 
-### QR code (brochure)
-1. Generate a free QR for your `[[LANDING_URL]]` or Razorpay link (e.g. qr-code-generator.com).
-2. Save the PNG next to the HTML file, e.g. `qr.png`.
-3. In `brochure.html`, find the QR box:
-   ```html
-   <div class="qr">[ QR to landing / Razorpay ]</div>
-   ```
-   Replace the inner text with an image:
-   ```html
-   <div class="qr"><img src="qr.png" alt="Scan to buy" style="width:100%;height:100%;object-fit:contain;border-radius:6px"></div>
-   ```
+## 2. Page map (landing-page.html)
 
-### Real app screenshot (optional, both files)
-The hero shows a **stylised** dashboard (fake numbers `+₹2.4L / 58% / ₹22k` + a drawn equity
-curve). It looks clean as-is. To use a **real** screenshot instead, replace the whole
-`<div class="preview">…</div>` block with:
-```html
-<div class="preview" style="padding:0"><img src="dashboard.png" alt="Vyuha dashboard" style="width:100%;display:block;border-radius:14px"></div>
+In order: nav → hero (version pill, trust chips, "why it wins" strip, dashboard shot) → `#workflow`
+(6 cards) → `#gallery` (10 screenshots) → `#why` (6 cards) → `#staged` (split) → `#tax` (split) →
+`#skins` ("Make it yours", 7 thumbnails) → `#pricing` (2 plan cards → "Features vs cost" summary →
+full comparison table) → "How you get it" (4 steps) → `#faq` → final CTA → footer (creators &
+reviewers line, disclaimer).
+
+### Screenshots used, and where
+
+All live in `docs/screenshots/` (1440×900, synthetic data). Regenerate the whole set with
+`node scripts/retake-screenshots.mjs` after a UI change; the page references them by relative
+path, so a retake needs no HTML edit unless a file is renamed.
+
+| Section | File(s) |
+|---|---|
+| Hero | `dashboard.png` |
+| `#gallery` (in order) | `trades.png`, `staged-position.png`, `options-journal.png`, `risk.png`, `tax-pack.png`, `arjuns-eye.png`, `lenses.png`, `kpi-drilldown.png`, `edge-report.png`, `rom-report.png` |
+| `#staged` | `staged-position.png` |
+| `#tax` | `calculator.png` |
+| `#skins` | `skin-lime.png`, `skin-rose.png`, `skin-ember.png`, `skin-sapphire.png`, `skin-aurora.png`, then `settings-appearance.png`, `custom-theme.png` |
+
+19 distinct files; 20 `<img>` tags (`staged-position.png` appears twice). Gallery and skin figures open in a built-in click-to-enlarge
+overlay (plain JS at the bottom of the file — no library). To add a screenshot, copy an existing
+`<figure>` and keep the caption to one line naming the feature. Mind the standalone size (§4).
+
+## 3. Editing checklist
+
+- Change a price → edit `lib/domain/pricing.ts`, then the two `<div class="amt">` cells and the
+  matching WhatsApp `?text=` links, then run the tests.
+- Change a competitor cell → edit `lib/domain/pricing-comparison.ts` first, then the full table
+  **and** the "Features vs cost" summary above it (its ranges — ≈ ₹12,600–31,600/yr global,
+  ₹999–2,499/yr Indian, "≈ ₹47,000–95,000 over three years" — are derived from that module).
+- Bump the version pill in the hero on every release.
+- Never write the word "indicator(s)", "TradingView" or "Pine Script" in the page body — the
+  invite-only indicators are not part of what is sold and the test fails on the bare word.
+- Search for `macOS` / `Mac` before publishing — there must be none.
+
+## 4. Build the emailable single file
+
 ```
-(Put `dashboard.png` next to the file.) Same idea for the indicators section if you want a real
-chart instead of the drawn payoff diagram.
+npm run landing:build        # → docs/sales/landing-page.standalone.html
+```
 
-## 5. Pricing tips
+This inlines every screenshot as a data: URI. **The standalone is the file you email or DM to a
+prospect until hosting exists** — it opens offline with no broken images. It is gitignored and
+must be regenerated after every edit; `tests/pricing.test.ts` checks it (when present) for the
+current prices, the upgrade sentence and the "download-only" network answer, so a stale twin
+fails the suite instead of rotting silently again.
 
-- `[[PRICE_LIST]]` should be **higher** than `[[PRICE_BUNDLE]]` — it's the crossed-out "anchor" price.
-- Keep the three prices sensible relative to each other (bundle ≈ app + a discount on indicators).
-- See `MONETIZATION_PLAN.md §2` for suggested ₹ ranges.
+Size: at v2.99.97 it is ≈ 5.9 MB with 20 inlined images. Keep it under ~8 MB (mail attachment
+comfort) — if you add screenshots and cross that, drop gallery figures rather than shrinking the
+hero shot.
 
-## 6. Consistency checklist (do this before publishing)
+## 5. Brochure (`brochure.html`) → PDF
 
-- [ ] `[[IND1]]` and `[[IND2]]` are identical in both files.
-- [ ] All four prices match in both files.
-- [ ] `[[WHATSAPP]]` matches in both files.
-- [ ] Landing links (`[[RZP_LINK]]`, `[[RZP_INDICATORS]]`, `[[TV_PROFILE]]`) are real, clickable URLs.
-- [ ] Brochure `[[LANDING_URL]]` points to where the landing page is actually hosted.
-- [ ] Both `[one-line]` descriptions written.
-- [ ] QR image added to the brochure.
-- [ ] No `[[` or `[one-line]` left anywhere — search each file for `[[` and `[one` to confirm.
+1. Open `brochure.html` in Chrome or Edge.
+2. Ctrl + P → Destination **Save as PDF** · Paper **A4** · Margins **None** · **Background graphics ON**.
+3. Save. Single-page A4, ready for WhatsApp / DMs / print.
 
-## 7. Publish / export
+The on-screen "sheet on a dark desk" backdrop is removed automatically in the PDF. The QR box
+(`<div class="qr">`) takes an `<img>` pointing at a QR PNG placed next to the file once there is a
+public URL to point it at.
 
-### Landing page (`landing-page.html`)
-Host it anywhere that serves a static file:
-- **Fastest:** Netlify Drop (drag the file onto app.netlify.com/drop), Cloudflare Pages, or GitHub Pages.
-- Point your domain (e.g. `vyuha.in`) at it.
-- If you added images (`qr.png`, `dashboard.png`), upload them **alongside** the HTML.
+## 6. Publish (when hosting exists)
 
-### Brochure (`brochure.html`) → PDF
-1. Open `brochure.html` in **Chrome or Edge**.
-2. **Ctrl + P**.
-3. Destination: **Save as PDF** · Paper size: **A4** · Margins: **None** · **Background graphics: ON**.
-4. Save. You get a single-page A4 PDF ready for WhatsApp / DMs / print.
+Host `landing-page.html` **together with `../screenshots/`** on any static host (Netlify Drop,
+Cloudflare Pages, GitHub Pages) — or just upload the standalone, which needs nothing beside it.
+Swap the footer/mailto address for a dedicated sales inbox before driving public traffic.
 
-> The on-screen version shows the page as a centered "sheet" on a dark desk — that backdrop is
-> automatically removed in the PDF, so the exported file is a clean edge-to-edge A4.
+## 7. Verify before sending anything
+
+```
+npm run landing:build
+npx vitest run tests/pricing.test.ts tests/no-indicators-in-client-docs.test.ts
+```
+
+Both must be green. Then open the standalone in a browser once and click a gallery tile — the
+overlay should show the enlarged screenshot; Esc or a click closes it.
 
 ## 8. Common gotchas
 
-- **A price looks cut off / wraps oddly** → your price text is too long. Use a short number like
-  `4,999`, not a phrase.
-- **Colours/gradients missing in the PDF** → turn ON "Background graphics" in the print dialog.
-- **Images don't show** → the image file must sit in the **same folder** as the HTML, and the
-  `src="…"` name must match exactly (case-sensitive on some hosts).
-- **A `[[TOKEN]]` still shows on the live page** → you missed one; search the file for `[[`.
+- **A price test fails after a reprice** → the amount is missing from a `<div class="amt">` cell,
+  or the standalone was not rebuilt.
+- **Images don't show in the source HTML** → the file must be opened from `docs/sales/` so
+  `../screenshots/` resolves; the standalone has no such dependency.
+- **Colours/gradients missing in the brochure PDF** → turn ON "Background graphics".

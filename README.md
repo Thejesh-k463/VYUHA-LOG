@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1627%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-41%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-1753%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-45%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -18,7 +18,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
-*Dhan · Zerodha · Groww · Angel One · Upstox · Kotak Neo · Paytm Money · Sahi — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
+*6 auto-detected broker formats (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money) + any CSV via the column mapper + 3 broker-API pulls (Kite, Dhan, Angel One SmartAPI) — Index/Stock Options, Intraday, Delivery, Equity MTF, MCX Commodities*
 
 </div>
 
@@ -116,9 +116,14 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > count-up numbers rolled out from the dashboard to the report and tracker screens.
 
 <p align="center">
-<img src="docs/screenshots/skin-royal.png" alt="Royal skin (retired in v2.99.96 — stored choices map to Sapphire) — violet-led dashboard" width="290" />
+<img src="docs/screenshots/skin-lime.png" alt="Lime skin — the whole canvas tinted lime, dashboard" width="290" />
+<img src="docs/screenshots/skin-rose.png" alt="Rose skin — rose-tinted dashboard" width="290" />
+<img src="docs/screenshots/skin-ember.png" alt="Ember skin — ember-tinted dashboard" width="290" />
+</p>
+<p align="center">
 <img src="docs/screenshots/skin-sapphire.png" alt="Sapphire skin — electric indigo dashboard" width="290" />
 <img src="docs/screenshots/skin-aurora.png" alt="Aurora skin — fuchsia dashboard" width="290" />
+<img src="docs/screenshots/settings-appearance.png" alt="Settings → Appearance — skin picker, tint intensity, panel style, wallpaper" width="290" />
 </p>
 >
 > **v2.99.60 — built for the ten-thousand-trade book, dressed to match.** Three engineering
@@ -200,7 +205,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 - 🔒 **You stay in control — always.** Auto-MTM is opt-in. Update dialogs ask, never install. Breach alerts say *"check a live quote and review your plan"* — the app never places, closes, or changes anything on its own.
 - 🪜 **Positions built the way you actually trade them.** Scale in across tranches with a stop on each, scale out in parts, and see per-leg R — with exits priced at the blended average, quantity retired FIFO so the surviving tranche keeps its own stop, and R frozen at your first entry so it stays comparable. Broker tradebooks rebuild the ladder automatically.
 - 🔬 **Every KPI explains itself.** Click any headline number — Net P&L, Open Risk @ SL, MTF funded, Unrealised P&L — and it opens a breakdown of what it's actually made of: gross minus every charge with your best and worst day, open risk sitting next to initial risk with the unstopped-position count, effective leverage and how much of your paper gain financing has already eaten. Sixteen cards, keyboard-accessible.
-- 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — dark or light, with a colorblind-safe mode.
+- 🖥 **Looks like a terminal, feels alive.** JetBrains Mono on every number, sparkline KPIs with week-over-week deltas, animated equity curve with crosshair, a magnitude-scaled P&L calendar, live IST market clock, `Ctrl+K` command palette — dark or light, nine skins with a tint dial, and a colorblind-safe mode.
 
 ---
 
@@ -212,8 +217,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **1,616** | **43** | **0** |
-| tests, 41 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
+| **1,753** | **43** | **0** |
+| tests, 45 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
 
 </div>
 
@@ -231,6 +236,10 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 
 <img src="docs/screenshots/pricing.png" alt="Pricing — Pro Annual and Journal Lifetime plans shown in-app" width="900" />
 
+**Pro — Annual ₹9,999/yr · Journal — Lifetime ₹29,999**, launch prices (list ₹13,000/yr and
+₹35,999 from 2027-01-01). Both are quoted in-app with the date they were set, and the buy message
+embeds the price you saw.
+
 | ♾ Free forever | 🔑 Pro |
 |---|---|
 | Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
@@ -239,7 +248,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 | Staged positions, playbooks, sessions, calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
 | Chart screenshots, symbol aliases, corporate actions | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
 | Backup & restore, full CSV/JSON export, audit log | Broker-cost + cross-broker MTF comparison, Charges & MTF Leak |
-| Workspace mode, sidebar layout, themes, multi-account | PDF reports — monthly, and any hand-picked selection of trades |
+| Workspace mode, sidebar layout, appearance (skins, tint, panels, custom theme, wallpaper), multi-account | PDF reports — monthly, and any hand-picked selection of trades |
 | **Lenses grouping** — by month/broker/type/file, with delete | **Lenses edge** — per-group win rate, profit factor, expectancy |
 | **Recoverable delete** — every delete snapshots first, restorable | |
 
@@ -252,7 +261,7 @@ forever.** Your own record of your trading is never held hostage.
 ## ✨ Feature tour
 
 ### 📒 Journal every leg, effortlessly
-- **Import from ANY broker.** Six are auto-detected — **Dhan** (P&L *and* the charge-carrying Global Transaction Report), **Groww** (stocks P&L *and* order history), **Zerodha** (tradebook and Console P&L), **Angel One** (tradebook, P&L, *and* the seven-section tax P&L with explicit MTF quantities), **Upstox**, and **Paytm Money** (per-execution tradebook with the broker's own charge breakdown) — plus PDF. Detection keys on **in-content fingerprints**, never on filename or column shape: every parser must prove whose file it holds before claiming it, and a cross-broker refusal matrix in the test suite keeps it that way. For every other broker — **Kotak Neo, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Live API pulls too: Zerodha **Kite**, **Dhan**, and **Angel One SmartAPI** — the last fully unattended, its daily login minted from your TOTP secret, all credentials encrypted at rest.
+- **Import from ANY broker.** Six are auto-detected — **Dhan** (P&L *and* the charge-carrying Global Transaction Report), **Groww** (stocks P&L *and* order history), **Zerodha** (tradebook and Console P&L), **Angel One** (tradebook, P&L, *and* the seven-section tax P&L with explicit MTF quantities), **Upstox**, and **Paytm Money** (per-execution tradebook with the broker's own charge breakdown). (A broker PDF is read for its text only — no PDF layout has been calibrated, so it never imports a trade, and the import screen says so.) Detection keys on **in-content fingerprints**, never on filename or column shape: every parser must prove whose file it holds before claiming it, and a cross-broker refusal matrix in the test suite keeps it that way. For every other broker — **Kotak Neo, Sahi**, or one that launches next year — drop the CSV/XLSX and Vyuha asks you to **match the columns once**, then remembers the mapping. Nothing is ever guessed: a file whose layout is unknown produces a question, never a trade with quantity in the price field. Mapped tradebooks go through the same FIFO pairing, de-duplication and charge engine as native ones, with the **charge reconciliation panel** (computed vs broker-reported) before commit. Live API pulls too: Zerodha **Kite**, **Dhan**, and **Angel One SmartAPI** — the last fully unattended, its daily login minted from your TOTP secret, all credentials encrypted at rest.
 - **Lenses — the same book, cut six ways.** One tab strip re-groups every trade by month, broker, trade type, import file, setup or outcome — so "what exactly did that one file produce?" is one click, in isolation, with that group's own P&L and charges (and, with Pro, its win rate, profit factor, expectancy and average R). Any group can be deleted from right there.
 - **Deletion you can reason about — and undo.** Delete by date range, by import file, by broker, by trade type, or exactly what the table is showing; every path goes through one confirmation that shows the precise set, counts and net P&L before anything happens, with type-to-confirm past ten trades. And every delete writes a **snapshot first** — trades, staged legs, chart attachments and all — restorable from **Backup & Restore → Deleted items**. Snapshots are never auto-purged.
 - **Back, everywhere it means something.** A back control appears in the header only when there is an in-app screen to return to (labelled with where it goes), Alt+← and the mouse's back button work in the desktop shell, and drill-downs carry their own in-page back.
@@ -292,6 +301,13 @@ forever.** Your own record of your trading is never held hostage.
 - **Does a loss change how you trade?** Expectancy after a win vs after a loss, plus same-day re-entries — revenge trading, measured.
 - **Is your conviction rewarded?** Expectancy by position-size quartile. If your biggest positions are not your best, that is a *sizing* question, not a selection one.
 - **Three honesty rules enforced in code:** no finding below 15 trades in a group; no invented sessions for trades whose time is unknown; and every finding phrased as an observation, never an instruction — there is a test asserting no finding says "you should".
+
+### 📋 Trades table — how many, at what, for how much
+<img src="docs/screenshots/trades.png" alt="Trades table — Qty, Invested, Entry price and Exit price columns, status/outcome view dropdown" width="900" />
+
+- **Qty · Invested · Entry · Exit** replaced the raw Buy/Sell rupee totals (v2.99.96): the quantity, what you actually put in, and the two weighted-average prices — universal, because every import path (six parsers, the column mapper, three API pulls) already produced them.
+- On **MTF rows, Invested is *your own* contribution** with the broker-funded amount alongside; when the funding split is not yet resolved it says so instead of inventing a percentage.
+- An open trade shows **"—" for its exit, never ₹0**, and sorts to the bottom of an Exit sort — a missing side is `undefined`, not zero.
 
 ### 🔎 See exactly the trades you mean
 
@@ -358,7 +374,15 @@ forever.** Your own record of your trading is never held hostage.
 - **Per-playbook expectancy cards**: win rate, net, expectancy, profit factor, avg R — with a small-sample caution until 20 closed trades.
 - **Discipline scorecard**: weekly adherence scores, cost-of-mistakes rollup, trading-by-emotion, entry-time limit breaches, and the per-rule cost table.
 
+### 📉 Options Seller Journal
+<img src="docs/screenshots/options-journal.png" alt="Options Seller Journal — seller KPIs, outcome mix and per-underlying breakdown" width="900" />
+
+- Expectancy by **DTE band**, hedged-vs-unhedged reported as an honest gap, **roll chains** against the first leg, IV rank, and premium per day of risk.
+- The four seller KPIs and the outcome mix open the same **breakdown dialog** the Dashboard uses — per-underlying counts, realised vs open, best and worst contract, capture arithmetic in one sentence — each row a deep link into the trades it counts.
+
 ### 🛡 Portfolio risk cockpit
+<img src="docs/screenshots/risk.png" alt="Portfolio Risk cockpit — exposure, open risk @ SL, VaR, Greeks, margin and breach alerts" width="900" />
+
 - Live exposure: initial risk, open P&L, **open risk @ SL**, allocation, sector concentration (HHI), one-click trail-to-breakeven.
 - **VaR / CVaR / parametric VaR**, beta-weighted exposure, NIFTY stress scenarios (±3%, ±5%, crash+IV spike).
 - **Option Greeks** (Black-Scholes) with a three-tier IV fallback ending at the real **India VIX**.
@@ -393,8 +417,18 @@ forever.** Your own record of your trading is never held hostage.
 - **MTF interest accrual** runs idempotently on app open.
 - **Signed auto-updates**: the desktop app checks once at launch and shows *Update now / Later* — nothing ever installs itself, and your DB is **backed up automatically before any migration**.
 
+### 🎨 Appearance — nine skins, tint, panels, custom, wallpaper
+<img src="docs/screenshots/custom-theme.png" alt="Custom theme builder — seven colour targets for dark and light with a WCAG readability badge on each row" width="900" />
+
+- **Nine skins**: eight built-in — Luxe, Terminal, Tape, Sapphire, Aurora, Lime, Rose, Ember — plus **Custom**. Every coloured skin tints canvas, panels and borders in its own hue, and a test asserts no two share a primary hex. (Ice and Royal, retired in v2.99.96, map to Sapphire.)
+- **Tint intensity** — a 0–100 dial with Subtle / Balanced / Vivid presets deciding how much of the skin's hue the canvas, sidebar, cards and borders wear; every skin holds ≥9:1 (dark) / ≥7:1 (light) body-text contrast even at 100.
+- **Panel style** — Flat / Soft / Luxe / Glow.
+- **Custom theme** — seven targets (accent, analytics, money, sidebar, cards, borders, canvas) × dark/light, each row wearing a **WCAG readability badge** that warns and never blocks; seed it from any built-in skin.
+- **Wallpaper** — PNG/JPEG/WebP ≤12 MB, kept locally in app-data **outside backups**, scrimmed per theme, never printed.
+- The tokens are computed by a pure engine and injected inline on `<html>` — no first-paint flash, and charts stay literal-colour.
+
 ### 🗃 Operational depth
-IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · collapsible sidebar with live IST market clock · light/dark + colorblind-safe themes · toast notifications · animated, skeleton-loaded UI.
+IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · collapsible sidebar with live IST market clock · light/dark, nine skins + colorblind-safe mode · toast notifications · animated, skeleton-loaded UI.
 
 ---
 
@@ -428,6 +462,13 @@ warns for a grace period before it locks, and it fails open when offline, which
 is stated rather than hidden. Full procedures:
 [`docs/owner/LICENSE_OPERATIONS.md`](docs/owner/LICENSE_OPERATIONS.md).
 
+**Buying is a WhatsApp message.** Every "Get Pro / Get Lifetime" button in the app opens a
+**buy dialog** — the number **+91 73936 73714**, a pre-filled message quoting the plan and the
+price you saw, and *Copy number* / *Copy message* buttons (plus an Open-WhatsApp link when you are
+in a browser). It is a dialog rather than a link because the app is offline by design and the
+desktop webview opens no external pages; the key arrives by reply and is pasted into Settings →
+License.
+
 ---
 
 ## 🔒 Local-first by design
@@ -444,6 +485,9 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
+
+Current release: **v2.99.97**. If the window ever comes up blank, the sidecar's own log is at
+`%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
 
@@ -473,13 +517,16 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       1616 unit + integration tests across 115 files
-e2e/         41 Playwright flows through the real app, in 16 specs
+tests/       1753 unit + integration tests across 125 files (+ tests/load: 13 load cases, run separately)
+e2e/         45 Playwright flows through the real app, in 17 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
   sales/     public marketing assets (landing page, brochure)
-  screenshots/        # dashboard, lenses, pricing, broker-connect, skins, reports
+  screenshots/  22 shots retaken by scripts/retake-screenshots.mjs — dashboard, trades, lenses,
+                pricing, broker-connect, staged-position, arjuns-eye, rom-report, kpi-drilldown,
+                playbooks, calculator, risk, options-journal, edge-report, tax-pack, surveillance,
+                settings-appearance, custom-theme, skin-{lime,rose,ember,sapphire,aurora}
 scripts/     build, release, and the vendor licence tooling
 ```
 
@@ -491,7 +538,8 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **1,616 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **1,753 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **Load-tested.** 13 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, and the second batch found more — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice.
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
 - Full changelog in [`CHANGELOG.md`](CHANGELOG.md).
@@ -506,8 +554,9 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (1,616 tests) |
-| `npm run test:e2e` | Playwright e2e — 41 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (1,753 tests) |
+| `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm run test:load` | 13 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |
@@ -523,7 +572,8 @@ export. The Tauri shell spawns the Next **standalone** server as a **bundled-Nod
 `127.0.0.1`, waits for the port, then points the native webview at it — WebView2 on Windows, WKWebView
 on macOS. On first run the launcher copies a seeded template DB (empty journal) into the OS app-data
 dir (`%APPDATA%\in.vyuha.tradejournal`, or `~/Library/Application Support/in.vyuha.tradejournal`);
-your data persists there across updates and reinstalls.
+your data persists there across updates and reinstalls. The sidecar's stdout/stderr go to
+`<data-dir>/logs/sidecar.log` (`%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` on Windows).
 
 ```bash
 # one-time prerequisites
@@ -538,7 +588,7 @@ npm run desktop:build
 macOS build needs a Mac. That is what the release matrix is for.
 
 Releases are built by CI on tag push (`v*`) across a matrix — Windows x64, macOS Apple silicon and
-macOS Intel — signed with the updater keypair and published as **drafts**, so updates only reach
+macOS Intel (macOS is built by CI but not sold or supported) — signed with the updater keypair and published as **drafts**, so updates only reach
 users when a draft is explicitly published. macOS ships per-architecture rather than as one universal
 binary because the app carries a bundled Node runtime, and a universal bundle would embed a
 single-architecture Node that fails on the other kind of Mac.
@@ -570,7 +620,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 1616 Vitest unit + integration tests
+  tests/          # 1753 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

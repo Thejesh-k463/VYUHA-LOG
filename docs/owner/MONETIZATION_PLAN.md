@@ -10,7 +10,12 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.75
+## 0. What you are actually selling, as of v2.99.97
+
+> Since v2.99.75 the pitch gained an appearance layer (nine skins incl. Custom, tint intensity,
+> panel styles, wallpaper — v2.99.96/97), the Qty/Invested/Entry/Exit trades table, and an
+> in-app WhatsApp buy dialog (+91 73936 73714, copy buttons) because the shell opens no external
+> links. The v2.99.75 note below still describes the core selling story.
 
 > ### v2.99.75 marketing note — trust features are conversion features
 >

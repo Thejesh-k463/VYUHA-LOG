@@ -48,11 +48,20 @@ pills open the plan card; **Appearance**: `lib/domain/appearance.ts` → inline 
 `<html>` (`app/layout.tsx`), tint intensity 0–100, panel style flat/soft/luxe/glow, 9th skin
 `custom` (7 fields × dark/light, WCAG badges), wallpaper upload (`app/api/appearance/wallpaper`,
 `<data>/wallpaper/`, outside backups) with scrim slider; migration **0048**.
-| Previous | **v2.99.95 is PUBLISHED** (`gh api …/releases/latest` → `v2.99.95`, 2026-08-15T05:51Z) — the "unpublished draft" note in older copies of this file is stale |
-| Unit tests | **1,679 passing / 119 files** after wave 1 (`npm run verify` EXIT:0 incl. build, 2026-08-15); +13 doc-guard tests added after that count |
-| e2e | **41/41 passed (2.1m), 2026-08-15, on the wave-1 tree** (Trades columns + skins changed) — exit 0 |
-| Load tests | **13 of 13 built** (A1–A6 + B1, B2, B5, B6, B7, C2, C7); B7's ≤2-decode target pinned as `it.fails` follow-up |
-| Not done | §7 install-on-non-build-machine (owner's hands); winget + MS submission — guide now in `docs/owner/WINGET_AND_SMARTSCREEN.md` |
+
+**Sales-assets pass (2026-08-15, after v2.99.97, docs-only — no release):** 22 screenshots
+regenerated from synthetic fixtures by `scripts/retake-screenshots.mjs` (skin-royal.png deleted;
+new: trades, options-journal, risk, settings-appearance, custom-theme, skin-lime/rose/ember);
+`docs/sales/landing-page.html` gained a hero "why it wins" strip, a 10-shot gallery with
+lightbox, a "Make it yours" skins section, a Features-vs-cost 3-column summary above the
+comparison table, and a creators line — all copy derived from `lib/domain/pricing-comparison.ts`;
+standalone rebuilt (5.7 MB, gitignored — the file to email; **still no public URL**).
+`docs/owner/CREATOR_OUTREACH.md` — WhatsApp/email/X proposals, creator FAQ, review-key runbook
+(offer = free lifetime key only). README brought current (badges 1,753 tests / 45 e2e flows in
+17 specs, nine skins, Trades columns, Appearance, buy dialog, sidecar log, load-tested line,
+PDF not an importer) and guarded by `tests/readme-claims.test.ts` (10 tests). Load tests **13 of
+13 built**. Not done: install-on-non-build-machine; winget + MS submission
+(`docs/owner/WINGET_AND_SMARTSCREEN.md`); hosting the landing page.
 
 **v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
 Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing
@@ -389,8 +398,11 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
 - Option-seller depth round 3 — scoped, never started.
 - B1 share-card funnel and B2 referral codes wired into the licence scripts — planned as the
   "highest-leverage builds", never built.
-- Retake the Settings skin-picker screenshot (**eight** swatches now; `docs/screenshots/skin-royal.png`
-  shows a retired skin — replace with lime/rose/ember).
+- ✅ Screenshots retaken 2026-08-15 by `scripts/retake-screenshots.mjs` (22 shots): `skin-royal.png` is
+  deleted; the set is dashboard, trades, lenses, pricing, staged-position, arjuns-eye, rom-report,
+  kpi-drilldown, playbooks, calculator, risk, options-journal, edge-report, tax-pack, surveillance,
+  settings-appearance, custom-theme and skin-{lime,rose,ember,sapphire,aurora}; README renders the
+  new set (guarded by `tests/readme-claims.test.ts`).
 - Intraday data: NOT required (owner 2026-08-15) — drop from the ceiling list until reopened.
 
 ### 8.5 Open questions the owner never answered
