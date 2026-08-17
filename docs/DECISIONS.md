@@ -27,6 +27,25 @@ Format:
 
 ---
 
+## 2026-08-15 — The landing page is hosted on GitHub Pages from `main:/docs` via a redirect, not a copy
+
+Public URL: https://thejesh-k463.github.io/VYUHA-LOG/ → `docs/index.html` (meta-refresh) →
+`sales/landing-page.html`, so `../screenshots/*.png` resolve as-is. A copy at `docs/index.html`
+would have drifted from the file `tests/pricing.test.ts` pins; the redirect keeps one source.
+Pages was enabled with `gh api -X POST repos/…/pages -f source[branch]=main -f source[path]=/docs`;
+first build ~1 min; verified 200 on root, landing page and a screenshot. `docs/.nojekyll` added so
+underscored paths are served. Everything under `docs/` (incl. `docs/owner/*`) is public — it already
+was, the repo is public; nothing secret lives there (verified: secrets are gitignored at root).
+Superseded: HOW_TO_EDIT_SALES_ASSETS "host it anywhere / when hosting exists" (2026-08-13).
+
+## 2026-08-15 — Screenshots come from synthetic fixtures via one script; skin-royal retired from every surface
+
+`scripts/retake-screenshots.mjs` (22 shots, temp DB, `dhan-gtr.csv` + `dhan-pnl.csv` last for
+the seller journal, settings set via `POST /api/settings`) is the only sanctioned way to refresh
+`docs/screenshots/`. Reason: three hand-taken files (lenses, pricing, skins) had drifted two
+releases; and screenshots must never show the owner's real book. `tests/readme-claims.test.ts`
+fails if README references a screenshot that does not exist.
+
 ## 2026-08-15 — Reinstall over a running copy failed on `server\node\node.exe`: the sidecar was only killed on WindowEvent::Destroyed, and Tauri's NSIS template stops vyuha.exe alone
 
 **Context:** buyers upgrading v2.99.96 → next saw the NSIS dialog "Error opening file for writing … server\node\node.exe".

@@ -480,6 +480,8 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 ## 🚀 Get it
 
+**Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
+
 **Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls.
 
 | Platform | File | Data lives in |

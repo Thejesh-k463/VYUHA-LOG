@@ -100,6 +100,56 @@ that cannot be bundled, because client components import `lib/license.ts` and a
 
 ---
 
+## Next session — ready-to-paste (written 2026-08-15, after v2.99.97 + the sales-assets pass)
+
+```
+Read CLAUDE.md first (it imports AGENTS.md), then VYUHA-STATE.md §2 and §8. Do not read
+anything else yet — VYUHA-STATE.md §3 is a routing table; open only what the task needs.
+Then read docs/DECISIONS.md ONLY for entries dated 2026-08-15 (there are ~14; they are the
+newest facts and several are traps: the lockfile rule, the revocations prerelease, the tint
+curves, the Pages redirect).
+
+STATE YOU CAN TRUST: v2.99.97 built, CI-green, tagged, DRAFT release (publish is mine);
+v2.99.96 is releases/latest; landing page live at https://thejesh-k463.github.io/VYUHA-LOG/;
+1,753 unit tests / 45 e2e flows green; 13/13 load tests built; revocations prerelease exists;
+key backup NOT yet taken (tooling exists: license-backup.mjs).
+
+TASK: <one of the two below, or what I paste>
+ A) BROKER INTEGRATION — I am supplying real Paytm Money / Zerodha / Upstox exports and API
+    client details (gitignored under tests/fixtures/private/; never quote identifiers).
+    For each: verify the parser against the real file per docs/BROKER_FORMATS.md, reconcile
+    Paytm against a contract note (VYUHA-STATE §7 rule), pin the cross-broker refusal matrix
+    in tests/import-detection-matrix.test.ts, wire/verify the API pull in lib/import/api/*,
+    and record findings in DECISIONS.md. No new brokers, no new screens.
+ B) FIRST-RUN ONBOARDING — the recorded #1 engineering pick: guide a fresh install through
+    import → mark → first review (app/, components/ only; no new subsystem). Ask me for the
+    step list before building.
+
+How I want you to work:
+1. Ask before building; propose what fits this app's structure and what it costs; build only
+   what we agree on. Multi-agent is fine — but agents must NOT git stash/commit/checkout, must
+   NOT run npm install, and must NOT run `npm run verify`/`next build` while another agent is
+   editing (builds collide in .next); one verify per wave, run by you.
+2. Label every claim VERIFIED (checked now) or INFERRED; say plainly what you could not verify.
+3. Scope: app/, components/, lib/, e2e/, tests/ (+ scripts/ and docs/ only when the task is
+   about them). No adjacent refactors, no new subsystems, no new brokers, no new report screens.
+4. Respect the 10 invariants in AGENTS.md — money is integer paise in the DB, rupees at
+   runtime; pure modules stay pure; every account-scoped read via getSelectedAccountId().
+5. Fixtures are schema-only; real exports live gitignored in tests/fixtures/private/.
+6. Before saying anything is done: `npm run verify` (not `npm test`), prove-it skill, and
+   report the numbers you actually saw (tests, e2e, build markers, sig key id 4FF85F3BBE1DA21D).
+7. Anything measured or deliberately deviated → docs/DECISIONS.md via decision-log.
+8. If this touches a release: release skill start to finish, then `npm run client:package`,
+   update docs/client/* per docs/owner/DOC_AUDIT.md — standing rule.
+9. Already settled, do not re-open: Pro annual ₹9,999 / lifetime ₹29,999 (list ₹13,000 /
+   ₹35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
+   revocations prerelease exists; annual→lifetime = full credit within the year; delivery is
+   manual mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages
+   redirect, not a copy.
+10. When done: update VYUHA-STATE.md §2 with verified numbers, and tell me it's a good point
+    to /clear.
+```
+
 ## Maintenance
 
 Item 9 is the part that goes stale. **When a question in `VYUHA-STATE.md` §8.5 is

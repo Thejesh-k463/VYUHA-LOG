@@ -55,7 +55,12 @@ new: trades, options-journal, risk, settings-appearance, custom-theme, skin-lime
 `docs/sales/landing-page.html` gained a hero "why it wins" strip, a 10-shot gallery with
 lightbox, a "Make it yours" skins section, a Features-vs-cost 3-column summary above the
 comparison table, and a creators line — all copy derived from `lib/domain/pricing-comparison.ts`;
-standalone rebuilt (5.7 MB, gitignored — the file to email; **still no public URL**).
+standalone rebuilt (5.7 MB, gitignored — the fallback attachment). **Landing page is LIVE:
+https://thejesh-k463.github.io/VYUHA-LOG/** (GitHub Pages, `main:/docs`, `docs/index.html`
+redirect → `sales/landing-page.html`; verified 200 on root/page/images; redeploys on every push
+to `main`). `docs/owner/ZERODHA_PROPOSAL.md` — email to Kite Connect/partnerships + X thread/DM
+to the Kamaths proposing a consent-based read-only feed. Next-session prompt:
+`docs/SESSION_PROMPT.md` § "Next session — ready-to-paste".
 `docs/owner/CREATOR_OUTREACH.md` — WhatsApp/email/X proposals, creator FAQ, review-key runbook
 (offer = free lifetime key only). README brought current (badges 1,753 tests / 45 e2e flows in
 17 specs, nine skins, Trades columns, Appearance, buy dialog, sidecar log, load-tested line,

@@ -69,8 +69,7 @@ overlay (plain JS at the bottom of the file — no library). To add a screenshot
 npm run landing:build        # → docs/sales/landing-page.standalone.html
 ```
 
-This inlines every screenshot as a data: URI. **The standalone is the file you email or DM to a
-prospect until hosting exists** — it opens offline with no broken images. It is gitignored and
+This inlines every screenshot as a data: URI. **The public page is https://thejesh-k463.github.io/VYUHA-LOG/ (GitHub Pages, source `main:/docs`, `docs/index.html` redirects to `sales/landing-page.html`); the standalone is the fallback you email when a link is not wanted** — it opens offline with no broken images. It is gitignored and
 must be regenerated after every edit; `tests/pricing.test.ts` checks it (when present) for the
 current prices, the upgrade sentence and the "download-only" network answer, so a stale twin
 fails the suite instead of rotting silently again.
@@ -89,10 +88,13 @@ The on-screen "sheet on a dark desk" backdrop is removed automatically in the PD
 (`<div class="qr">`) takes an `<img>` pointing at a QR PNG placed next to the file once there is a
 public URL to point it at.
 
-## 6. Publish (when hosting exists)
+## 6. Publish
 
-Host `landing-page.html` **together with `../screenshots/`** on any static host (Netlify Drop,
-Cloudflare Pages, GitHub Pages) — or just upload the standalone, which needs nothing beside it.
+**Already hosted (2026-08-15):** GitHub Pages serves the `main` branch's `/docs` folder, so
+`https://thejesh-k463.github.io/VYUHA-LOG/` → `docs/index.html` (meta-refresh) →
+`sales/landing-page.html`, with `../screenshots/` resolving naturally. Every push to `main`
+redeploys within ~1 minute; check `gh api repos/Thejesh-k463/VYUHA-LOG/pages/builds/latest --jq .status`.
+The page is a redirect, not a copy, so `tests/pricing.test.ts` keeps pinning the one source file.
 Swap the footer/mailto address for a dedicated sales inbox before driving public traffic.
 
 ## 7. Verify before sending anything

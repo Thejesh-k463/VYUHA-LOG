@@ -11,8 +11,7 @@ with them: `lib/domain/pricing-comparison.ts` (`WHY_VYUHA`, `VYUHA_ROW`),
 §2/§5. If a number changes there, change it here the same day.
 
 **Placeholders to fill before sending:** `[[NAME]]`, `[[HANDLE]]`,
-`[[LANDING_URL or attached landing-page.html]]` (there is no public URL yet — attach
-the HTML file), `[[EMAIL]]` (owner's outreach email; WhatsApp is +91 73936 73714).
+landing page = https://thejesh-k463.github.io/VYUHA-LOG/ (live on GitHub Pages since 2026-08-15; the standalone HTML is a fallback attachment), `[[EMAIL]]` (owner's outreach email; WhatsApp is +91 73936 73714).
 
 ---
 
@@ -47,7 +46,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > Pro is ₹9,999/yr or ₹29,999 lifetime.
 >
 > I'd like to give you a **free lifetime key** for an honest review — good or bad, no
-> commission, no script. Landing page: [[LANDING_URL or attached landing-page.html]].
+> commission, no script. Landing page: https://thejesh-k463.github.io/VYUHA-LOG/.
 > Interested? Reply here or [[EMAIL]].
 >
 > — Thejesh, +91 73936 73714
@@ -94,7 +93,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > that you don't present it as anything other than a record-keeping and analysis
 > tool — it is not advice and makes no claim about returns.
 >
-> Landing page: [[LANDING_URL or attached landing-page.html]].
+> Landing page: https://thejesh-k463.github.io/VYUHA-LOG/.
 >
 > If you're open to it, reply with the email you'd like the key issued to.
 >
@@ -110,7 +109,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > 6 broker importers, Indian statutory charges computed (not copied), options seller
 > journal, ITR/AIS pack, zero cloud. Journal free; Pro ₹9,999/yr or ₹29,999 lifetime.
 > Would you take a free lifetime key for an honest review? No fee, no script.
-> [[LANDING_URL or attached landing-page.html]]
+> https://thejesh-k463.github.io/VYUHA-LOG/
 
 ---
 
@@ -129,8 +128,7 @@ Send this once they say yes. It is short on purpose.
    is unforgiving. Describe what it does (records, imports, computes charges, builds
    the tax pack); leave results out of it. If you show your own P&L, that is your
    choice and your disclosure.
-4. **Include the link or file.** Point viewers at `[[LANDING_URL or attached
-   landing-page.html]]` (or the installer download we send you) so they can take the
+4. **Include the link or file.** Point viewers at https://thejesh-k463.github.io/VYUHA-LOG/ (or the installer download we send you) so they can take the
    7-day trial themselves.
 5. **Windows.** Please review the Windows build. Do not tell viewers a macOS version
    exists — it is not sold in this package.
