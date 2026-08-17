@@ -19,10 +19,34 @@ https://thejesh-k463.github.io/VYUHA-LOG/ · Repo: https://github.com/Thejesh-k4
 
 ---
 
+## 0. Contact map — verified 2026-08-15 against Zerodha's own pages
+
+Decoded from the Cloudflare-obfuscated addresses on zerodha.com; nothing here is guessed.
+
+| Purpose | Contact | Source | Use it for |
+|---|---|---|---|
+| **Kite Connect partnerships / business** | **talk@rainmatter.com** | zerodha.com/products/api ("Are you a business? … Drop us an e-mail") | **Send the email in §1 here first.** Rainmatter is Zerodha's fintech arm; the API page routes business/platform partnerships to it |
+| Rainmatter (funding + "financial APIs, industry networks") | https://rainmatter.com → "Apply now" Google Form; @Rainmatterin on X/LinkedIn | rainmatter.com | If the pitch also becomes an investment/incubation conversation |
+| Kite Connect technical questions | https://kite.trade/forum/discussions | Zerodha support article "Kite connect API – FAQs" (no phone/ticket support for the API) | Sandbox / read-scope / token questions once someone engages |
+| Kite Connect developer signup | https://developers.kite.trade/signup | zerodha.com/products/api | Register the Vyuha app (Personal free; Connect ₹500/mo) |
+| Managing Director | Nithin Kamath — nithin.k@zerodha.com | zerodha.com/contact (Key management, published) | Only as a copy-line after the X mention, or if talk@ goes unanswered ~2 weeks |
+| CFO | Nikhil Kamath — nikhil.k@zerodha.com | zerodha.com/contact | Same as above |
+| Whole-Time Director (Varsity, education) | Karthik Rangappa — karthik_r@zerodha.com | zerodha.com/contact | Educational/creator angle only |
+| CISO | Shravan B K — shravan.k@zerodha.com | zerodha.com/contact | Only if a security review of the consent flow is requested |
+| Press | press@zerodha.com | zerodha.com/contact | Not for this proposal |
+| Complaints / DP / support | complaints@zerodha.com, dp@zerodha.com, support@zerodha.com | zerodha.com/contact | Not for this proposal |
+| Account Aggregator ecosystem | services@sahamati.org.in (Sahamati, AA common services) | sahamati.org.in | If the AA route is chosen: Vyuha would need an FIU/TSP arrangement; Zerodha is an FIU via Perfios AA and Onemoney AA (zerodha.com/tos/account-aggregator) |
+
+Sequence: (1) email talk@rainmatter.com; (2) same day, the X thread in §2; (3) after ~10 working
+days without reply, a short follow-up to talk@ with nithin.k@ in CC. Do not mass-mail the
+management table — those addresses are published for regulatory contact, not partnerships.
+
 ## 1. Email — to Zerodha partnerships / Kite Connect team
 
-**To:** the Kite Connect / partnerships contact (kiteconnect@zerodha.com or the partnerships
-address on zerodha.com — confirm before sending)
+**To:** talk@rainmatter.com — the address Zerodha's own Kite Connect page names for businesses
+("Are you a business? … Let 16+ million clients of Zerodha seamlessly access your platform. Drop
+us an e-mail at talk@rainmatter.com", zerodha.com/products/api, verified 2026-08-15). See §0 for the
+full contact map.
 **Subject options:**
 - Vyuha × Zerodha — a consent-based, read-only journal integration (no cloud, data stays on the trader's PC)
 - Proposal: an Account-Aggregator-style read path from Zerodha into a local-first trade journal
