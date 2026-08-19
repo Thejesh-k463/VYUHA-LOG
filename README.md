@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1753%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1756%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-45%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -28,6 +28,55 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
+> **Now: v2.99.97** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.97 — Appearance becomes a set of dials.** A **tint intensity** slider (0–100, Subtle /
+> Balanced / Vivid) decides how much of the skin's hue the canvas, sidebar, cards and borders
+> wear — tuned so every skin holds ≥9:1 (dark) / ≥7:1 (light) body-text contrast even at 100.
+> A **panel style** (Flat / Soft / Luxe / Glow), a **wallpaper** (PNG/JPEG/WebP ≤12 MB, kept out
+> of backups, scrimmed per theme, never printed) and a ninth skin, **Custom** — seven colours ×
+> dark/light with a readability badge on each, seeded from any built-in skin. The tokens are
+> computed by a pure engine and injected inline on `<html>`, so there is no flash and charts
+> stay literal-colour. Also: the buy buttons open a copyable WhatsApp dialog inside the desktop
+> shell, and reinstalling over a running copy no longer errors on `node.exe`.
+>
+> **v2.99.96 — eight skins that tint the whole screen.** Ice and Royal are retired (they shared
+> hexes with Sapphire and Luxe/Aurora and were telling only by their buttons; a stored choice
+> maps to Sapphire). In their place **Lime**, **Rose** and **Ember** — and every coloured skin
+> now tints canvas, panels and borders in its own hue, so the roster is Luxe, Terminal, Tape,
+> Sapphire, Aurora, Lime, Rose, Ember, with a test that no two share a primary or an
+> analytics-vs-primary hex.
+>
+> **v2.99.95 — launch pricing that survives division, and a comparison that hides nothing.**
+> List prices are ₹13,000/yr (Pro — Annual) and ₹35,999 (Journal — Lifetime), effective
+> 2027-01-01; until then the launch offer sells at ₹9,999/yr and ₹29,999, and the savings
+> badges are computed and floored — **23% off** and **16% off**, never rounded up. Lifetime is
+> now the featured plan and lists the roadmap. The pricing and landing pages carry a
+> seven-product comparison read from public pages on 2026-08-15, with "not stated" wherever a
+> claim could not be verified — the ₹999–₹2,499 Indian competitors included. macOS selling
+> claims came off every surface (the Mac edition will be offered separately), the current
+> mark replaced the retired flat tile everywhere, and the refund policy states its edges.
+>
+> **v2.99.94 — the renewal you were never warned about, and four claims that were not true.**
+> An annual licence now warns from 30 days out — a dated countdown and a renew link on every
+> Pro screen, nothing withheld while it counts down, and the journal itself is unaffected by
+> expiry either way. PDF is no longer described as an importer (it reads a broker PDF's text
+> so you can enter trades by hand; it produces no trades), prices no longer claim to include
+> tax, the download promise says "private link" because a 35 MB installer cannot be emailed,
+> and a refund policy, terms of use and privacy statement now ship inside the download. For
+> the seller: a licence term must be stated explicitly and a paid key needs its payment
+> reference before it can be issued.
+>
+> **v2.99.93 — five things that only showed up under load, two of which lost data.** A load
+> and stress suite now exists, and its first six tests found five real defects. Screenshot
+> thumbnails no longer vanish on restore (they had no database row, so backups never carried
+> them — take a fresh backup after updating), deleting a large account no longer trips
+> SQLite's 32,766-parameter limit (a 2,000-trade delete went from 4,010 statements to 29),
+> and rebuilding a staged ladder is one all-or-nothing write instead of a half-repriced
+> position. Import preview is 364× faster on a 25,000-trade book (8 s → ~20 ms) and Data
+> Quality 31× faster when symbols are not price-marked (10 s → fast), with case-insensitive
+> symbol matching so a fresh mark is never reported stale.
+>
 > **v2.99.92 — the same app as v2.99.91, shipped by a pipeline that now works.** No behaviour
 > changed. v2.99.91's Windows job died on the release gate, so it published with macOS assets
 > only and no `Vyuha_x64-setup.exe`; everything below reaches a Windows machine for the first
@@ -89,23 +138,6 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > show-exactly-what-goes confirmation. The new **Lenses** screen cuts the same book six ways —
 > month, broker, trade type, import file, setup, outcome — with per-group performance, and the
 > app finally answers "how much?" in-app: real prices on the upsell panel and a pricing page.
-
-> **v2.99.97 — Appearance becomes a set of dials.** A **tint intensity** slider (0–100, Subtle /
-> Balanced / Vivid) decides how much of the skin's hue the canvas, sidebar, cards and borders
-> wear — tuned so every skin holds ≥9:1 (dark) / ≥7:1 (light) body-text contrast even at 100.
-> A **panel style** (Flat / Soft / Luxe / Glow), a **wallpaper** (PNG/JPEG/WebP ≤12 MB, kept out
-> of backups, scrimmed per theme, never printed) and a ninth skin, **Custom** — seven colours ×
-> dark/light with a readability badge on each, seeded from any built-in skin. The tokens are
-> computed by a pure engine and injected inline on `<html>`, so there is no flash and charts
-> stay literal-colour. Also: the buy buttons open a copyable WhatsApp dialog inside the desktop
-> shell, and reinstalling over a running copy no longer errors on `node.exe`.
->
-> **v2.99.96 — eight skins that tint the whole screen.** Ice and Royal are retired (they shared
-> hexes with Sapphire and Luxe/Aurora and were telling only by their buttons; a stored choice
-> maps to Sapphire). In their place **Lime**, **Rose** and **Ember** — and every coloured skin
-> now tints canvas, panels and borders in its own hue, so the roster is Luxe, Terminal, Tape,
-> Sapphire, Aurora, Lime, Rose, Ember, with a test that no two share a primary or an
-> analytics-vs-primary hex.
 >
 > **v2.99.70 — seven skins, and the chrome grows reflexes.** Three new accent skins — **Royal**
 > (regal violet, since retired), **Sapphire** (electric indigo with orchid analytics), **Aurora** (fuchsia with
@@ -217,7 +249,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **1,753** | **43** | **0** |
+| **1,756** | **43** | **0** |
 | tests, 45 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
 
 </div>
@@ -519,7 +551,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       1753 unit + integration tests across 125 files (+ tests/load: 13 load cases, run separately)
+tests/       1756 unit + integration tests across 125 files (+ tests/load: 13 load cases, run separately)
 e2e/         45 Playwright flows through the real app, in 17 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -540,7 +572,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **1,753 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **1,756 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 13 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, and the second batch found more — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice.
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -556,7 +588,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (1,753 tests) |
+| `npm test` | Vitest unit + integration suite (1,756 tests) |
 | `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 13 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -622,7 +654,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 1753 Vitest unit + integration tests (+ tests/load)
+  tests/          # 1756 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

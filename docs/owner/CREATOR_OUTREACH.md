@@ -200,8 +200,9 @@ Fill a row when you first message a creator, not when they accept — otherwise 
 - **No exclusivity, no editorial control, no takedown requests** on an unfavourable
   review.
 - **No macOS.** Windows only; do not say a Mac build is "coming" on any surface.
-- **No public URL yet.** Until the landing page is hosted, say "attached" and attach
-  the HTML file — never paste a placeholder link that 404s.
+- **The public URL is https://thejesh-k463.github.io/VYUHA-LOG/** (GitHub Pages, live
+  since 2026-08-15). Link it; attach the standalone HTML only as a fallback — never
+  paste a placeholder link that 404s.
 - **The trial and free tier are the product's own terms** (7 days; core journal
   free forever) — do not invent extended trials or discount codes for a creator's
   audience without deciding to and recording it in `MONETIZATION_PLAN.md`.

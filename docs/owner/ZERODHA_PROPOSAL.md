@@ -100,7 +100,7 @@ full contact map.
 > Angel One, Upstox, Paytm Money) plus a column mapper for any CSV and three broker-API
 > pulls (Kite, Dhan, Angel One SmartAPI); staged positions with per-tranche stops; an
 > options-seller journal; a tax pack (ITR schedule export, AIS reconcile, advance tax); MTF
-> margin lists for seven brokers (10,501 stocks); 1,753 unit tests and 45 Playwright flows
+> margin lists for seven brokers (10,501 stocks); 1,756 unit tests and 45 Playwright flows
 > in CI on every commit; signed installers with a working updater and remote key
 > revocation. Landing page: https://thejesh-k463.github.io/VYUHA-LOG/ · Source and
 > release history: https://github.com/Thejesh-k463/VYUHA-LOG

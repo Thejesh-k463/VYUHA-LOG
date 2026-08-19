@@ -35,7 +35,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 | CI | **green on `815e203` — all 5 jobs incl. Windows — BEFORE tagging** (run 31885698273); Release workflow 31885887802 **success** |
 | GitHub release | `v2.99.97` is a **DRAFT with 9 assets** (owner publishes); `release:verify v2.99.97` → all `.sig` = `4FF85F3BBE1DA21D`; `releases/latest` = **`v2.99.96`** (owner published it 2026-08-15) |
 | Client ZIP | `release-packages/Vyuha_2.99.97_Client_Package.zip`, installer SHA-256 `B1FE606B…B927C8` |
-| Unit tests | **1,743 passed / 0 failed** on the v2.99.97 tree (`npm run verify` EXIT 0 incl. build, 2026-08-15) |
+| Unit tests | **1,756 passed / 0 failed** across 125 files (`npx vitest run`, 2026-08-19; `npm run verify` EXIT 0 incl. build on 2026-08-15 at 1,743) |
 | e2e | 43 passed + `z-appearance.spec.ts` 4/4 after an assertion fix (React serialises inline style without a space) — **44/44 effective**, 2026-08-15 |
 | Installer | `Vyuha_2.99.97_x64-setup.exe` + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 18:15; bundle carries `appearance-tick`; generated `installer.nsi` inserts `NSIS_HOOK_PREINSTALL`/`PREUNINSTALL` |
 | Previous | v2.99.96 built, CI-green, tagged; its GitHub release is a **DRAFT with 9 assets** (owner publishes) — `releases/latest` was still `v2.99.95` |
@@ -62,11 +62,20 @@ to `main`). `docs/owner/ZERODHA_PROPOSAL.md` — email to Kite Connect/partnersh
 to the Kamaths proposing a consent-based read-only feed. Next-session prompt:
 `docs/SESSION_PROMPT.md` § "Next session — ready-to-paste".
 `docs/owner/CREATOR_OUTREACH.md` — WhatsApp/email/X proposals, creator FAQ, review-key runbook
-(offer = free lifetime key only). README brought current (badges 1,753 tests / 45 e2e flows in
+(offer = free lifetime key only). README brought current (badges 1,756 tests / 45 e2e flows in
 17 specs, nine skins, Trades columns, Appearance, buy dialog, sidecar log, load-tested line,
 PDF not an importer) and guarded by `tests/readme-claims.test.ts` (10 tests). Load tests **13 of
 13 built**. Not done: install-on-non-build-machine; winget + MS submission
-(`docs/owner/WINGET_AND_SMARTSCREEN.md`); hosting the landing page.
+(`docs/owner/WINGET_AND_SMARTSCREEN.md`); key backup (`license-backup.mjs`); publishing the v2.99.97 draft.
+
+**Monetisation pass (2026-08-19, docs-only):** README "Why Vyuha?" block reordered newest-first with a
+`Now: v2.99.97` line and v2.99.93/94/95 notes added (guarded by `tests/readme-claims.test.ts` ordering
+assertions); repo-wide staleness audit done. New owner kits: `docs/owner/RAINMATTER_APPLICATION.md`
+(draft answers for Rainmatter's startup Google Form — pitch deck still to be built),
+`docs/owner/CLIENT_FEEDBACK_FORM.md` (24-question client form spec), Zerodha contact map in
+`ZERODHA_PROPOSAL.md` §0 (talk@rainmatter.com is the Kite Connect business address). GitHub
+capacity incidents (Aug 2026) assessed: no code risk; mitigations = local repo + release copies +
+key backup; a mirror remote is optional.
 
 **v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
 Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing
@@ -413,8 +422,8 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
 ### 8.5 Open questions the owner never answered
 
 Refund-policy and terms sign-off (guide exists, decision pending) · whether to collapse "theme"
-and "accent skin" into one list (8 skins × light/dark keeps multiplying axes) · whether to
-publish v2.99.96 once built.
+and "accent skin" into one list (9 skins × light/dark × tint × panel style keeps multiplying
+axes) · whether to publish the v2.99.97 draft (v2.99.96 is `releases/latest`).
 
 *(Left this list 2026-08-14: Pro annual pricing — ₹9,999; the `v2.99.0` tag — keep; the PDF
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;

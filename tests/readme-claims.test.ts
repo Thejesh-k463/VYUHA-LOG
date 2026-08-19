@@ -110,6 +110,32 @@ describe("README test counts agree with each other", () => {
   });
 });
 
+describe("README release notes read newest first", () => {
+  // The "Why Vyuha?" blockquote once ran v2.99.92 … v2.99.75, THEN v2.99.97,
+  // v2.99.96, then v2.99.70 — so GitHub opened on a five-release-old note and
+  // three releases had no note at all. Order is not something a reader
+  // notices; only the assertion does.
+  const versions = [...readme.matchAll(/^> \*\*v(2\.99\.\d+)/gm)].map((m) => m[1]);
+  const key = (v: string) => v.split(".").map(Number).reduce((a, n) => a * 1000 + n, 0);
+
+  it("the first version quote is the highest version present", () => {
+    expect(versions.length).toBeGreaterThan(3);
+    const highest = versions.reduce((a, b) => (key(b) > key(a) ? b : a));
+    expect(versions[0]).toBe(highest);
+  });
+
+  it("the 'Now:' line names the same version as the first quote", () => {
+    const now = readme.match(/^> \*\*Now: v(2\.99\.\d+)\*\*/m)?.[1];
+    expect(now).toBe(versions[0]);
+  });
+
+  it("every quote is in descending order", () => {
+    for (let i = 1; i < versions.length; i++) {
+      expect(key(versions[i]), `${versions[i]} after ${versions[i - 1]}`).toBeLessThan(key(versions[i - 1]));
+    }
+  });
+});
+
 function readdirSpecs(): string[] {
   return readdirSync(path.join(root, "e2e")).filter((f) => f.endsWith(".spec.ts"));
 }
