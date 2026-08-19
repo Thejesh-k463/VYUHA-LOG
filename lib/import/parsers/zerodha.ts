@@ -1,6 +1,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { extractTime } from "../time-parse";
+import { extractDate, extractTime } from "../time-parse";
+import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
@@ -101,9 +102,16 @@ export function detectZerodha(ctx: ParseContext): number {
 
   if (!named && !tradebookFp && !consoleFp) return 0; // No name, no fingerprint, no claim.
 
+  // The FINGERPRINT carries the claim on its own — the filename only adds to
+  // it. Real Console exports are named "Tradebook_EQ…" / "statement…" and name
+  // no broker, so a fingerprint weighted below the 0.7 routing threshold left
+  // the real files under-scored (measured 2026-08-20: tradebook 0.65, Console
+  // P&L 0.55 under a neutral filename) while their redacted, broker-named
+  // copies routed fine. Neither `Auction`/`Trade ID`+`Order ID` nor a column of
+  // "- Z" charge heads appears in any other broker's export.
   let score = named ? 0.35 : 0;
-  if (tradebookFp) score += 0.4;
-  if (consoleFp) score += 0.4;
+  if (tradebookFp) score += 0.5;
+  if (consoleFp) score += 0.55;
   // Shape refines a qualified score; it can no longer create one.
   if (cells.includes("tradingsymbol") || (cells.includes("symbol") && cells.includes("isin")))
     score += 0.15;
@@ -130,9 +138,25 @@ function productHint(raw: string): ProductHint {
 
 /**
  * Zerodha importer. Supports:
- *  - Tradebook (granular, one row per execution with Trade Type buy/sell + product) →
- *    aggregated per tradingsymbol+product into round-trips. Best for segment/MTF.
+ *  - Tradebook (granular, one row per execution with Trade Type buy/sell) →
+ *    paired FIFO per tradingsymbol+product into positions.
  *  - Console P&L (already aggregated) → mapped directly.
+ *
+ * ── Why FIFO pairing and not whole-file aggregation (2026-08-20) ────────────
+ *
+ * This branch used to sum every fill of a symbol into ONE row and set
+ * grossPnl = sellValue − buyValue. On a real Console tradebook (1,554 fills,
+ * Apr–Jun) that produced 23 rows of which 8 were sell-only — holdings bought
+ * before the export window — and each of those was booked as 100 % profit
+ * because buyValue was zero. That is the fabrication invariant 6 forbids, and
+ * it came to ≈₹31 lakh of invented P&L. Every row also carried the FIRST
+ * fill's date as BOTH buyDate and sellDate, so 10 of 23 positions reported a
+ * zero-day hold they never had.
+ *
+ * `pairLegs` (lib/import/pair-legs.ts) is the same FIFO used by the Groww
+ * order-history parser: an unmatched sell becomes an `opening-sell` with
+ * `basisUnknown` and NO P&L, leftover buys become `open`, and re-entries in
+ * one symbol become separate positions with their own real dates.
  *
  * Note: Zerodha F&O tradingsymbols (e.g. NIFTY26JUN24500CE) are not Dhan-style; the
  * classifier will treat unrecognized symbols as equity — re-tag F&O in Trades until a
@@ -162,76 +186,197 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
   const cProduct = find("product", "product type");
   const cExch = find("exchange", "segment");
   const cDate = find("trade date", "order execution time", "date", "trade_date");
+  // The fill CLOCK lives in its own column on the real Console export
+  // ("Order Execution Time", "2026-04-01 11:14:28"); "Trade Date" there is a
+  // bare date, so reading the time off it yields null and loses every fill
+  // time in the file. Looked up separately, with the date cell as fallback
+  // for exports that put a full timestamp in the date column.
+  const cTime = find("order execution time", "trade time", "execution time", "order_execution_time");
 
   const warnings: string[] = [];
 
   if (cTradeType >= 0) {
-    // ---- Tradebook: aggregate per tradingsymbol + product ----
-    type Acc = {
-      symbol: string; isin: string | null; product: string; exch: string; date: string | null;
-      buyQty: number; buyVal: number; sellQty: number; sellVal: number;
-      executions: Execution[];
+    // ---- Tradebook: FIFO-pair per tradingsymbol + product ----
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+
+    // A LEG is a scrip-DAY, not a fill.
+    //
+    // `pairSymbolLegs` emits one closed position per SELL leg and one open per
+    // leftover BUY leg, so feeding it raw fills makes an SME tradebook that
+    // fills 11 + 2 + 2 + 3 shares at a time report hundreds of "trades" nobody
+    // took (measured 2026-08-20: 1,554 fills → 936 positions). The Dhan GTR
+    // parser's legs are per BILL — one scrip-day — and that is the honest unit
+    // here too: fills are summed per symbol|product|date|side BEFORE pairing,
+    // while every individual fill survives in `executions` for the ladder.
+    type Group = {
+      symbol: string;
+      productRaw: string;
+      isin: string | null;
+      /** Keyed `date|side` — one leg per scrip-day-side. */
+      legs: Map<string, Leg>;
+      fills: Execution[];
     };
-    const groups = new Map<string, Acc>();
+    const groups = new Map<string, Group>();
+    const unreadable: string[] = [];
+    let fillCount = 0;
+
     for (const r of dataRows) {
-      const symbol = r[cSymbol] ?? "";
+      const symbol = (r[cSymbol] ?? "").trim();
       if (!symbol) continue;
-      const product = cProduct >= 0 ? r[cProduct] : "";
-      const key = `${symbol}|${product}`;
-      const acc = groups.get(key) ?? {
-        symbol, isin: cIsin >= 0 ? r[cIsin] || null : null, product,
-        exch: cExch >= 0 ? r[cExch] : "", date: cDate >= 0 ? r[cDate] || null : null,
-        buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0, executions: [],
-      };
+
+      const productRaw = cProduct >= 0 ? (r[cProduct] ?? "").trim() : "";
+      const key = `${symbol}|${norm(productRaw)}`;
+
+      const dateCell = cDate >= 0 ? r[cDate] || null : null;
+      const timeCell = cTime >= 0 ? r[cTime] || null : null;
       const qty = toNum(r[cQty]);
       const price = toNum(r[cPrice]);
-      const side = norm(r[cTradeType]);
-      if (side.startsWith("b")) { acc.buyQty += qty; acc.buyVal += qty * price; }
-      else { acc.sellQty += qty; acc.sellVal += qty * price; }
-      // Keep the fill itself — the staged ladder is rebuilt from these.
-      if (qty > 0) {
-        const rawWhen = cDate >= 0 ? r[cDate] || null : acc.date;
-        // Date and time are pulled independently — the same column may hold a
-        // bare date or a full timestamp depending on the export.
-        acc.executions.push({
-          side: side.startsWith("b") ? "buy" : "sell",
+      const rawSide = norm(cTradeType >= 0 ? r[cTradeType] : "");
+      const side = rawSide.startsWith("b") ? "buy" : rawSide.startsWith("s") ? "sell" : null;
+      const date = extractDate(dateCell) ?? extractDate(timeCell);
+
+      // Refuse, never coerce (AGENTS.md): a row with no readable side, date,
+      // quantity or price cannot become a fill without inventing one of them.
+      if (!side || !date || qty <= 0 || price <= 0) {
+        unreadable.push(symbol);
+        continue;
+      }
+
+      const g = groups.get(key) ?? {
+        symbol,
+        productRaw,
+        isin: cIsin >= 0 ? r[cIsin] || null : null,
+        legs: new Map<string, Leg>(),
+        fills: [],
+      };
+      if (!g.isin && cIsin >= 0 && r[cIsin]) g.isin = r[cIsin];
+
+      const p = norm(productRaw);
+      // MTF has no counterpart in pairLegs' product union; the group key keeps
+      // it separate and the column supplies the hint further down.
+      const legProduct: Leg["product"] =
+        p === "cnc" ? "delivery" : p === "mis" ? "intraday" : "unknown";
+
+      const legKey = `${date}|${side}`;
+      const existing = g.legs.get(legKey);
+      if (existing) {
+        existing.qty += qty;
+        existing.value = r2(existing.value + qty * price);
+      } else {
+        g.legs.set(legKey, {
+          symbol,
+          side,
+          date,
           qty,
-          price,
-          date: rawWhen,
-          time: extractTime(rawWhen),
+          value: r2(qty * price),
+          charges: 0,
+          exchange: cExch >= 0 ? (r[cExch] || "").trim() || null : null,
+          product: legProduct,
         });
       }
-      groups.set(key, acc);
-    }
-    const trades: NormalizedTrade[] = [];
-    for (const a of groups.values()) {
-      trades.push({
-        broker: "zerodha",
-        tradingsymbol: a.symbol,
-        isin: a.isin,
-        buyQty: a.buyQty,
-        avgBuyPrice: a.buyQty ? a.buyVal / a.buyQty : 0,
-        buyValue: a.buyVal,
-        sellQty: a.sellQty,
-        avgSellPrice: a.sellQty ? a.sellVal / a.sellQty : 0,
-        sellValue: a.sellVal,
-        closingPrice: null,
-        grossPnl: a.sellQty > 0 ? a.sellVal - a.buyVal : 0,
-        unrealisedPnl: 0,
-        buyDate: a.date,
-        sellDate: a.sellQty > 0 ? a.date : null,
-        // First buy fill opens a long; last sell fill closes it. Times come
-        // from the executions so they survive aggregation.
-        entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
-        exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
-        productHint: productHint(a.product),
-        exchangeHint: exchangeFrom(a.exch),
-        sourceFile: ctx.filename,
-        executions: a.executions,
+      fillCount += 1;
+      g.fills.push({
+        side,
+        qty,
+        price,
+        date,
+        time: extractTime(timeCell) ?? extractTime(dateCell),
       });
+      groups.set(key, g);
     }
-    warnings.push("Zerodha tradebook aggregated per tradingsymbol+product; verify F&O classification.");
-    return { sourceId: "zerodha", broker: "zerodha", format: "tradebook", trades, warnings };
+
+    const allLegs: Leg[] = [];
+    const allPaired: ReturnType<typeof pairLegs> = [];
+    const trades: NormalizedTrade[] = [];
+
+    for (const g of groups.values()) {
+      const dayLegs = [...g.legs.values()];
+      const paired = pairLegs(dayLegs);
+      allLegs.push(...dayLegs);
+      allPaired.push(...paired);
+
+      for (const pos of paired) {
+        // Product is STATED when the export carries the column; the real
+        // Console tradebook does not, so it is derived from the calendar and
+        // flagged — a derived fact never wears a reported fact's clothes.
+        const stated = cProduct >= 0 ? productHint(g.productRaw) : null;
+        const sameDay = pos.kind === "closed" && pos.buyDate != null && pos.buyDate === pos.sellDate;
+        const hint: ProductHint = cProduct >= 0 ? stated : sameDay ? "intraday" : "delivery";
+
+        // Each position sees only the fills inside its own window, so a staged
+        // ladder is rebuilt from its own executions rather than the symbol's
+        // whole history. Approximate for re-entered symbols; totals stay exact.
+        const executions = g.fills.filter(
+          (e) =>
+            (pos.buyDate == null || (e.date ?? "") >= pos.buyDate) &&
+            (pos.sellDate == null || (e.date ?? "") <= pos.sellDate),
+        );
+
+        trades.push({
+          broker: "zerodha",
+          tradingsymbol: pos.symbol,
+          isin: g.isin,
+          buyQty: pos.buyQty,
+          avgBuyPrice: pos.buyQty > 0 ? r2(pos.buyValue / pos.buyQty) : 0,
+          buyValue: pos.buyValue,
+          sellQty: pos.sellQty,
+          avgSellPrice: pos.sellQty > 0 ? r2(pos.sellValue / pos.sellQty) : 0,
+          sellValue: pos.sellValue,
+          closingPrice: null,
+          // Only a CLOSED position has a knowable P&L. An opening sell has no
+          // purchase price anywhere in the file, so zero is the honest answer
+          // and `basisUnknown` says why.
+          grossPnl: pos.kind === "closed" ? r2(pos.sellValue - pos.buyValue) : 0,
+          unrealisedPnl: 0,
+          buyDate: pos.buyDate,
+          sellDate: pos.sellDate,
+          entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
+          exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+          productHint: hint,
+          exchangeHint: exchangeFrom(pos.exchange ?? ""),
+          sourceFile: ctx.filename,
+          executions: executions.length > 0 ? executions : null,
+          basisUnknown: pos.basisUnknown,
+          ...(cProduct >= 0 ? {} : { productDerived: true }),
+          importNotes: pos.notes.length > 0 ? pos.notes : null,
+        });
+      }
+    }
+
+    const check = summarisePairing(allLegs, allPaired);
+
+    warnings.push(
+      `${fillCount} fill${fillCount === 1 ? "" : "s"} → ${trades.length} position${trades.length === 1 ? "" : "s"} (FIFO per symbol + day). Verify F&O classification.`,
+    );
+    if (cProduct < 0) {
+      warnings.push(
+        "This tradebook has no Product column — delivery vs intraday is DERIVED from same-day round trips, and MTF cannot be identified at all. Confirm any delivery rows that were actually MTF.",
+      );
+    }
+    if (unreadable.length > 0) {
+      warnings.push(
+        `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable trade type, date, quantity or price and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed: ${[...new Set(unreadable)].slice(0, 5).join(", ")}.`,
+      );
+    }
+    if (check.openingSells > 0) {
+      warnings.push(
+        `${check.openingSells} sell${check.openingSells === 1 ? " had" : "s had"} no matching buy in this file — acquired before the export window; cost basis unknown, P&L left blank until you supply it.`,
+      );
+    }
+    if (check.qtyDelta !== 0 || check.valueDelta !== 0) {
+      warnings.push(
+        `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta}) — please report this file.`,
+      );
+    }
+
+    return {
+      sourceId: "zerodha",
+      broker: "zerodha",
+      format: "tradebook",
+      trades,
+      sourceRows: fillCount,
+      warnings,
+    };
   }
 
   // ---- Console P&L: already aggregated ----
@@ -252,6 +397,10 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     const sellQty = cSellQty >= 0 ? toNum(r[cSellQty]) : qty;
     const buyVal = cBuyVal >= 0 ? toNum(r[cBuyVal]) : 0;
     const sellVal = cSellVal >= 0 ? toNum(r[cSellVal]) : 0;
+    // A row with nothing bought, nothing sold and no value on either side is
+    // not a trade. The real Console export carries three of them, whose
+    // "Symbol" cell holds an ISIN — importing them creates empty positions.
+    if (buyQty === 0 && sellQty === 0 && buyVal === 0 && sellVal === 0) continue;
     trades.push({
       broker: "zerodha",
       tradingsymbol: symbol,

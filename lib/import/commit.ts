@@ -23,6 +23,8 @@ import { detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-sou
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
+import { getSymbolsByIsin } from "@/lib/queries/instruments";
+import { bundledSymbolByIsin, isCodedSymbol, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
@@ -284,6 +286,32 @@ function applyProductOverrides(
   };
 }
 
+/**
+ * Turn numeric SCRIP CODES into tickers before anything else looks at them.
+ *
+ * Paytm Money's tradebook states `216463` where every other broker states a
+ * ticker, and a book of scrip codes is invisible to sector analytics, the
+ * index map and the user's own memory alike. The ISIN on each row is what
+ * resolves it: the user's Instruments table first, the bundled NSE index map
+ * second, and the code itself when neither knows it.
+ *
+ * Runs FIRST in both preview and commit, so the two see identical rows — the
+ * dedup hash is derived from `tradingsymbol` inside `buildRow`, so resolving
+ * in only one of them would make every previewed row miss its own commit.
+ * The DB is only touched when a coded symbol actually exists, leaving every
+ * other broker's import path byte-for-byte as it was.
+ */
+function resolveSymbols(parsed: ParsedFile): ParsedFile {
+  const coded = parsed.trades.filter((t) => isCodedSymbol(t.tradingsymbol) && t.isin);
+  if (coded.length === 0) return parsed;
+  const fromDb = getSymbolsByIsin(coded.map((t) => t.isin!));
+  const trades = resolveCodedSymbols(
+    parsed.trades,
+    (isin) => fromDb.get(isin.trim().toUpperCase()) ?? bundledSymbolByIsin(isin),
+  );
+  return { ...parsed, trades };
+}
+
 export function previewParsedFile(
   parsedIn: ParsedFile,
   productOverrides: Record<string, ProductHint> | null = null,
@@ -294,7 +322,7 @@ export function previewParsedFile(
    *  rows that came from this very file on an earlier import. */
   fileName = "",
 ): PreviewResult {
-  const parsed = applyProductOverrides(parsedIn, productOverrides);
+  const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
   const overrides = loadOverrides(parsed.broker);
   // Full rows, not just hashes: the cross-source check below needs quantities,
@@ -396,7 +424,7 @@ export function commitParsedFile(
   productOverrides: Record<string, ProductHint> | null = null,
   accountIdIn?: number | null,
 ): CommitResult {
-  const parsed = applyProductOverrides(parsedIn, productOverrides);
+  const parsed = applyProductOverrides(resolveSymbols(parsedIn), productOverrides);
   const { rates, defaults, accountId } = loadContext(accountIdIn);
   const overrides = loadOverrides(parsed.broker);
 

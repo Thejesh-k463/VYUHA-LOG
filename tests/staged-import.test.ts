@@ -125,6 +125,11 @@ HDFCBANK,NSE,DELIVERY,SELL,15,1750,2026-06-06
     const out = parseZerodha(ctx("tradebook-zerodha.csv", ZERODHA_SCALED));
     const infy = out.trades.find((t) => t.tradingsymbol === "INFY")!;
     expect(infy.executions).toHaveLength(3);
+    // FIFO pairing keeps the ladder as ONE position and its REAL dates — the
+    // single sell consumes both buy lots, so entry is the oldest lot.
+    expect(out.trades).toHaveLength(1);
+    expect(infy.buyDate).toBe("2026-06-02");
+    expect(infy.sellDate).toBe("2026-06-09");
     const pos = summarise(toLegs(infy), "long");
     expect(pos.totalEntryQty).toBe(50);
     expect(pos.avgEntryPrice).toBe(1512); // (20*1500 + 30*1520) / 50

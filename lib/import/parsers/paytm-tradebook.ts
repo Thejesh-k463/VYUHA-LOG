@@ -8,8 +8,7 @@
  * with a full charge breakdown — Brokerage, ETT, GST, STT, SEBI, Stamp Duty.
  * That makes it the richest tradebook of the brokers examined: Zerodha's has
  * granularity but no charges; Dhan's GTR has charges but only bill-level
- * granularity. The sample carried ZERO data rows, so column mapping is
- * verified and value behaviour is INFERRED, coded defensively.
+ * granularity.
  *
  * AGENTS.md forbids inventing a parser for an unpublished format — that rule
  * existed because Paytm documents these columns nowhere. It is deliberately
@@ -19,6 +18,35 @@
  * Fingerprints (in-content, both verified): the `UCC` metadata label above
  * the table, and the `Script` (sic) + `ETT` header pair — Paytm's own
  * vocabulary, used by no other broker examined.
+ *
+ * ── What a real 414-execution export taught us (2026-08-20) ─────────────────
+ *
+ * The first version of this parser aggregated the WHOLE file per Script and
+ * reported `sellValue − buyValue` as P&L. On a real book that produced
+ * ₹2.17 Cr of P&L that never happened: nine scrips were sold without a buy in
+ * the window (an aggregate-only reading calls that a 100% gain) and eighteen
+ * more were unbalanced. It is now paired FIFO, exactly like the Groww order
+ * history and the Dhan GTR, and P&L exists only for a position that actually
+ * closed.
+ *
+ * Three further facts, all verified against that export:
+ *
+ *   - **`Script` is a numeric SCRIP CODE**, not a ticker (`216463`). The ISIN
+ *     is on every row, so the ticker is RESOLVED from it at import time
+ *     (lib/import/isin-symbol.ts) rather than guessed here.
+ *   - **`Product Type` is the SEGMENT, not the product.** It reads `EQ` on
+ *     every single row. Delivery vs intraday is therefore derived from the
+ *     charge signature (lib/import/product-signature.ts) — and only the
+ *     column saying something *else* (MTF, intraday, CNC) overrides it.
+ *   - **STT and stamp duty are booked once per SCRIP-DAY**, on one execution
+ *     row of that day, not spread across the fills. Four buys of one scrip on
+ *     one day carry STT `0 / 0 / 0 / 1960.08`, where 1960.08 is 0.1% of that
+ *     day's whole buy value. So the product signature only exists at
+ *     scrip-day granularity, which is exactly how it is read below.
+ *
+ * `Trade Time` is empty and `Trade Number` is `0` on every row of that export,
+ * so execution times are usually null — the honest answer, and the reason the
+ * session analytics show their empty state instead of a fabricated 00:00.
  */
 
 import * as XLSX from "xlsx";
@@ -27,6 +55,8 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 import { extractTime } from "../time-parse";
+import { inferProduct } from "../product-signature";
+import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.]/g, "");
 
@@ -102,6 +132,14 @@ function flexDate(raw: unknown): string | null {
   return null;
 }
 
+/**
+ * The `Product Type` column, read ONLY for a real product word.
+ *
+ * On the verified export this column says `EQ` on every row — a SEGMENT, not a
+ * product. Segment words therefore fall through to null ("not stated") and the
+ * charge signature decides. A column that does name a product (MTF, Intraday,
+ * CNC) still wins over inference, because a stated fact beats a derived one.
+ */
 function productHint(raw: string): ProductHint {
   const s = norm(raw);
   if (!s) return null;
@@ -120,6 +158,72 @@ function exchangeFrom(raw: string): Exchange | null {
   if (s.startsWith("bse")) return "BSE";
   if (s.startsWith("nse")) return "NSE";
   return null;
+}
+
+/** Pairing groups are keyed by scrip AND stated product, so an MTF position
+ *  and a cash position in the same scrip never pair into one trade. NUL is
+ *  used because no broker symbol or product word can contain it. */
+const SEP = "\u0000";
+const groupKey = (symbol: string, hint: ProductHint) => `${symbol}${SEP}${hint ?? "-"}`;
+const splitKey = (key: string): { symbol: string; hint: ProductHint } => {
+  const [symbol, h] = key.split(SEP);
+  return { symbol, hint: h === "-" ? null : (h as ProductHint) };
+};
+
+/** dhan-gtr's rule: a paired position that is not intraday is delivery. */
+const toHint = (p: PairedPosition["product"]): ProductHint => (p === "intraday" ? "intraday" : "delivery");
+
+/** One execution row, after it has been read and accepted. */
+interface Fill {
+  key: string; // scrip + stated product
+  symbol: string;
+  isin: string | null;
+  exchange: Exchange | null;
+  side: "buy" | "sell";
+  date: string;
+  qty: number;
+  price: number;
+  time: string | null;
+  charges: number;
+  stt: number;
+  stamp: number;
+}
+
+interface Components {
+  brokerage: number;
+  exchangeTxn: number;
+  gst: number;
+  sttCtt: number;
+  sebi: number;
+  stampDuty: number;
+}
+
+const zeroComponents = (): Components => ({
+  brokerage: 0, exchangeTxn: 0, gst: 0, sttCtt: 0, sebi: 0, stampDuty: 0,
+});
+
+/**
+ * A position's slice of the file's charges.
+ *
+ * The file states charges per execution, but FIFO pairing moves value between
+ * positions, so a position's charge total is a share of the whole rather than
+ * a set of rows. Apportioning every component by the SAME fraction keeps the
+ * parts adding back to the broker's own totals.
+ */
+function breakdownFor(total: Components, fraction: number): Partial<ChargeBreakdown> {
+  const b = {
+    brokerage: r2(total.brokerage * fraction),
+    exchangeTxn: r2(total.exchangeTxn * fraction),
+    gst: r2(total.gst * fraction),
+    sttCtt: r2(total.sttCtt * fraction),
+    sebi: r2(total.sebi * fraction),
+    stampDuty: r2(total.stampDuty * fraction),
+    ipft: 0, dpCharges: 0, mtfInterest: 0, pledgeCharges: 0,
+  };
+  return {
+    ...b,
+    total: r2(b.brokerage + b.exchangeTxn + b.gst + b.sttCtt + b.sebi + b.stampDuty),
+  };
 }
 
 export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
@@ -143,17 +247,11 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   const warnings: string[] = [];
   const unreadable: string[] = [];
 
-  // Aggregate per Script + Product Type — the same round-trip shape the
-  // Zerodha tradebook path produces — keeping every fill AND summing the
-  // stated charges, which is what Zerodha's tradebook cannot offer.
-  type Acc = {
-    symbol: string; isin: string | null; product: string; exch: string;
-    firstBuyDate: string | null; lastSellDate: string | null;
-    buyQty: number; buyVal: number; sellQty: number; sellVal: number;
-    charges: { brokerage: number; exchangeTxn: number; gst: number; sttCtt: number; sebi: number; stampDuty: number };
-    executions: Execution[];
-  };
-  const groups = new Map<string, Acc>();
+  // ── Pass 1: read every execution row, refusing rather than coercing ───────
+  const fills: Fill[] = [];
+  const statedHint = new Map<string, ProductHint>();
+  const isinOf = new Map<string, string | null>();
+  const fileTotals = zeroComponents();
 
   for (const r of dataRows) {
     const symbol = (r[cScript] ?? "").trim();
@@ -163,82 +261,192 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     const rawSide = norm(cType >= 0 ? r[cType] : "");
     const side = rawSide.startsWith("b") ? "buy" : rawSide.startsWith("s") ? "sell" : null;
     const date = flexDate(cDate >= 0 ? r[cDate] : "");
-    // Refuse rather than coerce — a zero-share or priceless execution is not a trade.
-    if (!side || qty <= 0 || price <= 0) {
+    // Refuse rather than coerce — a zero-share, priceless or undated execution
+    // is not a trade, and FIFO pairing cannot place a row it cannot date.
+    if (!side || qty <= 0 || price <= 0 || !date) {
       unreadable.push(symbol);
       continue;
     }
 
-    const product = cProduct >= 0 ? r[cProduct] : "";
-    const key = `${symbol}|${product}`;
-    const acc = groups.get(key) ?? {
-      symbol, isin: cIsin >= 0 ? r[cIsin] || null : null, product,
-      exch: cExch >= 0 ? r[cExch] : "",
-      firstBuyDate: null, lastSellDate: null,
-      buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0,
-      charges: { brokerage: 0, exchangeTxn: 0, gst: 0, sttCtt: 0, sebi: 0, stampDuty: 0 },
-      executions: [],
-    };
+    const hint = productHint(cProduct >= 0 ? r[cProduct] : "");
+    const key = groupKey(symbol, hint);
+    statedHint.set(key, hint);
+    if (!isinOf.has(key)) isinOf.set(key, cIsin >= 0 ? r[cIsin] || null : null);
 
-    if (side === "buy") {
-      acc.buyQty += qty; acc.buyVal += qty * price;
-      if (date && (!acc.firstBuyDate || date < acc.firstBuyDate)) acc.firstBuyDate = date;
-    } else {
-      acc.sellQty += qty; acc.sellVal += qty * price;
-      if (date && (!acc.lastSellDate || date > acc.lastSellDate)) acc.lastSellDate = date;
-    }
-    acc.charges.brokerage += toNum(r[cBrok]);
-    acc.charges.exchangeTxn += toNum(r[cEtt]); // ETT = exchange transaction tax/charge
-    acc.charges.gst += toNum(r[cGst]);
-    acc.charges.sttCtt += toNum(r[cStt]);
-    acc.charges.sebi += toNum(r[cSebi]);
-    acc.charges.stampDuty += toNum(r[cStamp]);
-    acc.executions.push({ side, qty, price, date, time: extractTime(cTime >= 0 ? r[cTime] : null) });
-    groups.set(key, acc);
-  }
-
-  const trades: NormalizedTrade[] = [];
-  for (const a of groups.values()) {
-    const c = a.charges;
-    const reported: Partial<ChargeBreakdown> = {
-      brokerage: r2(c.brokerage), exchangeTxn: r2(c.exchangeTxn), gst: r2(c.gst),
-      sttCtt: r2(c.sttCtt), sebi: r2(c.sebi), stampDuty: r2(c.stampDuty),
-      total: r2(c.brokerage + c.exchangeTxn + c.gst + c.sttCtt + c.sebi + c.stampDuty),
+    const c: Components = {
+      brokerage: toNum(r[cBrok]),
+      exchangeTxn: toNum(r[cEtt]), // ETT = exchange transaction charge
+      gst: toNum(r[cGst]),
+      sttCtt: toNum(r[cStt]),
+      sebi: toNum(r[cSebi]),
+      stampDuty: toNum(r[cStamp]),
     };
-    trades.push({
-      broker: "paytm",
-      tradingsymbol: a.symbol,
-      isin: a.isin,
-      buyQty: a.buyQty,
-      avgBuyPrice: a.buyQty ? r2(a.buyVal / a.buyQty) : 0,
-      buyValue: r2(a.buyVal),
-      sellQty: a.sellQty,
-      avgSellPrice: a.sellQty ? r2(a.sellVal / a.sellQty) : 0,
-      sellValue: r2(a.sellVal),
-      closingPrice: null,
-      grossPnl: a.sellQty > 0 ? r2(a.sellVal - a.buyVal) : 0,
-      unrealisedPnl: 0,
-      buyDate: a.firstBuyDate,
-      sellDate: a.sellQty > 0 ? a.lastSellDate : null,
-      entryTime: a.executions.find((e) => e.side === "buy")?.time ?? null,
-      exitTime: [...a.executions].reverse().find((e) => e.side === "sell")?.time ?? null,
-      productHint: productHint(a.product),
-      exchangeHint: exchangeFrom(a.exch),
-      sourceFile: ctx.filename,
-      executions: a.executions,
-      reportedCharges: reported,
+    for (const k of Object.keys(fileTotals) as (keyof Components)[]) fileTotals[k] += c[k];
+
+    fills.push({
+      key, symbol,
+      isin: cIsin >= 0 ? r[cIsin] || null : null,
+      exchange: exchangeFrom(cExch >= 0 ? r[cExch] : ""),
+      side, date, qty, price,
+      time: extractTime(cTime >= 0 ? r[cTime] : null),
+      charges: c.brokerage + c.exchangeTxn + c.gst + c.sttCtt + c.sebi + c.stampDuty,
+      stt: c.sttCtt,
+      stamp: c.stampDuty,
     });
   }
 
+  // ── Pass 2: one signature per SCRIP-DAY, because that is where Paytm books
+  //    the statutory charges — see the header note.
+  interface DayAcc {
+    key: string; date: string; exchange: Exchange | null;
+    buyQty: number; buyValue: number; sellQty: number; sellValue: number;
+    charges: number; stt: number; stamp: number;
+  }
+  const days = new Map<string, DayAcc>();
+  for (const f of fills) {
+    const dk = `${f.key}${SEP}${f.date}`;
+    const a = days.get(dk) ?? {
+      key: f.key, date: f.date, exchange: f.exchange,
+      buyQty: 0, buyValue: 0, sellQty: 0, sellValue: 0, charges: 0, stt: 0, stamp: 0,
+    };
+    if (f.side === "buy") { a.buyQty += f.qty; a.buyValue += f.qty * f.price; }
+    else { a.sellQty += f.qty; a.sellValue += f.qty * f.price; }
+    a.charges += f.charges;
+    a.stt += f.stt;
+    a.stamp += f.stamp;
+    if (!a.exchange && f.exchange) a.exchange = f.exchange;
+    days.set(dk, a);
+  }
+
+  // ── Pass 3: one leg per scrip-day-side, charges split by traded value ─────
+  const legs: Leg[] = [];
+  for (const a of days.values()) {
+    const verdict = inferProduct({
+      buyValue: a.buyValue, sellValue: a.sellValue, stt: a.stt, stampDuty: a.stamp,
+    });
+
+    const denom = a.buyValue + a.sellValue;
+    const buyCharges = denom > 0 ? r2((a.charges * a.buyValue) / denom) : 0;
+    const sellCharges = denom > 0 ? r2(a.charges - buyCharges) : 0;
+
+    if (a.buyQty > 0) {
+      legs.push({
+        symbol: a.key, side: "buy", date: a.date, qty: a.buyQty, value: r2(a.buyValue),
+        charges: buyCharges, exchange: a.exchange, product: verdict,
+      });
+    }
+    if (a.sellQty > 0) {
+      legs.push({
+        symbol: a.key, side: "sell", date: a.date, qty: a.sellQty, value: r2(a.sellValue),
+        charges: sellCharges, exchange: a.exchange, product: verdict,
+      });
+    }
+  }
+
+  const paired = pairLegs(legs);
+  const check = summarisePairing(legs, paired);
+
+  const totalCharges = fileTotals.brokerage + fileTotals.exchangeTxn + fileTotals.gst +
+    fileTotals.sttCtt + fileTotals.sebi + fileTotals.stampDuty;
+  const pairedCharges = paired.reduce((s, p) => s + p.charges, 0);
+
+  const CODE_NOTE =
+    "Paytm Money exports a numeric scrip code, not a ticker — Vyuha resolves the symbol from the ISIN via your Instruments list (Settings → Instruments → upload NSE's EQUITY_L.csv / SME securities list) or the bundled NSE index map; until then the code is shown.";
+
+  const trades: NormalizedTrade[] = paired.map((p) => {
+    const { symbol, hint: stated } = splitKey(p.symbol);
+
+    // A position's slice of the book's charges. `pairedCharges` is the
+    // denominator rather than the file total so the parts still add back when
+    // FIFO leaves a partially-matched opening sell behind.
+    const denom = pairedCharges > 0 ? pairedCharges : totalCharges;
+    const fraction = denom > 0 ? p.charges / denom : 0;
+
+    // Only this group's fills, narrowed to the position's own window — a
+    // re-entered scrip gets its own ladder rather than its whole history.
+    const executions = fills
+      .filter(
+        (f) =>
+          f.key === p.symbol &&
+          (p.buyDate == null || f.date >= p.buyDate) &&
+          (p.sellDate == null || f.date <= p.sellDate),
+      )
+      .map<Execution>((f) => ({ side: f.side, qty: f.qty, price: f.price, date: f.date, time: f.time }));
+
+    const notes: string[] = [...p.notes];
+    if (stated == null) {
+      notes.push(
+        p.product === "mixed"
+          ? "Part of this scrip's day was squared off and part carried — split derived from Paytm's own stamp duty."
+          : p.product === "unknown"
+            ? "Charges too small or unusual to read the product from — shown as delivery, please confirm."
+            : `Delivery vs intraday derived from the day's STT and stamp duty (${p.product}); Paytm's Product Type column states the segment only.`,
+      );
+    }
+    if (/^\d+$/.test(symbol)) notes.push(CODE_NOTE);
+
+    return {
+      broker: "paytm",
+      tradingsymbol: symbol,
+      isin: isinOf.get(p.symbol) ?? null,
+      buyQty: p.buyQty,
+      avgBuyPrice: p.buyQty > 0 ? r2(p.buyValue / p.buyQty) : 0,
+      buyValue: p.buyValue,
+      sellQty: p.sellQty,
+      avgSellPrice: p.sellQty > 0 ? r2(p.sellValue / p.sellQty) : 0,
+      sellValue: p.sellValue,
+      closingPrice: null,
+      // P&L only for a position that actually CLOSED. An opening sell has no
+      // purchase anywhere in the file; calling its whole proceeds a gain is
+      // the fabrication this parser was rewritten to stop making.
+      grossPnl: p.kind === "closed" ? r2(p.sellValue - p.buyValue) : 0,
+      unrealisedPnl: 0,
+      buyDate: p.buyDate,
+      sellDate: p.sellDate,
+      entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
+      exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+      productHint: stated ?? toHint(p.product),
+      exchangeHint: (p.exchange as Exchange | null) ?? null,
+      sourceFile: ctx.filename,
+      executions: executions.length > 0 ? executions : null,
+      reportedCharges: breakdownFor(fileTotals, fraction),
+      basisUnknown: p.basisUnknown,
+      productDerived: stated == null,
+      importNotes: notes.length > 0 ? notes : null,
+    };
+  });
+
+  // ── Warnings that actually tell the user something ───────────────────────
   warnings.push(
-    "Charges are the broker's own per-execution figures (Brokerage, ETT, GST, STT, SEBI, Stamp Duty), summed per position — not computed.",
+    "Charges are the broker's own per-execution figures (Brokerage, ETT, GST, STT, SEBI, Stamp Duty), apportioned to each position by its share of the book — not computed.",
   );
-  warnings.push("Paytm Money tradebook aggregated per Script + Product Type; verify F&O classification.");
+  warnings.push(
+    "Executions are paired FIFO per scrip; delivery vs intraday is derived from Paytm's own STT and stamp duty per day (the Product Type column says EQ, which is the segment, not the product).",
+  );
+  if (check.openingSells > 0) {
+    warnings.push(
+      `${check.openingSells} holding${check.openingSells === 1 ? " was" : "s were"} sold without a matching purchase in this window — acquired earlier, often an IPO allotment. Cost basis is unknown until you set it, and they are excluded from win rate and expectancy meanwhile.`,
+    );
+  }
+  if (check.qtyDelta !== 0 || check.valueDelta !== 0) {
+    warnings.push(
+      `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta}) — please report this file.`,
+    );
+  }
   if (unreadable.length > 0) {
     warnings.push(
-      `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable side, quantity or price and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed.`,
+      `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable side, quantity, price or date and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed.`,
     );
   }
 
-  return { sourceId: "paytm-tradebook", broker: "paytm", format: "tradebook", trades, warnings };
+  return {
+    sourceId: "paytm-tradebook",
+    broker: "paytm",
+    format: "tradebook",
+    trades,
+    // Executions as read, BEFORE pairing — so the UI can say
+    // "414 lines → 57 trades" instead of a count that looks like loss.
+    sourceRows: fills.length,
+    warnings,
+  };
 }

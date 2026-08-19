@@ -30,6 +30,47 @@ describe("pairSymbolLegs — the real shapes from a Dhan transaction report", ()
     expect(out[0].product).toBe("intraday");
   });
 
+  it("matches a sell against the SAME day's buy before an older lot (exchange netting)", () => {
+    // The Paytm Money statement pattern (real export, 2026-08-20): 26,000 bought on
+    // 03 Aug, 16,000 sold on 04 Aug, then 10,000 bought AND 10,000 sold on 05 Aug.
+    // The broker pairs the 05 Aug sell with the 05 Aug buy (intraday) and leaves
+    // 10,000 of the 03 Aug lot open — pure FIFO would close the old lot instead.
+    const out = pairSymbolLegs([
+      leg({ symbol: "NETCO", side: "buy", date: "2026-08-03", qty: 26000, value: 26000 * 52.45 }),
+      leg({ symbol: "NETCO", side: "sell", date: "2026-08-04", qty: 16000, value: 16000 * 57.96 }),
+      leg({ symbol: "NETCO", side: "buy", date: "2026-08-05", qty: 10000, value: 10000 * 57.0 }),
+      leg({ symbol: "NETCO", side: "sell", date: "2026-08-05", qty: 10000, value: 10000 * 58.58 }),
+    ]);
+    const closed = out.filter((p) => p.kind === "closed").sort((a, b) => a.sellDate!.localeCompare(b.sellDate!));
+    const open = out.filter((p) => p.kind === "open");
+    expect(closed.map((p) => [p.buyDate, p.sellDate, p.buyQty])).toEqual([
+      ["2026-08-03", "2026-08-04", 16000],
+      ["2026-08-05", "2026-08-05", 10000],
+    ]);
+    expect(closed[1].buyValue).toBeCloseTo(570000, 2); // the 05 Aug buy, not 03 Aug's price
+    expect(open).toHaveLength(1);
+    expect(open[0].buyDate).toBe("2026-08-03");
+    expect(open[0].buyQty).toBe(10000);
+  });
+
+  it("same-day first, then FIFO for the remainder of a bigger sell", () => {
+    // Holding 1,000 from day 1; day 2 buys 500 and sells 800 → 500 intraday
+    // against day 2's buy, 300 closed from the day-1 lot, 700 of day 1 still open.
+    const out = pairSymbolLegs([
+      leg({ symbol: "MIXCO", side: "buy", date: "2026-08-01", qty: 1000, value: 100000 }),
+      leg({ symbol: "MIXCO", side: "buy", date: "2026-08-02", qty: 500, value: 55000 }),
+      leg({ symbol: "MIXCO", side: "sell", date: "2026-08-02", qty: 800, value: 96000 }),
+    ]);
+    const closed = out.find((p) => p.kind === "closed")!;
+    const open = out.find((p) => p.kind === "open")!;
+    expect(closed.buyQty).toBe(800);
+    // 500 @ 110 (day 2) + 300 @ 100 (day 1) = 85,000 — not 800 @ 100.
+    expect(closed.buyValue).toBeCloseTo(85000, 2);
+    expect(closed.buyDate).toBe("2026-08-01"); // oldest lot consumed still decides the holding period
+    expect(open.buyQty).toBe(700);
+    expect(open.buyDate).toBe("2026-08-01");
+  });
+
   it("splits a partial exit into a closed trade plus a still-open remainder", () => {
     // PARTCO: bought 7,500 on 28 Jul, sold 5,000 the same day, 2,500 left.
     const out = pairSymbolLegs([

@@ -1,5 +1,44 @@
 # Changelog
 
+## v2.99.98 — tradebooks become the trades you made, checked against the broker's own statement
+
+The first live Paytm Money and Zerodha tradebooks exposed that both parsers
+aggregated a whole file per symbol and booked `sell − buy` as P&L — ₹2.17 Cr
+and ₹31 L of fabricated gain respectively on sells of shares bought before the
+window. Both now pair fills per scrip-day through the shared FIFO engine, which
+itself learned two things from Paytm's lot statement.
+
+- **Pairing engine (`lib/import/pair-legs.ts`).** A sell consumes the same day's
+  buy first (exchange intraday netting), then lots oldest-first; the quantity a
+  file never shows being bought is measured in a first pass and seeded as the
+  oldest lot in a second, so opening sells land on the earliest delivery sells
+  — where the broker puts them. Dhan GTR, Groww orders and the column mapper
+  inherit it; every existing pairing test still passes.
+- **Zerodha tradebook.** Console export preamble, numeric date serials,
+  `Order Execution Time` for fill times, per scrip-day legs (1,554 fills → 28
+  positions on the real file, 11 opening sells with blank P&L), derived product
+  when the export has no Product column, in-content fingerprint weights raised
+  so a neutral filename still routes (0.75 / 0.70). Console P&L skips all-zero
+  ISIN-in-Symbol rows.
+- **Paytm Money tradebook.** Product from the scrip-day STT/stamp signature
+  (`Product Type` is `EQ` = segment); the six stated charge components
+  apportioned per position (conserved to ₹0.16 over 142 positions); numeric
+  scrip codes resolved to tickers by ISIN at commit (instruments table →
+  bundled NSE index map → keep the code with a note); `sourceRows` so the
+  summary reads "414 fills → 142 positions". Reconciled against Paytm's
+  Realized P&L Detail: 47 of 52 in-window scrips within ₹25, closed net within
+  1.4% of the broker; the residual is 3,200 shares of opening inventory the
+  tradebook cannot see (DECISIONS.md 2026-08-20).
+- **Upstox.** Fingerprint on `UPSTOX SECURITIES PRIVATE LIMITED` in A1; trade
+  report header on row 11, realised P&L on row 22; `Trade Time`, `Buy/Sell
+  Date`, `Buy/Sell Amt`, `Total PL`, `Speculation`→intraday mapped. Layouts
+  VERIFIED, values INFERRED (the real exports carried no rows). Ledger has no
+  header and is not claimed.
+- **Fixtures + tests.** Seven schema-only redacted fixtures in the cross-broker
+  matrix (loaded under neutral filenames), a private block that replays the
+  real files where present, `tests/private-reconciliation.test.ts`, and
+  `docs/BROKER_FORMATS.md` updated with every verified quirk.
+
 ## v2.99.97 — skins you can feel, a theme you can build, and a buy button that answers
 
 Appearance grows from "pick a skin" into a set of dials, the buy buttons stop

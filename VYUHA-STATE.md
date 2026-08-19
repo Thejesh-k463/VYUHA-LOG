@@ -26,19 +26,48 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-15
+## 2. Current state — verified 2026-08-20
 
 | | |
 |---|---|
-| Version | **v2.99.97** — committed `815e203`, tagged `v2.99.97`, pushed 2026-08-15 |
+| Version | **v2.99.98** — committed `<pending>`, tagged `v2.99.98`, pushed 2026-08-20 |
 | Branch | `main`, clean apart from this file |
-| CI | **green on `815e203` — all 5 jobs incl. Windows — BEFORE tagging** (run 31885698273); Release workflow 31885887802 **success** |
-| GitHub release | `v2.99.97` is a **DRAFT with 9 assets** (owner publishes); `release:verify v2.99.97` → all `.sig` = `4FF85F3BBE1DA21D`; `releases/latest` = **`v2.99.96`** (owner published it 2026-08-15) |
-| Client ZIP | `release-packages/Vyuha_2.99.97_Client_Package.zip`, installer SHA-256 `B1FE606B…B927C8` |
-| Unit tests | **1,756 passed / 0 failed** across 125 files (`npx vitest run`, 2026-08-19; `npm run verify` EXIT 0 incl. build on 2026-08-15 at 1,743) |
-| e2e | 43 passed + `z-appearance.spec.ts` 4/4 after an assertion fix (React serialises inline style without a space) — **44/44 effective**, 2026-08-15 |
-| Installer | `Vyuha_2.99.97_x64-setup.exe` + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 18:15; bundle carries `appearance-tick`; generated `installer.nsi` inserts `NSIS_HOOK_PREINSTALL`/`PREUNINSTALL` |
-| Previous | v2.99.96 built, CI-green, tagged; its GitHub release is a **DRAFT with 9 assets** (owner publishes) — `releases/latest` was still `v2.99.95` |
+| CI | <pending> |
+| GitHub release | `v2.99.98` draft is created by the Release workflow on the tag (owner publishes); local `.sig` key ids decoded = `4FF85F3BBE1DA21D` = `tauri.conf.json` pubkey; `releases/latest` = **`v2.99.96`** (v2.99.97 draft still unpublished) |
+| Client ZIP | `release-packages/Vyuha_2.99.98_Client_Package.zip` (33.9 MB), installer SHA-256 `6CE6BFDB…9A8D36`; ZIP's `WHATS_NEW.md` first heading, `TERMS`/`PRIVACY` "Applies to" and both deck chips = v2.99.98 (opened and checked) |
+| Unit tests | **1,858 passed / 0 failed** across 128 files (`npm run verify` EXIT 0 incl. build, 2026-08-20 after the bump; 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
+| e2e | **45 passed / 0 failed** (2.1 min, `npx playwright test`, 2026-08-20, before the bump) |
+| Installer | `Vyuha_2.99.98_x64-setup.exe` (34,857,374 B) + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 01:31 IST 2026-08-20; bundle carries the `FIFO per symbol + day` and `numeric scrip code` markers |
+| Previous | v2.99.97 built, CI-green, tagged; its GitHub release is a **DRAFT with 9 assets** (owner publishes) — `releases/latest` is still `v2.99.96` |
+
+**v2.99.98 content (all verified 2026-08-20 — broker-integration wave, real files):** the owner
+supplied real exports (gitignored in `tests/fixtures/private/`): Paytm Money tradebook (414 executions)
++ Equity P&L (`.xls`, 3 sheets, 124 realised lots), Zerodha Console tradebook (1,554 fills) + Console
+P&L (53 rows), and three Upstox reports with ZERO data rows (schema-only). **No API client details were
+supplied** (the Kite path is unchanged; Upstox API was offered and deferred — not built). Findings and
+fixes: (1) both tradebook parsers aggregated a whole file per symbol and booked `sell − buy` — ₹2.17 Cr
+(Paytm) / ₹31 L (Zerodha) of fabricated gain on sells of pre-window holdings → both now pair per
+scrip-day through `pairLegs`; (2) `pair-legs.ts` learned **same-day first, then FIFO, opening inventory
+as the oldest lot** from Paytm's own lot statement (which is charge-inclusive) — 47 of 52 in-window
+scrips now agree within ₹25, closed net ₹12,34,049 vs Paytm ₹12,51,954 (−1.4%), residual = 3,200
+shares of opening inventory the tradebook cannot see; (3) Paytm: product from the scrip-day STT/stamp
+signature, six charge components apportioned (conserved to ₹0.16), numeric `Script` codes resolved by
+ISIN at commit (instruments table → bundled NSE map → keep code + note; 20 of 66 resolve from the
+bundled map), `sourceRows`; (4) Zerodha: Console preamble, serial dates, `Order Execution Time` for fill
+times, 1,554 fills → 28 positions (15 closed / 2 open / 11 opening-sell), fingerprint weights 0.5/0.55
+so neutral filenames route (0.75 / 0.70), Console P&L zero rows skipped — the Console P&L on disk is a
+different period, so it could not reconcile the tradebook; (5) Upstox: A1 legal-name fingerprint,
+header rows 11/22, `Trade Time`, `Buy/Sell Date`, `Buy/Sell Amt`, `Total PL`, `Speculation`→intraday —
+layouts VERIFIED, values INFERRED; ledger has no header, not claimed; (6) seven schema-only redacted
+fixtures (scratch transform + leak scan) in the matrix test under neutral filenames, a private replay
+block, `tests/private-reconciliation.test.ts`; docs: `BROKER_FORMATS.md`, four DECISIONS entries
+(2026-08-20), CHANGELOG, README, client docs, deck, landing/brochure pills, standalone rebuilt.
+**Not done / not verifiable here:** a contract note (none supplied — Paytm's lot statement was the
+reference); Upstox values; install on a non-build machine; winget + WDSI; publishing the drafts.
+An untracked `lib/import/api/openalgo.ts` + `tests/openalgo-api.test.ts` (15 tests, no references
+anywhere in the repo, not from this wave's agents) appeared in the tree during the session and was
+**moved out to the session scratchpad** (`…/scratchpad/openalgo-untracked/`) so the verified tree is
+exactly what shipped — the owner decides whether it comes back.
 
 **v2.99.97 content (all verified 2026-08-15):** installer node.exe lock fixed (`stop_sidecar()` on
 Destroyed / ExitRequested / Exit / before update; NSIS pre-install/pre-uninstall hooks stop only
@@ -308,9 +337,11 @@ and that it was previously mis-sold beside the six real parsers. It still export
 pins the behaviour. A session transcript flagged this as a dead parser left registered — that
 reading was wrong. **Do not delete it.**
 
-⚠ **Paytm Money's parser was built from a schema-only sample.** It was a deliberate exception
-to the never-invent-a-parser rule (DECISIONS.md 2026-08-12). **The first live Paytm import
-must be reconciled against a contract note** before the parser is trusted.
+✅ **Paytm Money's parser is now VERIFIED on a real 414-execution export and reconciled against
+Paytm's own Realized P&L Detail (2026-08-20, DECISIONS.md):** 47 of 52 in-window scrips within ₹25,
+closed net within 1.4% of the broker, charges conserved to ₹0.16. No contract note was supplied — the
+lot statement was the reference; a contract note for one day would still be a useful spot check of the
+per-execution charge rows.
 
 ⚠ **Never let npm rewrite `package-lock.json`** — see §6 Lockfile.
 
@@ -401,9 +432,11 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
   B7 half-fixed (15→8 decodes; ≤2 needs parsers to share a parsed workbook — `it.fails` pin),
   C7 no defect. Numbers in `tests/load/README.md` and DECISIONS.md 2026-08-15.
 - **PDF parser is dead but registered** — see §7 *(verified)*.
-- **Broker files + API keys (Paytm, Zerodha, Upstox)** — owner will supply in 1–2 days
-  (2026-08-15); then reconcile Paytm against a contract note (§7) and wire the API-pull client
-  details. **Intraday data integration is NOT required** (owner, 2026-08-15).
+- ✅ **Broker files (Paytm, Zerodha, Upstox) — DELIVERED and verified 2026-08-20 (v2.99.98).**
+  API client details were NOT supplied; the Kite pull is unchanged and an Upstox API pull was
+  offered and deferred (would add a 4th `lib/import/api/*` client + the "3 API pulls" claim
+  cascade). Upstox file parsing is schema-verified only — the first populated export must be
+  re-verified. **Intraday data integration is NOT required** (owner, 2026-08-15).
 - **Zerodha F&O symbol grammar** — blocked on 3–5 real tradingsymbol rows the owner said he
   would supply; never delivered. The private tradebook on disk appears equity-only.
 - **Intraday bar import** — named repeatedly as *the* analytical ceiling: MAE/MFE, trade replay

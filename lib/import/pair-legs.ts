@@ -11,12 +11,21 @@
  * produces a phantom open position and a phantom naked short — which then
  * poisons holding-period analysis, Arjun's Eye and Return-on-Margin alike.
  *
- * ── FIFO, deliberately ────────────────────────────────────────────────────
+ * ── Same day first, then FIFO ─────────────────────────────────────────────
  *
- * Quantity is retired oldest-buy-first. This matches how Indian brokers and
- * the Income Tax Act treat equity delivery, so the holding periods produced
- * here agree with the ones that decide STCG vs LTCG. It is also what the
- * staged-position engine already does, so the two never disagree.
+ * A sell is matched against the SAME DAY's buys before any older lot, and the
+ * remainder retires quantity oldest-buy-first. The same-day rule is how the
+ * exchange itself nets a scrip: a buy and a sell on one day in one product are
+ * squared off intraday and only the net quantity ever reaches delivery — so a
+ * holder of 1,000 who buys 500 and sells 500 today has one intraday trade and
+ * still holds the same 1,000, not a closed old lot and a new open one. Paytm
+ * Money's own realised-P&L statement pairs exactly this way (VERIFIED against
+ * a real export, 2026-08-20: 05-Aug sell 10,000 ↔ 05-Aug buy 10,000 while
+ * 10,000 of a 03-Aug lot stayed open), and pure FIFO disagreed with the
+ * broker on 52 of 60 scrips until this rule was added. FIFO for the rest
+ * matches how brokers and the Income Tax Act treat equity delivery, so the
+ * holding periods produced here agree with the ones that decide STCG vs LTCG,
+ * and it is what the staged-position engine already does.
  *
  * ── The three shapes that fall out ────────────────────────────────────────
  *
@@ -104,111 +113,144 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
   const symbol = legs[0].symbol;
   const exchange = legs.find((l) => l.exchange)?.exchange ?? null;
 
-  // Open buy lots, oldest first — the FIFO queue.
-  const lots: { date: string; qty: number; value: number; charges: number; product: Leg["product"] }[] = [];
-  const out: PairedPosition[] = [];
-  const orphanSells: Leg[] = [];
+  type Lot = { date: string; qty: number; value: number; charges: number; product: Leg["product"]; opening?: boolean };
 
-  for (const leg of legs) {
-    if (leg.side === "buy") {
-      if (leg.qty > 0) {
-        lots.push({ date: leg.date, qty: leg.qty, value: leg.value, charges: leg.charges, product: leg.product });
+  /**
+   * One pairing pass. `openingQty` > 0 seeds the FIFO queue with a lot of
+   * that size that PRE-DATES the file: holdings the file never shows being
+   * bought. It is the OLDEST lot, so FIFO retires it first — exactly where
+   * the broker's own statement puts it (Paytm Money's realised-P&L lots,
+   * VERIFIED 2026-08-20) — and every sell that consumes it becomes an
+   * opening-sell with an unknowable cost basis. Without the seed, the
+   * unmatched quantity would surface on the LAST sells instead of the first,
+   * and the closed trades in between would be paired against the wrong buys.
+   * The seed size is not guessed: it is the orphan quantity a seedless pass
+   * measures, so total opening-sell quantity is identical either way.
+   */
+  const run = (openingQty: number): { out: PairedPosition[]; orphanQty: number } => {
+    // Open buy lots, oldest first — the FIFO queue.
+    const lots: Lot[] = [];
+    if (openingQty > 0) lots.push({ date: "", qty: openingQty, value: 0, charges: 0, product: undefined, opening: true });
+    const out: PairedPosition[] = [];
+    const orphanSells: Leg[] = [];
+    let orphanQty = 0;
+
+    for (const leg of legs) {
+      if (leg.side === "buy") {
+        if (leg.qty > 0) {
+          lots.push({ date: leg.date, qty: leg.qty, value: leg.value, charges: leg.charges, product: leg.product });
+        }
+        continue;
       }
-      continue;
+
+      // A sell consumes the SAME DAY's lots first (exchange intraday netting),
+      // then the rest oldest-first — the pre-file seed lot, when present, is the
+      // oldest of all.
+      let remaining = leg.qty;
+      const sellCharges = leg.charges;
+      const consumed: Lot[] = [];
+      let openingTaken = 0;
+
+      const takeFrom = (lot: Lot) => {
+        const take = Math.min(remaining, lot.qty);
+        const share = lot.qty > 0 ? take / lot.qty : 0;
+        if (lot.opening) openingTaken += take;
+        else consumed.push({ date: lot.date, qty: take, value: r2(lot.value * share), charges: r2(lot.charges * share), product: lot.product });
+        lot.qty -= take;
+        lot.value = r2(lot.value * (1 - share));
+        lot.charges = r2(lot.charges * (1 - share));
+        remaining -= take;
+      };
+      for (const lot of lots) {
+        if (remaining <= 0) break;
+        if (!lot.opening && lot.date === leg.date && lot.qty > 0) takeFrom(lot);
+      }
+      while (remaining > 0 && lots.some((l) => l.qty > 0)) {
+        const lot = lots.find((l) => l.qty > 0)!;
+        takeFrom(lot);
+      }
+      // Drop exhausted lots so the queue stays oldest-first for the next sell.
+      for (let i = lots.length - 1; i >= 0; i--) if (lots[i].qty <= 0) lots.splice(i, 1);
+
+      const perShare = leg.qty > 0 ? leg.value / leg.qty : 0;
+      if (consumed.length > 0) {
+        const matchedQty = consumed.reduce((s, c) => s + c.qty, 0);
+        const portion = leg.qty > 0 ? matchedQty / leg.qty : 1;
+        out.push({
+          symbol,
+          kind: "closed",
+          exchange,
+          buyQty: matchedQty,
+          buyValue: r2(consumed.reduce((s, c) => s + c.value, 0)),
+          sellQty: matchedQty,
+          sellValue: r2(perShare * matchedQty),
+          // Entry is the OLDEST lot consumed: FIFO decides the holding period
+          // (the same-day lot is consumed first but is never the oldest).
+          buyDate: consumed.reduce((d, c) => (c.date < d ? c.date : d), consumed[0].date),
+          sellDate: leg.date,
+          charges: r2(consumed.reduce((s, c) => s + c.charges, 0) + sellCharges * portion),
+          product: resolveProduct([...consumed.map((c) => c.product), leg.product]),
+          basisUnknown: false,
+          notes: [],
+        });
+      }
+
+      const unmatched = openingTaken + remaining;
+      if (unmatched > 0) {
+        // Nothing (left) to match against — acquired before this file begins.
+        orphanQty += remaining; // only the part NO lot covered counts as newly measured
+        const portion = leg.qty > 0 ? unmatched / leg.qty : 1;
+        orphanSells.push({ ...leg, qty: unmatched, value: r2(perShare * unmatched), charges: r2(sellCharges * portion) });
+      }
     }
 
-    // A sell consumes lots oldest-first.
-    let remaining = leg.qty;
-    let soldValue = leg.value;
-    const sellCharges = leg.charges;
-    const consumed: { date: string; qty: number; value: number; charges: number; product: Leg["product"] }[] = [];
-
-    while (remaining > 0 && lots.length > 0) {
-      const lot = lots[0];
-      const take = Math.min(remaining, lot.qty);
-      const share = lot.qty > 0 ? take / lot.qty : 0;
-      consumed.push({
-        date: lot.date,
-        qty: take,
-        value: r2(lot.value * share),
-        charges: r2(lot.charges * share),
-        product: lot.product,
-      });
-      lot.qty -= take;
-      lot.value = r2(lot.value * (1 - share));
-      lot.charges = r2(lot.charges * (1 - share));
-      remaining -= take;
-      if (lot.qty <= 0) lots.shift();
-    }
-
-    if (consumed.length > 0) {
-      const matchedQty = consumed.reduce((s, c) => s + c.qty, 0);
-      const portion = leg.qty > 0 ? matchedQty / leg.qty : 1;
+    for (const s of orphanSells) {
       out.push({
         symbol,
-        kind: "closed",
+        kind: "opening-sell",
         exchange,
-        buyQty: matchedQty,
-        buyValue: r2(consumed.reduce((s, c) => s + c.value, 0)),
-        sellQty: matchedQty,
-        sellValue: r2(soldValue * portion),
-        // Entry is the OLDEST lot consumed: FIFO decides the holding period.
-        buyDate: consumed[0].date,
-        sellDate: leg.date,
-        charges: r2(consumed.reduce((s, c) => s + c.charges, 0) + sellCharges * portion),
-        product: resolveProduct([...consumed.map((c) => c.product), leg.product]),
+        buyQty: 0,
+        buyValue: 0,
+        sellQty: s.qty,
+        sellValue: r2(s.value),
+        buyDate: null,
+        sellDate: s.date,
+        charges: r2(s.charges),
+        product: s.product ?? "unknown",
+        basisUnknown: true,
+        notes: [
+          "Sold without a matching purchase in this file — acquired earlier. Often an IPO allotment. Cost basis unknown until you set it.",
+        ],
+      });
+    }
+
+    for (const lot of lots) {
+      if (lot.qty <= 0 || lot.opening) continue;
+      out.push({
+        symbol,
+        kind: "open",
+        exchange,
+        buyQty: lot.qty,
+        buyValue: r2(lot.value),
+        sellQty: 0,
+        sellValue: 0,
+        buyDate: lot.date,
+        sellDate: null,
+        charges: r2(lot.charges),
+        product: lot.product ?? "unknown",
         basisUnknown: false,
         notes: [],
       });
-      soldValue = r2(soldValue * (1 - portion));
     }
 
-    if (remaining > 0) {
-      // Nothing left to match against — acquired before this file begins.
-      orphanSells.push({ ...leg, qty: remaining, value: soldValue, charges: consumed.length > 0 ? 0 : sellCharges });
-    }
-  }
+    return { out, orphanQty };
+  };
 
-  for (const s of orphanSells) {
-    out.push({
-      symbol,
-      kind: "opening-sell",
-      exchange,
-      buyQty: 0,
-      buyValue: 0,
-      sellQty: s.qty,
-      sellValue: r2(s.value),
-      buyDate: null,
-      sellDate: s.date,
-      charges: r2(s.charges),
-      product: s.product ?? "unknown",
-      basisUnknown: true,
-      notes: [
-        "Sold without a matching purchase in this file — acquired earlier. Often an IPO allotment. Cost basis unknown until you set it.",
-      ],
-    });
-  }
-
-  for (const lot of lots) {
-    if (lot.qty <= 0) continue;
-    out.push({
-      symbol,
-      kind: "open",
-      exchange,
-      buyQty: lot.qty,
-      buyValue: r2(lot.value),
-      sellQty: 0,
-      sellValue: 0,
-      buyDate: lot.date,
-      sellDate: null,
-      charges: r2(lot.charges),
-      product: lot.product ?? "unknown",
-      basisUnknown: false,
-      notes: [],
-    });
-  }
-
-  return out;
+  // Pass 1 measures how much was sold that the file never shows being bought;
+  // pass 2 places that quantity where FIFO says it sits — before everything.
+  const first = run(0);
+  if (first.orphanQty <= 0) return first.out;
+  return run(first.orphanQty).out;
 }
 
 /** Pair every symbol in a file. Order is stable by symbol then entry date. */

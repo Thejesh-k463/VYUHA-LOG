@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1756%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1858%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-45%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -28,7 +28,17 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v2.99.97** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v2.99.98** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.98 — Tradebooks import as the trades you made, verified against a real broker statement.** Zerodha and Paytm Money
+> tradebooks are paired **per scrip and day — same-day buys and sells net into one intraday trade first, the rest FIFO** —
+> so a quarter of fills no longer collapses into one row per symbol; sells of shares bought before the window are
+> **opening sells with the P&L left blank**, never a 100% gain. Zerodha fill times now come from *Order Execution Time*.
+> Paytm's `EQ`-only product column is replaced by the product Paytm's own STT/stamp duty imply per day, its six charge
+> components travel with each trade, and its numeric scrip codes resolve to tickers through the ISIN. Reconciled against
+> Paytm's realised-P&L statement: 47 of 52 scrips within ₹25, total within 1.4%. Upstox trade report and realised P&L
+> are recognised by the legal name in A1 (schema verified; values unverified — no rows yet). Same-day-first pairing
+> applies to Dhan GTR, Groww order history and the column mapper too.
 >
 > **v2.99.97 — Appearance becomes a set of dials.** A **tint intensity** slider (0–100, Subtle /
 > Balanced / Vivid) decides how much of the skin's hue the canvas, sidebar, cards and borders
@@ -249,7 +259,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **1,756** | **43** | **0** |
+| **1,858** | **43** | **0** |
 | tests, 45 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
 
 </div>
@@ -352,7 +362,7 @@ forever.** Your own record of your trading is never held hostage.
 - Dhan's **Global Transaction Report** has no product column — but India levies statutory charges at *different rates per product*, so the rate is a fingerprint. Stamp duty **0.015%** on a delivery buy vs **0.003%** intraday, corroborated independently by STT (**0.1%** both legs vs **0.025%** sell-only). Two witnesses agreeing on **89 of 92 rows** of a real report.
 - **A bill that mixes both is split algebraically.** Stamp duty is linear in value, so "bought 3,600, squared 1,800 same day" has exactly one solution. Labelled *derived* — it is arithmetic on a total, not a stated fact.
 - **MTF is still never claimed**, and that was verified rather than assumed: `Oth. Charges` totalled **₹0.03** across 92 rows and GST was 18% of (brokerage + txn + SEBI) to within **₹0.01**. No unexplained rupee, nowhere for financing to hide. So Vyuha asks about the *delivery* rows only — intraday and F&O can never be MTF.
-- **Legs pair FIFO across dates into real positions**, matching how the Income Tax Act treats equity delivery, so holding periods agree with the ones that decide STCG vs LTCG. A conservation check asserts not one share or rupee is created or lost.
+- **Legs pair same-day first, then FIFO across dates, into real positions** — the exchange nets a scrip's same-day buy and sell before anything reaches delivery (verified against Paytm Money's own lot statement, 2026-08-20), and oldest-first for the rest is how the Income Tax Act treats equity delivery, so holding periods agree with the ones that decide STCG vs LTCG. Shares sold that the file never shows being bought become opening sells with the basis left blank. A conservation check asserts not one share or rupee is created or lost.
 - **The broker's own charges are stored as truth.** Vyuha cannot be more accurate about a charge than the charge itself; its computed figures stay alongside as a cross-check.
 
 ### 🏦 MTF, answered by the broker rather than guessed
@@ -520,7 +530,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v2.99.97**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v2.99.98**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
@@ -551,7 +561,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       1756 unit + integration tests across 125 files (+ tests/load: 13 load cases, run separately)
+tests/       1858 unit + integration tests across 128 files (+ tests/load: 13 load cases, run separately)
 e2e/         45 Playwright flows through the real app, in 17 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -572,7 +582,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **1,756 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **1,858 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 13 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, and the second batch found more — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice.
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -588,7 +598,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (1,756 tests) |
+| `npm test` | Vitest unit + integration suite (1,858 tests) |
 | `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 13 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -654,7 +664,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 1756 Vitest unit + integration tests (+ tests/load)
+  tests/          # 1858 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

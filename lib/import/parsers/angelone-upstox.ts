@@ -119,23 +119,48 @@ function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
   // to accept a bare `clientcode`/`clientid` column — generic broker
   // vocabulary that let a no-name file with a Client ID column score 0.8 as
   // Upstox (measured 2026-08-12). Those columns are refinement now, below.
-  const fingerprint =
-    (broker === "angelone" && cells.some((c) => c.includes("angel"))) ||
-    (broker === "upstox" && cells.some((c) => c.includes("upstox")));
+  const namesBroker = (cs: string[]) =>
+    broker === "angelone" ? cs.some((c) => c.includes("angel")) : cs.some((c) => c.includes("upstox"));
+  const headerFingerprint = namesBroker(cells);
+
+  // Upstox's real reports never repeat the broker name in the HEADER row: it
+  // sits in the legal-entity banner above it ("UPSTOX SECURITIES PRIVATE
+  // LIMITED", rows 0-2), and the filenames (trade_…, realizedPnL_…, ledger_…)
+  // name nobody at all. Reading only the header therefore scored 0 on both
+  // real reports, which then fell to the generic mapper — and it picked the
+  // wrong header row out of the label block (verified 2026-08-20 against three
+  // real exports). The banner IS an in-content fingerprint, so it counts as
+  // equivalent to a named file. Angel One is deliberately not given the same
+  // treatment: its scoring is unchanged and no evidence asked for it.
+  const bannerFingerprint =
+    broker === "upstox" && rows.slice(0, Math.min(13, h)).some((r) => namesBroker(r.map(norm)));
+  const fingerprint = headerFingerprint || bannerFingerprint;
 
   // No name, no claim.
   if (!namedInFile && !fingerprint) return 0;
 
-  let score = namedInFile ? 0.4 : 0;
+  let score = namedInFile || bannerFingerprint ? 0.4 : 0;
   if (fingerprint) score += 0.1;
   if (cells.includes("clientcode") || cells.includes("clientid")) score += 0.05;
   const hasSymbol = cells.some((c) => ["symbol", "tradingsymbol", "scrip", "scripname", "instrument"].includes(c));
   if (hasSymbol) score += 0.2;
   // Side column (tradebook) or an aggregated buy/sell pair (P&L report).
   if (cells.some((c) => ["buysell", "tradetype", "transactiontype", "side", "ordertype"].includes(c))) score += 0.25;
-  if (cells.some((c) => c.includes("buyvalue")) && cells.some((c) => c.includes("sellvalue"))) score += 0.25;
+  const hasPair = (a: string, b: string) =>
+    cells.some((c) => c.includes(a)) && cells.some((c) => c.includes(b));
+  // "Buy Amt"/"Sell Amt" is Upstox's realised-P&L spelling of the same pair.
+  if (hasPair("buyvalue", "sellvalue") || hasPair("buyamt", "sellamt")) score += 0.25;
   return Math.min(1, score);
 }
+
+/** Instrument-type values that mean "plain equity" in an Upstox trade report.
+ *  Anything else (FUTIDX/OPTSTK/FUT/OPT/CE/PE) is F&O, and this parser has
+ *  never seen a real F&O row — so it flags rather than guesses a symbol. */
+const EQUITY_INSTRUMENTS = new Set(["eq", "equity", "eqty", "stock", "stocks", "cash"]);
+const isEquityInstrument = (raw: string) => {
+  const s = norm(raw);
+  return !s || EQUITY_INSTRUMENTS.has(s);
+};
 
 function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   const label = broker === "angelone" ? "Angel One" : "Upstox";
@@ -162,15 +187,27 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   const cProduct = find("product", "product type", "producttype");
   const cExch = find("exchange", "exch", "segment");
   const cDate = find("trade date", "order execution time", "date", "trade time", "executed on");
+  // Upstox's trade report splits the clock off into its own column ("Trade
+  // Time"), so the date cell carries no time at all and entryTime/exitTime came
+  // back null for every imported row. Resolved separately; the date cell stays
+  // the fallback for the brokers that keep one timestamp.
+  const cTime = find("trade time", "order execution time", "execution time", "time");
   const warnings: string[] = [];
 
   if (cSide >= 0 && cQty >= 0) {
     // ---- Tradebook: aggregate executions per tradingsymbol + product ----
+    // Upstox states the instrument type (and strike/expiry) per row. An F&O row
+    // is flagged, not decoded: no real Upstox derivatives export has been seen,
+    // so its tradingsymbol grammar is unknown and inventing one would silently
+    // misclassify the trade AND mis-charge it.
+    const cInstrType = broker === "upstox" ? find("instrument type", "instrumenttype") : -1;
+    const cStrike = cInstrType >= 0 ? find("strike price", "strike") : -1;
+    const cExpiry = cInstrType >= 0 ? find("expiry", "expiry date") : -1;
     type Acc = {
       symbol: string; isin: string | null; product: string; exch: string;
       buyDate: string | null; sellDate: string | null;
       buyQty: number; buyVal: number; sellQty: number; sellVal: number;
-      executions: Execution[];
+      executions: Execution[]; notes: string[];
     };
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
@@ -186,12 +223,21 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         buyDate: null,
         sellDate: null,
         buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0,
-        executions: [],
+        executions: [], notes: [],
       };
       const qty = toNum(r[cQty]);
       const price = toNum(r[cPrice]);
       const date = cDate >= 0 ? (r[cDate] || null) : null;
+      const time = extractTime(cTime >= 0 ? r[cTime] : null) ?? extractTime(date);
       const side = norm(r[cSide]);
+      if (cInstrType >= 0 && !isEquityInstrument(r[cInstrType] ?? "")) {
+        const note =
+          `Upstox F&O row: instrument type ${(r[cInstrType] ?? "").trim() || "—"}, ` +
+          `strike ${(cStrike >= 0 ? r[cStrike] : "").trim() || "—"}, ` +
+          `expiry ${(cExpiry >= 0 ? r[cExpiry] : "").trim() || "—"} — tradingsymbol grammar ` +
+          `unverified against a real row; check the classification`;
+        if (!acc.notes.includes(note)) acc.notes.push(note);
+      }
       if (side.startsWith("b")) {
         acc.buyQty += qty;
         acc.buyVal += qty * price;
@@ -209,7 +255,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
           qty,
           price,
           date,
-          time: extractTime(date),
+          time,
         });
       }
       groups.set(key, acc);
@@ -237,6 +283,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         exchangeHint: exchangeFrom(a.exch),
         sourceFile: ctx.filename,
         executions: a.executions,
+        importNotes: a.notes.length ? a.notes : null,
       });
     }
     warnings.push(`${label} tradebook aggregated per tradingsymbol+product; verify F&O classification and re-tag MTF rows once (overrides persist).`);
@@ -246,11 +293,22 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   // ---- Aggregated P&L / holdings report ----
   const cBuyQty = find("buy quantity", "buy qty", "quantity bought");
   const cSellQty = find("sell quantity", "sell qty", "quantity sold");
-  const cBuyVal = find("buy value", "buy amount", "total buy value");
-  const cSellVal = find("sell value", "sell amount", "total sell value");
+  const cBuyVal = find("buy value", "buy amount", "buy amt", "total buy value");
+  const cSellVal = find("sell value", "sell amount", "sell amt", "total sell value");
   const cBuyAvg = find("buy average", "buy avg", "average buy price", "buy price", "buy rate");
   const cSellAvg = find("sell average", "sell avg", "average sell price", "sell price", "sell rate");
-  const cPnl = find("realized p&l", "realised p&l", "realized pnl", "realised pnl", "profit/loss", "net p&l", "pnl", "profit");
+  const cPnl = find("realized p&l", "realised p&l", "realized pnl", "realised pnl", "profit/loss", "net p&l", "total pl", "total p&l", "total p/l", "pnl", "profit");
+  // Upstox's realised-P&L report dates both legs of the round trip.
+  const cBuyDate = find("buy date");
+  const cSellDate = find("sell date");
+  // …and states the tax bucket rather than the product. Speculation is the
+  // Income-Tax Act's name for an intraday equity trade; Short/Long Term means
+  // it was delivered. That is a DERIVED product, flagged as such — the file
+  // never says "MIS" or "CNC".
+  const cSpeculation = find("speculation");
+  const cShortTerm = find("short term");
+  const cLongTerm = find("long term");
+  const hasTaxBuckets = cSpeculation >= 0 || cShortTerm >= 0 || cLongTerm >= 0;
 
   const trades: NormalizedTrade[] = [];
   for (const r of dataRows) {
@@ -264,6 +322,18 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     const buyVal = cBuyVal >= 0 ? toNum(r[cBuyVal]) : buyQty * buyAvg;
     const sellVal = cSellVal >= 0 ? toNum(r[cSellVal]) : sellQty * sellAvg;
     if (buyQty <= 0 && sellQty <= 0) continue;
+
+    let derivedProduct: ProductHint = null;
+    let productDerived = false;
+    if (cProduct < 0 && hasTaxBuckets) {
+      const speculation = cSpeculation >= 0 ? toNum(r[cSpeculation]) : 0;
+      const shortTerm = cShortTerm >= 0 ? toNum(r[cShortTerm]) : 0;
+      const longTerm = cLongTerm >= 0 ? toNum(r[cLongTerm]) : 0;
+      if (speculation !== 0) derivedProduct = "intraday";
+      else if (shortTerm !== 0 || longTerm !== 0) derivedProduct = "delivery";
+      productDerived = derivedProduct != null;
+    }
+
     trades.push({
       broker,
       tradingsymbol: symbol,
@@ -277,11 +347,19 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       closingPrice: null,
       grossPnl: cPnl >= 0 ? toNum(r[cPnl]) : sellVal - buyVal,
       unrealisedPnl: 0,
-      buyDate: cDate >= 0 ? r[cDate] || null : null,
-      sellDate: null,
-      productHint: cProduct >= 0 ? productHint(r[cProduct]) : null,
+      buyDate: (cBuyDate >= 0 ? r[cBuyDate] : cDate >= 0 ? r[cDate] : "") || null,
+      sellDate: (cSellDate >= 0 ? r[cSellDate] : "") || null,
+      productHint: cProduct >= 0 ? productHint(r[cProduct]) : derivedProduct,
       exchangeHint: cExch >= 0 ? exchangeFrom(r[cExch]) : null,
       sourceFile: ctx.filename,
+      ...(productDerived
+        ? {
+            productDerived: true,
+            importNotes: [
+              "Product derived from the Speculation / Short Term / Long Term columns — the file states a tax bucket, not a product code.",
+            ],
+          }
+        : {}),
     });
   }
   warnings.push(`${label} P&L report is aggregated per scrip; segment/MTF may need re-tagging (overrides persist across re-imports).`);

@@ -10,10 +10,18 @@ header is still verified, but value-level behaviour is not.
 Source files live in `tests/fixtures/private/` (gitignored — they carry client
 codes, PANs and names). This document deliberately contains **no identifiers**.
 
-> ⚠️ **The samples are schema-only.** Of six files, only one contained a single
+> ⚠️ **The 2026-08-12 samples are schema-only.** Of six files, only one contained a single
 > data row. They are sufficient to fix detection and column mapping; they are
 > NOT sufficient to verify that parsed values (prices, P&L, charges) are correct.
-> That needs exports from an account with real activity.
+>
+> **2026-08-20 — a second batch WITH data** (also in `tests/fixtures/private/`,
+> redacted schema-only copies in `tests/fixtures/redacted/`): a Paytm Money
+> tradebook with **414 executions** and its Equity P&L (`.xls`, 3 sheets, 124
+> realised lots), a Zerodha Console tradebook with **1,554 fills** and a
+> Console P&L with 53 rows, and three Upstox reports that are **schema-only**
+> (the account had no trades). Value-level behaviour is therefore VERIFIED for
+> Paytm and Zerodha tradebooks and still INFERRED for Upstox. What the data
+> changed is recorded per broker below and in DECISIONS.md 2026-08-20.
 
 ---
 
@@ -34,6 +42,8 @@ format needs an **in-content fingerprint**. Every file examined has one:
 | Angel One Ledger | `Angelone charge` column in the `Charges` sheet |
 | Groww Stocks P&L | Sheets named `Trade Level` / `Scrip Level` |
 | Groww Stocks Order History | `Unique Client Code` header — Groww-specific phrasing |
+| Upstox trade report / realised P&L | `UPSTOX SECURITIES PRIVATE LIMITED` in A1 (the legal name), header 11 / 22 rows down |
+| Paytm Money Equity P&L (`.xls`) | section titles `Unrealized P/L Summary (As on …)` / `Realized P/L Summary (From …)` — no parser, mapper |
 
 ---
 
@@ -49,6 +59,16 @@ Auction | Quantity | Price | Trade ID | Order ID | Order Execution Time
 
 - `Trade Type` is buy/sell. **No charge columns** — charges must come from the
   Console P&L or a contract note.
+- **Console export variant (real, 2026-08-20, 1,554 fills):** an 8-row preamble —
+  `Client ID` on row 1, `Tradebook for Equity from <from> to <to>` on row 5,
+  header on row 9. `Trade Date` is a numeric Excel date serial (renders
+  `2026-04-01`); `Order Execution Time` renders `2026-04-01 11:14:28` — the
+  parser now reads fill TIMES from it. `Series` carries SME series (`SM`, `ST`,
+  `M`, `MT`, `BE`, `B`, `X`, `A`, `T`) besides `EQ`. There is **no Product
+  column** in this export. `Auction` is `false` throughout. Sell-only symbols
+  are common (8 of 23 in the sample — holdings bought before the window), so the
+  tradebook is paired FIFO and an unmatched sell is an *opening sell* with
+  `basisUnknown`, never a 100% gain.
 - Sample had `!ref=A1:M3292` but only the header was non-empty: 3,291 formatted
   blank rows. A row-count check must ignore empty rows or it will claim 3,291 trades.
 
@@ -74,6 +94,13 @@ Realized P&L Pct. | Previous Closing Price | Open Quantity |
 Open Quantity Type | Open Value | Unrealized P&L | Unrealized P&L Pct.
 ```
 
+**Column-A variant (real, 2026-08-20, 53 rows):** the sheet starts directly at
+the charges block in column A (8 `- Z` heads — no `Brokerage - Z` — plus
+`IPFT`), four blank rows, then the trade table with the header on row 14. Three
+rows carry an ISIN in the `Symbol` cell with an empty ISIN and zero quantity
+and values (delisted/merged scrips) — skipped, not imported as empty trades.
+`Open Quantity` / `Unrealized P&L` describe holdings, not trades.
+
 ---
 
 ## Paytm Money
@@ -91,6 +118,23 @@ Trade Number | Trade Time
 - **The richest tradebook of the three brokers** — per-execution granularity *and*
   a complete per-trade charge breakdown. Zerodha's tradebook has neither.
 - Column is `Script`, not `Symbol` or `Scrip`.
+- **VERIFIED with 414 real executions (2026-08-20, export named `Tradebook_EQ.xlsx`):**
+  - `Script` holds a **numeric scrip code** (six digits; BSE-code-like on BSE
+    rows, Paytm's own id on NSE rows), **not a ticker**. `ISIN` is always
+    filled — Vyuha resolves the symbol from the ISIN at commit (instruments
+    table, then the bundled NSE index map) and otherwise keeps the code with a
+    note telling the user to upload NSE's securities list.
+  - `Product Type` is `EQ` on every row — the SEGMENT, not delivery/intraday.
+    Product is derived per scrip-day from Paytm's own STT and stamp duty
+    (`lib/import/product-signature.ts`).
+  - STT and stamp duty for a scrip-day are **booked on one execution row** of
+    that day (the last one), not spread per fill — e.g. four buys whose STT
+    reads 0 / 0 / 0 / 1960.08, where 1960.08 = 0.1% of the day's total buy
+    value. Sum per scrip-day before inferring product.
+  - `Trade Time` is empty and `Trade Number` is `0` on every row; `Order
+    Number` is a 16-digit id. Dates are `dd-mm-yyyy` strings.
+  - The word "Paytm" appears nowhere in the file; the `UCC` label and the
+    `Script` + `ETT` header are the fingerprint, as before.
 
 ### P&L (XLSX) — two sections
 `Sheet1`, `!ref=A2:I73`. Metadata rows, then:
@@ -107,6 +151,25 @@ Scrip Name | ISIN | Quantity | Buy Average | Buy Value | Sell Average |
 Sell Value | Realized P&L
 ```
 Terminated by a `Total` row.
+
+### Equity P&L (`.xls`, 3 sheets) — the download Paytm serves today (real, 2026-08-20)
+File `<UCC>_EquityP&L_<from>_<to>.xls` (BIFF), sheets
+`Summary P&L | Realized P&L Detail | Unrealized Transactions`; each sheet has
+`UCC`/`Name`/`PAN number`/`Period` label rows, dates are `dd-Mon-yyyy`.
+
+- `Summary P&L` — the two sections above (`Unrealized P/L Summary (As on …)`
+  with the 9-column header; `Realized P/L Summary (From … – …)` with the
+  8-column header), each closed by a `Total` row.
+- `Realized P&L Detail` — **one row per matched lot**:
+  `Scrip Name | ISIN | Quantity | Buy Date | Buy Price | Buy Value | Sell Date |
+  Sell Price | Sell Value | P&L Value`, `Total` row. Lots bought before the
+  period appear with their original buy date. This is the broker-stated
+  reference the tradebook is reconciled against (DECISIONS.md 2026-08-20).
+- `Unrealized Transactions` — open lots:
+  `Scrip Name | ISIN | Type | Quantity | Date | Price | Value`, `Total` row.
+
+Still **no parser** (mapper): the tradebook is the import path; this file is a
+reconciliation reference. The generic mapper reads the first sheet only.
 
 ---
 
@@ -158,6 +221,42 @@ so a parser must scan for section titles rather than assume one header:
 
 ---
 
+## Upstox
+
+Three real exports examined 2026-08-20 — **all schema-only** (the account had
+no trades), so the layouts below are VERIFIED and every value behaviour is
+INFERRED. Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
+`realizedPnL_EQ_<from>_To_<to>_<code>.xlsx`, `ledger_<from>_To_<to>_trading_<code>.xlsx`.
+**Fingerprint: `UPSTOX SECURITIES PRIVATE LIMITED` in A1** (then `(Formerly …)`,
+`Dealing Office …`, `UCC`/`Name`/… label rows, `Report Time Period`, `Generated On`).
+Every sheet ends with a footer note (`From 19-Jul-2025, our Broking …`).
+
+### Trade report — sheet `TRADE`, header on row 11
+```
+Date | Company | Amount | Exchange | Segment | Scrip Code | Instrument Type |
+Strike Price | Expiry | Trade Num | Trade Time | Side | Quantity | Price
+```
+`Company` is the name column (used as the symbol); `Trade Time` is a separate
+time column; `Instrument Type` / `Strike Price` / `Expiry` carry F&O — the
+tradingsymbol grammar for those rows is unverified, so such rows are flagged.
+No product column.
+
+### Realised P&L — sheet `REALIZED_PNL`, header on row 22
+Preceded by `Segment | EQ`, a `P&L Summary` block (`Gross P&L`, `Net P&L`) and a
+`Charges` block (`TOTAL`), then `Realised P&L Details`:
+```
+Scrip Name | Scrip Code | Symbol | ISIN | Scrip Opt | Qty | Buy Date | Buy Rate |
+Buy Amt | Sell Date | Sell Rate | Sell Amt | Days | Total PL | Short Term |
+Long Term | Speculation | Turn Over
+```
+`Speculation` ≠ 0 → intraday; `Short Term`/`Long Term` ≠ 0 → delivery (derived).
+
+### Ledger — sheet `LEDGER_V3`
+`Wallet | TRADING` and **no column header at all** in the sample — nothing to
+map; no parser claims it.
+
+---
+
 ## Groww
 
 ### Stocks — Order History (XLSX) — parsed by `lib/import/parsers/groww-orders.ts` (2026-08-12)
@@ -178,6 +277,17 @@ Three traps:
 Sheets `Trade Level` (+ `Scrip Level`). Parsed by `lib/import/parsers/groww-xlsx.ts`.
 
 ---
+
+## Status (2026-08-20)
+
+Second batch: `paytm-tradebook.ts` and `zerodha.ts` tradebook paths pair FIFO
+via `lib/import/pair-legs.ts` (opening sells → `basisUnknown`, P&L blank);
+`zerodha.ts` reads `Order Execution Time`; Paytm derives product from the
+scrip-day charge signature and apportions its six stated charge components;
+coded Paytm symbols resolve by ISIN at commit; `angelone-upstox.ts` fingerprints
+Upstox on the A1 legal name and maps `Trade Time`, `Buy/Sell Date`,
+`Buy/Sell Amt`, `Total PL`, `Speculation`. Seven more redacted fixtures in the
+matrix test, plus a private block that replays the real files when present.
 
 ## Status (2026-08-12)
 

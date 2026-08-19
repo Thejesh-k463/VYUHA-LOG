@@ -43,9 +43,45 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   // zero-data-row sample) must take them — no parser may claim them outright.
   { file: "YourStatement_TEST0000.xlsx", broker: "angelone", expect: "generic-or-none", label: "Angel One ledger" },
   { file: "paytm-pnl.xlsx", broker: "paytm", expect: "generic-or-none", label: "Paytm Money P&L" },
+  // ── 2026-08-20 batch: schema-only copies of a SECOND set of real exports
+  // (Paytm, Zerodha and Upstox), redacted the same way — the owner's real
+  // book is never committed; data rows are three synthetic lines each.
+  // Filenames here are NEUTRAL on purpose (the real ones name no broker
+  // either: `Tradebook_EQ.xlsx`, `trade_<from>_<to>_<code>.xlsx`, …), so
+  // every claim below is carried by in-content fingerprints alone.
+  { file: "paytm-tradebook-v2.xlsx", broker: "paytm", expect: "paytm-tradebook", label: "Paytm Money tradebook (Tradebook_EQ export, numeric Script codes)" },
+  { file: "paytm-equity-pnl.xls", broker: "paytm", expect: "generic-or-none", label: "Paytm Money Equity P&L (.xls, 3 sheets)" },
+  { file: "zerodha-tradebook-console.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha tradebook (Console export with preamble)" },
+  { file: "zerodha-console-pnl-cola.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console P&L (column-A variant)" },
+  { file: "upstox-trade-report.xlsx", broker: "upstox", expect: "upstox", label: "Upstox trade report" },
+  { file: "upstox-realized-pnl.xlsx", broker: "upstox", expect: "upstox", label: "Upstox realised P&L report" },
+  // No column header at all — nothing can read it; nothing may claim it.
+  { file: "upstox-ledger.xlsx", broker: "upstox", expect: "generic-or-none", label: "Upstox ledger" },
 ];
 
-const load = (file: string) => buildContext(file, fs.readFileSync(path.join(DIR, file)));
+/**
+ * The REAL files, when this machine has them (gitignored under
+ * tests/fixtures/private/). Same assertions as the redacted copies — this is
+ * the proof that redaction preserved exactly the cells detection reads. On CI
+ * and on any other machine the block is skipped, not failed.
+ */
+const PRIVATE_DIR = path.join(process.cwd(), "tests", "fixtures", "private");
+const PRIVATE: { file: string; expect: string }[] = [
+  { file: "Paytm Money - Tradebook (real).xlsx", expect: "paytm-tradebook" },
+  { file: "Paytm Money - EquityPnL (real).xls", expect: "generic-or-none" },
+  { file: "Zerodha Tradebook (real).xlsx", expect: "zerodha" },
+  { file: "Zerodha Console PnL (real).xlsx", expect: "zerodha" },
+  { file: "Upstox trade report (schema-only).xlsx", expect: "upstox" },
+  { file: "Upstox realizedPnL (schema-only).xlsx", expect: "upstox" },
+  { file: "Upstox ledger (schema-only).xlsx", expect: "generic-or-none" },
+];
+const havePrivate = PRIVATE.every((p) => fs.existsSync(path.join(PRIVATE_DIR, p.file)));
+
+// The 2026-08-20 batch is loaded under a NEUTRAL filename so that a claim can
+// only come from the file's content — the real exports name no broker.
+const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx"]);
+const load = (file: string) =>
+  buildContext(NEUTRAL.has(file) ? "export" + path.extname(file) : file, fs.readFileSync(path.join(DIR, file)));
 
 describe("every real export routes to its own parser", () => {
   for (const f of FIXTURES.filter((x) => x.expect !== "generic-or-none")) {
@@ -63,6 +99,22 @@ describe("every real export routes to its own parser", () => {
       // parser winning is the bug.
       const top = rankParsers(load(f.file)).filter((r) => r.confidence > 0)[0];
       if (top) expect(top.sourceId).toBe("generic-table");
+    });
+  }
+});
+
+describe.skipIf(!havePrivate)("the real exports route exactly like their redacted copies", () => {
+  for (const p of PRIVATE) {
+    it(`${p.file.replace(/\(.*\)/, "").trim()} → ${p.expect}`, () => {
+      // Neutral filename — the real names carry no broker word either.
+      const ranked = rankParsers(buildContext("export" + path.extname(p.file), fs.readFileSync(path.join(PRIVATE_DIR, p.file))));
+      const top = ranked.filter((r) => r.confidence > 0)[0];
+      if (p.expect === "generic-or-none") {
+        if (top) expect(top.sourceId).toBe("generic-table");
+      } else {
+        expect(top?.sourceId).toBe(p.expect);
+        expect(top!.confidence).toBeGreaterThanOrEqual(0.7);
+      }
     });
   }
 });

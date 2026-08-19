@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.98
+
+| Upgrade | What it gives you |
+|---|---|
+| **Zerodha and Paytm Money tradebooks import as the trades you actually made** | Each fill is now paired **per scrip and day**: a buy and a sell on the same day net into one intraday trade first, and the rest match oldest-first (FIFO). A three-month tradebook no longer collapses into one row per symbol, and every position carries its real entry and exit dates. Shares you sold that were bought *before* the export window appear as **opening sells** with the P&L left blank until you supply the purchase price — never booked as a 100% gain. The import summary says "N fills → M positions". |
+| **Zerodha fill times** | Entry and exit times are read from the tradebook's *Order Execution Time*, so the time-of-day views fill in for Zerodha imports. |
+| **Paytm Money: product, charges and symbols from the broker's own numbers** | Paytm's tradebook says `EQ` for everything, so delivery vs intraday is derived from the STT and stamp duty Paytm itself levied each day; its six stated charge components travel with every trade; and the numeric scrip code Paytm exports is resolved to the ticker through the ISIN (your Instruments list — upload NSE's `EQUITY_L.csv` / SME list — or the bundled NSE index list). When nothing resolves, the code is kept and the row says so. Verified against a real 414-execution export and Paytm's own realised-P&L statement: 47 of 52 scrips agree to within ₹25. |
+| **Upstox trade report and realised P&L are recognised** | By the legal name in the first cell of the report, header on the 11th / 22nd row. Trade time, buy/sell dates, Total PL and the Speculation/Short Term/Long Term split are mapped. The sample had no trade rows, so value handling is unverified until one does — the import says so. |
+| **Same-day-first pairing everywhere** | The Dhan transaction report, Groww order history and the column mapper use the same pairing engine, so they inherit the same-day netting rule. |
+
 ## New in v2.99.97
 
 | Upgrade | What it gives you |
