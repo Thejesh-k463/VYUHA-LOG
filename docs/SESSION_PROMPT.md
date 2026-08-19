@@ -100,7 +100,7 @@ that cannot be bundled, because client components import `lib/license.ts` and a
 
 ---
 
-## Next session — ready-to-paste (written 2026-08-15, after v2.99.97 + the sales-assets pass)
+## Next session — ready-to-paste (updated 2026-08-19, after v2.99.97 + sales/monetisation passes)
 
 ```
 Read CLAUDE.md first (it imports AGENTS.md), then VYUHA-STATE.md §2 and §8. Do not read
@@ -111,8 +111,10 @@ curves, the Pages redirect).
 
 STATE YOU CAN TRUST: v2.99.97 built, CI-green, tagged, DRAFT release (publish is mine);
 v2.99.96 is releases/latest; landing page live at https://thejesh-k463.github.io/VYUHA-LOG/;
-1,753 unit tests / 45 e2e flows green; 13/13 load tests built; revocations prerelease exists;
-key backup NOT yet taken (tooling exists: license-backup.mjs).
+1,756 unit tests / 45 e2e flows green; 13/13 load tests built; revocations prerelease exists;
+owner kits done (Rainmatter deck + answers, creator outreach, Zerodha proposal + contact map,
+client feedback form script, release-resilience scripts) — all in docs/owner/; key backup,
+mirror repo and release archive are still the owner's to run.
 
 TASK: <one of the two below, or what I paste>
  A) BROKER INTEGRATION — I am supplying real Paytm Money / Zerodha / Upstox exports and API

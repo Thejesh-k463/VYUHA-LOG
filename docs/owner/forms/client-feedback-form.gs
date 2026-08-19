@@ -16,7 +16,7 @@
  * Re-running createVyuhaFeedbackForm creates a SECOND form + trigger - delete the first in Drive if you iterate.
  * Script properties remember the form id so vyuhaSummary/onSubmit know which form to read.
  */
-var OWNER_EMAIL = "thejesh463.git@gmail.com"; // <- change if alerts should go elsewhere
+var OWNER_EMAIL = "ktr.thejesh463@gmail.com"; // <- change if alerts should go elsewhere
 var PLAN_TITLE = "Your plan";                     // must match the question title below
 
 function createVyuhaFeedbackForm() {

@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything below was verified against the repo on 2026-08-15 (v2.99.96 session), not recalled.
+Everything below was verified against the repo on 2026-08-19 (monetisation/docs sessions after v2.99.97), not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -79,7 +79,14 @@ key backup; a mirror remote is optional. Follow-up 2026-08-19: `docs/owner/RAINM
 1.15 MB, `docs/owner/pitch-deck/deck.html` + `build-deck.mjs`; owner placeholders [[N licences]], [[₹ amount]],
 [[YOUR NAME]]/[[EMAIL]] remain); `docs/owner/forms/client-feedback-form.gs` creates the client Google Form;
 `npm run mirror:push` / `npm run release:archive -- <dir>` + `docs/owner/RELEASE_RESILIENCE.md` (owner must still
-create the mirror repo, run the archive, and run `license-backup.mjs`).
+create the mirror repo, run the archive, and run `license-backup.mjs`). Form script now also links a responses Sheet,
+emails the owner per submission with running plan totals, and has `vyuhaSummary()` (not executed here — one test
+submission by the owner will prove it).
+
+**Owner's open to-dos (as of 2026-08-19):** publish the v2.99.97 draft · fill the deck chips and submit the Rainmatter form ·
+email talk@rainmatter.com + X thread (ZERODHA_PROPOSAL.md) · run the Apps Script, send the form link with each sale ·
+create the mirror repo + `npm run mirror:push` · `npm run release:archive` to a drive · `license-backup.mjs` ·
+refund/terms sign-off · winget + WDSI submissions · supply Paytm/Zerodha/Upstox files + API details for the next build.
 
 **v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
 Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing
