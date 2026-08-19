@@ -30,15 +30,15 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.98** — committed `<pending>`, tagged `v2.99.98`, pushed 2026-08-20 |
+| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20 |
 | Branch | `main`, clean apart from this file |
-| CI | <pending> |
-| GitHub release | `v2.99.98` draft is created by the Release workflow on the tag (owner publishes); local `.sig` key ids decoded = `4FF85F3BBE1DA21D` = `tauri.conf.json` pubkey; `releases/latest` = **`v2.99.96`** (v2.99.97 draft still unpublished) |
+| CI | **green on `6e2dd80` — all 5 jobs incl. Windows — BEFORE tagging** (run 32296904204; the ubuntu e2e job hung twice at the Playwright browser-install step — GitHub infra — and passed on a rerun of that job alone); Release workflow 32301883296 — see GitHub release row |
+| GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"; `releases/latest` = **`v2.99.97`** (owner published it 2026-08-15 13:28Z) |
 | Client ZIP | `release-packages/Vyuha_2.99.98_Client_Package.zip` (33.9 MB), installer SHA-256 `6CE6BFDB…9A8D36`; ZIP's `WHATS_NEW.md` first heading, `TERMS`/`PRIVACY` "Applies to" and both deck chips = v2.99.98 (opened and checked) |
 | Unit tests | **1,858 passed / 0 failed** across 128 files (`npm run verify` EXIT 0 incl. build, 2026-08-20 after the bump; 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
 | e2e | **45 passed / 0 failed** (2.1 min, `npx playwright test`, 2026-08-20, before the bump) |
 | Installer | `Vyuha_2.99.98_x64-setup.exe` (34,857,374 B) + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 01:31 IST 2026-08-20; bundle carries the `FIFO per symbol + day` and `numeric scrip code` markers |
-| Previous | v2.99.97 built, CI-green, tagged; its GitHub release is a **DRAFT with 9 assets** (owner publishes) — `releases/latest` is still `v2.99.96` |
+| Previous | v2.99.97 is published and is `releases/latest` (2026-08-15 13:28Z) |
 
 **v2.99.98 content (all verified 2026-08-20 — broker-integration wave, real files):** the owner
 supplied real exports (gitignored in `tests/fixtures/private/`): Paytm Money tradebook (414 executions)
