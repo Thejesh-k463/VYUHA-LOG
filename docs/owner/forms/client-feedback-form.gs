@@ -5,12 +5,20 @@
  * HOW TO RUN (one time, ~2 minutes):
  *   1. Open https://script.google.com -> "New project".
  *   2. Delete the stub, paste this whole file, Ctrl+S.
- *   3. Run > createVyuhaFeedbackForm -> approve the Forms/Drive permission prompt (your own account).
- *   4. View > Logs: it prints the EDIT url and the SHARE url. The form lands in your Google Drive root.
- *   5. Open the edit url once: Responses tab -> link a Sheet; add columns "Version", "Followed up (date)".
+ *   3. Set OWNER_EMAIL below to the address that should receive submission alerts.
+ *   4. Run > createVyuhaFeedbackForm -> approve the Forms/Drive/Gmail/Sheets permission prompt (your own account).
+ *   5. View > Logs: it prints the EDIT url, the SHARE url and the RESPONSES SHEET url.
+ *      The script also installs an on-submit trigger, so EVERY submission emails OWNER_EMAIL a summary
+ *      plus the running totals (responses / Pro annual / Lifetime).
  *   6. Share the SHARE url (the /viewform one) on WhatsApp after purchase.
- * Re-running creates a second form - delete the first in Drive if you iterate.
+ *   7. Any time later: Run > vyuhaSummary -> View > Logs prints total responses and the plan split
+ *      (and the same numbers are always visible in the linked Sheet / the form's Responses tab).
+ * Re-running createVyuhaFeedbackForm creates a SECOND form + trigger - delete the first in Drive if you iterate.
+ * Script properties remember the form id so vyuhaSummary/onSubmit know which form to read.
  */
+var OWNER_EMAIL = "thejesh463.git@gmail.com"; // <- change if alerts should go elsewhere
+var PLAN_TITLE = "Your plan";                     // must match the question title below
+
 function createVyuhaFeedbackForm() {
   var form = FormApp.create("Vyuha - tell us how it is going");
   form.setDescription(
@@ -94,7 +102,67 @@ function createVyuhaFeedbackForm() {
   form.addTextItem().setTitle("If yes - best day/time");
   form.addParagraphTextItem().setTitle("Anything else - bugs, praise, rants.");
 
-  Logger.log("EDIT  : " + form.getEditUrl());
-  Logger.log("SHARE : " + form.getPublishedUrl());
+  // Responses -> a Google Sheet (auto-created next to the form), so counts are always one tab away.
+  var sheet = SpreadsheetApp.create("Vyuha feedback - responses");
+  form.setDestination(FormApp.DestinationType.SPREADSHEET, sheet.getId());
+
+  // Remember the form, then install the on-submit alert trigger.
+  PropertiesService.getScriptProperties().setProperty("VYUHA_FORM_ID", form.getId());
+  ScriptApp.newTrigger("onVyuhaSubmit").forForm(form).onFormSubmit().create();
+
+  Logger.log("EDIT   : " + form.getEditUrl());
+  Logger.log("SHARE  : " + form.getPublishedUrl());
+  Logger.log("SHEET  : " + sheet.getUrl());
+  Logger.log("Alerts : every submission emails " + OWNER_EMAIL);
   return form.getPublishedUrl();
+}
+
+/** Fires on every submission (installed by createVyuhaFeedbackForm). Emails a digest + running totals. */
+function onVyuhaSubmit(e) {
+  var form = FormApp.openById(PropertiesService.getScriptProperties().getProperty("VYUHA_FORM_ID"));
+  var items = e.response.getItemResponses();
+  var lines = [];
+  var name = "", plan = "", city = "", nps = "";
+  for (var i = 0; i < items.length; i++) {
+    var t = items[i].getItem().getTitle(), v = items[i].getResponse();
+    if (v === "" || v === null || (Array.isArray(v) && v.length === 0)) continue;
+    lines.push(t + ": " + (Array.isArray(v) ? v.join(", ") : v));
+    if (t === "Name") name = v;
+    if (t === PLAN_TITLE) plan = v;
+    if (t === "City") city = v;
+    if (t.indexOf("recommend Vyuha") >= 0) nps = v;
+  }
+  var tot = vyuhaTotals_(form);
+  var subject = "[Vyuha feedback] " + (name || "someone") + (city ? " · " + city : "") +
+                (plan ? " · " + plan : "") + (nps !== "" ? " · NPS " + nps : "") +
+                " — total " + tot.total + " (Pro " + tot.annual + " / Lifetime " + tot.lifetime + ")";
+  var NL = String.fromCharCode(10);
+  var body = "New response at " + new Date().toLocaleString("en-IN") + NL + NL + lines.join(NL) +
+             NL + NL + "--- Running totals ---" + NL + "Responses: " + tot.total +
+             NL + "Pro - Annual: " + tot.annual + NL + "Journal - Lifetime: " + tot.lifetime +
+             NL + "No plan stated: " + tot.unknown +
+             NL + NL + "Sheet: https://docs.google.com/spreadsheets/d/" + form.getDestinationId() +
+             NL + "Edit form: " + form.getEditUrl();
+  MailApp.sendEmail(OWNER_EMAIL, subject, body);
+}
+
+/** Run by hand any time: prints total responses and the plan split to the Logs. */
+function vyuhaSummary() {
+  var id = PropertiesService.getScriptProperties().getProperty("VYUHA_FORM_ID");
+  if (!id) { Logger.log("Run createVyuhaFeedbackForm first."); return; }
+  var tot = vyuhaTotals_(FormApp.openById(id));
+  Logger.log("Responses: " + tot.total + " | Pro - Annual: " + tot.annual +
+             " | Journal - Lifetime: " + tot.lifetime + " | no plan stated: " + tot.unknown);
+  return tot;
+}
+
+function vyuhaTotals_(form) {
+  var rs = form.getResponses(), annual = 0, lifetime = 0, unknown = 0;
+  for (var i = 0; i < rs.length; i++) {
+    var plan = "";
+    var items = rs[i].getItemResponses();
+    for (var j = 0; j < items.length; j++) if (items[j].getItem().getTitle() === PLAN_TITLE) plan = items[j].getResponse();
+    if (plan === "Pro - Annual") annual++; else if (plan === "Journal - Lifetime") lifetime++; else unknown++;
+  }
+  return { total: rs.length, annual: annual, lifetime: lifetime, unknown: unknown };
 }

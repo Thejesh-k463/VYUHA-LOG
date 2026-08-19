@@ -54,7 +54,9 @@ API keys, TOTP secrets, PAN, or account numbers.
 `docs/owner/forms/client-feedback-form.gs` is an Apps Script that creates this exact form in your
 Google Drive: open https://script.google.com, New project, paste the file, Run
 `createVyuhaFeedbackForm`, approve the one-time permission, then View > Logs prints the EDIT and
-SHARE links. Link a responses Sheet from the Responses tab. Re-running makes a second form, so
+SHARE links plus a RESPONSES SHEET link (the script links a Sheet for you), installs an on-submit
+trigger so every submission emails you a digest with running totals (responses / Pro annual /
+Lifetime), and `vyuhaSummary` prints those counts on demand. Set `OWNER_EMAIL` at the top first. Re-running makes a second form, so
 edit the script and re-run only when the spec changes. Manual alternative: every numbered question
 above maps 1:1 to a Forms item type (short answer, paragraph, multiple choice, checkboxes,
 linear scale 0-10); the five sections are page breaks.
