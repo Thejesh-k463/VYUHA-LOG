@@ -25,6 +25,8 @@
     "bump-version": "node scripts/bump-version.mjs",
     "verify": "npm run typecheck && npm run lint && npm run test -- --run && npm run build",
     "release:verify": "node scripts/verify-release-signatures.mjs",
+    "release:archive": "node scripts/release-archive.mjs",
+    "mirror:push": "node scripts/mirror-push.mjs",
     "release:revocations": "node scripts/revocation-publish.mjs",
     "landing:build": "node scripts/build-landing.mjs",
     "test:load": "vitest run --config vitest.load.config.ts",

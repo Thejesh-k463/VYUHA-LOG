@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vyuha — Rainmatter pitch deck</title>
+<style>
+  /* 16:9 — one 1280×720 CSS-px slide per page (13.333in × 7.5in at 96 dpi). */
+  @page { size: 13.333in 7.5in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #05080f; color: #e2e8f0;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slide { position: relative; width: 1280px; height: 720px; overflow: hidden;
+    padding: 56px 72px 64px; background: #05080f; page-break-after: always; break-after: page;
+    display: flex; flex-direction: column; }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  @media screen { body { padding: 24px 0; } .slide { margin: 0 auto 24px; outline: 1px solid #1e293b; } }
+  .foot { position: absolute; left: 72px; right: 72px; bottom: 22px; display: flex; justify-content: space-between; gap: 24px;
+    font-size: 11px; color: #64748b; letter-spacing: .02em; }
+  .foot .src { color: #64748b; max-width: 1040px; line-height: 1.35; }
+  .kicker { font-size: 13px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: #2dd4bf; margin-bottom: 10px; }
+  h1 { font-size: 40px; font-weight: 700; line-height: 1.15; letter-spacing: -.01em; margin-bottom: 26px; }
+  h1 em { font-style: normal; color: #f0b429; }
+  h2 { font-size: 20px; font-weight: 600; color: #f8fafc; margin-bottom: 8px; }
+  p, li { font-size: 17px; line-height: 1.45; color: #cbd5e1; }
+  .grid { display: grid; gap: 20px; flex: 1; min-height: 0; }
+  .cols2 { grid-template-columns: 1fr 1fr; }
+  .cols3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card { background: #0d1320; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 22px; }
+  .card.teal { border-color: rgba(45,212,191,.45); }
+  .card.gold { border-color: rgba(240,180,41,.45); }
+  .big { font-size: 44px; font-weight: 700; color: #f0b429; line-height: 1.05; letter-spacing: -.02em; }
+  .big.teal { color: #2dd4bf; }
+  .lbl { font-size: 14px; color: #94a3b8; margin-top: 6px; line-height: 1.35; }
+  ul { padding-left: 20px; } li { margin-bottom: 7px; }
+  li::marker { color: #2dd4bf; }
+  .shot { display: flex; flex-direction: column; min-height: 0; }
+  .shot img { width: 100%; height: auto; max-height: 100%; object-fit: contain; object-position: top left;
+    border-radius: 8px; border: 1px solid #1e293b; display: block; }
+  .cap { font-size: 13px; color: #94a3b8; margin-top: 8px; line-height: 1.35; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #1e293b; vertical-align: top; color: #cbd5e1; line-height: 1.3; }
+  th { color: #94a3b8; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  tr.vy td { background: rgba(45,212,191,.08); color: #f8fafc; font-weight: 600; }
+  .ph { color: #f0b429; background: rgba(240,180,41,.12); border: 1px dashed #f0b429; border-radius: 4px; padding: 0 6px; font-weight: 600; }
+  .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; }
+  .muted { color: #94a3b8; }
+  .tag { display: inline-block; font-size: 12px; color: #2dd4bf; border: 1px solid rgba(45,212,191,.5); border-radius: 999px; padding: 2px 10px; margin-right: 6px; }
+  .note { font-size: 13px; color: #94a3b8; margin-top: 12px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<!-- 1 · Title -->
+<section class="slide" style="justify-content:center; align-items:flex-start;">
+  <div style="display:flex; align-items:center; gap:18px; margin-bottom:26px;">
+    <img src="../../../public/brand/vyuha-appicon.svg" alt="Vyuha mark" style="width:64px;height:64px;border-radius:14px;" />
+    <div style="font-size:34px;font-weight:700;letter-spacing:.22em;">VYUHA <span style="color:#64748b;font-weight:400;letter-spacing:.06em;font-size:22px;">· Journal · Measure · Master</span></div>
+  </div>
+  <h1 style="font-size:54px;max-width:1000px;">Your P&amp;L tells you <em>what</em>.<br>Vyuha tells you <em>why</em>.</h1>
+  <p style="font-size:21px;max-width:900px;color:#cbd5e1;">A fully local, offline-first trade journal and analytics cockpit for Indian retail traders. Exact charges. Honest analytics. Zero cloud.</p>
+  <div style="margin-top:40px;display:flex;gap:36px;font-size:16px;color:#94a3b8;">
+    <div><span class="muted">Web</span> &nbsp;<span class="mono" style="color:#2dd4bf;">thejesh-k463.github.io/VYUHA-LOG</span></div>
+    <div><span class="muted">Code</span> &nbsp;<span class="mono" style="color:#2dd4bf;">github.com/Thejesh-k463/VYUHA-LOG</span></div>
+  </div>
+  <div style="margin-top:48px;font-size:15px;color:#f0b429;letter-spacing:.14em;text-transform:uppercase;font-weight:600;">Application to Rainmatter · 2026</div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>1</span></div>
+</section>
+
+<!-- 2 · The problem -->
+<section class="slide">
+  <div class="kicker">The problem</div>
+  <h1>Most Indian traders have no honest record of their own trading.</h1>
+  <div class="grid cols3">
+    <div class="card">
+      <h2>The broker shows P&amp;L, not behaviour</h2>
+      <p>Console and order books answer "how much". Nothing answers <em>why</em>: which setups, which hours, which mistakes, which instruments, and what the charges actually cost.</p>
+    </div>
+    <div class="card">
+      <h2>Journals built for the US do not fit India</h2>
+      <p>Global journals are web-hosted subscriptions priced in dollars, with no STT/CTT, stamp duty, GST, exchange and SEBI charges, no Indian tax pack, and no MTF or options-seller workflow.</p>
+    </div>
+    <div class="card">
+      <h2>Web journals require trust they have not earned</h2>
+      <p>Every existing product asks traders to upload their full trade history to someone else's server. Many traders — rightly — refuse.</p>
+    </div>
+  </div>
+  <p class="note">Result: the trader who most needs to learn from their record is the one least likely to keep one. Vyuha exists to make the record effortless, exact, and theirs.</p>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>2</span></div>
+</section>
+
+<!-- 3 · Why now -->
+<section class="slide">
+  <div class="kicker">Why now</div>
+  <h1>The market is enormous, and the regulator itself says traders need a record.</h1>
+  <div class="grid cols3" style="flex:0 0 auto;">
+    <div class="card gold"><div class="big">≈ 22.9 cr</div><div class="lbl">demat accounts in India — CDSL 18.38 cr + NSDL 4.51 cr (May 2026)<sup>1</sup></div></div>
+    <div class="card gold"><div class="big">1.13 cr</div><div class="lbl">unique individual traders in equity F&amp;O over FY22–FY24<sup>2</sup>; ≈ 96 lakh F&amp;O clients at the top 13 brokers in FY25<sup>3</sup></div></div>
+    <div class="card gold"><div class="big">93% · 91%</div><div class="lbl">of individual F&amp;O traders lost money (FY22–FY24<sup>2</sup>; FY25<sup>3</sup>) — net losses ₹1.81 lakh cr over three years, ₹1.06 lakh cr in FY25 alone</div></div>
+  </div>
+  <div class="card teal" style="margin-top:20px;">
+    <p><strong style="color:#f8fafc;">What this means for a journal:</strong> SEBI's own finding is that most retail derivatives activity loses money after transaction costs. A journal does not change the odds — it is the instrument that lets a trader <em>see</em> their own costs, behaviour and mistakes. Vyuha makes no claim about outcomes; it makes the record exact.</p>
+  </div>
+  <div class="foot"><span class="src">1 Depository data as reported by Outlook Money, 16 Jun 2026 (NSDL 4.51 cr as of May 2026; CDSL 18.38 cr at May-end 2026). &nbsp;2 SEBI press release, 23 Sep 2024 — "93% of individual traders incurred losses in equity F&amp;O between FY22 and FY24". &nbsp;3 SEBI study on the equity derivatives segment, 7 Jul 2025 (as reported by PTI). · Vyuha · not investment advice</span><span>3</span></div>
+</section>
+
+<!-- 4 · The solution -->
+<section class="slide">
+  <div class="kicker">The solution</div>
+  <h1>A desktop journal that computes the truth and keeps it on the trader's machine.</h1>
+  <div class="grid cols2">
+    <div class="card teal">
+      <h2>Local-first by design</h2>
+      <ul>
+        <li>Windows desktop app. SQLite file in the user's app-data. No account, no cloud, no telemetry — no Vyuha server exists.</li>
+        <li>Works fully offline. Backup and restore are one file.</li>
+        <li>The core journal — recording, every importer, backups — is free and never gated.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>What ships today (v2.99.97)</h2>
+      <ul>
+        <li><strong>Import:</strong> 6 auto-detected broker formats (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money) + any CSV via a column mapper + 3 broker-API pulls (Kite Connect, Dhan, Angel One SmartAPI).</li>
+        <li><strong>Charges engine:</strong> STT/CTT, stamp duty, GST, exchange &amp; SEBI charges from a broker × segment × exchange rate table — within 0.69% of a real broker report across 92 verified rows.</li>
+        <li><strong>Analytics:</strong> expectancy, R-multiples, setups, mistakes, time-of-day, sector and theme lenses, options-seller journal, risk, staged positions, MTF.</li>
+        <li><strong>Tax pack:</strong> FY-wise P&amp;L, STCG/LTCG, speculative vs non-speculative, ITR-schedule export.</li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top:16px;">
+    <span class="tag">Index &amp; stock options</span><span class="tag">Intraday</span><span class="tag">Delivery</span><span class="tag">Equity MTF · 10,501 margins across 7 brokers</span><span class="tag">MCX commodities</span>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>4</span></div>
+</section>
+
+<!-- 5 · Product — dashboard -->
+<section class="slide">
+  <div class="kicker">Product · 1 of 4</div>
+  <h1 style="font-size:32px;margin-bottom:16px;">Dashboard — equity curve, daily calendar, the numbers that describe a book.</h1>
+  <div class="shot" style="flex:1;">
+    <img src="../../screenshots/dashboard.png" alt="Vyuha dashboard">
+    <div class="cap">Every figure is computed locally from the trader's own imported trades, net of computed charges. Nine skins, light/dark, print-ready.</div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>5</span></div>
+</section>
+
+<!-- 6 · Product — trades + staged -->
+<section class="slide">
+  <div class="kicker">Product · 2 of 4</div>
+  <h1 style="font-size:32px;margin-bottom:16px;">Trades ledger and staged positions — the record, exactly as it happened.</h1>
+  <div class="grid cols2">
+    <div class="shot"><img src="../../screenshots/trades.png" alt="Trades view"><div class="cap"><strong>Trades:</strong> saved views, filters, tags, setups and mistakes; legs are additive detail, the parent row always holds the aggregate.</div></div>
+    <div class="shot"><img src="../../screenshots/staged-position.png" alt="Staged position"><div class="cap"><strong>Staged positions:</strong> scale-in / scale-out with weighted-average pricing, FIFO quantity consumption and R frozen at the first entry.</div></div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>6</span></div>
+</section>
+
+<!-- 7 · Product — options + risk -->
+<section class="slide">
+  <div class="kicker">Product · 3 of 4</div>
+  <h1 style="font-size:32px;margin-bottom:16px;">Options-seller journal and risk — built for how Indian F&amp;O is actually traded.</h1>
+  <div class="grid cols2">
+    <div class="shot"><img src="../../screenshots/options-journal.png" alt="Options journal"><div class="cap"><strong>Options journal:</strong> strategies, strikes, expiries and premium captured per position; index and stock options.</div></div>
+    <div class="shot"><img src="../../screenshots/risk.png" alt="Risk"><div class="cap"><strong>Risk:</strong> position sizing, R-multiples and drawdown against the trader's own capital — never against a fabricated denominator.</div></div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>7</span></div>
+</section>
+
+<!-- 8 · Product — tax pack + charges -->
+<section class="slide">
+  <div class="kicker">Product · 4 of 4</div>
+  <h1 style="font-size:32px;margin-bottom:16px;">Tax pack and the charges engine — computed, not copied; reconcilable against a contract note.</h1>
+  <div class="grid cols2">
+    <div class="shot"><img src="../../screenshots/tax-pack.png" alt="Tax pack"><div class="cap"><strong>Tax pack:</strong> FY-wise realised P&amp;L, STCG/LTCG, speculative vs non-speculative, ITR schedule export — blank where a figure cannot be derived, never a 0.</div></div>
+    <div class="shot"><img src="../../screenshots/calculator.png" alt="Charges calculator"><div class="cap"><strong>Charges engine:</strong> STT/CTT, stamp duty, GST, exchange &amp; SEBI charges from a broker × segment × exchange <code class="mono">charge_config</code> table — <strong style="color:#f0b429;">within 0.69% of a real broker report across 92 verified rows</strong>.</div></div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>8</span></div>
+</section>
+
+<!-- 9 · Competition -->
+<section class="slide">
+  <div class="kicker">Competition</div>
+  <h1 style="font-size:32px;margin-bottom:14px;">Every journal in the market is a web app with a login. Vyuha is a desktop app with a file.</h1>
+  <table>
+    <thead><tr><th>Product</th><th>Market</th><th>Model</th><th>Cheapest paid</th><th>Data location</th><th>Indian brokers</th><th>Charges engine</th><th>Limits</th></tr></thead>
+    <tbody>
+      <tr><td>TradeZella</td><td>Global</td><td>Subscription</td><td>≈ ₹27,700/yr</td><td>Web-hosted</td><td>Zerodha listed as coming soon; CSV upload</td><td>Not stated</td><td>1 account on base tier</td></tr>
+      <tr><td>Edgewonk</td><td>Global</td><td>Subscription</td><td>≈ ₹17,300/yr</td><td>Web-hosted</td><td>Not stated</td><td>Not stated</td><td>Unlimited trades</td></tr>
+      <tr><td>TraderSync †</td><td>Global</td><td>Subscription</td><td>≈ ₹15,800/yr</td><td>Web-hosted</td><td>Not stated</td><td>Not stated</td><td>Feature caps per tier</td></tr>
+      <tr><td>Tradervue †</td><td>Global</td><td>Subscription</td><td>≈ ₹31,600/yr</td><td>Web-hosted</td><td>Not stated</td><td>Not stated</td><td>Limited free tier (stocks/ETFs)</td></tr>
+      <tr><td>TradesViz</td><td>Global</td><td>Subscription</td><td>₹12,600/yr (their own ₹ price)</td><td>Web-hosted</td><td>Yes — Zerodha and others</td><td>Not stated</td><td>Free: 3,000 executions/mo, stocks only</td></tr>
+      <tr><td>OneTradeJournal</td><td>India</td><td>Freemium subscription</td><td>₹1,999–2,499/yr</td><td>Web-hosted</td><td>Yes — 5 brokers</td><td>Parses charges from the tradebook</td><td>Not stated</td></tr>
+      <tr><td>TradeDiary</td><td>India</td><td>Freemium subscription</td><td>₹999/yr</td><td>Web-hosted</td><td>Yes — 4 brokers</td><td>Not stated</td><td>Free: 10 trades/mo</td></tr>
+      <tr class="vy"><td>Vyuha</td><td>India</td><td>Annual ₹9,999/yr · Lifetime ₹29,999 once</td><td>₹9,999/yr — or ₹29,999 ever</td><td>Your computer only — no server exists</td><td>6 auto-detected parsers + column mapper + 3 broker-API pulls</td><td>Computes STT/CTT, stamp duty, GST, exchange &amp; SEBI charges from configurable rates</td><td>Core journal never gated — no trade or account caps</td></tr>
+    </tbody>
+  </table>
+  <p class="note">Every cell read from the named product's public pages on 2026-08-15; ₹ conversions at ≈ ₹88/USD are approximate. † Pricing from third-party 2026 reviews — official page unreachable. "Not stated" means we could not verify it, not that the feature is absent. The same table ships on the Vyuha pricing page.</p>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>9</span></div>
+</section>
+
+<!-- 10 · Competitive advantages -->
+<section class="slide">
+  <div class="kicker">Competitive advantages</div>
+  <h1 style="font-size:32px;">Six claims — each is architecture or arithmetic, verifiable by reading the product. None is a promise about results.</h1>
+  <div class="grid cols3">
+    <div class="card"><h2>Three-year cost is a subtraction, not a subscription</h2><p>Lifetime is ₹29,999 once. Three years of the global journals runs ≈ ₹47,000–95,000 at their current prices.</p></div>
+    <div class="card"><h2>Your data lives on your machine</h2><p>There is no Vyuha server to send it to. Every competitor is a web app with a login; Vyuha is a desktop app with a file.</p></div>
+    <div class="card"><h2>The only lifetime licence in the table</h2><p>Every competitor listed is subscription-only. Vyuha is the one product you can stop paying for and keep.</p></div>
+    <div class="card"><h2>Indian statutory charges are computed, not copied</h2><p>STT/CTT, stamp duty, GST, exchange and SEBI charges from a broker × segment × exchange rate table — within 0.69% of a real broker report across 92 verified rows. Parsing charges a broker already reported is not computing them.</p></div>
+    <div class="card"><h2>The core journal is never metered</h2><p>Recording trades, every importer, backups — free forever, no monthly trade cap, no account cap. Free tiers elsewhere meter trades, executions or accounts.</p></div>
+    <div class="card"><h2>Works with no internet at all</h2><p>Journal on a train, in a dealing room, anywhere — the app never needs a connection to record or analyse.</p></div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>10</span></div>
+</section>
+
+<!-- 11 · Traction -->
+<section class="slide">
+  <div class="kicker">Traction</div>
+  <h1 style="font-size:32px;">Shipped, tested, and in traders' hands — a product, not a prototype.</h1>
+  <div class="grid cols3" style="flex:0 0 auto;">
+    <div class="card teal"><div class="big teal">57</div><div class="lbl">tagged releases (v1 → v2.99.97), Windows installer with a signed in-app updater</div></div>
+    <div class="card teal"><div class="big teal">1,756</div><div class="lbl">unit tests · 45 Playwright e2e flows · 13 of 13 load tests · CI runs typecheck, lint, tests and the production build on every push</div></div>
+    <div class="card teal"><div class="big teal">6 + 3</div><div class="lbl">broker formats auto-detected + broker-API pulls; 10,501 MTF margins across 7 brokers bundled</div></div>
+  </div>
+  <div class="grid cols2" style="margin-top:20px;">
+    <div class="card">
+      <h2>Go-to-market so far</h2>
+      <ul>
+        <li>Landing page live — <span class="mono" style="color:#2dd4bf;">thejesh-k463.github.io/VYUHA-LOG</span> (features, screenshots, pricing, comparison table).</li>
+        <li>First paid licences issued — <span class="ph">[[N licences]]</span> to date (owner to fill before upload).</li>
+        <li>Creator outreach under way: review keys for Indian trading educators and YouTubers; no commission, no script.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Engineering posture</h2>
+      <ul>
+        <li>Money stored as integer paise; charge rates live only in a configurable table; pure analytics modules with no DB and no UI, exhaustively unit-tested.</li>
+        <li>Broker parsers must see the broker's name before claiming a file — a cross-broker refusal matrix is pinned in tests.</li>
+        <li>Restore leaves the journal intact on any failure; account isolation is asserted against the schema.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>11</span></div>
+</section>
+
+<!-- 12 · Business model -->
+<section class="slide">
+  <div class="kicker">Business model</div>
+  <h1 style="font-size:32px;">Free core journal, paid analytics. Same reasoning as free equity delivery.</h1>
+  <div class="grid cols3" style="flex:0 0 auto;">
+    <div class="card"><div class="big teal">₹0</div><div class="lbl">Core journal — recording, every importer, backups. Free forever, never metered, never gated.</div></div>
+    <div class="card gold"><div class="big">₹9,999<span style="font-size:20px;color:#94a3b8;">/yr</span></div><div class="lbl">Pro — analytics, reports, tax pack, risk. Launch price; list ₹13,000/yr from 2027-01-01.</div></div>
+    <div class="card gold"><div class="big">₹29,999</div><div class="lbl">Lifetime — pay once, keep forever, all future updates. Launch price; list ₹35,999 from 2027-01-01.</div></div>
+  </div>
+  <div class="grid cols2" style="margin-top:20px;">
+    <div class="card">
+      <h2>How a sale works today</h2>
+      <ul>
+        <li>Every "Get Pro / Get Lifetime" button opens a WhatsApp checkout (+91 73936 73714) with a pre-filled message; a licence key is issued by hand.</li>
+        <li>Offline licence file — no licence server, no phone-home; a signed revocation list ships with the updater.</li>
+        <li>Next: a payment page, then in-app checkout.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Distribution</h2>
+      <ul>
+        <li>Creators and trading educators receive review keys — honest review, no commission, no script.</li>
+        <li>Zerodha traders are already the largest import source — via Console exports and their own Kite Connect apps.</li>
+        <li>Basic forecast: <span class="ph">[[owner to fill — units × price, no invented figures]]</span></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>12</span></div>
+</section>
+
+<!-- 13 · The ask -->
+<section class="slide">
+  <div class="kicker">The ask</div>
+  <h1 style="font-size:32px;">Make the Zerodha → Vyuha path one consent. Optionally, back the build.</h1>
+  <div class="grid cols2">
+    <div class="card teal">
+      <h2>1 · Partnership (the primary ask)</h2>
+      <ul>
+        <li>A <strong>consent-based, read-only</strong> data path from Zerodha to Vyuha — a Kite Connect read-scope partner app, or a signed Console export.</li>
+        <li>Data moves Zerodha → trader's machine and nowhere else. We do not want a copy; no orders, no writes.</li>
+        <li>Charges are computed, not copied — the trader can reconcile Vyuha against your contract note.</li>
+        <li>Today Zerodha traders do this by hand (download a file, or register and pay for a Kite Connect app). We are asking to make that one click.</li>
+      </ul>
+    </div>
+    <div class="card gold">
+      <h2>2 · Optional pre-seed</h2>
+      <p style="margin-bottom:10px;">Raise: <span class="ph">[[₹ amount]]</span> &nbsp;·&nbsp; Structure: <span class="ph">[[owner to fill]]</span></p>
+      <p style="margin-bottom:6px;"><strong style="color:#f8fafc;">What it funds, in order:</strong></p>
+      <ul>
+        <li>Broker integrations beyond file import — starting with the Zerodha read path above, then Dhan / Angel One parity.</li>
+        <li>Payment page and in-app checkout; onboarding for first-week retention.</li>
+        <li>Later: macOS and a web build (Windows-only today; macOS is not sold).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>13</span></div>
+</section>
+
+<!-- 14 · Team + contact -->
+<section class="slide">
+  <div class="kicker">Team &amp; contact</div>
+  <h1 style="font-size:32px;">Built solo, end to end — product, engine, desktop shell, tests, docs and sales.</h1>
+  <div class="grid cols2">
+    <div class="card">
+      <h2><span class="ph">[[YOUR NAME]]</span> — founder &amp; sole engineer</h2>
+      <p><span class="ph">[[one line: background, years trading / building, city]]</span></p>
+      <ul style="margin-top:12px;">
+        <li>Wrote every line: Next.js + Tauri desktop app, SQLite, the charges engine, parsers for six brokers, 1,756 unit tests and 45 e2e flows.</li>
+        <li>Ships from a public repo with CI on every push; 57 tagged releases.</li>
+      </ul>
+    </div>
+    <div class="card teal">
+      <h2>Reach us</h2>
+      <ul>
+        <li>WhatsApp &nbsp;<span class="mono" style="color:#f8fafc;">+91 73936 73714</span></li>
+        <li>Email &nbsp;<span class="ph">[[EMAIL]]</span></li>
+        <li>Landing page &nbsp;<span class="mono" style="color:#2dd4bf;">https://thejesh-k463.github.io/VYUHA-LOG/</span></li>
+        <li>Repository &nbsp;<span class="mono" style="color:#2dd4bf;">https://github.com/Thejesh-k463/VYUHA-LOG</span></li>
+      </ul>
+      <p class="note">Vyuha is a record-keeping and analytics tool. It does not give investment advice, signals or recommendations, and makes no claim about trading outcomes.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Vyuha · local-first trade journal · not investment advice</span><span>14</span></div>
+</section>
+
+</body>
+</html>

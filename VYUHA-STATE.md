@@ -75,7 +75,11 @@ assertions); repo-wide staleness audit done. New owner kits: `docs/owner/RAINMAT
 `docs/owner/CLIENT_FEEDBACK_FORM.md` (24-question client form spec), Zerodha contact map in
 `ZERODHA_PROPOSAL.md` §0 (talk@rainmatter.com is the Kite Connect business address). GitHub
 capacity incidents (Aug 2026) assessed: no code risk; mitigations = local repo + release copies +
-key backup; a mirror remote is optional.
+key backup; a mirror remote is optional. Follow-up 2026-08-19: `docs/owner/RAINMATTER_DECK.pdf` built (14 slides,
+1.15 MB, `docs/owner/pitch-deck/deck.html` + `build-deck.mjs`; owner placeholders [[N licences]], [[₹ amount]],
+[[YOUR NAME]]/[[EMAIL]] remain); `docs/owner/forms/client-feedback-form.gs` creates the client Google Form;
+`npm run mirror:push` / `npm run release:archive -- <dir>` + `docs/owner/RELEASE_RESILIENCE.md` (owner must still
+create the mirror repo, run the archive, and run `license-backup.mjs`).
 
 **v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
 Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing

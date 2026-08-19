@@ -70,7 +70,8 @@ The installer is **not** code-signed (a recorded decision), and SmartScreen
 reputation accrues **per file hash** — so every release starts cold no matter
 how many people installed the last one. At this project's release cadence that
 means essentially every buyer meets a cold warning. Two free mitigations, both
-of which must happen *after* the release is public:
+of which must happen *after* the release is public. (And before either: `npm run mirror:push` +
+`npm run release:archive -- <drive>` — see `RELEASE_RESILIENCE.md`.)
 
 1. **`npm run winget:manifest`** → then
    `wingetcreate submit --token <gh-token> release-packages/winget/<version>`.
@@ -130,6 +131,8 @@ Full operational detail: [`LICENSE_OPERATIONS.md`](LICENSE_OPERATIONS.md).
 | [`HOW_TO_EDIT_SALES_ASSETS.md`](HOW_TO_EDIT_SALES_ASSETS.md) | Editing the landing page and brochure in `docs/sales/` |
 | [`CODE_SIGNING.md`](CODE_SIGNING.md) | Updater signing, and what the guards enforce |
 | [`CREATOR_OUTREACH.md`](CREATOR_OUTREACH.md) | Creator/influencer proposal (WhatsApp, email, X), creator FAQ, review-key runbook — free lifetime key only |
+| [`RELEASE_RESILIENCE.md`](RELEASE_RESILIENCE.md) | If GitHub is down: what fails open, and the three habits (mirror push, release archive, encrypted key backup) |
+| [`forms/client-feedback-form.gs`](forms/client-feedback-form.gs) | Apps Script that creates the client feedback Google Form from CLIENT_FEEDBACK_FORM.md in one run |
 | [`CLIENT_FEEDBACK_FORM.md`](CLIENT_FEEDBACK_FORM.md) | The 24-question client Google Form spec (who/how/what matters/price/consent) and setup notes |
 | [`RAINMATTER_APPLICATION.md`](RAINMATTER_APPLICATION.md) | Draft answers for Rainmatter's "Application for Startups" Google Form (+ the pitch-deck spec it requires) |
 | [`ZERODHA_PROPOSAL.md`](ZERODHA_PROPOSAL.md) | Zerodha integration proposal — email to Kite Connect/partnerships + X thread/DM to the Kamaths |
