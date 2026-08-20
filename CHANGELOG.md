@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.99.99 — Angel One's live pull works again; it had been broken since v2.99.80
+
+**Angel One's live API pull was broken in every shipped build from v2.99.80 to
+v2.99.98, including the published v2.99.98.** No entry in this changelog said so
+until this one. Pressing **Pull** on an Angel One connection returned "The saved
+credentials cannot be read: … Re-enter the API key and access token" and never
+reached the network. Zerodha and Dhan pulls were unaffected, as was every file
+import and every report.
+
+- **The cause.** The vault stores each secret encrypted. Angel One is the only
+  broker that collects no access token — it mints the day's login code from your
+  TOTP secret — so the app stored an *encrypted empty string*. AES-GCM over an
+  empty plaintext yields a zero-length ciphertext, producing `venc:1:<iv>::<tag>`,
+  which `parseVaultString` correctly refuses as malformed. The pull's guard
+  required a readable token **before** dispatching to any broker, so it refused
+  on a token this broker never asks for.
+- **The fix.** The guard now requires a token only where `API_BROKERS` says one is
+  collected (`!keyRead.ok || (needsToken && !tokenRead.ok)`), and the Kite/Dhan
+  branches take an empty string when there is no token to read. **The vault format
+  is deliberately unchanged** — refusing to read an empty ciphertext is right; the
+  caller was wrong to demand a secret it never collected. `tests/vault.test.ts`
+  now pins the property, so the next caller meets this trap in a test.
+- **Nothing to re-enter.** Saved Angel One credentials were never wrong and were
+  never lost. Install this build and press Pull.
+- **In-app text that had drifted is now true.** The Help Desk said "Eight brokers,
+  auto-detected" (six have parsers) and that MTF is never read from a file — Angel
+  One's tax P&L carries an explicit MTF Qty column and Vyuha believes it rather
+  than asking. The Dashboard's empty state said five brokers. The import column
+  mapper still promised plain FIFO after the pairing engine moved to
+  same-day-netting-first.
+- **The guards that let those rot are closed.** `tests/readme-claims.test.ts`
+  compared its six figures only to each other, so 1,858/128 stayed green against a
+  suite at 1,920/131; it now reads the `tests/` and `screenshots/` counts off disk.
+  `docs/owner/DOC_AUDIT.md` gains a row that forces a check that every advertised
+  broker-API pull actually works **in the build being shipped** — nothing in CI
+  asserts that a broker API works, which is how this survived from v2.99.80 to
+  v2.99.98.
+
 ## v2.99.98 — tradebooks become the trades you made, checked against the broker's own statement
 
 The first live Paytm Money and Zerodha tradebooks exposed that both parsers

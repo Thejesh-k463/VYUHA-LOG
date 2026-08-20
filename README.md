@@ -28,7 +28,22 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v2.99.98** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v2.99.99** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.99 — Angel One's live pull works again; it had been refusing since v2.99.80.** Pressing
+> **Pull** on an Angel One connection answered *"the saved credentials cannot be read"* and never
+> reached the network — on every shipped build from v2.99.80 up to and including the published
+> v2.99.98. Angel One is the only broker that collects **no access token** (it mints the day's login
+> code from your enrolled TOTP secret), so the vault held an *encrypted empty string*, whose
+> zero-length ciphertext `parseVaultString` correctly rejects as malformed — and the pull's guard
+> demanded a readable token **before** dispatching to any broker, refusing on one Angel One never
+> asks for. The guard now requires a token only where the broker table says one is collected; the
+> vault format is unchanged, because refusing an empty ciphertext is the right behaviour, and
+> `tests/vault.test.ts` pins the trap. **Nothing needs re-entering.** Also shipped: the Help Desk's
+> "eight brokers", the Dashboard's "five brokers" and the column mapper's plain-FIFO description
+> now match the code, and `tests/readme-claims.test.ts` reads its test and screenshot counts off
+> disk instead of comparing its six figures only to each other — which is how 1,858/128 stayed
+> green against a suite at 1,920/131.
 >
 > **v2.99.98 — Tradebooks import as the trades you made, verified against a real broker statement.** Zerodha and Paytm Money
 > tradebooks are paired **per scrip and day — same-day buys and sells net into one intraday trade first, the rest FIFO** —

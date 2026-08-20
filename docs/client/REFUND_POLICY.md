@@ -1,12 +1,6 @@
 # Refund policy
 
-> ⚠️ **OWNER: confirm these terms before sending this to a buyer.** This is a
-> conservative draft written to match how Vyuha is actually sold (a full 7-day
-> trial before any money changes hands). The numbers — the 7-day window, the
-> "final after that" line — are commercial decisions, not technical ones.
-> Change them here and nowhere else; this file ships inside the client ZIP.
-
-**Last updated:** 2026-08-15
+**Last updated:** 2026-08-20 · **Applies to:** Vyuha v2.99.99 and later
 
 ## Try it first — that is the point of the trial
 

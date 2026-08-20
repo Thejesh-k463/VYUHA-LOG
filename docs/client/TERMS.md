@@ -1,12 +1,6 @@
 # Terms of use
 
-> ⚠️ **OWNER: confirm before sending to a buyer.** This is a short, plain-language
-> draft covering the licence grant, the disclaimers Vyuha's own screens already
-> make, and a liability cap. It is written to be honest rather than to be
-> maximally protective, and it is **not legal advice** — have it read by someone
-> qualified before you sell at volume. This file ships inside the client ZIP.
-
-**Last updated:** 2026-08-20 · **Applies to:** Vyuha v2.99.98 and later
+**Last updated:** 2026-08-20 · **Applies to:** Vyuha v2.99.99 and later
 
 ## 1. What you are buying
 

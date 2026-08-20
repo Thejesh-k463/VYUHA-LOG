@@ -3,6 +3,14 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.99
+
+| Upgrade | What it gives you |
+|---|---|
+| **Angel One's live pull works again** | If your Angel One API pull said the saved credentials could not be read, it now works. Angel One is the only broker that never asks you for an access token — it mints the day's login code from your TOTP secret — and the check guarding the pull was demanding that token anyway, so it refused before ever reaching Angel One. It had been doing that on every version from **v2.99.80** up to and including v2.99.98. Nothing about your saved credentials was wrong and nothing needs re-entering: install this build and press **Pull** again. |
+| **Zerodha, Dhan and file imports were never affected** | This was only ever the Angel One live-pull path. Every file import, every other broker and every report behaved exactly as documented throughout. |
+| **In-app text that had drifted now matches the app** | The Help Desk said eight brokers are auto-detected (six have parsers) and that MTF is never read from a file — Angel One's tax P&L states MTF quantity outright, and Vyuha believes it rather than guessing. The Dashboard's empty state said five brokers. The column mapper still described plain FIFO after the pairing engine moved to same-day-netting-first. All four now say what actually happens. |
+
 ## New in v2.99.98
 
 | Upgrade | What it gives you |
@@ -43,7 +51,7 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 | **Lifetime carries the roadmap** | Lifetime includes every future upgrade at no extra cost — exciting, useful features are on the roadmap. |
 | **This deck caught up with the product** | The getting-started deck now names all six brokers, the column mapper and the three broker-API pulls, lists the full Pro screen set (Lenses included), and carries the SmartScreen note next to the install steps. |
 | **The refreshed mark, everywhere** | The landing page, brochure and this deck now carry the current Vyuha mark — the older flat tile is retired. |
-| **Windows-only, said plainly** | This package sells and supports the Windows desktop app. A macOS edition will be offered separately later. |
+| **Windows-only, said plainly** | This package sells and supports the Windows desktop app. |
 | **The refund policy states its edges** | A closing note now says refunds beyond the two named exceptions are at the owner's discretion, and that verified tampering or replication of Vyuha forfeits them. |
 
 ## New in v2.99.94
@@ -67,12 +75,6 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 | **A staged position can't be left half-updated** | Rebuilding a tranche ladder wrote each tranche and then the headline figures separately. An interruption between them left the two disagreeing, with nothing on screen to show for it. It is now a single all-or-nothing write. |
 | **Import preview stops looking like it hung** | On a 25,000-trade book, previewing a 5,000-row import took about 8 seconds with the app frozen throughout. Now roughly 20 ms. |
 | **Data Quality opens instantly again** | If your traded symbols had no price marks — an F&O book against equity-only bhavcopy data — the page took about 10 seconds every time. Now under a third of a second. Prices written with different capitalisation are also no longer treated as different symbols, which could report a fresh price as stale. |
-
-## New in v2.99.92
-
-| Upgrade | What it gives you |
-|---|---|
-| **This is the Windows build of v2.99.91** | v2.99.91 never shipped a Windows installer — our build for it failed after the Mac builds had already gone out. Nothing about the app changed since; everything listed under v2.99.91 below arrives here. If you are on Windows, this is the version to install. |
 
 ## New in v2.99.91
 
