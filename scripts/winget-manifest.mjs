@@ -26,13 +26,27 @@
  * github.com/microsoft/winget-pkgs, which is a human-reviewed external repo.
  * This writes correct manifests and prints the exact command; you press send.
  *
+ * ── The hash is NOT the local build's ───────────────────────────────────────
+ *
+ * This script used to hash the locally built installer, on the stated grounds
+ * that it was "identical, since the same build produced both". IT IS NOT.
+ * .github/workflows/release.yml REBUILDS the installer on its own runners via
+ * tauri-action; `npm run desktop:build` produces a different binary that goes
+ * into the client ZIP. Measured 2026-08-20: the v2.99.98 release asset is
+ * 34,857,616 B against a local 34,857,374 B, and v2.99.99 is 34,861,983 B
+ * against a local 34,860,149 B. Different bytes, therefore different SHA-256.
+ *
+ * Since InstallerUrl points at the GITHUB asset, hashing the local file emits a
+ * manifest whose hash cannot match its own URL. winget-pkgs validation
+ * downloads that URL and verifies the hash, so the PR is rejected — and if one
+ * ever slipped through, `winget install` would fail for every user. `--sha` is
+ * therefore REQUIRED, and must be the hash of the PUBLISHED asset.
+ *
  * Usage:
- *   node scripts/winget-manifest.mjs                 # uses the local built installer
- *   node scripts/winget-manifest.mjs --sha <SHA256>  # if you only have the hash
- *   node scripts/winget-manifest.mjs --out <dir>
+ *   node scripts/winget-manifest.mjs --sha <SHA256>  # REQUIRED — see below
+ *   node scripts/winget-manifest.mjs --sha <SHA256> --out <dir>
  */
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -52,18 +66,24 @@ const REPO = "Thejesh-k463/VYUHA-LOG";
 const installerName = `Vyuha_${version}_x64-setup.exe`;
 const installerUrl = `https://github.com/${REPO}/releases/download/v${version}/${installerName}`;
 
-// The hash must be of the EXACT bytes published to the release. Prefer the
-// local artefact (identical, since the same build produced both) but allow a
-// hash to be passed for a release built elsewhere.
-let sha = opt("--sha")?.toUpperCase();
+// The hash must be of the EXACT bytes PUBLISHED to the release, which are NOT
+// the bytes of the local build — see the header. There is deliberately no
+// local-file fallback: hashing whatever happens to be on this disk is how you
+// get a manifest that fails validation, and a wrong hash is worse than a
+// missing one because it looks finished.
+const sha = opt("--sha")?.toUpperCase();
 if (!sha) {
-  const local = path.join(root, "src-tauri", "target", "release", "bundle", "nsis", installerName);
-  if (!existsSync(local)) {
-    console.error(`No installer at ${local}, and no --sha given.`);
-    console.error(`Run: npm run desktop:build   (or pass --sha <SHA256> from the release page)`);
-    process.exit(1);
-  }
-  sha = createHash("sha256").update(readFileSync(local)).digest("hex").toUpperCase();
+  console.error(`--sha is required: the SHA-256 of the PUBLISHED ${installerName}.`);
+  console.error(``);
+  console.error(`  It is NOT the hash of your local build — the release workflow rebuilds`);
+  console.error(`  the installer on its own runners, so the two binaries differ.`);
+  console.error(``);
+  console.error(`  Get it with:`);
+  console.error(`    gh release download v${version} --repo ${REPO} --pattern ${installerName} --dir .`);
+  console.error(`    sha256sum ${installerName}`);
+  console.error(``);
+  console.error(`  Then: npm run winget:manifest -- --sha <SHA256>`);
+  process.exit(1);
 }
 if (!/^[0-9A-F]{64}$/.test(sha)) {
   console.error(`--sha must be 64 hex characters (got ${sha.length}).`);

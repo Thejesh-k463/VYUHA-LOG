@@ -4,13 +4,32 @@ The installer is unsigned (owner decision, `CODE_SIGNING.md`). These two free
 actions are the whole mitigation, and each one is **per release** — SmartScreen
 reputation accrues per file hash, and every build is a new hash.
 
+## Which file? — the two actions target DIFFERENT binaries
+
+**There are two installers per release and they are not the same file.**
+`.github/workflows/release.yml` rebuilds the installer on GitHub's runners via
+`tauri-action`; `npm run desktop:build` builds a separate one locally, and that
+local one is what `npm run client:package` zips and what you mail a buyer.
+Measured 2026-08-20 on v2.99.99: the release asset is **34,861,983 B / SHA-256
+`46A3842A…4343`**, the local/ZIP build is **34,860,149 B / SHA-256
+`27D8695E…3004`**. Different bytes, different hash, and SmartScreen reputation
+is keyed to the hash — so **the two binaries earn reputation separately.**
+
+| Action | Which binary | Why |
+|---|---|---|
+| **winget** (Part 1) | the **GitHub release asset** | The manifest's `InstallerUrl` points at the release, and the validation bot downloads that URL and hashes it. The manifest must carry the PUBLISHED hash. |
+| **WDSI** (Part 2) | the installer **inside the client ZIP** | Delivery is a mailed/WhatsApped ZIP, so this is the binary a paying buyer actually double-clicks. Submitting the GitHub one spends the submission on a file no buyer runs. |
+
+If you ever also send buyers the GitHub link, submit both — one WDSI submission
+per hash a customer might execute.
+
 ## Do this on release day
 
 1. Confirm the GitHub release `v<version>` is **public** with `Vyuha_<version>_x64-setup.exe` attached, and `npm run release:verify` has passed.
-2. `npm run winget:manifest` (or `-- --sha <SHA256>` from the release page) → `release-packages/winget/<version>/`.
+2. Get the PUBLISHED asset's hash, then `npm run winget:manifest -- --sha <SHA256>` → `release-packages/winget/<version>/`. `--sha` is **required** — the script no longer hashes your local build, because that is a different binary (see *Which file?* above).
 3. First release ever: `wingetcreate submit --token <gh-token> release-packages/winget/<version>`. Every later release: `wingetcreate update ThejeshK.Vyuha --version <version> --urls <installer-url> --submit --token <gh-token>`.
 4. Watch the PR on `microsoft/winget-pkgs` until the validation bot goes green (minutes) and a reviewer merges (first time: days; updates: usually same day).
-5. <https://www.microsoft.com/en-us/wdsi/filesubmission> → Software developer → upload the `.exe` → "incorrectly detected" → submit. Keep the submission ID.
+5. <https://www.microsoft.com/en-us/wdsi/filesubmission> → Software developer → upload **the `.exe` extracted from `release-packages/Vyuha_<version>_Client_Package.zip`** (the binary buyers run — NOT the release asset) → "incorrectly detected" → submit. Keep the submission ID.
 6. On another PC or a clean VM, download the `.exe` in a browser and note what SmartScreen shows; re-check in a week.
 
 ---
@@ -29,9 +48,15 @@ reputation accrues per file hash, and every build is a new hash.
 ### Step 1 — generate the manifests
 
 ```
-npm run winget:manifest                    # hashes the local build at src-tauri/target/release/bundle/nsis/
-npm run winget:manifest -- --sha <SHA256>  # if the release was built by CI and you only have the hash
+gh release download v<version> --repo Thejesh-k463/VYUHA-LOG --pattern Vyuha_<version>_x64-setup.exe --dir .
+sha256sum Vyuha_<version>_x64-setup.exe
+npm run winget:manifest -- --sha <SHA256>
 ```
+
+Running it without `--sha` now exits with that same recipe. It used to hash the
+local build and claim the two were "identical, since the same build produced
+both" — they are not, and the resulting manifest would have failed validation
+because its hash could not match its own URL.
 
 Output: `release-packages/winget/<version>/` containing three YAML files —
 `ThejeshK.Vyuha.yaml` (version manifest), `ThejeshK.Vyuha.installer.yaml`
@@ -39,10 +64,11 @@ Output: `release-packages/winget/<version>/` containing three YAML files —
 and `ThejeshK.Vyuha.locale.en-US.yaml` (publisher, description, tags, License
 `Proprietary`). Manifest schema version 1.6.0. Do not hand-edit — regenerate.
 
-To get the SHA-256 for `--sha`: on the release page GitHub shows a digest per
-asset, or `certutil -hashfile Vyuha_<version>_x64-setup.exe SHA256` on a
-downloaded copy. It must be the exact bytes on the release — a rebuilt installer
-has a different hash and validation fails.
+To get the SHA-256 for `--sha`: download the asset and hash it (`sha256sum`, or
+`certutil -hashfile Vyuha_<version>_x64-setup.exe SHA256` on Windows), or read
+the digest GitHub shows per asset on the release page. **It must be the bytes on
+the RELEASE, never your local build** — those differ every time, and validation
+downloads the URL and checks.
 
 ### Step 2 — validate locally (optional but cheap)
 
@@ -130,9 +156,9 @@ Microsoft account is fine.
 **Steps:**
 
 1. Sign in → **"Software developer"** (not "Home customer" or "Enterprise") — this is the path whose reviewers handle publisher-side false positives.
-2. Upload `Vyuha_<version>_x64-setup.exe` (up to 500 MB; ours is ~35 MB).
+2. Upload the `Vyuha_<version>_x64-setup.exe` **extracted from the client ZIP** (up to 500 MB; ours is ~35 MB). This is the binary buyers run; the release asset is a different file with a different hash, and reputation does not transfer between them — see *Which file?* at the top.
 3. **What do you believe this file is?** → **"Incorrectly detected as malware/malicious"** (false positive). If the form asks for the detection name and Defender has not actually flagged it, write "no detection — pre-emptive reputation submission for a new unsigned release" — the reviewers accept that.
-4. Company / product: Publisher **Thejesh K**, product **Vyuha**, version `<version>`, and paste the GitHub release URL as the source of the file. Say it is a NSIS installer built by GitHub Actions from a public repository, unsigned.
+4. Company / product: Publisher **Thejesh K**, product **Vyuha**, version `<version>`, and paste the GitHub release URL so a reviewer can see the project. Say it is a NSIS installer built from a public repository, unsigned, and delivered to customers as a ZIP — note that the uploaded file is the locally built copy, which differs byte-for-byte from the release asset because the release is rebuilt in CI.
 5. Submit. You get a submission ID and an email; keep both with the release notes.
 
 **What to expect back:** an automated result in minutes to hours ("no threats
