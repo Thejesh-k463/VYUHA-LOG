@@ -26,24 +26,28 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-20
+## 2. Current state — verified 2026-08-20 (v2.99.99 release session)
 
 | | |
 |---|---|
-| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is FOUR commits AHEAD of the tag** (`af228b5` + `f2c375a` + `d0a2f0f` + `6c232a0`, the OpenAlgo opt-in wave and its state updates): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
+| Version | **v2.99.99** — committed `e8198c2`, tagged `v2.99.99` (annotated tag `51b664d` → `e8198c2`), pushed 2026-08-20. Cut to ship the **Angel One live-pull fix**, which was broken in every build from v2.99.80 through the published v2.99.98. The OpenAlgo opt-in wave (`af228b5`…`b405ad9`) rides along **switched OFF and named in no buyer-facing document** — owner's standing decision: in-app only until a live pull is reconciled against a contract note |
 | Branch | `main`, clean apart from this file |
-| CI | **green on `6e2dd80` — all 5 jobs incl. Windows — BEFORE tagging** (run 32296904204; the ubuntu e2e job hung twice at the Playwright browser-install step — GitHub infra — and passed on a rerun of that job alone); Release workflow 32301883296 — see GitHub release row |
-| GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish". **PUBLISHED by the owner 2026-08-20 03:23Z and is now `releases/latest`.** Its assets are built from `6e2dd80` — the commits after the tag are NOT in them, so the Angel One pull fix reaches nobody until v2.99.99 ships. Never re-upload assets onto a published tag: the updater compares versions, so an existing install would never be offered the same version again, and SmartScreen reputation and the ZIP's CHECKSUMS.txt are both per file hash |
-| Client ZIP | `release-packages/Vyuha_2.99.98_Client_Package.zip` (33.9 MB), installer SHA-256 `6CE6BFDB…9A8D36`; ZIP's `WHATS_NEW.md` first heading, `TERMS`/`PRIVACY` "Applies to" and both deck chips = v2.99.98 (opened and checked) |
-| Unit tests | **1,920 passed / 0 failed** across 131 files (`npm run verify` EXIT 0 incl. build, 2026-08-20, on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
-| e2e | **45 passed / 0 failed** (2.1 min, `npx playwright test`, 2026-08-20, before the bump) |
-| Installer | `Vyuha_2.99.98_x64-setup.exe` (34,857,374 B) + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 01:31 IST 2026-08-20; bundle carries the `FIFO per symbol + day` and `numeric scrip code` markers |
-| Previous | v2.99.97 published 2026-08-15 13:28Z (superseded as `releases/latest` by v2.99.98 on 2026-08-20) |
+| CI | **green on the release commit `e8198c2` — all 5 jobs — BEFORE tagging** (run 32380322684, conclusion `success`): Lint/typecheck/unit/build, **Windows install + tests**, Playwright e2e ubuntu, Playwright e2e macOS-14, desktop bundle macOS. **No rerun needed** — the ubuntu Playwright browser-install step, which hung twice on earlier releases, completed clean this time |
+| GitHub release (v2.99.99) | Release workflow **32380767740** triggered by the tag; it REBUILDS the installer on its own runners and creates a **DRAFT** — **publishing is the owner's, not done here.** After it succeeds run `npm run release:verify v2.99.99` (it needs an existing tag, so it cannot run before this point) and confirm all `.sig` = `4FF85F3BBE1DA21D`. Still to do, owner only: publish the draft, WDSI + winget, install on a non-build machine, run a live Angel One pull. **Do NOT create or re-publish the `revocations` prerelease — it exists and must stay a prerelease.** |
+| GitHub release (v2.99.98) | `v2.99.98` was a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish". **PUBLISHED by the owner 2026-08-20 03:23Z and is now `releases/latest`.** Its assets are built from `6e2dd80` — the commits after the tag are NOT in them, so the Angel One pull fix reaches nobody until v2.99.99 ships. Never re-upload assets onto a published tag: the updater compares versions, so an existing install would never be offered the same version again, and SmartScreen reputation and the ZIP's CHECKSUMS.txt are both per file hash |
+| Client ZIP | `release-packages/Vyuha_2.99.99_Client_Package.zip` — 10 entries, installer SHA-256 `27D8695E…B23004`. **Extracted and read:** `WHATS_NEW.md` first heading `## New in v2.99.99`; `TERMS`/`PRIVACY`/**`REFUND_POLICY`** all `Applies to: Vyuha v2.99.99 and later` dated 2026-08-20 (REFUND carries that line for the FIRST time); deck contains exactly one version string, `v2.99.99`; grep for `OWNER:`, `macos` and `pine script|tradingview` over the extracted ZIP all return **nothing**; the packed `.sig` decodes to `4FF85F3BBE1DA21D`. **This installer is NOT the GitHub release asset** — see the 2026-08-20 DECISIONS entry on the two binaries |
+| Unit tests | **1,920 passed / 0 failed** across 131 files — `npm run verify` EXIT 0 **twice on 2026-08-20**: once on `b405ad9` as the pre-bump gate and again at `vyuha@2.99.99` after the doc edits and bump. (Earlier context: on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
+| e2e | **NOT run locally this session.** The evidence for v2.99.99 is CI run 32380322684, where BOTH Playwright suites (ubuntu + macOS-14) passed on the release commit. Last local run was 45/45 on 2026-08-20 before the OpenAlgo wave |
+| Installer | `Vyuha_2.99.99_x64-setup.exe` **34,860,149 B**, SHA-256 `27D8695E863D3426DE4016C86002C6A148E2F1A1E1457838A11835621BB23004`; MSI `Vyuha_2.99.99_x64_en-US.msi` 57,963,645 B, SHA-256 `068DCA47…57FEC4`. Both `.sig` key ids decode to **`4FF85F3BBE1DA21D`**, byte-identical to `tauri.conf.json` `plugins.updater.pubkey` (decoded from the local `.sig`, NOT trusted from the build's "✓ signed" line). **Freshness proven two ways:** `BUILD_ID` changed `2wW9bxykXfHZipbZHTgP3` → **`KOKnpdVgOsrtwbhlnjiEn`** (19:50 IST 2026-08-20), and the bundle carries `openalgo` (16 files) + `Integrations (advanced)` (3 chunks incl. a client chunk). **The Angel One fix is present in the built server chunk**, minified as `h=L[l]?.needsToken??!0; if(!d.ok||h&&!p.ok)` with `angelone` at `needsToken:!1` |
+| Previous | v2.99.98 published 2026-08-20 03:23Z and was `releases/latest` until v2.99.99 is published. **Its binary still carries the broken Angel One pull** (built from `6e2dd80`) |
 
-**UNRELEASED on `main` (verified 2026-08-20, commit `af228b5`) — OpenAlgo opt-in integration.**
-Owner decision: build it, commit it, **hold the release** until a live pull is reconciled against a
-contract note. No version bump, no tag, no installer, no client ZIP, and **nothing in any
-buyer-facing document** (landing page, brochure, deck, client docs all untouched by design).
+**SHIPPED IN v2.99.99, SWITCHED OFF — OpenAlgo opt-in integration** (was "unreleased on `main`"
+until 2026-08-20; the code is unchanged from `af228b5`, only its release status moved). It rode
+along with the Angel One fix because holding it back would have meant holding the fix too. It is
+**off on every install**, invisible until enabled, and **named in NO buyer-facing document** —
+landing page, brochure, deck, client docs, CHANGELOG and README are all deliberately silent
+(owner's call, 2026-08-20). The hold that remains is on the CLAIM, not the code: no copy may say
+OpenAlgo works until a live pull is reconciled against a contract note.
 
 *What it is:* a fourth broker-API import path through **OpenAlgo** — third-party, self-hosted,
 AGPL-3.0, fronting 35 Indian brokers, of which **7 of Vyuha's 8** (all but Sahi). It gives Groww,
@@ -69,8 +73,11 @@ integration or inherits someone's consent** (pinned by a forged-envelope test).
    produces `venc:1:<iv>::<tag>`, whose empty ciphertext segment `parseVaultString` rejects, and the
    pull refused on `!tokenRead.ok` before dispatching. Angel One is the only shipped
    `needsToken:false` broker. The guard now checks a token only where one is collected;
-   `tests/vault.test.ts` pins the trap. **This fix is unreleased** — it reaches buyers only when the
-   next release ships, and the README currently advertises that pull as working.
+   `tests/vault.test.ts` pins the trap. **The fix SHIPS IN v2.99.99** (tagged 2026-08-20) — verified
+   in the source at `app/api/import/broker/route.ts:260` and in the built bundle, where the minified
+   guard reads `h=L[l]?.needsToken??!0; if(!d.ok||h&&!p.ok)` with `angelone` at `needsToken:!1`.
+   **Still never exercised against the live broker** — that pull is the owner's to run (DOC_AUDIT
+   row 18). Until the v2.99.99 draft is PUBLISHED, every buyer still has the broken build.
 2. **My own regression, caught by the suite:** `openalgo_enabled` is the first NOT NULL column in the
    backup redaction list, and redaction wrote `null` → the restore INSERT violated the constraint and
    `restoreDatabase` returned `{ok:false}` (9 backup round-trip tests). Fixed with
@@ -156,7 +163,7 @@ create the mirror repo, run the archive, and run `license-backup.mjs`). Form scr
 emails the owner per submission with running plan totals, and has `vyuhaSummary()` (not executed here — one test
 submission by the owner will prove it).
 
-**Owner's open to-dos (as of 2026-08-20):** **cut v2.99.99 so the Angel One pull fix reaches buyers** (broken for every user since v2.99.80, still broken in the published v2.99.98) · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
+**Owner's open to-dos (as of 2026-08-20):** **publish the v2.99.99 draft** — it is built, tagged and CI-green; until it is published the Angel One pull stays broken for every buyer · **run a live Angel One pull on the v2.99.99 build** (DOC_AUDIT row 18; the fix is verified in the code and in the built bundle, never against the broker) · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
 email talk@rainmatter.com + X thread (ZERODHA_PROPOSAL.md) · run the Apps Script, send the form link with each sale ·
 create the mirror repo + `npm run mirror:push` · `npm run release:archive` to a drive · `license-backup.mjs` ·
 refund/terms sign-off · winget + WDSI submissions · supply the broker **API client details** (the Paytm/Zerodha/Upstox FILES were delivered and verified 2026-08-20; only the API credentials remain).
@@ -197,10 +204,12 @@ Code volume (excluding `src-tauri` vendored Rust deps):
 | `e2e/` | 18 | 1.6 |
 
 Product surface: **43 screens**, 7 brokers' MTF lists (10,501 per-stock margins bundled),
-6 auto-detected broker importers + PDF + generic column mapper, and **3 live broker APIs in the
-shipped v2.99.98 binary** (Kite, Dhan, Angel One) — `main` carries a 4th, OpenAlgo, off by default
-and unreleased. NOTE: Angel One's pull is BROKEN in every shipped build since v2.99.80; fixed on
-`main`, ships in v2.99.99.
+6 auto-detected broker importers + PDF + generic column mapper, and **3 live broker APIs advertised
+to buyers** (Kite, Dhan, Angel One) — plus a 4th, OpenAlgo, which ships in the v2.99.99 binary
+**off by default and undocumented outside the app**. Angel One's pull was BROKEN in every shipped
+build from v2.99.80 to v2.99.98; **fixed in v2.99.99** — verified in the source
+(`app/api/import/broker/route.ts:260`) and in the built bundle, but **never yet against the live
+broker**.
 
 ---
 
@@ -426,6 +435,9 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
 
 - ✅ **v2.99.98 is PUBLISHED and is `releases/latest`** (2026-08-20 03:23Z; v2.99.95/.96/.97 all published before it). Publishing stays
   the owner's per-release decision. Older drafts still unpublished: v2.99.75/.55/.50/.40/.30.
+- ⏳ **v2.99.99 is TAGGED and its draft is building** (tag `51b664d` → commit `e8198c2`, CI run
+  32380322684 green on all 5 jobs before the tag; Release workflow 32380767740). **Not published —
+  that is the owner's click.** Until it is, every buyer still has the broken Angel One pull.
 - ✅ **The `revocations` prerelease EXISTS** (created 2026-08-12, `prerelease: true`, one
   asset `revocations.json`) — verified 2026-08-15; do not create it again.
 - **Owner answers 2026-08-15:** delivery link = mail/WhatsApp, owner sends the package after
@@ -512,9 +524,14 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
 
 ### 8.5 Open questions the owner never answered
 
-Refund-policy and terms sign-off (guide exists, decision pending) · whether to collapse "theme"
-and "accent skin" into one list (9 skins × light/dark × tint × panel style keeps multiplying
-axes) · whether to ship v2.99.99 now for the Angel One fix or wait on a live OpenAlgo pull first.
+Refund-policy and terms sign-off — **partially closed 2026-08-20**: the owner had the ⚠️ OWNER
+banners deleted from `TERMS.md` and `REFUND_POLICY.md` and both now ship to buyers without them,
+and REFUND gained an "Applies to" line and a current date. A qualified legal read is still not
+done · whether to collapse "theme" and "accent skin" into one list (9 skins × light/dark × tint ×
+panel style keeps multiplying axes).
+
+*(Closed 2026-08-20: ship v2.99.99 now for the Angel One fix, or wait on a live OpenAlgo pull? —
+**shipped now**, with OpenAlgo switched off and absent from every buyer-facing document.)*
 
 *(Left this list 2026-08-14: Pro annual pricing — ₹9,999; the `v2.99.0` tag — keep; the PDF
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
