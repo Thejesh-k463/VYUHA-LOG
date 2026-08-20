@@ -30,15 +30,56 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20 |
+| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is one commit AHEAD of the tag** (`af228b5`, the OpenAlgo opt-in wave): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
 | Branch | `main`, clean apart from this file |
 | CI | **green on `6e2dd80` — all 5 jobs incl. Windows — BEFORE tagging** (run 32296904204; the ubuntu e2e job hung twice at the Playwright browser-install step — GitHub infra — and passed on a rerun of that job alone); Release workflow 32301883296 — see GitHub release row |
 | GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"; `releases/latest` = **`v2.99.97`** (owner published it 2026-08-15 13:28Z) |
 | Client ZIP | `release-packages/Vyuha_2.99.98_Client_Package.zip` (33.9 MB), installer SHA-256 `6CE6BFDB…9A8D36`; ZIP's `WHATS_NEW.md` first heading, `TERMS`/`PRIVACY` "Applies to" and both deck chips = v2.99.98 (opened and checked) |
-| Unit tests | **1,858 passed / 0 failed** across 128 files (`npm run verify` EXIT 0 incl. build, 2026-08-20 after the bump; 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
+| Unit tests | **1,918 passed / 0 failed** across 131 files (`npm run verify` EXIT 0 incl. build, 2026-08-20, on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
 | e2e | **45 passed / 0 failed** (2.1 min, `npx playwright test`, 2026-08-20, before the bump) |
 | Installer | `Vyuha_2.99.98_x64-setup.exe` (34,857,374 B) + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 01:31 IST 2026-08-20; bundle carries the `FIFO per symbol + day` and `numeric scrip code` markers |
 | Previous | v2.99.97 is published and is `releases/latest` (2026-08-15 13:28Z) |
+
+**UNRELEASED on `main` (verified 2026-08-20, commit `af228b5`) — OpenAlgo opt-in integration.**
+Owner decision: build it, commit it, **hold the release** until a live pull is reconciled against a
+contract note. No version bump, no tag, no installer, no client ZIP, and **nothing in any
+buyer-facing document** (landing page, brochure, deck, client docs all untouched by design).
+
+*What it is:* a fourth broker-API import path through **OpenAlgo** — third-party, self-hosted,
+AGPL-3.0, fronting 35 Indian brokers, of which **7 of Vyuha's 8** (all but Sahi). It gives Groww,
+Upstox, Paytm Money and Kotak a same-day pull they have no native path for. Adapter
+(`lib/import/api/openalgo.ts`, 20 tests) came from `T:\Thejesh\CLAUDE-CODE\OPENALGO-HANDOFF\VYUHA`
+and is **byte-identical to that handoff** so rollback is a clean delete. Its endpoint shape,
+today-only behaviour, the documented `quantity: 0.0` sample and the broker list were **re-verified
+against OpenAlgo's own docs on 2026-08-20**.
+
+*How it is gated (this is the owner's requirement, not a nicety):* **off on every install**;
+`lib/domain/openalgo-disclosure.ts` (pure, 14 tests) holds the versioned what-it-is / what-it-does /
+six-risks copy, the gate rule and a loopback check, and is the ONLY source of that copy; the Settings
+→ **Integrations (advanced)** switch opens a disclosure dialog and only an explicit accept enables it,
+stamping `OPENALGO_DISCLOSURE_VERSION`; **the acceptance is written to the Audit Log**; the **server**
+applies the same gate on save and pull (**403**), so a hidden tab is never the only defence; the
+Import tab does not exist until enabled; a **non-loopback host warns before saving**. Migration
+**0049** adds `openalgo_enabled` (NOT NULL false) + `openalgo_ack_version`; both are
+`SETTINGS_MACHINE_COLUMNS` and excluded from the settings baseline, so **a restore never enables an
+integration or inherits someone's consent** (pinned by a forged-envelope test).
+
+*Two defects found and fixed on the way, both worth knowing:*
+1. **Angel One's live API pull has been broken for every user since v2.99.80** — `encryptSecret("")`
+   produces `venc:1:<iv>::<tag>`, whose empty ciphertext segment `parseVaultString` rejects, and the
+   pull refused on `!tokenRead.ok` before dispatching. Angel One is the only shipped
+   `needsToken:false` broker. The guard now checks a token only where one is collected;
+   `tests/vault.test.ts` pins the trap. **This fix is unreleased** — it reaches buyers only when the
+   next release ships, and the README currently advertises that pull as working.
+2. **My own regression, caught by the suite:** `openalgo_enabled` is the first NOT NULL column in the
+   backup redaction list, and redaction wrote `null` → the restore INSERT violated the constraint and
+   `restoreDatabase` returned `{ok:false}` (9 backup round-trip tests). Fixed with
+   `settingsMachineBlank()`; both properties now pinned in one test.
+
+*Not verified:* no live OpenAlgo instance was run — the pull path, the repair count on real rows,
+whether OpenAlgo's "Kotak Securities" is Neo or legacy, and the dialog's rendered appearance are all
+INFERRED. e2e was **not** re-run after this wave (last run 45/45 before it). DECISIONS.md carries
+three entries dated 2026-08-20 for the above.
 
 **v2.99.98 content (all verified 2026-08-20 — broker-integration wave, real files):** the owner
 supplied real exports (gitignored in `tests/fixtures/private/`): Paytm Money tradebook (414 executions)
