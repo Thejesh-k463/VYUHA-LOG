@@ -52,7 +52,36 @@ export const BACKUP_TABLES = [
  * `lib/domain/settings-baseline.ts` already excluded all three from "restore
  * defaults" for the same reason — the backup path was the one left unguarded.
  */
-export const SETTINGS_MACHINE_COLUMNS = ["licenseKey", "trialStartedAt", "clockHighWaterMark", "revocationListIssuedAt"] as const;
+export const SETTINGS_MACHINE_COLUMNS = [
+  "licenseKey",
+  "trialStartedAt",
+  "clockHighWaterMark",
+  "revocationListIssuedAt",
+  // Consent is a statement a PERSON made on a MACHINE, not journal data.
+  // Restoring someone else's backup must never switch an integration on, and
+  // must never inherit their acknowledgement of its risks — so a restored
+  // install starts exactly where a fresh one does: off, disclosure unseen.
+  "openalgoEnabled",
+  "openalgoAckVersion",
+] as const;
+
+/**
+ * What a redacted machine column becomes in a dump.
+ *
+ * Null for every NULLABLE one — which was all of them until 2026-08-20, when
+ * `openalgo_enabled` arrived as NOT NULL DEFAULT false and blanking it to null
+ * made the restore INSERT violate the constraint: `restoreDatabase` returned
+ * `{ok:false}` and nine backup round-trip tests failed at once. A NOT NULL
+ * machine column needs its SAFE value, not null — and for a gate, safe is off.
+ */
+export const SETTINGS_MACHINE_BLANKS: Readonly<Record<string, unknown>> = {
+  openalgoEnabled: false,
+};
+
+/** The value a redacted machine column carries in a dump / after a restore. */
+export function settingsMachineBlank(col: string): unknown {
+  return col in SETTINGS_MACHINE_BLANKS ? SETTINGS_MACHINE_BLANKS[col] : null;
+}
 
 /**
  * Broker credential columns, redacted from every dump for the same reason the

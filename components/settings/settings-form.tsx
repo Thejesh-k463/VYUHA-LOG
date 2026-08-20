@@ -24,6 +24,12 @@ import {
   type PanelStyle,
   type Theme,
 } from "@/lib/domain/appearance";
+import {
+  OPENALGO_DISCLOSURE_VERSION,
+  isAckCurrent,
+  openAlgoGate,
+} from "@/lib/domain/openalgo-disclosure";
+import { OpenAlgoDialog } from "@/components/system/openalgo-dialog";
 import { TintControl } from "@/components/settings/appearance/tint-control";
 import { PanelStyleSelect } from "@/components/settings/appearance/panel-style-select";
 import { CustomThemeBuilder } from "@/components/settings/appearance/custom-theme-builder";
@@ -49,6 +55,14 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [defaultBuyOrders, setBuyOrders] = useState(String(current.defaultBuyOrders));
   const [defaultSellOrders, setSellOrders] = useState(String(current.defaultSellOrders));
   const [autoMtm, setAutoMtm] = useState(current.autoMtmEnabled);
+  // ── OpenAlgo integration (opt-in, disclosure-gated) ──
+  // Both halves of the gate are held here so the card can tell "off" apart from
+  // "on, but accepted against a disclosure that has since changed".
+  const [openalgoEnabled, setOpenalgoEnabled] = useState(current.openalgoEnabled);
+  const [openalgoAckVersion, setOpenalgoAckVersion] = useState<string | null>(
+    current.openalgoAckVersion ?? null,
+  );
+  const [openalgoDialogOpen, setOpenalgoDialogOpen] = useState(false);
   const [pending, setPending] = useState(false);
   // ── Appearance (lib/domain/appearance.ts) ──
   const [tintIntensity, setTint] = useState(clampIntensity(current.tintIntensity));
@@ -159,7 +173,15 @@ export function SettingsForm({ current }: { current: Settings }) {
     document.documentElement.classList.toggle("density-comfortable", next === "comfortable");
   }
 
-  async function save() {
+  /**
+   * The one save path. `over` lets an event handler persist a field IMMEDIATELY
+   * with a value React has not re-rendered with yet — the OpenAlgo switch uses
+   * it, because an acceptance the user never got round to pressing Save for
+   * would be lost and re-prompt forever, and a switch turned off must be off.
+   * Everything else in the form still travels on every save, so the two can
+   * never disagree.
+   */
+  async function save(over?: { openalgoEnabled?: boolean; openalgoAckVersion?: string | null }) {
     setPending(true);
     try {
       const res = await fetch("/api/settings", {
@@ -170,6 +192,10 @@ export function SettingsForm({ current }: { current: Settings }) {
           goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
+          // `undefined` means "not overridden" — null is a real value here.
+          openalgoEnabled: over?.openalgoEnabled ?? openalgoEnabled,
+          openalgoAckVersion:
+            over && over.openalgoAckVersion !== undefined ? over.openalgoAckVersion : openalgoAckVersion,
           // Appearance. customTheme goes only while the Custom skin is selected
           // ("Save as my theme" is explicit); otherwise it is omitted and the
           // stored theme is kept. wallpaperStoredName is NOT sent — the upload
@@ -193,6 +219,34 @@ export function SettingsForm({ current }: { current: Settings }) {
     } finally {
       setPending(false);
     }
+  }
+
+  // The acceptance on file no longer covers the disclosure as it reads today —
+  // the gate is closed, so the card must say so instead of showing a switch
+  // that looks live. Derived at render; never synced into state by an effect.
+  const openalgoAckStale = openalgoEnabled && !isAckCurrent(openalgoAckVersion);
+  const openalgoGateReason = openAlgoGate({
+    enabled: openalgoEnabled,
+    ackVersion: openalgoAckVersion,
+  }).reason;
+
+  /** ON never flips the switch directly — it opens the disclosure. OFF is immediate. */
+  function toggleOpenalgo(next: boolean) {
+    if (next) {
+      setOpenalgoDialogOpen(true);
+      return;
+    }
+    setOpenalgoEnabled(false);
+    // The acknowledgement is left on file: they did read that version. Turning
+    // it back on shows the disclosure again regardless.
+    void save({ openalgoEnabled: false });
+  }
+
+  /** The only path to enabled=true, and it stamps the version that was read. */
+  function acceptOpenalgo() {
+    setOpenalgoEnabled(true);
+    setOpenalgoAckVersion(OPENALGO_DISCLOSURE_VERSION);
+    void save({ openalgoEnabled: true, openalgoAckVersion: OPENALGO_DISCLOSURE_VERSION });
   }
 
   return (
@@ -379,6 +433,57 @@ export function SettingsForm({ current }: { current: Settings }) {
 
       <Card>
         <CardHeader>
+          <CardTitle>Integrations (advanced)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3" data-testid="integrations-section">
+          <div className="flex items-center justify-between rounded-md border border-border bg-card-hover/40 px-3 py-2">
+            <div>
+              <div className="text-sm font-medium">OpenAlgo API pulls (third-party server you run)</div>
+              <div className="text-xs text-muted-foreground">
+                Adds a same-day API pull for Groww, Upstox, Paytm Money and Kotak through an OpenAlgo
+                instance on your own machine.{" "}
+                <span className="text-warning">Your broker credentials go into OpenAlgo, not Vyuha.</span>{" "}
+                Turning it on opens the full disclosure first — you accept it there, not here. Saved
+                immediately, both ways: no need to press Save settings.
+              </div>
+            </div>
+            <Switch
+              checked={openalgoEnabled}
+              onCheckedChange={(v) => toggleOpenalgo(Boolean(v))}
+              data-testid="openalgo-switch"
+            />
+          </div>
+
+          {openalgoAckStale && (
+            <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+              {/* Verbatim from the gate itself (lib/domain/openalgo-disclosure.ts),
+                  so the reason the pull refuses and the reason shown here are one
+                  string. The switch reads on because it IS on in the database —
+                  what has lapsed is the acceptance, and that is said out loud. */}
+              <p className="text-xs text-warning">{openalgoGateReason}</p>
+              <div className="mt-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => setOpenalgoDialogOpen(true)}>
+                  Read it again
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Off by default, and everything else in Vyuha works without it — every broker still imports by
+            file, and the three direct API pulls are unaffected.
+          </p>
+        </CardContent>
+      </Card>
+
+      <OpenAlgoDialog
+        open={openalgoDialogOpen}
+        onOpenChange={setOpenalgoDialogOpen}
+        onAccept={acceptOpenalgo}
+      />
+
+      <Card>
+        <CardHeader>
           <CardTitle>App updates</CardTitle>
         </CardHeader>
         <CardContent className="text-xs text-muted-foreground">
@@ -390,7 +495,7 @@ export function SettingsForm({ current }: { current: Settings }) {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button type="button" onClick={save} disabled={pending}>
+        <Button type="button" onClick={() => save()} disabled={pending}>
           {pending ? "Saving…" : "Save settings"}
         </Button>
       </div>

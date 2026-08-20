@@ -493,6 +493,14 @@ export const settings = sqliteTable("settings", {
   // the app is allowed to fetch from NSE and overwrite matched MTM prices).
   autoMtmEnabled: integer("auto_mtm_enabled", { mode: "boolean" }).notNull().default(false),
   lastAutoMtmDate: text("last_auto_mtm_date"), // bhavcopy date last applied (once-per-day guard)
+  // OpenAlgo integration (v2.99.99) — OFF until the user reads the disclosure
+  // and accepts it. Two columns because "never asked" and "asked, then turned
+  // off" are different: the ack stores WHICH disclosure version was accepted
+  // (lib/domain/openalgo-disclosure.ts), so a materially changed risk
+  // statement re-prompts instead of inheriting an old consent. Both are
+  // machine state, not journal data — see SETTINGS_MACHINE_COLUMNS.
+  openalgoEnabled: integer("openalgo_enabled", { mode: "boolean" }).notNull().default(false),
+  openalgoAckVersion: text("openalgo_ack_version"),
   // Monetization v2 — offline full-Pro trial (TRIAL_DAYS), stamped on first run
   // (backfilled to migration time for existing installs). See lib/license.ts.
   trialStartedAt: text("trial_started_at"),

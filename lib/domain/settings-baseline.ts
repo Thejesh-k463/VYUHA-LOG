@@ -17,6 +17,9 @@
 //   lastAutoMtmDate    — job bookkeeping; restoring re-runs a day's MTM
 //   selectedAccountId  — where the user IS, not how they like things
 //   goLiveDate         — a historical fact about the account, not a choice
+//   openalgoEnabled    — an integration the user switched on after reading a
+//   openalgoAckVersion   risk disclosure; "back to my defaults" must not
+//                        silently re-enable it or re-assert a consent
 //
 // Rate tables (charge/margin/risk) ARE part of the baseline: the user chose
 // those numbers, and "back to my defaults" should mean the rates they trust.

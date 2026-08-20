@@ -97,6 +97,20 @@ const SettingsSchema = z.object({
   defaultSellOrders: z.coerce.number().int().min(1).max(50),
   colorblindSafe: z.coerce.boolean(),
   autoMtmEnabled: z.coerce.boolean(),
+  // ── OpenAlgo integration (v2.99.99) ──
+  // Both are OPTIONAL, like the appearance fields above: a body that omits them
+  // keeps the stored value. Every settings form that predates this feature
+  // sends neither, and an absent field must not silently revoke a consent the
+  // user gave (nor grant one they did not).
+  //
+  // z.boolean(), NOT z.coerce.boolean(), deliberately: coercion is truthiness,
+  // so the STRING "false" would arrive as `true` — and this is the one boolean
+  // where that re-opens a gate the user closed. The consent dialog sends a real
+  // JSON boolean, so nothing legitimate is rejected by the stricter type.
+  openalgoEnabled: z.boolean().optional(),
+  // Which disclosure version was accepted. Explicit null clears the acceptance
+  // (which closes the gate — see openAlgoGate); absent keeps what is stored.
+  openalgoAckVersion: z.string().nullable().optional(),
 });
 
 /**
@@ -202,7 +216,26 @@ export async function POST(req: Request) {
       defaultSellOrders: v.defaultSellOrders,
       colorblindSafe: v.colorblindSafe,
       autoMtmEnabled: v.autoMtmEnabled,
+      ...(v.openalgoEnabled !== undefined && { openalgoEnabled: v.openalgoEnabled }),
+      ...(v.openalgoAckVersion !== undefined && { openalgoAckVersion: v.openalgoAckVersion }),
     };
+
+    // OpenAlgo consent is a DATED RECORD, not just a dialog. The dialog is what
+    // the user sees; this is what survives — so the Audit Log gets its own
+    // entry whenever the stored value actually changes, carrying the
+    // before/after of these two fields ONLY (never the whole settings row).
+    const openalgoBefore = {
+      openalgoEnabled: existing?.openalgoEnabled ?? false,
+      openalgoAckVersion: existing?.openalgoAckVersion ?? null,
+    };
+    const openalgoAfter = {
+      openalgoEnabled: v.openalgoEnabled ?? openalgoBefore.openalgoEnabled,
+      openalgoAckVersion: v.openalgoAckVersion !== undefined ? v.openalgoAckVersion : openalgoBefore.openalgoAckVersion,
+    };
+    const openalgoChanged =
+      openalgoBefore.openalgoEnabled !== openalgoAfter.openalgoEnabled ||
+      openalgoBefore.openalgoAckVersion !== openalgoAfter.openalgoAckVersion;
+
     if (existing) {
       db.update(settings).set({ ...values, updatedAt: now }).where(eq(settings.id, existing.id)).run();
     } else {
@@ -218,6 +251,21 @@ export async function POST(req: Request) {
       before: existing ? { equityCapital: existing.equityCapital, activeCapital: existing.activeCapital, goLiveDate: existing.goLiveDate, theme: existing.theme } : null,
       after: { equityCapital: v.equityCapital, activeCapital: v.activeCapital, goLiveDate: v.goLiveDate, theme: v.theme },
     });
+    if (openalgoChanged) {
+      recordAudit({
+        entity: "settings",
+        action: "update",
+        summary: openalgoAfter.openalgoEnabled
+          ? openalgoAfter.openalgoAckVersion
+            ? `OpenAlgo integration enabled (disclosure v${openalgoAfter.openalgoAckVersion} accepted)`
+            : // Never fabricate the version that was accepted — say plainly
+              // that none was recorded. The gate stays closed in this state.
+              "OpenAlgo integration enabled, but no disclosure acceptance was recorded"
+          : "OpenAlgo integration disabled",
+        before: openalgoBefore,
+        after: openalgoAfter,
+      });
+    }
     for (const p of ["/", "/equity", "/active", "/targets/equity", "/targets/active", "/risk", "/trades"]) revalidatePath(p);
     return NextResponse.json({ ok: true, message: "Settings saved." });
   }

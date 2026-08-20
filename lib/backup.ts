@@ -19,6 +19,7 @@ import {
   type BackupTable,
   type EncryptedBackupEnvelope,
   isEncryptedBackup,
+  settingsMachineBlank,
 } from "@/lib/backup-format";
 
 // P0.4 — backup/restore engine. Operates through the live Drizzle connection so it
@@ -69,7 +70,7 @@ export function dumpDatabase(includeAttachments = true): BackupEnvelope {
     if (name === "settings") {
       rows = rows.map((r) => {
         const clean = { ...r };
-        for (const col of SETTINGS_MACHINE_COLUMNS) clean[col] = null;
+        for (const col of SETTINGS_MACHINE_COLUMNS) clean[col] = settingsMachineBlank(col);
         return clean;
       });
     }
@@ -286,7 +287,7 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
         const restored0 = tx.select().from(schema.settings).all()[0] as Record<string, unknown> | undefined;
         if (restored0) {
           const keep: Record<string, unknown> = {};
-          for (const col of SETTINGS_MACHINE_COLUMNS) keep[col] = machineSettings[col] ?? null;
+          for (const col of SETTINGS_MACHINE_COLUMNS) keep[col] = machineSettings[col] ?? settingsMachineBlank(col);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tx.update(schema.settings).set(keep as any).run();
         }

@@ -292,6 +292,36 @@ describe("v3: licence and trial state stay on the machine", () => {
     expect(after.trialStartedAt).toBe("2026-08-01");
     expect(after.clockHighWaterMark).toBe("2026-08-12");
   });
+
+  it("a backup neither carries nor grants an integration consent — and a NOT NULL machine column still restores", () => {
+    // Two properties in one test because they broke as one:
+    //
+    //  1. Consent is a statement a PERSON made on a MACHINE. Restoring anyone's
+    //     backup must leave the OpenAlgo gate exactly where a fresh install
+    //     leaves it — off, disclosure unseen — even when the envelope says on.
+    //  2. openalgo_enabled is NOT NULL. Redacting it to null (what every other
+    //     machine column gets) made the restore INSERT violate the constraint,
+    //     so restoreDatabase returned ok:false and took the whole round-trip
+    //     down with it. A NOT NULL machine column needs its SAFE value, and
+    //     for a gate the safe value is off — see settingsMachineBlank().
+    t.db.update(t.schema.settings).set({ openalgoEnabled: false, openalgoAckVersion: null }).run();
+
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    // The dump itself must not be able to say "on" — redaction happens there.
+    expect(dumped.openalgoEnabled).toBe(false);
+    expect(dumped.openalgoAckVersion).toBeNull();
+
+    // Now forge an envelope that claims the integration was on and accepted.
+    dumped.openalgoEnabled = true;
+    dumped.openalgoAckVersion = "1";
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true); // property 2: NOT NULL survives the round trip
+    const after = t.db.select().from(t.schema.settings).all()[0];
+    expect(after.openalgoEnabled).toBe(false); // property 1: no inherited consent
+    expect(after.openalgoAckVersion).toBeNull();
+  });
 });
 
 describe("connection pragmas", () => {

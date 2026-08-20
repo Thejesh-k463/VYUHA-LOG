@@ -175,8 +175,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Eight brokers, auto-detected, de-duplicated, with a charge reconciliation panel before anything commits. Tradebooks and P&L exports are treated as different kinds because they are — a P&L file states neither product nor time, so the product question is asked once, before commit.",
       "If a file's rows look like trades already recorded from a different file kind, the preview says so before you commit — the two kinds state different facts, so the duplicate check cannot match them silently.",
       "Imported files are listed below with the trades each still owns; deleting one asks whether the trades go too.",
+      "Live API pulls for Zerodha, Dhan and Angel One are built in. A fourth path — OpenAlgo — appears here only after you switch it on in Settings → Integrations: it is separate open-source software you run yourself, and through it Groww, Upstox, Paytm Money and Kotak also get a same-day pull. It reads today's executed trades only, and sizes are repaired and counted when the API reports zero, so check a repaired row against your contract note before committing.",
     ],
-    keywords: ["dhan", "zerodha", "groww", "csv", "duplicate", "delete import", "reconciliation"],
+    keywords: ["dhan", "zerodha", "groww", "csv", "duplicate", "delete import", "reconciliation", "openalgo", "api pull"],
     refusals: ["MTF is never inferred from a file — it is indistinguishable from delivery there, so the app asks instead of guessing."],
   },
   {
@@ -350,8 +351,9 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Capital buckets, risk and charge/margin rate tables (every statutory rate is editable — nothing is hard-coded), theme, accent skins, colorblind-safe mode and licence activation.",
       "Your first configuration is kept as My Default Settings; change anything freely and one click brings the whole configuration back to your baseline. Trades and journal data are never part of that restore.",
+      "Integrations (advanced) is where the OpenAlgo connection is switched on. It is off on every install, the switch opens a disclosure you have to accept, and the acceptance is written to the Audit Log with the version of the risks you read. Turning it off hides it again and leaves every trade already imported exactly where it is.",
     ],
-    keywords: ["settings", "capital", "rates", "theme", "default", "restore defaults", "licence"],
+    keywords: ["settings", "capital", "rates", "theme", "default", "restore defaults", "licence", "integrations", "openalgo"],
   },
   {
     href: "/help",

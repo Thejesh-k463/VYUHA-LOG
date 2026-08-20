@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { brokerConnections } from "@/lib/db/schema";
+import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
 import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
+import {
+  assertOpenAlgoBroker,
+  fetchOpenAlgoTradebook,
+  normalizeHost,
+  normalizeOpenAlgoTrades,
+  toParsedFile as openAlgoToParsedFile,
+} from "@/lib/import/api/openalgo";
+import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
+import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
@@ -46,15 +55,45 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
     needsToken: false,
     extraFields: ["clientCode", "pin", "totpSecret"],
   },
+  openalgo: {
+    label: "OpenAlgo (self-hosted)",
+    keyLabel: "OpenAlgo API key",
+    note: "Your OpenAlgo instance must be running on the configured host at the moment you pull — there is no queue and no retry.",
+    needsToken: false,
+    extraFields: ["host", "underlyingBroker"],
+  },
 };
 
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
+
+/**
+ * The SERVER's copy of the OpenAlgo gate (lib/domain/openalgo-disclosure.ts).
+ *
+ * The Import UI hides the tab when this is closed; that is a courtesy. This is
+ * the thing that actually refuses — hiding a button must never be the only
+ * thing standing between an unread disclosure and a stored credential or a
+ * live pull. The rule itself is never re-implemented here: both halves
+ * (switch on AND acceptance current) live in the pure function.
+ */
+function currentOpenAlgoGate() {
+  const row = db
+    .select({ enabled: settings.openalgoEnabled, ackVersion: settings.openalgoAckVersion })
+    .from(settings)
+    .limit(1)
+    .get();
+  return openAlgoGate({ enabled: row?.enabled ?? false, ackVersion: row?.ackVersion ?? null });
+}
 
 export async function GET() {
   sweepPlaintextSecrets(); // upgrade any pre-vault plaintext rows (v2.99.80)
   const selected=getSelectedAccountId(); const accountId=selected||1;
   const rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
+  const gate = currentOpenAlgoGate();
   return NextResponse.json({
+    // CONTRACT: the Import UI reads `openalgo.available` to decide whether to
+    // render the OpenAlgo tab at all, and shows `openalgo.reason` when it is
+    // false. Shape is fixed — `reason` is present only when closed.
+    openalgo: gate.allowed ? { available: true } : { available: false, reason: gate.reason },
     ok: true,
     connections: rows.map((r) => {
       // Decrypt only to mask — the plaintext never leaves this handler. An
@@ -88,13 +127,45 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
+    // The gate goes FIRST, before any field is even looked at: a refusal must
+    // not depend on the shape of the body, and nothing may be stored on the
+    // way to discovering the disclosure was never accepted.
+    if (broker === "openalgo") {
+      const gate = currentOpenAlgoGate();
+      if (!gate.allowed) return NextResponse.json({ ok: false, message: gate.reason }, { status: 403 });
+    }
+
     if (!apiKey || (spec.needsToken && !accessToken)) {
       return NextResponse.json({ ok: false, message: `${spec.keyLabel}${spec.needsToken ? " and access token are" : " is"} required.` }, { status: 400 });
     }
 
-    // Angel One's extras: client code + PIN + TOTP SECRET, one encrypted blob.
+    // Broker-specific extras, one encrypted blob in auth_json.
     let authPlain: string | null = null;
-    if (spec.extraFields) {
+    if (broker === "openalgo") {
+      // OpenAlgo's extras: WHERE the instance is, and WHICH broker sits behind
+      // it. The broker is load-bearing — it selects the charge profile — so it
+      // is stored, never guessed from the payload at pull time.
+      const host = String(body.host ?? "").trim();
+      const underlyingBroker = String(body.underlyingBroker ?? "").trim();
+      if (!host || !underlyingBroker) {
+        return NextResponse.json(
+          { ok: false, message: "The OpenAlgo host and the broker your instance is connected to are both required." },
+          { status: 400 },
+        );
+      }
+      // Both are validated AT SAVE, with the adapter's own message. A typo in
+      // either would otherwise surface as a failed pull tomorrow, by which
+      // point the user has no idea which field was wrong.
+      let normalizedHost: string;
+      try {
+        assertOpenAlgoBroker(underlyingBroker as Broker);
+        normalizedHost = normalizeHost(host);
+      } catch (e) {
+        return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });
+      }
+      authPlain = JSON.stringify({ host: normalizedHost, underlyingBroker });
+    } else if (spec.extraFields) {
+      // Angel One's extras: client code + PIN + TOTP SECRET.
       const clientCode = String(body.clientCode ?? "").trim();
       const pin = String(body.pin ?? "").trim();
       const totpSecret = String(body.totpSecret ?? "").trim();
@@ -149,15 +220,44 @@ export async function POST(req: Request) {
   if (body.action === "pull") {
     const broker = String(body.broker ?? "zerodha");
     const mode = body.mode === "commit" ? "commit" : "preview";
+
+    // Same gate, same position: before the connection is even looked up. A
+    // credential saved while the gate was open must not keep pulling after the
+    // user turns the integration off or the disclosure changes under them.
+    if (broker === "openalgo") {
+      const gate = currentOpenAlgoGate();
+      if (!gate.allowed) return NextResponse.json({ ok: false, message: gate.reason }, { status: 403 });
+    }
+
     const conn = db.select().from(brokerConnections).where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker))).all()[0];
-    if (!conn) return NextResponse.json({ ok: false, message: "No saved connection — save the API key + access token first." }, { status: 400 });
+    if (!conn) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            broker === "openalgo"
+              ? "No saved OpenAlgo connection — save the API key, host and broker first."
+              : "No saved connection — save the API key + access token first.",
+        },
+        { status: 400 },
+      );
+    }
 
     // Decrypted only here, at the moment of use. Pre-vault plaintext rows
     // still read (the sweep upgrades them); an unreadable vault asks for the
     // credential again instead of failing cryptically inside the fetch.
     const keyRead = readSecret(conn.apiKey);
     const tokenRead = readSecret(conn.accessToken);
-    if (!keyRead.ok || !tokenRead.ok) {
+    // A `needsToken: false` broker (Angel One, OpenAlgo) stores an ENCRYPTED
+    // EMPTY STRING in access_token, and that value does not read back:
+    // AES-GCM over "" is zero bytes, so the envelope is `venc:1:<iv>::<tag>`
+    // and parseVaultString rejects an empty ciphertext segment — correctly, it
+    // cannot tell that shape from a truncated row. Requiring it to be readable
+    // therefore refused every such pull with "the stored secret is malformed",
+    // which is a lie: there is no token, and none is needed. So the token is
+    // only load-bearing for the brokers whose spec says it is.
+    const needsToken = API_BROKERS[broker]?.needsToken ?? true;
+    if (!keyRead.ok || (needsToken && !tokenRead.ok)) {
       const reason = !keyRead.ok ? (keyRead as { reason: string }).reason : (tokenRead as { reason: string }).reason;
       const keyLabel = API_BROKERS[broker]?.keyLabel ?? "API key";
       return NextResponse.json(
@@ -165,10 +265,34 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
+    /** "" for the token-less brokers, which never read it. */
+    const accessTokenPlain = tokenRead.ok ? tokenRead.value : "";
 
     let parsed;
+    /** Which broker sat behind the OpenAlgo instance — names the commit file. */
+    let openAlgoBroker: Broker | null = null;
     try {
-      if (broker === "angelone") {
+      if (broker === "openalgo") {
+        // host + underlyingBroker live in auth_json as one encrypted blob.
+        const authRead = readSecret(conn.authJson);
+        if (!authRead.ok || !authRead.value) {
+          return NextResponse.json(
+            { ok: false, message: "The saved OpenAlgo settings cannot be read — re-enter the API key, host and broker." },
+            { status: 400 },
+          );
+        }
+        const auth = JSON.parse(authRead.value) as { host: string; underlyingBroker: Broker };
+        openAlgoBroker = auth.underlyingBroker;
+        const creds = { apiKey: keyRead.value, host: auth.host, broker: openAlgoBroker };
+        const today = new Date().toISOString().slice(0, 10);
+        // normalize is called DIRECTLY rather than through fetchTrades: the
+        // `repaired` / `refused` counts are what become the user-facing
+        // warnings, and fetchTrades returns only the trades. The quantity
+        // repair is the whole reason those warnings exist — see the adapter
+        // header — so it must not be dropped on the way to the screen.
+        const result = normalizeOpenAlgoTrades(await fetchOpenAlgoTradebook(creds), openAlgoBroker, today);
+        parsed = openAlgoToParsedFile(openAlgoBroker, result);
+      } else if (broker === "angelone") {
         // The extras live in auth_json as one encrypted JSON blob.
         const authRead = readSecret(conn.authJson);
         if (!authRead.ok || !authRead.value) {
@@ -186,10 +310,10 @@ export async function POST(req: Request) {
       } else if (broker === "dhan") {
         // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
         // came first. Renaming it would need a migration for no behavioural gain.
-        const source = dhanImportSource({ clientId: keyRead.value, accessToken: tokenRead.value });
+        const source = dhanImportSource({ clientId: keyRead.value, accessToken: accessTokenPlain });
         parsed = dhanToParsedFile(await source.fetchTrades({}));
       } else {
-        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: tokenRead.value });
+        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: accessTokenPlain });
         parsed = kiteToParsedFile(await source.fetchTrades({}));
       }
     } catch (e) {
@@ -197,7 +321,11 @@ export async function POST(req: Request) {
     }
 
     if (mode === "commit") {
-      const fileName = `${broker === "dhan" ? "dhan" : "kite"}-api-${new Date().toISOString().slice(0, 10)}`;
+      const today = new Date().toISOString().slice(0, 10);
+      const fileName =
+        broker === "openalgo" && openAlgoBroker
+          ? `openalgo-${openAlgoBroker}-${today}`
+          : `${broker === "dhan" ? "dhan" : "kite"}-api-${today}`;
       const result = commitParsedFile(parsed, fileName);
       db.update(brokerConnections)
         .set({ lastPullAt: new Date().toISOString() })

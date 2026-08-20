@@ -73,6 +73,22 @@ describe("encrypt / read", () => {
     expect(vault.readSecret(b)).toMatchObject({ ok: true, value: "same" });
   });
 
+  it("an EMPTY secret encrypts to a string that cannot be read back — the shape that broke Angel One", () => {
+    // AES-GCM over "" produces a zero-length ciphertext, so formatVaultString
+    // yields `venc:1:<iv>::<tag>` and parseVaultString rejects the empty
+    // segment. This is not a bug in the vault — an empty secret is not a
+    // secret — but it IS a trap for callers: `app/api/import/broker` stored
+    // `encryptSecret(accessToken || "")` for every broker and then refused any
+    // pull whose token would not read, which silently disabled Angel One's
+    // live pull from v2.99.80 until 2026-08-20. A caller that has no token
+    // must not require one to be readable; this test pins the property so the
+    // next caller learns it here rather than in production.
+    const enc = vault.encryptSecret("");
+    expect(isVaultCiphertext(enc)).toBe(true);
+    expect(enc).toContain("::"); // the empty ciphertext segment
+    expect(vault.readSecret(enc).ok).toBe(false);
+  });
+
   it("pre-vault plaintext passes through, flagged for the sweep", () => {
     expect(vault.readSecret("legacy-token")).toEqual({ ok: true, value: "legacy-token", wasPlaintext: true });
     expect(vault.readSecret(null)).toEqual({ ok: true, value: "", wasPlaintext: true });
