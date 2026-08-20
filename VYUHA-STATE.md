@@ -469,9 +469,12 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
 - ✅ **KEY BACKUP TAKEN AND RESTORE-TESTED 2026-08-21.** `vyuha-keys-2026-08-20.vkb` (1.4 KB) at
   `T:Thejeshyuha-key-backups`, holding `license-private.pem` + `license-ledger.jsonl` as of the
   2 existing sales; the owner ran the `--restore` drill and it produced both files. Verified no
-  `.vkb` sits inside the repo. **Remaining gap: it is on the SAME drive letter as the source**, so
-  one disk failure still loses both — the bundle is encrypted and belongs on an external or cloud
-  drive too. **Re-run after every key issued**, or the backup predates that customer.
+  `.vkb` sits inside the repo. **Also copied to an EXTERNAL DRIVE 2026-08-21**, which is what actually
+  protects it: `C:`, `T:` and `K:` are all partitions of ONE physical NVMe (Disk 0, SK hynix 1TB —
+  measured via `Get-Partition`/`Get-Disk`), so the on-machine copy and `license-private.pem` would
+  have been lost in the same disk failure. Any "backup" to another drive LETTER on this box is
+  theatre; only off-device copies count. **Re-run after every key issued**, or the backup predates
+  that customer.
   Earlier note (owner, 2026-08-15 — testing with friends/colleagues): tooling
   now exists: `license-issue.mjs --save-dir` / `VYUHA_KEY_ARCHIVE_DIR` and
   `license-backup.mjs` — run the backup before the first real sale.
