@@ -30,7 +30,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is one commit AHEAD of the tag** (`af228b5`, the OpenAlgo opt-in wave): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
+| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is two commits AHEAD of the tag** (`af228b5` + `f2c375a`, the OpenAlgo opt-in wave): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
 | Branch | `main`, clean apart from this file |
 | CI | **green on `6e2dd80` — all 5 jobs incl. Windows — BEFORE tagging** (run 32296904204; the ubuntu e2e job hung twice at the Playwright browser-install step — GitHub infra — and passed on a rerun of that job alone); Release workflow 32301883296 — see GitHub release row |
 | GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"; `releases/latest` = **`v2.99.97`** (owner published it 2026-08-15 13:28Z) |
@@ -78,8 +78,11 @@ integration or inherits someone's consent** (pinned by a forged-envelope test).
 
 *Not verified:* no live OpenAlgo instance was run — the pull path, the repair count on real rows,
 whether OpenAlgo's "Kotak Securities" is Neo or legacy, and the dialog's rendered appearance are all
-INFERRED. e2e was **not** re-run after this wave (last run 45/45 before it). DECISIONS.md carries
-three entries dated 2026-08-20 for the above.
+INFERRED. DECISIONS.md carries three entries dated 2026-08-20 for the above.
+
+*CI on this wave:* **green on `f2c375a` — all 5 jobs, incl. Windows and BOTH Playwright e2e jobs
+(ubuntu + macOS)** — run 32366386859, no rerun needed. Locally e2e was last run 45/45 before the
+wave; CI's two suites are the post-wave evidence.
 
 **v2.99.98 content (all verified 2026-08-20 — broker-integration wave, real files):** the owner
 supplied real exports (gitignored in `tests/fixtures/private/`): Paytm Money tradebook (414 executions)
