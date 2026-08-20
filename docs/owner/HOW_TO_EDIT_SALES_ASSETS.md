@@ -74,7 +74,7 @@ must be regenerated after every edit; `tests/pricing.test.ts` checks it (when pr
 current prices, the upgrade sentence and the "download-only" network answer, so a stale twin
 fails the suite instead of rotting silently again.
 
-Size: at v2.99.98 it is ≈ 5.7 MB with 20 inlined images. Keep it under ~8 MB (mail attachment
+Size: at v2.99.99 it is ≈ 5.7 MB with 20 inlined images. Keep it under ~8 MB (mail attachment
 comfort) — if you add screenshots and cross that, drop gallery figures rather than shrinking the
 hero shot.
 

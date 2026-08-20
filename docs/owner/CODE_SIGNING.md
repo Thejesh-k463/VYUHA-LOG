@@ -1,6 +1,6 @@
 # Code Signing — Killing the SmartScreen Warning
 
-**Status: prepared, dormant — and deliberately so (unchanged as of v2.99.98).** Owner decision (2026-08-11, v2.99.70):
+**Status: prepared, dormant — and deliberately so (unchanged as of v2.99.99).** Owner decision (2026-08-11, v2.99.70):
 users are satisfied with the branded installer wizard, so paid signing is **deferred
 indefinitely**. The Azure Trusted Signing wiring below stays in place untouched — it activates
 automatically if the Azure secrets are ever added to GitHub. Until then, use the free

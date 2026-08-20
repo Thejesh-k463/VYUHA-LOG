@@ -232,8 +232,11 @@ declared "no-mtf", not omitted.
   while every installed copy rejected the update, which is what it did to v2.98.0. **If a copy
   reappears from a backup, delete it again rather than keeping it "just in case".** The CI secret `TAURI_SIGNING_PRIVATE_KEY` must hold the `.secrets` key for the same
   reason. Verify a release by decoding the signature's key id, not by trusting "✓ signed".
-- Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json, Cargo.toml and
-  the sidebar footer — but **not `src-tauri/Cargo.lock`**, which needs a `cargo` invocation, and
+- Version bumps: `npm run bump-version x.y.z` syncs package.json, tauri.conf.json and Cargo.toml —
+  three files, which is what it prints. It does **not** touch the sidebar footer (that is a literal
+  `v2.99` in `components/layout/sidebar.tsx`, major-minor only, and **nothing in the running app
+  surfaces the patch version** — checked 2026-08-20), nor **`src-tauri/Cargo.lock`**, which needs a
+  `cargo` invocation, and
   **not package-lock.json's root version fields**. To sync those, edit the two version strings BY
   HAND — never by running npm. `--package-lock-only` drops the darwin/linux optional-dep variants
   (broke all four CI jobs at v2.99.5), and a plain `npm install` corrupts the lock differently but

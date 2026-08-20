@@ -1,13 +1,13 @@
 # Creator outreach — free review copies for finance creators
 
-**Status:** owner playbook, drafted 2026-08-17, refreshed 2026-08-20 against v2.99.98. Not client-facing.
+**Status:** owner playbook, drafted 2026-08-17, refreshed 2026-08-20 against v2.99.99. Not client-facing.
 
 **The offer, in one line:** a free **lifetime** Vyuha key in exchange for an honest,
 disclosed review. No fee, no commission, no revenue share, no script approval.
 
 Every factual claim below is lifted from one of three places and must stay in step
 with them: `lib/domain/pricing-comparison.ts` (`WHY_VYUHA`, `VYUHA_ROW`),
-`docs/client/README.md` (v2.99.98 feature copy) and `docs/owner/MONETIZATION_PLAN.md`
+`docs/client/README.md` (v2.99.99 feature copy) and `docs/owner/MONETIZATION_PLAN.md`
 §2/§5. If a number changes there, change it here the same day.
 
 **Placeholders to fill before sending:** `[[NAME]]`, `[[HANDLE]]`,

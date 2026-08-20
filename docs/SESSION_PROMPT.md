@@ -100,81 +100,39 @@ that cannot be bundled, because client components import `lib/license.ts` and a
 
 ---
 
-## Next session — ready-to-paste (updated 2026-08-20, after v2.99.98 + the OpenAlgo opt-in wave)
+## Next session — ready-to-paste (updated 2026-08-20, after v2.99.99 shipped)
 
 ```
 Read CLAUDE.md first (it imports AGENTS.md), then VYUHA-STATE.md §2 and §8. Do not read
-anything else yet — §3 is a routing table; open only what the task needs. Then read
-docs/DECISIONS.md ONLY for the entries dated 2026-08-20 (six of them; the newest three are the
-OpenAlgo opt-in, the Angel One vault bug, and the Paytm pairing reconciliation).
+anything else yet — §3 is a routing table; open only what the task needs. Read
+docs/DECISIONS.md only for the entries you actually need; the newest are dated 2026-08-20.
 
-Start this session on Opus 5 (the VYUHA default; the work below is Bash/Edit-bound).
+Start this session on Opus 5 (the VYUHA default).
 
-STATE YOU CAN TRUST (verified 2026-08-20):
-- Branch main, HEAD 6c232a0 or later, clean, pushed. main is FOUR+ commits ahead of tag v2.99.98
-  (af228b5 + f2c375a + d0a2f0f + 6c232a0 = the OpenAlgo opt-in wave and its state/doc updates).
-- npm run verify EXIT 0 — 1,920 unit tests / 131 files, build compiled.
-- CI green on that work, all 5 jobs incl. Windows and BOTH Playwright e2e suites (run 32366386859).
-- v2.99.98 is PUBLISHED and is releases/latest (2026-08-20 03:23Z). Its installer was built from
-  commit 6e2dd80, so NONE of the commits above are in the binary buyers have.
-- The OpenAlgo integration is built, gated OFF, invisible until enabled, and deliberately absent
-  from every buyer-facing document. No live OpenAlgo pull has ever been run.
+STATE YOU CAN TRUST (verified 2026-08-20, end of the v2.99.99 release session):
+- Branch main, HEAD f05c8ae or later, clean, pushed. No uncommitted work.
+- v2.99.99 is PUBLISHED and is releases/latest (2026-08-20 15:46Z), tag 51b664d -> commit e8198c2.
+- npm run verify EXIT 0 — 1,920 unit tests / 131 files. CI run 32380322684 green on all 5 jobs
+  (incl. Windows and BOTH Playwright e2e suites) on the release commit, before the tag.
+- Installer 34,860,149 B SHA-256 27D8695E...B23004 (local, = the client ZIP's).
+  GitHub release asset is a DIFFERENT binary: 34,861,983 B SHA-256 46A3842A...4343.
+  These are not interchangeable — see DECISIONS 2026-08-20 "two installers per release".
+- Angel One's live API pull was BROKEN from v2.99.80 to v2.99.98. It is FIXED in v2.99.99 and
+  CONFIRMED against the live broker (2026-08-20 16:32 IST: connected, unattended TOTP login,
+  trade book returned empty on a non-trading day — the success path). NOT yet exercised with
+  a pull carrying REAL FILLS.
+- OpenAlgo shipped in v2.99.99 switched OFF, invisible until enabled, and named in NO
+  buyer-facing document. No live OpenAlgo pull has ever been run. The hold is on the CLAIM,
+  not the code: no copy may say it works until a pull is reconciled against a contract note.
 - Latest migration is 0049.
 
-TASK: cut, build and release v2.99.99, and close the open items below.
-
-WHY THIS RELEASE IS TIME-SENSITIVE — say it plainly in the notes: every shipped build since
-v2.99.80, including the currently published v2.99.98, has a BROKEN Angel One live API pull
-(encryptSecret("") is unreadable and the pull refused on it before dispatching). The fix is
-committed but unreleased, while README, the client docs, the deck and the landing page all
-advertise that pull as working. That fix is the reason to release; OpenAlgo rides along
-switched off.
-
-Follow the `release` skill start to finish. Specifics that have bitten before:
-1. npm run verify (not npm test) BEFORE the bump; report the count you actually saw.
-2. npm run bump-version 2.99.99, then BY HAND: package-lock.json root "version" in TWO places
-   (lines 3 and 9), and `cd src-tauri && cargo update -p vyuha --offline` for Cargo.lock.
-   NEVER npm install / --package-lock-only — it corrupts the lock and breaks all CI jobs.
-3. npm run desktop:build (needs Rust+MSVC; in Git Bash
-   export PATH="$(cygpath "$USERPROFILE")/.cargo/bin:$PATH"). Prove freshness TWO ways:
-   desktop-dist/.next/BUILD_ID is from this build, AND grep the bundle for a marker only this
-   version has — use "openalgo" or "Integrations (advanced)".
-4. Verify signatures by DECODING the key id, never by trusting "✓ signed": every .sig must be
-   4FF85F3BBE1DA21D and match plugins.updater.pubkey in tauri.conf.json.
-5. CI must be green on the release commit BEFORE tagging (the Windows job especially). The ubuntu
-   Playwright job has hung twice at "Install Playwright browsers" — if it hangs, cancel the run
-   and `gh run rerun <id> --failed`; do not tag around it.
-6. npm run client:package AFTER the docs are updated (the ZIP packs docs/client/* at build time),
-   then OPEN the ZIP and confirm WHATS_NEW.md, TERMS/PRIVACY "Applies to" and both deck chips
-   say v2.99.99.
-7. Do NOT create or re-publish the revocations prerelease — it exists and must stay a prerelease.
-8. Never re-upload assets onto an already published tag: the updater compares version numbers, so
-   an existing install would never be offered the same version again, and SmartScreen reputation
-   and the client ZIP's CHECKSUMS.txt are both per file hash.
-
-OPEN ITEMS TO CLOSE IN THIS SESSION:
-a) docs/client/README.md "New in v2.99.99" MUST LEAD with the Angel One fix in the buyer's words
-   ("if your Angel One API pull said the saved credentials could not be read, it now works"),
-   then walk docs/owner/DOC_AUDIT.md rows 1,3,5,6,9,10,11,13,14 to bring every buyer-facing
-   surface to v2.99.99. Run npm run landing:build after editing the landing page.
-b) The Angel One copy is FALSE until this release ships, in at least: README.md ~110/306/321/324,
-   docs/client/README.md ~90, docs/client/INSTALLATION_GUIDE.md ~82, docs/sales/landing-page.html
-   ~555, docs/client/GETTING_STARTED_DECK.html ~164, CHANGELOG.md ~353/356. Once v2.99.99 is
-   built, re-read each and confirm it is true again. Add a CHANGELOG note recording that the pull
-   was broken from v2.99.80 to v2.99.98 — the changelog currently has no entry saying so.
-c) ASK ME before writing OpenAlgo into any buyer-facing doc. Standing decision: in-app only until
-   I have run a live pull and checked it against a contract note. A release note may say a new
-   advanced, off-by-default integration exists; it may NOT claim broker coverage.
-d) Buyer-ZIP hygiene, my call — ask me: docs/client/TERMS.md and REFUND_POLICY.md still carry the
-   ⚠️ OWNER banner and ship to buyers that way; REFUND_POLICY has no "Applies to" line and is
-   dated 2026-08-15 while TERMS/PRIVACY say 2026-08-20. docs/client/README.md ~46/~75 still
-   forward-sells a macOS edition, and CHANGELOG ~199 offers Mac builds "on request" while ~165
-   says macOS is no longer sold.
-e) Also mine to decide: the public CHANGELOG still names Pine Script / TradingView indicators
-   (~461, ~1978, ~2051) and README ~568 lists "indicators" in the repo tree, while
-   tests/no-indicators-in-client-docs.test.ts scans only docs/client + the landing page.
-f) Update VYUHA-STATE §2 with verified numbers before we finish, and tell me when it is a good
-   point to /clear.
+TASK: <state it here>. Candidates the owner has not yet picked up:
+  - Sell one annual licence end to end (§8.1 "recommended first move" — never done once).
+  - First-run onboarding flow (§8.4 called this the explicit #1 next-cycle pick; trial->paid is
+    the bottleneck and nothing guides a fresh install through import -> mark -> first review).
+  - An Angel One API pull with real fills, to close the last unverified half of that path.
+  - A live OpenAlgo pull reconciled against a contract note, which is what unblocks ever
+    documenting it.
 
 HOW I WANT YOU TO WORK (unchanged):
 1. Ask before building; propose what fits this app's structure and what it costs. Multi-agent is
@@ -185,15 +143,35 @@ HOW I WANT YOU TO WORK (unchanged):
    them). No adjacent refactors, no new subsystems, no new brokers, no new report screens — with
    the one recorded exception in VYUHA-STATE §8.6 (the OpenAlgo integration, already built).
 4. Respect the 10 invariants in AGENTS.md.
-5. Anything measured or deliberately deviated → docs/DECISIONS.md via the decision-log skill.
+5. Anything measured or deliberately deviated -> docs/DECISIONS.md via the decision-log skill.
 6. Before saying anything is done: npm run verify, the prove-it skill, and report the numbers you
    actually saw (tests, e2e, BUILD_ID, bundle marker, sig key id, installer SHA-256).
 
-ALREADY SETTLED — do not re-open: Pro annual ₹9,999 / lifetime ₹29,999 (list ₹13,000 / ₹35,999
-from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design; revocations
-prerelease exists; annual→lifetime = full credit within the year; delivery is manual mail/WhatsApp;
-intraday data not required; macOS is not sold; landing page = Pages redirect, not a copy; OpenAlgo
-is opt-in, off by default, server-gated, and not in BROKERS.
+IF THE TASK IS A RELEASE: follow the `release` skill start to finish. Traps already paid for:
+1. npm run verify (not npm test) BEFORE the bump; report the count you actually saw.
+2. npm run bump-version x.y.z, then BY HAND: package-lock.json root "version" in TWO places
+   (lines 3 and 9), and `cd src-tauri && cargo update -p vyuha --offline` for Cargo.lock.
+   NEVER npm install / --package-lock-only — it corrupts the lock and breaks all CI jobs.
+3. npm run desktop:build, then prove freshness TWO ways: BUILD_ID must CHANGE (record it BEFORE
+   the build), and grep the bundle for a marker only the new version has.
+4. Verify signatures by DECODING the key id (2-byte alg, 8-byte little-endian key id), never by
+   trusting "signed". Local .sig files can be checked before tagging; `npm run release:verify
+   <tag>` needs the tag to exist and checks the CI-signed assets, which come from a different
+   key source (the repo secret). Both must read 4FF85F3BBE1DA21D.
+5. CI green on the release commit BEFORE tagging. If the ubuntu Playwright job hangs at
+   "Install Playwright browsers", cancel and `gh run rerun <id> --failed`; do not tag around it.
+6. npm run client:package AFTER the docs are updated, then OPEN the ZIP and check WHATS_NEW.md,
+   TERMS/PRIVACY/REFUND "Applies to" and both deck chips.
+7. Do NOT create or re-publish the revocations prerelease — it exists and must stay a prerelease.
+8. Never re-upload assets onto an already published tag.
+9. winget:manifest REQUIRES --sha, and it must be the PUBLISHED asset's hash, not your local
+   build's. WDSI takes the ZIP's installer instead. DOC_AUDIT rows 15/16/20.
+
+ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (list Rs 13,000 /
+Rs 35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
+revocations prerelease exists; annual->lifetime = full credit within the year; delivery is manual
+mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages redirect, not a
+copy; OpenAlgo is opt-in, off by default, server-gated, and not in BROKERS.
 
 MINE, NOT YOURS (do not attempt): publishing releases, running a live OpenAlgo or broker API pull,
 entering any credential, winget + WDSI submissions, license-backup.mjs, the mirror repo, and

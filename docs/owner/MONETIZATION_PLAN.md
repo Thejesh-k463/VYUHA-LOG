@@ -10,12 +10,20 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.98
+## 0. What you are actually selling, as of v2.99.99
 
 > Since v2.99.75 the pitch gained an appearance layer (nine skins incl. Custom, tint intensity,
 > panel styles, wallpaper — v2.99.96/97), the Qty/Invested/Entry/Exit trades table, and an
 > in-app WhatsApp buy dialog (+91 73936 73714, copy buttons) because the shell opens no external
 > links. The v2.99.75 note below still describes the core selling story.
+>
+> - **v2.99.99 — the unattended broker connection actually works.** Angel One's live API
+>   pull had been refusing for every user since v2.99.80 while six of our own surfaces sold it as
+>   working; it is fixed and confirmed against the live broker. Worth knowing how to use in the
+>   pitch: the honest version ("we found it, we said so in the changelog, we shipped the fix")
+>   is a trust asset, and it is the difference between this product and the ones it competes with.
+>   Do not lead with it cold — it lands as a reply when someone asks why they should trust an
+>   independent developer.
 >
 > - **v2.99.98 — a tradebook now imports as the trades you actually made.** Zerodha and Paytm
 >   Money tradebooks are paired per scrip and day and reconciled against the broker's own

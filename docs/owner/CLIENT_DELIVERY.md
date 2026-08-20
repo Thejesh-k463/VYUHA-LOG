@@ -1,6 +1,8 @@
 # Client delivery package
 
-Build a source-free client ZIP only after the signed installer has been built:
+Build a source-free client ZIP only after the installer has been built ("signed" below means the
+updater signature — the `.sig` — NOT Authenticode; the installer is deliberately not code-signed,
+see `CODE_SIGNING.md`):
 
 ```powershell
 npm run desktop:build
