@@ -33,13 +33,13 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 | Version | **v2.99.99** — committed `e8198c2`, tagged `v2.99.99` (annotated tag `51b664d` → `e8198c2`), pushed 2026-08-20. Cut to ship the **Angel One live-pull fix**, which was broken in every build from v2.99.80 through the published v2.99.98. The OpenAlgo opt-in wave (`af228b5`…`b405ad9`) rides along **switched OFF and named in no buyer-facing document** — owner's standing decision: in-app only until a live pull is reconciled against a contract note |
 | Branch | `main`, clean apart from this file |
 | CI | **green on the release commit `e8198c2` — all 5 jobs — BEFORE tagging** (run 32380322684, conclusion `success`): Lint/typecheck/unit/build, **Windows install + tests**, Playwright e2e ubuntu, Playwright e2e macOS-14, desktop bundle macOS. **No rerun needed** — the ubuntu Playwright browser-install step, which hung twice on earlier releases, completed clean this time |
-| GitHub release (v2.99.99) | **DRAFT with 9 assets, `isDraft=true`, `isPrerelease=false`** — Release workflow **32380767740** success on all 3 platform jobs (Windows x64, macOS Intel, macOS Apple silicon). `npm run release:verify v2.99.99` → **all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"** (this check needs an existing tag, so it can only run after tagging; it verifies the CI-signed assets, which use the repo secret `TAURI_SIGNING_PRIVATE_KEY`, NOT the local `.secrets` key — a separate fact from the local build's signatures). **`releases/latest` is STILL `v2.99.98`** — correct, and it stays that way until the owner publishes. The release asset `Vyuha_2.99.99_x64-setup.exe` is **34,861,983 B** vs the LOCAL/ZIP build's **34,860,149 B** — 1,834 B apart, confirming again that these are two different binaries (see the 2026-08-20 DECISIONS entry). **Owner only, not done here:** publish the draft · run a live Angel One pull · WDSI (use the ZIP's installer) · winget (uses the GitHub asset) · install on a non-build machine. **Do NOT create or re-publish the `revocations` prerelease — it exists and must stay a prerelease.** |
+| GitHub release (v2.99.99) | **PUBLISHED by the owner 2026-08-20 15:46:10Z and is now `releases/latest`** (9 assets; a draft until then) — Release workflow **32380767740** success on all 3 platform jobs (Windows x64, macOS Intel, macOS Apple silicon). `npm run release:verify v2.99.99` → **all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"** (this check needs an existing tag, so it can only run after tagging; it verifies the CI-signed assets, which use the repo secret `TAURI_SIGNING_PRIVATE_KEY`, NOT the local `.secrets` key — a separate fact from the local build's signatures). `releases/latest` moved from v2.99.98 to **v2.99.99** on publication, so existing installs are now offered the update. `revocations` re-checked after publishing: still `prerelease=true`, untouched. The release asset `Vyuha_2.99.99_x64-setup.exe` is **34,861,983 B** vs the LOCAL/ZIP build's **34,860,149 B** — 1,834 B apart, confirming again that these are two different binaries (see the 2026-08-20 DECISIONS entry). **Publish DONE. Live Angel One pull DONE — see §7.** Still open, owner only: WDSI (use the ZIP's installer) · winget (uses the GitHub asset) · install on a non-build machine. **Do NOT create or re-publish the `revocations` prerelease — it exists and must stay a prerelease.** |
 | GitHub release (v2.99.98) | `v2.99.98` was a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish". **PUBLISHED by the owner 2026-08-20 03:23Z and is now `releases/latest`.** Its assets are built from `6e2dd80` — the commits after the tag are NOT in them, so the Angel One pull fix reaches nobody until v2.99.99 ships. Never re-upload assets onto a published tag: the updater compares versions, so an existing install would never be offered the same version again, and SmartScreen reputation and the ZIP's CHECKSUMS.txt are both per file hash |
 | Client ZIP | `release-packages/Vyuha_2.99.99_Client_Package.zip` — 10 entries, installer SHA-256 `27D8695E…B23004`. **Extracted and read:** `WHATS_NEW.md` first heading `## New in v2.99.99`; `TERMS`/`PRIVACY`/**`REFUND_POLICY`** all `Applies to: Vyuha v2.99.99 and later` dated 2026-08-20 (REFUND carries that line for the FIRST time); deck contains exactly one version string, `v2.99.99`; grep for `OWNER:`, `macos` and `pine script|tradingview` over the extracted ZIP all return **nothing**; the packed `.sig` decodes to `4FF85F3BBE1DA21D`. **This installer is NOT the GitHub release asset** — see the 2026-08-20 DECISIONS entry on the two binaries |
 | Unit tests | **1,920 passed / 0 failed** across 131 files — `npm run verify` EXIT 0 **twice on 2026-08-20**: once on `b405ad9` as the pre-bump gate and again at `vyuha@2.99.99` after the doc edits and bump. (Earlier context: on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
 | e2e | **NOT run locally this session.** The evidence for v2.99.99 is CI run 32380322684, where BOTH Playwright suites (ubuntu + macOS-14) passed on the release commit. Last local run was 45/45 on 2026-08-20 before the OpenAlgo wave |
 | Installer | `Vyuha_2.99.99_x64-setup.exe` **34,860,149 B**, SHA-256 `27D8695E863D3426DE4016C86002C6A148E2F1A1E1457838A11835621BB23004`; MSI `Vyuha_2.99.99_x64_en-US.msi` 57,963,645 B, SHA-256 `068DCA47…57FEC4`. Both `.sig` key ids decode to **`4FF85F3BBE1DA21D`**, byte-identical to `tauri.conf.json` `plugins.updater.pubkey` (decoded from the local `.sig`, NOT trusted from the build's "✓ signed" line). **Freshness proven two ways:** `BUILD_ID` changed `2wW9bxykXfHZipbZHTgP3` → **`KOKnpdVgOsrtwbhlnjiEn`** (19:50 IST 2026-08-20), and the bundle carries `openalgo` (16 files) + `Integrations (advanced)` (3 chunks incl. a client chunk). **The Angel One fix is present in the built server chunk**, minified as `h=L[l]?.needsToken??!0; if(!d.ok||h&&!p.ok)` with `angelone` at `needsToken:!1` |
-| Previous | v2.99.98 published 2026-08-20 03:23Z and was `releases/latest` until v2.99.99 is published. **Its binary still carries the broken Angel One pull** (built from `6e2dd80`) |
+| Previous | v2.99.98 published 2026-08-20 03:23Z, superseded as `releases/latest` by v2.99.99 at 15:46Z the same day. **Its binary carries the broken Angel One pull** (built from `6e2dd80`) — anyone still on it must update |
 
 **SHIPPED IN v2.99.99, SWITCHED OFF — OpenAlgo opt-in integration** (was "unreleased on `main`"
 until 2026-08-20; the code is unchanged from `af228b5`, only its release status moved). It rode
@@ -76,8 +76,15 @@ integration or inherits someone's consent** (pinned by a forged-envelope test).
    `tests/vault.test.ts` pins the trap. **The fix SHIPS IN v2.99.99** (tagged 2026-08-20) — verified
    in the source at `app/api/import/broker/route.ts:260` and in the built bundle, where the minified
    guard reads `h=L[l]?.needsToken??!0; if(!d.ok||h&&!p.ok)` with `angelone` at `needsToken:!1`.
-   **Still never exercised against the live broker** — that pull is the owner's to run (DOC_AUDIT
-   row 18). Until the v2.99.99 draft is PUBLISHED, every buyer still has the broken build.
+   **CONFIRMED AGAINST THE LIVE BROKER 2026-08-20 16:32 IST by the owner, on the published
+   v2.99.99 build** — the connection reports "connected" and a Pull & commit returned
+   *"Committed — 0 added, 0 duplicates skipped. Angel One returned no fills"*. That message is the
+   SUCCESS path: it means the vault read, the `needsToken` guard, the TOTP-minted unattended login
+   and the trade-book request all ran, and the book was simply empty on a day with no trades. The
+   broken build could never reach that point — it refused with "the saved credentials cannot be
+   read" before any network call. **DOC_AUDIT row 18 is satisfied for this release.** Still NOT
+   exercised: an Angel One API pull carrying ACTUAL FILLS — row parsing, charge computation,
+   product derivation and de-duplication on that path remain unverified until a trading day.
 2. **My own regression, caught by the suite:** `openalgo_enabled` is the first NOT NULL column in the
    backup redaction list, and redaction wrote `null` → the restore INSERT violated the constraint and
    `restoreDatabase` returned `{ok:false}` (9 backup round-trip tests). Fixed with
@@ -163,7 +170,7 @@ create the mirror repo, run the archive, and run `license-backup.mjs`). Form scr
 emails the owner per submission with running plan totals, and has `vyuhaSummary()` (not executed here — one test
 submission by the owner will prove it).
 
-**Owner's open to-dos (as of 2026-08-20):** **publish the v2.99.99 draft** — it is built, tagged and CI-green; until it is published the Angel One pull stays broken for every buyer · **run a live Angel One pull on the v2.99.99 build** (DOC_AUDIT row 18; the fix is verified in the code and in the built bundle, never against the broker) · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
+**Owner's open to-dos (as of 2026-08-20):** *(v2.99.99 published 15:46Z and its Angel One pull confirmed live at 16:32 IST — both closed.)* **An Angel One pull carrying REAL FILLS** — the empty-book path is proven, the row-parsing path is not · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
 email talk@rainmatter.com + X thread (ZERODHA_PROPOSAL.md) · run the Apps Script, send the form link with each sale ·
 create the mirror repo + `npm run mirror:push` · `npm run release:archive` to a drive · `license-backup.mjs` ·
 refund/terms sign-off · winget + WDSI submissions · supply the broker **API client details** (the Paytm/Zerodha/Upstox FILES were delivered and verified 2026-08-20; only the API credentials remain).
@@ -207,9 +214,9 @@ Product surface: **43 screens**, 7 brokers' MTF lists (10,501 per-stock margins 
 6 auto-detected broker importers + PDF + generic column mapper, and **3 live broker APIs advertised
 to buyers** (Kite, Dhan, Angel One) — plus a 4th, OpenAlgo, which ships in the v2.99.99 binary
 **off by default and undocumented outside the app**. Angel One's pull was BROKEN in every shipped
-build from v2.99.80 to v2.99.98; **fixed in v2.99.99** — verified in the source
-(`app/api/import/broker/route.ts:260`) and in the built bundle, but **never yet against the live
-broker**.
+build from v2.99.80 to v2.99.98; **fixed in v2.99.99 and CONFIRMED against the live broker**
+(2026-08-20 16:32 IST — connected, authenticated unattended via TOTP, trade book returned empty on a
+non-trading day). Source: `app/api/import/broker/route.ts:260`.
 
 ---
 
@@ -435,11 +442,12 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
 
 - ✅ **v2.99.98 is PUBLISHED and is `releases/latest`** (2026-08-20 03:23Z; v2.99.95/.96/.97 all published before it). Publishing stays
   the owner's per-release decision. Older drafts still unpublished: v2.99.75/.55/.50/.40/.30.
-- ⏳ **v2.99.99 is TAGGED and its DRAFT IS READY** (tag `51b664d` → commit `e8198c2`; CI run
-  32380322684 green on all 5 jobs before the tag; Release workflow 32380767740 success, 9 assets;
-  `release:verify v2.99.99` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"). **Not published
-  — that is the owner's click.** Until it is, `releases/latest` stays v2.99.98 and every buyer
-  still has the broken Angel One pull.
+- ✅ **v2.99.99 is PUBLISHED and is `releases/latest`** (2026-08-20 15:46:10Z; tag `51b664d` →
+  commit `e8198c2`; CI run 32380322684 green on all 5 jobs before the tag; Release workflow
+  32380767740 success, 9 assets; `release:verify v2.99.99` → all 3 `.sig` = `4FF85F3BBE1DA21D`).
+  **The Angel One pull was then confirmed working against the live broker** (§7). This is the first
+  release in this repo's history whose headline fix was verified end to end against the real
+  third-party service before the session closed.
 - ✅ **The `revocations` prerelease EXISTS** (created 2026-08-12, `prerelease: true`, one
   asset `revocations.json`) — verified 2026-08-15; do not create it again.
 - **Owner answers 2026-08-15:** delivery link = mail/WhatsApp, owner sends the package after
