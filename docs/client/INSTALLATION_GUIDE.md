@@ -153,7 +153,7 @@ database migration).
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (shown at the bottom of the sidebar, e.g. `Local · Offline · v2.99`) and, if the
+Vyuha version (shown at the bottom of the sidebar, e.g. `Local · Offline · v2.99.98`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

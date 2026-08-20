@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything below was verified against the repo on 2026-08-19 (monetisation/docs sessions after v2.99.97), not recalled.
+Everything below was verified against the repo on 2026-08-20 (the broker-integration release and the OpenAlgo opt-in wave), not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -30,12 +30,12 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 | | |
 |---|---|
-| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is two commits AHEAD of the tag** (`af228b5` + `f2c375a`, the OpenAlgo opt-in wave): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
+| Version | **v2.99.98** — committed `6e2dd80`, tagged `v2.99.98` (tag `937c5f5`), pushed 2026-08-20. **`main` is FOUR commits AHEAD of the tag** (`af228b5` + `f2c375a` + `d0a2f0f` + `6c232a0`, the OpenAlgo opt-in wave and its state updates): built and verified, deliberately NOT bumped, tagged or packaged — owner holds the release until a live OpenAlgo pull is checked against a contract note |
 | Branch | `main`, clean apart from this file |
 | CI | **green on `6e2dd80` — all 5 jobs incl. Windows — BEFORE tagging** (run 32296904204; the ubuntu e2e job hung twice at the Playwright browser-install step — GitHub infra — and passed on a rerun of that job alone); Release workflow 32301883296 — see GitHub release row |
-| GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish". **PUBLISHED by the owner 2026-08-20 03:23Z and is now `releases/latest`.** Its assets are built from `6e2dd80` — the three commits after the tag are NOT in them, so the Angel One pull fix reaches nobody until v2.99.99 ships. Never re-upload assets onto a published tag: the updater compares versions, so an existing install would never be offered the same version again, and SmartScreen reputation and the ZIP's CHECKSUMS.txt are both per file hash |
+| GitHub release | `v2.99.98` is a **DRAFT with 9 assets** (Release workflow 32301883296 success; owner publishes); `release:verify v2.99.98` → all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish". **PUBLISHED by the owner 2026-08-20 03:23Z and is now `releases/latest`.** Its assets are built from `6e2dd80` — the commits after the tag are NOT in them, so the Angel One pull fix reaches nobody until v2.99.99 ships. Never re-upload assets onto a published tag: the updater compares versions, so an existing install would never be offered the same version again, and SmartScreen reputation and the ZIP's CHECKSUMS.txt are both per file hash |
 | Client ZIP | `release-packages/Vyuha_2.99.98_Client_Package.zip` (33.9 MB), installer SHA-256 `6CE6BFDB…9A8D36`; ZIP's `WHATS_NEW.md` first heading, `TERMS`/`PRIVACY` "Applies to" and both deck chips = v2.99.98 (opened and checked) |
-| Unit tests | **1,918 passed / 0 failed** across 131 files (`npm run verify` EXIT 0 incl. build, 2026-08-20, on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
+| Unit tests | **1,920 passed / 0 failed** across 131 files (`npm run verify` EXIT 0 incl. build, 2026-08-20, on `af228b5`; was 1,858/128 at the v2.99.98 tag — +60 from the OpenAlgo adapter, disclosure, route-gate, vault and backup tests). Earlier at the tag: 1,756 → 1,858 = +102 from the new parser, fixture-matrix, isin-symbol and reconciliation tests; the private-file tests skip on CI, so CI's count is lower by those) |
 | e2e | **45 passed / 0 failed** (2.1 min, `npx playwright test`, 2026-08-20, before the bump) |
 | Installer | `Vyuha_2.99.98_x64-setup.exe` (34,857,374 B) + MSI; both `.sig` key ids **`4FF85F3BBE1DA21D`**; `BUILD_ID` 01:31 IST 2026-08-20; bundle carries the `FIFO per symbol + day` and `numeric scrip code` markers |
 | Previous | v2.99.97 published 2026-08-15 13:28Z (superseded as `releases/latest` by v2.99.98 on 2026-08-20) |
@@ -108,10 +108,10 @@ block, `tests/private-reconciliation.test.ts`; docs: `BROKER_FORMATS.md`, four D
 (2026-08-20), CHANGELOG, README, client docs, deck, landing/brochure pills, standalone rebuilt.
 **Not done / not verifiable here:** a contract note (none supplied — Paytm's lot statement was the
 reference); Upstox values; install on a non-build machine; winget + WDSI; publishing the drafts.
-An untracked `lib/import/api/openalgo.ts` + `tests/openalgo-api.test.ts` (15 tests, no references
-anywhere in the repo, not from this wave's agents) appeared in the tree during the session and was
-**moved out to the session scratchpad** (`…/scratchpad/openalgo-untracked/`) so the verified tree is
-exactly what shipped — the owner decides whether it comes back.
+An early DRAFT of `lib/import/api/openalgo.ts` appeared untracked in the tree during that session
+and was parked outside the repo so the v2.99.98 tree was exactly what shipped. **Superseded:** the
+refined version from `T:\Thejesh\CLAUDE-CODE\OPENALGO-HANDOFF\VYUHA` (20 tests) was committed on
+2026-08-20 in `af228b5`; the parked draft is obsolete and can be discarded.
 
 **v2.99.97 content (all verified 2026-08-15):** installer node.exe lock fixed (`stop_sidecar()` on
 Destroyed / ExitRequested / Exit / before update; NSIS pre-install/pre-uninstall hooks stop only
@@ -156,10 +156,10 @@ create the mirror repo, run the archive, and run `license-backup.mjs`). Form scr
 emails the owner per submission with running plan totals, and has `vyuhaSummary()` (not executed here — one test
 submission by the owner will prove it).
 
-**Owner's open to-dos (as of 2026-08-19):** publish the v2.99.97 draft · fill the deck chips and submit the Rainmatter form ·
+**Owner's open to-dos (as of 2026-08-20):** **cut v2.99.99 so the Angel One pull fix reaches buyers** (broken for every user since v2.99.80, still broken in the published v2.99.98) · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
 email talk@rainmatter.com + X thread (ZERODHA_PROPOSAL.md) · run the Apps Script, send the form link with each sale ·
 create the mirror repo + `npm run mirror:push` · `npm run release:archive` to a drive · `license-backup.mjs` ·
-refund/terms sign-off · winget + WDSI submissions · supply Paytm/Zerodha/Upstox files + API details for the next build.
+refund/terms sign-off · winget + WDSI submissions · supply the broker **API client details** (the Paytm/Zerodha/Upstox FILES were delivered and verified 2026-08-20; only the API credentials remain).
 
 **v2.99.96 content (all verified 2026-08-15, commits `99581e6`…`e889645`):** Trades table Qty /
 Invested (MTF own-% from `buyValue − mtfFundedAmount`, never invented) / Entry / Exit replacing
@@ -193,11 +193,14 @@ Code volume (excluding `src-tauri` vendored Rust deps):
 | `lib/` | 164 | 25.1 |
 | `components/` | 110 | 16.4 |
 | `app/` | 91 | 8.5 |
-| `tests/` | 126 | 15.6 |
+| `tests/` | 131 | 16.9 |
 | `e2e/` | 18 | 1.6 |
 
 Product surface: **43 screens**, 7 brokers' MTF lists (10,501 per-stock margins bundled),
-6 auto-detected broker importers + PDF + generic column mapper, 3 live broker APIs.
+6 auto-detected broker importers + PDF + generic column mapper, and **3 live broker APIs in the
+shipped v2.99.98 binary** (Kite, Dhan, Angel One) — `main` carries a 4th, OpenAlgo, off by default
+and unreleased. NOTE: Angel One's pull is BROKEN in every shipped build since v2.99.80; fixed on
+`main`, ships in v2.99.99.
 
 ---
 
@@ -209,9 +212,9 @@ cost win in this repo.
 | Question | File |
 |---|---|
 | Can I change this? What will it break? | **`AGENTS.md`** — 10 invariants + conventions. Read before ANY code change. |
-| Why is this constant/threshold what it is? | **`docs/DECISIONS.md`** (59 KB, dated entries, newest at top) |
-| What shipped, when, and what broke | **`CHANGELOG.md`** (137 KB, 57 release sections) |
-| What does the product actually do / feature copy | `README.md` (52 KB) |
+| Why is this constant/threshold what it is? | **`docs/DECISIONS.md`** (100 KB, dated entries, newest at top) |
+| What shipped, when, and what broke | **`CHANGELOG.md`** (152 KB, 61 release sections) |
+| What does the product actually do / feature copy | `README.md` (64 KB) |
 | A broker file's exact columns + fingerprint | `docs/BROKER_FORMATS.md` |
 | What can be imported at all | `lib/import/registry-meta.ts` — **the only source of truth** |
 | Licensing, keys, revocation, refunds | `docs/owner/LICENSE_OPERATIONS.md` |
@@ -421,7 +424,7 @@ The owner's chosen priority at the last session's close was **"make it sellable 
 further engineering. The reframing finding: **131 commits and 53 tags in six days produced 2
 licence keys, zero of them annual.** The featured SKU has never been sold end to end.
 
-- ✅ **v2.99.95 is PUBLISHED and is `releases/latest`** (verified 2026-08-15). Publishing stays
+- ✅ **v2.99.98 is PUBLISHED and is `releases/latest`** (2026-08-20 03:23Z; v2.99.95/.96/.97 all published before it). Publishing stays
   the owner's per-release decision. Older drafts still unpublished: v2.99.75/.55/.50/.40/.30.
 - ✅ **The `revocations` prerelease EXISTS** (created 2026-08-12, `prerelease: true`, one
   asset `revocations.json`) — verified 2026-08-15; do not create it again.
@@ -450,7 +453,7 @@ deliver, activate.
 - `npm run winget:manifest` → `wingetcreate` submit PR to `microsoft/winget-pkgs`.
 - Microsoft false-positive file submission.
 
-The release IS public now (v2.99.95). This matters more than it looks: **SmartScreen reputation
+The release IS public now (v2.99.98). This matters more than it looks: **SmartScreen reputation
 accrues per FILE HASH**, so a 53-tag cadence guarantees every buyer meets a cold warning.
 winget is the intended fix. Step-by-step: `docs/owner/WINGET_AND_SMARTSCREEN.md` (2026-08-15).
 
@@ -511,7 +514,7 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
 
 Refund-policy and terms sign-off (guide exists, decision pending) · whether to collapse "theme"
 and "accent skin" into one list (9 skins × light/dark × tint × panel style keeps multiplying
-axes) · whether to publish the v2.99.97 draft (v2.99.96 is `releases/latest`).
+axes) · whether to ship v2.99.99 now for the Angel One fix or wait on a live OpenAlgo pull first.
 
 *(Left this list 2026-08-14: Pro annual pricing — ₹9,999; the `v2.99.0` tag — keep; the PDF
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
@@ -520,6 +523,11 @@ revocations prerelease exists; annual→lifetime — full credit within the year
 ### 8.6 Explicit non-goals — do not propose these
 
 **No more brokers, no more report screens, no cloud AI, no backtesting, no new subsystems** —
+**One recorded exception (2026-08-20, owner-approved):** the opt-in OpenAlgo integration added a
+fourth broker-API source, a Settings → Integrations section and migration 0049. It is not a new
+broker (OpenAlgo is a router; trades are stamped with the underlying broker and `BROKERS` was NOT
+extended) and it is off by default. Rationale in DECISIONS.md 2026-08-20. This exception does not
+reopen the list. Otherwise —
 "the codebase rewards consolidation". No paid code signing (free workarounds only). Taglines
 must avoid outcome claims, SEBI-adjacent. Kotak Neo and Sahi stay on the generic column mapper
 by design until a real export pins the layout.
@@ -534,7 +542,8 @@ by design until a real export pins the layout.
 - **Fixtures are schema-only.** Real exports live gitignored in `tests/fixtures/private/`; never
   commit or quote identifiers. **Label every claim VERIFIED (against a real file) or INFERRED.**
 - Scope searches to `app/`, `components/`, `lib/`, `e2e/`, `tests/`. No adjacent refactors.
-- Reconcile the first live Paytm Money import against a contract note (§7).
+- ✅ Paytm Money reconciliation DONE 2026-08-20 (§7). The equivalent still-open one: Upstox file
+  values are unverified — its exports carried no rows — so re-verify on the first populated export.
 - Public launch is planned as **"V.30.0"**.
 
 ---

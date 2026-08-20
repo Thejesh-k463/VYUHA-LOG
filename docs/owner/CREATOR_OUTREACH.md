@@ -1,13 +1,13 @@
 # Creator outreach — free review copies for finance creators
 
-**Status:** owner playbook, drafted 2026-08-17 against v2.99.97. Not client-facing.
+**Status:** owner playbook, drafted 2026-08-17, refreshed 2026-08-20 against v2.99.98. Not client-facing.
 
 **The offer, in one line:** a free **lifetime** Vyuha key in exchange for an honest,
 disclosed review. No fee, no commission, no revenue share, no script approval.
 
 Every factual claim below is lifted from one of three places and must stay in step
 with them: `lib/domain/pricing-comparison.ts` (`WHY_VYUHA`, `VYUHA_ROW`),
-`docs/client/README.md` (v2.99.97 feature copy) and `docs/owner/MONETIZATION_PLAN.md`
+`docs/client/README.md` (v2.99.98 feature copy) and `docs/owner/MONETIZATION_PLAN.md`
 §2/§5. If a number changes there, change it here the same day.
 
 **Placeholders to fill before sending:** `[[NAME]]`, `[[HANDLE]]`,
@@ -39,8 +39,8 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > Hi [[NAME]] — I build Vyuha, a local-first Windows trade journal for Indian retail
 > traders. Everything stays on the trader's own PC: no account, no cloud, no telemetry.
 >
-> It imports tradebooks from 6 brokers automatically (plus a column mapper and 3
-> broker-API pulls), computes STT/CTT, stamp duty, GST and exchange charges from a
+> It imports tradebooks from 6 brokers automatically (plus a column mapper, and direct
+> API pulls from Zerodha Kite and Dhan), computes STT/CTT, stamp duty, GST and exchange charges from a
 > broker × segment × exchange rate table, handles staged positions and an options
 > seller journal, and builds an ITR / AIS / advance-tax pack. Journal is free forever;
 > Pro is ₹9,999/yr or ₹29,999 lifetime.
@@ -75,7 +75,8 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > What it does, plainly:
 >
 > - Imports tradebooks from 6 brokers with auto-detection, plus a column mapper for
->   the rest and 3 broker-API pulls (Import → Connect broker).
+>   the rest and direct API pulls from Zerodha Kite and Dhan (Import → Connect broker).
+>   Angel One SmartAPI's unattended pull is fixed and ships in the next release.
 > - Computes statutory charges — STT/CTT, stamp duty, GST, exchange and SEBI charges —
 >   from a broker × segment × exchange rate table. Measured within 0.69% of a real
 >   broker report across 92 rows (brokerage excluded).

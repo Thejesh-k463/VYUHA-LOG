@@ -108,8 +108,11 @@ this is about catching it before the push, not instead of CI.
   files belong to `lib/import/generic-map.ts`, which asks; it refuses a row it cannot read rather
   than coercing a bad cell to 0, because a trade for zero shares at zero rupees is worse than no
   trade. Paytm Money moved OFF this list on 2026-08-12 when a real export pinned its layout —
-  a deliberate exception recorded in docs/DECISIONS.md, with the caveat that its sample was
-  schema-only: the first live import should be reconciled against a contract note.
+  a deliberate exception recorded in docs/DECISIONS.md. That caveat is now DISCHARGED: on
+  2026-08-20 a real 414-execution export was reconciled against Paytm's own Realized P&L Detail
+  (47 of 52 in-window scrips within ₹25, closed net within 1.4%, charges conserved to ₹0.16).
+  Upstox is the one that is still schema-only — its three real exports carried zero data rows, so
+  its layouts are VERIFIED and every value behaviour is INFERRED until a populated export arrives.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.

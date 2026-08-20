@@ -1,6 +1,6 @@
 # Zerodha — integration proposal (email + X/Twitter messages)
 
-Owner-only. Drafted 2026-08-15 against v2.99.97. Every product claim below is taken from
+Owner-only. Drafted 2026-08-15, refreshed 2026-08-20 against v2.99.98. Every product claim below is taken from
 `lib/domain/pricing-comparison.ts`, `docs/client/README.md` and the README; do not add
 outcome, accuracy or returns language (SEBI posture — `MONETIZATION_PLAN.md` §5).
 
@@ -96,12 +96,13 @@ full contact map.
 > sandbox account to test against. Vyuha would carry Zerodha's terms verbatim in the consent
 > screen and publish exactly what fields are read.
 >
-> **About Vyuha (v2.99.97).** Six auto-detected broker formats (Zerodha, Dhan, Groww,
-> Angel One, Upstox, Paytm Money) plus a column mapper for any CSV and three broker-API
-> pulls (Kite, Dhan, Angel One SmartAPI); staged positions with per-tranche stops; an
+> **About Vyuha (v2.99.98).** Six auto-detected broker formats (Zerodha, Dhan, Groww,
+> Angel One, Upstox, Paytm Money) plus a column mapper for any CSV and direct API pulls
+> from Kite and Dhan (Angel One SmartAPI's unattended pull is fixed and ships in the next
+> release); staged positions with per-tranche stops; an
 > options-seller journal; a tax pack (ITR schedule export, AIS reconcile, advance tax); MTF
-> margin lists for seven brokers (10,501 stocks); 1,756 unit tests and 45 Playwright flows
-> in CI on every commit; signed installers with a working updater and remote key
+> margin lists for seven brokers (10,501 stocks); 1,920 unit tests across 131 files and 45
+> Playwright flows in CI on every commit; an updater whose artifacts are cryptographically signed and verified on every install (the installer itself is deliberately NOT Authenticode-signed — no paid certificate; see CODE_SIGNING.md) and remote key
 > revocation. Landing page: https://thejesh-k463.github.io/VYUHA-LOG/ · Source and
 > release history: https://github.com/Thejesh-k463/VYUHA-LOG
 >

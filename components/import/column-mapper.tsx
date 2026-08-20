@@ -116,7 +116,7 @@ export function ColumnMapper({
           </span>
           {" — "}
           {shape === "executions"
-            ? "buys and sells will be paired into positions, FIFO."
+            ? "buys and sells will be paired into positions — same-day buys and sells net off first, then oldest-lot FIFO."
             : "map a Buy/Sell column instead if each row is a single fill."}
         </div>
       </div>

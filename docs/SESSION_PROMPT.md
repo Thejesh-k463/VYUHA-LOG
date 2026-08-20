@@ -10,7 +10,7 @@ When unsure, use Full. The prompt costs a few hundred tokens; a wrong assumption
 about paise-vs-rupees costs a release.
 
 **Do not tell a session to "read all the files".** This repo is 164 `lib/` files,
-110 components, 43 screens and a 137 KB changelog. Reading broadly is what makes
+110 components, 43 screens and a 148 KB changelog. Reading broadly is what makes
 a session both expensive and *less* accurate — the window fills with material the
 task does not need. `VYUHA-STATE.md` §3 is a routing table precisely so a session
 opens the right three files instead of the wrong thirty.
@@ -100,56 +100,104 @@ that cannot be bundled, because client components import `lib/license.ts` and a
 
 ---
 
-## Next session — ready-to-paste (updated 2026-08-19, after v2.99.97 + sales/monetisation passes)
+## Next session — ready-to-paste (updated 2026-08-20, after v2.99.98 + the OpenAlgo opt-in wave)
 
 ```
 Read CLAUDE.md first (it imports AGENTS.md), then VYUHA-STATE.md §2 and §8. Do not read
-anything else yet — VYUHA-STATE.md §3 is a routing table; open only what the task needs.
-Then read docs/DECISIONS.md ONLY for entries dated 2026-08-15 (there are ~14; they are the
-newest facts and several are traps: the lockfile rule, the revocations prerelease, the tint
-curves, the Pages redirect).
+anything else yet — §3 is a routing table; open only what the task needs. Then read
+docs/DECISIONS.md ONLY for the entries dated 2026-08-20 (six of them; the newest three are the
+OpenAlgo opt-in, the Angel One vault bug, and the Paytm pairing reconciliation).
 
-STATE YOU CAN TRUST: v2.99.97 built, CI-green, tagged, DRAFT release (publish is mine);
-v2.99.96 is releases/latest; landing page live at https://thejesh-k463.github.io/VYUHA-LOG/;
-1,756 unit tests / 45 e2e flows green; 13/13 load tests built; revocations prerelease exists;
-owner kits done (Rainmatter deck + answers, creator outreach, Zerodha proposal + contact map,
-client feedback form script, release-resilience scripts) — all in docs/owner/; key backup,
-mirror repo and release archive are still the owner's to run.
+Start this session on Opus 5 (the VYUHA default; the work below is Bash/Edit-bound).
 
-TASK: <one of the two below, or what I paste>
- A) BROKER INTEGRATION — I am supplying real Paytm Money / Zerodha / Upstox exports and API
-    client details (gitignored under tests/fixtures/private/; never quote identifiers).
-    For each: verify the parser against the real file per docs/BROKER_FORMATS.md, reconcile
-    Paytm against a contract note (VYUHA-STATE §7 rule), pin the cross-broker refusal matrix
-    in tests/import-detection-matrix.test.ts, wire/verify the API pull in lib/import/api/*,
-    and record findings in DECISIONS.md. No new brokers, no new screens.
- B) FIRST-RUN ONBOARDING — the recorded #1 engineering pick: guide a fresh install through
-    import → mark → first review (app/, components/ only; no new subsystem). Ask me for the
-    step list before building.
+STATE YOU CAN TRUST (verified 2026-08-20):
+- Branch main, HEAD 6c232a0 or later, clean, pushed. main is FOUR+ commits ahead of tag v2.99.98
+  (af228b5 + f2c375a + d0a2f0f + 6c232a0 = the OpenAlgo opt-in wave and its state/doc updates).
+- npm run verify EXIT 0 — 1,920 unit tests / 131 files, build compiled.
+- CI green on that work, all 5 jobs incl. Windows and BOTH Playwright e2e suites (run 32366386859).
+- v2.99.98 is PUBLISHED and is releases/latest (2026-08-20 03:23Z). Its installer was built from
+  commit 6e2dd80, so NONE of the commits above are in the binary buyers have.
+- The OpenAlgo integration is built, gated OFF, invisible until enabled, and deliberately absent
+  from every buyer-facing document. No live OpenAlgo pull has ever been run.
+- Latest migration is 0049.
 
-How I want you to work:
-1. Ask before building; propose what fits this app's structure and what it costs; build only
-   what we agree on. Multi-agent is fine — but agents must NOT git stash/commit/checkout, must
-   NOT run npm install, and must NOT run `npm run verify`/`next build` while another agent is
-   editing (builds collide in .next); one verify per wave, run by you.
+TASK: cut, build and release v2.99.99, and close the open items below.
+
+WHY THIS RELEASE IS TIME-SENSITIVE — say it plainly in the notes: every shipped build since
+v2.99.80, including the currently published v2.99.98, has a BROKEN Angel One live API pull
+(encryptSecret("") is unreadable and the pull refused on it before dispatching). The fix is
+committed but unreleased, while README, the client docs, the deck and the landing page all
+advertise that pull as working. That fix is the reason to release; OpenAlgo rides along
+switched off.
+
+Follow the `release` skill start to finish. Specifics that have bitten before:
+1. npm run verify (not npm test) BEFORE the bump; report the count you actually saw.
+2. npm run bump-version 2.99.99, then BY HAND: package-lock.json root "version" in TWO places
+   (lines 3 and 9), and `cd src-tauri && cargo update -p vyuha --offline` for Cargo.lock.
+   NEVER npm install / --package-lock-only — it corrupts the lock and breaks all CI jobs.
+3. npm run desktop:build (needs Rust+MSVC; in Git Bash
+   export PATH="$(cygpath "$USERPROFILE")/.cargo/bin:$PATH"). Prove freshness TWO ways:
+   desktop-dist/.next/BUILD_ID is from this build, AND grep the bundle for a marker only this
+   version has — use "openalgo" or "Integrations (advanced)".
+4. Verify signatures by DECODING the key id, never by trusting "✓ signed": every .sig must be
+   4FF85F3BBE1DA21D and match plugins.updater.pubkey in tauri.conf.json.
+5. CI must be green on the release commit BEFORE tagging (the Windows job especially). The ubuntu
+   Playwright job has hung twice at "Install Playwright browsers" — if it hangs, cancel the run
+   and `gh run rerun <id> --failed`; do not tag around it.
+6. npm run client:package AFTER the docs are updated (the ZIP packs docs/client/* at build time),
+   then OPEN the ZIP and confirm WHATS_NEW.md, TERMS/PRIVACY "Applies to" and both deck chips
+   say v2.99.99.
+7. Do NOT create or re-publish the revocations prerelease — it exists and must stay a prerelease.
+8. Never re-upload assets onto an already published tag: the updater compares version numbers, so
+   an existing install would never be offered the same version again, and SmartScreen reputation
+   and the client ZIP's CHECKSUMS.txt are both per file hash.
+
+OPEN ITEMS TO CLOSE IN THIS SESSION:
+a) docs/client/README.md "New in v2.99.99" MUST LEAD with the Angel One fix in the buyer's words
+   ("if your Angel One API pull said the saved credentials could not be read, it now works"),
+   then walk docs/owner/DOC_AUDIT.md rows 1,3,5,6,9,10,11,13,14 to bring every buyer-facing
+   surface to v2.99.99. Run npm run landing:build after editing the landing page.
+b) The Angel One copy is FALSE until this release ships, in at least: README.md ~110/306/321/324,
+   docs/client/README.md ~90, docs/client/INSTALLATION_GUIDE.md ~82, docs/sales/landing-page.html
+   ~555, docs/client/GETTING_STARTED_DECK.html ~164, CHANGELOG.md ~353/356. Once v2.99.99 is
+   built, re-read each and confirm it is true again. Add a CHANGELOG note recording that the pull
+   was broken from v2.99.80 to v2.99.98 — the changelog currently has no entry saying so.
+c) ASK ME before writing OpenAlgo into any buyer-facing doc. Standing decision: in-app only until
+   I have run a live pull and checked it against a contract note. A release note may say a new
+   advanced, off-by-default integration exists; it may NOT claim broker coverage.
+d) Buyer-ZIP hygiene, my call — ask me: docs/client/TERMS.md and REFUND_POLICY.md still carry the
+   ⚠️ OWNER banner and ship to buyers that way; REFUND_POLICY has no "Applies to" line and is
+   dated 2026-08-15 while TERMS/PRIVACY say 2026-08-20. docs/client/README.md ~46/~75 still
+   forward-sells a macOS edition, and CHANGELOG ~199 offers Mac builds "on request" while ~165
+   says macOS is no longer sold.
+e) Also mine to decide: the public CHANGELOG still names Pine Script / TradingView indicators
+   (~461, ~1978, ~2051) and README ~568 lists "indicators" in the repo tree, while
+   tests/no-indicators-in-client-docs.test.ts scans only docs/client + the landing page.
+f) Update VYUHA-STATE §2 with verified numbers before we finish, and tell me when it is a good
+   point to /clear.
+
+HOW I WANT YOU TO WORK (unchanged):
+1. Ask before building; propose what fits this app's structure and what it costs. Multi-agent is
+   fine — agents must NOT git stash/commit/checkout, must NOT npm install, and must NOT run
+   npm run verify / next build while another agent edits; one verify per wave, run by you.
 2. Label every claim VERIFIED (checked now) or INFERRED; say plainly what you could not verify.
-3. Scope: app/, components/, lib/, e2e/, tests/ (+ scripts/ and docs/ only when the task is
-   about them). No adjacent refactors, no new subsystems, no new brokers, no new report screens.
-4. Respect the 10 invariants in AGENTS.md — money is integer paise in the DB, rupees at
-   runtime; pure modules stay pure; every account-scoped read via getSelectedAccountId().
-5. Fixtures are schema-only; real exports live gitignored in tests/fixtures/private/.
-6. Before saying anything is done: `npm run verify` (not `npm test`), prove-it skill, and
-   report the numbers you actually saw (tests, e2e, build markers, sig key id 4FF85F3BBE1DA21D).
-7. Anything measured or deliberately deviated → docs/DECISIONS.md via decision-log.
-8. If this touches a release: release skill start to finish, then `npm run client:package`,
-   update docs/client/* per docs/owner/DOC_AUDIT.md — standing rule.
-9. Already settled, do not re-open: Pro annual ₹9,999 / lifetime ₹29,999 (list ₹13,000 /
-   ₹35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
-   revocations prerelease exists; annual→lifetime = full credit within the year; delivery is
-   manual mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages
-   redirect, not a copy.
-10. When done: update VYUHA-STATE.md §2 with verified numbers, and tell me it's a good point
-    to /clear.
+3. Scope: app/, components/, lib/, e2e/, tests/ (+ scripts/ and docs/ when the task is about
+   them). No adjacent refactors, no new subsystems, no new brokers, no new report screens — with
+   the one recorded exception in VYUHA-STATE §8.6 (the OpenAlgo integration, already built).
+4. Respect the 10 invariants in AGENTS.md.
+5. Anything measured or deliberately deviated → docs/DECISIONS.md via the decision-log skill.
+6. Before saying anything is done: npm run verify, the prove-it skill, and report the numbers you
+   actually saw (tests, e2e, BUILD_ID, bundle marker, sig key id, installer SHA-256).
+
+ALREADY SETTLED — do not re-open: Pro annual ₹9,999 / lifetime ₹29,999 (list ₹13,000 / ₹35,999
+from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design; revocations
+prerelease exists; annual→lifetime = full credit within the year; delivery is manual mail/WhatsApp;
+intraday data not required; macOS is not sold; landing page = Pages redirect, not a copy; OpenAlgo
+is opt-in, off by default, server-gated, and not in BROKERS.
+
+MINE, NOT YOURS (do not attempt): publishing releases, running a live OpenAlgo or broker API pull,
+entering any credential, winget + WDSI submissions, license-backup.mjs, the mirror repo, and
+installing on a non-build machine.
 ```
 
 ## Maintenance

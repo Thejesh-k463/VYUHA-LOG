@@ -27,8 +27,9 @@ record-keeping and analytics tool, not advice).
 **Describe your solution to the problem? (3–4 sentences)**
 > Vyuha is a Windows desktop journal where the trader's record lives in a SQLite file on their
 > own machine — no server, no account, no telemetry. It auto-detects six brokers' exports
-> (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money), maps any other CSV, and pulls from
-> three broker APIs (Kite, Dhan, Angel One SmartAPI), then computes statutory charges from
+> (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money), maps any other CSV, and pulls
+> directly from the Kite and Dhan APIs (Angel One SmartAPI's unattended pull is fixed and
+> ships in the next release), then computes statutory charges from
 > configurable rate tables — within 0.69% of a real broker report across 92 verified rows
 > (brokerage excluded, because it is not derivable from the file). On top of that record sit
 > staged positions with per-tranche stops, an options-seller journal, an ITR/AIS/advance-tax
@@ -46,8 +47,9 @@ record-keeping and analytics tool, not advice).
 **Category:** Capital Markets *(secondary fit: WealthTech and Portfolio Management — pick Capital Markets)*
 
 **Current progress of your product?**
-> Advanced stage — shipping. 57 tagged releases; current v2.99.97 (signed Windows installer,
-> working auto-updater, remote licence revocation); 1,756 unit tests and 45 Playwright flows on
+> Advanced stage — shipping. 61 tagged releases; current v2.99.98 (signed Windows installer,
+> working auto-updater, remote licence revocation); 1,920 unit tests across 131 files and 45
+> Playwright flows on
 > every commit; 13 load tests to a 250k-trade book; per-buyer licensing, 7-day offline trial,
 > free tier that never gates the user's own record. In use by early traders and SEBI-RA
 > colleagues; first paid licences issued. Windows only today; the Mac build exists in CI but is not sold.

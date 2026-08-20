@@ -10,12 +10,18 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.97
+## 0. What you are actually selling, as of v2.99.98
 
 > Since v2.99.75 the pitch gained an appearance layer (nine skins incl. Custom, tint intensity,
 > panel styles, wallpaper — v2.99.96/97), the Qty/Invested/Entry/Exit trades table, and an
 > in-app WhatsApp buy dialog (+91 73936 73714, copy buttons) because the shell opens no external
 > links. The v2.99.75 note below still describes the core selling story.
+>
+> - **v2.99.98 — a tradebook now imports as the trades you actually made.** Zerodha and Paytm
+>   Money tradebooks are paired per scrip and day and reconciled against the broker's own
+>   realised-P&L statement (47 of 52 scrips within ₹25). This is the strongest single claim in
+>   the pitch today: not "we read your file", but "we rebuild your round trips and check them
+>   against your broker's own number."
 
 > ### v2.99.75 marketing note — trust features are conversion features
 >
@@ -315,7 +321,7 @@ things competitors can't easily copy:
 
 Supporting depth: F&O + Greeks, India VIX IV fallback, corporate actions, physical-settlement
 traps, peak-margin leak, broker-cost comparison, SEBI reality-check, SEBI compliance radar,
-five-broker import (incl. Angel One ≈15% of India's active accounts), clickable KPI drill-downs,
+six-broker import (incl. Angel One ≈15% of India's active accounts), clickable KPI drill-downs,
 25-setup preset playbook library.
 
 ## 2. The offer & pricing (₹, India retail)
@@ -360,7 +366,7 @@ can say on a call: **your record is free, the intelligence about it is paid.**
 | Free forever | Pro |
 |---|---|
 | Recording **closed** trades, editing, deleting, tagging | **Live open-position tracking** — SL/TSL/target, running risk |
-| All five broker importers, cross-source overlap warnings | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
+| All six broker importers, cross-source overlap warnings | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
 | Dashboard, P&L calendar with day drill-down and streaks | Portfolio Risk cockpit (VaR, Greeks, margin, breach alerts) |
 | Staged positions, playbooks, sessions, trade calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
 | Chart screenshots, attachments, symbol aliases | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |

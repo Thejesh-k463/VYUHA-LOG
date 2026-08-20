@@ -177,7 +177,7 @@ export function DashboardClient({
         <EmptyState
           variant="chart"
           title="Nothing journalled yet"
-          hint="Import a broker file and this screen comes alive — P&L, expectancy, the equity curve, the daily calendar. Five brokers auto-detect; any other broker's CSV imports by mapping its columns once."
+          hint="Import a broker file and this screen comes alive — P&L, expectancy, the equity curve, the daily calendar. Six brokers auto-detect; any other broker's CSV imports by mapping its columns once."
           action={
             <Button asChild size="sm">
               <Link href="/import">Import a broker file</Link>

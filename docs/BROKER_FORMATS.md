@@ -67,8 +67,8 @@ Auction | Quantity | Price | Trade ID | Order ID | Order Execution Time
   `M`, `MT`, `BE`, `B`, `X`, `A`, `T`) besides `EQ`. There is **no Product
   column** in this export. `Auction` is `false` throughout. Sell-only symbols
   are common (8 of 23 in the sample — holdings bought before the window), so the
-  tradebook is paired FIFO and an unmatched sell is an *opening sell* with
-  `basisUnknown`, never a 100% gain.
+  tradebook is paired SAME-DAY-FIRST then FIFO (see `lib/import/pair-legs.ts`) and
+  an unmatched sell is an *opening sell* with `basisUnknown`, never a 100% gain.
 - Sample had `!ref=A1:M3292` but only the header was non-empty: 3,291 formatted
   blank rows. A row-count check must ignore empty rows or it will claim 3,291 trades.
 
@@ -280,8 +280,11 @@ Sheets `Trade Level` (+ `Scrip Level`). Parsed by `lib/import/parsers/groww-xlsx
 
 ## Status (2026-08-20)
 
-Second batch: `paytm-tradebook.ts` and `zerodha.ts` tradebook paths pair FIFO
-via `lib/import/pair-legs.ts` (opening sells → `basisUnknown`, P&L blank);
+Second batch: `paytm-tradebook.ts` and `zerodha.ts` tradebook paths pair per
+scrip-day via `lib/import/pair-legs.ts` — **same-day buys and sells net off first,
+then oldest-lot FIFO, with inferred opening inventory seeded as the oldest lot**
+(pure FIFO disagreed with Paytm's own statement on 52 of 60 scrips; DECISIONS
+2026-08-20) (opening sells → `basisUnknown`, P&L blank);
 `zerodha.ts` reads `Order Execution Time`; Paytm derives product from the
 scrip-day charge signature and apportions its six stated charge components;
 coded Paytm symbols resolve by ISIN at commit; `angelone-upstox.ts` fingerprints

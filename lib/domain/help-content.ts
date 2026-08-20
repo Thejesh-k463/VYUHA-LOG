@@ -172,13 +172,13 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: "Import",
     answers: "Get broker files into the journal, honestly.",
     body: [
-      "Eight brokers, auto-detected, de-duplicated, with a charge reconciliation panel before anything commits. Tradebooks and P&L exports are treated as different kinds because they are — a P&L file states neither product nor time, so the product question is asked once, before commit.",
+      "Six brokers auto-detected (Zerodha, Dhan, Groww, Angel One, Upstox, Paytm Money), de-duplicated, with a charge reconciliation panel before anything commits. Tradebooks and P&L exports are treated as different kinds because they are — a P&L file states neither product nor time, so the product question is asked once, before commit.",
       "If a file's rows look like trades already recorded from a different file kind, the preview says so before you commit — the two kinds state different facts, so the duplicate check cannot match them silently.",
       "Imported files are listed below with the trades each still owns; deleting one asks whether the trades go too.",
       "Live API pulls for Zerodha, Dhan and Angel One are built in. A fourth path — OpenAlgo — appears here only after you switch it on in Settings → Integrations: it is separate open-source software you run yourself, and through it Groww, Upstox, Paytm Money and Kotak also get a same-day pull. It reads today's executed trades only, and sizes are repaired and counted when the API reports zero, so check a repaired row against your contract note before committing.",
     ],
     keywords: ["dhan", "zerodha", "groww", "csv", "duplicate", "delete import", "reconciliation", "openalgo", "api pull"],
-    refusals: ["MTF is never inferred from a file — it is indistinguishable from delivery there, so the app asks instead of guessing."],
+    refusals: ["MTF is never GUESSED from a file. In most exports it is indistinguishable from delivery — identical STT, identical stamp duty, financing in the ledger — so the app asks rather than assuming. Angel One's tax P&L is the one exception: it carries an explicit MTF Qty column, and a stated figure is read, not inferred."],
   },
   {
     href: "/cash",
