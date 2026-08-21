@@ -126,6 +126,18 @@ describe("README test counts agree with each other", () => {
     const specs = readdirSpecs();
     expect(num(e2eTree?.[2])).toBe(specs.length);
   });
+
+  it("the load-case count matches tests/load/*.load.ts on disk", () => {
+    // Added 2026-08-22 after an audit found "13 load cases" in THREE places in
+    // this README, plus VYUHA-STATE, the Rainmatter application and the pitch
+    // deck, while a fourteenth (C8) had been on disk since the day before. The
+    // count is quoted often enough, and to outside parties, that it needs the
+    // same disk-backed guard the tests/ and screenshots/ figures already have.
+    const cases = readdirSync(path.join(root, "tests", "load")).filter((f) => f.endsWith(".load.ts"));
+    const stated = [...readme.matchAll(/(\d+) load(?:\/stress)? cases/g)].map((m) => num(m[1]));
+    expect(stated.length, "README no longer states a load-case count").toBeGreaterThan(0);
+    for (const s of stated) expect(s, "README states a load-case count that is not on disk").toBe(cases.length);
+  });
 });
 
 describe("README release notes read newest first", () => {

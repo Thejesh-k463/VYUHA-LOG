@@ -1,5 +1,31 @@
 # Refund policy + Terms of use — owner sign-off checklist
 
+> ## ✅ SIGNED OFF — 2026-08-22
+>
+> **Every step below is answered. Do not reopen without a reason to change a
+> commercial term.** Recorded so a future session treats these as settled facts
+> rather than open questions:
+>
+> | Step | Decision |
+> |---|---|
+> | 1 · Refund window | **As drafted** — 7-day full-Pro trial before any money changes hands |
+> | 2 · "Final once the key is issued" | **As drafted** |
+> | 3 · Owner-discretion / tampering note | **Kept** |
+> | 4 · Contact channel | **CLOSED 2026-08-22.** The invoice now carries `ktr.thejesh463@gmail.com` alongside WhatsApp +91 73936 73714. This was a real gap: TERMS told buyers to use "the WhatsApp number and email on your invoice" while `RECEIPT_TEMPLATE.md` still read `<support email>`, and the landing-page footer pointed at the owner's *git* address. Invoice, landing page and the client feedback form (`OWNER_EMAIL`) now all carry the same address and **must not be allowed to drift apart** |
+> | 5 · Licence grant terms | **As drafted** |
+> | 6 · Not-advice disclaimer and accuracy | **As drafted** |
+> | 7 · Liability cap | **As drafted** |
+> | 7a · Governing law / jurisdiction | **LEAVE AS IS — "the laws of India", no city or court named** (owner, 2026-08-22). Deliberate: naming a city's courts requires an actual place of business, and the owner chose not to narrow it. A dispute may be raised anywhere in India |
+> | 8 · Landing-page FAQ consistency | **Consistent** — steps 1–3 changed nothing, so the FAQ still matches |
+> | 9 · Delete the two ⚠️ OWNER banners | **DONE 2026-08-21** — removed from `TERMS.md` and `REFUND_POLICY.md`, verified absent from inside the shipped ZIP |
+> | 10 · Rebuild the client ZIP | **DONE** — `Vyuha_2.99.100_Client_Package.zip` carries the clean copies |
+>
+> **Still NOT done, and deliberately so:** a qualified legal read. The owner has
+> confirmed the terms are acceptable to him; nobody with a practising certificate
+> has reviewed them. That is a live exposure, not a pending task, and it stays
+> true until a lawyer is engaged.
+
+
 `docs/client/REFUND_POLICY.md` and `docs/client/TERMS.md` ship inside the client
 ZIP and are what a buyer holds you to. Both were written as *conservative
 drafts* and both still carry an "OWNER: confirm before sending" banner. This
@@ -65,6 +91,12 @@ and under "What is not refundable": change of mind after the trial; an annual li
 
 ## Step 4 — Contact channel (both files)
 
+> **ANSWERED 2026-08-22: keep WhatsApp AND add the email, which now exists.**
+> `RECEIPT_TEMPLATE.md` carries `ktr.thejesh463@gmail.com`; the landing-page
+> footer was swapped off the owner's git address to match. No edit is needed in
+> `TERMS.md` or `REFUND_POLICY.md` — they point at the invoice, and the invoice
+> is now true.
+
 **Says today:** REFUND_POLICY — "message the WhatsApp number on your invoice with your **Key ID**"; TERMS "## Contact" — "The WhatsApp number and email on your invoice."
 
 **Question:** Is WhatsApp-on-the-invoice the channel you commit to for refund requests, and is the invoice always going to carry it?
@@ -122,6 +154,9 @@ and the two plan definitions: Annual "for one year from the date your key is iss
 **Edit:** TERMS.md "## 7. Liability".
 
 ## Step 7a — Governing law and jurisdiction (TERMS.md §9)
+
+> **ANSWERED 2026-08-22: leave as is.** "The laws of India", no city and no court
+> named. `TERMS.md` §9 is unchanged and needs no edit.
 
 **Says today:** "These terms are governed by the laws of India." — no city/court named.
 

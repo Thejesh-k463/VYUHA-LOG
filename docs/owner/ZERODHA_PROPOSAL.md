@@ -101,7 +101,7 @@ full contact map.
 > from Kite, Dhan and Angel One SmartAPI (the last unattended, minting each day's login code
 > from the enrolled TOTP secret); staged positions with per-tranche stops; an
 > options-seller journal; a tax pack (ITR schedule export, AIS reconcile, advance tax); MTF
-> margin lists for seven brokers (10,501 stocks); 1,920 unit tests across 131 files and 45
+> margin lists for seven brokers (10,501 stocks); 1,921 unit tests across 131 files and 45
 > Playwright flows in CI on every commit; an updater whose artifacts are cryptographically signed and verified on every install (the installer itself is deliberately NOT Authenticode-signed — no paid certificate; see CODE_SIGNING.md) and remote key
 > revocation. Landing page: https://thejesh-k463.github.io/VYUHA-LOG/ · Source and
 > release history: https://github.com/Thejesh-k463/VYUHA-LOG

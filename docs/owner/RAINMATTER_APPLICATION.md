@@ -47,11 +47,11 @@ record-keeping and analytics tool, not advice).
 **Category:** Capital Markets *(secondary fit: WealthTech and Portfolio Management — pick Capital Markets)*
 
 **Current progress of your product?**
-> Advanced stage — shipping. 60 tagged releases; current v2.99.99 (Windows installer with a
+> Advanced stage — shipping. 61 tagged releases; current v2.99.100 (Windows installer with a
 > signed auto-updater channel and remote licence revocation — the installer itself is not
-> Authenticode code-signed, a deliberate cost decision); 1,920 unit tests across 131 files and 45
+> Authenticode code-signed, a deliberate cost decision); 1,921 unit tests across 131 files and 45
 > Playwright flows on
-> every commit; 13 load tests to a 250k-trade book; per-buyer licensing, 7-day offline trial,
+> every commit; 14 load tests to a 250k-trade book; per-buyer licensing, 7-day offline trial,
 > free tier that never gates the user's own record. In use by early traders and SEBI-RA
 > colleagues; first paid licences issued. Windows only today; the Mac build exists in CI but is not sold.
 
