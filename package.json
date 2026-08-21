@@ -30,6 +30,7 @@
     "release:revocations": "node scripts/revocation-publish.mjs",
     "landing:build": "node scripts/build-landing.mjs",
     "test:load": "vitest run --config vitest.load.config.ts",
+    "demo": "node scripts/demo-server.mjs",
     "winget:manifest": "node scripts/winget-manifest.mjs"
   },
   "dependencies": {
