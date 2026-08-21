@@ -31,5 +31,15 @@ console.log(`Mirroring to ${url.replace(/\/\/[^@]*@/, "//***@")} …`);
 execSync("git push mirror main --follow-tags", { stdio: "inherit" });
 execSync("git push mirror --tags", { stdio: "inherit" });
 const head = sh("git rev-parse --short HEAD");
-const tag = sh("git describe --tags --abbrev=0 2>/dev/null || echo none");
+// NOT `... 2>/dev/null || echo none`: execSync runs this through cmd.exe on
+// Windows, where that is a syntax error — so the command failed, the fallback
+// never ran, and every push reported "tags through none" against a mirror that
+// actually had every tag. Verified 2026-08-22: 61 tags on the mirror while this
+// line printed "none".
+let tag = "none";
+try {
+  tag = sh("git describe --tags --abbrev=0");
+} catch {
+  /* no tag reachable from HEAD — "none" is then accurate */
+}
 console.log(`✓ mirror has main@${head} and tags through ${tag}`);

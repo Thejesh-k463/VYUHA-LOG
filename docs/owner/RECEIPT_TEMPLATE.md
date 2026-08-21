@@ -45,7 +45,7 @@ Not a tax invoice. No GST has been charged or collected on this sale.
 Vyuha is a record-keeping and analytics tool, not investment advice.
 Refund policy and terms of use are included in your download.
 
-Thejesh K · <ktr.thejesh463@gmail.com> · WhatsApp +91 73936 73714
+Thejesh K · ktr.thejesh463@gmail.com · WhatsApp +91 73936 73714
 ```
 
 ### Upgrade receipt (Annual → Lifetime)
