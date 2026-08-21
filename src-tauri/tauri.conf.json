@@ -39,6 +39,7 @@
     "shortDescription": "Local-first trade journal for Indian traders",
     "longDescription": "A fully local, offline trade journal and analytics cockpit for Indian retail traders. Exact broker-and-segment charge computation, MTF interest, discipline enforcement and ITR-ready tax schedules. No account, no cloud, no telemetry.",
     "copyright": "Copyright © Vyuha",
+    "publisher": "Thejesh K",
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
