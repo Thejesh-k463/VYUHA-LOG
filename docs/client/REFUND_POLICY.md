@@ -1,6 +1,6 @@
 # Refund policy
 
-**Last updated:** 2026-08-20 · **Applies to:** Vyuha v2.99.99 and later
+**Last updated:** 2026-08-21 · **Applies to:** Vyuha v2.99.100 and later
 
 ## Try it first — that is the point of the trial
 

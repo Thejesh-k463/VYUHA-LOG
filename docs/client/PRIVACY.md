@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-08-20 · **Applies to:** Vyuha v2.99.99 and later
+**Last updated:** 2026-08-21 · **Applies to:** Vyuha v2.99.100 and later
 
 Vyuha has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —

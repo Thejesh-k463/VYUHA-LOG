@@ -1,5 +1,48 @@
 # Changelog
 
+## v2.99.100 — imports stay proportional as a book grows
+
+One fix, and a real one: **the pairing engine was quadratic on a single symbol**,
+so the longer you had traded one instrument, the slower importing it became.
+Numbered as a patch deliberately — the output is byte-identical and nothing
+about compatibility changed, so calling it 3.0.0 would have signalled a breaking
+change that does not exist. The 3.0.0 milestone stays reserved for the public
+launch.
+
+- **The defect.** `lib/import/pair-legs.ts` walks a FIFO lot queue per symbol.
+  The cost of a *sell* was proportional to the number of OPEN LOTS rather than to
+  the number of legs, because each sell ran **three separate O(lots) scans**: a
+  full-queue pass looking for same-day lots, `lots.some(...)` **and**
+  `lots.find(...)` re-scanning from the head on every iteration of the
+  oldest-first loop, and a reverse `splice` to drop exhausted lots. When buys
+  outnumber sells the queue grows without bound and the walk becomes O(n²).
+- **How it was found.** A new load case, `tests/load/c8-pairing-depth.load.ts`.
+  It exists because an import-graph scan of the thirteen existing load cases
+  found that **none of them imported the pairing engine** — it had been rewritten
+  in v2.99.98, five days after the load suite was written, and "13 of 13 green"
+  had been reading as coverage it never had.
+- **The numbers.** One symbol, 65% buys: 8,000 legs → 79 ms, 32,000 → 1,249 ms —
+  a **15.89× cost for 4× the work**, where linear is 4 and quadratic is 16.
+  Opening-sell-heavy books: 13.32×. Multi-symbol books, which is what most people
+  have, were **never affected** — 4.19×, with per-item cost flat at 1.10 → 1.14 µs,
+  because the work partitions per symbol.
+- **The fix.** A forward-only `head` pointer replaces the `splice` compaction
+  (lots are only ever emptied, never refilled, so it never looks back), and a
+  per-date index replaces the same-day full-queue scan. **Selection is
+  unchanged** — the head walk returns exactly the lot `find` returned. Ratios are
+  now **3.70×** and **4.10×**, and 50,000 legs on one symbol went **775 ms → 63 ms**.
+- **Proven identical, not merely tested.** Same 28,269 positions, same
+  22,559 closed / 5,710 open / 0 opening-sell split, quantity conserved exactly,
+  value drift unchanged at ₹3.29 on ₹1.5 billion — 2.19 parts per billion, which is
+  IEEE-754 noise and not a leak. 1,920 unit tests across 131 files pass, and so do
+  both real-file reconciliations: Paytm's 414 executions against Paytm's own
+  Realized P&L Detail, and the 1,554-fill Zerodha Console tradebook.
+- **Also carried in from the v2.99.99 line:** `winget:manifest` now requires
+  `--sha` and refuses to hash the local build — it would otherwise emit a manifest
+  whose hash could not match its own URL — and a documentation sweep that corrected
+  two claims that were untrue, including a "signed Windows installer" line in an
+  application drafted for an outside party.
+
 ## v2.99.99 — Angel One's live pull works again; it had been broken since v2.99.80
 
 **Angel One's live API pull was broken in every shipped build from v2.99.80 to

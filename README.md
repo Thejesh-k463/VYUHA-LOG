@@ -28,7 +28,20 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v2.99.99** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v2.99.100** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.100 — imports stay proportional as a book grows; the pairing engine was quadratic.** The
+> FIFO walk that turns fills into positions cost **three O(lots) scans per sell** — a full-queue
+> pass for same-day lots, `.some()` *and* `.find()` re-scanning inside the oldest-first loop, and a
+> `splice` compaction — so a queue that grows (buys outnumbering sells) made the walk **O(n²)**.
+> Found by a new load case, `tests/load/c8-pairing-depth.load.ts`, written because an import-graph
+> scan showed **none of the thirteen existing load cases imported the module at all**: one symbol at
+> 8,000 legs → 79 ms and 32,000 → 1,249 ms, a **15.89× cost for 4× the legs**. A forward-only head
+> pointer plus a per-date index brings that to **3.70×**, and 50,000 legs on one symbol from
+> **775 ms to 63 ms** — with byte-identical output, proven by 1,920 unit tests and by both
+> real-broker reconciliations (Paytm's 414 executions against Paytm's own realised-P&L statement,
+> and a 1,554-fill Zerodha Console tradebook). Multi-symbol books were never affected: that path
+> measured 4.19× with per-item cost flat throughout.
 >
 > **v2.99.99 — Angel One's live pull works again; it had been refusing since v2.99.80.** Pressing
 > **Pull** on an Angel One connection answered *"the saved credentials cannot be read"* and never
@@ -545,7 +558,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v2.99.99**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v2.99.100**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.

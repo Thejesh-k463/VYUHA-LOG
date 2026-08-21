@@ -93,6 +93,19 @@ was right but bigger than predicted (B7: 15, not 7–8, because the route ranks
 twice), and B2 needed the calls spaced a millisecond apart before it would
 show at all.
 
+### Third batch (2026-08-21) — C8
+
+| # | Test | Outcome |
+|---|---|---|
+| **C8** | `c8-pairing-depth.load.ts` | **Real defect, fixed — and it was invisible to every other case.** `lib/import/pair-legs.ts` was rewritten on 2026-08-20 (v2.99.98) from one pass to two, five days AFTER this suite was written; an import-graph scan showed **none of the thirteen existing cases import that module**, though it is the hot path for five sources (Zerodha, Paytm Money, Dhan GTR, Groww orders, generic mapper). Each sell ran **three O(lots) scans** — a full-queue walk for same-day lots, `.some()` **and** `.find()` re-scanning inside the oldest-first `while`, and a reverse `splice` compaction — so a queue that grows (buys outnumbering sells) made the walk O(n²): **one symbol 8,000 → 79 ms, 32,000 → 1,249 ms, ratio 15.89**; opening-sell heavy **13.32**. Many symbols was always fine at **4.19** with per-item flat at 1.10 → 1.14 µs — work partitions per symbol, so no realistic book was affected. Fixed with a forward-only `head` pointer (replacing the splice) plus a per-date index: **ratios 3.70 and 4.10**, and 50,000 legs on one symbol **775 → 63 ms** with byte-identical output (28,269 positions, qty delta 0, value drift ₹3.29 on ₹1.5 bn = 2.19 ppb, unchanged). 1,920 unit tests and both real-file reconciliations pass unchanged |
+
+Two lessons worth keeping. **A load suite only covers the modules it imports** —
+thirteen cases and 13-of-13 green said nothing about the engine none of them
+touched, and "we have load tests" read as coverage it did not have. And **fixing
+a quadratic breaks its own ratio test**: the baselines fell under `growthRatio`'s
+25 ms floor and had to be raised, which is exactly the failure its docstring
+predicts.
+
 ## Designed, not yet written
 
 Each names the code that worries it, so none of this needs re-deriving.

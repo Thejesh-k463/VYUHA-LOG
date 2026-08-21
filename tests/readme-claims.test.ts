@@ -133,7 +133,11 @@ describe("README release notes read newest first", () => {
   // v2.99.96, then v2.99.70 — so GitHub opened on a five-release-old note and
   // three releases had no note at all. Order is not something a reader
   // notices; only the assertion does.
-  const versions = [...readme.matchAll(/^> \*\*v(2\.99\.\d+)/gm)].map((m) => m[1]);
+  // Generalised from `2\.99\.\d+` at the v3.0.0 bump (2026-08-21): the pattern
+  // was version-locked, so the first major bump made `versions` empty and the
+  // "Now:" match undefined — the ordering guard silently stopped guarding
+  // anything at exactly the release where ordering was most likely to break.
+  const versions = [...readme.matchAll(/^> \*\*v(\d+\.\d+\.\d+)/gm)].map((m) => m[1]);
   const key = (v: string) => v.split(".").map(Number).reduce((a, n) => a * 1000 + n, 0);
 
   it("the first version quote is the highest version present", () => {
@@ -143,7 +147,7 @@ describe("README release notes read newest first", () => {
   });
 
   it("the 'Now:' line names the same version as the first quote", () => {
-    const now = readme.match(/^> \*\*Now: v(2\.99\.\d+)\*\*/m)?.[1];
+    const now = readme.match(/^> \*\*Now: v(\d+\.\d+\.\d+)\*\*/m)?.[1];
     expect(now).toBe(versions[0]);
   });
 

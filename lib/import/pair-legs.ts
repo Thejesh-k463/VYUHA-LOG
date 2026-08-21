@@ -130,7 +130,36 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
   const run = (openingQty: number): { out: PairedPosition[]; orphanQty: number } => {
     // Open buy lots, oldest first — the FIFO queue.
     const lots: Lot[] = [];
-    if (openingQty > 0) lots.push({ date: "", qty: openingQty, value: 0, charges: 0, product: undefined, opening: true });
+    /**
+     * Two indexes over the SAME Lot objects, so mutating `qty` through either
+     * is seen by both. They exist purely to stop each sell rescanning the
+     * whole queue: with buys outnumbering sells the queue grows without bound,
+     * and three O(lots) scans per sell made the walk O(n²) — 4x the legs on one
+     * symbol cost 15.9x the time before this (tests/load/c8-pairing-depth).
+     *
+     * `head` is the oldest lot that may still have quantity. Lots are only ever
+     * emptied, never refilled, and the oldest-first pass always takes the first
+     * non-empty lot — so `head` moves forward only and never needs to look back.
+     * That replaces the per-sell `splice` compaction, which was the worst of the
+     * three scans.
+     *
+     * `byDate` holds each date's lots in push order with its own head, so the
+     * same-day pass visits only that day's lots instead of the entire queue.
+     * Legs are chronological, so once a date is passed it never gets another
+     * sell and its head can advance permanently.
+     */
+    let head = 0;
+    const byDate = new Map<string, { arr: Lot[]; head: number }>();
+    const pushLot = (lot: Lot) => {
+      lots.push(lot);
+      // The seeded opening lot is deliberately NOT indexed by date: it pre-dates
+      // the file, so it must never satisfy a same-day match.
+      if (lot.opening) return;
+      const e = byDate.get(lot.date);
+      if (e) e.arr.push(lot);
+      else byDate.set(lot.date, { arr: [lot], head: 0 });
+    };
+    if (openingQty > 0) pushLot({ date: "", qty: openingQty, value: 0, charges: 0, product: undefined, opening: true });
     const out: PairedPosition[] = [];
     const orphanSells: Leg[] = [];
     let orphanQty = 0;
@@ -138,7 +167,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
     for (const leg of legs) {
       if (leg.side === "buy") {
         if (leg.qty > 0) {
-          lots.push({ date: leg.date, qty: leg.qty, value: leg.value, charges: leg.charges, product: leg.product });
+          pushLot({ date: leg.date, qty: leg.qty, value: leg.value, charges: leg.charges, product: leg.product });
         }
         continue;
       }
@@ -161,16 +190,23 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         lot.charges = r2(lot.charges * (1 - share));
         remaining -= take;
       };
-      for (const lot of lots) {
-        if (remaining <= 0) break;
-        if (!lot.opening && lot.date === leg.date && lot.qty > 0) takeFrom(lot);
+      // Same day first, in push order — identical selection to scanning the
+      // whole queue for `lot.date === leg.date`, just without the scan.
+      const sameDay = byDate.get(leg.date);
+      if (sameDay) {
+        while (sameDay.head < sameDay.arr.length && sameDay.arr[sameDay.head].qty <= 0) sameDay.head++;
+        for (let i = sameDay.head; i < sameDay.arr.length && remaining > 0; i++) {
+          if (sameDay.arr[i].qty > 0) takeFrom(sameDay.arr[i]);
+        }
       }
-      while (remaining > 0 && lots.some((l) => l.qty > 0)) {
-        const lot = lots.find((l) => l.qty > 0)!;
-        takeFrom(lot);
+      // Then oldest-first. Advancing `head` past emptied lots picks exactly the
+      // lot `lots.find((l) => l.qty > 0)` used to return, and exhausting the
+      // queue ends the loop exactly where `lots.some(...)` used to.
+      while (remaining > 0) {
+        while (head < lots.length && lots[head].qty <= 0) head++;
+        if (head >= lots.length) break;
+        takeFrom(lots[head]);
       }
-      // Drop exhausted lots so the queue stays oldest-first for the next sell.
-      for (let i = lots.length - 1; i >= 0; i--) if (lots[i].qty <= 0) lots.splice(i, 1);
 
       const perShare = leg.qty > 0 ? leg.value / leg.qty : 0;
       if (consumed.length > 0) {

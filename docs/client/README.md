@@ -3,6 +3,13 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.100
+
+| Upgrade | What it gives you |
+|---|---|
+| **Imports stay fast however much history you have** | The engine that turns your broker's fills into the trades you actually made was doing far more work than it needed to once one symbol carried a lot of history — the cost grew with the *square* of the open positions, so a book you had traded for months got slower and slower to import. It is now proportional, and the difference is not small: a 50,000-fill book on a single symbol went from **775 ms to 63 ms**. If you trade one instrument heavily, this is the release you want. |
+| **Nothing about your trades changed** | This was purely about speed. The same fills pair into the same positions, with the same dates, quantities and P&L — verified against your broker's own statement, not only against our own tests. |
+
 ## New in v2.99.99
 
 | Upgrade | What it gives you |
