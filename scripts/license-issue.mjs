@@ -28,7 +28,11 @@
 //   It still verifies so old keys keep working, but issuing one today labels
 //   the buyer's Settings screen "Vyuha app (legacy bundle key)". Prefer `app`.
 //
-//   No expiry flag = lifetime key. --years N = annual, expiring N years out.
+//   TERM IS REQUIRED — there is no default. --lifetime for the Lifetime plan,
+//   --years N for an annual one, --expires YYYY-MM-DD for a custom date. It used
+//   to be that no flag meant lifetime, and one forgotten flag on a Rs 9,999
+//   annual sale minted a Rs 29,999 lifetime key: signed, valid, and undoable only
+//   by revoking someone who had just paid. Lifetime is opt-IN for that reason.
 //
 //   --machine LOCKS the key to one computer. The buyer reads their Machine ID
 //   from Settings → License and sends it to you; the key then refuses to
@@ -60,9 +64,15 @@ for (let i = args.length - 1; i >= 0; i--) {
 // after the v2.99.76 reprice retired that bundle.
 const [email, sku = "app"] = args;
 if (!email || !email.includes("@")) {
-  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] [--expires YYYY-MM-DD | --years N] [--machine ABCD-EF12-3456] [--save-dir <folder>]");
-  console.error("  Lifetime ₹29,999 : license-issue.mjs buyer@x.com app");
-  console.error("  Annual   ₹9,999  : license-issue.mjs buyer@x.com app --years 1");
+  console.error("Usage: node scripts/license-issue.mjs <buyer-email> [app|toolkit|indicators] (--lifetime | --years N | --expires YYYY-MM-DD) [--machine ABCD-EF12-3456] [--save-dir <folder>] [--no-payment]");
+  console.error("");
+  console.error("  A TERM is required — there is no default:");
+  console.error("    Journal — Lifetime ₹29,999 : license-issue.mjs buyer@x.com app --lifetime");
+  console.error("    Pro — Annual ₹9,999/yr     : license-issue.mjs buyer@x.com app --years 1");
+  console.error("");
+  console.error("  A PAYMENT REFERENCE is required — set VYUHA_LICENSE_NOTE to the UTR:");
+  console.error('    VYUHA_LICENSE_NOTE="UTR 123456789012, ₹9,999 UPI 2026-08-22" node scripts/license-issue.mjs …');
+  console.error("    (or --no-payment for a genuine freebie: review copy, reissue, your own machine)");
   process.exit(1);
 }
 if (expires && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) {
