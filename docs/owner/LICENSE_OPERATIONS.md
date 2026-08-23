@@ -62,6 +62,36 @@ in the password manager, not in the same folder as the bundle.
 
 ## 1. A sale comes in
 
+> ### The one-command version: `npm run sell` (2026-08-23)
+>
+> Everything in §1 from the mint onward, in order, stopping at the first failure:
+>
+> ```bash
+> npm run sell -- buyer@email.com --lifetime --utr 627604880174 --name "Siddhi Gunwant"
+> npm run sell -- buyer@email.com --years 1  --utr 072712985315 --name "Shivangi Kulkarni"
+> npm run sell -- you@example.com --lifetime --no-payment --name "Me"     # dry run on yourself
+> ```
+>
+> It **spawns** `license-issue.mjs` and `license-backup.mjs` rather than re-implementing
+> them, so every guard below stays in force. Then it verifies the ledger and archive against
+> disk, numbers and saves the receipt (`VY-<year>-NNN`, recorded on the ledger line), backs
+> up — renaming a same-day bundle first — and proves the bundle holds the live ledger, and
+> writes `send-<keyid>.txt` with a `<<< PASTE THE KEY HERE >>>` marker. **The key is never
+> written into the message file.** It refuses a second key for an email that already holds
+> one (a re-run after a partial failure is the common cause; pass
+> `--allow-duplicate-email` only for a deliberate renewal or reissue).
+>
+> What it leaves to you, and prints: copy the `.vkb` to the **external drive**, paste the
+> key from the archive into the message, attach the ZIP, send, and ask for "Licensed to …"
+> confirmation. Set `VYUHA_BACKUP_PASSPHRASE` in the shell first or it will prompt twice.
+>
+> **Monthly:** `npm run renewals` lists every annual key expiring in the next 60 days with
+> its chase-from date, and exits 2 if any has already lapsed. Nothing else reminds you.
+>
+> Both were built against a throwaway keypair and ledger (`tests/sell-flow.test.ts`, 11 cases,
+> incl. a sabotage run that found the duplicate-email hole) — the real `.pem` and ledger are
+> never opened by the tests.
+
 > **The plan is the EXPIRY, not the SKU.** `sku` is display-only — it feeds
 > `SKU_LABELS` on the buyer's Settings screen and gates nothing. What the
 > entitlement engine actually reads is `expires`: absent means lifetime

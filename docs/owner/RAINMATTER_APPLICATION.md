@@ -49,7 +49,7 @@ record-keeping and analytics tool, not advice).
 **Current progress of your product?**
 > Advanced stage — shipping. 61 tagged releases; current v2.99.100 (Windows installer with a
 > signed auto-updater channel and remote licence revocation — the installer itself is not
-> Authenticode code-signed, a deliberate cost decision); 1,921 unit tests across 131 files and 45
+> Authenticode code-signed, a deliberate cost decision); 1,932 unit tests across 132 files and 45
 > Playwright flows on
 > every commit; 14 load tests to a 250k-trade book; per-buyer licensing, 7-day offline trial,
 > free tier that never gates the user's own record. In use by early traders and SEBI-RA
