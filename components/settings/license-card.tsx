@@ -146,10 +146,14 @@ export function LicenseCard({ status, entitlement }: { status: LicenseStatus; en
                   <Copy className="size-3.5" /> Copy
                 </Button>
               </div>
+              {/* Leads with "you can ignore this": the old wording ("Send this with your
+                  order if…") read as an instruction, and the first real buyer — whose key
+                  was deliberately unbound — stopped to ask whether the process had changed.
+                  Binding is the exception (LICENSE_OPERATIONS.md §6), so the copy says so. */}
               <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
-                Send this with your order if your key is being locked to one computer. It is a one-way
-                fingerprint — it contains no personal information and never leaves this machine unless you
-                send it.
+                Only needed if you have asked for your key to be locked to this one computer. Most keys
+                are not — you can ignore this. It is a one-way fingerprint: it contains no personal
+                information and never leaves this machine unless you send it.
               </p>
             </div>
           </>

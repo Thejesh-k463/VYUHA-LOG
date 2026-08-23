@@ -488,8 +488,19 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
   now exists: `license-issue.mjs --save-dir` / `VYUHA_KEY_ARCHIVE_DIR` and
   `license-backup.mjs` — run the backup before the first real sale.
 
-**Recommended first move:** sell one annual licence end to end — payment, receipt, mint,
-deliver, activate.
+- ✅ **FIRST REAL SALE — 2026-08-23.** Journal (Lifetime), ₹29,999 by UPI, key `A5E2-A025-D6`,
+  receipt **VY-2026-001**. Done end to end by the owner at the keyboard: quote in writing (with the
+  SmartScreen warning stated upfront) → UTR received → `license-issue.mjs … --lifetime` with
+  `VYUHA_LICENSE_NOTE` set (**the first key in the ledger ever to carry a payment note**) → ledger
+  + archive verified on disk → `license-backup.mjs` → `.vkb` copied to the external drive →
+  receipt + key + ZIP in one WhatsApp message. Unbound, per §6. Two traps met on the way, now in
+  the sale runbook: cmd.exe's `>` redirect cannot create the archive folder (it runs before node),
+  so `mkdir` it first; and `₹` is unsafe in a cmd.exe note — use `Rs`. **The 2026-08-02
+  `Siddhi@client1.com` key was a TEST, not a sale** — a different person; it carries no payment
+  note and still reads as lifetime in the ledger.
+
+**Recommended next move:** sell one ANNUAL licence end to end — the featured SKU has still never
+been sold, and it is the one with a renewal to manage.
 
 ### 8.2 Release-day actions never run
 
