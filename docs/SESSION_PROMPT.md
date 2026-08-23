@@ -112,7 +112,7 @@ Start this session on Opus 5 (the VYUHA default).
 STATE YOU CAN TRUST (verified 2026-08-20, end of the v2.99.99 release session):
 - Branch main, HEAD f05c8ae or later, clean, pushed. No uncommitted work.
 - v2.99.99 is PUBLISHED and is releases/latest (2026-08-20 15:46Z), tag 51b664d -> commit e8198c2.
-- npm run verify EXIT 0 — 1,956 unit tests / 133 files. CI run 32380322684 green on all 5 jobs
+- npm run verify EXIT 0 — 1,962 unit tests / 133 files (+ tests/sim/). CI run 32380322684 green on all 5 jobs
   (incl. Windows and BOTH Playwright e2e suites) on the release commit, before the tag.
 - Installer 34,860,149 B SHA-256 27D8695E...B23004 (local, = the client ZIP's).
   GitHub release asset is a DIFFERENT binary: 34,861,983 B SHA-256 46A3842A...4343.

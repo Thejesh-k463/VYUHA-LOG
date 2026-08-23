@@ -1,5 +1,7 @@
 # Demo video — script, shot list and rules
 
+> **Superseded 2026-08-23 by `docs/owner/demo-video/`** — the executable kit: narration per shot, a shot list pinned to `nav-config.ts` by test, an importable OBS profile, a setup script, an end card and publish copy scanned for outcome claims. The claim rules below are unchanged and still binding; the shot order and tool guidance are replaced.
+
 Owner-only. Written 2026-08-21 against **v2.99.100**. Not client-facing.
 
 Plan: **record the long walkthrough once**, then cut the 90-second version from
