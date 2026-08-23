@@ -503,8 +503,21 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
   `Siddhi@client1.com` key was a TEST, not a sale** — a different person; it carries no payment
   note and still reads as lifetime in the ledger.
 
-**Recommended next move:** sell one ANNUAL licence end to end — the featured SKU has still never
-been sold, and it is the one with a renewal to manage.
+- ✅ **SECOND SALE, FIRST ANNUAL — 2026-08-23.** Pro (Annual), ₹9,999 by UPI, key `35CF-B8B5-8E`,
+  receipt **VY-2026-002**, buyer Shivangi Kulkarni (`extra.drive1409@gmail.com` — related to the
+  lifetime buyer, different household, separate key on purpose). Same flow, `--years 1`.
+  **Expires 2027-08-23** — the ledger's first key with a date, status `active`. Backup
+  `vyuha-keys-2026-08-23.vkb` verified to hold the 1,500-byte 4-key ledger and copied off-device.
+  One trap this run: a same-day second backup is REFUSED (no overwrite), so the morning's bundle
+  was renamed `-a` first. The featured SKU has now been sold.
+
+**RENEWAL DIARY — nothing in the system reminds you.**
+| Key | Buyer | Expires | Chase from |
+|---|---|---|---|
+| `35CF-B8B5-8E` | Shivangi Kulkarni | **2027-08-23** | 2027-07-23 (the app shows the buyer a 30-day countdown from then; you see nothing) |
+
+**Recommended next move:** the sale flow is proven on both SKUs. First-run onboarding (§8.4) is now
+the highest-leverage build — it is the only item that changes whether a STRANGER buys.
 
 ### 8.2 Release-day actions never run
 
