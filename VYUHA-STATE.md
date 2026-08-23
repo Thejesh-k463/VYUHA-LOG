@@ -493,7 +493,11 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
   SmartScreen warning stated upfront) → UTR received → `license-issue.mjs … --lifetime` with
   `VYUHA_LICENSE_NOTE` set (**the first key in the ledger ever to carry a payment note**) → ledger
   + archive verified on disk → `license-backup.mjs` → `.vkb` copied to the external drive →
-  receipt + key + ZIP in one WhatsApp message. Unbound, per §6. Two traps met on the way, now in
+  receipt + key + ZIP in one WhatsApp message. **ACTIVATED by the buyer the same day** — the
+  chain is proven end to end for the first time. Unbound, per §6, and it should stay that way: a
+  bound reissue would need `--machine` + `--no-payment` AND a revocation of `A5E2-A025-D6` (a
+  new key does not retire the old one), which is the §4 path and is only for a buyer who asks or a
+  key caught being shared. Two traps met on the way, now in
   the sale runbook: cmd.exe's `>` redirect cannot create the archive folder (it runs before node),
   so `mkdir` it first; and `₹` is unsafe in a cmd.exe note — use `Rs`. **The 2026-08-02
   `Siddhi@client1.com` key was a TEST, not a sale** — a different person; it carries no payment
