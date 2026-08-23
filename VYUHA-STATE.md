@@ -509,7 +509,9 @@ licence keys, zero of them annual.** The featured SKU has never been sold end to
   **Expires 2027-08-23** — the ledger's first key with a date, status `active`. Backup
   `vyuha-keys-2026-08-23.vkb` verified to hold the 1,500-byte 4-key ledger and copied off-device.
   One trap this run: a same-day second backup is REFUSED (no overwrite), so the morning's bundle
-  was renamed `-a` first. The featured SKU has now been sold.
+  was renamed `-a` first. **ACTIVATED by the buyer the same day.** The featured SKU has now been
+  sold AND activated. **Both SKUs are proven end to end** — two real customers, two receipts, two
+  activations, zero support tickets.
 
 **RENEWAL DIARY — nothing in the system reminds you.**
 | Key | Buyer | Expires | Chase from |
