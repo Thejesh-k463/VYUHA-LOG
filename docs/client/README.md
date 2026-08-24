@@ -3,6 +3,14 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.101
+
+- **Booking an exit on a fully closed staged position now explains itself.** Previously the
+  quantity shortcuts appeared to do nothing and the browser blocked every quantity with
+  "Value must be 0." — with no hint why. The dialog now tells you the position is fully closed
+  and what to do instead: **Add entry** to re-open it, or remove the exit leg that was booked
+  wrongly and book the exit that actually happened.
+
 ## New in v2.99.100
 
 | Upgrade | What it gives you |

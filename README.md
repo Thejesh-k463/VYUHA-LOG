@@ -28,7 +28,14 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v2.99.100** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v2.99.101** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.101 — a closed position explains itself instead of dead-ending.** Booking an exit on a
+> fully closed staged position offered percentage shortcuts of nothing and a native `max=0`
+> constraint whose "Value must be 0." blocked every quantity before the ladder's own message could
+> surface. The dialog now says the position is closed and names the two real paths — add an entry
+> to re-open it, or remove the wrongly-booked exit leg and book what actually happened. The button
+> stays enabled throughout: the panel warns; it does not decide.
 >
 > **v2.99.100 — imports stay proportional as a book grows; the pairing engine was quadratic.** The
 > FIFO walk that turns fills into positions cost **three O(lots) scans per sell** — a full-queue

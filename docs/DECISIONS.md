@@ -6,6 +6,14 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-25 — A native HTML constraint can pre-empt the engine's designed refusal: Book-exit's `max=0` dead end
+
+**Context:** A real user hit an unexplained dead end booking an exit on a fully closed staged position (SG Finserv, buy 600/sell 600 — verified in the live desktop DB): the 25/50/100% shortcuts appeared to do nothing and every typed quantity was refused with the browser-native bubble "Value must be 0."
+**Measured / found:** The engine was right (0 open is the truth) and the panel's design rule — actions are never disabled by position state; the ladder refuses with a clear message — was already in place. What broke it was `<Input min="0" max={openQty}>`: at `openQty=0` the browser's constraint validation blocks form submission BEFORE the server action runs, so the ladder's message became unreachable, and `fractionOf(0, f)` made the shortcuts write nothing visible. The dialog also lacked the closed-state banner its Add-entry sibling already had.
+**Decision:** Inside `BookExitDialog` only: a closed-position banner naming the two real paths (Add entry re-opens; delete the wrongly-booked exit leg and re-book reality), shortcuts hidden at 0 open, `max` dropped at 0 open so a determined submit reaches the ladder's own refusal. Submit stays enabled — the panel warns, it does not decide. Pinned in `e2e/staged-position.spec.ts`.
+**Why not the obvious thing:** Disabling the submit button would repeat the exact UI-opinion block that the "never disables an action" test exists to forbid; and keeping `max=0` "for safety" is not safety — it replaces a designed, specific message with an unactionable browser bubble.
+**Invalidated if:** the staged panel gains client-side ladder replay, or the form moves off native constraint validation entirely.
+
 ## 2026-08-24 — A frozen `--today` freezes only the caller: the sell-flow suite passed for exactly one day
 
 **Context:** `npm run verify` failed on 2026-08-24; `tests/sell-flow.test.ts` (written 2026-08-23) had 2 of 11 failing.

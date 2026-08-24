@@ -1,8 +1,18 @@
 # Changelog
 
-## Unreleased (on `main` after v2.99.100)
+## v2.99.101 — a closed position explains itself
 
-Owner tooling and test infrastructure — nothing in the shipped app changed.
+One shipped-app fix, plus the owner tooling and test infrastructure that had collected on `main`.
+
+- **Fixed: booking an exit on a fully closed staged position was an unexplained dead end.** The
+  dialog's 25/50/100% shortcuts silently wrote a fraction of zero, and the quantity input carried a
+  native `max=0` constraint — so the browser blocked every typed quantity with the cryptic
+  "Value must be 0." before the ladder's own clear refusal could ever surface (hit by a real user
+  on 2026-08-24). The dialog now states that the position is fully closed and names the two real
+  paths: **Add entry** re-opens it, or remove the wrongly-booked exit leg and book the exit that
+  actually happened. The shortcuts hide when nothing is open, the blocking `max` is gone, and the
+  submit stays enabled — the panel warns; it does not decide. Pinned by
+  `e2e/staged-position.spec.ts`, which now closes a position fully and asserts all three behaviours.
 
 - **The sale flow is one command.** `npm run sell -- <email> --years 1|--lifetime --utr <UTR>
   --name "<Name>"` runs mint → verify → receipt → encrypted key backup → send-message, with the
