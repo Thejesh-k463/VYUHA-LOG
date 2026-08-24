@@ -477,6 +477,7 @@ function BookExitDialog({
   const q = Number(qty) || 0;
   const px = Number(price) || 0;
   const gross = avgCost != null && q > 0 && px > 0 ? (isLong ? px - avgCost : avgCost - px) * q : null;
+  const closed = openQty <= 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -484,31 +485,42 @@ function BookExitDialog({
         <DialogHeader>
           <DialogTitle>Book an exit — {trade.symbol}</DialogTitle>
           <DialogDescription>
-            {openQty} open at an average cost of {avgCost != null ? `₹${avgCost}` : "—"}. Exit part of
-            it and the rest keeps running with its own stops.
+            {closed
+              ? "Nothing is open on this position."
+              : `${openQty} open at an average cost of ${avgCost != null ? `₹${avgCost}` : "—"}. Exit part of it and the rest keeps running with its own stops.`}
           </DialogDescription>
         </DialogHeader>
+        {closed && (
+          <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-xs">
+            This position is <b>fully closed</b> — an exit has nothing to sell against, so the ladder
+            will refuse it. If you re-entered the name, use <b>Add entry</b> first and the position
+            re-opens. If an exit already on the ladder is wrong (say you really sold only part of it),
+            remove that exit leg with its bin icon and book the exit that actually happened.
+          </div>
+        )}
         <form action={formAction} className="space-y-3">
           <input type="hidden" name="tradeId" value={trade.id} />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="sx-qty">Quantity to exit</Label>
               <Input
-                id="sx-qty" name="qty" type="number" step="any" min="0" max={openQty} required
+                id="sx-qty" name="qty" type="number" step="any" min="0" max={closed ? undefined : openQty} required
                 value={qty} onChange={(e) => setQty(e.target.value)}
               />
-              <div className="mt-1 flex gap-1">
-                {[0.25, 0.5, 1].map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary/50 hover:text-primary"
-                    onClick={() => setQty(String(fractionOf(openQty, f)))}
-                  >
-                    {f === 1 ? "All" : `${f * 100}%`}
-                  </button>
-                ))}
-              </div>
+              {!closed && (
+                <div className="mt-1 flex gap-1">
+                  {[0.25, 0.5, 1].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary/50 hover:text-primary"
+                      onClick={() => setQty(String(fractionOf(openQty, f)))}
+                    >
+                      {f === 1 ? "All" : `${f * 100}%`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <Label htmlFor="sx-price">Exit price</Label>

@@ -87,6 +87,27 @@ test("staged position: enable → add tranche → partial exit", async ({ page }
 
   // A realised exit leg now exists.
   await expect(dialog.getByText(/1 exit/i)).toBeVisible({ timeout: 20_000 });
+
+  // Close the rest with the "All" shortcut, then reopen the exit dialog on the
+  // now-flat position. A closed position must EXPLAIN itself inside the dialog
+  // rather than dead-end on the input's native max=0 bubble ("Value must be
+  // 0."), which is exactly what a real user hit on 2026-08-24: the percentage
+  // shortcuts silently wrote 0 and no quantity could ever validate.
+  await dialog.getByRole("button", { name: /Book exit/i }).click();
+  await page.getByRole("button", { name: "All" }).click();
+  await page.locator("#sx-price").fill("125");
+  await page.getByRole("button", { name: /^Book exit$/ }).last().click();
+  await expect(dialog.getByText(/2 exits/i)).toBeVisible({ timeout: 20_000 });
+
+  await dialog.getByRole("button", { name: /Book exit/i }).click();
+  const exitDialog = page.getByRole("dialog").filter({ hasText: "Book an exit" });
+  await expect(exitDialog.getByText(/fully closed/i)).toBeVisible();
+  // No fraction-of-nothing shortcuts, and no native max that blocks the form —
+  // the submit stays enabled (the panel warns; it does not decide) so the
+  // ladder's own message is what a determined submit receives.
+  await expect(exitDialog.getByRole("button", { name: "25%" })).toHaveCount(0);
+  await expect(exitDialog.locator("#sx-qty")).not.toHaveAttribute("max");
+  await expect(exitDialog.getByRole("button", { name: /^Book exit$/ })).toBeEnabled();
 });
 
 /**
