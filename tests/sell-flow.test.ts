@@ -141,7 +141,9 @@ describe("npm run sell — end to end on a throwaway ledger", () => {
     expect(keyFile).toBeDefined();
     expect(fs.readFileSync(path.join(archive, keyFile!), "utf8").split("\n")[0]).toBe(rec.key);
 
-    expect(fs.existsSync(path.join(archive, "vyuha-keys-2026-08-23.vkb"))).toBe(true);
+    const vkbs = fs.readdirSync(archive).filter((f) => f.endsWith(".vkb"));
+    expect(vkbs).toHaveLength(1);
+    expect(vkbs[0]).toMatch(/^vyuha-keys-\d{4}-\d{2}-\d{2}\.vkb$/); // real-clock name, not --today's
     expect(r.err).toMatch(/holds the \d+-byte ledger \(matches live\)/);
     expect(r.err).not.toMatch(/RENEWAL/); // lifetime has none
   });
@@ -153,14 +155,23 @@ describe("npm run sell — end to end on a throwaway ledger", () => {
     const ledger = readLedger(ledgerPath);
     expect(ledger).toHaveLength(2);
     const rec = ledger[1];
-    expect(rec.expires).toBe("2027-08-23");
+    // Expiry is minted from the REAL clock by license-issue.mjs — sell.mjs's
+    // --today pins only its own outputs (receipt year, backup name, note). So
+    // assert shape + horizon and reuse the actual value; hardcoding the date
+    // broke this suite the day after it was written (2026-08-24).
+    expect(rec.expires).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const daysAhead = (Date.parse(rec.expires) - Date.now()) / 86400e3;
+    expect(daysAhead).toBeGreaterThan(360);
+    expect(daysAhead).toBeLessThan(370);
     expect(rec.receipt).toBe("VY-2026-002");
 
     // Same-day second backup: the earlier bundle must have been renamed, not clobbered.
-    expect(fs.existsSync(path.join(archive, "vyuha-keys-2026-08-23-a.vkb"))).toBe(true);
-    expect(fs.existsSync(path.join(archive, "vyuha-keys-2026-08-23.vkb"))).toBe(true);
+    const vkbs = fs.readdirSync(archive).filter((f) => f.endsWith(".vkb"));
+    expect(vkbs).toHaveLength(2);
+    expect(vkbs.some((f) => /^vyuha-keys-\d{4}-\d{2}-\d{2}-a\.vkb$/.test(f))).toBe(true);
+    expect(vkbs.some((f) => /^vyuha-keys-\d{4}-\d{2}-\d{2}\.vkb$/.test(f))).toBe(true);
     expect(r.err).toMatch(/earlier bundle today renamed/);
-    expect(r.err).toMatch(/RENEWAL: expires 2027-08-23 — chase from 2027-07-24/);
+    expect(r.err).toContain(`RENEWAL: expires ${rec.expires} — chase from ${chaseFrom(rec.expires)}`);
   });
 
   it("refuses to reuse a receipt number if the file already exists", () => {
@@ -188,17 +199,22 @@ describe("npm run sell — end to end on a throwaway ledger", () => {
   });
 
   it("npm run renewals reads the same ledger and reports the annual key", () => {
-    const far = renewals(["--today", "2026-08-23", "--days", "60"]);
+    // Anchor every probe date to the annual key's ACTUAL expiry, so this test
+    // is true on any day it runs, not only the day it was written.
+    const exp = readLedger(ledgerPath).find((r: { expires: string | null }) => r.expires)!.expires as string;
+    const addDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400e3).toISOString().slice(0, 10);
+
+    const far = renewals(["--today", addDays(exp, -100), "--days", "60"]);
     expect(far.status).toBe(0);
     expect(far.out).toMatch(/Nothing expires in the next 60 days/);
 
-    const near = renewals(["--today", "2027-08-01", "--days", "60"]);
+    const near = renewals(["--today", addDays(exp, -22), "--days", "60"]);
     expect(near.status).toBe(0);
-    expect(near.out).toMatch(/35CF|[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{2}/);
-    expect(near.out).toMatch(/2027-08-23/);
+    expect(near.out).toMatch(/[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{2}/);
+    expect(near.out).toContain(exp);
     expect(near.out).toMatch(/22d left/);
 
-    const lapsed = renewals(["--today", "2027-09-01", "--days", "60"]);
+    const lapsed = renewals(["--today", addDays(exp, 9), "--days", "60"]);
     expect(lapsed.status).toBe(2); // non-zero so a scheduled run can alert
     expect(lapsed.out).toMatch(/LAPSED 9d ago/);
   });

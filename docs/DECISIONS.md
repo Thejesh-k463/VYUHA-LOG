@@ -6,6 +6,14 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-24 — A frozen `--today` freezes only the caller: the sell-flow suite passed for exactly one day
+
+**Context:** `npm run verify` failed on 2026-08-24; `tests/sell-flow.test.ts` (written 2026-08-23) had 2 of 11 failing.
+**Measured / found:** `sell.mjs --today 2026-08-23` pins only sell.mjs's own outputs (receipt year, ledger note, backup-name prediction) — the SPAWNED `license-issue.mjs` and `license-backup.mjs` keep real time. So the minted expiry came out `2027-08-24` against a hardcoded `2027-08-23`, and sell.mjs verified/renamed a bundle named from the frozen date while the child wrote the real-date name (`vyuha-keys-2026-08-24.vkb`), making the post-backup existence check fail and the same-day-rename guard rename nothing.
+**Decision:** sell.mjs now derives the bundle path from the same real-clock expression license-backup.mjs uses (`new Date().toISOString().slice(0,10)`, its line 94); the tests derive every expected date from the ledger's actual minted values — expiry asserted as shape + 360–370-day horizon, renewals probed at expiry−100d / −22d / +9d, `.vkb` names matched by pattern.
+**Why not the obvious thing:** plumbing `--today` down into `license-issue.mjs`/`license-backup.mjs` would put a clock-override into the two production scripts that mint and archive real keys — a test convenience is not worth a path that can backdate a licence.
+**Invalidated if:** the mint or backup scripts ever gain a legitimate date parameter, or sell.mjs stops spawning them as child processes.
+
 **Read this before changing a constant that looks arbitrary, or before
 re-measuring something.** An odd value with an entry here is a landmine with a
 sign on it.

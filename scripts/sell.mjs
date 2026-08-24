@@ -162,7 +162,10 @@ console.error(`   ✓ ${receiptNo} → ${path.basename(receiptPath)} (number rec
 
 // ── 4. backup ────────────────────────────────────────────────────────────────
 console.error(`\n[4/5] backup …`);
-const bundle = path.join(archiveDir, `vyuha-keys-${today}.vkb`);
+// license-backup.mjs names the bundle from the REAL clock (UTC date,
+// license-backup.mjs:94) — so this path must use the same expression, never
+// `today`, which --today can freeze while the child keeps real time.
+const bundle = path.join(archiveDir, `vyuha-keys-${new Date().toISOString().slice(0, 10)}.vkb`);
 if (existsSync(bundle)) {
   // Same-day second sale: the backup script refuses to overwrite, so rename the
   // earlier bundle — VY-2026-002 hit this by hand.
