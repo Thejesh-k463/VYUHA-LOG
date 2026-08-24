@@ -10,7 +10,7 @@ When unsure, use Full. The prompt costs a few hundred tokens; a wrong assumption
 about paise-vs-rupees costs a release.
 
 **Do not tell a session to "read all the files".** This repo is 164 `lib/` files,
-110 components, 43 screens and a 148 KB changelog. Reading broadly is what makes
+110 components, 43 screens and a 154 KB changelog. Reading broadly is what makes
 a session both expensive and *less* accurate — the window fills with material the
 task does not need. `VYUHA-STATE.md` §3 is a routing table precisely so a session
 opens the right three files instead of the wrong thirty.
@@ -100,36 +100,41 @@ that cannot be bundled, because client components import `lib/license.ts` and a
 
 ---
 
-## Next session — ready-to-paste (updated 2026-08-20, after v2.99.99 shipped)
+## Next session — ready-to-paste (updated 2026-08-24, audit session)
 
 ```
 Read CLAUDE.md first (it imports AGENTS.md), then VYUHA-STATE.md §2 and §8. Do not read
 anything else yet — §3 is a routing table; open only what the task needs. Read
-docs/DECISIONS.md only for the entries you actually need; the newest are dated 2026-08-20.
+docs/DECISIONS.md only for the entries you actually need; the newest are dated 2026-08-24.
 
 Start this session on Opus 5 (the VYUHA default).
 
-STATE YOU CAN TRUST (verified 2026-08-20, end of the v2.99.99 release session):
-- Branch main, HEAD f05c8ae or later, clean, pushed. No uncommitted work.
-- v2.99.99 is PUBLISHED and is releases/latest (2026-08-20 15:46Z), tag 51b664d -> commit e8198c2.
-- npm run verify EXIT 0 — 1,962 unit tests / 133 files (+ tests/sim/). CI run 32380322684 green on all 5 jobs
-  (incl. Windows and BOTH Playwright e2e suites) on the release commit, before the tag.
-- Installer 34,860,149 B SHA-256 27D8695E...B23004 (local, = the client ZIP's).
-  GitHub release asset is a DIFFERENT binary: 34,861,983 B SHA-256 46A3842A...4343.
-  These are not interchangeable — see DECISIONS 2026-08-20 "two installers per release".
-- Angel One's live API pull was BROKEN from v2.99.80 to v2.99.98. It is FIXED in v2.99.99 and
-  CONFIRMED against the live broker (2026-08-20 16:32 IST: connected, unattended TOTP login,
-  trade book returned empty on a non-trading day — the success path). NOT yet exercised with
-  a pull carrying REAL FILLS.
-- OpenAlgo shipped in v2.99.99 switched OFF, invisible until enabled, and named in NO
-  buyer-facing document. No live OpenAlgo pull has ever been run. The hold is on the CLAIM,
-  not the code: no copy may say it works until a pull is reconciled against a contract note.
+STATE YOU CAN TRUST (verified 2026-08-24, repo audit session):
+- Branch main, clean, pushed. No uncommitted work.
+- v2.99.100 is PUBLISHED and is releases/latest (2026-08-21 16:30Z). v2.99.99 preceded it.
+- npm run verify EXIT 0 — 1,962 unit tests / 134 files (incl. tests/sim/), re-run 2026-08-24
+  after fixing a date-frozen sell-flow test (DECISIONS 2026-08-24: a frozen --today freezes
+  only the caller; children keep real time).
+- Installer v2.99.100: 34,863,579 B SHA-256 B89A225D...F14DD4 (local, = the client ZIP's).
+  GitHub release asset is a DIFFERENT binary: 34,858,983 B. Not interchangeable — see
+  DECISIONS 2026-08-20 "two installers per release".
+- Both SKUs SOLD and ACTIVATED (VY-2026-001 lifetime, VY-2026-002 annual, 2026-08-23).
+  Sale flow is automated: npm run sell / npm run renewals (docs/owner/LICENSE_OPERATIONS.md §"npm run sell").
+- Off-device backup: npm run backup:drive -- <letter> (refuses C:/K:/T: — one physical disk).
+- Demo-video kit ready at docs/owner/demo-video/ (npm run demo serves a throwaway seeded book);
+  copy guarded by tests/demo-video-copy.test.ts. Recording not yet done.
+- winget PR #421585 (v2.99.99) OPEN, validation passed, awaiting a community moderator — do NOT
+  open a 2.99.100 PR until it merges, then wingetcreate update.
+- Angel One live pull CONFIRMED on the empty-book path (2026-08-20); a pull with REAL FILLS
+  is still unexercised.
+- OpenAlgo ships switched OFF and unnamed in buyer-facing copy. No live pull has ever been run.
+  The hold is on the CLAIM: no copy may say it works until reconciled against a contract note.
 - Latest migration is 0049.
 
 TASK: <state it here>. Candidates the owner has not yet picked up:
-  - Sell one annual licence end to end (§8.1 "recommended first move" — never done once).
-  - First-run onboarding flow (§8.4 called this the explicit #1 next-cycle pick; trial->paid is
-    the bottleneck and nothing guides a fresh install through import -> mark -> first review).
+  - First-run onboarding flow (§8.4's explicit #1 pick; the owner gates the 3.0.0 release on it —
+    trial->paid is the bottleneck and nothing guides a fresh install through import -> mark -> review).
+  - Record the demo video (kit is complete; docs/owner/demo-video/README.md, shots then Clipchamp).
   - An Angel One API pull with real fills, to close the last unverified half of that path.
   - A live OpenAlgo pull reconciled against a contract note, which is what unblocks ever
     documenting it.

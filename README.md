@@ -589,7 +589,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       1962 unit + integration tests across 133 files (+ tests/load: 14 load cases, run separately)
+tests/       1962 unit + integration tests across 134 files (+ tests/load: 14 load cases, run separately)
 e2e/         45 Playwright flows through the real app, in 17 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -617,7 +617,7 @@ lines.
 - Full changelog in [`CHANGELOG.md`](CHANGELOG.md).
 
 <details>
-<summary><b>📜 All npm scripts</b></summary>
+<summary><b>📜 Key npm scripts</b></summary>
 
 | Script | What it does |
 | --- | --- |
@@ -629,6 +629,7 @@ lines.
 | `npm test` | Vitest unit + integration suite (1,962 tests) |
 | `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 14 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
+| `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
 | `npm run bump-version x.y.z` | Sync the version across package/tauri/cargo/sidebar |

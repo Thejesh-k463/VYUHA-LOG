@@ -89,8 +89,5 @@ updater-private.key
 # that the next `git add -A` commits (it did once, at v2.99.91).
 /.sigcheck.tmp
 
-# Insert/cleanup state written by scripts/demo-ind7.mjs.
-scripts/.demo-ind7.json
-
 # Trend artifact from npm run test:load — a measurement, not source.
 /load-results.json

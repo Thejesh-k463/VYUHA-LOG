@@ -33,7 +33,8 @@
     "demo": "node scripts/demo-server.mjs",
     "sell": "node scripts/sell.mjs",
     "renewals": "node scripts/renewals.mjs",
-    "winget:manifest": "node scripts/winget-manifest.mjs"
+    "winget:manifest": "node scripts/winget-manifest.mjs",
+    "backup:drive": "node scripts/backup-to-drive.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.5",

@@ -44,6 +44,10 @@ if (-not (Test-Path $src)) { throw "profile source missing: $src" }
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item (Join-Path $src "basic.ini")          (Join-Path $dest "basic.ini")          -Force
 Copy-Item (Join-Path $src "recordEncoder.json") (Join-Path $dest "recordEncoder.json") -Force
+# The committed basic.ini carries an absolute RecFilePath; point it at THIS user's takes folder
+# so a hand-import on another machine does not silently record to a nonexistent path.
+$ini = Join-Path $dest "basic.ini"
+(Get-Content $ini) -replace '^RecFilePath=.*', "RecFilePath=$env:USERPROFILE\Videos\vyuha-demo-takes" | Set-Content $ini
 Ok "installed to $dest"
 Note "in OBS: Profile menu → 'Vyuha Demo'. If OBS was open, restart it to see the profile."
 Note "canvas 1920x1080 = output 1920x1080 (no resample), 30 fps, mkv, x264 CRF 18, keyint 2 s"

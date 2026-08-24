@@ -104,14 +104,16 @@ describe("README test counts agree with each other", () => {
     expect(num(npmE2e?.[1])).toBe(badgeE2e);
   });
 
-  it("the unit-test FILE count matches tests/*.test.ts on disk", () => {
+  it("the unit-test FILE count matches tests/**/*.test.ts on disk", () => {
     // The six figures above agree with each other and with nothing else, so
     // they stayed green at 1,858/128 while the suite had moved to 1,918/131
     // (found by an audit on 2026-08-20, not by this file). The TEST count
     // cannot be checked without running vitest, but the FILE count can be
     // read off disk — and in practice they move together, so this catches a
-    // stale README the next time the suite grows.
-    const files = readdirSync(path.join(root, "tests")).filter((f) => f.endsWith(".test.ts"));
+    // stale README the next time the suite grows. RECURSIVE, because vitest's
+    // include is tests/**/*.test.ts — a non-recursive readdir pinned the
+    // README to 133 while tests/sim/ made it 134 (audit, 2026-08-24).
+    const files = readdirSync(path.join(root, "tests"), { recursive: true }).filter((f) => String(f).endsWith(".test.ts"));
     const stated = readme.match(/unit \+ integration tests across (\d+) files/);
     expect(num(stated?.[1]), "README states a tests/ file count that is not on disk").toBe(files.length);
   });

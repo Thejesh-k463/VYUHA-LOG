@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased (on `main` after v2.99.100)
+
+Owner tooling and test infrastructure — nothing in the shipped app changed.
+
+- **The sale flow is one command.** `npm run sell -- <email> --years 1|--lifetime --utr <UTR>
+  --name "<Name>"` runs mint → verify → receipt → encrypted key backup → send-message, with the
+  traps from the two real sales automated (duplicate-email guard BEFORE the irreversible mint,
+  same-day backup renamed not clobbered, archive folder created before redirect). `npm run
+  renewals` prints the annual-renewal outreach list and exits 2 on a lapsed key so a scheduled
+  run can alert. 11 tests on a throwaway ed25519 keypair; the real key is never opened.
+- **Simulation harness** (`tests/sim/`, 24 cases): a deterministic 10,028-fill book rendered as
+  five real broker formats through the real detection route — every parser conserves quantity
+  exactly and value to the paisa, and all formats agree on the same 4,504 positions.
+- **Demo-video kit** (`docs/owner/demo-video/`): narration, shot list pinned to the sidebar's
+  `nav-config.ts` by test, importable OBS profile, setup script, end card, publish copy —
+  narration and publish copy scanned by `tests/demo-video-copy.test.ts` for outcome claims.
+- **Full off-device backup**: `npm run backup:drive -- <letter>` — verified git bundle, secrets,
+  key archive, `.vkb` bundles, private fixtures, client ZIPs and the live journal in one
+  command; refuses same-disk targets (C:/K:/T: are one physical NVMe) and refuses to run while
+  Vyuha is open.
+- **Fixed:** the sell-flow suite was date-frozen to the day it was written and `sell.mjs`
+  predicted the backup bundle's name from `--today` while the backup script used the real
+  clock — both now derive from the artefacts actually produced (DECISIONS 2026-08-24).
+  `tests/readme-claims.test.ts`'s file-count guard made recursive (it was blind to `tests/sim/`).
+  Orphan `scripts/demo-ind7.mjs` deleted — it wrote into the live journal; `npm run demo`
+  supersedes it.
+
 ## v2.99.100 — imports stay proportional as a book grows
 
 One fix, and a real one: **the pairing engine was quadratic on a single symbol**,

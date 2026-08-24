@@ -1,4 +1,4 @@
-# If GitHub is down — what breaks, what does not, and the three habits that make it a non-event
+# If GitHub is down — what breaks, what does not, and the four habits that make it a non-event
 
 Written 2026-08-19 after GitHub's August 2026 capacity incidents (an ~8-hour outage of web, API,
 Actions, Pages and Copilot; 13 incidents in 17 days; GitHub's CTO publicly revising capacity
@@ -20,7 +20,7 @@ GitHub" framing in circulation is commentary, not a fact — but the outages are
 signing key are local, gitignored files. The real single point of failure is the build machine's
 disk, not GitHub.
 
-## The three habits (≈3 minutes per release)
+## The four habits (≈4 minutes per release)
 
 1. **Mirror the history to a second host.** One-time: create an empty *private* repo on Codeberg,
    GitLab or Bitbucket (a human must create the account), then
@@ -34,6 +34,13 @@ disk, not GitHub.
    `license-private.pem` + `license-ledger.jsonl`. Also copy `.secrets/vyuha-updater.key`
    into the same encrypted folder by hand (it is not in the bundle — it signs installers, not
    licences). Do this before the first real sale and after every batch of sales.
+4. **Full off-device backup to the external drive.** `npm run backup:drive -- <letter>` —
+   one command, everything a disk failure would take: a verified git bundle (all branches +
+   tags), `.secrets`, the key archive, the `.vkb` bundles, `tests/fixtures/private` (the real
+   broker exports, irreplaceable), the client ZIPs and the LIVE journal app data. It refuses
+   `C:`/`K:`/`T:` because those are partitions of the ONE physical NVMe — a same-disk "backup"
+   dies with the disk — and refuses to run while Vyuha is open (the DB must not be copied
+   mid-write). Run it before any risky machine work and after every sale batch.
 
 ## What not to do
 

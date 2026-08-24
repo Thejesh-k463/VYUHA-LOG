@@ -10,7 +10,7 @@ This document is the strategic spine. The other files in `docs/owner/` and
 
 ---
 
-## 0. What you are actually selling, as of v2.99.99
+## 0. What you are actually selling, as of v2.99.100
 
 > Since v2.99.75 the pitch gained an appearance layer (nine skins incl. Custom, tint intensity,
 > panel styles, wallpaper — v2.99.96/97), the Qty/Invested/Entry/Exit trades table, and an
@@ -531,7 +531,7 @@ the same SKU on the same day get completely different keys.
 | 5. Compliant growth / content-bot plan | `docs/owner/GROWTH_ENGINE_PLAN.md` |
 | 6. **Getting-started slide deck (v2.80)** — install → import → journal → playbook loop → activate; visual-first, printable to PDF, doubles as demo-video storyboard | `docs/client/GETTING_STARTED_DECK.html` |
 | 7. Public repo landing page with current screenshots | `README.md` |
-| 8. **Vendor licence tooling (v2.86)** — issue / list / revoke | `scripts/license-{issue,list,revoke}.mjs` |
+| 8. **Vendor licence tooling (v2.86; sale flow automated 2026-08-23)** — one-command sale (`npm run sell`), renewals report (`npm run renewals`), issue / list / revoke / upgrade / encrypted key backup | `scripts/sell.mjs`, `scripts/renewals.mjs`, `scripts/license-{issue,list,revoke,upgrade,backup}.mjs` |
 | 9. **Licence operations runbook (v2.86)** — sale → delivery → refund → renewal | `docs/owner/LICENSE_OPERATIONS.md` |
 | 10. **Indicators launch kit** — analysis of both Pine scripts, sales copy, paste-ready TradingView descriptions, invite-only publishing steps | `docs/owner/INDICATORS_LAUNCH_KIT.md` |
 
@@ -550,7 +550,7 @@ Everything technical is now BUILT — the sequence is pure go-to-market:
    2-minute walkthrough); founding-trader launch (first 100 @ launch price); collect
    testimonials; iterate copy from checkout drop-off. Consider the annual SKU
    (`--years 1`) as the downsell on exit-intent.
-4. **Ongoing** — run `node scripts/license-list.mjs --expiring 30` monthly; that output is your
+4. **Ongoing** — run `npm run renewals` monthly (exit 2 on a lapsed key, so a scheduled run can alert); that output is your
    renewal outreach list. Back up `license-private.pem` + `license-ledger.jsonl` after every
    batch of sales. Full procedures in `LICENSE_OPERATIONS.md`.
 

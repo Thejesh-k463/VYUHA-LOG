@@ -73,16 +73,23 @@ means essentially every buyer meets a cold warning. Two free mitigations, both
 of which must happen *after* the release is public. (And before either: `npm run mirror:push` +
 `npm run release:archive -- <drive>` — see `RELEASE_RESILIENCE.md`.)
 
-1. **`npm run winget:manifest`** → then
-   `wingetcreate submit --token <gh-token> release-packages/winget/<version>`.
-   Once the listing exists, `winget install ThejeshK.Vyuha` installs with no
-   SmartScreen prompt at all, because winget fetches without the
-   mark-of-the-web. Put that command in the purchase email as the recommended
-   path.
+1. **`npm run winget:manifest -- --sha <published-asset-SHA256>`** — `--sha` is
+   REQUIRED and must be the GitHub release asset's hash, never your local
+   build's (they are different binaries — DOC_AUDIT row 20). Then authenticate
+   with the device flow — **`wingetcreate token --store`, NEVER
+   `--token <pat>` on the command line**: the tool itself warns the token gets
+   logged, and one PAT was pasted in cleartext this way on 2026-08-20 and had
+   to be revoked. Then `wingetcreate submit release-packages/winget/<version>`
+   (or `wingetcreate update` once the package exists). Status of the first
+   submission: PR #421585 (v2.99.99), validation passed, awaiting a moderator.
+   Once listed, `winget install ThejeshK.Vyuha` installs with no SmartScreen
+   prompt, because winget fetches without the mark-of-the-web.
 2. **Submit the .exe to Microsoft** at
    <https://www.microsoft.com/en-us/wdsi/filesubmission> (Software developer →
-   false positive). Seeds reputation for that hash before buyers download it.
-   A web form; there is no API.
+   false positive) — use the installer **extracted from the client ZIP**, the
+   binary a buyer actually runs (DOC_AUDIT row 16). A web form; there is no
+   API. Done for all three v2.99.100 binaries on 2026-08-22; the case IDs are
+   in VYUHA-STATE §2's Defender row.
 
 Details and the reasoning: [`CODE_SIGNING.md`](CODE_SIGNING.md).
 
@@ -90,10 +97,20 @@ Details and the reasoning: [`CODE_SIGNING.md`](CODE_SIGNING.md).
 
 ## Selling to a client
 
+**The primary path is one command** (since 2026-08-23; both real sales used this
+flow — mint → verify → receipt → encrypted backup → send-message, with the
+duplicate-email and same-day-backup traps handled):
+
 ```bash
-node scripts/license-issue.mjs buyer@mail.com app --years 1 --machine ABCD-EF12-3456   # Annual
-node scripts/license-issue.mjs buyer@mail.com app --machine ABCD-EF12-3456             # Lifetime
-node scripts/license-list.mjs --expiring 30      # renewals due
+npm run sell -- buyer@mail.com --years 1 --utr <12-digit-UTR> --name "Full Name"   # Annual
+npm run sell -- buyer@mail.com --lifetime --utr <12-digit-UTR> --name "Full Name"  # Lifetime
+npm run renewals                                 # monthly renewal outreach list (exit 2 on lapsed)
+```
+
+Full procedure and flags: `LICENSE_OPERATIONS.md` § "npm run sell". The raw
+tools underneath, for one-offs:
+
+```bash
 node scripts/license-list.mjs buyer@mail.com     # find one buyer
 node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"
 ```
@@ -101,10 +118,11 @@ node scripts/license-revoke.mjs A1B2-C3D4-E5 "refunded"
 Four habits that matter once you are past a handful of customers:
 
 1. **`--years 1`, not lifetime.** Renewals are the revenue, and
-   `--expiring 30` becomes your reminder list.
-2. **`--machine` on every paid key.** It is the only thing that stops one key
-   circulating in a WhatsApp group. The buyer reads their Machine ID from
-   Settings → License, so delivery becomes two-step.
+   `npm run renewals` becomes your reminder list.
+2. **Unbound keys are the default** (owner policy, 2026-08-23 — both real sales
+   are unbound and stay that way). `--machine` binding is opt-in, for a buyer
+   who asks or a key caught being shared; a bound reissue needs `--machine` +
+   `--no-payment` AND a revocation of the old key (LICENSE_OPERATIONS §4/§6).
 3. **A `--note` per sale** (invoice number, WhatsApp handle) so a support
    thread resolves with one `grep`.
 4. **Revocation has two speeds — use both.**
@@ -131,7 +149,13 @@ Full operational detail: [`LICENSE_OPERATIONS.md`](LICENSE_OPERATIONS.md).
 | [`HOW_TO_EDIT_SALES_ASSETS.md`](HOW_TO_EDIT_SALES_ASSETS.md) | Editing the landing page and brochure in `docs/sales/` |
 | [`CODE_SIGNING.md`](CODE_SIGNING.md) | Updater signing, and what the guards enforce |
 | [`CREATOR_OUTREACH.md`](CREATOR_OUTREACH.md) | Creator/influencer proposal (WhatsApp, email, X), creator FAQ, review-key runbook — free lifetime key only |
-| [`RELEASE_RESILIENCE.md`](RELEASE_RESILIENCE.md) | If GitHub is down: what fails open, and the three habits (mirror push, release archive, encrypted key backup) |
+| [`RELEASE_RESILIENCE.md`](RELEASE_RESILIENCE.md) | If GitHub is down: what fails open, and the four habits (mirror push, release archive, encrypted key backup, `npm run backup:drive` full off-device backup) |
+| [`LICENSE_OPERATIONS.md § npm run sell`](LICENSE_OPERATIONS.md) | The one-command sale flow (`npm run sell`, `npm run renewals`) — the primary selling path since 2026-08-23 |
+| [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) | Demo-video claim rules (superseded for shots/tooling by `demo-video/`, still binding on claims) |
+| [`demo-video/`](demo-video/README.md) | The executable demo-video kit: narration, shot list (pinned to nav-config by test), OBS profile, setup script, end card, publish copy |
+| [`RECEIPT_TEMPLATE.md`](RECEIPT_TEMPLATE.md) | The receipt format `npm run sell` emits (receipt, not tax invoice — no GSTIN) |
+| [`CLIENT_DELIVERY.md`](CLIENT_DELIVERY.md) | What to send a buyer and in what order |
+| [`pitch-deck/`](pitch-deck/) + `RAINMATTER_DECK.pdf` | The Rainmatter pitch deck source and built PDF (four `[[placeholders]]` still to fill before submitting) |
 | [`forms/client-feedback-form.gs`](forms/client-feedback-form.gs) | Apps Script that creates the client feedback Google Form from CLIENT_FEEDBACK_FORM.md in one run |
 | [`CLIENT_FEEDBACK_FORM.md`](CLIENT_FEEDBACK_FORM.md) | The 24-question client Google Form spec (who/how/what matters/price/consent) and setup notes |
 | [`RAINMATTER_APPLICATION.md`](RAINMATTER_APPLICATION.md) | Draft answers for Rainmatter's "Application for Startups" Google Form (+ the pitch-deck spec it requires) |
