@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-1962%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-1993%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-45%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -28,7 +28,22 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v2.99.101** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v2.99.102** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v2.99.102 — the first live F&O pull, and everything it taught.** The first broker-API pull ever
+> to return real F&O fills ran on 2026-08-26 against a live Dhan account, supervised end to end and
+> reconciled against the broker's signed contract note — **all 9 contracts to the 4th decimal, STT
+> exact to the paisa, non-brokerage levies within 0.081%**. It found real defects and this release
+> ships their fixes: F&O positions pulled through the Dhan API used to classify as *equity* (wrong
+> STT, wrong segment, invisible to options analytics) — derivative names are now built from the
+> facts Dhan itself states, never guessed from symbol shape; open positions arrive **already
+> valued** with the broker's own mark; and a pull that looks like trades already in your journal
+> now **stops before committing** and shows you exactly which rows collide — the same contract at
+> two different brokers still imports as the two real trades it is. Also: Portfolio Risk shows
+> rupees beside percentages, and an inline price box replaces the dead-end "enter a current price"
+> link. The same classification defect is known and still open for Zerodha/Angel One **API** pulls
+> (their file imports were always correct) — it is fixed the day a real F&O payload exists to
+> verify against, because guessing is how journals lie.
 >
 > **v2.99.101 — a closed position explains itself instead of dead-ending.** Booking an exit on a
 > fully closed staged position offered percentage shortcuts of nothing and a native `max=0`
@@ -294,7 +309,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **1,962** | **43** | **0** |
+| **1,993** | **43** | **0** |
 | tests, 45 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
 
 </div>
@@ -304,6 +319,10 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > pledge, per broker × segment × exchange, in integer paise with statutory rounding. Brokerage is
 > excluded from that claim because it isn't derivable from the file. We say so rather than pad the
 > number.
+>
+> And it keeps being re-proven: on 2026-08-27 a live Dhan API pull was reconciled against the
+> broker's **signed contract note** — all 9 contracts matched to the 4th decimal, STT to the exact
+> paisa (₹1,222.00 vs ₹1,222.00), and non-brokerage levies landed within **0.081%**.
 
 ---
 
@@ -596,7 +615,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       1962 unit + integration tests across 134 files (+ tests/load: 14 load cases, run separately)
+tests/       1993 unit + integration tests across 134 files (+ tests/load: 14 load cases, run separately)
 e2e/         45 Playwright flows through the real app, in 17 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -617,7 +636,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **1,962 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **1,993 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 14 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -633,7 +652,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (1,962 tests) |
+| `npm test` | Vitest unit + integration suite (1,993 tests) |
 | `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 14 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -700,7 +719,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 1962 Vitest unit + integration tests (+ tests/load)
+  tests/          # 1993 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.
