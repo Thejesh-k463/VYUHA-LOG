@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.99.102 — the first live F&O pull, and everything it taught
+
+The first broker-API pull ever to return real F&O fills ran on 2026-08-26 against a live Dhan
+account, supervised end to end and reconciled against the broker's contract note
+(all 9 contracts to the 4th decimal, STT exact to the paisa, non-brokerage levies −0.081%).
+It found real defects; this release ships their fixes.
+
+- **Fixed: the Dhan API pull classified every F&O position as equity.** The API's hyphenated
+  option symbols (`SENSEX-Aug2026-78200-CE`) never matched the classifier's canonical names, so
+  options were charged **equity** STT, filed under equity segments, and invisible to the options
+  analytics — while open options nagged as unvalued equity "holdings". Derivative names are now
+  built from the facts Dhan itself states (`drvExpiryDate` / `drvStrikePrice` / `drvOptionType`),
+  never guessed from symbol shape; an F&O row whose stated facts are incomplete keeps its raw
+  name and says so. Contract-note verified. The same class of defect is **known and still open
+  for Zerodha and Angel One API pulls** (no real F&O payload exists yet to fix them against —
+  DECISIONS 2026-08-26); their file imports were always correct.
+- **Open Dhan positions arrive already valued.** The pull now derives the broker's own mark
+  (entry ± stated unrealised ÷ quantity — it reproduced Dhan's displayed LTPs exactly), so open
+  positions show their unrealised P&L immediately instead of asking for a price.
+- **A suspected duplicate now blocks the commit until you decide.** Pulling the same trades from
+  two sources can differ by a paisa and slip past the exact duplicate check — found live, where
+  it silently double-counted one SENSEX option. A risky overlap now stops the commit and opens a
+  dialog naming each suspect row (quantity, source file, kind of match); only its explicit
+  **Commit anyway** proceeds. The same instrument traded the same day at a *different* broker
+  imports normally — two brokers are two books — with a note confirming the overlap is intentional.
+- **Portfolio Risk speaks rupees, not only percentages**: the Open P&L tile, each position row
+  and the expanded Return now show the ₹ figure beside the %. Holdings with no mark gain an
+  inline **Value it** box (the old link led to a page with no visible entry point), and a partial
+  risk save can no longer silently clear an SL/TSL/target it did not mention.
+- **Fixed:** engine charge refusals during an API import now surface as a readable message
+  instead of a bare HTTP 500, and Angel One API commits no longer file under the Kite name.
+
 ## v2.99.101 — a closed position explains itself
 
 One shipped-app fix, plus the owner tooling and test infrastructure that had collected on `main`.

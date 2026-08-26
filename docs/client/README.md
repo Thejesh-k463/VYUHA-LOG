@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.102
+
+| Upgrade | What it gives you |
+|---|---|
+| **Dhan API pulls now book your F&O correctly** | Options and futures pulled through the Dhan connection used to be filed as equity — wrong charges, wrong segment, invisible to the options analytics. They now import as the contracts they are, with strike, expiry and option type read from what Dhan itself states. Verified against a real contract note: every contract matched to the 4th decimal and STT to the paisa. |
+| **Open positions arrive already valued** | A Dhan pull now carries the broker's own current price for each open position, so unrealised P&L shows immediately — no more "no current price" prompts for freshly pulled positions. And wherever a holding still needs a price, you can now type it right there in the panel. |
+| **You cannot double-import a day by accident** | If a pull looks like trades already in your journal (for example, the same day imported earlier from a file), Vyuha now stops before committing and shows you exactly which rows collide — nothing is committed until you explicitly say so. The same contract traded at two different brokers still imports as two trades, as it should. |
+| **Portfolio Risk shows rupees, not just percentages** | Open P&L and each position's running impact now display the ₹ figure beside the %. |
+
 ## New in v2.99.101
 
 - **Booking an exit on a fully closed staged position now explains itself.** Previously the
