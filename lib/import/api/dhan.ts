@@ -93,6 +93,74 @@ export function exchangeOf(segment: string): Exchange | null {
   return null;
 }
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-09-29 14:30:00" → "2026-09-29". Dhan's equity rows carry the sentinel
+ *  "0001-01-01", which is a non-date and returns null. */
+function drvExpiryIso(v: string | null | undefined): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? "").trim());
+  if (!m) return null;
+  if (Number(m[1]) < 1980) return null; // "0001-01-01" sentinel on non-derivatives
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+/** A derivative segment as Dhan names it. Currency segments are deliberately
+ *  NOT included: Vyuha has no currency segment vocabulary, so those rows keep
+ *  their raw symbol and the equity fallback until that vocabulary exists. */
+function isDerivativeSegment(segment: string): boolean {
+  const s = String(segment).toUpperCase();
+  return s.endsWith("_FNO") || s === "MCX_COMM";
+}
+
+/**
+ * Canonicalise a derivative name from Dhan's STATED drv* fields.
+ *
+ * The API's `tradingSymbol` is hyphenated (`SENSEX-Aug2026-78200-CE`) — a shape
+ * `parseInstrumentName` does not read, so every F&O position used to fall
+ * through to the equity branch and be charged at equity STT (found on the first
+ * real-fills pull, 2026-08-26). Dhan states expiry, strike and option type
+ * outright in `drvExpiryDate` / `drvStrikePrice` / `drvOptionType`, so the
+ * canonical `OPT <SYM> <DD Mon YYYY> <STRIKE> <CE|PE>` / `FUT <SYM> <DD Mon YYYY>`
+ * name is BUILT from those facts — the same convention as the Angel One tax-P&L
+ * parser — never parsed out of the symbol's shape.
+ *
+ * Returns null when the row is not a derivative, or when the stated fields are
+ * incomplete (the caller then keeps the raw symbol and says so).
+ */
+export function canonicalDerivativeName(r: DhanPositionRow): string | null {
+  if (!isDerivativeSegment(r.exchangeSegment)) return null;
+  const underlying = String(r.tradingSymbol ?? "").split("-")[0]!.trim().toUpperCase();
+  const iso = drvExpiryIso(r.drvExpiryDate);
+  if (!underlying || !iso) return null;
+  const [y, m, d] = iso.split("-");
+  const date = `${d} ${MON[Number(m) - 1]} ${y}`;
+
+  const ot = String(r.drvOptionType ?? "").toUpperCase();
+  const strike = Number(r.drvStrikePrice) || 0;
+  const optionType = ot === "CALL" || ot === "CE" ? "CE" : ot === "PUT" || ot === "PE" ? "PE" : null;
+  if (optionType && strike > 0) return `OPT ${underlying} ${date} ${String(strike)} ${optionType}`;
+  if (!optionType || ot === "NA") return `FUT ${underlying} ${date}`;
+  return null; // an option type with no strike — incomplete, refuse to guess
+}
+
+/**
+ * The current mark of an OPEN position, derived from Dhan's own numbers.
+ *
+ * The payload has no LTP field, but it states `unrealizedProfit`, and
+ * entry ± unrealised/qty IS the broker's mark (verified against Dhan's UI on
+ * the real 2026-08-26 book: 1.30 / 2.90 / 38.25 reproduced exactly). This is
+ * algebra on two stated facts, not an invented price — without it every open
+ * position imports unvalued and asks the user for a number Dhan already sent.
+ */
+export function markOf(r: DhanPositionRow): number | null {
+  const netQty = Number(r.netQty) || 0;
+  const u = Number(r.unrealizedProfit);
+  if (netQty === 0 || !Number.isFinite(u)) return null;
+  return netQty > 0
+    ? r2((Number(r.buyAvg) || 0) + u / netQty)
+    : r2((Number(r.sellAvg) || 0) - u / Math.abs(netQty));
+}
+
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
 /**
@@ -122,9 +190,21 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
           ? r2(sellValue - buyValue)
           : 0;
 
+    // Derivatives get the canonical OPT/FUT name built from Dhan's stated drv*
+    // fields; a derivative row whose facts are incomplete keeps its raw symbol
+    // and SAYS SO rather than silently classifying as equity.
+    const canonical = canonicalDerivativeName(r);
+    const unclassifiable = !canonical && isDerivativeSegment(r.exchangeSegment);
+    const notes: string[] = [];
+    if (productHintOf(r.productType) === "mtf") notes.push("Product stated by the Dhan API as MTF — not inferred.");
+    if (unclassifiable)
+      notes.push(
+        `Dhan marked ${r.tradingSymbol} as F&O but stated no usable expiry/strike — imported with its raw name; check its segment.`,
+      );
+
     out.push({
       broker: "dhan",
-      tradingsymbol: r.tradingSymbol,
+      tradingsymbol: canonical ?? r.tradingSymbol,
       isin: null,
       buyQty,
       avgBuyPrice: r2(Number(r.buyAvg) || 0),
@@ -132,7 +212,9 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
       sellQty,
       avgSellPrice: r2(Number(r.sellAvg) || 0),
       sellValue,
-      closingPrice: null,
+      // The broker's own mark for an open position (entry ± unrealised/qty);
+      // null for closed rows and when Dhan states no unrealised figure.
+      closingPrice: markOf(r),
       grossPnl: gross,
       unrealisedPnl: r2(Number(r.unrealizedProfit) || 0),
       // Positions are the CURRENT day's book, so today is the honest date.
@@ -144,10 +226,7 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
       // The positions endpoint carries no fill times — only aggregates.
       entryTime: null,
       exitTime: null,
-      importNotes:
-        productHintOf(r.productType) === "mtf"
-          ? ["Product stated by the Dhan API as MTF — not inferred."]
-          : null,
+      importNotes: notes.length ? notes : null,
     });
   }
 

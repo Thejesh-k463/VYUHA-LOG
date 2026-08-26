@@ -26,12 +26,34 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalgo-disclosure";
-import { openAlgoBrokerOptions } from "@/lib/import/api/openalgo";
+import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { TriangleAlert } from "lucide-react";
 
 interface ConnStatus {
   broker: string;
   apiKeyMasked: string;
   lastPullAt: string | null;
+  /** OpenAlgo only — saved config echoed back so the form shows what is
+   *  actually connected instead of defaults (host/broker are not secrets). */
+  openalgoHost?: string | null;
+  openalgoUnderlyingBroker?: string | null;
+}
+
+/** One suspected duplicate from the server's cross-source check (409 body). */
+interface CollisionLite {
+  symbol: string;
+  kind: string;
+  detail: string;
+  incoming: { buyQty: number; sellQty: number; buyValue: number; sellValue: number };
+  existing: { id: number; buyQty: number; sellQty: number; sourceFile: string | null };
 }
 
 interface PullResult {
@@ -138,6 +160,11 @@ export function BrokerConnect() {
   const [openalgoAvailable, setOpenalgoAvailable] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  /** A 409'd commit awaiting the user's decision in the collision dialog. */
+  const [collisionPrompt, setCollisionPrompt] = useState<{
+    brokerId: string;
+    collisions: CollisionLite[];
+  } | null>(null);
 
   // Derived, not synced: if the gate closes while the OpenAlgo tab is selected,
   // fall back to Zerodha at render time. (AGENTS.md — never reset state in an
@@ -145,11 +172,34 @@ export function BrokerConnect() {
   const active: BrokerId = broker === "openalgo" && !openalgoAvailable ? "zerodha" : broker;
   const spec = BROKERS[active];
   const conn = conns.find((c) => c.broker === active) ?? null;
+  /** Every saved OpenAlgo instance (`openalgo:<broker>` rows) — a user with
+   *  accounts at several brokers runs one instance per broker, each on its own
+   *  port, and each pulls independently. */
+  const openAlgoConns = conns.filter((c) => isOpenAlgoConnectionId(c.broker));
   const visibleBrokers = (Object.keys(BROKERS) as BrokerId[]).filter(
     (b) => b !== "openalgo" || openalgoAvailable,
   );
   const hostIsRemote = host.trim() !== "" && !isLocalOpenAlgoHost(host);
   const underlyingNote = OPENALGO_OPTIONS.find((o) => o.broker === underlyingBroker)?.note;
+
+  /** Prefill the OpenAlgo form fields from the SAVED connection — but never
+   *  over something the user has already typed. Without this, a reloaded page
+   *  showed the default host over a saved one, and an innocent "Update
+   *  connection" would have silently repointed the pull at a different
+   *  OpenAlgo instance (found live 2026-08-26, two instances on one machine). */
+  function adoptSavedOpenAlgo(connections: ConnStatus[]) {
+    // Only with exactly ONE instance is "the saved config" unambiguous — with
+    // several, the instance list below shows each one's host and broker.
+    const list = connections.filter((c) => isOpenAlgoConnectionId(c.broker));
+    if (list.length !== 1) return;
+    const oa = list[0]!;
+    if (oa.openalgoHost) {
+      setHost((prev) => (prev === OPENALGO_DEFAULT_HOST || !prev.trim() ? oa.openalgoHost! : prev));
+    }
+    if (oa.openalgoUnderlyingBroker) {
+      setUnderlyingBroker((prev) => (prev === "" ? oa.openalgoUnderlyingBroker! : prev));
+    }
+  }
 
   async function refresh() {
     try {
@@ -158,6 +208,7 @@ export function BrokerConnect() {
       if (data.ok) {
         setConns(data.connections ?? []);
         setOpenalgoAvailable(Boolean(data.openalgo?.available));
+        adoptSavedOpenAlgo(data.connections ?? []);
       }
     } catch {
       /* stays disconnected */
@@ -173,6 +224,7 @@ export function BrokerConnect() {
         if (!alive || !d.ok) return;
         setConns(d.connections ?? []);
         setOpenalgoAvailable(Boolean(d.openalgo?.available));
+        adoptSavedOpenAlgo(d.connections ?? []);
       })
       .catch(() => {});
     return () => {
@@ -240,9 +292,19 @@ export function BrokerConnect() {
     await refresh();
   }
 
-  async function pull(mode: "preview" | "commit") {
-    const { res, data } = await post({ action: "pull", broker: active, mode }, mode);
+  async function pull(mode: "preview" | "commit", brokerId: string = active, force = false) {
+    // A 409 from the server means the pull collides with trades already in the
+    // journal (same trades from another source, hashes a paisa apart). Nothing
+    // was committed; the collision dialog shows the details, and only its
+    // "Commit anyway" re-posts with force:true — an explicit human decision,
+    // never a default.
+    const { res, data } = await post({ action: "pull", broker: brokerId, mode, ...(force ? { force: true } : {}) }, mode);
     if (!data.ok) {
+      if (res?.status === 409 && data.needsForce) {
+        setCollisionPrompt({ brokerId, collisions: (data.collisions ?? []) as CollisionLite[] });
+        setMsg(null);
+        return;
+      }
       await fail(res, data, "Pull failed");
       return;
     }
@@ -259,8 +321,8 @@ export function BrokerConnect() {
     }
   }
 
-  async function disconnect() {
-    const { res, data } = await post({ action: "disconnect", broker: active }, "disconnect");
+  async function disconnect(brokerId: string = active) {
+    const { res, data } = await post({ action: "disconnect", broker: brokerId }, "disconnect");
     if (!data.ok) await fail(res, data, "Could not disconnect.");
     else setMsg({ ok: true, text: data.message ?? "" });
     await refresh();
@@ -276,6 +338,7 @@ export function BrokerConnect() {
     setHost(OPENALGO_DEFAULT_HOST);
     setUnderlyingBroker("");
     setMsg(null);
+    setCollisionPrompt(null);
   }
 
   return (
@@ -315,7 +378,7 @@ export function BrokerConnect() {
         </p>
         <div className="flex flex-wrap gap-2">
           {visibleBrokers.map((b) => {
-            const connected = conns.some((c) => c.broker === b);
+            const connected = b === "openalgo" ? openAlgoConns.length > 0 : conns.some((c) => c.broker === b);
             return (
               <button
                 key={b}
@@ -339,6 +402,41 @@ export function BrokerConnect() {
           file alone carries nothing usable — and they are sent nowhere except{" "}
           {active === "openalgo" ? "your own OpenAlgo instance" : "the broker itself"}.
         </p>
+
+        {active === "openalgo" && openAlgoConns.length > 0 && (
+          <div className="space-y-2">
+            {/* One row per instance: a user with several broker accounts runs
+                one OpenAlgo per broker, each on its own port, each pulling on
+                its own. The row IS the display of what is saved — host and
+                broker included — so a stale form can never misrepresent it. */}
+            {openAlgoConns.map((c) => {
+              const underlying = c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker) ?? "?";
+              const label = OPENALGO_OPTIONS.find((o) => o.broker === underlying)?.label ?? underlying;
+              return (
+                <div key={c.broker} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                  <div className="text-xs">
+                    <span className="font-medium">{label}</span>
+                    <span className="text-muted-foreground"> — {c.openalgoHost ?? "host unknown"} · key {c.apiKeyMasked}</span>
+                    {c.lastPullAt && (
+                      <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => pull("preview", c.broker)} disabled={busy != null}>
+                      {busy === "preview" ? "Pulling…" : "Preview pull"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => pull("commit", c.broker)} disabled={busy != null}>
+                      {busy === "commit" ? "Committing…" : "Pull & commit"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => disconnect(c.broker)} disabled={busy != null}>
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
@@ -424,25 +522,110 @@ export function BrokerConnect() {
                   : !clientCode || !pin || !totpSecret)
             }
           >
-            {busy === "save" ? "Saving…" : conn ? "Update connection" : "Save connection"}
+            {busy === "save"
+              ? "Saving…"
+              : active === "openalgo"
+                ? openAlgoConns.some((c) => (c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker)) === underlyingBroker)
+                  ? "Update instance"
+                  : "Add instance"
+                : conn
+                  ? "Update connection"
+                  : "Save connection"}
           </Button>
-          <Button variant="outline" onClick={() => pull("preview")} disabled={busy != null || !conn}>
-            {busy === "preview" ? "Pulling…" : "Preview pull"}
-          </Button>
-          <Button variant="outline" onClick={() => pull("commit")} disabled={busy != null || !conn}>
-            {busy === "commit" ? "Committing…" : "Pull & commit"}
-          </Button>
-          {conn && (
-            <Button variant="ghost" onClick={disconnect} disabled={busy != null}>
-              Disconnect
-            </Button>
-          )}
-          {conn?.lastPullAt && (
-            <span className="text-[0.6875rem] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+          {active !== "openalgo" && (
+            <>
+              <Button variant="outline" onClick={() => pull("preview")} disabled={busy != null || !conn}>
+                {busy === "preview" ? "Pulling…" : "Preview pull"}
+              </Button>
+              <Button variant="outline" onClick={() => pull("commit")} disabled={busy != null || !conn}>
+                {busy === "commit" ? "Committing…" : "Pull & commit"}
+              </Button>
+              {conn && (
+                <Button variant="ghost" onClick={() => disconnect()} disabled={busy != null}>
+                  Disconnect
+                </Button>
+              )}
+              {conn?.lastPullAt && (
+                <span className="text-[0.6875rem] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+              )}
+            </>
           )}
         </div>
 
         {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}
+
+        {/* Blocked-commit dialog: the server refused (409) because these rows
+            look like trades already in the journal from another source. The
+            details are laid out per trade so the decision is informed, and
+            committing anyway is a button press INSIDE this dialog only. */}
+        <Dialog
+          open={collisionPrompt != null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCollisionPrompt(null);
+              setMsg({ ok: true, text: "Commit cancelled — nothing was committed." });
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <TriangleAlert className="size-4 text-warning" />
+                These trades may already be in your journal
+              </DialogTitle>
+              <DialogDescription>
+                Nothing has been committed. Different sources state the same trade slightly differently — a
+                position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check
+                cannot vouch for these {collisionPrompt?.collisions.length === 1 ? "this row" : "rows"}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              {(collisionPrompt?.collisions ?? []).map((c, i) => (
+                <div key={i} className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium">{c.symbol}</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {c.kind === "same-quantity" ? "same quantity" : c.kind === "same-value" ? "same value" : "partial overlap"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
+                  <p className="mt-1 font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
+                    incoming {c.incoming.buyQty || c.incoming.sellQty} qty · already recorded{" "}
+                    {c.existing.buyQty || c.existing.sellQty} qty
+                    {c.existing.sourceFile ? ` from ${c.existing.sourceFile}` : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              If this pull is the <b>same trades from another source</b>, cancel — the journal already has them.
+              Commit anyway only if you are sure these are <b>different trades</b> (nothing is ever merged
+              automatically).
+            </p>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setCollisionPrompt(null);
+                  setMsg({ ok: true, text: "Commit cancelled — nothing was committed." });
+                }}
+              >
+                Cancel — keep the journal as it is
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={busy != null}
+                onClick={() => {
+                  const target = collisionPrompt?.brokerId;
+                  setCollisionPrompt(null);
+                  if (target) void pull("commit", target, true);
+                }}
+              >
+                Commit anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

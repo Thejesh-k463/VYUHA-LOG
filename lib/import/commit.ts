@@ -9,7 +9,7 @@ import {
   mtmPrices,
   tradeLegs,
 } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates } from "@/lib/engine/rates";
@@ -19,7 +19,7 @@ import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
 import { getWriteAccountId } from "@/lib/queries/accounts";
-import { detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
+import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
@@ -258,6 +258,8 @@ export interface PreviewResult {
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
   /** Rows that look like trades already held from a DIFFERENT file kind. */
   crossSource?: CrossSourceReport;
+  /** Same instrument, same day, DIFFERENT broker — informational only. */
+  crossBroker?: string | null;
 }
 
 
@@ -414,6 +416,41 @@ export function previewParsedFile(
         dedupHash: r.dedupHash,
       })),
       fileName,
+    ),
+    // Same instrument on the same day under ANOTHER broker: two real books,
+    // both kept — reported so a multi-broker day reads as intentional.
+    crossBroker: detectCrossBrokerEchoes(
+      parsed.trades.map((t) => ({
+        broker: parsed.broker,
+        symbol: t.tradingsymbol,
+        tradingsymbol: t.tradingsymbol,
+        buyQty: t.buyQty ?? 0,
+        sellQty: t.sellQty ?? 0,
+        buyValue: t.buyValue ?? 0,
+        sellValue: t.sellValue ?? 0,
+        buyDate: t.buyDate ?? null,
+        sellDate: t.sellDate ?? null,
+        dedupHash: "",
+      })),
+      db
+        .select()
+        .from(tradesTable)
+        .where(and(eq(tradesTable.accountId, accountId), ne(tradesTable.broker, parsed.broker)))
+        .all()
+        .map((r) => ({
+          id: r.id,
+          broker: r.broker,
+          symbol: r.symbol,
+          tradingsymbol: r.tradingsymbol,
+          buyQty: r.buyQty,
+          sellQty: r.sellQty,
+          buyValue: r.buyValue,
+          sellValue: r.sellValue,
+          buyDate: r.buyDate,
+          sellDate: r.sellDate,
+          sourceFile: r.sourceFile,
+          dedupHash: r.dedupHash,
+        })),
     ),
   };
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { detectCrossSourceDuplicates, type ExistingRow, type IncomingRow } from "@/lib/import/cross-source";
+import {
+  detectCrossBrokerEchoes,
+  detectCrossSourceDuplicates,
+  type ExistingRow,
+  type IncomingRow,
+} from "@/lib/import/cross-source";
 
 /**
  * The scenario this exists for, reproduced from a real report:
@@ -169,5 +174,48 @@ describe("reporting", () => {
   it("tells the user what to actually do about it", () => {
     const r = detectCrossSourceDuplicates([inc()], [ex()], "pnl.csv");
     expect(r.message).toMatch(/delete the earlier import/i);
+  });
+});
+
+describe("detectCrossBrokerEchoes — same instrument, same day, different broker", () => {
+  // A trader with accounts at two brokers really can buy the same SENSEX
+  // option twice in one day. Both trades are real and both stay — this note
+  // only confirms the overlap is intentional. Informational, never a refusal.
+  it("names the symbol and the other broker on a same-day overlap", () => {
+    const note = detectCrossBrokerEchoes(
+      [inc({ broker: "zerodha", tradingsymbol: "OPT SENSEX 27 Aug 2026 77300 PE" })],
+      [ex({ broker: "dhan", tradingsymbol: "OPT SENSEX 27 Aug 2026 77300 PE" })],
+    );
+    expect(note).toMatch(/OPT SENSEX 27 Aug 2026 77300 PE/);
+    expect(note).toMatch(/also under dhan/);
+    expect(note).toMatch(/separate trades/i);
+  });
+
+  it("stays silent when the days differ", () => {
+    expect(
+      detectCrossBrokerEchoes(
+        [inc({ broker: "zerodha", buyDate: "2026-07-02" })],
+        [ex({ broker: "dhan", buyDate: "2026-07-01" })],
+      ),
+    ).toBeNull();
+  });
+
+  it("stays silent when the symbols differ", () => {
+    expect(
+      detectCrossBrokerEchoes(
+        [inc({ broker: "zerodha", tradingsymbol: "TCS" })],
+        [ex({ broker: "dhan", tradingsymbol: "INFY" })],
+      ),
+    ).toBeNull();
+  });
+
+  it("matches on the sell date too and survives empty inputs", () => {
+    expect(detectCrossBrokerEchoes([], [ex()])).toBeNull();
+    expect(detectCrossBrokerEchoes([inc()], [])).toBeNull();
+    const note = detectCrossBrokerEchoes(
+      [inc({ broker: "zerodha", buyDate: null, sellDate: "2026-07-05" })],
+      [ex({ broker: "groww", buyDate: null, sellDate: "2026-07-05" })],
+    );
+    expect(note).toMatch(/also under groww/);
   });
 });

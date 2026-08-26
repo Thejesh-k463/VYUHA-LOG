@@ -38,6 +38,7 @@
 
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
+import { COMMODITY_UNDERLYINGS, INDEX_UNDERLYINGS, BSE_INDEX_UNDERLYINGS } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
 
 /** One executed trade from OpenAlgo POST /api/v1/tradebook. */
@@ -49,7 +50,9 @@ export interface OpenAlgoTradeRow {
   product: string; // CNC | MIS | NRML | MTF
   quantity: number | string;
   average_price: number | string;
-  /** TIME ONLY — "13:58:03". The date is the pull date; see normalize(). */
+  /** Docs show TIME ONLY ("13:58:03"), but the Dhan plugin returns a full
+   *  datetime ("2026-08-26 12:33:07" — verified against a real instance,
+   *  2026-08-26). Either shape parses; the DATE is always the pull date. */
   timestamp?: string | null;
   trade_value?: number | string;
 }
@@ -122,6 +125,38 @@ export function openAlgoBrokerOptions(): OpenAlgoBrokerSupport[] {
   return OPENALGO_BROKERS.filter((b) => b.supported);
 }
 
+// ── Multiple OpenAlgo instances ─────────────────────────────────────────────
+//
+// One OpenAlgo instance fronts ONE broker login, so a user with accounts at
+// two brokers runs two instances on two ports (verified live 2026-08-26:
+// Upstox on :5000 and Dhan on :5051 on the same machine). Each instance is a
+// separate broker_connections row whose `broker` column is `openalgo:<broker>`
+// — the underlying broker is the identity, because that is what selects the
+// charge profile and what the user thinks of the connection as. One instance
+// per underlying broker per account; the legacy id `openalgo` (single-instance
+// era) is migrated to this form on read.
+
+export const OPENALGO_ID_PREFIX = "openalgo";
+
+/** `dhan` → `openalgo:dhan` — the broker_connections identity of an instance. */
+export function openAlgoConnectionId(underlying: Broker): string {
+  return `${OPENALGO_ID_PREFIX}:${underlying}`;
+}
+
+/** Anything stored or posted as an OpenAlgo connection — legacy `openalgo` or
+ *  `openalgo:<broker>`. */
+export function isOpenAlgoConnectionId(id: string): boolean {
+  return id === OPENALGO_ID_PREFIX || id.startsWith(`${OPENALGO_ID_PREFIX}:`);
+}
+
+/** The underlying broker inside `openalgo:<broker>`, or null for the legacy
+ *  bare `openalgo` (whose underlying lives only in its auth blob). */
+export function openAlgoUnderlyingOf(id: string): string | null {
+  if (!id.startsWith(`${OPENALGO_ID_PREFIX}:`)) return null;
+  const rest = id.slice(OPENALGO_ID_PREFIX.length + 1);
+  return rest || null;
+}
+
 /**
  * Refuse an unsupported broker AT CONSTRUCTION, with the reason.
  *
@@ -164,11 +199,81 @@ function exchangeOf(exchange: string): Exchange | null {
   return null;
 }
 
-/** "13:58:03" → "13:58". Anything else → null, never a fabricated session. */
+/** "13:58:03" or "2026-08-26 12:33:07" → "13:58" / "12:33". Anything else →
+ *  null, never a fabricated session. The datetime shape is what the Dhan
+ *  plugin actually sends, against the docs' time-only sample. */
 function hhmm(timestamp: string | null | undefined): string | null {
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(timestamp ?? "").trim());
+  const m = /(?:^|\s)(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(String(timestamp ?? "").trim());
   if (!m) return null;
   return `${m[1]!.padStart(2, "0")}:${m[2]}`;
+}
+
+const MON: Record<string, string> = {
+  JAN: "Jan", FEB: "Feb", MAR: "Mar", APR: "Apr", MAY: "May", JUN: "Jun",
+  JUL: "Jul", AUG: "Aug", SEP: "Sep", OCT: "Oct", NOV: "Nov", DEC: "Dec",
+};
+
+const INDEX_SET = new Set<string>(INDEX_UNDERLYINGS);
+const BSE_INDEX_SET = new Set<string>(BSE_INDEX_UNDERLYINGS);
+const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
+
+/** A derivative exchange as OpenAlgo names it. Currency (CDS/BCD) is
+ *  deliberately excluded — Vyuha has no currency segment vocabulary. */
+function isDerivativeExchange(exchange: string): boolean {
+  const e = String(exchange ?? "").toUpperCase();
+  return e === "NFO" || e === "BFO" || e === "MCX";
+}
+
+/**
+ * Canonicalise an OpenAlgo derivative symbol for the classifier.
+ *
+ * OpenAlgo's documented symbology is compact — `SENSEX27AUG2677400PE`,
+ * `NIFTY29SEP26FUT` — which `parseInstrumentName` does not read, so every F&O
+ * execution used to fall through to the equity branch and be charged equity
+ * STT (the same defect the Dhan API adapter had; both found on the first real
+ * F&O pull, 2026-08-26). The derivative FACT comes from the stated exchange
+ * (NFO/BFO/MCX); only the contract details are parsed from the symbol, and a
+ * symbol that will not parse keeps its raw name and is REPORTED, not guessed.
+ *
+ * Returns the canonical `OPT`/`FUT` name, or null for a non-derivative
+ * exchange or an unparseable symbol.
+ */
+export function canonicalOpenAlgoSymbol(symbol: string, exchange: string): string | null {
+  if (!isDerivativeExchange(exchange)) return null;
+  const s = String(symbol ?? "").trim().toUpperCase();
+
+  const opt = /^([A-Z][A-Z0-9&-]*?)(\d{2})([A-Z]{3})(\d{2})(\d+(?:\.\d+)?)(CE|PE)$/.exec(s);
+  if (opt) {
+    const mon = MON[opt[3]!];
+    if (mon) return `OPT ${opt[1]} ${opt[2]} ${mon} 20${opt[4]} ${opt[5]} ${opt[6]}`;
+  }
+  const fut = /^([A-Z][A-Z0-9&-]*?)(\d{2})([A-Z]{3})(\d{2})FUT$/.exec(s);
+  if (fut) {
+    const mon = MON[fut[3]!];
+    if (mon) return `FUT ${fut[1]} ${fut[2]} ${mon} 20${fut[4]}`;
+  }
+  return null;
+}
+
+/**
+ * Detect a symbol whose underlying contradicts its stated exchange — a silver
+ * option on NFO, an index option on MCX. A real instance mis-symbolled a PIIND
+ * call as `SILVERM23NOV26236750PE` on NFO (2026-08-26). Such a row is REFUSED
+ * with a warning naming it: its identity is corrupt, so there is no honest
+ * charge profile for it (the engine proved this — commodity_option on NSE has
+ * no charge_config row and never will), and a trade booked under a wrong
+ * identity is worse than an absent trade the warning tells the user to import
+ * from the broker's own record.
+ */
+export function underlyingExchangeConflict(underlying: string, exchange: string): string | null {
+  const e = String(exchange ?? "").toUpperCase();
+  if (COMMODITY_SET.has(underlying) && (e === "NFO" || e === "BFO")) {
+    return `${underlying} is a commodity underlying but arrived on ${e}`;
+  }
+  if ((INDEX_SET.has(underlying) || BSE_INDEX_SET.has(underlying)) && e === "MCX") {
+    return `${underlying} is an index underlying but arrived on MCX`;
+  }
+  return null;
 }
 
 /**
@@ -198,6 +303,12 @@ export function recoverQuantity(row: OpenAlgoTradeRow): { qty: number; repaired:
 
 interface Agg {
   symbol: string;
+  /** Canonical OPT/FUT name for a derivative, when the symbol parsed. */
+  canonical: string | null;
+  /** Identity is corrupt (underlying contradicts exchange) — never emitted. */
+  suspect: boolean;
+  /** Per-position caveats: unparseable F&O symbol, underlying/exchange conflict. */
+  notes: string[];
   product: string;
   exchange: Exchange | null;
   buyQty: number;
@@ -214,6 +325,9 @@ export interface OpenAlgoNormalizeResult {
   repaired: number;
   /** Rows dropped because no size was recoverable at all. */
   refused: number;
+  /** Position-level caveats worth showing before a commit: an F&O symbol that
+   *  would not parse, or an underlying that contradicts its exchange. */
+  notes: string[];
 }
 
 /**
@@ -252,10 +366,30 @@ export function normalizeOpenAlgoTrades(
     }
 
     const key = `${row.symbol}|${String(row.product ?? "").toUpperCase()}`;
-    const g =
-      groups.get(key) ??
-      ({
+    let g = groups.get(key);
+    if (!g) {
+      const canonical = canonicalOpenAlgoSymbol(row.symbol, String(row.exchange ?? ""));
+      const notes: string[] = [];
+      let suspect = false;
+      if (!canonical && isDerivativeExchange(String(row.exchange ?? ""))) {
+        notes.push(
+          `${row.symbol} arrived on ${String(row.exchange).toUpperCase()} (a derivative exchange) but does not parse as an option or future — imported with its raw name; check its segment and charges.`,
+        );
+      }
+      if (canonical) {
+        const conflict = underlyingExchangeConflict(canonical.split(" ")[1]!, String(row.exchange ?? ""));
+        if (conflict) {
+          suspect = true;
+          notes.push(
+            `REFUSED — suspect symbol ${row.symbol}: ${conflict}. OpenAlgo has mislabelled a real trade this way before, and a trade booked under a corrupt identity cannot be charged honestly. Import this trade from the broker's own API or file instead.`,
+          );
+        }
+      }
+      g = {
         symbol: row.symbol,
+        canonical,
+        suspect,
+        notes,
         product: String(row.product ?? "").toUpperCase(),
         exchange: exchangeOf(row.exchange),
         buyQty: 0,
@@ -264,7 +398,8 @@ export function normalizeOpenAlgoTrades(
         sellValue: 0,
         entryTime: null,
         exitTime: null,
-      } satisfies Agg);
+      } satisfies Agg;
+    }
 
     const value = size.qty * price;
     const at = hhmm(row.timestamp);
@@ -280,7 +415,7 @@ export function normalizeOpenAlgoTrades(
     groups.set(key, g);
   }
 
-  const trades = [...groups.values()].map((g): NormalizedTrade => {
+  const trades = [...groups.values()].filter((g) => !g.suspect).map((g): NormalizedTrade => {
     const closedQty = Math.min(g.buyQty, g.sellQty);
     const gross =
       closedQty > 0 && g.buyQty > 0 && g.sellQty > 0
@@ -288,7 +423,7 @@ export function normalizeOpenAlgoTrades(
         : 0;
     return {
       broker,
-      tradingsymbol: g.symbol,
+      tradingsymbol: g.canonical ?? g.symbol,
       isin: null,
       buyQty: g.buyQty,
       avgBuyPrice: g.buyQty > 0 ? r2(g.buyValue / g.buyQty) : 0,
@@ -306,10 +441,12 @@ export function normalizeOpenAlgoTrades(
       sourceFile: "openalgo-api",
       entryTime: g.entryTime,
       exitTime: g.exitTime,
+      importNotes: g.notes.length ? g.notes : null,
     };
   });
 
-  return { trades, repaired, refused };
+  const notes = [...groups.values()].flatMap((g) => g.notes);
+  return { trades, repaired, refused, notes };
 }
 
 /** Normalise a user-typed host into a base URL, or throw with a usable message. */
@@ -413,6 +550,7 @@ export function toParsedFile(broker: Broker, result: OpenAlgoNormalizeResult): P
       `${result.refused} row${result.refused === 1 ? " was" : "s were"} skipped: no usable quantity or price. Nothing was guessed.`,
     );
   }
+  warnings.push(...result.notes);
   return {
     sourceId: "openalgo-api",
     broker,

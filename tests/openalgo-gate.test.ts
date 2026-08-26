@@ -185,7 +185,11 @@ describe("with the gate OPEN, the save still validates before it stores", () => 
 
     const rows = connections();
     expect(rows).toHaveLength(1);
-    expect(rows[0].broker).toBe("openalgo");
+    // One row PER INSTANCE: the identity carries the underlying broker, so a
+    // user running several OpenAlgo instances (one per broker account) keeps
+    // them as separate connections. The legacy bare "openalgo" id is migrated
+    // to this form on read.
+    expect(rows[0].broker).toBe("openalgo:groww");
     // The column holds ciphertext, never the key the user typed.
     expect(rows[0].api_key).not.toContain("oa-secret-key");
     expect(decrypt(rows[0].api_key)).toBe(GOOD_SAVE.apiKey);
@@ -245,7 +249,7 @@ describe("with the gate open, a pull reaches the adapter and its warnings reach 
       );
     });
 
-    const res = await post({ action: "pull", broker: "openalgo", mode: "preview" });
+    const res = await post({ action: "pull", broker: "openalgo:groww", mode: "preview" });
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; warnings: string[] };
     expect(json.ok).toBe(true);
@@ -262,7 +266,7 @@ describe("with the gate open, a pull reaches the adapter and its warnings reach 
       throw new Error("ECONNREFUSED");
     });
 
-    const res = await post({ action: "pull", broker: "openalgo", mode: "preview" });
+    const res = await post({ action: "pull", broker: "openalgo:groww", mode: "preview" });
     expect(res.status).toBe(502);
     const json = (await res.json()) as { ok: boolean; message: string };
     expect(json.ok).toBe(false);

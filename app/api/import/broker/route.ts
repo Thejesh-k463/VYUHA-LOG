@@ -10,8 +10,10 @@ import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile 
 import {
   assertOpenAlgoBroker,
   fetchOpenAlgoTradebook,
+  isOpenAlgoConnectionId,
   normalizeHost,
   normalizeOpenAlgoTrades,
+  openAlgoConnectionId,
   toParsedFile as openAlgoToParsedFile,
 } from "@/lib/import/api/openalgo";
 import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
@@ -66,6 +68,11 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
 
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
 
+/** One OpenAlgo instance fronts ONE broker, and a user can run several — so
+ *  each is its own connection row, `openalgo:<underlying>` (see the adapter).
+ *  Every openalgo:* id shares the single "openalgo" spec. */
+const specOf = (broker: string) => API_BROKERS[isOpenAlgoConnectionId(broker) ? "openalgo" : broker];
+
 /**
  * The SERVER's copy of the OpenAlgo gate (lib/domain/openalgo-disclosure.ts).
  *
@@ -87,7 +94,28 @@ function currentOpenAlgoGate() {
 export async function GET() {
   sweepPlaintextSecrets(); // upgrade any pre-vault plaintext rows (v2.99.80)
   const selected=getSelectedAccountId(); const accountId=selected||1;
-  const rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
+  let rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
+  // Legacy single-instance id: a row saved as bare "openalgo" is renamed to
+  // `openalgo:<underlying>` on read (same GET-time-migration pattern as the
+  // plaintext sweep above), so multiple instances can coexist from here on.
+  for (const r of rows) {
+    if (r.broker !== "openalgo") continue;
+    const auth = readSecret(r.authJson);
+    if (!auth.ok || !auth.value) continue;
+    try {
+      const a = JSON.parse(auth.value) as { underlyingBroker?: string };
+      if (a.underlyingBroker) {
+        db.update(brokerConnections)
+          .set({ broker: openAlgoConnectionId(a.underlyingBroker as Broker) })
+          .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, "openalgo")))
+          .run();
+        rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId, accountId)).all();
+      }
+    } catch {
+      /* unreadable blob — leave the legacy row as it is */
+    }
+    break;
+  }
   const gate = currentOpenAlgoGate();
   return NextResponse.json({
     // CONTRACT: the Import UI reads `openalgo.available` to decide whether to
@@ -99,12 +127,30 @@ export async function GET() {
       // Decrypt only to mask — the plaintext never leaves this handler. An
       // unreadable secret masks as bullets rather than leaking ciphertext.
       const key = readSecret(r.apiKey);
-      return {
+      const out: Record<string, unknown> = {
         broker: r.broker,
         apiKeyMasked: key.ok && key.value ? mask(key.value) : "••••",
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
       };
+      // OpenAlgo's host and underlying broker are CONFIG, not credentials —
+      // they ride encrypted in auth_json but the UI must show them back, or a
+      // reloaded page renders the default host over a saved one and an
+      // innocent "Update connection" silently repoints the pull at a
+      // different OpenAlgo instance (found live, 2026-08-26).
+      if (isOpenAlgoConnectionId(r.broker)) {
+        const auth = readSecret(r.authJson);
+        if (auth.ok && auth.value) {
+          try {
+            const a = JSON.parse(auth.value) as { host?: string; underlyingBroker?: string };
+            out.openalgoHost = a.host ?? null;
+            out.openalgoUnderlyingBroker = a.underlyingBroker ?? null;
+          } catch {
+            /* unreadable blob — the UI keeps its defaults */
+          }
+        }
+      }
+      return out;
     }),
   });
 }
@@ -117,10 +163,10 @@ export async function POST(req: Request) {
   const selected=getSelectedAccountId(); const accountId=selected||1;
 
   if (body.action === "save") {
-    const broker = String(body.broker ?? "");
+    let broker = String(body.broker ?? "");
     const apiKey = String(body.apiKey ?? "").trim();
     const accessToken = String(body.accessToken ?? "").trim();
-    const spec = API_BROKERS[broker];
+    const spec = specOf(broker);
     if (!spec) {
       return NextResponse.json(
         { ok: false, message: `Unsupported broker. Available: ${Object.values(API_BROKERS).map((b) => b.label).join(", ")}.` },
@@ -130,7 +176,7 @@ export async function POST(req: Request) {
     // The gate goes FIRST, before any field is even looked at: a refusal must
     // not depend on the shape of the body, and nothing may be stored on the
     // way to discovering the disclosure was never accepted.
-    if (broker === "openalgo") {
+    if (isOpenAlgoConnectionId(broker)) {
       const gate = currentOpenAlgoGate();
       if (!gate.allowed) return NextResponse.json({ ok: false, message: gate.reason }, { status: 403 });
     }
@@ -141,7 +187,7 @@ export async function POST(req: Request) {
 
     // Broker-specific extras, one encrypted blob in auth_json.
     let authPlain: string | null = null;
-    if (broker === "openalgo") {
+    if (isOpenAlgoConnectionId(broker)) {
       // OpenAlgo's extras: WHERE the instance is, and WHICH broker sits behind
       // it. The broker is load-bearing — it selects the charge profile — so it
       // is stored, never guessed from the payload at pull time.
@@ -164,6 +210,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 400 });
       }
       authPlain = JSON.stringify({ host: normalizedHost, underlyingBroker });
+      // The stored identity is the instance's underlying broker, so several
+      // instances (one per broker) coexist as separate rows; saving the same
+      // underlying again UPDATES that instance via the (account, broker) upsert.
+      broker = openAlgoConnectionId(underlyingBroker as Broker);
     } else if (spec.extraFields) {
       // Angel One's extras: client code + PIN + TOTP SECRET.
       const clientCode = String(body.clientCode ?? "").trim();
@@ -224,7 +274,7 @@ export async function POST(req: Request) {
     // Same gate, same position: before the connection is even looked up. A
     // credential saved while the gate was open must not keep pulling after the
     // user turns the integration off or the disclosure changes under them.
-    if (broker === "openalgo") {
+    if (isOpenAlgoConnectionId(broker)) {
       const gate = currentOpenAlgoGate();
       if (!gate.allowed) return NextResponse.json({ ok: false, message: gate.reason }, { status: 403 });
     }
@@ -235,7 +285,7 @@ export async function POST(req: Request) {
         {
           ok: false,
           message:
-            broker === "openalgo"
+            isOpenAlgoConnectionId(broker)
               ? "No saved OpenAlgo connection — save the API key, host and broker first."
               : "No saved connection — save the API key + access token first.",
         },
@@ -256,10 +306,10 @@ export async function POST(req: Request) {
     // therefore refused every such pull with "the stored secret is malformed",
     // which is a lie: there is no token, and none is needed. So the token is
     // only load-bearing for the brokers whose spec says it is.
-    const needsToken = API_BROKERS[broker]?.needsToken ?? true;
+    const needsToken = specOf(broker)?.needsToken ?? true;
     if (!keyRead.ok || (needsToken && !tokenRead.ok)) {
       const reason = !keyRead.ok ? (keyRead as { reason: string }).reason : (tokenRead as { reason: string }).reason;
-      const keyLabel = API_BROKERS[broker]?.keyLabel ?? "API key";
+      const keyLabel = specOf(broker)?.keyLabel ?? "API key";
       return NextResponse.json(
         { ok: false, message: `The saved credentials cannot be read: ${reason}. Re-enter the ${keyLabel} and access token.` },
         { status: 400 },
@@ -272,7 +322,7 @@ export async function POST(req: Request) {
     /** Which broker sat behind the OpenAlgo instance — names the commit file. */
     let openAlgoBroker: Broker | null = null;
     try {
-      if (broker === "openalgo") {
+      if (isOpenAlgoConnectionId(broker)) {
         // host + underlyingBroker live in auth_json as one encrypted blob.
         const authRead = readSecret(conn.authJson);
         if (!authRead.ok || !authRead.value) {
@@ -320,23 +370,64 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });
     }
 
-    if (mode === "commit") {
-      const today = new Date().toISOString().slice(0, 10);
-      const fileName =
-        broker === "openalgo" && openAlgoBroker
-          ? `openalgo-${openAlgoBroker}-${today}`
-          : `${broker === "dhan" ? "dhan" : "kite"}-api-${today}`;
-      const result = commitParsedFile(parsed, fileName);
-      db.update(brokerConnections)
-        .set({ lastPullAt: new Date().toISOString() })
-        .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
-        .run();
-      revalidatePath("/trades");
-      revalidatePath("/");
-      return NextResponse.json({ ok: true, mode, result, warnings: parsed.warnings });
-    }
+    const today = new Date().toISOString().slice(0, 10);
+    // "kite" is kept for Zerodha so source_file naming stays continuous with
+    // every existing import; Angel One used to fall into the kite name too,
+    // which mislabelled its commits — it now files under its own name.
+    const fileName =
+      isOpenAlgoConnectionId(broker) && openAlgoBroker
+        ? `openalgo-${openAlgoBroker}-${today}`
+        : `${broker === "zerodha" ? "kite" : broker}-api-${today}`;
 
-    return NextResponse.json({ ok: true, mode, preview: previewParsedFile(parsed), warnings: parsed.warnings });
+    // The classify → charges pipeline THROWS rather than invent a rate (e.g. a
+    // corrupted symbol classifying into a segment/exchange pair no charge
+    // profile can exist for). That refusal is correct — but it must reach the
+    // user as a message naming the problem, not as a bare HTTP 500.
+    try {
+      // Preview runs in BOTH modes: it carries the cross-source collision
+      // report (rows that would slip past the exact-hash dedup — e.g. the same
+      // trades pulled once natively and once through OpenAlgo, a paisa apart)
+      // and the same-day cross-broker note. A RISKY collision blocks a commit
+      // until the user explicitly confirms — a silent double-count is exactly
+      // the wrong default for a journal.
+      const pre = previewParsedFile(parsed, null, undefined, fileName);
+      const warnings = [...parsed.warnings];
+      if (pre.crossSource?.message) warnings.push(pre.crossSource.message);
+      if (pre.crossBroker) warnings.push(pre.crossBroker);
+
+      if (mode === "commit") {
+        if (pre.crossSource?.risky && body.force !== true) {
+          return NextResponse.json(
+            {
+              ok: false,
+              needsForce: true,
+              // Structured for the confirmation dialog; message kept for any
+              // older client that only prints text.
+              collisions: pre.crossSource.collisions,
+              symbols: pre.crossSource.symbols,
+              message:
+                `${pre.crossSource.message} Nothing was committed. If these really are different trades, click Pull & commit again to commit anyway.`,
+            },
+            { status: 409 },
+          );
+        }
+        const result = commitParsedFile(parsed, fileName);
+        db.update(brokerConnections)
+          .set({ lastPullAt: new Date().toISOString() })
+          .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
+          .run();
+        revalidatePath("/trades");
+        revalidatePath("/");
+        return NextResponse.json({ ok: true, mode, result, warnings });
+      }
+
+      return NextResponse.json({ ok: true, mode, preview: pre, warnings });
+    } catch (e) {
+      return NextResponse.json(
+        { ok: false, message: `Import refused: ${(e as Error).message}` },
+        { status: 422 },
+      );
+    }
   }
 
   return NextResponse.json({ ok: false, message: "Unknown action" }, { status: 400 });
