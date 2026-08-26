@@ -129,7 +129,7 @@ export function RiskCockpitClient({
           />
           <Tile
             label="Open P&L"
-            value={`${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`}
+            value={`${inrCompact(e.unrealised)} · ${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`}
             valueCls={e.openPnlPct >= 0 ? "text-profit" : "text-loss"}
             detail={{
               title: "Open P&L — unrealised, on paper",
@@ -428,6 +428,9 @@ function PositionRow({
           <span className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums ${impactCls}`}>
             {p.runningImpactPct >= 0 ? "+" : ""}{p.runningImpactPct.toFixed(2)}%
           </span>
+          <div className={`mt-1 text-[10px] font-medium tabular-nums ${p.unrealised >= 0 ? "text-profit" : "text-loss"}`}>
+            {p.unrealised >= 0 ? "+" : ""}{inrCompact(p.unrealised)}
+          </div>
         </div>
         <div className="w-28 text-right">
           <span className="rounded-md bg-warning/15 px-2 py-1 text-xs font-medium tabular-nums text-warning">
@@ -450,7 +453,11 @@ function PositionRow({
             <Detail k="Entry" v={num(p.entry, 2)} />
             <Detail k="MTM" v={num(p.mtm, 2)} />
             <Detail k="Invested" v={inrCompact(p.invested)} />
-            <Detail k="Return" v={`${p.returnPct >= 0 ? "+" : ""}${p.returnPct.toFixed(2)}%`} cls={p.returnPct >= 0 ? "text-profit" : "text-loss"} />
+            <Detail
+              k="Return"
+              v={`${p.returnPct >= 0 ? "+" : ""}${p.returnPct.toFixed(2)}% (${inrCompact(p.unrealised)})`}
+              cls={p.returnPct >= 0 ? "text-profit" : "text-loss"}
+            />
             <Detail k="Original SL" v={p.originalSl == null ? "—" : num(p.originalSl, 2)} />
             <Detail k="Trailing SL" v={p.trailingSl == null ? "—" : num(p.trailingSl, 2)} />
             <Detail k="Target" v={p.target == null ? "—" : num(p.target, 2)} />

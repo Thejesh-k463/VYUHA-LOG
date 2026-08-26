@@ -25,11 +25,13 @@ export async function POST(req: Request) {
   const t = db.select().from(trades).where(eq(trades.id, id)).get();
   if (!t) return NextResponse.json({ ok: false, message: "Trade not found" }, { status: 404 });
 
-  const originalSl = numOrNull(body.originalSl);
-  const trailingSl = numOrNull(body.trailingSl);
-  const target = numOrNull(body.target);
+  // Only the fields PRESENT in the body are written. The risk dialog always
+  // sends all five, so its saves behave as before ("" still clears a field);
+  // a partial caller (the unmarked-holdings panel sends only mtmPrice) must
+  // not silently wipe an existing stop or target.
+  const has = (k: string) => k in (body as Record<string, unknown>);
+  const originalSl = has("originalSl") ? numOrNull(body.originalSl) : t.slPlanned;
   const mtmPrice = numOrNull(body.mtmPrice);
-  const impliedVol = numOrNull(body.impliedVol);
 
   // Short (sell-to-open) has its entry on the sell leg — avgBuyPrice is unset until covered.
   const isShort = t.sellQty > t.buyQty;
@@ -44,13 +46,13 @@ export async function POST(req: Request) {
 
   db.update(trades)
     .set({
-      slPlanned: originalSl,
-      trailingSl,
-      targetPlanned: target,
       riskAmount,
       rMultiple,
-      impliedVol,
       updatedAt: sql`(datetime('now'))`,
+      ...(has("originalSl") ? { slPlanned: originalSl } : {}),
+      ...(has("trailingSl") ? { trailingSl: numOrNull(body.trailingSl) } : {}),
+      ...(has("target") ? { targetPlanned: numOrNull(body.target) } : {}),
+      ...(has("impliedVol") ? { impliedVol: numOrNull(body.impliedVol) } : {}),
     })
     .where(eq(trades.id, id))
     .run();

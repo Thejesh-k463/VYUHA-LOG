@@ -18,6 +18,7 @@
 import { useActionState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { pushTradeToIpoAction } from "@/app/trades/actions";
@@ -39,6 +40,9 @@ export interface UnmarkedHolding {
 
 function Row({ h }: { h: UnmarkedHolding }) {
   const [state, action, pending] = useActionState(pushTradeToIpoAction, { ok: false, message: "" });
+  const router = useRouter();
+  const [price, setPrice] = useState("");
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!state.message) return;
     if (state.ok) toast.success(state.message);
@@ -46,6 +50,35 @@ function Row({ h }: { h: UnmarkedHolding }) {
   }, [state]);
   const linked = h.ipoId != null || state.ok;
   const noBasis = h.buyValue <= 0;
+
+  // Posts ONLY the mark — the route leaves SL/TSL/target untouched for a
+  // partial body, so this cannot wipe risk inputs set elsewhere.
+  async function saveMark() {
+    const n = Number(price);
+    if (!(n > 0)) {
+      toast.error("Enter the price as a positive number.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/positions/risk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tradeId: h.id, mtmPrice: price }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        toast.success(`${h.symbol} valued at ${price}.`);
+        router.refresh();
+      } else {
+        toast.error(json.message ?? "Failed");
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-1.5 rounded-md border border-border/60 p-3">
@@ -70,8 +103,8 @@ function Row({ h }: { h: UnmarkedHolding }) {
         ) : (
           <>
             The purchase is on record — what is missing is a <b>current price</b> to value it at today.
-            Without one there is no unrealised result to show. Enter a recent close on{" "}
-            <a className="underline" href="/risk">Portfolio Risk</a>, or record where the shares came from.
+            Without one there is no unrealised result to show. Enter a recent close right here, or record
+            where the shares came from.
           </>
         )}
       </p>
@@ -90,9 +123,23 @@ function Row({ h }: { h: UnmarkedHolding }) {
             </Button>
           </form>
         )}
-        <a href="/risk" className="text-xs text-muted-foreground underline">
-          or enter a current price to value it
-        </a>
+        <span className="flex items-center gap-1.5">
+          <Input
+            type="number"
+            step="any"
+            min="0"
+            placeholder="Current price"
+            className="h-8 w-32 text-xs"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveMark();
+            }}
+          />
+          <Button size="sm" variant="outline" disabled={saving || !price} onClick={() => void saveMark()}>
+            {saving ? "Valuing…" : "Value it"}
+          </Button>
+        </span>
       </div>
     </div>
   );
