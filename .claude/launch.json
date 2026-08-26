@@ -10,6 +10,16 @@
       ],
       "port": 3007,
       "autoPort": true
+    },
+    {
+      "name": "vyuha-dev-live-db",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VYUHA_DB_PATH=C:\\Users\\theje\\AppData\\Roaming\\in.vyuha.tradejournal\\vyuha.sqlite&& npm run dev"
+      ],
+      "port": 3007,
+      "autoPort": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything below was verified against the repo on 2026-08-20 (the broker-integration release and the OpenAlgo opt-in wave), not recalled.
+Everything below was verified against the repo on 2026-08-27 (the live broker-API test session), not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -50,6 +50,31 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 | Two binaries per release | The GitHub asset and the local/ZIP installer are **different files** — v2.99.99: **34,861,983 B / `46A3842ADD7B91A65F493330B8FAAEE0A1B06A2DA76A52DBFBA4CB6C74EB4343`** (GitHub, for winget) vs **34,860,149 B / `27D8695E863D3426DE4016C86002C6A148E2F1A1E1457838A11835621BB23004`** (local, in the client ZIP, for WDSI and for buyers). SmartScreen reputation is per hash, so they accrue it separately. DOC_AUDIT rows 15/16/20 |
 | Housekeeping (2026-08-20) | ~1.65 GB of stale build artefacts deleted — 28 MSIs older than v2.99.98 plus their `.sig`s, the v2.99.97 NSIS installer, the v2.99.96/.97 client ZIPs, and `release-2.98.0-corrected/` (a resolved Aug-5 incident folder). **v2.99.98 and v2.99.99 are kept in all three artefact classes.** All deleted paths were untracked AND gitignored — verified `git ls-files` returned 0 before deleting. `scripts/measure-slim.mjs` (a spent one-shot measurement) removed. **`scripts/license-revoked.mjs` looks like a typo-duplicate of `license-revoke.mjs` but is LOAD-BEARING** — it is the `REVOKED_IDS` source of truth; do not delete it |
 | Housekeeping (2026-08-24) | Repo audit session. Excel-damaged `tests/fixtures/zerodha-tradebook.csv` restored from HEAD (trailing-comma/date-format signature of an Excel re-save — never hand-edit fixtures in Excel). Orphan `scripts/demo-ind7.mjs` DELETED — unreferenced, and it wrote into the LIVE journal (`data/vyuha.sqlite`); `npm run demo` supersedes it (its two `.gitignore` lines went with it). Empty stray dirs removed. **NEW: `npm run backup:drive -- <letter>`** (`scripts/backup-to-drive.mjs`) — one-command full off-device backup: verified git bundle (all branches+tags), `.secrets`, key archive, `.vkb` bundles, `tests/fixtures/private`, client ZIPs, live app data; REFUSES `C:`/`K:`/`T:` (one physical NVMe) and refuses to run while Vyuha is open. Proven: 51 files / 191.3 MB test run, bundle re-cloned with all 61 tags. `tests/readme-claims.test.ts` file-count guard made RECURSIVE (was pinned to top-level `tests/`, blind to `tests/sim/`). **Later same day (cloud-backup pass): ~10.1 GB of regenerable caches deleted** — `.next/` (4.4 GB), `src-tauri/target/` (5.7 GB), `test-results/`, `tsconfig.tsbuildinfo`, and the extracted `release-packages/Vyuha_2.99.99_Client_Package/` folder (35 MB; its ZIP is kept) — all verified untracked (`git ls-files` = 0) before deletion; `git status` clean after. Full-project backup for Google Drive created at `T:\Thejesh\CLAUDE-CODE\Vyuha_Drive_Backup_2026-08-24.zip` (142 MB, 1,608 entries, excludes only `node_modules` + `desktop-dist`; verified to contain `.git`, `.secrets`, `license-private.pem`, ledger, `data/`, private fixtures, all 3 client ZIPs). NOTE: that ZIP holds the PLAINTEXT signing + licence keys — it must live only in a private Drive folder |
+
+**UNCOMMITTED ON `main` — the 2026-08-26/27 live broker-API test wave (release pending as ~v2.99.102).**
+The owner ran the first-ever live pulls with REAL F&O fills (Dhan native + a self-hosted OpenAlgo
+instance on :5051 fronting Dhan), supervised end to end against the live desktop journal via a dev
+server pointed at `%APPDATA%` (`VYUHA_DB_PATH`; vault.key sits beside the DB so saved credentials
+decrypt). **1,993 unit tests green, `npm run verify` EXIT 0** on the working tree. Five entries
+appended to DECISIONS.md (2026-08-26/27) carry the full story. Found and fixed, each verified live:
+(1) **every API puller classified F&O as equity** — Dhan now canonicalises from its stated `drv*`
+fields, OpenAlgo from stated exchange + documented compact symbol; **Kite and Angel One remain
+DEFECTIVE for F&O** (no real payload to verify against — do not guess-fix); (2) open Dhan positions
+now import **already valued** (mark = entry ± stated unrealised/qty; reproduced Dhan's LTPs exactly);
+(3) an OpenAlgo row whose identity is corrupt (real case: a PIIND call relabelled `SILVERM…` on NFO)
+is **REFUSED with a warning**, and engine charge-refusals return 422 messages, not 500s;
+(4) **multiple OpenAlgo instances**: connections are `openalgo:<broker>` rows (legacy id migrated on
+GET), UI shows an instance list with per-instance pulls; (5) **risky cross-source collisions block
+API commits behind a 409 + confirmation dialog** (found live: a 1-paisa hash near-miss double-counted
+a SENSEX option), with an informational note for same-day overlap across brokers. Reconciliation
+evidence so far: OpenAlgo↔native to the paisa on all 11 positions; totals match Dhan's own dashboard
+to the rupee. **The contract-note reconcile is DONE (2026-08-27, note 14721318): all 9 contracts
+match to the 4th decimal, STT exact to the paisa (₹1,222.00), non-brokerage levies −0.081%, and
+the engine's 0.15% options STT rate was confirmed CORRECT by the broker's own levy — the OpenAlgo
+claim-hold condition is DISCHARGED** (buyer-facing copy may now claim it; none does yet — owner
+decides when). Still pending: an Angel One real-fills day.
+Ops lesson that cost hours: **never run `npm run verify` while the dev server is up** — the build
+poisons `.next` and browsers silently serve stale chunks (DECISIONS 2026-08-27).
 
 **SHIPPED IN v2.99.99, SWITCHED OFF — OpenAlgo opt-in integration** (was "unreleased on `main`"
 until 2026-08-20; the code is unchanged from `af228b5`, only its release status moved). It rode
@@ -180,7 +205,7 @@ create the mirror repo, run the archive, and run `license-backup.mjs`). Form scr
 emails the owner per submission with running plan totals, and has `vyuhaSummary()` (not executed here — one test
 submission by the owner will prove it).
 
-**Owner's open to-dos (as of 2026-08-24):** *(v2.99.100 published 2026-08-21 16:30Z — closed.)* **do NOT open a winget PR for 2.99.100 while #421585 (v2.99.99) is open** — let it merge, then `wingetcreate update` (re-checked 2026-08-24: still OPEN, validation passed, awaiting a community moderator) · **WDSI: SUBMITTED 2026-08-22 for all three v2.99.100 binaries** — the 2026-08-21 deferral is superseded (see the Defender row for the three case IDs); check the portal for determinations · **install on a non-build machine** (partially discharged by winget's `08. Installation Validation`; app-launch unproven) · **An Angel One pull carrying REAL FILLS** — the empty-book path is proven, the row-parsing path is not · run a live OpenAlgo pull and reconcile it against a contract note before any copy claims it works · fill the deck chips and submit the Rainmatter form ·
+**Owner's open to-dos (as of 2026-08-24):** *(v2.99.100 published 2026-08-21 16:30Z — closed.)* **do NOT open a winget PR for 2.99.100 while #421585 (v2.99.99) is open** — let it merge, then `wingetcreate update` (re-checked 2026-08-24: still OPEN, validation passed, awaiting a community moderator) · **WDSI: SUBMITTED 2026-08-22 for all three v2.99.100 binaries** — the 2026-08-21 deferral is superseded (see the Defender row for the three case IDs); check the portal for determinations · **install on a non-build machine** (partially discharged by winget's `08. Installation Validation`; app-launch unproven) · **An Angel One pull carrying REAL FILLS** — the empty-book path is proven, the row-parsing path is not; **and its F&O classification is a known defect until a real F&O payload arrives** (DECISIONS 2026-08-26) · **OpenAlgo live pull DONE and CONTRACT-NOTE RECONCILED (2026-08-27, −0.081%, STT exact) — the claim-hold is discharged; adding OpenAlgo to buyer-facing copy is now the owner's call** (deliberately NOT done in v2.99.102, which ships fixes only) · cut the release (v2.99.102) carrying the 2026-08-26/27 wave · fill the deck chips and submit the Rainmatter form ·
 email talk@rainmatter.com + X thread (ZERODHA_PROPOSAL.md) · run the Apps Script, send the form link with each sale ·
 `npm run release:archive` to a drive · **fill the four `[[placeholders]]` in `docs/owner/pitch-deck/deck.html` and REBUILD `RAINMATTER_DECK.pdf`** (the committed PDF was built 2026-08-19 and shows them) · supply the broker **API client details** (the Paytm/Zerodha/Upstox FILES were delivered and verified 2026-08-20; only the API credentials remain).
 
