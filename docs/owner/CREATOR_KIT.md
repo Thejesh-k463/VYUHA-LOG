@@ -1,7 +1,8 @@
 # Creator Kit — the document that goes to each influencer
 
-> **OWNER: how to use this file.** Copy everything below the line, fill the three
-> placeholders — `[[NAME]]`, `[[CODE]]`, `[[FORM_LINK]]` — and send it (as PDF or
+> **OWNER: how to use this file.** Copy everything below the line, fill the two
+> placeholders — `[[NAME]]` and `[[CODE]]` (the form link is already the live
+> VYUHA-REFERAL-FROM share url) — and send it (as PDF or
 > pasted text) WITH the client ZIP. One kit per creator; their code doubles as
 > their identifier in the licence ledger and the referral form, so one string
 > tracks a collaborator across leads, payouts and keys.
@@ -26,7 +27,7 @@ what they'll experience.
 ## Your two identifiers
 
 - **Your referral code: `[[CODE]]`** — tell your audience to enter it in the
-  pre-purchase form: [[FORM_LINK]]. Every lead that types your code is
+  pre-purchase form: https://docs.google.com/forms/d/e/1FAIpQLSeGQhfmlXhBPnBUt7LIvdyo5B0jUCn68-bHMcZoEJDpHOBuRg/viewform. Every lead that types your code is
   attributed to you; we share your lead counts with you, and payouts settle
   from this record. The code is yours alone — one code per creator.
 - **Your licence** is a **lifetime key locked to your computer**. To issue it:
@@ -100,7 +101,7 @@ matches the product; content without it hurts us both.
 
 ## How your audience buys
 
-1. They fill the form ([[FORM_LINK]]) and enter your code `[[CODE]]`.
+1. They fill the form (https://docs.google.com/forms/d/e/1FAIpQLSeGQhfmlXhBPnBUt7LIvdyo5B0jUCn68-bHMcZoEJDpHOBuRg/viewform) and enter your code `[[CODE]]`.
 2. They message us on WhatsApp **+91 73936 73714** to complete the purchase.
 3. Key + invoice arrive the same day payment is verified.
 
