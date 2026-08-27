@@ -72,7 +72,12 @@ to the rupee. **The contract-note reconcile is DONE (2026-08-27, note 14721318):
 match to the 4th decimal, STT exact to the paisa (₹1,222.00), non-brokerage levies −0.081%, and
 the engine's 0.15% options STT rate was confirmed CORRECT by the broker's own levy — the OpenAlgo
 claim-hold condition is DISCHARGED** (buyer-facing copy may now claim it; none does yet — owner
-decides when). Still pending: an Angel One real-fills day.
+decides when). **The Angel One real-fills day happened 2026-08-27 (after v2.99.102 shipped):**
+11 fills captured raw, the adapter's F&O defect fixed from Angel's STATED fields (its symbol lied
+about a real expiry — DECISIONS 2026-08-27), MARGIN verified as Angel's MTF product, 6 trades
+committed and verified to the paisa against Angel's own UI (gross −843.72 exact). **2,001 tests,
+verify EXIT 0; UNCOMMITTED → goes into the next release. Zerodha/Kite is now the ONLY API puller
+with no real F&O payload.** Angel contract-note reconcile pending when the note arrives.
 Ops lesson that cost hours: **never run `npm run verify` while the dev server is up** — the build
 poisons `.next` and browsers silently serve stale chunks (DECISIONS 2026-08-27).
 

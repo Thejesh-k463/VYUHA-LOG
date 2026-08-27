@@ -101,8 +101,14 @@ export async function angelOneLogin(creds: AngelOneCredentials): Promise<{ jwtTo
   return { jwtToken: data.jwtToken };
 }
 
-/** One row of GET …/order/v1/getTradeBook — candidate field names, because the
- *  shape is INFERRED from doc examples rather than a verified live response. */
+/** One row of GET …/order/v1/getTradeBook.
+ *
+ *  Shape VERIFIED against a live response on 2026-08-27 (11 real fills across
+ *  NFO/BFO/NSE/BSE, all four products) — the candidate-name fallbacks are kept
+ *  because older docs showed camelCase variants. The verified row STATES the
+ *  derivative facts outright: `instrumenttype` (OPTSTK/OPTIDX/FUT…, "" for
+ *  equity), `strikeprice` (−1 for equity), `optiontype` ("CE"/"PE"/""),
+ *  `expirydate` ("29SEP2026", "" for equity). */
 export interface AngelTradeRow {
   tradingsymbol?: string;
   tradingSymbol?: string;
@@ -111,6 +117,11 @@ export interface AngelTradeRow {
   productType?: string;
   transactiontype?: string;
   transactionType?: string;
+  instrumenttype?: string;
+  strikeprice?: string | number;
+  optiontype?: string;
+  expirydate?: string;
+  marketlot?: string | number;
   fillsize?: string | number;
   fillSize?: string | number;
   tradedqty?: string | number;
@@ -132,13 +143,19 @@ export async function fetchAngelTradeBook(creds: AngelOneCredentials, jwtToken: 
   return Array.isArray(data) ? data : [];
 }
 
-/** DELIVERY→delivery, intraday flavours→intraday; MARGIN/CARRYFORWARD→null
- *  (the F&O carry product — the classifier reads the segment off the symbol,
- *  a hint would only get in the way, same reasoning as the Dhan source). */
+/** DELIVERY→delivery, intraday flavours→intraday, MARGIN→mtf,
+ *  CARRYFORWARD→null (the F&O carry product — the classifier decides).
+ *
+ *  MARGIN is Angel One's MTF product on EQUITY rows — verified against a live
+ *  trade book on 2026-08-27, where a real MTF trade arrived as
+ *  `producttype: "MARGIN"` on an NSE equity row while every F&O row carried
+ *  CARRYFORWARD. The old mapping sent MARGIN→null on the assumption it was an
+ *  F&O carry product; it is not. */
 export function productHintOf(productType: string | undefined): ProductHint {
   switch (String(productType ?? "").toUpperCase()) {
     case "DELIVERY": return "delivery";
-    case "MTF": return "mtf";
+    case "MTF":
+    case "MARGIN": return "mtf";
     case "INTRADAY":
     case "BO":
     case "CO": return "intraday";
@@ -164,6 +181,63 @@ const hhmm = (v: string | undefined): string | null => {
   return m ? `${m[1].padStart(2, "0")}:${m[2]}` : null;
 };
 
+const MON: Record<string, string> = {
+  JAN: "Jan", FEB: "Feb", MAR: "Mar", APR: "Apr", MAY: "May", JUN: "Jun",
+  JUL: "Jul", AUG: "Aug", SEP: "Sep", OCT: "Oct", NOV: "Nov", DEC: "Dec",
+};
+
+/** "29SEP2026" → "29 Sep 2026". Null for the equity sentinel "" or junk. */
+function expiryPretty(v: string | undefined): string | null {
+  const m = /^(\d{1,2})([A-Z]{3})(\d{4})$/.exec(String(v ?? "").trim().toUpperCase());
+  if (!m || !MON[m[2]!]) return null;
+  return `${m[1]} ${MON[m[2]!]} ${m[3]}`;
+}
+
+/**
+ * Canonicalise a derivative name from Angel One's STATED fields.
+ *
+ * The trade book states everything — `instrumenttype`, `strikeprice`,
+ * `optiontype`, `expirydate` — and the live payload (2026-08-27) proved the
+ * symbol cannot be trusted for dates: `SENSEX26AUG77600CE` carried a stated
+ * expiry of 27AUG2026. So the canonical `OPT <SYM> <DD Mon YYYY> <STRIKE>
+ * <CE|PE>` / `FUT <SYM> <DD Mon YYYY>` name is BUILT from the stated fields;
+ * only the UNDERLYING is recovered from the symbol, by stripping the stated
+ * strike+type suffix and then a trailing date-like token.
+ *
+ * Returns null for a non-derivative row or when the stated facts are
+ * incomplete (the caller keeps the raw name and SAYS SO).
+ */
+export function canonicalAngelName(r: AngelTradeRow): string | null {
+  const it = String(r.instrumenttype ?? "").toUpperCase();
+  const isOpt = it.startsWith("OPT");
+  const isFut = it.startsWith("FUT");
+  if (!isOpt && !isFut) return null;
+  const date = expiryPretty(r.expirydate);
+  if (!date) return null;
+  let u = String(r.tradingsymbol ?? r.tradingSymbol ?? "").trim().toUpperCase();
+
+  if (isOpt) {
+    const ot = String(r.optiontype ?? "").toUpperCase();
+    const strike = num(r.strikeprice);
+    if ((ot !== "CE" && ot !== "PE") || !(strike > 0)) return null;
+    const suffix = `${String(strike)}${ot}`;
+    if (u.endsWith(suffix)) u = u.slice(0, -suffix.length);
+    u = u.replace(/\d{1,2}[A-Z]{3}\d{0,4}$/, "");
+    if (!u) return null;
+    return `OPT ${u} ${date} ${String(strike)} ${ot}`;
+  }
+  if (u.endsWith("FUT")) u = u.slice(0, -3);
+  u = u.replace(/\d{1,2}[A-Z]{3}\d{0,4}$/, "");
+  if (!u) return null;
+  return `FUT ${u} ${date}`;
+}
+
+/** NSE series suffix on equity symbols ("HFCL-EQ", "X-BE") → bare ticker, so
+ *  Angel API trades line up with every other source's symbols. */
+export function stripSeriesSuffix(symbol: string): string {
+  return symbol.replace(/-(EQ|BE|BZ|BL|GS|SM|ST)$/i, "");
+}
+
 /**
  * Today's fills → normalized trades, aggregated per symbol + product with the
  * executions preserved — the same round-trip shape the Zerodha and Paytm
@@ -173,7 +247,8 @@ const hhmm = (v: string | undefined): string | null => {
  */
 export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { trades: NormalizedTrade[]; refused: number } {
   type Acc = {
-    symbol: string; product: string; exch: string | undefined;
+    symbol: string; canonical: string | null; notes: string[];
+    product: string; exch: string | undefined;
     buyQty: number; buyVal: number; sellQty: number; sellVal: number;
     executions: Execution[];
   };
@@ -193,10 +268,27 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
 
     const product = String(r.producttype ?? r.productType ?? "");
     const key = `${symbol}|${product}`;
-    const acc = groups.get(key) ?? {
-      symbol, product, exch: r.exchange,
-      buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0, executions: [],
-    };
+    let acc = groups.get(key);
+    if (!acc) {
+      // Derivative names come from the STATED fields (instrumenttype, strike,
+      // option type, expiry) — the live payload proved the symbol's own date
+      // token can disagree with the stated expiry. An F&O row whose stated
+      // facts are incomplete keeps its raw name and SAYS SO. Equity symbols
+      // lose their NSE series suffix so they line up with every other source.
+      const canonical = canonicalAngelName(r);
+      const notes: string[] = [];
+      if (!canonical && String(r.instrumenttype ?? "").trim() !== "") {
+        notes.push(
+          `${symbol} is ${String(r.instrumenttype)} per Angel One but stated no usable expiry/strike/option type — imported with its raw name; check its segment.`,
+        );
+      }
+      acc = {
+        symbol: canonical ?? stripSeriesSuffix(symbol),
+        canonical, notes,
+        product, exch: r.exchange,
+        buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0, executions: [],
+      };
+    }
     if (side === "buy") { acc.buyQty += qty; acc.buyVal += qty * price; }
     else { acc.sellQty += qty; acc.sellVal += qty * price; }
     acc.executions.push({ side, qty, price, date: today, time: hhmm(r.filltime ?? r.fillTime ?? r.tradetime) });
@@ -228,6 +320,7 @@ export function normalizeAngelTrades(rows: AngelTradeRow[], today: string): { tr
       exchangeHint: exchangeOf(a.exch),
       sourceFile: "angelone-api",
       executions: a.executions,
+      importNotes: a.notes.length ? a.notes : null,
     });
   }
   return { trades, refused };
@@ -256,7 +349,7 @@ export function toParsedFile(trades: NormalizedTrade[], refused = 0): ParsedFile
     );
   } else {
     warnings.push(
-      "Trades are today's fills from the SmartAPI trade book, aggregated per symbol + product. The field mapping is inferred from Angel One's documentation — reconcile the first pull against a contract note (charges are computed from your rate card; the API states none).",
+      "Trades are today's fills from the SmartAPI trade book, aggregated per symbol + product; F&O contracts are named from the fields Angel One states (the field mapping was verified against a live trade book on 2026-08-27). Charges are computed from your rate card — the API states none.",
     );
   }
   if (refused > 0) {

@@ -6,6 +6,14 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-27 — Angel One's trade book STATES the derivative facts — and its symbol lied about the expiry on a real contract
+
+**Context:** The first Angel One pull ever to return fills (11 real executions, all four products, NFO/BFO/NSE/BSE), captured raw before fixing the adapter's known F&O-as-equity defect the same grounded way as Dhan's.
+**Measured / found:** The row shape (previously INFERRED from docs) is now VERIFIED: `instrumenttype` (OPTSTK/OPTIDX), `strikeprice` (−1 equity sentinel), `optiontype`, `expirydate` ("29SEP2026") are all stated. Two facts symbol-parsing would get wrong: (1) `SENSEX26AUG77600CE` carried a STATED expiry of **27AUG2026** — the symbol's own date token disagrees with the contract's expiry, so parsing the symbol books the wrong expiry day; (2) `producttype: "MARGIN"` arrived on a real **MTF equity trade** — the old mapping sent MARGIN→null assuming it was the F&O carry product (F&O carry is CARRYFORWARD, confirmed in the same payload). Also: equity symbols carry NSE series suffixes ("HFCL-EQ") that no other source uses, and a real cross-exchange intraday pair (bought BSE, sold NSE) arrives as two one-sided positions — represented as such, not merged. Committed and verified end to end: 6 trades, options as index/stock_option with options-rate charges, WABAG as eq_mtf, gross P&L total −843.72 matching Angel's own UI to the paisa.
+**Decision:** Canonical OPT/FUT names built from the stated fields (underlying recovered by stripping the stated strike+type suffix and a trailing date token); MARGIN→mtf; series suffixes stripped; incomplete stated facts keep the raw name and say so. The "known defective for Angel One" line from 2026-08-26 is DISCHARGED. Zerodha/Kite remains the one API puller with no real F&O payload.
+**Why not the obvious thing:** Parsing the compact symbol (as the OpenAlgo adapter must, having no stated fields) — Angel states everything, and its own symbols proved unreliable on the expiry.
+**Invalidated if:** SmartAPI renames these fields, or a payload shows MARGIN on an F&O row (then the product mapping needs an instrumenttype guard).
+
 ## 2026-08-27 — Contract note 14721318 reconciles the live pulls to −0.081%, STT to the paisa — and the engine's 0.15% options STT was RIGHT
 
 **Context:** The final gate on the OpenAlgo/Dhan live-pull wave: Dhan's real contract note for 2026-08-26 (Raise Securities, note 14721318, 12 pages) against the 11 committed rows.
