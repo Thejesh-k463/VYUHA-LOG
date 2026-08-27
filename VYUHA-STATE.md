@@ -92,7 +92,12 @@ v3.0.0 claims audit and the OpenAlgo advertising decision (hold discharged; copy
 email, WhatsApp, discovery channel, MANDATORY referral code ("NONE" allowed), plan intent, brokers;
 per-submission email names the referrer in the subject, `vyuhaReferralSummary()` prints leads per
 referrer/plan — the record that settles influencer payouts. Owner runs it in Apps Script (same
-drill as the feedback form), gives each creator a code.
+drill as the feedback form), gives each creator a code. **New: `docs/owner/CREATOR_KIT.md`** —
+the per-influencer document sent WITH the client ZIP (no separate influencer package — one
+installer, one hash, one truth): fill `[[NAME]]`/`[[CODE]]`/`[[FORM_LINK]]`; carries the
+pre-approved claims verbatim from audited copy, the NOT-to-say list, the ASCI disclosure
+requirement, machine-bound key delivery steps, and the buy flow. It is buyer-adjacent copy —
+part of every release's claims audit; macOS and OpenAlgo deliberately absent.
 Ops lesson that cost hours: **never run `npm run verify` while the dev server is up** — the build
 poisons `.next` and browsers silently serve stale chunks (DECISIONS 2026-08-27).
 
