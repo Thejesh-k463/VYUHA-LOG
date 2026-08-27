@@ -76,8 +76,23 @@ decides when). **The Angel One real-fills day happened 2026-08-27 (after v2.99.1
 11 fills captured raw, the adapter's F&O defect fixed from Angel's STATED fields (its symbol lied
 about a real expiry — DECISIONS 2026-08-27), MARGIN verified as Angel's MTF product, 6 trades
 committed and verified to the paisa against Angel's own UI (gross −843.72 exact). **2,001 tests,
-verify EXIT 0; UNCOMMITTED → goes into the next release. Zerodha/Kite is now the ONLY API puller
-with no real F&O payload.** Angel contract-note reconcile pending when the note arrives.
+verify EXIT 0; committed `49e3180` → goes into v2.99.103. Zerodha/Kite is now the ONLY API puller
+with no real F&O payload.** Angel contract-note reconcile pending when the note arrives — it GATES
+the v2.99.103 release (owner's instruction 2026-08-27).
+
+**LAUNCH PLAN (owner, 2026-08-27): public launch as v3.0.0 in ~2 days.** Collaborators/potential
+buyers want to see "3.0" before buying, so 3.0.0 ships even if minor issues remain (fixes ride
+later releases). Before it: a rigorous full-feature test pass. **REPORTED BUG for that pass, not
+yet investigated: UI lag when switching between tabs, appearing from the ~3rd–4th navigation
+onwards** (owner observed on the installed app; suspect list for the investigation: accumulating
+listeners/intervals on remount, recharts re-render cost, the wallpaper/backdrop layer, dev-only vs
+installed behaviour — measure first, DECISIONS records what is found). Launch also needs the
+v3.0.0 claims audit and the OpenAlgo advertising decision (hold discharged; copy still silent).
+**New: `docs/owner/forms/referral-form.gs`** — pre-purchase referral form (short by design): name,
+email, WhatsApp, discovery channel, MANDATORY referral code ("NONE" allowed), plan intent, brokers;
+per-submission email names the referrer in the subject, `vyuhaReferralSummary()` prints leads per
+referrer/plan — the record that settles influencer payouts. Owner runs it in Apps Script (same
+drill as the feedback form), gives each creator a code.
 Ops lesson that cost hours: **never run `npm run verify` while the dev server is up** — the build
 poisons `.next` and browsers silently serve stale chunks (DECISIONS 2026-08-27).
 
