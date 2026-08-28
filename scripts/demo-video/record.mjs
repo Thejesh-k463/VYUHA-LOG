@@ -32,7 +32,13 @@ const ONLY = (() => {
 })();
 
 const W = 1920, H = 1080;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Global pace: 1 = brisk (~3.5 min total). The 10-minute tour films at
+ *  PACE=2.6 — every pause and scroll beat stretches, cursor glide stays
+ *  natural. Override: PACE=2 node scripts/demo-video/record.mjs */
+const PACE = Number(process.env.PACE ?? 2.6);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms * PACE));
+/** Unpaced — cursor glide frames must stay real-time or motion turns syrupy. */
+const rawSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The animated cursor + click ripple, injected before any page script runs. */
 const CURSOR_SCRIPT = `
@@ -64,7 +70,7 @@ async function glideTo(x, y) {
   const steps = Math.max(8, Math.min(60, Math.round(dist / 22)));
   for (let i = 1; i <= steps; i++) {
     await page.mouse.move(cursorX + (dx * i) / steps, cursorY + (dy * i) / steps);
-    await sleep(14);
+    await rawSleep(14);
   }
   cursorX = x; cursorY = y;
 }
@@ -247,6 +253,10 @@ const SCENES = [
   }},
 
   { n: 8, name: "import", run: async () => {
+    // PRECONDITION: "Options — Demo" must hold no Zerodha import, or the
+    // commit button reads "0 new trades" and the scene times out. Re-seed
+    // with `npm run demo -- --fresh`, or clear just that account:
+    //   delete from trades where account_id=3; delete from import_batches where account_id=3;
     await switchAccount("Options — Demo");    // the deliberately empty book
     await navTo("Import");
     await sleep(1500);
