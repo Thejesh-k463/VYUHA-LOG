@@ -78,8 +78,10 @@ export const SLIM_TRADE_FIELDS = [
 
 export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;
 
-/** Project a full row down to the wire shape (never mutates its input). */
-export function toSlimTrade(t: Trade): SlimTrade {
+/** Project a row carrying at least the slim fields down to the wire shape
+ *  (never mutates its input). Accepts any superset of `SlimTrade` — the full
+ *  `Trade` row, or a column-trimmed query row like `JournalTrade`. */
+export function toSlimTrade(t: SlimTrade): SlimTrade {
   const out = {} as Record<string, unknown>;
   for (const k of SLIM_TRADE_FIELDS) out[k] = t[k];
   return out as SlimTrade;

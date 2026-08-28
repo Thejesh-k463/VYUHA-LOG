@@ -4,10 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EquityCurve, UnderwaterCurve } from "@/components/dashboard/charts";
 import { monteCarloEquity } from "@/lib/analytics/monte-carlo";
-import { getTrades } from "@/lib/queries/trades";
+import { getPerformanceTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { getLedgerEntries } from "@/lib/queries/ledger";
+import { getExternalCashFlows, getLedgerAggregates } from "@/lib/queries/ledger";
 import { dailyPnl, equityCurve, computeKpis } from "@/lib/analytics/metrics";
 import { ShareCard } from "@/components/reports/share-card";
 import type { ShareStats } from "@/lib/analytics/share-card";
@@ -45,7 +45,9 @@ const sign = (v: number) => (v >= 0 ? "+" : "");
 const cls = (v: number | null) => (v == null ? "" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
 export default function PerformancePage() {
-  const trades = getTrades();
+  // Column-trimmed book (same rows, same order as getTrades — see the
+  // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
+  const trades = getPerformanceTrades();
   const settings = getSettings();
   const capital = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0) || 1700000;
 
@@ -91,7 +93,12 @@ export default function PerformancePage() {
   // unrealised trading P&L. All in integer paise (P0.1).
   const today = new Date().toISOString().slice(0, 10);
   const goLive = settings?.goLiveDate ?? today;
-  const ledger = getLedgerEntries();
+  // The 60k-row ledger never crosses into JS: the external flows come back as
+  // rows (XIRR/TWR need each one), and the internal net + earliest date are
+  // SQL aggregates over integer paise / ISO-date text — bit-identical to the
+  // old whole-ledger reduce (perf sweep 2026-08-29).
+  const external = getExternalCashFlows();
+  const { internalNetPaise: internalLedgerPaise, minDate: ledgerMinDate } = getLedgerAggregates();
   const mtm = getMtmMap();
   const closed = trades.filter((t) => !t.isOpen);
   const open = trades.filter((t) => t.isOpen);
@@ -103,12 +110,10 @@ export default function PerformancePage() {
       return s + (px - t.avgBuyPrice) * qty;
     }, 0),
   );
-  const external = ledger.filter((e) => e.type === "deposit" || e.type === "withdrawal");
   const externalNetPaise = external.reduce((s, e) => s + e.amountPaise, 0);
-  const internalLedgerPaise = ledger.filter((e) => e.type !== "deposit" && e.type !== "withdrawal").reduce((s, e) => s + e.amountPaise, 0);
   const openingPaise = toPaise(capital);
   const startDate =
-    [goLive, ...closed.map((t) => t.sellDate).filter((d): d is string => !!d), ...ledger.map((e) => e.date)]
+    [goLive, ...closed.map((t) => t.sellDate).filter((d): d is string => !!d), ...(ledgerMinDate ? [ledgerMinDate] : [])]
       .filter(Boolean)
       .sort()[0] ?? goLive;
   const terminalPaise = openingPaise + externalNetPaise + internalLedgerPaise + realisedPaise + unrealisedPaise;

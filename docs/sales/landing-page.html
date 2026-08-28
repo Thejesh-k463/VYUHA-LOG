@@ -478,7 +478,7 @@
           <tr><th></th><th class="vy">Vyuha</th><th>Global journals</th><th>Indian journals</th></tr>
           <tr><td>Price</td><td class="vy">₹9,999/yr — or ₹29,999 once, ever</td><td>≈ ₹12,600–31,600/yr, subscription only</td><td>₹999–2,499/yr, freemium subscription</td></tr>
           <tr><td>Where your data lives</td><td class="vy">Your computer only — no server exists</td><td>Web-hosted</td><td>Web-hosted</td></tr>
-          <tr><td>Indian broker imports</td><td class="vy">6 auto-detected parsers + column mapper for any CSV + 3 broker-API pulls</td><td>Mostly not stated; CSV upload; one lists Zerodha, one has it "coming soon"</td><td>4–5 brokers</td></tr>
+          <tr><td>Indian broker imports</td><td class="vy">6 auto-detected parsers + column mapper for any CSV + 4 broker-API pulls</td><td>Mostly not stated; CSV upload; one lists Zerodha, one has it "coming soon"</td><td>4–5 brokers</td></tr>
           <tr><td>Statutory charges engine</td><td class="vy">Computes STT/CTT, stamp duty, GST, exchange &amp; SEBI charges from configurable rates</td><td>Not stated</td><td>One parses charges from the tradebook; the other not stated</td></tr>
           <tr><td>Limits</td><td class="vy">Core journal never gated — no trade or account caps</td><td>Tier caps — 1 account on a base tier, feature caps, free tiers metered by executions</td><td>Free caps (10 trades/mo on one) or not stated</td></tr>
         </table>
@@ -554,8 +554,11 @@
       <details><summary>Which brokers can I import from?</summary>
         <p>Six brokers are auto-detected: Zerodha (tradebook and Console P&amp;L), Dhan, Groww, Angel One, Upstox and
         Paytm Money — tradebook or aggregated P&amp;L exports. Any other broker's CSV goes through the column mapper,
-        where you say which column is which. And Zerodha, Dhan and Angel One can also be pulled directly over
-        their APIs (Import → Connect broker) — one click after market close. Everything is de-duplicated, and
+        where you say which column is which. And Zerodha, Dhan, Angel One and Upstox can also be pulled directly
+        over their APIs (Import → Connect broker) — one click after market close. Brokers with no API of their own
+        — Groww, Paytm Money, Kotak — can pull same-day through <b>OpenAlgo</b>, an open-source bridge you run on
+        your own computer: off by default, and your broker credentials go into your own OpenAlgo instance, never
+        into Vyuha. Everything is de-duplicated, and
         charges are recomputed from your own rate card so you can see exactly where your broker's number differs.</p></details>
       <details><summary>Can I move it to a new computer?</summary>
         <p>Yes. Copy your database file across and re-paste your key. If your key was locked to a specific machine

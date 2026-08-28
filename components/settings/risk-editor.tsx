@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ const FIELDS: { key: keyof RiskConfigRow; label: string }[] = [
 ];
 
 export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
+  const router = useRouter();
   const [pending, setPending] = React.useState(false);
   const [edits, setEdits] = React.useState<Record<number, Editable>>(() => {
     const o: Record<number, Editable> = {};
@@ -45,8 +47,13 @@ export function RiskEditor({ rows }: { rows: RiskConfigRow[] }) {
       });
       const json = await res.json();
       const text = json.message ?? (json.ok ? "Saved." : "Failed.");
-      if (json.ok) toast.success(text);
-      else toast.error(text);
+      if (json.ok) {
+        toast.success(text);
+        // Invalidate the router cache so a revisit within staleTimes.dynamic
+        // does not remount from the pre-save RSC payload. router.refresh()
+        // preserves this component's client state (unlike server actions).
+        router.refresh();
+      } else toast.error(text);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

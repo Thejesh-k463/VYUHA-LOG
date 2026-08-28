@@ -2,6 +2,20 @@ import type { Trade } from "@/lib/db/schema";
 import { defaultMtfFundedAmount, DEFAULT_MTF_OWN_MARGIN_PCT } from "@/lib/risk/margin";
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 
+/**
+ * The fields this module actually reads — a structural subset of `Trade`, so
+ * the tracker pages can feed it a column-trimmed query row (perf sweep
+ * 2026-08-29) while every full-`Trade` caller keeps compiling unchanged.
+ */
+export type PositionTrade = Pick<
+  Trade,
+  | "id" | "broker" | "bucket" | "segment" | "exchange" | "symbol" | "tradingsymbol"
+  | "optionType" | "strike" | "expiry" | "isOpen"
+  | "buyQty" | "sellQty" | "avgBuyPrice" | "avgSellPrice" | "closingPrice"
+  | "buyDate" | "sellDate" | "mtfFundedAmount" | "mtfInterest"
+  | "riskAmount" | "slPlanned" | "targetPlanned"
+>;
+
 export interface OpenPosition {
   id: number;
   broker: string;
@@ -48,7 +62,7 @@ function daysBetween(a: string | null, b: string): number | null {
 
 /** Derive open positions from open trades, applying a manual/EOD MTM map. */
 export function deriveOpenPositions(
-  trades: Trade[],
+  trades: PositionTrade[],
   mtm: Map<string, number>,
   today: string,
   mtfMarginByBroker: Record<string, number> = {},

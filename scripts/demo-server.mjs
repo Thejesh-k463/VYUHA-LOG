@@ -225,7 +225,7 @@ async function main() {
      *  importFixture lands in it. Multi-account is a headline demo scene: the
      *  transition only reads on camera when each account holds a visibly
      *  DIFFERENT book, which is why each gets its own broker fixture. */
-    async function useAccount(name) {
+    async function switchToAccount(name) {
       const list = await (await fetch(BASE + "/api/settings")).json().catch(() => null);
       void list; // accounts are read via their own listing on /settings; create idempotently:
       const res = await fetch(BASE + "/api/accounts", {
@@ -265,7 +265,7 @@ async function main() {
     // camera visibly changes every number. Groww P&L is deliberately NOT used:
     // a P&L import stops at the product-confirmation step, which needs a hand.
     try {
-      await useAccount("Swing — Zerodha");
+      await switchToAccount("Swing — Zerodha");
       await importFixture("zerodha-tradebook.csv");
     } catch (e) {
       console.error("  ✗ second-account seed —", e.message.split("\n")[0]);
@@ -274,7 +274,7 @@ async function main() {
     // THIRD account left EMPTY on purpose: the video's import scene commits the
     // Zerodha tradebook here live, so the preview shows real "new trades".
     try {
-      await useAccount("Options — Demo");
+      await switchToAccount("Options — Demo");
     } catch (e) {
       console.error("  ✗ third-account seed —", e.message.split("\n")[0]);
     }

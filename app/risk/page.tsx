@@ -5,7 +5,7 @@ import { MtmForm } from "@/components/trackers/mtm-form";
 import { BhavcopyMtm } from "@/components/trackers/bhavcopy-mtm";
 import { LimitCheck } from "@/components/risk/limit-check";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getTrades } from "@/lib/queries/trades";
+import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap, getSpotMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { getSectorMap } from "@/lib/queries/instruments";
@@ -80,7 +80,9 @@ function daysBetween(a: string | null, b: string): number | null {
 
 export default function RiskPage() {
   const today = new Date().toISOString().slice(0, 10);
-  const trades = getTrades();
+  // Column-trimmed book (same rows, same order as getTrades — see the
+  // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
+  const trades = getTrackerTrades();
   const mtm = getMtmMap();
   const spot = getSpotMap();
   const settings = getSettings();

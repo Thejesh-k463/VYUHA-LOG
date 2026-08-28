@@ -467,8 +467,8 @@
          opacity 35 → scrim 0.65). The scrim is `rgb(<channels> / <alpha>)`,
          NOT color-mix(): the channels token is theme-answered above and the
          alpha is the user's number, so no mixing function is needed — and the
-         chart canvas never sees any of it (it is a body background-image, not
-         a token). Cards stay opaque (bg-card is a literal), and the sidebar
+         chart canvas never sees any of it (it is a body::before background
+         image, not a token). Cards stay opaque (bg-card is a literal), and the sidebar
          paints an opaque surface→background gradient, so the image shows
          through the main canvas only.
      PLACEMENT: these token blocks sit AFTER every skin block. `html.panel-flat`
@@ -499,10 +499,21 @@
      block from --shadow-primary-glow (each skin's own hue) + --shadow-card. */
 
   /* Wallpaper: scrim (theme-coloured, user alpha) over the image, over the
-     canvas colour. `fixed` + `cover` so the image neither tiles nor scrolls
-     with the main pane. --wallpaper carries the url() inline. */
+     canvas colour. The image lives on a position:fixed body::before rather
+     than body's own `background-attachment: fixed` — attachment:fixed + cover
+     puts Chromium on a full-repaint-per-scroll path, while a fixed pseudo
+     element is promoted to its own composited layer and scrolls for free.
+     Same paint result: scrim gradient over image (z-index:-1 keeps both under
+     all content), over the body's canvas colour. --wallpaper carries the
+     url() inline on <html>, so the pseudo-element inherits it. */
   html.wallpaper body {
     background-color: var(--color-background);
+  }
+  html.wallpaper body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
     background-image:
       linear-gradient(
         rgb(var(--wallpaper-scrim-rgb, 5 8 15) / var(--wallpaper-scrim, 0.65)),
@@ -512,7 +523,7 @@
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    background-attachment: fixed;
+    will-change: transform;
   }
 
   /* Display density. Everything in the app is sized in rem, so one root
@@ -854,8 +865,14 @@
     background-image: none;
     box-shadow: none;
   }
-  /* A wallpaper is a screen surface. Paper gets the plain white canvas. */
+  /* A wallpaper is a screen surface. Paper gets the plain white canvas.
+     Both rules stay: the body reset guards any future body-level image, and
+     the ::before rule removes the fixed compositing layer that now carries
+     the image. */
   html.wallpaper body {
     background-image: none !important;
+  }
+  html.wallpaper body::before {
+    content: none !important;
   }
 }

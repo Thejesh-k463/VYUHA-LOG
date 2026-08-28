@@ -4250,7 +4250,7 @@ dependencies = [
 
 [[package]]
 name = "vyuha"
-version = "2.99.104"
+version = "3.0.0"
 dependencies = [
  "reqwest",
  "serde",

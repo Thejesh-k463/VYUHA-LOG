@@ -1,7 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { LensesClient } from "@/components/lenses/lenses-client";
-import { toSlimTrade } from "@/lib/domain/slim-trade";
-import { getTrades, getImportBatches } from "@/lib/queries/trades";
+import { getSlimTrades, getImportBatches } from "@/lib/queries/trades";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getEntitlement } from "@/lib/queries/license";
 import { LENSES, lensGroups, groupIds, type LensKind } from "@/lib/domain/lenses";
@@ -11,7 +10,10 @@ import { computeKpis } from "@/lib/analytics/metrics";
 export const dynamic = "force-dynamic";
 
 export default function LensesPage() {
-  const trades = getTrades().map(toSlimTrade);
+  // The slim projection is selected in SQL — same rows, order and values as
+  // getTrades().map(toSlimTrade), without mapping 74 columns to keep 43
+  // (perf sweep 2026-08-29).
+  const trades = getSlimTrades();
   const batches = getImportBatches().map((b) => ({
     id: b.id,
     fileName: b.fileName,

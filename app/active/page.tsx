@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { TrackerClient } from "@/components/trackers/tracker-client";
-import { getTrades } from "@/lib/queries/trades";
+import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 
 export default function ActiveTrackerPage() {
   const today = new Date().toISOString().slice(0, 10);
-  const trades = getTrades();
+  // Column-trimmed book (same rows, same order as getTrades — see the
+  // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
+  const trades = getTrackerTrades();
   const mtm = getMtmMap();
   const settings = getSettings();
 

@@ -26,7 +26,39 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-25 (v2.99.101 release session)
+## 2. Current state — verified 2026-08-29 (v3.0.0 in progress)
+
+**NOW: v3.0.0 IS BEING CUT (2026-08-29, uncommitted docs/claims pass done, bump NOT yet run —
+package.json still 2.99.104).** What v3.0.0 ships, all verified today: (1) the all-accounts
+Import view lists EVERY connected broker API + OpenAlgo instance with per-account labels (was:
+silently collapsed to account 1), saving a connection asks which account it belongs to, and
+Pull & commit always books into the connection's own account — invariant-9 fix, latent
+cross-account write closed; (2) a new **Import Help** sidebar tab (Journal group) — per-broker
+download/API-setup cards derived from the import registry, guarded by a new test; (3) the perf
+pass, measured on the new 42-route sweep against a seeded 25,000-trade book (production build):
+**Cash & Ledger 27,313 → 901 ms median** (113 MB SSR/RSC payload, not SQL — sums/running
+balance into SQL, 200-row pages, export on click), corporate actions 1,645 → 654 ms, dashboard
+1,873 → 1,312 ms, **overall median 1,195 → 987 ms, budget breaches 13 → 6, console errors
+3 → 0**; six payload-bound routes stay above the internal 1.5 s budget at that tier (options
+journal/strategies ~6 s at 8,058 rendered option rows; equity/risk ~3 s; trades/lenses ~2.2 s)
+— deferred as v3.0.x pagination, no algorithmic defect (DECISIONS 2026-08-29); (4) the harness
+itself: `npm run perf:seed` + `npm run perf:sweep`, load suite now **15 cases** (new
+a7-cash-ledger), all green. **Suite: 2,050 tests / 137 files, verify EXIT 0.** OpenAlgo is now
+ADVERTISED IN WRITING (owner decision 2026-08-27): root README, client README, deck, landing
+FAQ, CREATOR_KIT pre-approved claims all carry the honest framing (off by default, credentials
+go into the user's own OpenAlgo instance, never Vyuha; Groww/Paytm/Kotak same-day pulls);
+landing-page.standalone.html needs `npm run landing:build` re-run before the next send.
+**e2e: 45/45 PASSED (2.1 min, exit 0).** Bump to **3.0.0** done (4 files synced, footer v3.0;
+package-lock roots hand-edited, 2 lines only; Cargo.lock at 3.0.0 via the build). Post-bump
+verify EXIT 0. Desktop build EXIT 0: `Vyuha_3.0.0_x64-setup.exe` + `.msi`, BUILD_ID
+`LMtVNbTk51bL3Id7sqMPN` (2026-08-29 01:36), `/import-help` route + "Import Help" label present
+in server AND client chunks, both `.sig`s decode to key id `4FF85F3BBE1DA21D` (live key).
+Client ZIP `Vyuha_3.0.0_Client_Package.zip` packed AFTER the docs pass (10 entries, installer
+SHA-256 `8D35DCE554CB38CA81D5B02DB14279FC8AAB8A86F81E88C66A94CF5810B7B170`).
+landing:build re-run after the 4-API fix (standalone page current). Remaining: commit → push →
+CI all-5 green BEFORE tag → tag → Release workflow → release:verify → owner publishes →
+re-film the tour (Ember+Glow, v3.0 footer) → owner voice pass.
+*The table below is the v2.99.102-era state and remains accurate history.*
 
 | | |
 |---|---|

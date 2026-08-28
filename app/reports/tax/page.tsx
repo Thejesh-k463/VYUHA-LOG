@@ -2,19 +2,16 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ExportButtons } from "@/components/ui/export-button";
-import { getTrades } from "@/lib/queries/trades";
+import { ItrExportButtons } from "@/components/reports/itr-export";
 import { getSettings } from "@/lib/queries/settings";
-import { getLedgerEntries } from "@/lib/queries/ledger";
-import { getIposComputed } from "@/lib/queries/ipos";
-import { taxByFy, type TaxTrade } from "@/lib/analytics/tax";
+import { getDividendLedgerEntries } from "@/lib/queries/ledger";
+import { getTaxBase, countItrRows } from "@/lib/queries/tax-itr";
+import { taxByFy } from "@/lib/analytics/tax";
 import {
   aggregateTradesByFy,
   computeTaxTimeline,
-  classifyGain,
-  classifyTerm,
   RATE_CUTOVER_DATE,
   GRANDFATHER_DATE,
-  type CapitalGainsTrade,
 } from "@/lib/analytics/capital-gains";
 import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
 import { inr } from "@/lib/format";
@@ -46,78 +43,29 @@ const COLS = [
 ];
 
 export default function TaxReportPage() {
-  const trades = getTrades();
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
 
-  // Exited IPOs are equity-delivery capital gains but live OUTSIDE the trades
-  // table — fold them into BOTH the raw scaffold and the set-off engine so the
-  // Tax Summary is complete. Acquisition date = allotment (fallback listing/applied).
-  const exitedIpos = getIposComputed().rows.filter((r) => r.realised);
-  const ipoTaxRows: TaxTrade[] = exitedIpos.map((r) => ({
-    segment: "eq_delivery",
-    instrumentType: "equity",
-    buyDate: r.allotmentDate ?? r.listingDate ?? r.appliedDate ?? null,
-    sellDate: r.exitDate ?? null,
-    grossPnl: r.grossPnl,
-    netPnl: r.netPnl,
-    buyValue: r.investedAllotted,
-    sellValue: (r.exitPrice ?? 0) * r.allottedQty,
-    chargesTotal: r.charges,
-    isOpen: false,
-  }));
+  // The book projected to the 15 tax columns, exited IPOs folded in, and the
+  // capital-gains inputs — one shared builder (lib/queries/tax-itr.ts) feeds
+  // this page AND the on-demand /api/tax-itr export, so the two can never
+  // drift. Same rows, same order, same JS filters as before — only the 59
+  // never-read columns stopped being fetched.
+  const { trades, closedTrades, ipoTaxRows, cgTrades } = getTaxBase();
   const rows = taxByFy([...trades, ...ipoTaxRows], fyStartMonth);
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
-  // IND-1 + IND-2 — date-based STCG/LTCG rates + speculative/non-speculative
-  // set-off and carry-forward across FYs. Grandfathering uses the per-trade FMV
-  // entered below (per-share × qty → same total units as buyValue/sellValue).
-  const closedTrades = trades.filter((t) => !t.isOpen);
-  const cgTrades: CapitalGainsTrade[] = [
-    ...closedTrades.map((t) => ({
-      segment: t.segment,
-      buyDate: t.buyDate,
-      sellDate: t.sellDate,
-      buyValue: t.buyValue,
-      sellValue: t.sellValue,
-      netPnl: t.netPnl,
-      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
-    })),
-    ...ipoTaxRows.map((r) => ({
-      segment: r.segment,
-      buyDate: r.buyDate,
-      sellDate: r.sellDate,
-      buyValue: r.buyValue,
-      sellValue: r.sellValue,
-      netPnl: r.netPnl,
-    })),
-  ];
   const hasPreGrandfatherLot = cgTrades.some((t) => t.buyDate != null && t.buyDate < GRANDFATHER_DATE);
   // Pre-2018 closed equity lots — the rows the FMV editor targets.
   const grandfatherRows = closedTrades
     .filter((t) => (t.segment === "eq_delivery" || t.segment === "eq_mtf") && t.buyDate != null && t.buyDate < GRANDFATHER_DATE)
     .map((t) => ({ id: t.id, symbol: t.symbol, buyDate: t.buyDate!, sellDate: t.sellDate, buyQty: t.buyQty, avgBuyPrice: t.avgBuyPrice, fmv31Jan2018: t.fmv31Jan2018 ?? null }));
 
-  // ITR-schedule-shaped per-trade export (closed equity + F&O + exited IPOs).
-  const itrRows = cgTrades
-    .map((t, i) => {
-      const g = classifyGain(t);
-      if (!g) return null;
-      const isIpo = i >= closedTrades.length;
-      const src = isIpo ? exitedIpos[i - closedTrades.length] : closedTrades[i];
-      return {
-        scrip: isIpo ? `${(src as (typeof exitedIpos)[number]).name} (IPO)` : (src as (typeof closedTrades)[number]).symbol,
-        acquired: t.buyDate ?? "",
-        sold: t.sellDate ?? "",
-        cost: t.buyValue,
-        consideration: t.sellValue,
-        netGain: t.netPnl,
-        term: t.segment === "eq_delivery" || t.segment === "eq_mtf" ? classifyTerm(t.buyDate, t.sellDate) : "",
-        head: g.bucket === "stcg" ? "STCG (111A)" : g.bucket === "ltcg" ? "LTCG (112A)" : g.bucket === "speculative" ? "Speculative business" : "Non-speculative business (F&O)",
-        taxableGain: g.taxableGain,
-      };
-    })
-    .filter((r): r is NonNullable<typeof r> => r != null);
+  // ITR-schedule export rows are fetched by /api/tax-itr when Export is
+  // clicked — shipping all of them as client props serialised ~4.8 MB of
+  // never-rendered rows into every visit's RSC payload at 25k trades. Only
+  // the count (for the disabled state) is computed here.
+  const itrCount = countItrRows();
   const today = new Date();
   const todayY = today.getFullYear();
   const todayFyStart = today.getMonth() + 1 >= fyStartMonth ? todayY : todayY - 1;
@@ -127,11 +75,10 @@ export default function TaxReportPage() {
 
   // IND-6 — dividend & TDS: group "dividend" ledger entries (posted by corporate
   // actions) by company + FY and estimate the 10%-above-₹5,000 TDS per section 194.
-  const ledgerEntries = getLedgerEntries();
-  const dividendEvents: DividendEvent[] = ledgerEntries
-    .filter((e) => e.type === "dividend" && e.symbol)
+  // Filtered in SQL — see getDividendLedgerEntries; same rows, same order.
+  const dividendEvents: DividendEvent[] = getDividendLedgerEntries()
     .map((e) => ({
-      symbol: e.symbol!,
+      symbol: e.symbol,
       fy: fyOf(e.date, fyStartMonth, currentFy),
       date: e.date,
       grossAmount: e.amountPaise / 100,
@@ -200,17 +147,7 @@ export default function TaxReportPage() {
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle>Capital-gains tax &amp; set-off (informational)</CardTitle>
             <div className="flex items-center gap-2">
-              <ExportButtons
-                filename="vyuha-capital-gains-itr"
-                columns={[
-                  { key: "scrip", label: "Scrip" }, { key: "acquired", label: "Date of acquisition" },
-                  { key: "sold", label: "Date of sale" }, { key: "cost", label: "Cost of acquisition" },
-                  { key: "consideration", label: "Sale consideration" }, { key: "netGain", label: "Net gain (post-charge)" },
-                  { key: "term", label: "Term" }, { key: "head", label: "Head / schedule" },
-                  { key: "taxableGain", label: "Taxable gain (grandfathered)" },
-                ]}
-                rows={itrRows}
-              />
+              <ItrExportButtons filename="vyuha-capital-gains-itr" total={itrCount} />
               <Badge variant="secondary">rates change {RATE_CUTOVER_DATE}</Badge>
             </div>
           </CardHeader>

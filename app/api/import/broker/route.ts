@@ -21,7 +21,8 @@ import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
-import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { getWriteAccountId } from "@/lib/queries/accounts";
+import { listBrokerConnections } from "@/lib/queries/broker-connections";
 import { encryptSecret, readSecret, sweepPlaintextSecrets } from "@/lib/vault";
 
 export const runtime = "nodejs";
@@ -100,29 +101,10 @@ function currentOpenAlgoGate() {
 
 export async function GET() {
   sweepPlaintextSecrets(); // upgrade any pre-vault plaintext rows (v2.99.80)
-  const selected=getSelectedAccountId(); const accountId=selected||1;
-  let rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId,accountId)).all();
-  // Legacy single-instance id: a row saved as bare "openalgo" is renamed to
-  // `openalgo:<underlying>` on read (same GET-time-migration pattern as the
-  // plaintext sweep above), so multiple instances can coexist from here on.
-  for (const r of rows) {
-    if (r.broker !== "openalgo") continue;
-    const auth = readSecret(r.authJson);
-    if (!auth.ok || !auth.value) continue;
-    try {
-      const a = JSON.parse(auth.value) as { underlyingBroker?: string };
-      if (a.underlyingBroker) {
-        db.update(brokerConnections)
-          .set({ broker: openAlgoConnectionId(a.underlyingBroker as Broker) })
-          .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, "openalgo")))
-          .run();
-        rows = db.select().from(brokerConnections).where(eq(brokerConnections.accountId, accountId)).all();
-      }
-    } catch {
-      /* unreadable blob — leave the legacy row as it is */
-    }
-    break;
-  }
+  // Scoping, the legacy openalgo → openalgo:<underlying> rename and account
+  // names all live in the query module — the aggregate view lists EVERY
+  // account's connections (invariant 8), it never collapses to account 1.
+  const { aggregate, rows } = listBrokerConnections();
   const gate = currentOpenAlgoGate();
   return NextResponse.json({
     // CONTRACT: the Import UI reads `openalgo.available` to decide whether to
@@ -130,12 +112,17 @@ export async function GET() {
     // false. Shape is fixed — `reason` is present only when closed.
     openalgo: gate.allowed ? { available: true } : { available: false, reason: gate.reason },
     ok: true,
+    /** True when the listing spans every account (the All-accounts view) —
+     *  the client uses it to label each connection with its account. */
+    aggregate,
     connections: rows.map((r) => {
       // Decrypt only to mask — the plaintext never leaves this handler. An
       // unreadable secret masks as bullets rather than leaking ciphertext.
       const key = readSecret(r.apiKey);
       const out: Record<string, unknown> = {
         broker: r.broker,
+        accountId: r.accountId,
+        accountName: r.accountName,
         apiKeyMasked: key.ok && key.value ? mask(key.value) : "••••",
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
@@ -167,7 +154,12 @@ export async function POST(req: Request) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, message: "Bad request" }, { status: 400 });
   }
-  const selected=getSelectedAccountId(); const accountId=selected||1;
+  // Writes need a real account — 0 is a view, not a place (invariant 9), and
+  // the old `selected||1` collapse landed All-accounts writes on a hard-coded
+  // account 1 that may not even exist. The client sends the connection row's
+  // own accountId for pulls/disconnects and the picker's choice for saves;
+  // getWriteAccountId validates any explicit id against the accounts table.
+  const accountId = getWriteAccountId(typeof body.accountId === "number" ? body.accountId : null);
 
   if (body.action === "save") {
     let broker = String(body.broker ?? "");
@@ -402,7 +394,9 @@ export async function POST(req: Request) {
       // and the same-day cross-broker note. A RISKY collision blocks a commit
       // until the user explicitly confirms — a silent double-count is exactly
       // the wrong default for a journal.
-      const pre = previewParsedFile(parsed, null, undefined, fileName);
+      // Dedup is per (account, broker), so preview and commit must both run
+      // against the connection's own account, not the selected view.
+      const pre = previewParsedFile(parsed, null, accountId, fileName);
       const warnings = [...parsed.warnings];
       if (pre.crossSource?.message) warnings.push(pre.crossSource.message);
       if (pre.crossBroker) warnings.push(pre.crossBroker);
@@ -450,7 +444,7 @@ export async function POST(req: Request) {
             { status: 409 },
           );
         }
-        const result = commitParsedFile(parsed, fileName);
+        const result = commitParsedFile(parsed, fileName, null, accountId);
         db.update(brokerConnections)
           .set({ lastPullAt: new Date().toISOString() })
           .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))

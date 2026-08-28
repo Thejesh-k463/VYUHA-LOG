@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PayoffChart } from "@/components/reports/payoff-chart";
-import { getTrades } from "@/lib/queries/trades";
+import { getOpenOptionPositions } from "@/lib/queries/trades";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { buildStrategies, type PositionedLeg } from "@/lib/analytics/strategies";
 import { inr } from "@/lib/format";
@@ -10,11 +10,12 @@ import { inr } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default function StrategiesPage() {
-  const trades = getTrades();
+  // The open/option/strike/CE-PE filter lives in SQL now (getOpenOptionPositions):
+  // the whole-book read mapped 25k rows to keep 673 on the 25k perf tier.
+  const trades = getOpenOptionPositions();
   const spot = getSpotMap();
 
   const legs: PositionedLeg[] = trades
-    .filter((t) => t.isOpen && t.instrumentType === "option" && t.strike != null && (t.optionType === "CE" || t.optionType === "PE"))
     .map((t) => {
       const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
       const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);

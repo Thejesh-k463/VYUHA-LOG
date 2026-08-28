@@ -2,25 +2,15 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
-import { ExportButtons } from "@/components/ui/export-button";
+import { LedgerExportButtons } from "@/components/cash/ledger-export";
 import { LedgerForm } from "@/components/cash/ledger-form";
 import { LedgerImport } from "@/components/cash/ledger-import";
 import { LedgerTable } from "@/components/cash/ledger-table";
-import { getSettings } from "@/lib/queries/settings";
-import { getLedgerEntries } from "@/lib/queries/ledger";
-import { summariseLedger, type BucketLedger } from "@/lib/analytics/ledger";
-import { toPaise, toRupees, formatPaise } from "@/lib/money";
+import { getLedgerGroups, getLedgerRunningRows, getOpeningByBucketPaise } from "@/lib/queries/ledger";
+import { LEDGER_PAGE_SIZE, summariseLedgerGroups, type BucketLedger } from "@/lib/analytics/ledger";
+import { formatPaise } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
-
-const COLS = [
-  { key: "date", label: "Date" },
-  { key: "bucket", label: "Bucket" },
-  { key: "type", label: "Type" },
-  { key: "amount", label: "Amount" },
-  { key: "balance", label: "Balance" },
-  { key: "note", label: "Note" },
-] as const;
 
 const BUCKET_LABEL: Record<string, string> = { equity: "Equity", active: "Trade F&O", "": "Unassigned" };
 
@@ -60,29 +50,19 @@ function Line({ label, v }: { label: string; v: number }) {
 }
 
 export default function CashPage() {
-  const settings = getSettings();
-  const opening = {
-    equity: toPaise(settings?.equityCapital ?? 1300000),
-    active: toPaise(settings?.activeCapital ?? 400000),
-  };
-  const entries = getLedgerEntries();
-  const s = summariseLedger(entries, opening);
-  const display = [...s.running].reverse(); // latest first
-  const exportData = display.map((r) => ({
-    date: r.date,
-    bucket: r.bucket || "—",
-    type: r.type,
-    amount: toRupees(r.amountPaise),
-    balance: toRupees(r.balancePaise),
-    note: r.note ?? "",
-  }));
+  // Sums and running balances are computed in SQL; the render ships only one
+  // page of rows. At 60k entries the old entry-level path materialised the
+  // whole ledger into the RSC payload twice (table + export) — a 27 s render.
+  const opening = getOpeningByBucketPaise();
+  const s = summariseLedgerGroups(getLedgerGroups(), opening);
+  const display = getLedgerRunningRows({ limit: LEDGER_PAGE_SIZE }); // latest first
 
   return (
     <>
       <PageHeader
         title="Cash & ledger"
         description="Fund flows in integer paise — available capital is derived from opening balance + ledger."
-        actions={<Badge variant="secondary">{entries.length} entries</Badge>}
+        actions={<Badge variant="secondary">{s.totalCount} entries</Badge>}
       />
       <div className="space-y-5 p-6">
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -108,10 +88,10 @@ export default function CashPage() {
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Ledger</CardTitle>
-            <ExportButtons filename="vyuha-ledger" columns={COLS as unknown as { key: string; label: string }[]} rows={exportData} />
+            <LedgerExportButtons filename="vyuha-ledger" total={s.totalCount} />
           </CardHeader>
           <CardContent className="p-0">
-            <LedgerTable rows={display} />
+            <LedgerTable rows={display} total={s.totalCount} />
           </CardContent>
         </Card>
 

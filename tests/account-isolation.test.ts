@@ -131,6 +131,31 @@ describe("account isolation — reads", () => {
     expect(queries.ledger.getLedgerEntries()).toHaveLength(2);
   });
 
+  it("the SQL-aggregated /cash reads (groups, running page, count) are scoped", () => {
+    selectAccount(PRIMARY);
+    expect(queries.ledger.countLedgerEntries()).toBe(1);
+    expect(queries.ledger.getLedgerGroups()).toEqual([
+      { bucket: "equity", type: "deposit", totalPaise: 5_000_000, count: 1 },
+    ]);
+    let rows = queries.ledger.getLedgerRunningRows({ limit: 10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amountPaise).toBe(5_000_000);
+
+    selectAccount(SWING);
+    expect(queries.ledger.countLedgerEntries()).toBe(1);
+    rows = queries.ledger.getLedgerRunningRows({ limit: 10 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amountPaise).toBe(1_000_000);
+
+    selectAccount(ALL);
+    expect(queries.ledger.countLedgerEntries()).toBe(2);
+    expect(queries.ledger.getLedgerRunningRows({ limit: 10 })).toHaveLength(2);
+    // The aggregate view SUMS both books' running balance inside one bucket —
+    // the same thing summariseLedger did when handed both accounts' entries.
+    const groups = queries.ledger.getLedgerGroups();
+    expect(groups).toEqual([{ bucket: "equity", type: "deposit", totalPaise: 6_000_000, count: 2 }]);
+  });
+
   it("getSessionsWithReview is scoped even though both accounts traded the same day", () => {
     selectAccount(PRIMARY);
     let s = queries.sessions.getSessionsWithReview();
@@ -236,7 +261,7 @@ describe("account-scoped table registry", () => {
     // so the query module owns the boundary and the route never touches the
     // table — which is the shape D1's fix deliberately produced.
     capital_snapshots: ["lib/queries/capital.ts"],
-    broker_connections: ["app/api/import/broker/route.ts"],
+    broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts"],
     panel_dismissals: ["lib/queries/dismissals.ts"],
   };
 

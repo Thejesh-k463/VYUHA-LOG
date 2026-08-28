@@ -1,5 +1,51 @@
 # Changelog
 
+## v3.0.0 — every connection knows its account, imports explain themselves, and speed is now measured
+
+The public-launch release. Its performance claims were measured on a new 42-route benchmark
+against a seeded 25,000-trade book, on the production build — every number below is from that
+sweep, not an estimate.
+
+- **The all-accounts Import view now shows every connection.** Connected broker APIs and
+  OpenAlgo instances used to silently collapse to the first account's set, so a second
+  account's connections were invisible from "All accounts". The view now lists every one with
+  a per-account label, saving a connection asks which account it belongs to — the same picker
+  file imports already use — and **Pull & commit always books into the connection's own
+  account**. That last part closes a latent cross-account write path: "All accounts" is a
+  view, never a place a write can land, and the API-pull path now honours that rule the way
+  every other write already did.
+- **New: Import Help — a sidebar tab that answers "which file do I download?"** One expandable
+  card per broker: which of its exports import, where each one lives on the broker's own site
+  (dated "as of Aug 2026", because brokers move menus), and the full API setup path — Kite's
+  daily token, DhanHQ's 24-hour token, Angel SmartAPI's TOTP secret, Upstox's Analytics token
+  plus its static-IP registration. Two OpenAlgo cards cover setting up an instance and
+  connecting it, and a final card explains the generic column mapper for everyone else. The
+  copy derives from the import registry — the same source of truth the dropzone reads — and a
+  new test keeps it from drifting.
+- **Cash & Ledger on a 25,000-trade book: 27.3 s → 0.9 s.** The page was serializing a 113 MB
+  response — the ledger's every row, twice — not running a slow query. Sums and the running
+  balance moved into SQL, the table pages at 200 rows, and the export is built only when
+  clicked. Corporate actions went 1.6 s → 0.7 s and the dashboard 1.9 s → 1.3 s on the same
+  book; the tax, performance and harvest reports all sit under budget.
+- **The whole app feels faster, and the sweep proves it isn't imagined**: overall route median
+  1,195 ms → 987 ms at the 25,000-trade tier, and console errors 3 → 0 (one was a real React
+  hydration error on the Help Desk, now fixed). Every route now shows a loading skeleton
+  (8 of 42 did), the wallpaper paints on a GPU-composited layer, chart mount animations are
+  off, the sidebar no longer re-renders on every navigation, page payloads are trimmed by
+  column projection (proven value-identical row for row), and the router cache holds pages for
+  120 s — with the charge and risk editors explicitly refreshing after a save so they never
+  show a stale table.
+- **New: a repeatable performance harness.** `npm run perf:seed` builds a deterministic
+  25,000-trade book and `npm run perf:sweep` times all 42 routes against it and fails on any
+  console error — the same gate the numbers above came from. The load suite grows to 15 cases
+  with `a7-cash-ledger`, so the 113 MB regression class stays pinned.
+
+Known and deliberate: at this abusive 25,000-trade tier, six payload-bound routes remain above
+the internal 1.5 s budget (the options journal and strategies render ~8,058 option rows at
+~6 s; equity/risk ~3 s; trades and lenses ~2.2 s). The sweep found no algorithmic defect on
+them — they render everything they are given — so they are scheduled as v3.0.x pagination
+work rather than launch-night patches.
+
 ## v2.99.104 — Upstox connects natively, and duplicate pulls explain themselves
 
 Built and verified against a live Upstox account on 2026-08-28 (11 real fills across NSE, NFO and

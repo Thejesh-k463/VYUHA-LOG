@@ -7,7 +7,7 @@ import { OutcomeMixBar } from "@/components/behavior/outcome-mix-bar";
 import { optionsSellerReport, sellerKpiDetails, orderedOutcomes } from "@/lib/analytics/options-seller";
 import { dteReport, hedgeReport, rollReport, ivRankReport, thetaEfficiency } from "@/lib/analytics/options-seller-depth";
 import { inr } from "@/lib/format";
-import { getTrades } from "@/lib/queries/trades";
+import { getOptionTrades } from "@/lib/queries/trades";
 import { ProGate } from "@/components/system/pro-gate";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,9 @@ function Eyebrow({ children, hint }: { children: ReactNode; hint?: string }) {
 }
 
 export default function OptionsJournalPage() {
-  const options = getTrades().filter((t) => t.instrumentType === "option");
+  // Filtered in SQL — the whole-book `getTrades().filter(...)` materialised
+  // 25k rows to keep the 8k options (see getOptionTrades).
+  const options = getOptionTrades();
   const seller = optionsSellerReport(options);
   const details = sellerKpiDetails(options, seller);
   const outcomeSlices = orderedOutcomes(seller.outcomes);

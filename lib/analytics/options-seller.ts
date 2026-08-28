@@ -65,8 +65,14 @@ export function sellerKpiDetails(trades: SellerTrade[], report: OptionsSellerRep
   const noneNote = "No seller trades yet — sell-side option contracts appear here once imported or entered.";
 
   // --- Seller trades: per underlying, top 8 by count -----------------------
+  // push, not re-spread: `[...(get ?? []), t]` recopied the bucket per trade —
+  // O(n²) per symbol, and index-heavy books concentrate in 1-2 underlyings.
   const byUnderlying = new Map<string, SellerTrade[]>();
-  for (const t of sellers) byUnderlying.set(t.symbol, [...(byUnderlying.get(t.symbol) ?? []), t]);
+  for (const t of sellers) {
+    const bucket = byUnderlying.get(t.symbol);
+    if (bucket) bucket.push(t);
+    else byUnderlying.set(t.symbol, [t]);
+  }
   const underlyings = [...byUnderlying.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
   const modeSegment = (ts: SellerTrade[]): string | undefined => {
     const c = new Map<string, number>();

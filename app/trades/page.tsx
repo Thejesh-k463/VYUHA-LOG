@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { toSlimTrade } from "@/lib/domain/slim-trade";
-import { getTrades, getTradeStats } from "@/lib/queries/trades";
+import { getJournalTrades, tradeStatsOf } from "@/lib/queries/trades";
 import { getAttachmentCounts } from "@/lib/queries/trades";
 import { getEntitlement } from "@/lib/queries/license";
 import { getPlaybooks } from "@/lib/queries/playbooks";
@@ -23,10 +23,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export const dynamic = "force-dynamic";
 
 export default function TradesPage() {
-  const trades = getTrades();
+  // Wire shape + acquisition fields selected in SQL — same rows, order and
+  // values as getTrades(), without mapping the 74-column row to use 47
+  // (perf sweep 2026-08-29). The KPI strip reduces over the same rows in the
+  // same order, so its floats are bit-identical to getTradeStats().
+  const trades = getJournalTrades();
   // A6 — only the aggregate view leaves "which account?" unanswered.
   const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
-  const stats = getTradeStats();
+  const stats = tradeStatsOf(trades);
   const chargePct = stats.gross !== 0 ? (stats.charges / Math.abs(stats.gross)) * 100 : 0;
 
   // Sales whose purchase is not in the data — resolved here, at the top, because

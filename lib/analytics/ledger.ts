@@ -71,6 +71,15 @@ export interface RunningRow extends LedgerEntryInput {
   balancePaise: number; // bucket balance immediately after this entry
 }
 
+/**
+ * How many running-balance rows a /cash render ships. The full ledger used to
+ * be SSR'd and serialised into the RSC payload wholesale — 113 MB of HTML and
+ * a 27 s render at 60k entries. Everything beyond this page loads on demand
+ * via GET /api/ledger with balances still computed in SQL, so every row (and
+ * the exact same numbers) remains reachable.
+ */
+export const LEDGER_PAGE_SIZE = 200;
+
 export interface BucketLedger {
   bucket: string;
   openingPaise: number;
@@ -91,6 +100,74 @@ export interface LedgerSummary {
   totalAvailablePaise: number;
   byType: Record<LedgerType, number>;
   running: RunningRow[]; // chronological
+}
+
+/**
+ * One `GROUP BY bucket, type` row from SQL — the whole ledger reduced to at
+ * most buckets × types rows before it ever leaves the database.
+ */
+export interface LedgerGroupRow {
+  bucket: string;
+  type: LedgerType;
+  totalPaise: number;
+  count: number;
+}
+
+/** `summariseLedger` minus the materialised `running` rows, plus a total count. */
+export type LedgerGroupSummary = Omit<LedgerSummary, "running"> & { totalCount: number };
+
+/**
+ * Same numbers as `summariseLedger`, computed from SQL GROUP BY rows instead of
+ * every ledger entry. At 60k entries the entry-level path materialised the
+ * whole table per render just to add it up; the grouped path is O(buckets × types).
+ * `tests/ledger.test.ts` asserts the two agree entry-for-entry.
+ */
+export function summariseLedgerGroups(
+  groups: LedgerGroupRow[],
+  openingByBucket: Record<string, number>,
+): LedgerGroupSummary {
+  const bucketNames = [...new Set([...Object.keys(openingByBucket), ...groups.map((g) => g.bucket)])].sort();
+  const byType = LEDGER_TYPES.reduce(
+    (acc, t) => {
+      acc[t] = 0;
+      return acc;
+    },
+    {} as Record<LedgerType, number>,
+  );
+  const perBucket = new Map(bucketNames.map((b) => [b, { sums: {} as Record<string, number>, flows: 0, count: 0 }]));
+  for (const g of groups) {
+    const pb = perBucket.get(g.bucket);
+    if (!pb) continue; // unreachable: bucketNames is built from groups
+    pb.sums[g.type] = (pb.sums[g.type] ?? 0) + g.totalPaise;
+    pb.flows += g.totalPaise; // flows sum EVERY entry, known type or not — same as summariseLedger
+    pb.count += g.count;
+    if (g.type in byType) byType[g.type] += g.totalPaise;
+  }
+  const buckets: BucketLedger[] = bucketNames.map((bucket) => {
+    const { sums, flows, count } = perBucket.get(bucket)!;
+    const by = (t: LedgerType) => sums[t] ?? 0;
+    const opening = openingByBucket[bucket] ?? 0;
+    return {
+      bucket,
+      openingPaise: opening,
+      depositsPaise: by("deposit"),
+      withdrawalsPaise: by("withdrawal"),
+      chargesPaise: by("charge") + by("mtf_interest") + by("margin_penalty"),
+      realisedPnlPaise: by("realised_pnl"),
+      otherPaise: by("interest") + by("dividend") + by("dividend_tds") + by("adjustment"),
+      flowsPaise: flows,
+      availablePaise: opening + flows,
+      count,
+    };
+  });
+  return {
+    buckets,
+    totalOpeningPaise: buckets.reduce((s, b) => s + b.openingPaise, 0),
+    totalFlowsPaise: buckets.reduce((s, b) => s + b.flowsPaise, 0),
+    totalAvailablePaise: buckets.reduce((s, b) => s + b.availablePaise, 0),
+    byType,
+    totalCount: buckets.reduce((s, b) => s + b.count, 0),
+  };
 }
 
 export function summariseLedger(

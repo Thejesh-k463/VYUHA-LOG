@@ -4,11 +4,34 @@ import { db } from "@/lib/db";
 import { ledgerEntries } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { toPaise } from "@/lib/money";
-import { LEDGER_TYPES, type LedgerType } from "@/lib/analytics/ledger";
+import { LEDGER_PAGE_SIZE, LEDGER_TYPES, type LedgerType } from "@/lib/analytics/ledger";
 import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
+import { countLedgerEntries, getLedgerRunningRows } from "@/lib/queries/ledger";
 
 export const runtime = "nodejs";
+
+/**
+ * Pages of the running-balance ledger (latest first), so /cash can render one
+ * page instead of SSR-ing every entry. `?all=1` returns the full ledger for the
+ * on-demand CSV/XLSX export — fetched only when the user clicks Export, never
+ * as part of a render. Balances come from the same SQL window the page uses,
+ * scoped to the selected account like every other read.
+ */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  if (url.searchParams.get("all") === "1") {
+    // limit < 0 is SQLite's "no limit".
+    const rows = getLedgerRunningRows({ limit: -1 });
+    return NextResponse.json({ ok: true, rows, total: rows.length });
+  }
+  const rawOffset = Number(url.searchParams.get("offset") ?? 0);
+  const rawLimit = Number(url.searchParams.get("limit") ?? LEDGER_PAGE_SIZE);
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0;
+  const limit = Number.isFinite(rawLimit) ? Math.min(1000, Math.max(1, Math.trunc(rawLimit))) : LEDGER_PAGE_SIZE;
+  const rows = getLedgerRunningRows({ limit, offset });
+  return NextResponse.json({ ok: true, rows, total: countLedgerEntries() });
+}
 
 // Types whose sign is fixed regardless of how the magnitude is entered.
 const FIXED_SIGN: Partial<Record<LedgerType, 1 | -1>> = {

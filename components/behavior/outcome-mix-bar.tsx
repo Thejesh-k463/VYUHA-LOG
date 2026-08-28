@@ -17,9 +17,6 @@ export function OutcomeMixBar({ slices, height = 28 }: { slices: OutcomeSlice[];
   if (!total) return null;
   const datum: Record<string, number | string> = { name: "mix" };
   for (const s of slices) datum[s.key] = s.count;
-  const prefersReducedMotion =
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
   return (
     <div className="space-y-2">
       <div style={{ height }} className="w-full">
@@ -56,7 +53,7 @@ export function OutcomeMixBar({ slices, height = 28 }: { slices: OutcomeSlice[];
                 dataKey={s.key}
                 stackId="mix"
                 fill={s.color}
-                isAnimationActive={!prefersReducedMotion}
+                isAnimationActive={false}
                 radius={arr.length === 1 ? 4 : i === 0 ? [4, 0, 0, 4] : i === arr.length - 1 ? [0, 4, 4, 0] : 0}
               />
             ))}

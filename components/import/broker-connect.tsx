@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalgo-disclosure";
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
 import {
@@ -39,6 +40,10 @@ import { TriangleAlert } from "lucide-react";
 
 interface ConnStatus {
   broker: string;
+  /** The account this connection row lives in — pulls and disconnects target
+   *  it explicitly, so the All-accounts view can never misroute them. */
+  accountId: number;
+  accountName?: string | null;
   apiKeyMasked: string;
   lastPullAt: string | null;
   /** OpenAlgo only — saved config echoed back so the form shows what is
@@ -156,10 +161,22 @@ const BROKERS: Record<BrokerId, {
   },
 };
 
-export function BrokerConnect() {
+export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAccountOption[] }) {
   const router = useRouter();
   const [broker, setBroker] = useState<BrokerId>("zerodha");
   const [conns, setConns] = useState<ConnStatus[]>([]);
+  // A6 — same question as the file importer above: in the All-accounts view a
+  // SAVED connection needs an account to live in. Pulls never ask — they run
+  // against the connection row's own account.
+  const [savePick, setSavePick] = useState<number>(writeAccounts[0]?.id ?? 0);
+  // Derived, not synced: the sidebar account switcher router.refresh()es this
+  // page, which swaps the writeAccounts prop WITHOUT remounting — a picked id
+  // that left the list must fall back at render time, never via an effect.
+  const saveAccountId = writeAccounts.some((a) => a.id === savePick)
+    ? savePick
+    : writeAccounts[0]?.id ?? 0;
+  /** True when the server listed every account's connections (All-accounts). */
+  const [aggregate, setAggregate] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [accessToken, setAccessToken] = useState("");
   // Angel One's extras — client code, PIN and the TOTP SECRET.
@@ -180,6 +197,9 @@ export function BrokerConnect() {
    *  or, with nothingNew, the "already in your journal" notice. */
   const [collisionPrompt, setCollisionPrompt] = useState<{
     brokerId: string;
+    /** Account of the connection whose pull 409'd — "Commit anyway" must
+     *  re-target the same row. */
+    accountId?: number;
     collisions: CollisionLite[];
     nothingNew?: boolean;
     message?: string;
@@ -191,11 +211,22 @@ export function BrokerConnect() {
   // effect keyed on other state.)
   const active: BrokerId = broker === "openalgo" && !openalgoAvailable ? "zerodha" : broker;
   const spec = BROKERS[active];
-  const conn = conns.find((c) => c.broker === active) ?? null;
+  /** Every row for the active broker — the All-accounts view can hold one per
+   *  account. Sorted by accountId so `conn` (the single-row fallback) is
+   *  deterministic, never dependent on listing order. */
+  const brokerConns = conns
+    .filter((c) => c.broker === active)
+    .sort((a, b) => a.accountId - b.accountId);
+  const conn = brokerConns[0] ?? null;
+  /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
+  const saveTargetConn =
+    saveAccountId > 0 ? brokerConns.find((c) => c.accountId === saveAccountId) ?? null : conn;
   /** Every saved OpenAlgo instance (`openalgo:<broker>` rows) — a user with
    *  accounts at several brokers runs one instance per broker, each on its own
    *  port, and each pulls independently. */
-  const openAlgoConns = conns.filter((c) => isOpenAlgoConnectionId(c.broker));
+  const openAlgoConns = conns
+    .filter((c) => isOpenAlgoConnectionId(c.broker))
+    .sort((a, b) => a.accountId - b.accountId || a.broker.localeCompare(b.broker));
   const visibleBrokers = (Object.keys(BROKERS) as BrokerId[]).filter(
     (b) => b !== "openalgo" || openalgoAvailable,
   );
@@ -209,8 +240,13 @@ export function BrokerConnect() {
    *  OpenAlgo instance (found live 2026-08-26, two instances on one machine). */
   function adoptSavedOpenAlgo(connections: ConnStatus[]) {
     // Only with exactly ONE instance is "the saved config" unambiguous — with
-    // several, the instance list below shows each one's host and broker.
-    const list = connections.filter((c) => isOpenAlgoConnectionId(c.broker));
+    // several (more than one per account, or one per account in the
+    // All-accounts view), the instance list below shows each one's host and
+    // broker. Sorted by (accountId, broker) so that if this guard is ever
+    // relaxed, the adopted default is deterministic — never listing-order.
+    const list = connections
+      .filter((c) => isOpenAlgoConnectionId(c.broker))
+      .sort((a, b) => a.accountId - b.accountId || a.broker.localeCompare(b.broker));
     if (list.length !== 1) return;
     const oa = list[0]!;
     if (oa.openalgoHost) {
@@ -227,6 +263,7 @@ export function BrokerConnect() {
       const data = await res.json();
       if (data.ok) {
         setConns(data.connections ?? []);
+        setAggregate(Boolean(data.aggregate));
         setOpenalgoAvailable(Boolean(data.openalgo?.available));
         adoptSavedOpenAlgo(data.connections ?? []);
       }
@@ -243,6 +280,7 @@ export function BrokerConnect() {
       .then((d) => {
         if (!alive || !d.ok) return;
         setConns(d.connections ?? []);
+        setAggregate(Boolean(d.aggregate));
         setOpenalgoAvailable(Boolean(d.openalgo?.available));
         adoptSavedOpenAlgo(d.connections ?? []);
       })
@@ -290,6 +328,9 @@ export function BrokerConnect() {
       {
         action: "save",
         broker: active,
+        // Only the All-accounts picker produces this; the server validates it
+        // against the accounts table (getWriteAccountId).
+        ...(saveAccountId > 0 ? { accountId: saveAccountId } : {}),
         apiKey,
         accessToken,
         ...(active === "angelone" ? { clientCode, pin, totpSecret } : {}),
@@ -312,17 +353,28 @@ export function BrokerConnect() {
     await refresh();
   }
 
-  async function pull(mode: "preview" | "commit", brokerId: string = active, force = false) {
+  async function pull(
+    mode: "preview" | "commit",
+    brokerId: string = active,
+    force = false,
+    // The connection row's OWN account: a pull belongs to the book the
+    // connection was saved in, not to whatever view happens to be selected.
+    accountId: number | undefined = conn?.accountId,
+  ) {
     // A 409 from the server means the pull collides with trades already in the
     // journal (same trades from another source, hashes a paisa apart). Nothing
     // was committed; the collision dialog shows the details, and only its
     // "Commit anyway" re-posts with force:true — an explicit human decision,
     // never a default.
-    const { res, data } = await post({ action: "pull", broker: brokerId, mode, ...(force ? { force: true } : {}) }, mode);
+    const { res, data } = await post(
+      { action: "pull", broker: brokerId, mode, ...(accountId ? { accountId } : {}), ...(force ? { force: true } : {}) },
+      mode,
+    );
     if (!data.ok) {
       if (res?.status === 409 && data.nothingNew) {
         setCollisionPrompt({
           brokerId,
+          accountId,
           collisions: [],
           nothingNew: true,
           message: data.message,
@@ -332,7 +384,7 @@ export function BrokerConnect() {
         return;
       }
       if (res?.status === 409 && data.needsForce) {
-        setCollisionPrompt({ brokerId, collisions: (data.collisions ?? []) as CollisionLite[] });
+        setCollisionPrompt({ brokerId, accountId, collisions: (data.collisions ?? []) as CollisionLite[] });
         setMsg(null);
         return;
       }
@@ -352,8 +404,11 @@ export function BrokerConnect() {
     }
   }
 
-  async function disconnect(brokerId: string = active) {
-    const { res, data } = await post({ action: "disconnect", broker: brokerId }, "disconnect");
+  async function disconnect(brokerId: string = active, accountId: number | undefined = conn?.accountId) {
+    const { res, data } = await post(
+      { action: "disconnect", broker: brokerId, ...(accountId ? { accountId } : {}) },
+      "disconnect",
+    );
     if (!data.ok) await fail(res, data, "Could not disconnect.");
     else setMsg({ ok: true, text: data.message ?? "" });
     await refresh();
@@ -379,7 +434,15 @@ export function BrokerConnect() {
           Connect broker (API) — Zerodha, Dhan, Angel One &amp; Upstox
           {openalgoAvailable && <> + OpenAlgo</>}
         </CardTitle>
-        {conn && <Badge variant="secondary">key {conn.apiKeyMasked}</Badge>}
+        {brokerConns.length === 1 && conn && (
+          <Badge variant="secondary">
+            key {conn.apiKeyMasked}
+            {aggregate && conn.accountName ? ` · ${conn.accountName}` : ""}
+          </Badge>
+        )}
+        {brokerConns.length > 1 && (
+          <Badge variant="secondary">{brokerConns.length} accounts connected</Badge>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Say plainly which brokers this list covers, not all of them. The
@@ -445,22 +508,27 @@ export function BrokerConnect() {
               const underlying = c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker) ?? "?";
               const label = OPENALGO_OPTIONS.find((o) => o.broker === underlying)?.label ?? underlying;
               return (
-                <div key={c.broker} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                // Keyed per (account, broker): the All-accounts view can list
+                // the same openalgo:<broker> id once per account.
+                <div key={`${c.accountId}:${c.broker}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
                   <div className="text-xs">
                     <span className="font-medium">{label}</span>
+                    {aggregate && (
+                      <Badge variant="secondary" className="ml-1.5 text-[10px]">{c.accountName ?? `account ${c.accountId}`}</Badge>
+                    )}
                     <span className="text-muted-foreground"> — {c.openalgoHost ?? "host unknown"} · key {c.apiKeyMasked}</span>
                     {c.lastPullAt && (
                       <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => pull("preview", c.broker)} disabled={busy != null}>
+                    <Button size="sm" variant="outline" onClick={() => pull("preview", c.broker, false, c.accountId)} disabled={busy != null}>
                       {busy === "preview" ? "Pulling…" : "Preview pull"}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => pull("commit", c.broker)} disabled={busy != null}>
+                    <Button size="sm" variant="outline" onClick={() => pull("commit", c.broker, false, c.accountId)} disabled={busy != null}>
                       {busy === "commit" ? "Committing…" : "Pull & commit"}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => disconnect(c.broker)} disabled={busy != null}>
+                    <Button size="sm" variant="ghost" onClick={() => disconnect(c.broker, c.accountId)} disabled={busy != null}>
                       Disconnect
                     </Button>
                   </div>
@@ -470,13 +538,53 @@ export function BrokerConnect() {
           </div>
         )}
 
+        {active !== "openalgo" && brokerConns.length > 1 && (
+          <div className="space-y-2">
+            {/* One row per ACCOUNT holding a connection to this broker — the
+                All-accounts view lists them all, and each pull or disconnect
+                targets its own row, never "whichever account came first". */}
+            {brokerConns.map((c) => (
+              <div key={`${c.accountId}:${c.broker}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                <div className="text-xs">
+                  <span className="font-medium">{c.accountName ?? `Account ${c.accountId}`}</span>
+                  <span className="text-muted-foreground"> — key {c.apiKeyMasked}</span>
+                  {c.lastPullAt && (
+                    <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => pull("preview", c.broker, false, c.accountId)} disabled={busy != null}>
+                    {busy === "preview" ? "Pulling…" : "Preview pull"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => pull("commit", c.broker, false, c.accountId)} disabled={busy != null}>
+                    {busy === "commit" ? "Committing…" : "Pull & commit"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => disconnect(c.broker, c.accountId)} disabled={busy != null}>
+                    Disconnect
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* A6 — the same question the file importer asks: in the All-accounts
+            view, which book does a SAVED connection belong to? Renders only
+            when the question is real (aggregate view, 2+ accounts). */}
+        <WriteAccountPicker
+          accounts={writeAccounts}
+          value={saveAccountId}
+          onChange={setSavePick}
+          label="Save connection to account"
+        />
+
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>{spec.keyLabel}</Label>
             <Input
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={conn ? conn.apiKeyMasked : spec.keyPlaceholder}
+              placeholder={saveTargetConn ? saveTargetConn.apiKeyMasked : spec.keyPlaceholder}
             />
           </div>
           {spec.needsToken && (
@@ -561,14 +669,21 @@ export function BrokerConnect() {
             {busy === "save"
               ? "Saving…"
               : active === "openalgo"
-                ? openAlgoConns.some((c) => (c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker)) === underlyingBroker)
+                ? openAlgoConns.some(
+                    (c) =>
+                      (saveAccountId > 0 ? c.accountId === saveAccountId : true) &&
+                      (c.openalgoUnderlyingBroker ?? openAlgoUnderlyingOf(c.broker)) === underlyingBroker,
+                  )
                   ? "Update instance"
                   : "Add instance"
-                : conn
+                : saveTargetConn
                   ? "Update connection"
                   : "Save connection"}
           </Button>
-          {active !== "openalgo" && (
+          {/* With several accounts connected, the per-account rows above carry
+              the pull buttons — a single set here could only act on one of
+              them and would misread as acting on all. */}
+          {active !== "openalgo" && brokerConns.length <= 1 && (
             <>
               <Button variant="outline" onClick={() => pull("preview")} disabled={busy != null || !conn}>
                 {busy === "preview" ? "Pulling…" : "Preview pull"}
@@ -580,6 +695,11 @@ export function BrokerConnect() {
                 <Button variant="ghost" onClick={() => disconnect()} disabled={busy != null}>
                   Disconnect
                 </Button>
+              )}
+              {conn && aggregate && (
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  pulls into {conn.accountName ?? `account ${conn.accountId}`}
+                </span>
               )}
               {conn?.lastPullAt && (
                 <span className="text-[0.6875rem] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
@@ -696,8 +816,9 @@ export function BrokerConnect() {
                     disabled={busy != null}
                     onClick={() => {
                       const target = collisionPrompt?.brokerId;
+                      const targetAccount = collisionPrompt?.accountId;
                       setCollisionPrompt(null);
-                      if (target) void pull("commit", target, true);
+                      if (target) void pull("commit", target, true, targetAccount);
                     }}
                   >
                     Commit anyway

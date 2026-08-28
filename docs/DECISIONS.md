@@ -6,6 +6,25 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-29 — v3.0.0 perf pass — 42-route sweep at 25k trades
+
+**Context:** The pre-launch performance pass for v3.0.0, measured with the new harness (`npm run perf:seed` — a deterministic 25,000-trade book — then `npm run perf:sweep` — all 42 routes timed on the production build, with a console-error gate). Every number below is a sweep median at the 25k tier.
+**Measured / found:**
+
+| Route | Before (median) | After (median) |
+|---|---|---|
+| /cash (Cash & Ledger) | 27,313 ms | 901 ms |
+| /corporate-actions | 1,645 ms | 654 ms |
+| / (dashboard) | 1,873 ms | 1,312 ms |
+| **Overall route median** | **1,195 ms** | **987 ms** |
+| Budget breaches (of 42) | 13 | 6 |
+| Console errors | 3 | 0 |
+
+The /cash cause was NOT SQL: the page serialized a **113 MB SSR/RSC payload** (the full ledger, into the flight stream). Fix: sums and the running balance pushed into SQL, 200-row pages, export fetched on click (`tests/load` case `a7-cash-ledger` pins the class; the load suite is now 15 cases). A measured hazard shaped the payload work everywhere else: **adding WHERE clauses to the trades queries reorders `(sell_date, created_at)` ties**, so rows shift between runs and any row-for-row equivalence proof dies — which is why the trimming was done as **column projections, not filters** (projections were proven value-identical row for row against the untrimmed query). Remaining above the internal budget at this abusive tier, all payload-bound with no algorithmic defect found: options journal and strategies (~6 s — 8,058 option rows rendered), equity and risk (~3 s), trades and lenses (~2.2 s).
+**Decision:** Budget = **median < 1,500 ms per route at the 25k-trade tier**, gated by `perf:sweep` (which also fails on any console error). The six breaching routes are deferred to v3.0.x as pagination work — they render everything they are handed; the fix is to hand them less, the same shape as the /cash fix, and it deserves its own tested pass, not a launch-night patch.
+**Why not the obvious thing:** Filtering rows in SQL (WHERE) instead of projecting columns — the tie-reordering above means a filter cannot be proven output-identical, and a perf pass that changes what a page shows is no longer a perf pass.
+**Invalidated if:** the v3.0.x pagination pass lands (re-run the sweep and supersede the six-route list), or the trades queries gain a deterministic total ordering (then filters become provable and projections are no longer the only safe tool).
+
 ## 2026-08-29 — Upstox reconciles across THREE contract notes; "STT-SQUP" makes settle-based STT industry practice
 
 **Context:** Closing the Upstox live-pull file: three signed contract notes for 2026-08-28 (NSE-EQ 93306382, MTF 93323360, combined F&O 8340511) against the 5 committed rows that both the native pull and the OpenAlgo pull had produced identically.
@@ -1286,5 +1305,74 @@ a user would ever see — it is indistinguishable from "no update available".
 Any future fail-open path needs a deliberate way to be *observed* failing.
 **Invalidated if:** GitHub changes how `/releases/latest` resolves, or the
 updater endpoint stops using the `latest` alias.
+
+## 2026-08-29 — Perf quick wins: wallpaper compositing, router cache 120s, gzip off, chart mount animation off
+
+Four same-day changes, each a deliberate deviation from a default:
+
+- **Wallpaper moved from `background-attachment: fixed` on body to a
+  `position: fixed` body::before layer** (`app/globals.css`). attachment:fixed
+  + cover is Chromium's slow path — the background repaints on every scroll
+  instead of compositing; a fixed pseudo-element scrolls as its own layer.
+  Same visual stacking (scrim gradient over image over canvas colour, all
+  under content via z-index:-1); the print block hides the layer with
+  `content: none`. `tests/skin.test.ts` pins the structure and that
+  background-attachment does not come back.
+- **`experimental.staleTimes.dynamic` 30 → 120** (`next.config.ts`). Safe
+  because every write surface audited (37 files grep'd for `router.refresh()`:
+  settings, editors, imports, backup, cash, risk, behavior tools) invalidates
+  the client router cache on write — a stale entry can only be one the user
+  never wrote through.
+- **`compress: false`** (`next.config.ts`). The server only ever serves
+  loopback (desktop sidecar / localhost dev); gzip on a loopback link is pure
+  CPU for zero bandwidth benefit.
+- **Recharts mount animation off everywhere** (`isAnimationActive={false}`;
+  dashboard equity curve + outcome mix bar were the last two holdouts). Every
+  DB-reading route is force-dynamic, so charts REMOUNT on each navigation and
+  the 700ms draw-in replayed every visit — main-thread work exactly when the
+  page should feel settled. This also retires the prefers-reduced-motion
+  guards those two charts carried (2026-08-10 audit): no animation at all
+  satisfies reduced-motion trivially.
+
+**Invalidated if:** the app ever serves non-loopback clients (compress), a
+write path stops calling router.refresh() (staleTimes), or charts stop
+remounting per navigation (animation could return behind a reduced-motion
+guard).
+
+## 2026-08-29 — /reports/tax + /reports/harvest: column projection, on-click ITR export; an added WHERE reorders ties
+
+Perf sweep at 25k trades (data/perf.sqlite, readonly). What was measured:
+
+- **/reports/tax served 4.97 MB, of which 4.79 MB was RSC flight** — 21,540
+  ITR-schedule export rows passed as props to the client `ExportButtons` and
+  never rendered. The rows now come from `/api/tax-itr` on click (the /cash
+  ledger-export pattern, `lib/queries/tax-itr.ts` shared by page and route so
+  they cannot drift). `JSON.stringify` of those rows is only ~18 ms — the cost
+  was React's flight serialisation plus shipping/parsing 4.8 MB per visit.
+- **Whole-book `select *` (74 cols) is ~250–290 ms in SQLite alone at 25k
+  rows; the 15-col tax projection is ~81 ms and the 11-col harvest projection
+  ~60 ms**, same rows in the same order (id-sequence compared).
+- **Pushing the pages' row filters into SQL is NOT safe here**: adding
+  `WHERE is_open=…`/segment/sell_date changes the query plan and reorders rows
+  that tie on (sell_date, created_at) — measured directly: the filtered
+  harvest-lot and closed-trade sequences differed from the JS-filtered ones,
+  and the taxByFy per-FY float sums differed. Tie order feeds visible row
+  order (harvest's stable `allocate()` sort, the ITR export order) and float
+  accumulation order. So `getTaxTrades`/`getHarvestTrades` are pure
+  projections with no new WHERE, and the pages keep their JS filters —
+  identical output by construction.
+- **The exception is `getDividendLedgerEntries`** (SQL-filtered): its ORDER BY
+  ends on the unique `id`, a total order no plan can permute — filtered rows
+  and per-company sums proved bit-identical against the JS filter.
+- **/corporate-actions was never slow itself** (17–26 ms warm; it reads an
+  empty table). Its sweep median of 1.6 s / p95 5.5 s is head-of-line
+  blocking: better-sqlite3 is synchronous, so while /trades (23.5 MB) or the
+  old tax/harvest renders held the event loop, a concurrent /corporate-actions
+  request measured 2.39 s. Shrinking the heavy routes is the fix; the page
+  needs none.
+
+**Invalidated if:** trades gains an index that makes filtered plans preserve
+the full-scan tie order (re-measure, don't assume), or the ORDER BY gains a
+unique tiebreaker column (then SQL filters become safe everywhere).
 
 <!-- First entry goes here. -->

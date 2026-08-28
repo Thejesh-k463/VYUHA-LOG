@@ -16,12 +16,6 @@ import {
 import type { EquityPoint, GroupStat } from "@/lib/analytics/metrics";
 import { inrCompact, inr } from "@/lib/format";
 
-// The only animation in the app not guarded by prefers-reduced-motion was
-// this chart's 700ms draw-in (2026-08-10 audit). SSR has no matchMedia;
-// default to animating and let the client value win after hydration.
-const prefersReducedMotion = () =>
-  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 const axis = { fontSize: 10, fill: "var(--color-muted-foreground)" };
 
 interface ChartTooltipPayloadItem {
@@ -65,15 +59,17 @@ export function EquityCurve({ data }: { data: EquityPoint[] }) {
         <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={40} />
         <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => inrCompact(v)} />
-        {/* C3 — crosshair cursor + draw-in. Recharts only animates on mount, so
-            navigations get the sweep without re-animating on every filter change. */}
+        {/* C3 — crosshair cursor. The 700ms mount draw-in was retired
+            (2026-08-29): force-dynamic routes remount charts on every
+            navigation, so the sweep replayed each visit and cost main-thread
+            time exactly when the page should feel settled. */}
         <Tooltip
           content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />}
           cursor={{ stroke: "var(--color-muted)", strokeDasharray: "4 3", strokeWidth: 1 }}
         />
         <ReferenceLine y={0} stroke="var(--color-border)" />
-        <Area animationDuration={700} isAnimationActive={!prefersReducedMotion()} animationEasing="ease-out" type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
-        <Area animationDuration={700} animationEasing="ease-out" type="monotone" dataKey="drawdown" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1} fill="var(--color-loss)" fillOpacity={0.12} />
+        <Area isAnimationActive={false} type="monotone" dataKey="cum" name="Cumulative" stroke="var(--color-primary)" strokeWidth={2} fill="url(#eq)" />
+        <Area isAnimationActive={false} type="monotone" dataKey="drawdown" name="Drawdown" stroke="var(--color-loss)" strokeWidth={1} fill="var(--color-loss)" fillOpacity={0.12} />
       </ComposedChart>
     </ResponsiveContainer>
   );

@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "2.99.104",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -30,6 +30,8 @@
     "release:revocations": "node scripts/revocation-publish.mjs",
     "landing:build": "node scripts/build-landing.mjs",
     "test:load": "vitest run --config vitest.load.config.ts",
+    "perf:seed": "node scripts/seed-perf-db.mjs",
+    "perf:sweep": "node scripts/perf-sweep.mjs",
     "demo": "node scripts/demo-server.mjs",
     "sell": "node scripts/sell.mjs",
     "renewals": "node scripts/renewals.mjs",

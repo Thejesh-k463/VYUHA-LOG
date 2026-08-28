@@ -8,11 +8,10 @@
 > tracks a collaborator across leads, payouts and keys.
 >
 > Claims below are copied from the audited sales surfaces (README / landing page,
-> v2.99.102 audit). If a claim changes there, change it here in the same commit —
+> v3.0.0 audit). If a claim changes there, change it here in the same commit —
 > this file is buyer-adjacent copy and is part of every release's claims audit.
-> Deliberately absent, do not add: macOS (not sold — owner decision 2026-08-15),
-> OpenAlgo (unadvertised until the owner green-lights the copy), and any price
-> other than the two below.
+> Deliberately absent, do not add: macOS (not sold — owner decision 2026-08-15)
+> and any price other than the two below.
 
 ---
 
@@ -57,7 +56,12 @@ These sentences are true, verified, and safe to use verbatim:
   note**: all 9 contracts matched to the 4th decimal and STT to the exact paisa."
 - "Imports from Zerodha, Dhan, Groww, Angel One, Upstox and Paytm Money files
   are auto-detected; any other broker's CSV works through the column mapper;
-  Zerodha, Dhan and Angel One also pull live through their APIs."
+  Zerodha, Dhan, Angel One and Upstox also pull live through their APIs —
+  four broker-API pulls in total."
+- "Brokers with no API of their own — Groww, Paytm Money, Kotak — can pull
+  same-day through OpenAlgo, an open-source bridge you run on your own
+  computer. It is off by default, and your broker credentials go into your own
+  OpenAlgo instance, never into Vyuha."
 - "The free tier never holds your own record hostage — the journal is free
   forever; the analytics intelligence is what's paid."
 - Prices, if you mention them: **Lifetime ₹29,999** (list ₹35,999) ·

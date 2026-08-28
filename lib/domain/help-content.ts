@@ -181,6 +181,16 @@ export const HELP_ENTRIES: HelpEntry[] = [
     refusals: ["MTF is never GUESSED from a file. In most exports it is indistinguishable from delivery — identical STT, identical stamp duty, financing in the ledger — so the app asks rather than assuming. Angel One's tax P&L is the one exception: it carries an explicit MTF Qty column, and a stated figure is read, not inferred."],
   },
   {
+    href: "/import-help",
+    title: "Import Help",
+    answers: "Where do I get each broker's files, and how do the API connections work?",
+    body: [
+      "One card per import path: which exports Vyuha reads (generated from the same registry the import screen uses, so the list can never overstate it), where each file is downloaded from the broker, and how the four API connections and the two-part OpenAlgo path are set up.",
+      "Verification status is stated honestly — Upstox layouts are verified but value behaviour is inferred until a populated export is seen, the PDF source reads text without importing trades, and brokers with no published format go to the column mapper, where you say whose file it is.",
+    ],
+    keywords: ["import help", "download", "tradebook", "api key", "access token", "totp", "openalgo", "kite connect", "smartapi", "column mapper"],
+  },
+  {
     href: "/cash",
     title: "Cash & Ledger",
     answers: "What has moved in and out of the account besides trades?",

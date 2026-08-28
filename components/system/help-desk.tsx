@@ -6,7 +6,8 @@ import * as React from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { badgeVariants } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { searchHelp, type HelpEntry } from "@/lib/domain/help-content";
 import { ArrowRight, Search, ShieldOff } from "lucide-react";
 
@@ -59,7 +60,10 @@ export function HelpDesk({ entries, groups }: { entries: HelpEntry[]; groups: { 
                       {e.refusals?.map((r, i) => (
                         <p key={`r${i}`} className="flex items-start gap-1.5">
                           <ShieldOff className="mt-0.5 size-3 shrink-0" />
-                          <span><Badge variant="outline" className="mr-1">won&apos;t do</Badge>{r}</span>
+                          {/* Chip is a <span>, not <Badge> (a <div>): a div inside <p> makes the
+                              browser's parser close the <p> early, so the hydrated DOM never
+                              matches the server tree — React #418, three per visit on this page. */}
+                          <span><span className={cn(badgeVariants({ variant: "outline" }), "mr-1")}>won&apos;t do</span>{r}</span>
                         </p>
                       ))}
                     </CardContent>

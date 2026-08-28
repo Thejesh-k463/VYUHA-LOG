@@ -3,6 +3,14 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.0.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **Every account's connections, visible from All accounts** | The Import view in "All accounts" now lists every connected broker API and every OpenAlgo instance, each labelled with the account it belongs to — previously only the first account's connections showed. Saving a new connection asks which account it is for (the same picker file imports use), and **Pull & commit always books into that connection's own account**, so a pull can never land trades in the wrong book. |
+| **Import Help — a new sidebar tab that answers "which file do I download?"** | One card per broker: which of its exports Vyuha imports, where to find each on the broker's own site (locations noted as of Aug 2026), and the full setup path for each live connection — Kite's daily token, Dhan's 24-hour token, Angel One's TOTP secret, Upstox's Analytics token and static-IP step — plus cards for OpenAlgo and the column mapper. No more hunting through broker menus or asking us which export to use. |
+| **Big journals got much faster** | Measured on a 25,000-trade book: Cash & Ledger opens in under a second (it used to take ~27 s), corporate actions and the dashboard are quicker, and every screen now shows a loading skeleton immediately instead of a blank pause. A handful of the heaviest screens on books that size are next in line for the same treatment. |
+
 ## New in v2.99.104
 
 | Upgrade | What it gives you |
@@ -272,6 +280,17 @@ position, and the financing interest is posted to your **ledger**, not to the
 contract note. So no Dhan file can tell them apart — Vyuha asks rather than
 guesses. If you connect the **Dhan API** (Import → Connect broker), the broker
 states it outright and you are never asked again.
+
+### Brokers with no API of their own — OpenAlgo (optional)
+
+Groww, Paytm Money and Kotak offer no trade-book API, but they can still pull
+same-day fills into Vyuha through **OpenAlgo** — an open-source bridge you run
+on your own computer. It is **off by default** behind an in-app disclosure,
+because it means running one more program that holds a broker credential: your
+broker login goes into **your own OpenAlgo instance, never into Vyuha**, the
+data flows only from your broker to your machine, and Vyuha's pull is read-only
+and goes through the same preview → charges → duplicate-check pipeline as every
+file import. The **Import Help** tab has step-by-step cards for setting it up.
 
 ---
 

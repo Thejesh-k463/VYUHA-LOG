@@ -90,7 +90,7 @@ async function click(locator, { settle = 900 } = {}) {
   await sleep(settle);
 }
 
-async function hover(locator, holdMs = 1600) {
+async function _hover(locator, holdMs = 1600) {
   await glideToLoc(locator);
   await sleep(holdMs);
 }

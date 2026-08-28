@@ -13,12 +13,19 @@ const nextConfig: NextConfig = {
   // "use no memo" and e2e/z-compiler-protocol.spec.ts stay — they are the
   // preconditions for the next attempt.
   reactCompiler: false,
-  // Back/forward navigations reuse the client router cache for 30s instead of
+  // Back/forward navigations reuse the client router cache for 120s instead of
   // refetching the full RSC payload (force-dynamic still re-renders on real
-  // navigations — this touches only the browser-side cache).
+  // navigations — this touches only the browser-side cache). 120s is safe
+  // because every write surface (settings, editors, imports, backup, cash,
+  // risk, behavior tools — 30+ components audited 2026-08-29) goes through
+  // route handlers + client fetch + router.refresh(), which invalidates this
+  // cache; a stale entry can only be one the user never wrote through.
   // (optimizePackageImports: lucide-react barrel-import rewriting lives here
   // too in this Next version.)
-  experimental: { staleTimes: { dynamic: 30 }, optimizePackageImports: ["lucide-react"] },
+  experimental: { staleTimes: { dynamic: 120 }, optimizePackageImports: ["lucide-react"] },
+  // Loopback-only server (desktop sidecar / localhost): gzip is pure CPU on a
+  // link with no bandwidth cost — spend nothing compressing for 127.0.0.1.
+  compress: false,
   // Native / heavy server-only modules — never bundle; load from node_modules at runtime.
   serverExternalPackages: ["better-sqlite3", "pdf-parse"],
   // Self-contained server build for the Tauri desktop sidecar (`.next/standalone`).

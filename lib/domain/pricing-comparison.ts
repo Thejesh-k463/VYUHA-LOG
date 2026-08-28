@@ -111,7 +111,7 @@ export const VYUHA_ROW = {
   model: "Annual ₹9,999/yr · Lifetime ₹29,999 once",
   cheapestPaid: "₹9,999/yr — or ₹29,999 ever",
   dataLocation: "Your computer only — no server exists",
-  indianBrokers: "6 auto-detected parsers + column mapper + 3 broker-API pulls",
+  indianBrokers: "6 auto-detected parsers + column mapper + 4 broker-API pulls",
   chargesEngine: "Computes STT/CTT, stamp duty, GST, exchange & SEBI charges from configurable rates",
   limits: "Core journal never gated — no trade or account caps",
 } as const;

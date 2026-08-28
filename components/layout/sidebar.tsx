@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Search, GripVertical, Filter } from "lucide-react";
-import { NAV_GROUPS, NAV_ITEMS, mergeOrder, moveWithinVisible } from "./nav-config";
+import { NAV_GROUPS, NAV_ITEMS, mergeOrder, moveWithinVisible, type NavItem } from "./nav-config";
 import { useListDrag } from "./use-list-drag";
 import { WORKSPACE_LABELS, screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,81 @@ function MarketClock() {
   );
 }
 
+/**
+ * One nav row, memoised so a pathname change re-renders only the rows whose
+ * `active` actually flipped — not all ~40 Radix-tooltip links. The React
+ * Compiler is OFF (next.config.ts), so this memo is load-bearing, not
+ * decorative. Every prop is identity-stable across Sidebar renders: `item`
+ * rows are the module-level NAV_ITEMS objects, `onGripDown` and `onRegister`
+ * are useCallback'd in the Sidebar, and `style` is undefined except on the
+ * dragged row.
+ */
+const NavRow = React.memo(function NavRow({
+  item,
+  group,
+  index,
+  active,
+  collapsed,
+  dragging,
+  style,
+  suppressNav,
+  onGripDown,
+  onRegister,
+}: {
+  item: NavItem;
+  group: string;
+  index: number;
+  active: boolean;
+  collapsed: boolean;
+  dragging: boolean;
+  style?: React.CSSProperties;
+  /** True while ANY drag is live — a lift over the link must not navigate. */
+  suppressNav: boolean;
+  onGripDown: (e: React.PointerEvent, scope: string, key: string, index: number) => void;
+  onRegister: (scope: string, index: number, el: HTMLElement | null) => void;
+}) {
+  const Icon = item.icon;
+  const link = (
+    <Link
+      href={item.href}
+      aria-label={collapsed ? item.label : undefined}
+      // A drag that started on the grip must not navigate when the pointer
+      // happens to lift over the link.
+      onClick={(e) => { if (suppressNav) e.preventDefault(); }}
+      className={cn(
+        "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
+        collapsed && "justify-center px-0",
+        active
+          ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
+          : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      {!collapsed && item.label}
+    </Link>
+  );
+  return (
+    <div ref={(el) => onRegister(group, index, el)} className={cn("group/row flex items-center", dragging && "transition-none")} style={style}>
+      {!collapsed && (
+        <Tip label={`Drag to move ${item.label}`}>
+          <button
+            type="button"
+            aria-label={`Reorder ${item.label}`}
+            onPointerDown={(e) => onGripDown(e, group, item.href, index)}
+            style={{ touchAction: "none" }}
+            className="cursor-grab pl-0.5 pr-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 active:cursor-grabbing"
+          >
+            <GripVertical className="size-3" />
+          </button>
+        </Tip>
+      )}
+      {/* The label IS the link text when expanded — a tip there would only
+          repeat it, so it exists for the icon rail. */}
+      {collapsed ? <Tip label={item.label} side="right">{link}</Tip> : link}
+    </div>
+  );
+});
+
 export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:{id:number;name:string;archived:boolean}[];selectedAccountId:number;workspace?:Workspace}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
@@ -87,29 +162,45 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
     localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
   };
 
-  const orderedGroups = mergeOrder(navOrder?.groups, [...NAV_GROUPS]);
+  // Memoised (with NavRow below) so the nav model keeps its identity across
+  // renders that change none of its inputs — a pathname change recomputes only
+  // because isCurrent gates workspace-hidden screens.
+  const orderedGroups = React.useMemo(() => mergeOrder(navOrder?.groups, [...NAV_GROUPS]), [navOrder]);
 
   /** Every screen in a group, in the user's order — hidden ones included. */
-  const fullItems = (group: string) =>
-    mergeOrder(navOrder?.items?.[group], NAV_ITEMS.filter((i) => i.group === group).map((i) => i.href));
+  const fullItems = React.useCallback(
+    (group: string) =>
+      mergeOrder(navOrder?.items?.[group], NAV_ITEMS.filter((i) => i.group === group).map((i) => i.href)),
+    [navOrder],
+  );
 
-  const isCurrent = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isCurrent = React.useCallback(
+    (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href)),
+    [pathname],
+  );
 
   // Workspace mode hides the other book's screens. The screen you are ON is
   // always kept: arriving via a link or bookmark and finding no menu entry for
   // where you are reads as a broken app, not a tidy one.
-  const orderedItems = (group: string) =>
-    fullItems(group)
-      .map((h) => NAV_ITEMS.find((i) => i.href === h)!)
-      .filter(Boolean)
-      .filter((i) => screenVisible(i.href, workspace) || isCurrent(i.href));
+  const orderedItems = React.useCallback(
+    (group: string) =>
+      fullItems(group)
+        .map((h) => NAV_ITEMS.find((i) => i.href === h)!)
+        .filter(Boolean)
+        .filter((i) => screenVisible(i.href, workspace) || isCurrent(i.href)),
+    [fullItems, workspace, isCurrent],
+  );
 
   // Groups are rendered from this list, so indices, refs and drop lines all
   // count the same rows — a group emptied by workspace mode disappears
   // entirely rather than leaving a gap the drag maths would trip over.
-  const visibleGroups = orderedGroups
-    .map((group) => ({ group, items: orderedItems(group) }))
-    .filter((g) => g.items.length > 0);
+  const visibleGroups = React.useMemo(
+    () =>
+      orderedGroups
+        .map((group) => ({ group, items: orderedItems(group) }))
+        .filter((g) => g.items.length > 0),
+    [orderedGroups, orderedItems],
+  );
 
   const resetOrder = () => {
     localStorage.removeItem(NAV_ORDER_KEY);
@@ -138,12 +229,23 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
   });
 
   // Element refs per scope, so a drag can measure its siblings once on grab.
+  // registerRow is a single stable callback (NavRow closes an inline ref
+  // arrow over it) so NavRow's memo is not defeated by a fresh per-row
+  // setter closure on every Sidebar render.
   const rowRefs = React.useRef<Map<string, (HTMLElement | null)[]>>(new Map());
-  const setRowRef = (scope: string, index: number) => (el: HTMLElement | null) => {
+  const registerRow = React.useCallback((scope: string, index: number, el: HTMLElement | null) => {
     const arr = rowRefs.current.get(scope) ?? [];
     arr[index] = el;
     rowRefs.current.set(scope, arr);
-  };
+  }, []);
+
+  /** Stable grip handler for NavRow — `begin` is useCallback'd in useListDrag. */
+  const gripDown = React.useCallback(
+    (e: React.PointerEvent, scope: string, key: string, index: number) => {
+      begin(e, scope, key, index, rowRefs.current.get(scope) ?? []);
+    },
+    [begin],
+  );
 
   /** Glow that follows whatever is being dragged. */
   const dragStyle = (scope: string, key: string): React.CSSProperties | undefined =>
@@ -273,7 +375,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
           return (
             <div
               key={group}
-              ref={setRowRef(GROUPS_SCOPE, gi)}
+              ref={(el) => registerRow(GROUPS_SCOPE, gi, el)}
               className={cn("mb-4", groupDragging && "transition-none")}
               style={dragStyle(GROUPS_SCOPE, group)}
             >
@@ -302,60 +404,24 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                   <span aria-hidden className="ml-2 h-px flex-1 bg-border" />
                 </div>
               )}
-              {items.map((item, ii) => {
-                const active = isCurrent(item.href);
-                const Icon = item.icon;
-                const itemDragging = drag?.scope === group && drag.key === item.href;
-                return (
-                  <React.Fragment key={item.href}>
-                    {dropLine(group, ii)}
-                    <div
-                      ref={setRowRef(group, ii)}
-                      className={cn("group/row flex items-center", itemDragging && "transition-none")}
-                      style={dragStyle(group, item.href)}
-                    >
-                      {!collapsed && (
-                        <Tip label={`Drag to move ${item.label}`}>
-                          <button
-                            type="button"
-                            aria-label={`Reorder ${item.label}`}
-                            onPointerDown={(e) => begin(e, group, item.href, ii, rowRefs.current.get(group) ?? [])}
-                            style={{ touchAction: "none" }}
-                            className="cursor-grab pl-0.5 pr-0.5 text-muted-foreground/30 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 active:cursor-grabbing"
-                          >
-                            <GripVertical className="size-3" />
-                          </button>
-                        </Tip>
-                      )}
-                      {(() => {
-                        const link = (
-                          <Link
-                            href={item.href}
-                            aria-label={collapsed ? item.label : undefined}
-                            // A drag that started on the grip must not navigate when
-                            // the pointer happens to lift over the link.
-                            onClick={(e) => { if (drag) e.preventDefault(); }}
-                            className={cn(
-                              "flex flex-1 items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors",
-                              collapsed && "justify-center px-0",
-                              active
-                                ? "bg-[linear-gradient(90deg,rgba(45,212,191,0.14),rgba(45,212,191,0.04))] font-medium text-primary shadow-[inset_2px_0_0_0_var(--color-primary),0_0_14px_-6px_color-mix(in_oklab,var(--color-primary)_60%,transparent)]"
-                                : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
-                            )}
-                          >
-                            <Icon className="size-4 shrink-0" />
-                            {!collapsed && item.label}
-                          </Link>
-                        );
-                        // The label IS the link text when expanded — a tip there
-                        // would only repeat it, so it exists for the icon rail.
-                        return collapsed ? <Tip label={item.label} side="right">{link}</Tip> : link;
-                      })()}
-                    </div>
-                    {ii === items.length - 1 && dropLine(group, items.length)}
-                  </React.Fragment>
-                );
-              })}
+              {items.map((item, ii) => (
+                <React.Fragment key={item.href}>
+                  {dropLine(group, ii)}
+                  <NavRow
+                    item={item}
+                    group={group}
+                    index={ii}
+                    active={isCurrent(item.href)}
+                    collapsed={collapsed}
+                    dragging={drag?.scope === group && drag.key === item.href}
+                    style={dragStyle(group, item.href)}
+                    suppressNav={drag !== null}
+                    onGripDown={gripDown}
+                    onRegister={registerRow}
+                  />
+                  {ii === items.length - 1 && dropLine(group, items.length)}
+                </React.Fragment>
+              ))}
             </div>
           );
         })}
@@ -389,7 +455,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
       </nav>
 
       <div className={cn("flex flex-col gap-1 border-t border-border py-2 text-[10px] text-muted-foreground", collapsed ? "items-center px-1" : "px-4")}>
-        {!collapsed && <span>Local · Offline · v2.99</span>}
+        {!collapsed && <span>Local · Offline · v3.0</span>}
         <MarketClock />
       </div>
     </aside>

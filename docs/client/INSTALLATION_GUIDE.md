@@ -153,7 +153,7 @@ database migration).
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_2.99.100_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Local · Offline · v2.99`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_3.0.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Local · Offline · v3.0`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

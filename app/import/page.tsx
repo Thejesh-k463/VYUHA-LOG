@@ -24,7 +24,7 @@ export default function ImportPage() {
       <div className="space-y-6 p-6">
         <ImportClient writeAccounts={writeAccounts} />
 
-        <BrokerConnect />
+        <BrokerConnect writeAccounts={writeAccounts} />
 
         <Card>
           <CardHeader className="flex-row items-center justify-between">

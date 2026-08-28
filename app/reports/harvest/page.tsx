@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
-import { getTrades } from "@/lib/queries/trades";
+import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
@@ -21,7 +21,11 @@ const statusBadge = { offsets: "profit", partial: "warning", carry: "secondary" 
 
 export default function HarvestPage() {
   const today = new Date().toISOString().slice(0, 10);
-  const trades = getTrades();
+  // The book projected to the 11 harvest columns (of 74) — same rows, same
+  // order, and the filters below are unchanged, so every figure and every
+  // rendered row order is identical; only never-read columns stopped being
+  // fetched and mapped (this was the whole-book getTrades() call).
+  const trades = getHarvestTrades();
   const mtm = getMtmMap();
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;

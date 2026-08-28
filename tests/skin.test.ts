@@ -218,13 +218,20 @@ describe("appearance CSS — panel styles and wallpaper (lib/domain/appearance.t
     expect(css.lastIndexOf("@media print")).toBeGreaterThan(at);
   });
 
-  it("wallpaper paints on body, behind the scrim, and is reset on paper", () => {
+  it("wallpaper paints on a fixed body::before layer, behind the scrim, and is reset on paper", () => {
+    // Canvas colour stays on body; image + scrim live on a position:fixed
+    // ::before that Chromium composites as its own layer. body-level
+    // `background-attachment: fixed` + cover is the slow repaint-per-scroll
+    // path this replaced (2026-08-29) — it must not come back.
     expect(css).toContain("html.wallpaper body {");
-    const body = block("html.wallpaper body");
-    expect(body).toContain("var(--wallpaper)");
-    expect(body).toContain("var(--wallpaper-scrim");
-    expect(body).toContain("--wallpaper-scrim-rgb");
-    expect(body).toContain("background-size: cover");
+    expect(block("html.wallpaper body")).toContain("var(--color-background)");
+    const layer = block("html.wallpaper body::before");
+    expect(layer).toContain("var(--wallpaper)");
+    expect(layer).toContain("var(--wallpaper-scrim");
+    expect(layer).toContain("--wallpaper-scrim-rgb");
+    expect(layer).toContain("background-size: cover");
+    expect(layer).toContain("position: fixed");
+    expect(layer).not.toContain("background-attachment");
     // Scrim channels are theme-answered.
     expect(css).toMatch(/--wallpaper-scrim-rgb:\s*5 8 15/);
     expect(block("html.theme-light")).toMatch(/--wallpaper-scrim-rgb:\s*244 246 249/);
@@ -234,11 +241,13 @@ describe("appearance CSS — panel styles and wallpaper (lib/domain/appearance.t
     const print = css.lastIndexOf("@media print {");
     const reset = css.search(/html\.wallpaper body \{\r?\n\s+background-image: none !important;/);
     expect(reset).toBeGreaterThan(print);
+    const layerOff = css.search(/html\.wallpaper body::before \{\r?\n\s+content: none !important;/);
+    expect(layerOff).toBeGreaterThan(print);
   });
 
   it("none of the appearance blocks use color-mix() — same rule as the skins", () => {
     // Token blocks (base) — extracted by exact selector.
-    for (const sel of ["html.panel-flat", "html.theme-light.panel-flat", "html.panel-soft", "html.theme-light.panel-soft", "html.wallpaper body"]) {
+    for (const sel of ["html.panel-flat", "html.theme-light.panel-flat", "html.panel-soft", "html.theme-light.panel-soft", "html.wallpaper body", "html.wallpaper body::before"]) {
       expect(block(sel), `${sel} uses color-mix`).not.toContain("color-mix");
     }
     // The utilities-layer overrides — the whole `@layer utilities { … }` block
