@@ -7,6 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
 import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
+import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
   assertOpenAlgoBroker,
   fetchOpenAlgoTradebook,
@@ -56,6 +57,12 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
     note: "Login is unattended: the TOTP secret mints the day's code at pull time, so nothing expires on you.",
     needsToken: false,
     extraFields: ["clientCode", "pin", "totpSecret"],
+  },
+  upstox: {
+    label: "Upstox (Analytics token)",
+    keyLabel: "Analytics token",
+    note: "The Analytics token lasts a year and is read-only by design. Upstox answers only from the IPv4 address registered under Apps → Static IPs.",
+    needsToken: false,
   },
   openalgo: {
     label: "OpenAlgo (self-hosted)",
@@ -362,6 +369,11 @@ export async function POST(req: Request) {
         // came first. Renaming it would need a migration for no behavioural gain.
         const source = dhanImportSource({ clientId: keyRead.value, accessToken: accessTokenPlain });
         parsed = dhanToParsedFile(await source.fetchTrades({}));
+      } else if (broker === "upstox") {
+        // apiKey holds the year-long read-only Analytics token. normalize is
+        // called directly so the unparseable-symbol notes reach the screen.
+        const today = new Date().toISOString().slice(0, 10);
+        parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
       } else {
         const source = kiteImportSource({ apiKey: keyRead.value, accessToken: accessTokenPlain });
         parsed = kiteToParsedFile(await source.fetchTrades({}));
@@ -396,6 +408,33 @@ export async function POST(req: Request) {
       if (pre.crossBroker) warnings.push(pre.crossBroker);
 
       if (mode === "commit") {
+        // Every row already in the journal → committing would add nothing.
+        // Said in a dialog, not a green one-liner: a user who just pulled the
+        // same day through a second path (native vs OpenAlgo) deserves to see
+        // plainly that the journal is unchanged — and no empty import batch
+        // is created for a no-op. (Found live 2026-08-28: the native Upstox
+        // pull exact-deduped 5/5 against the OpenAlgo rows, silently.)
+        if (pre.summary.total > 0 && pre.summary.newCount === 0 && body.force !== true) {
+          return NextResponse.json(
+            {
+              ok: false,
+              nothingNew: true,
+              // The rows themselves, so the dialog can SHOW what matched
+              // instead of only counting it.
+              duplicates: pre.rows
+                .filter((r) => r.isDuplicate)
+                .map((r) => ({
+                  symbol: r.tradingsymbol,
+                  segment: r.segment,
+                  buyQty: r.buyQty,
+                  sellQty: r.sellQty,
+                  grossPnl: r.grossPnl,
+                })),
+              message: `All ${pre.summary.total} trade${pre.summary.total === 1 ? " is" : "s are"} already in your journal — nothing new to commit. The journal is unchanged.`,
+            },
+            { status: 409 },
+          );
+        }
         if (pre.crossSource?.risky && body.force !== true) {
           return NextResponse.json(
             {

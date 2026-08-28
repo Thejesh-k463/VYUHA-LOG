@@ -3,6 +3,14 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.104
+
+| Upgrade | What it gives you |
+|---|---|
+| **Upstox connects natively — with a token that lasts a year** | The fourth live broker connection, and the easiest of them all: paste Upstox's **Analytics token** once (account.upstox.com → Apps → Analytics) and it works for a year. It is read-only by design — it cannot place orders, even in principle. One extra one-time step: register your current IPv4 address under Apps → Static IPs; Upstox answers only from that address, and the connection screen explains this. |
+| **Your Upstox F&O books correctly from day one** | Options import as the contracts they are — strike, expiry, exchange — verified against a live trade book on 2026-08-28, with MTF recognised as MTF. |
+| **A pull that adds nothing now tells you clearly** | If every trade in a pull is already in your journal, Vyuha shows exactly which trades matched and confirms the journal is unchanged — instead of a one-line note that was easy to miss. |
+
 ## New in v2.99.103
 
 | Upgrade | What it gives you |

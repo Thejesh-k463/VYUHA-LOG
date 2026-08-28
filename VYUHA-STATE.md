@@ -82,7 +82,24 @@ with no real F&O payload.** **2026-08-28: OpenAlgo↔Upstox live pull DONE** —
 fills → 5 trades committed and verified (index options on NSE+BFO under canonical names, PRECWIRE
 delivery, **EBGNG as eq_mtf — the OpenAlgo path's first stated-MTF trade**), gross total −135.45
 matching Upstox's own UI to the paisa; multi-instance proven live with real money on both
-instances. Upstox contract-note reconcile pending (would be the THIRD broker document). Angel contract-note reconcile pending when the note arrives — it GATES
+instances. Upstox contract-note reconcile pending (would be the THIRD broker document).
+**Later on 2026-08-28 — NATIVE Upstox connection built and live-verified → ships as v2.99.104:**
+the 4th broker-API pull, on Upstox's **Analytics token** (1-year, read-only by design; requires
+the user's IPv4 registered under Apps → Static IPs). Grounded in a captured live payload (11
+fills): weekly-symbol canonicalisation verified on three real contracts; `D`/`I`/`MTF` products
+(MTF stated); equity ISIN from `instrument_token`; times from `order_timestamp` (the
+`exchange_timestamp` field is +05:30 wrong — verified); **the fetch forces IPv4 via node:https**
+because api.upstox.com is dual-stack and the Static-IP gate rejects the IPv6 path a default
+fetch takes (cost three 401 rounds live). Monthly-format symbols and futures refuse-with-note
+(no real payload — the v2.99.98 zero-rows lesson applied). The native pull **exact-hash-deduped
+5/5 against the OpenAlgo rows** — which surfaced the new **"nothing new to commit" dialog**
+(commit adding 0 rows now lists each already-recorded trade; risky near-misses keep the blocking
+dialog; ordinary re-pulls stay silent). README hero: **4 broker-API pulls** (guard test moved in
+lockstep; counts 2,019/135). **The 3-year backfill via `/v2/charges/historical-trades` is the
+planned v3.0.0 HEADLINE** — the endpoint states strike/expiry/option_type/ISIN per row, but it
+fills on settlement lag and this young account returned 0 rows for the full 3-FY window
+(2026-08-28); today's 11 trades should be its first rows on 2026-08-29 → capture then, build
+grounded, pair via `pairSymbolLegs`. Do NOT build it on zero rows. Angel contract-note reconcile pending when the note arrives — it GATES
 the v2.99.103 release (owner's instruction 2026-08-27).
 
 **LAUNCH PLAN (owner, 2026-08-27): public launch as v3.0.0 in ~2 days.** Collaborators/potential

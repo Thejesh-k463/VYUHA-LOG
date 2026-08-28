@@ -63,7 +63,7 @@ interface PullResult {
   rows?: number;
 }
 
-type BrokerId = "zerodha" | "dhan" | "angelone" | "openalgo";
+type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";
 
 /** OpenAlgo's supported list, straight from the adapter — never re-typed here. */
 const OPENALGO_OPTIONS = openAlgoBrokerOptions();
@@ -123,6 +123,22 @@ const BROKERS: Record<BrokerId, {
       </>
     ),
   },
+  upstox: {
+    label: "Upstox",
+    tab: "Upstox (Analytics token)",
+    keyLabel: "Analytics token",
+    keyPlaceholder: "from account.upstox.com → Apps → Analytics",
+    needsToken: false,
+    blurb: (
+      <>
+        Pulls <span className="font-medium">today&apos;s fills</span> using the <b>Analytics token</b> — it lasts a
+        year and is <b>read-only by design</b> (it cannot place orders, even in principle). Two one-time steps at
+        account.upstox.com → Apps: generate the Analytics token, and register your current <b>IPv4</b> address under{" "}
+        <b>Static IPs</b> — Upstox answers account APIs only from that address, so if pulls ever start failing with a
+        401, your connection&apos;s IP changed: re-register it there.
+      </>
+    ),
+  },
   openalgo: {
     label: "OpenAlgo",
     tab: "OpenAlgo (self-hosted)",
@@ -132,7 +148,7 @@ const BROKERS: Record<BrokerId, {
     blurb: (
       <>
         Pulls <span className="font-medium">today&apos;s executions</span> from an OpenAlgo instance you run
-        yourself — the same-day path for Groww, Upstox, Paytm Money and Kotak, which have none of their own.{" "}
+        yourself — the same-day path for Groww, Paytm Money and Kotak, which have none of their own.{" "}
         <b>Your broker credentials go into OpenAlgo, not Vyuha</b>, and charges are computed here rather than
         stated by the API. The full disclosure is in Settings → Integrations.
       </>
@@ -160,10 +176,14 @@ export function BrokerConnect() {
   const [openalgoAvailable, setOpenalgoAvailable] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  /** A 409'd commit awaiting the user's decision in the collision dialog. */
+  /** A 409'd commit awaiting the user's decision in the collision dialog —
+   *  or, with nothingNew, the "already in your journal" notice. */
   const [collisionPrompt, setCollisionPrompt] = useState<{
     brokerId: string;
     collisions: CollisionLite[];
+    nothingNew?: boolean;
+    message?: string;
+    duplicates?: { symbol: string; segment: string; buyQty: number; sellQty: number; grossPnl: number }[];
   } | null>(null);
 
   // Derived, not synced: if the gate closes while the OpenAlgo tab is selected,
@@ -300,6 +320,17 @@ export function BrokerConnect() {
     // never a default.
     const { res, data } = await post({ action: "pull", broker: brokerId, mode, ...(force ? { force: true } : {}) }, mode);
     if (!data.ok) {
+      if (res?.status === 409 && data.nothingNew) {
+        setCollisionPrompt({
+          brokerId,
+          collisions: [],
+          nothingNew: true,
+          message: data.message,
+          duplicates: data.duplicates ?? [],
+        });
+        setMsg(null);
+        return;
+      }
       if (res?.status === 409 && data.needsForce) {
         setCollisionPrompt({ brokerId, collisions: (data.collisions ?? []) as CollisionLite[] });
         setMsg(null);
@@ -345,7 +376,7 @@ export function BrokerConnect() {
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle>
-          Connect broker (API) — Zerodha, Dhan &amp; Angel One
+          Connect broker (API) — Zerodha, Dhan, Angel One &amp; Upstox
           {openalgoAvailable && <> + OpenAlgo</>}
         </CardTitle>
         {conn && <Badge variant="secondary">key {conn.apiKeyMasked}</Badge>}
@@ -359,12 +390,13 @@ export function BrokerConnect() {
             broker imports by file" beside a live Groww/Upstox/Paytm/Kotak pull
             would make the copy false. */}
         <p className="rounded-md border border-border bg-card-hover/40 px-3 py-2 text-xs text-muted-foreground">
-          <span className="text-foreground">Zerodha</span>, <span className="text-foreground">Dhan</span> and{" "}
-          <span className="text-foreground">Angel One</span> are wired for live API pulls
+          <span className="text-foreground">Zerodha</span>, <span className="text-foreground">Dhan</span>,{" "}
+          <span className="text-foreground">Angel One</span> and <span className="text-foreground">Upstox</span> are
+          wired for live API pulls
           {openalgoAvailable ? (
             <>
               {" "}
-              directly, and <span className="text-foreground">Groww, Upstox, Paytm Money and Kotak</span> through
+              directly, and <span className="text-foreground">Groww, Paytm Money and Kotak</span> through
               your own OpenAlgo instance.{" "}
               <span className="text-foreground">Everything else imports by file</span>
             </>
@@ -517,9 +549,13 @@ export function BrokerConnect() {
               busy != null || !apiKey ||
               (active === "openalgo"
                 ? !host.trim() || !underlyingBroker
-                : spec.needsToken
-                  ? !accessToken
-                  : !clientCode || !pin || !totpSecret)
+                : active === "angelone"
+                  ? !clientCode || !pin || !totpSecret
+                  : spec.needsToken
+                    ? !accessToken
+                    // Upstox: the Analytics token in the key field is the
+                    // whole credential — nothing else to demand.
+                    : false)
             }
           >
             {busy === "save"
@@ -562,8 +598,14 @@ export function BrokerConnect() {
           open={collisionPrompt != null}
           onOpenChange={(open) => {
             if (!open) {
+              const wasInfo = collisionPrompt?.nothingNew;
               setCollisionPrompt(null);
-              setMsg({ ok: true, text: "Commit cancelled — nothing was committed." });
+              setMsg({
+                ok: true,
+                text: wasInfo
+                  ? "Nothing new to commit — the journal is unchanged."
+                  : "Commit cancelled — nothing was committed.",
+              });
             }
           }}
         >
@@ -571,14 +613,38 @@ export function BrokerConnect() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <TriangleAlert className="size-4 text-warning" />
-                These trades may already be in your journal
+                {collisionPrompt?.nothingNew
+                  ? "These trades are already in your journal"
+                  : "These trades may already be in your journal"}
               </DialogTitle>
               <DialogDescription>
-                Nothing has been committed. Different sources state the same trade slightly differently — a
-                position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check
-                cannot vouch for these {collisionPrompt?.collisions.length === 1 ? "this row" : "rows"}.
+                {collisionPrompt?.nothingNew
+                  ? collisionPrompt.message ??
+                    "Every trade in this pull matched one already recorded, so there is nothing new to commit. The journal is unchanged."
+                  : <>
+                      Nothing has been committed. Different sources state the same trade slightly differently — a
+                      position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check
+                      cannot vouch for these {collisionPrompt?.collisions.length === 1 ? "this row" : "rows"}.
+                    </>}
               </DialogDescription>
             </DialogHeader>
+            {collisionPrompt?.nothingNew && (collisionPrompt.duplicates?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                {collisionPrompt.duplicates!.map((d, i) => (
+                  <div key={i} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-border/60 bg-card-hover/30 px-3 py-2">
+                    <span className="text-sm font-medium">{d.symbol}</span>
+                    <span className="font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
+                      {d.buyQty > 0 && d.sellQty > 0
+                        ? `${d.buyQty} bought · ${d.sellQty} sold`
+                        : d.buyQty > 0
+                          ? `${d.buyQty} bought (open)`
+                          : `${d.sellQty} sold (open)`}
+                    </span>
+                    <Badge variant="secondary" className="text-[10px]">already recorded</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
               {(collisionPrompt?.collisions ?? []).map((c, i) => (
                 <div key={i} className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
@@ -597,32 +663,47 @@ export function BrokerConnect() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
-              If this pull is the <b>same trades from another source</b>, cancel — the journal already has them.
-              Commit anyway only if you are sure these are <b>different trades</b> (nothing is ever merged
-              automatically).
-            </p>
+            {!collisionPrompt?.nothingNew && (
+              <p className="text-xs text-muted-foreground">
+                If this pull is the <b>same trades from another source</b>, cancel — the journal already has them.
+                Commit anyway only if you are sure these are <b>different trades</b> (nothing is ever merged
+                automatically).
+              </p>
+            )}
             <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setCollisionPrompt(null);
-                  setMsg({ ok: true, text: "Commit cancelled — nothing was committed." });
-                }}
-              >
-                Cancel — keep the journal as it is
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={busy != null}
-                onClick={() => {
-                  const target = collisionPrompt?.brokerId;
-                  setCollisionPrompt(null);
-                  if (target) void pull("commit", target, true);
-                }}
-              >
-                Commit anyway
-              </Button>
+              {collisionPrompt?.nothingNew ? (
+                <Button
+                  onClick={() => {
+                    setCollisionPrompt(null);
+                    setMsg({ ok: true, text: "Nothing new to commit — the journal is unchanged." });
+                  }}
+                >
+                  OK
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setCollisionPrompt(null);
+                      setMsg({ ok: true, text: "Commit cancelled — nothing was committed." });
+                    }}
+                  >
+                    Cancel — keep the journal as it is
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={busy != null}
+                    onClick={() => {
+                      const target = collisionPrompt?.brokerId;
+                      setCollisionPrompt(null);
+                      if (target) void pull("commit", target, true);
+                    }}
+                  >
+                    Commit anyway
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

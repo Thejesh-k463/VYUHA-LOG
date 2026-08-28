@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.99.104 — Upstox connects natively, and duplicate pulls explain themselves
+
+Built and verified against a live Upstox account on 2026-08-28 (11 real fills across NSE, NFO and
+BFO, all three equity products), cross-checked to the paisa against a second, independent pull of
+the same day.
+
+- **New: a native Upstox connection — the fourth broker-API pull, on the best credential of the
+  four.** Upstox's **Analytics token** lasts a year and is **read-only by design** (it cannot
+  place orders, even in principle), so the connection is paste-once instead of daily token
+  churn. Two one-time steps at account.upstox.com → Apps: generate the token, and register your
+  current **IPv4** address under Static IPs — Upstox answers account APIs only from that address.
+  Vyuha forces its requests onto IPv4 for exactly that reason (api.upstox.com is dual-stack, and
+  a default fetch from a dual-stack machine arrives from the IPv6 address and fails — found live,
+  coded around, and explained in the connection's own help text).
+- **Upstox F&O books correctly from day one**: weekly option symbols
+  (`NIFTY2690124350CE`) canonicalise from Upstox's compact format — verified against three live
+  contracts — with equity ISINs read from the instrument token, MTF arriving as the stated
+  product, and fill times taken from the one timestamp field the live payload proved honest.
+  Monthly-format symbols state no expiry day and are imported under their raw name with a
+  warning rather than a guessed calendar date.
+- **A commit that would add nothing now says so in a dialog** — "These trades are already in
+  your journal", listing each matched trade — instead of a one-line skip note. Found live when a
+  native Upstox pull exact-matched all 5 trades already imported through a second path: the
+  silent skip was correct, but invisible. Normal re-pulls (some new, some duplicate) stay
+  nag-free, and risky near-misses keep their blocking warning dialog — three distinct outcomes,
+  three distinct behaviours.
+- **Fixed:** the connect form's save button wrongly demanded Angel One's credentials for any
+  broker that collects no daily token.
+
 ## v2.99.103 — Angel One's live pull books F&O correctly, verified against its contract note
 
 The first Angel One pull ever to return fills ran on 2026-08-27 (11 real executions across all
