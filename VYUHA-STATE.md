@@ -76,8 +76,13 @@ decides when). **The Angel One real-fills day happened 2026-08-27 (after v2.99.1
 11 fills captured raw, the adapter's F&O defect fixed from Angel's STATED fields (its symbol lied
 about a real expiry — DECISIONS 2026-08-27), MARGIN verified as Angel's MTF product, 6 trades
 committed and verified to the paisa against Angel's own UI (gross −843.72 exact). **2,001 tests,
-verify EXIT 0; committed `49e3180` → goes into v2.99.103. Zerodha/Kite is now the ONLY API puller
-with no real F&O payload.** Angel contract-note reconcile pending when the note arrives — it GATES
+verify EXIT 0; committed `49e3180` → shipped in v2.99.103. Zerodha/Kite is now the ONLY API puller
+with no real F&O payload.** **2026-08-28: OpenAlgo↔Upstox live pull DONE** — a SECOND instance
+(:5050, Upstox behind it) added beside the Dhan one on a NEW account `UPSTOX-KR` (id 3): 11 real
+fills → 5 trades committed and verified (index options on NSE+BFO under canonical names, PRECWIRE
+delivery, **EBGNG as eq_mtf — the OpenAlgo path's first stated-MTF trade**), gross total −135.45
+matching Upstox's own UI to the paisa; multi-instance proven live with real money on both
+instances. Upstox contract-note reconcile pending (would be the THIRD broker document). Angel contract-note reconcile pending when the note arrives — it GATES
 the v2.99.103 release (owner's instruction 2026-08-27).
 
 **LAUNCH PLAN (owner, 2026-08-27): public launch as v3.0.0 in ~2 days.** Collaborators/potential
