@@ -55,9 +55,18 @@ verify EXIT 0. Desktop build EXIT 0: `Vyuha_3.0.0_x64-setup.exe` + `.msi`, BUILD
 in server AND client chunks, both `.sig`s decode to key id `4FF85F3BBE1DA21D` (live key).
 Client ZIP `Vyuha_3.0.0_Client_Package.zip` packed AFTER the docs pass (10 entries, installer
 SHA-256 `8D35DCE554CB38CA81D5B02DB14279FC8AAB8A86F81E88C66A94CF5810B7B170`).
-landing:build re-run after the 4-API fix (standalone page current). Remaining: commit → push →
-CI all-5 green BEFORE tag → tag → Release workflow → release:verify → owner publishes →
-re-film the tour (Ember+Glow, v3.0 footer) → owner voice pass.
+landing:build re-run after the 4-API fix (standalone page current).
+**RELEASE CUT AND VERIFIED (2026-08-29 ~02:00 IST):** commit `a33434c` pushed; CI run
+33207259927 ALL 5 JOBS GREEN before tagging (the three prior main CI runs were RED from
+demo-script lint errors — fixed in the same commit); tag `v3.0.0` pushed; Release workflow
+33207627450 success, 3 platform jobs; `release:verify v3.0.0` → all 3 `.sig` =
+`4FF85F3BBE1DA21D`, "Safe to publish"; **draft release: 9 assets, `releases/latest` still
+v2.99.104 until the owner publishes.** Landing page (GitHub Pages sharing link) rethemed
+Terminal × Ember + v3.0.0 content + 22 screenshots re-shot from the v3.0.0 build, pushed
+`7bf7eb7`. Tour re-film (Ember+Glow, v3.0 footer) launched same night.
+**Owner steps remaining: publish the draft → mirror:push from a real terminal → WDSI with
+the ZIP's installer → winget only when #421585 closes → voice pass per
+docs/owner/demo-video/tour/VOICE-HANDOFF.md.**
 *The table below is the v2.99.102-era state and remains accurate history.*
 
 | | |
