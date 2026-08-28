@@ -82,7 +82,10 @@ with no real F&O payload.** **2026-08-28: OpenAlgo↔Upstox live pull DONE** —
 fills → 5 trades committed and verified (index options on NSE+BFO under canonical names, PRECWIRE
 delivery, **EBGNG as eq_mtf — the OpenAlgo path's first stated-MTF trade**), gross total −135.45
 matching Upstox's own UI to the paisa; multi-instance proven live with real money on both
-instances. Upstox contract-note reconcile pending (would be the THIRD broker document).
+instances. **Upstox contract-note reconcile COMPLETE (2026-08-29, three notes: EQ + MTF + combined
+F&O): trades 5/5 to the paisa and fill time; options STT 0.15% confirmed by a FOURTH broker
+document; Upstox's own "STT-SQUP" line makes settle-based STT a second broker's practice
+(DECISIONS 2026-08-29). Upstox is the THIRD broker fully reconciled.**
 **Later on 2026-08-28 — NATIVE Upstox connection built and live-verified → ships as v2.99.104:**
 the 4th broker-API pull, on Upstox's **Analytics token** (1-year, read-only by design; requires
 the user's IPv4 registered under Apps → Static IPs). Grounded in a captured live payload (11

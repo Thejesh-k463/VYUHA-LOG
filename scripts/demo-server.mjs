@@ -159,7 +159,9 @@ const BASE_SETTINGS = {
   equityCapital: 1_300_000,
   activeCapital: 400_000,
   theme: "dark",
-  accentSkin: "luxe",
+  // The tour films in Ember + Glow (owner's pick, 2026-08-28). Override for a
+  // different look without editing this file:  DEMO_SKIN=terminal npm run demo
+  accentSkin: process.env.DEMO_SKIN || "ember",
   density: "compact",
   workspace: "both",
   fyStartMonth: 4,
@@ -168,7 +170,7 @@ const BASE_SETTINGS = {
   colorblindSafe: false,
   autoMtmEnabled: false,
   tintIntensity: 50,
-  panelStyle: "luxe",
+  panelStyle: "glow",
   wallpaperOpacity: 35,
 };
 

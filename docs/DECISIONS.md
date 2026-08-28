@@ -6,6 +6,14 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-29 — Upstox reconciles across THREE contract notes; "STT-SQUP" makes settle-based STT industry practice
+
+**Context:** Closing the Upstox live-pull file: three signed contract notes for 2026-08-28 (NSE-EQ 93306382, MTF 93323360, combined F&O 8340511) against the 5 committed rows that both the native pull and the OpenAlgo pull had produced identically.
+**Measured / found:** Trades 5/5 to the paisa AND the fill time — including EBGNG's blended two-fill MTF average (621.88) and all three option round trips (the F&O note lists SENSEX as "OPTSTK BSX" under a BSE-FO section; one note covers both exchanges). Charges: brokerage EXACT on the delivery note (₹2.66 = the rate card); turnover within 4p; SEBI 1p; F&O STT **9.36 = exactly 0.15% of sell premium — the FOURTH broker document confirming the rate** (Dhan note, Angel note, and now Upstox × its own arithmetic), with a broker-side "STT-Round off" −0.36 showing Upstox rounds the note total where Vyuha rounds per row (₹1 granularity, not a rate difference). Upstox's own line item is named **"STT-SQUP"** — square-up STT — on the same-day-closed DELIVERY and MTF equity trades (0.33 and 0.78 vs our product-rate ₹3 and ₹6): the second broker charging by what settled, which upgrades the 2026-08-28 settle-based-STT finding from one broker's behaviour to industry practice. GST deltas are explained, not mysterious: contract notes exclude DP charges (a depository bill item) that Vyuha includes on delivery sells, and the rest follows brokerage.
+**Decision:** The Upstox reconcile is COMPLETE and the "values INFERRED" era for Upstox is over on the API path (file-parser values remain inferred until a populated file export exists). The settle-aware STT refinement stays deliberately post-launch, now with two brokers' evidence waiting for it.
+**Why not the obvious thing:** Patching STT before launch — unchanged from 2026-08-28: conservative direction, small magnitude, engine change deserves its own pass.
+**Invalidated if:** the settle-aware STT rule ships, or a populated Upstox FILE export finally arrives (then retire the file-side INFERRED caveat separately).
+
 ## 2026-08-28 — Angel contract note 0061896174: trades 6/6 to the fill time; STT follows what SETTLED, not the product code
 
 **Context:** The gate on v2.99.103 — Angel One's contract note for the 2026-08-27 live pull, against the 6 committed rows.
