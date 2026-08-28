@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.99.103 — Angel One's live pull books F&O correctly, verified against its contract note
+
+The first Angel One pull ever to return fills ran on 2026-08-27 (11 real executions across all
+four products and four exchanges/segments), and its contract note reconciled the result **6/6 —
+every quantity, price, per-contract net AND every fill time matched the broker's annexure.**
+
+- **Fixed: F&O pulled through the Angel One API classified as equity** (the same defect v2.99.102
+  fixed for Dhan; Angel was the known-still-open case). Derivative names are now built from the
+  fields Angel One states — `instrumenttype`, `strikeprice`, `optiontype`, `expirydate` — never
+  from the symbol, and the live payload proved why that matters: a real SENSEX contract's symbol
+  said `26AUG` while its stated (and true) expiry was 27 Aug 2026. The broker's own contract note
+  carries the same mismatch. An F&O row whose stated facts are incomplete keeps its raw name and
+  says so. **Zerodha's API pull remains the one path with no real F&O payload to verify against;
+  its file imports were always correct.**
+- **Fixed: Angel One MTF trades now carry the MTF product.** A real MTF trade arrives as
+  `producttype: "MARGIN"`, which the old mapping discarded on the assumption it was an F&O carry
+  product (that is `CARRYFORWARD`, confirmed in the same payload). MTF interest tracking now sees
+  Angel One MTF positions.
+- **Angel One equity symbols lose their NSE series suffix** (`HFCL-EQ` → `HFCL`), so API-pulled
+  trades line up with the same stock imported from any file or any other broker.
+- The field mapping is no longer "inferred from documentation" — the pull's own info line now
+  records that it was verified against a live trade book.
+
+Known and recorded, not yet changed: same-day-squared delivery/MTF equity currently books
+delivery-rate STT where brokers levy intraday STT on what actually settled — a small,
+conservative overstatement (docs/DECISIONS.md 2026-08-28) scheduled for its own pass.
+
 ## v2.99.102 — the first live F&O pull, and everything it taught
 
 The first broker-API pull ever to return real F&O fills ran on 2026-08-26 against a live Dhan

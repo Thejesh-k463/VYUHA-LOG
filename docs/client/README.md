@@ -3,6 +3,14 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v2.99.103
+
+| Upgrade | What it gives you |
+|---|---|
+| **Angel One API pulls now book your F&O correctly** | Options and futures pulled through the Angel One connection used to be filed as equity — wrong charges, wrong segment, invisible to the options analytics. They now import as the contracts they are, named from the facts Angel One itself states. Verified against a real contract note: every trade, price and fill time matched the broker's own annexure. |
+| **Angel One MTF trades are recognised as MTF** | A margin-funded trade pulled through the API now carries the MTF product, so MTF interest tracking sees it. |
+| **Symbols line up across sources** | `HFCL-EQ` from the Angel One API and `HFCL` from any file are now the same symbol in your journal. |
+
 ## New in v2.99.102
 
 | Upgrade | What it gives you |

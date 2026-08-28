@@ -6,6 +6,14 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-28 — Angel contract note 0061896174: trades 6/6 to the fill time; STT follows what SETTLED, not the product code
+
+**Context:** The gate on v2.99.103 — Angel One's contract note for the 2026-08-27 live pull, against the 6 committed rows.
+**Measured / found:** Trades are a perfect 6/6: every quantity, WAP, per-contract net (−422 / −420 / +3.78 / −4.80 / ±MOSCHIP) AND every entry/exit fill time matches the annexure. The annexure also shows the SENSEX contract as `BSXOPT SENSEX26AUG77600CE` under a summary line saying "Aug 27 2026" — the broker's own document carrying the symbol/expiry mismatch the adapter now codes around. Charges: exchange txn ₹2.52 vs ₹2.55, SEBI 1p, stamp 0=0. F&O STT re-confirms 0.15% of premium (SENSEX ₹2.65 = 0.15% × 1,768 exactly — Angel books paise where Vyuha rounds STT to the rupee, hence our ₹3; ICICIBANK ₹1.35 vs a computed ₹1.68 is unexplained, trade-wise levies available on request, not chased). **The real finding: equity STT is charged by what actually settled.** HFCL rode the DELIVERY product and WABAG the MARGIN (MTF) product, but both were squared off the same day — no delivery occurred, and Angel levied intraday STT (sell-side 0.025%, NSE-capital total ₹1.00) where Vyuha's segment-based engine charged delivery/MTF STT at 0.1% both sides (₹3 + ₹4). Same-day-closed delivery/MTF trades therefore OVERSTATE STT.
+**Decision:** Recorded, deliberately NOT fixed in v2.99.103 — the direction is conservative (overstates costs, never flatters), the magnitude is paise-to-rupees, and a settle-aware STT rule is a charges-engine change that deserves its own test pass, not a release-night patch.
+**Why not the obvious thing:** Patching the engine immediately — charging by segment is load-bearing for every FILE import too (where a delivery product usually does deliver), and the same-day-square-off case needs its own rule with its own tests, per invariant 3's discipline.
+**Invalidated if:** the settle-aware STT rule ships (supersede this), or a broker note shows a same-day-squared delivery trade charged at delivery STT (then the rule is broker-specific and belongs in charge_config, not logic).
+
 ## 2026-08-27 — Angel One's trade book STATES the derivative facts — and its symbol lied about the expiry on a real contract
 
 **Context:** The first Angel One pull ever to return fills (11 real executions, all four products, NFO/BFO/NSE/BSE), captured raw before fixing the adapter's known F&O-as-equity defect the same grounded way as Dhan's.
