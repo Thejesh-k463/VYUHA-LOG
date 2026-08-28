@@ -91,3 +91,6 @@ updater-private.key
 
 # Trend artifact from npm run test:load — a measurement, not source.
 /load-results.json
+
+# Automated demo-video takes (regenerated per release by scripts/demo-video/record.mjs)
+demo-takes/
