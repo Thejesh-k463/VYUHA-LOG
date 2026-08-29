@@ -57,9 +57,17 @@ and later" dated 2026-08-29; DECISIONS 2026-08-29 account-deletion entry. The fo
 suites re-run green after the edits: `readme-claims` + `client-docs-version` + `help-content` +
 `no-indicators-in-client-docs` = 39 passed / 4 files, EXIT 0 (2026-08-29). README test-count
 figures untouched (already synced to 2,070 by the orchestrator).**
-**Remaining for v3.1.0, in order: confirm the running e2e → film the tour → bump 3.1.0 →
-desktop build → client ZIP (must pack the two OpenAlgo guides) → release, per the `release`
-skill.**
+**v3.1.0 CUT AND VERIFIED (2026-08-29 ~13:15 IST) — every step above completed:** e2e 45/45
+twice (pre- and post-review-fix); Aurora tour filmed 08:56 and sent (T-0 voice approved,
+T-1..12 pending from owner); adversarial review found 1 blocker + 6 should-fixes in account
+deletion (snapshot completeness, pnlRolledIn withdrawal trap, restore-into-collided-id,
+archived-target stranding, in-flight-import ghost trades, whitespace names) — ALL fixed and
+pinned by tests; bump 3.1.0; verify 2,070/2,070 EXIT 0; desktop build EXIT 0 (BUILD_ID
+2026-08-29 12:43, bundle markers OPENALGO_SETUP_GUIDE + "Merge into" in server AND client
+chunks, `.sig` decodes to `4FF85F3BBE1DA21D`); client ZIP 12 entries incl. both OpenAlgo
+guides (installer SHA-256 `A7A4984969D061F78B37BC62E6F4ACD341DDF8B25DC6119A3AF8C4D03D68F841`);
+CI 5/5 green BEFORE tag; tag `v3.1.0`; Release workflow success; `release:verify v3.1.0` all
+3 sigs live key, "Safe to publish"; **draft 9 assets — owner: publish → mirror:push → WDSI.**
 
 *Below: the v3.0.0 cut, verified 2026-08-29 — accurate history.*
 
