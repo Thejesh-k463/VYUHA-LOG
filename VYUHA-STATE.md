@@ -28,6 +28,22 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ## 2. Current state — verified 2026-08-29 (v3.1.0 in progress)
 
+**2026-08-30 — LIVE-DEMO FAILURE DIAGNOSED (Paytm + Zerodha files): owner reports wrong
+"P&L values and number of trades imported". Investigation (173/173 import tests green incl.
+private real-file reconciliations; both real tradebooks re-imported through the live API):
+(1) COUNTS are FIFO aggregation, not loss — Paytm 414 executions -> 142 positions, Zerodha
+1,554 fills -> 28 positions; the preview warns but the aggregate count reads as data loss to
+an audience. (2) P&L gaps are deliberate refusals — 24/142 Paytm and 11/28 Zerodha positions
+are opening sells shown as "—" (Paytm net vs broker statement −1.4%, ₹7.7L on pre-window
+lots, documented DECISIONS 2026-08-20); Zerodha charges are engine-computed (file carries
+none). (3) Paytm Script column is 100% numeric codes; clean installs resolve only ~1,150
+index-constituent ISINs -> SME-heavy books show raw codes. (4) Zerodha F&O compact grammar
+(NIFTY26JUN24500CE) still unparsed — documented defect, fix ONLY against a real F&O export.
+v3.1.1 plan: import-summary UX (executions->positions counts made prominent), bundled full
+NSE+SME ISIN map (snapshot pattern), owner's demo files awaited for exact-file verification
+and possibly the first real Zerodha F&O sample. Fable weekly limit 100% consumed 2026-08-30;
+next session runs on Opus.**
+
 **NOW: v3.1.0 IS IN PROGRESS (2026-08-29 — docs/claims pass DONE this session, all uncommitted;
 bump NOT yet run, package.json still 3.0.0).** What v3.1.0 ships, per the verified ship list:
 (1) **Account deletion with scoped options** — per-account Delete in Settings; the dialog offers
