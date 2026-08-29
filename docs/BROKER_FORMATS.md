@@ -122,8 +122,17 @@ Trade Number | Trade Time
   - `Script` holds a **numeric scrip code** (six digits; BSE-code-like on BSE
     rows, Paytm's own id on NSE rows), **not a ticker**. `ISIN` is always
     filled — Vyuha resolves the symbol from the ISIN at commit (instruments
-    table, then the bundled NSE index map) and otherwise keeps the code with a
-    note telling the user to upload NSE's securities list.
+    table, then the bundled snapshots) and otherwise keeps the code.
+  - **The code does NOT tell you the exchange, so never resolve by code —
+    resolve by ISIN.** Re-measured on a second real export (7,544 executions,
+    2026-08-30): 544xxx codes, which look like BSE codes, appear on NSE rows
+    too (e.g. `544838` / XTRANET on NSE), and 30 of 215 distinct codes appear
+    on BOTH exchanges. An ISIN identifies the security regardless of which
+    venue the fill happened on, which is why the lookup is keyed on it.
+  - **Coverage needs BOTH exchanges' lists.** Of that export's 215 distinct
+    codes, the index-constituent map alone resolved 76; of the 139 misses, 69
+    sat only on BSE rows. The bundled `lib/data/isin-symbols.json` (NSE main +
+    NSE Emerge + BSE, 5,671 securities) resolves all 215.
   - `Product Type` is `EQ` on every row — the SEGMENT, not delivery/intraday.
     Product is derived per scrip-day from Paytm's own STT and stamp duty
     (`lib/import/product-signature.ts`).

@@ -26,23 +26,111 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-29 (v3.1.0 in progress)
+## 2. Current state — verified 2026-08-30 (v3.1.1 build in progress)
 
-**2026-08-30 — LIVE-DEMO FAILURE DIAGNOSED (Paytm + Zerodha files): owner reports wrong
-"P&L values and number of trades imported". Investigation (173/173 import tests green incl.
-private real-file reconciliations; both real tradebooks re-imported through the live API):
-(1) COUNTS are FIFO aggregation, not loss — Paytm 414 executions -> 142 positions, Zerodha
-1,554 fills -> 28 positions; the preview warns but the aggregate count reads as data loss to
-an audience. (2) P&L gaps are deliberate refusals — 24/142 Paytm and 11/28 Zerodha positions
-are opening sells shown as "—" (Paytm net vs broker statement −1.4%, ₹7.7L on pre-window
-lots, documented DECISIONS 2026-08-20); Zerodha charges are engine-computed (file carries
-none). (3) Paytm Script column is 100% numeric codes; clean installs resolve only ~1,150
-index-constituent ISINs -> SME-heavy books show raw codes. (4) Zerodha F&O compact grammar
-(NIFTY26JUN24500CE) still unparsed — documented defect, fix ONLY against a real F&O export.
-v3.1.1 plan: import-summary UX (executions->positions counts made prominent), bundled full
-NSE+SME ISIN map (snapshot pattern), owner's demo files awaited for exact-file verification
-and possibly the first real Zerodha F&O sample. Fable weekly limit 100% consumed 2026-08-30;
-next session runs on Opus.**
+**2026-08-30 — v3.1.1 BUILT AND VERIFIED LOCALLY (release sequence in progress; see the
+bottom of this block for exactly where it stopped).** The live-demo failure is CLOSED. The
+owner supplied the four exact demo files (Paytm tradebook + Equity P&L for UCC AG847854,
+Zerodha tradebook + Console P&L for PJ7736), and they are BIGGER than the private fixtures
+the diagnosis was built on — which is why the "data loss" impression was worse than the
+investigation predicted:
+
+| | diagnosis fixtures | **the demo files** |
+|---|---|---|
+| Paytm | 414 → 142 | **7,544 executions → 804 positions** (650 closed / 82 open / 72 opening sells) |
+| Zerodha | 1,554 → 28 | **3,530 fills → 79 positions** (64 closed / 4 open / 11 opening sells) |
+
+Reconciliation on the demo files: Paytm closed net **₹1,54,39,611** vs Paytm's own in-window
+realised **₹1,64,58,423** = **−6.19%**, the gap being pre-window cost basis the tradebook
+cannot see (same cause as the −1.4% on the older file, larger because this book has more
+pre-window inventory). Zerodha gross **₹9,02,987** vs Console's stated realised
+**₹9,53,951**; Zerodha's tradebook carries NO charge columns, so its charges are
+engine-computed by design.
+
+**All four demo files are now local regression fixtures** in `tests/fixtures/private/`
+(gitignored), named `… (demo 2026-08-30).xlsx/.xls`.
+
+**What v3.1.1 ships (4 items, all verified):**
+
+1. **Import surfaces state the arithmetic** — new pure module `lib/domain/import-shape.ts`
+   renders `"7,544 executions → 804 positions (82 open, 72 opening sells without buy
+   history)"`, used by the PREVIEW, the COMMIT result and the RECENT-IMPORTS row (whose
+   column is now headed *Executions → positions*). Previously each surface said something
+   different and the top-of-screen count said only "804". `PreviewResult.shape` and
+   `CommitResult.shape` carry it; per-batch open/opening-sell counts are DERIVED in
+   `getImportBatchShapes()` (one grouped, account-scoped query — no migration, no second
+   copy of a fact already on `trades`).
+2. **The "—" cells explain themselves** — `openingSellNote()` names the count, says the
+   cost basis is not in the file, and says setting the buy price fills it in. Banned-claims
+   regex `/\breturns?\b(?! to)/` pinned in tests.
+3. **NEW DEFECT FOUND AND FIXED: a false "conservation check FAILED — please report this
+   file" was firing on BOTH demo files, on screen.** `summarisePairing` treated any non-zero
+   `valueDelta` as a lost lot, but each paired position rounds to the paisa, so N positions
+   carry up to N × 0.01 of residue. Measured: **₹0.04 on ₹75.8 crore of Paytm turnover (804
+   positions) and ₹0.01 on Zerodha's (79)**, `qtyDelta` exactly 0 in both — 1e-9 of turnover.
+   Tolerance is now DERIVED (`positions × 0.01`, floor 0.05) and lives in ONE `conserved`
+   flag in `pair-legs.ts`; all four parsers (paytm, zerodha, dhan-gtr, groww) now read it
+   instead of each copying the expression. Quantity stays exactly strict.
+   `tests/load/c8-pairing-depth.load.ts` had already encoded this (`relDrift < 1e-6`).
+4. **Bundled full ISIN→symbol snapshot** — `lib/data/isin-symbols.json`, **5,671 securities,
+   142 KB, `asOf` 2026-08-30**, built by `node scripts/build-isin-symbols.mjs --fetch`
+   (NSE EQUITY_L 2,559 + NSE Emerge SME 565 + BSE ListofScripData 2,547 new). Resolution
+   chain is now user instruments → THIS snapshot → bundled index map → keep the code; the
+   index map STAYS as an independent second source. **All 215 distinct scrip codes in the
+   demo book resolve, and all 66 in the older fixture** (was 76 of 215).
+
+**Zerodha F&O: the demo file is EQUITY-ONLY — every row's Segment is `EQ`, zero symbols match
+the compact grammar. `lib/engine/classify.ts` was NOT touched.** The `NIFTY26JUN24500CE`
+defect still has no real sample; AGENTS.md's rule stands.
+
+**Downloads for the ISIN snapshot (verified 2026-08-30, encoded in `SOURCES` in the build
+script):** `nseindia.com` itself answers **403** to a plain client while
+`nsearchives.nseindia.com` serves the CSVs fine; the Emerge list is at
+`/emerge/corporates/content/SME_EQUITY_L.csv` and the plausible
+`/content/equities/SME_EQUITY_L.csv` returns a **224-byte error page under HTTP 200** (the
+script rejects any body < 2 KB for this reason); BSE's API returns an **empty array when
+`segment` is blank**, and `segment=Equity` already includes the BSE SME board. Downloads
+land in `.isin-lists/` (gitignored).
+
+**Suite: 2,089 tests / 140 files** (+19 / +2 over v3.1.0's 2,070/138 — new
+`tests/import-shape.test.ts` and `tests/isin-bundle-coverage.test.ts`). `npm run verify`
+**EXIT 0 twice** — pre-bump and post-bump, including the production build, with no dev server
+running. All six README figures re-synced by pattern; four doc guards (readme-claims +
+client-docs-version + help-content + no-indicators-in-client-docs) **48 passed, EXIT 0**.
+
+**Docs pass DONE (uncommitted):** CHANGELOG `## v3.1.1`; README Now-line → v3.1.1 + new first
+history quote; client README `## New in v3.1.1` (4 rows); deck chips + footer → v3.1.1;
+INSTALLATION_GUIDE installer example `Vyuha_3.1.1_x64-setup.exe` (footer stays `v3.1`);
+PRIVACY/TERMS/REFUND → "Applies to: Vyuha v3.1.1 and later" dated 2026-08-30; TWO DECISIONS
+entries dated 2026-08-30; new AGENTS.md section "Bundled ISIN → symbol map".
+
+**Bump 3.1.1 done — printed 3 files, which is CORRECT for a PATCH** (footer stays `v3.1`).
+`package-lock.json` root strings hand-edited: `git diff --numstat` = **2 additions, 2
+deletions**, lock re-parses. `npm` was never run against the lock.
+
+**DESKTOP BUILD EXIT 0 (2026-08-30 01:15 IST).** Freshness proven two ways, not taken from
+the build's own "✓ signed": `BUILD_ID` moved **`5aVqKlBd-FpsB5k_wujCI` → `aSVMM39M9opB0dhqcX-HN`**
+(01:15:10 IST), and the bundle carries v3.1.1's own literals — `without buy history` and
+`Executions → positions` in **both** the server AND client chunks, `rounding tolerance` in the
+server chunk (parser warnings are server-side, so client 0 is correct there). **NOTE for the
+next freshness check: `opening sells without buy history` greps to ZERO and that is CORRECT** —
+`importShapeSentence` assembles it from `"opening "` + a plural + `" without buy history"`, so
+the whole phrase is never a literal. Grep the fragments. Best proof of the ISIN snapshot
+shipping: `INE0UZO01024` (a BSE SME name from the demo book that the OLD bundle could not
+resolve) is present in `desktop-dist/.next/server/chunks/lib_0zircx0._.js`.
+**Both `.sig` files decode to `4FF85F3BBE1DA21D`** (NSIS + MSI, decoded from the signature
+bytes), byte-matching `tauri.conf.json` `plugins.updater.pubkey`. `src-tauri/Cargo.lock` is at
+3.1.1 via the build.
+**Client ZIP `Vyuha_3.1.1_Client_Package.zip`** — 12 entries, extracted and audited: WHATS_NEW
+first heading `## New in v3.1.1`; TERMS/PRIVACY/REFUND all "Applies to: Vyuha v3.1.1 and later"
+dated 2026-08-30; greps for `OWNER:`, `macos`, `pine script|tradingview` all return NOTHING;
+packed `.sig` decodes to the live key. Installer **33.3 MB**, SHA-256
+`A0A73A33A052A770E7B3AF6BF95510CCC85FAA88ECAA97A877971FE1985FBC24`.
+
+**RELEASE SEQUENCE — where it stands: see the "STOPPED AT" line at the end of this block.
+Everything above it is verified; anything after it was not reached.**
+
+*Below: the v3.1.0 cut, verified 2026-08-29 — accurate history.*
 
 **NOW: v3.1.0 IS IN PROGRESS (2026-08-29 — docs/claims pass DONE this session, all uncommitted;
 bump NOT yet run, package.json still 3.0.0).** What v3.1.0 ships, per the verified ship list:

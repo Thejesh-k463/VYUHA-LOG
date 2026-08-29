@@ -6,6 +6,110 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-30 — The live-demo failure was three sentences, not three bugs
+
+**Context:** A live demo of v3.1.0 importing the owner's own Paytm Money and Zerodha
+tradebooks "failed": the audience read the P&L values and the trade counts as wrong.
+All 173 import tests were green at the time, including the reconciliations against
+those very brokers' statements. Re-measured on the exact demo files (larger than the
+private fixtures the diagnosis was built on: 7,544 Paytm executions and 3,530 Zerodha
+fills, against 414 and 1,554).
+
+**What was actually wrong, and what was not:**
+
+1. **The counts were right and the sentence was wrong.** `7,544 executions → 804 positions`
+   was rendered as the second number alone — "804". To anyone who knows they placed 7,544
+   orders that reads as data loss, and no correct arithmetic underneath undoes the first
+   impression. The Dhan GTR had solved this in 2026-08-12 (`ParsedFile.sourceRows`,
+   "92 lines → 73 trades") and the lesson never reached the aggregate count at the top of
+   the screen. Fixed by making the sentence a single pure module,
+   `lib/domain/import-shape.ts`, used by the preview, the commit result AND the
+   Recent-imports row — three surfaces that had three different phrasings and one of them
+   had none. **Never state the position count without the execution count that produced it.**
+
+2. **A false alarm was firing on BOTH demo files, on screen, saying "please report this
+   file".** `summarisePairing` treated ANY non-zero `valueDelta` as a lost lot. But each
+   paired position rounds its buy and sell values to the paisa, so N positions carry up to
+   2N half-paisa residues that no longer cancel — a ceiling of N × 0.01 that is REACHED,
+   not approached. Measured: **₹0.04 on ₹75.8 crore of Paytm turnover (804 positions) and
+   ₹0.01 on Zerodha's (79)** — 1e-9 of turnover, with `qtyDelta` exactly 0 in both. The
+   tolerance is now derived from the rounding that produces it (`positions × 0.01`, floor
+   0.05) rather than picked, quantity stays exactly strict, and the check is one
+   `conserved` flag in `pair-legs.ts` instead of the same expression copied into four
+   parsers. A genuinely lost lot moves whole rupees and almost always moves quantity too,
+   so it still fails loudly. `tests/load/c8-pairing-depth.load.ts` had already encoded this
+   understanding (`relDrift < 1e-6`) — the parsers just never learned it.
+
+3. **The blank P&L cells are the product working.** 72 of 804 Paytm positions and 11 of 79
+   Zerodha positions are opening sells — shares sold from holdings the file never shows
+   being bought. Invariant 6 says never fabricate a denominator, so they read "—". That is
+   indistinguishable on screen from "the importer failed", so the import result now SAYS it
+   (`openingSellNote`), naming the count and how to fill it in.
+
+**Measured on the demo files (for the next person who re-measures):** Paytm 7,544 → 804
+positions (650 closed / 82 open / 72 opening sells), closed net ₹1,54,39,611 against
+Paytm's own in-window realised ₹1,64,58,423 = **−6.19%**, the gap being pre-window cost
+basis the tradebook cannot see. Zerodha 3,530 → 79 (64 / 4 / 11), gross ₹9,02,987 against
+Console's stated realised ₹9,53,951; Zerodha's tradebook carries no charge columns at all,
+so its charges are engine-computed by design.
+
+**Deliberately NOT done: the F&O path was not touched.** The Zerodha demo file was checked
+for it and is **equity-only** — every row's Segment is `EQ` and zero symbols match the
+compact F&O grammar. The `NIFTY26JUN24500CE` defect therefore still has no real sample, and
+AGENTS.md's rule stands: fix it against a real F&O export or not at all.
+
+## 2026-08-30 — Bundled ISIN→symbol snapshot: why the index map was never going to be enough
+
+**Context:** Paytm Money's tradebook states exchange scrip codes, not tickers, and
+`lib/import/isin-symbol.ts` resolved them through the bundled NSE index-constituent map.
+
+**Measured on the owner's demo book:** 215 distinct numeric codes, of which the index map
+resolves **76**. The map covers index CONSTITUENTS — so it resolves large and mid caps and
+misses precisely the SME names a trader is least able to recognise by number. Of the 139
+misses, **69 appear only on BSE rows, 48 only on NSE rows, 22 on both**.
+
+**Decisions:**
+
+1. **A second snapshot, not a replacement.** `lib/data/isin-symbols.json` (built by
+   `scripts/build-isin-symbols.mjs`, same snapshot discipline as the index map: script +
+   `asOf` + never hand-edited) is consulted BEFORE the index map, and the index map stays in
+   the chain. It is built from a different set of downloads, so it still answers when the
+   listing snapshot is stale, partial, or was rebuilt from an incomplete folder. Two
+   independent sources cost ~200 KB and remove a single point of failure.
+
+2. **NSE wins a collision, and load order is forced rather than left to `readdir`.** One
+   ISIN, two tickers; every other Vyuha surface (index map, bhavcopy, corporate actions,
+   surveillance) is keyed on the NSE symbol, so preferring BSE's Security Id would print a
+   ticker that is correct and matches nothing downstream.
+
+3. **Active equities only.** BSE's `ListOfScrips` carries debt, MF units, warrants and
+   delisted rows. A delisted ticker that has since been REISSUED to another company is the
+   silent two-companies-in-one-position merge this module exists to prevent.
+
+4. **NSE's own lists are not sufficient for this book.** 69 of the 139 unresolved codes sit
+   on BSE-only rows, so `EQUITY_L.csv` + the Emerge SME list leave roughly a third of the
+   misses unresolved. The BSE list is required, not optional — and BSE's `segment=Equity`
+   query already includes the BSE SME board, so it is one download, not two.
+
+   **Built and measured the same day: 5,671 ISINs (NSE main 2,559 + NSE Emerge 565 + BSE
+   2,547 new), 142 KB, `asOf` 2026-08-30 — and ALL 215 demo scrip codes resolve, plus all
+   66 in the older private fixture.** Both are pinned in
+   `tests/isin-bundle-coverage.test.ts`.
+
+   Three things about the download that will otherwise be rediscovered the hard way:
+   `nseindia.com` itself answers **403** to a plain client while the `nsearchives.nseindia.com`
+   archive host serves the CSVs fine, so no cookie dance is needed; the Emerge list is at
+   `/emerge/corporates/content/SME_EQUITY_L.csv` and the plausible
+   `/content/equities/SME_EQUITY_L.csv` returns a **224-byte error page under HTTP 200**
+   (the script rejects any body under 2 KB for exactly this reason); and BSE's API returns
+   an **empty array when `segment` is blank**, so the parameter must be spelled `Equity`.
+   The URLs live in `SOURCES` in the build script, and `--fetch` does the whole refresh.
+
+5. **An absent snapshot must not fail anything.** The committed placeholder is empty; the
+   chain falls through to the index map, and `tests/isin-bundle-coverage.test.ts` SKIPS its
+   coverage assertions rather than reddening CI. It fails only once a real snapshot exists
+   and still leaves a code unresolved.
+
 ## 2026-08-29 — Account deletion: two coherent ends, capped capital carry, credentials never in trash
 
 **Context:** The v3.1.0 headline — per-account Delete in Settings (`lib/queries/account-delete.ts`, trash envelope in `lib/trash-format.ts` / `lib/trash.ts`). Four decisions worth not re-litigating.

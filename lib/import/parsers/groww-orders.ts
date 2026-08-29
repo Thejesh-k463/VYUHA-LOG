@@ -238,8 +238,8 @@ export function parseGrowwOrders(ctx: ParseContext): ParsedFile {
       `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable side, quantity, value or date and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed: ${[...new Set(unreadable)].slice(0, 5).join(", ")}.`,
     );
   }
-  if (check.qtyDelta !== 0 || check.valueDelta !== 0) {
-    warnings.push(`Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta}) — please report this file.`);
+  if (!check.conserved) {
+    warnings.push(`Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`);
   }
   if (check.openingSells > 0) {
     warnings.push(

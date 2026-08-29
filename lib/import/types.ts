@@ -1,6 +1,7 @@
 import type { Broker } from "@/lib/domain/constants";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ColumnMapping } from "./generic-map";
+import type { ImportShape } from "@/lib/domain/import-shape";
 
 /** Result of parsing one broker file into normalized rows + reported totals. */
 export interface ParsedFile {
@@ -85,4 +86,11 @@ export interface CommitResult {
   skipped: number;
   total: number;
   netPnl: number;
+  /**
+   * The FILE's shape — executions read, positions produced, and the two
+   * sub-counts whose P&L is legitimately blank. Describes the whole file, not
+   * just the rows that were new, because that is what the user is comparing
+   * against their broker's own statement.
+   */
+  shape: ImportShape;
 }

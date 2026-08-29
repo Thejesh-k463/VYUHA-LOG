@@ -315,6 +315,13 @@ export interface PairSummary {
   /** Quantity conservation check — must be zero, or the pairing lost shares. */
   qtyDelta: number;
   valueDelta: number;
+  /**
+   * The largest `valueDelta` that is arithmetic rather than loss, for this
+   * many positions. Reported so a caller can say how close it got.
+   */
+  valueTolerance: number;
+  /** False only when quantity moved, or value moved further than rounding can. */
+  conserved: boolean;
 }
 
 /**
@@ -322,7 +329,26 @@ export interface PairSummary {
  *
  * FIFO moves quantity and value between records, so the only way to know it
  * did not silently drop or duplicate any is to compare the totals before and
- * after. A non-zero delta here is a bug, not a rounding artefact.
+ * after.
+ *
+ * QUANTITY is exact and stays exact: shares are integers, nothing rounds them,
+ * and a non-zero `qtyDelta` is always a bug.
+ *
+ * VALUE cannot be. Each paired position's buy and sell values are rounded to
+ * the paisa, so N positions carry up to 2N half-paisa residues that no longer
+ * cancel — a ceiling of N × 0.01, and it is REACHED in the direction of the
+ * rounding, not in some vanishing fraction of runs. A real 7,544-execution
+ * Paytm book lands 4 paise out on ₹75.8 crore of turnover and a 3,530-fill
+ * Zerodha book 1 paisa out, and both were being reported as
+ * "conservation check FAILED — please report this file" (found on the owner's
+ * own demo files, 2026-08-30). That warning is meant for the case where the
+ * pairing dropped a lot, which moves whole rupees and almost always moves
+ * quantity too; at 1e-9 of turnover it was crying wolf on correct arithmetic,
+ * on screen, during a demo.
+ *
+ * So the tolerance is derived from the rounding that produces it, not picked:
+ * `positions × 0.01`, with a floor for tiny books. A lost lot is orders of
+ * magnitude above it and still fails loudly.
  */
 export function summarisePairing(legs: Leg[], paired: PairedPosition[]): PairSummary {
   const inBuyQty = legs.filter((l) => l.side === "buy").reduce((s, l) => s + l.qty, 0);
@@ -333,11 +359,17 @@ export function summarisePairing(legs: Leg[], paired: PairedPosition[]): PairSum
   const inValue = legs.reduce((s, l) => s + l.value, 0);
   const outValue = paired.reduce((s, p) => s + p.buyValue + p.sellValue, 0);
 
+  const qtyDelta = r2(outBuyQty - inBuyQty + (outSellQty - inSellQty));
+  const valueDelta = r2(outValue - inValue);
+  const valueTolerance = r2(Math.max(0.05, paired.length * 0.01));
+
   return {
     closed: paired.filter((p) => p.kind === "closed").length,
     open: paired.filter((p) => p.kind === "open").length,
     openingSells: paired.filter((p) => p.kind === "opening-sell").length,
-    qtyDelta: r2(outBuyQty - inBuyQty + (outSellQty - inSellQty)),
-    valueDelta: r2(outValue - inValue),
+    qtyDelta,
+    valueDelta,
+    valueTolerance,
+    conserved: qtyDelta === 0 && Math.abs(valueDelta) <= valueTolerance,
   };
 }

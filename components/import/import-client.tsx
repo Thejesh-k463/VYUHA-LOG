@@ -13,6 +13,7 @@ import { dropzoneHint } from "@/lib/import/registry-meta"; // client-safe leaf �
 import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
+import { importShapeSentence, openingSellNote, type ImportShape } from "@/lib/domain/import-shape";
 
 interface PreviewRow {
   tradingsymbol: string; symbol: string; segment: Segment; bucket: string; exchange: string;
@@ -59,6 +60,7 @@ interface PreviewResp {
   preview: {
     sourceId: string; broker: string; format: string; warnings: string[]; rawText?: string;
     rows: PreviewRow[];
+    shape: ImportShape;
     summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
     reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
     crossSource?: { collisions: { symbol: string; kind: string; detail: string }[]; symbols: string[]; risky: boolean; message: string | null };
@@ -76,7 +78,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [committed, setCommitted] = useState<{ added: number; skipped: number } | null>(null);
+  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape } | null>(null);
   const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
   /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
   const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
@@ -321,13 +323,27 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
 
       {committed && (
         <Card className="border-profit/40">
-          <CardContent className="flex items-center justify-between p-4 text-sm">
-            <span className="flex items-center gap-2 text-profit">
-              <CheckCircle2 className="size-4" />
-              Imported {committed.added} trade{committed.added === 1 ? "" : "s"} ·{" "}
-              {committed.skipped} duplicate{committed.skipped === 1 ? "" : "s"} skipped.
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => router.push("/trades")}>
+          <CardContent className="flex items-start justify-between gap-4 p-4 text-sm">
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-2 text-profit">
+                <CheckCircle2 className="size-4" />
+                Imported {committed.added} trade{committed.added === 1 ? "" : "s"} ·{" "}
+                {committed.skipped} duplicate{committed.skipped === 1 ? "" : "s"} skipped.
+              </span>
+              {/* The file's own arithmetic, so a tradebook's execution count is
+                  never replaced by a smaller number with no explanation. */}
+              {committed.shape && (
+                <p data-testid="commit-shape" className="text-xs text-muted-foreground">
+                  {importShapeSentence(committed.shape)}
+                </p>
+              )}
+              {committed.shape && openingSellNote(committed.shape.openingSells) && (
+                <p className="text-xs text-muted-foreground">
+                  {openingSellNote(committed.shape.openingSells)}
+                </p>
+              )}
+            </div>
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={() => router.push("/trades")}>
               View trades →
             </Button>
           </CardContent>
@@ -360,8 +376,17 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Stated ABOVE the stat tiles, because the tiles show the
+                  position count alone and that is the number a trader reads as
+                  "you lost most of my file". The sentence is the arithmetic. */}
+              <p data-testid="preview-shape" className="text-sm font-medium">
+                {importShapeSentence(p.shape)}
+              </p>
+              {openingSellNote(p.shape.openingSells) && (
+                <p className="text-xs text-muted-foreground">{openingSellNote(p.shape.openingSells)}</p>
+              )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <Stat label="Rows" value={String(p.summary.total)} />
+                <Stat label="Positions" value={String(p.summary.total)} />
                 <Stat label="New" value={String(p.summary.newCount)} cls="text-primary" />
                 <Stat label="Duplicates" value={String(p.summary.dupCount)} cls="text-warning" />
                 <Stat label="Gross P&L" value={inr(p.summary.grossPnl, { decimals: 0 })} />

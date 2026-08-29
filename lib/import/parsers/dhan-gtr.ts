@@ -321,9 +321,9 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   warnings.push(
     "Charges are taken from the broker's own per-row figures, not computed — this file states what you were actually charged.",
   );
-  if (check.qtyDelta !== 0 || check.valueDelta !== 0) {
+  if (!check.conserved) {
     warnings.push(
-      `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta}) — please report this file.`,
+      `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`,
     );
   }
   if (check.openingSells > 0) {

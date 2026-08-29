@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.1.1 — an import says what it did with every row
+
+- **"7,544 executions → 804 positions (82 open, 72 opening sells without buy history)".** A
+  tradebook states executions; Vyuha stores positions, because a position is what a trader
+  reasons about. The screen used to announce only the second number, so a book of 7,544
+  orders imported as "804" and read as data loss. The preview, the commit result and the
+  Recent-imports row now all state the arithmetic, in the same words, and the Recent-imports
+  column is headed **Executions → positions**.
+- **The blank P&L cells now explain themselves.** A sale of shares bought before the export
+  window has no cost basis anywhere in the file, so Vyuha shows "—" rather than invent one.
+  The import result now says so, names how many rows it applies to, and tells you that
+  setting the buy price fills them in.
+- **Fixed: a false "conservation check FAILED — please report this file" on large, correct
+  imports.** The check treated any value difference as a lost lot, but each paired position
+  rounds to the paisa, so a big book accumulates a few paise of arithmetic residue — 4 paise
+  on ₹75.8 crore of turnover, with quantity conserved exactly. The tolerance is now derived
+  from that rounding instead of assumed to be zero; quantity stays strict, and a genuinely
+  lost lot still fails loudly.
+- **Numeric scrip codes resolve to real tickers — including SME.** Paytm Money's tradebook
+  states exchange scrip codes, and the bundled index-constituent map only covered index
+  members, so SME-heavy books showed rows of numbers. Vyuha now bundles a full listed-equity
+  snapshot — **5,671 securities across NSE, NSE Emerge and BSE** — and resolves every code in
+  a real 215-code book. Your own uploaded instruments still take precedence.
+
 ## v3.1.0 — an account can leave the journal cleanly, and OpenAlgo gets a manual
 
 - **Delete an account — or merge it into another — with a preview that shows the true blast

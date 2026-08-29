@@ -209,6 +209,37 @@ export function getImportBatches() {
 }
 
 /**
+ * Per-batch open and opening-sell counts, for the Recent-imports row's
+ * "N executions → M positions (K open, J opening sells…)" sentence.
+ *
+ * Derived rather than stored: `is_open` and `acquisition` are already on every
+ * trade, so a column on `import_batches` would be a second copy of the same
+ * fact that a later edit could drift away from. One grouped query for the whole
+ * table, not one per row.
+ *
+ * Account-scoped like every other read (invariant 8) — an unscoped version
+ * would count another book's trades into this account's import summary.
+ */
+export function getImportBatchShapes(): Map<number, { open: number; openingSells: number }> {
+  const accountId = getSelectedAccountId();
+  const rows = db
+    .select({
+      batchId: trades.importBatchId,
+      open: sql<number>`sum(case when ${trades.isOpen} = 1 and coalesce(${trades.acquisition}, '') != 'unknown' then 1 else 0 end)`,
+      openingSells: sql<number>`sum(case when ${trades.acquisition} = 'unknown' then 1 else 0 end)`,
+    })
+    .from(trades)
+    .where(
+      accountId > 0
+        ? sql`${trades.importBatchId} is not null and ${trades.accountId} = ${accountId}`
+        : sql`${trades.importBatchId} is not null`,
+    )
+    .groupBy(trades.importBatchId)
+    .all();
+  return new Map(rows.filter((r) => r.batchId != null).map((r) => [r.batchId!, { open: Number(r.open ?? 0), openingSells: Number(r.openingSells ?? 0) }]));
+}
+
+/**
  * The /trades KPI strip, computed from rows the page already fetched — same
  * reduce, same row order, same floats as `getTradeStats()`, without a second
  * full-book query.

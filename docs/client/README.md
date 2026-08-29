@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.1.1
+
+| Upgrade | What it gives you |
+|---|---|
+| **Your import now shows its working** | A broker tradebook lists every execution; Vyuha groups them into positions, which is what you actually traded. It now says both numbers — *"7,544 executions → 804 positions (82 open, 72 opening sells without buy history)"* — on the preview, on the result after importing, and in the Recent imports table. Previously only the position count appeared, which looked like rows had gone missing when nothing had. |
+| **Blank P&L cells now explain themselves** | If you sold shares you bought before the file's start date, the file contains no purchase price for them — so Vyuha shows "—" instead of inventing a number. The import result now tells you how many rows this affects and that setting the buy price on them fills in the P&L. |
+| **Fixed: a false "please report this file" warning** | Large, entirely correct imports could show a scary pairing warning caused by fractions of a paisa of rounding across thousands of rows. The check now allows for that rounding while still catching a genuinely mis-paired trade. |
+| **SME and BSE-only stocks now show their real names** | Some brokers (Paytm Money in particular) list stocks by numeric code rather than ticker. Vyuha now bundles the full list of listed equities from NSE, NSE Emerge and BSE — **5,671 securities** — so those codes turn into names you recognise, including SME stocks that previously stayed as numbers. Instruments you upload yourself still take priority. |
+
 ## New in v3.1.0
 
 | Upgrade | What it gives you |

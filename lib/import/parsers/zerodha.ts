@@ -363,9 +363,9 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
         `${check.openingSells} sell${check.openingSells === 1 ? " had" : "s had"} no matching buy in this file — acquired before the export window; cost basis unknown, P&L left blank until you supply it.`,
       );
     }
-    if (check.qtyDelta !== 0 || check.valueDelta !== 0) {
+    if (!check.conserved) {
       warnings.push(
-        `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta}) — please report this file.`,
+        `Pairing conservation check FAILED (qty delta ${check.qtyDelta}, value delta ${check.valueDelta} against a ${check.valueTolerance} rounding tolerance) — please report this file.`,
       );
     }
 

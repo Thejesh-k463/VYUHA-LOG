@@ -94,3 +94,6 @@ updater-private.key
 
 # Automated demo-video takes (regenerated per release by scripts/demo-video/record.mjs)
 demo-takes/
+
+# Downloaded exchange listing files for scripts/build-isin-symbols.mjs (regenerable)
+/.isin-lists/

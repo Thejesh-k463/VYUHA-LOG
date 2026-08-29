@@ -19,6 +19,7 @@ import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade, ProductH
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
+import type { ImportShape } from "@/lib/domain/import-shape";
 import { getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
@@ -255,6 +256,13 @@ export interface PreviewResult {
   warnings: string[];
   rawText?: string;
   rows: PreviewRow[];
+  /**
+   * How the file's own row count became this many positions, plus the two
+   * sub-counts whose P&L is legitimately blank. Rendered by
+   * `lib/domain/import-shape.ts` so the preview, the commit result and the
+   * Recent-imports row all say the same sentence.
+   */
+  shape: ImportShape;
   summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
   reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
   /** Rows that look like trades already held from a DIFFERENT file kind. */
@@ -339,13 +347,18 @@ export function previewParsedFile(
   const existing = new Set(existingRows.map((r) => r.dedupHash));
 
   const rows: PreviewRow[] = [];
-  let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0;
+  let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, openCount = 0, openingSells = 0;
   const agg: Record<string, number> = { brokerage: 0, sttCtt: 0, exchangeTxn: 0, sebi: 0, stampDuty: 0, ipft: 0, gst: 0, dpCharges: 0 };
 
   for (const t of parsed.trades) {
     const b = buildRow(t, rates, overrides, defaults);
     const isDuplicate = existing.has(b.dedup);
     if (isDuplicate) dupCount++;
+    // Disjoint by construction: an opening sell also has buyQty !== sellQty, so
+    // counting it as "open" as well would make the three counts overlap and
+    // stop summing to the position total.
+    if (t.basisUnknown) openingSells++;
+    else if (b.isOpen) openCount++;
     grossPnl += t.grossPnl;
     chargesTotal += b.charges.total;
     netPnl += b.netPnl;
@@ -376,6 +389,12 @@ export function previewParsedFile(
     warnings: parsed.warnings,
     rawText: parsed.rawText,
     rows,
+    shape: {
+      sourceRows: parsed.sourceRows ?? null,
+      positions: rows.length,
+      open: openCount,
+      openingSells,
+    },
     summary: {
       total: rows.length,
       newCount: rows.length - dupCount,
@@ -498,11 +517,16 @@ export function commitParsedFile(
       .get();
     const batchId = batch!.id;
 
-    let added = 0, skipped = 0, netPnl = 0;
+    let added = 0, skipped = 0, netPnl = 0, openCount = 0, openingSells = 0;
     const seenInThisFile = new Set<string>();
 
     for (const t of parsed.trades) {
       const b = buildRow(t, rates, overrides, defaults);
+      // Counted BEFORE the duplicate check, and over every parsed row: the
+      // shape sentence describes the FILE, which is what the user reconciles
+      // against their broker's statement. Added/skipped is a separate fact.
+      if (t.basisUnknown) openingSells++;
+      else if (b.isOpen) openCount++;
       if (existing.has(b.dedup) || seenInThisFile.has(b.dedup)) {
         skipped++;
         continue;
@@ -612,6 +636,12 @@ export function commitParsedFile(
       skipped,
       total: parsed.trades.length,
       netPnl: Math.round(netPnl * 100) / 100,
+      shape: {
+        sourceRows: parsed.sourceRows ?? null,
+        positions: parsed.trades.length,
+        open: openCount,
+        openingSells,
+      },
     };
   });
 }
