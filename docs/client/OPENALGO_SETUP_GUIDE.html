@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vyuha · OpenAlgo setup guide</title>
+<style>
+  /* ── Vyuha OpenAlgo setup guide · scrolling document · palette shared with the getting-started deck ── */
+  :root {
+    --bg: #0a0e14; --surface: #0e141d; --card: #111a26; --card2: #16212f;
+    --border: #1f2b3a; --fg: #e6edf3; --mut: #8a98a7;
+    --teal: #2dd4bf; --blue: #2f81f7; --green: #16c784; --red: #f6465d; --amber: #f0b90b;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .page { max-width: 880px; margin: 0 auto; padding: 48px 24px 96px; }
+  header.hero {
+    padding: 40px 0 28px; border-bottom: 1px solid var(--border); margin-bottom: 36px;
+    background: radial-gradient(700px 320px at 50% -30%, #101c26 0%, transparent 70%);
+  }
+  .kicker { color: var(--teal); font-size: 12px; letter-spacing: .3em; text-transform: uppercase; font-weight: 600; }
+  h1 { font-size: 34px; letter-spacing: -0.02em; margin: 10px 0 8px; }
+  h2 { font-size: 24px; letter-spacing: -0.01em; margin: 48px 0 12px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p { margin: 10px 0; }
+  .sub { color: var(--mut); font-size: 16px; max-width: 64ch; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul, ol { margin: 10px 0 10px 22px; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--teal); }
+
+  .cards { display: flex; gap: 16px; width: 100%; flex-wrap: wrap; margin: 18px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.35); flex: 1; min-width: 220px; }
+  .card h3 { font-size: 16px; margin: 8px 0 6px; }
+  .card p { color: var(--mut); font-size: 14px; line-height: 1.5; margin: 0; }
+  .card .ico { font-size: 22px; }
+  .hero-card { border-color: color-mix(in oklab, var(--teal) 30%, var(--border));
+    background-image: linear-gradient(160deg, color-mix(in oklab, var(--teal) 9%, transparent), transparent 45%); }
+
+  .chip { display: inline-block; border: 1px solid var(--border); background: var(--card2);
+    border-radius: 99px; padding: 4px 12px; font-size: 13px; color: var(--mut); margin: 3px 4px 3px 0; }
+  .chip b { color: var(--fg); }
+  .chip.live { border-color: color-mix(in oklab, var(--green) 45%, var(--border)); color: var(--green); }
+  .chip.doc { border-color: color-mix(in oklab, var(--amber) 40%, var(--border)); color: var(--amber); }
+  .good { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); } .teal { color: var(--teal); }
+
+  .keybox { font-family: var(--mono); background: #0d1520; border: 1px dashed var(--teal); border-radius: 8px;
+    padding: 12px 14px; font-size: 13.5px; color: var(--teal); word-break: break-all; margin: 12px 0; }
+  pre.env { font-family: var(--mono); background: #0d1520; border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; font-size: 13.5px; color: var(--fg); overflow-x: auto; margin: 12px 0; line-height: 1.6; }
+  pre.env .c { color: var(--mut); }
+  code { font-family: var(--mono); background: var(--card2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 6px; font-size: .92em; }
+  pre.env code { background: none; border: none; padding: 0; }
+
+  .strip { border: 1px solid color-mix(in oklab, var(--blue) 35%, var(--border)); background: color-mix(in oklab, var(--blue) 8%, var(--card));
+    border-radius: 10px; padding: 12px 14px; font-size: 14.5px; margin: 16px 0; }
+  .strip.warn-strip { border-color: color-mix(in oklab, var(--amber) 40%, var(--border));
+    background: color-mix(in oklab, var(--amber) 7%, var(--card)); }
+  .strip.danger-strip { border-color: color-mix(in oklab, var(--red) 40%, var(--border));
+    background: color-mix(in oklab, var(--red) 7%, var(--card)); }
+
+  .step-list { counter-reset: step; list-style: none; margin: 16px 0; padding: 0; }
+  .step-list > li { counter-increment: step; position: relative; padding: 0 0 0 46px; margin: 14px 0; }
+  .step-list > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--card2); border: 1px solid color-mix(in oklab, var(--teal) 40%, var(--border));
+    color: var(--teal); font-family: var(--mono); font-size: 14px;
+  }
+
+  .broker { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; margin: 18px 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 2px rgba(0,0,0,.35); }
+  .broker h3 { margin: 0 0 6px; font-size: 18px; }
+  .broker .meta { margin-bottom: 8px; }
+  .broker p, .broker li { font-size: 14.5px; }
+  .broker p { color: var(--mut); }
+  .broker p b, .broker li b { color: var(--fg); }
+
+  .table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+  th { text-align: left; background: var(--card2); color: var(--fg); padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--mut); background: var(--card); }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { color: var(--fg); white-space: nowrap; }
+
+  .toc { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin: 20px 0; }
+  .toc ol { margin: 6px 0 2px 20px; }
+  .toc a { color: var(--fg); }
+  .toc a:hover { color: var(--teal); }
+  .toc .sec { color: var(--mut); font-size: 13px; }
+
+  footer { border-top: 1px solid var(--border); margin-top: 56px; padding-top: 18px;
+    color: var(--mut); font-size: 13.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .page { max-width: none; padding: 0; }
+    .card, .broker, .toc, .strip, td { background: #fff; }
+    .card p, .broker p, td, .sub, .chip { color: #444; }
+    a { color: #0a7c6e; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div class="kicker">Vyuha · Broker connections</div>
+  <h1>Connecting brokers through OpenAlgo</h1>
+  <p class="sub">The step-by-step guide to pulling the day's fills straight from your broker into
+    Vyuha through <a href="https://openalgo.in">OpenAlgo</a> — an open-source (AGPL-3.0),
+    self-hosted bridge that speaks to 35+ Indian brokers and runs entirely on
+    <b>your own computer</b>.</p>
+  <div style="margin-top:14px">
+    <span class="chip"><b>As of Aug 2026</b></span>
+    <span class="chip">Windows</span>
+    <span class="chip">Self-hosted · your machine only</span>
+    <span class="chip">Read-only pull</span>
+  </div>
+</header>
+
+<div class="toc">
+  <div class="sec">In this guide</div>
+  <ol>
+    <li><a href="#honest">What you should know before enabling it</a></li>
+    <li><a href="#install">Install OpenAlgo on Windows</a></li>
+    <li><a href="#env">The <code>.env</code> file, decoded</a></li>
+    <li><a href="#multi">Running two or more brokers (multi-instance)</a></li>
+    <li><a href="#apikey">The OpenAlgo API key</a></li>
+    <li><a href="#daily">The daily broker login</a></li>
+    <li><a href="#vyuha">Connecting it to Vyuha</a></li>
+    <li><a href="#pull">Pulling trades</a></li>
+    <li><a href="#brokers">Broker-by-broker: the exact deltas</a></li>
+    <li><a href="#cost">What it costs</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+  </ol>
+</div>
+
+<div class="cards">
+  <div class="card hero-card"><div class="ico">🏠</div><h3>Runs on your computer</h3>
+    <p>OpenAlgo is a program you install and run locally. Your broker credentials live in its
+    <span class="mono">.env</span> file on your disk — never in Vyuha, never in any cloud.</p></div>
+  <div class="card"><div class="ico">📥</div><h3>Vyuha only reads</h3>
+    <p>Vyuha calls one endpoint (<span class="mono">/api/v1/tradebook</span>) and imports through the same
+    preview → charges → duplicate-check pipeline as every file. It never places, modifies or cancels an order.</p></div>
+  <div class="card"><div class="ico">🔌</div><h3>Off by default</h3>
+    <p>The integration does not exist in the UI until you switch it on in
+    Settings → Integrations (advanced) and accept an in-app disclosure.</p></div>
+</div>
+
+<h2 id="honest">1 · What you should know before enabling it (the honest part)</h2>
+<ul>
+  <li><b>Your broker credentials go into OpenAlgo, not Vyuha.</b> Vyuha stores only the OpenAlgo
+    API key and the address of your instance — both revocable from OpenAlgo's own screen without
+    touching your broker account.</li>
+  <li><b>The risk is real but small, and you should understand it:</b> you are running one more
+    program that holds a broker credential. The data itself only ever flows <i>from</i> your broker
+    <i>to</i> your machine — OpenAlgo is a medium in between, not a service in the cloud. Keep it on
+    <code>127.0.0.1</code> (Vyuha warns you before saving any non-local address, because at that
+    moment your trade data would leave your computer).</li>
+  <li><b>Vyuha's pull is read-only</b>: it calls one endpoint (<code>/api/v1/tradebook</code>),
+    imports through the same preview → charges → duplicate-check pipeline as every file, and
+    computes charges from your rate card — it never places, modifies or cancels an order.</li>
+  <li>Because of all of the above, the integration is <b>off by default</b>. You switch it on
+    yourself in <b>Settings → Integrations (advanced)</b>, after an in-app disclosure that states
+    exactly this list. Your acceptance is recorded in the Audit Log.</li>
+</ul>
+
+<h2 id="install">2 · Install OpenAlgo on Windows</h2>
+<p>One OpenAlgo instance connects to <b>one broker login</b>. If you use two brokers through
+OpenAlgo, run two instances on different ports — Vyuha handles multiple instances side by side
+(<a href="#multi">section 4</a>).</p>
+
+<h3>What you need first</h3>
+<ul>
+  <li><b>Windows 10 or newer.</b></li>
+  <li><b>Python 3.12 or newer</b>, installed with <i>“Add python.exe to PATH”</i> ticked.</li>
+  <li><b>Git for Windows</b> (any recent version).</li>
+</ul>
+
+<h3>Install and first run</h3>
+<ol class="step-list">
+  <li><b>Install <code>uv</code></b> (the Python runner OpenAlgo uses):
+    <pre class="env"><code>pip install uv</code></pre></li>
+  <li><b>Clone OpenAlgo</b> into a folder of your choice:
+    <pre class="env"><code>git clone https://github.com/marketcalls/openalgo
+cd openalgo</code></pre></li>
+  <li><b>Create your <code>.env</code></b>: copy <code>.sample.env</code> to <code>.env</code> and
+    fill in your broker's lines (<a href="#env">next section</a>, and the per-broker deltas in
+    <a href="#brokers">section 9</a>).</li>
+  <li><b>Start it:</b>
+    <pre class="env"><code>uv run app.py</code></pre>
+    The <b>first run takes several minutes</b> — <code>uv</code> downloads and builds the whole
+    environment. Later starts are quick.</li>
+  <li><b>Open the dashboard</b> at <code>http://127.0.0.1:5000</code>, create your OpenAlgo login,
+    and complete the broker login (client id / PIN / TOTP as your broker requires). The dashboard
+    should show your broker's name and <b>Live Mode</b>.</li>
+  <li><b>Sanity-check before touching Vyuha:</b> open OpenAlgo's own <b>Tradebook</b> page on a day
+    you traded — your fills should be there. If they are not, Vyuha cannot see them either; fix the
+    OpenAlgo side first.</li>
+</ol>
+
+<h3>Updating OpenAlgo later</h3>
+<ul>
+  <li>Run <code>install\update.bat</code> from the OpenAlgo folder.</li>
+  <li>Some upgrades also need a database migration:
+    <pre class="env"><code>cd upgrade
+uv run migrate_all.py</code></pre></li>
+</ul>
+<div class="strip">Full official documentation for every step:
+  <a href="https://docs.openalgo.in">docs.openalgo.in</a> → Getting Started / Connect Brokers.</div>
+
+<h2 id="env">3 · The <code>.env</code> file, decoded</h2>
+<p>Three lines connect an instance to your broker; everything else can stay at its default for a
+single instance:</p>
+<pre class="env"><code>BROKER_API_KEY    = <span class="c">'the key your broker's developer portal gives you'</span>
+BROKER_API_SECRET = <span class="c">'its secret (a few brokers do not use one)'</span>
+REDIRECT_URL      = <span class="c">'http://127.0.0.1:&lt;port&gt;/&lt;broker&gt;/callback'</span></code></pre>
+<p>The <code>&lt;broker&gt;</code> segment of the redirect URL is OpenAlgo's short name for your
+broker (<code>dhan</code>, <code>upstox</code>, <code>groww</code>, <code>paytm</code>,
+<code>kotak</code>, <code>angel</code>, <code>zerodha</code>) — and the <b>same URL must be
+registered on the broker's developer portal</b>, port and all. A mismatch is the single most common
+setup failure.</p>
+<div class="strip danger-strip"><b>Never rotate <code>APP_KEY</code>, the pepper or the salt.</b>
+  OpenAlgo auto-generates these encryption values in the <code>.env</code> on first run and uses
+  them to protect every credential it stores. Changing them later destroys access to everything the
+  instance has saved — logins, tokens, keys — and there is no undo. Leave them exactly as
+  generated, and back the <code>.env</code> up as a whole.</div>
+
+<h2 id="multi">4 · Running two or more brokers (multi-instance)</h2>
+<p>One instance, one broker login. For a second broker, run a second copy of OpenAlgo — the
+official way is the <code>multi-instance.ps1</code> PowerShell script from the OpenAlgo docs, which
+sets up separate folders on ports 5000, 5001, and so on.</p>
+<ul>
+  <li><b>Separate folder per instance</b> — each has its own <code>.env</code>, its own databases,
+    its own auto-generated keys. Never share or copy these between instances.</li>
+  <li><b>Separate ports per instance</b> — the second instance's <code>.env</code> carries its own
+    set, for example:
+    <pre class="env"><code>FLASK_PORT=5051
+HOST_SERVER=http://127.0.0.1:5051
+WEBSOCKET_PORT=8766
+ZMQ_PORT=5556</code></pre></li>
+  <li><b>Separate API key per instance</b> — each instance issues its own OpenAlgo API key, and
+    each becomes its own row in Vyuha with its own host and port.</li>
+</ul>
+
+<h2 id="apikey">5 · The OpenAlgo API key</h2>
+<p>This is <b>OpenAlgo's</b> key, not your broker's. Get it from the instance's dashboard at
+<code>/apikey</code> (or the <b>API Key</b> menu entry).</p>
+<div class="keybox">a3f9…64 hexadecimal characters…c41e</div>
+<ul>
+  <li>It is a 64-character hex string, and it <b>does not expire</b> — it stays valid until you
+    regenerate it from the same page.</li>
+  <li>Regenerating invalidates the old key immediately; you would then paste the new one into
+    Vyuha's instance row.</li>
+  <li>Each instance has its own key. Pasting instance A's key with instance B's port is the classic
+    mix-up — see <a href="#trouble">Troubleshooting</a>.</li>
+</ul>
+
+<h2 id="daily">6 · The daily broker login</h2>
+<div class="strip warn-strip"><b>Broker sessions die around 3 AM IST, every day.</b> Each morning
+  (or before your evening pull), open the instance's dashboard at
+  <code>http://127.0.0.1:&lt;port&gt;</code> and complete the broker login again — client id, PIN,
+  TOTP, whatever your broker asks. Until you do, the tradebook is empty and a pull has nothing to
+  read. This is a broker-side rule that applies to every broker API, not an OpenAlgo quirk.</div>
+
+<h2 id="vyuha">7 · Connecting it to Vyuha</h2>
+<ol class="step-list">
+  <li><b>Settings → Integrations (advanced)</b> → switch OpenAlgo on → read the disclosure →
+    <b>Accept</b>. The Import tab entry does not exist until you do, and the server refuses saves
+    and pulls regardless of the UI — hiding a button is never the only defence.</li>
+  <li><b>Import → OpenAlgo (self-hosted)</b>, then fill the three fields:
+    <ul>
+      <li><b>OpenAlgo API key</b> — from <a href="#apikey">section 5</a>.</li>
+      <li><b>Host</b> — <code>http://127.0.0.1:5000</code>, or whatever port that instance runs on.
+        Each instance is its own host:port.</li>
+      <li><b>Broker behind OpenAlgo</b> — the broker this instance is logged into. This matters: it
+        stamps the trades and selects the charge profile.</li>
+    </ul>
+    Then <b>Add instance</b>. Saving fires a live check against the instance, so a wrong key or
+    port fails here with a message — not tomorrow at pull time.</li>
+  <li><b>Repeat for a second instance</b> — each appears as its own row with its own
+    Preview / Pull &amp; commit buttons.</li>
+</ol>
+
+<h2 id="pull">8 · Pulling trades</h2>
+<ul>
+  <li><b>Preview pull</b> shows what would land — trades aggregated per contract, charges computed
+    from your rate card — without writing anything.</li>
+  <li><b>Pull &amp; commit</b> imports through the normal pipeline. Everything that protects a file
+    import protects this: exact re-pulls are skipped, a pull that adds nothing says so and lists
+    what matched, and a suspicious overlap blocks the commit until you decide.</li>
+  <li>The tradebook covers <b>the current trading day only</b> — pull after you are done trading.
+    Older history still comes in by file.</li>
+</ul>
+
+<h2 id="brokers">9 · Broker-by-broker: the exact deltas</h2>
+<p>Sections 2–8 are the same for every broker. What differs is where the API key comes from and
+what the daily login asks for. Two labels below tell you how far each path has been exercised:</p>
+<p>
+  <span class="chip live"><b>✓</b> Verified live with Vyuha — a real pull from a real account landed real trades (Aug 2026)</span><br />
+  <span class="chip doc"><b>◌</b> Documented, not yet exercised — the OpenAlgo path is official and published, but Vyuha has not run it against a live account</span>
+</p>
+
+<div class="broker">
+  <h3>Dhan</h3>
+  <div class="meta"><span class="chip live">✓ Verified live with Vyuha · Aug 2026</span></div>
+  <ul>
+    <li>At <a href="https://web.dhan.co">web.dhan.co</a> → DhanHQ Trading APIs, switch the app to
+      <b>API Key Mode</b> (not the default partner mode) and set the redirect URL to
+      <code>http://127.0.0.1:5000/dhan/callback</code>.</li>
+    <li>The <code>.env</code> key is a <b>composite</b> — your Dhan client id and the API key joined
+      by three colons:
+      <pre class="env"><code>BROKER_API_KEY    = 'your_dhan_clientid:::your_dhan_apikey'
+BROKER_API_SECRET = 'your_dhan_apisecret'
+REDIRECT_URL      = 'http://127.0.0.1:5000/dhan/callback'</code></pre></li>
+    <li>Daily login is a single click-through consent on Dhan's page.</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Upstox</h3>
+  <div class="meta"><span class="chip live">✓ Verified live with Vyuha · Aug 2026</span></div>
+  <ul>
+    <li>Create a <b>developer app</b> at Upstox (account.upstox.com → My Apps / Developer API). The
+      app gives you the API key and secret.</li>
+    <li>Set the app's redirect URL to <code>http://127.0.0.1:&lt;port&gt;/upstox/callback</code> —
+      matching your instance's port exactly. Running Upstox as a <b>second</b> instance alongside
+      another broker? Give it its own port (for example <code>5050</code>) and register
+      <code>http://127.0.0.1:5050/upstox/callback</code>.</li>
+    <li>Daily login is Upstox's standard OAuth page (mobile number / TOTP / PIN).</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Groww</h3>
+  <div class="meta"><span class="chip doc">◌ Documented, not yet exercised with Vyuha</span></div>
+  <ul>
+    <li>No app to create — Groww's execution platform portal issues a <b>token pair</b> (API key +
+      secret) directly, which go into <code>BROKER_API_KEY</code> / <code>BROKER_API_SECRET</code>.</li>
+    <li><b>A static IP is mandatory.</b> Groww's API requires you to whitelist the IP address your
+      requests come from, so a home connection with a changing IP will break. This is a Groww-side
+      requirement, and it is the one broker on this page where "install and go" is not enough.</li>
+    <li>Callback segment: <code>groww</code>.</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Paytm Money</h3>
+  <div class="meta"><span class="chip doc">◌ Documented, not yet exercised with Vyuha</span></div>
+  <ul>
+    <li>Create an API app at Paytm Money's developer page and choose the
+      <b>“Trading Bridge”</b> app type.</li>
+    <li>The app is not usable immediately — <b>wait until its status shows Active</b> before
+      putting its key and secret into the <code>.env</code>.</li>
+    <li>Callback segment: <code>paytm</code>.</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Kotak Neo</h3>
+  <div class="meta"><span class="chip doc">◌ Documented, not yet exercised with Vyuha</span> <span class="chip">Most step-heavy of the seven</span></div>
+  <ul>
+    <li>The <code>.env</code> fields carry different things than they do elsewhere: your
+      <b>UCC (Unique Client Code)</b> goes in as the key, and an access token generated from the
+      <b>Neo developer dashboard</b> goes in as the secret.</li>
+    <li>Daily login asks for the most of any broker here: mobile/UCC, <b>TOTP</b>, and your
+      <b>trading PIN</b> — budget an extra minute each morning.</li>
+    <li>Callback segment: <code>kotak</code>.</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Angel One</h3>
+  <div class="meta"><span class="chip doc">◌ Documented, not yet exercised with Vyuha</span></div>
+  <ul>
+    <li>Create an app at <a href="https://smartapi.angelone.in">smartapi.angelone.in</a> (SmartAPI).
+      Only the API key is used — <b>the API secret is not used</b>; login is a TOTP exchange:
+      <pre class="env"><code>BROKER_API_KEY = 'your_smartapi_key'
+REDIRECT_URL   = 'http://127.0.0.1:5000/angel/callback'</code></pre></li>
+    <li><b>Enable TOTP on your Angel One account first</b> (smartapi.angelone.in/enable-totp) — the
+      daily login cannot complete without it.</li>
+    <li>Note the callback segment is <code>angel</code> — not <code>angelone</code>.</li>
+  </ul>
+</div>
+
+<div class="broker">
+  <h3>Zerodha</h3>
+  <div class="meta"><span class="chip doc">◌ Documented, not yet exercised with Vyuha</span></div>
+  <ul>
+    <li>Create a <b>Kite Connect</b> app at developers.kite.trade; its API key and secret go into
+      the <code>.env</code>, with redirect <code>http://127.0.0.1:&lt;port&gt;/zerodha/callback</code>.</li>
+    <li>Daily login goes through Kite's page and exchanges a fresh <b>request token</b> each day —
+      OpenAlgo handles the exchange; you just complete the Kite login.</li>
+    <li>Vyuha also connects to Zerodha natively (file import and its own API path) — use OpenAlgo
+      for Zerodha only if you prefer one pull screen for every broker.</li>
+  </ul>
+</div>
+
+<h2 id="cost">10 · What it costs</h2>
+<p>As of Aug 2026: <b>read-only tradebook pulls are free on all seven brokers.</b> Creating the
+developer app or API key costs nothing at Dhan, Upstox, Groww, Paytm Money, Kotak Neo, Angel One or
+Zerodha, and the tradebook endpoint Vyuha reads is not a paid add-on anywhere. The paid tiers some
+brokers advertise cover live market-data streams — not required for anything on this page.</p>
+
+<h2 id="trouble">11 · Troubleshooting</h2>
+<p>Each of these was hit in real testing.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Symptom</th><th>Cause and fix</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>"Cannot reach OpenAlgo at …"</td>
+      <td>The instance is not running, or the port in Vyuha's Host field is not the port in the instance's <code>.env</code>. Check the OpenAlgo console banner — it prints its real address.</td>
+    </tr>
+    <tr>
+      <td>"wrong API key?" on save</td>
+      <td>The key is the OTHER instance's, or was regenerated. Copy it again from that instance's API Key page.</td>
+    </tr>
+    <tr>
+      <td>A pull returns no fills on a trading day</td>
+      <td>Log into the OpenAlgo web UI first — broker sessions expire daily and the tradebook is empty until the day's login.</td>
+    </tr>
+    <tr>
+      <td>A row is REFUSED with "suspect symbol"</td>
+      <td>OpenAlgo's broker plugin mislabelled a contract (it has happened: a stock option arrived named as a silver option). Vyuha refuses to book a trade under a corrupt identity — import that one trade from the broker's own file or API instead.</td>
+    </tr>
+    <tr>
+      <td>A warning says a quantity was "recovered from trade value"</td>
+      <td>Some OpenAlgo broker plugins report quantity 0 on real fills. Vyuha recovers the size from value ÷ price, tells you, and refuses any row it cannot recover. Check those against your contract note once.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  <span>Vyuha — trade journal &amp; analytics · record-keeping, not investment advice</span>
+  <span>OpenAlgo setup guide · As of Aug 2026</span>
+</footer>
+
+</div>
+</body>
+</html>

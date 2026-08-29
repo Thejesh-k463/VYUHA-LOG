@@ -3,7 +3,7 @@
  *
  *   node scripts/demo-video/assemble.mjs                     → silent master + cue sheet
  *   node scripts/demo-video/assemble.mjs --voice=voice-dir   → adds T-0.mp3 … T-12.mp3 at the cues
- *   node scripts/demo-video/assemble.mjs --voice=dir --music=track.mp3   → + music bed at −20 dB
+ *   node scripts/demo-video/assemble.mjs --voice=dir --music=track.mp3   → + looped music bed at −20 dB, faded out at the end
  *
  * Inputs:  demo-takes/01-*.webm … 11-*.webm  (from record.mjs)
  *          docs/owner/demo-video/04-end-card.html (screenshotted automatically)
@@ -165,8 +165,17 @@ async function main() {
   let mixInputs = labels.join("");
   let mixCount = clips.length;
   if (args.music) {
-    inputs.push("-i", path.resolve(String(args.music)));
-    filters.push(`[${clips.length + 1}:a]volume=0.10,apad=whole_dur=${Math.ceil(total)}[mus]`);
+    // The bed LOOPS to cover the full runtime — apad alone padded a short
+    // track with silence once it ran out. `-stream_loop -1` makes the input
+    // endless; atrim bounds it to the video's length so amix sees a finite
+    // stream, and a 3 s fade-out lands exactly on the video's end so the bed
+    // closes cleanly instead of being cut mid-note. Volume stays 0.10 (−20 dB).
+    inputs.push("-stream_loop", "-1", "-i", path.resolve(String(args.music)));
+    const fadeStart = Math.max(0, total - 3);
+    filters.push(
+      `[${clips.length + 1}:a]atrim=0:${total.toFixed(3)},volume=0.10,` +
+      `afade=t=out:st=${fadeStart.toFixed(3)}:d=3[mus]`,
+    );
     mixInputs += "[mus]";
     mixCount += 1;
   }

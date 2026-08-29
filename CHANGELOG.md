@@ -1,5 +1,35 @@
 # Changelog
 
+## v3.1.0 — an account can leave the journal cleanly, and OpenAlgo gets a manual
+
+- **Delete an account — or merge it into another — with a preview that shows the true blast
+  radius.** Every account in Settings now carries a Delete. The dialog offers two coherent ends:
+  delete everything the account owns, or merge its journal into another account (with a target
+  picker) — and in either case, a separate choice for its broker connections (delete them, or
+  move them along with a merge). Before anything is armed, a live server-computed preview shows
+  the exact per-table counts, any duplicate trades already present in the merge target, and the
+  warnings that apply; the button stays disabled until the account's name is typed back.
+- **Deletions are snapshot-first and transactional.** The snapshot is written before anything is
+  removed — no snapshot, no delete — so trades, ledger entries, IPOs, import history, sessions
+  and capital history are all recoverable from Deleted items, and restoring recreates the
+  account itself. The one deliberate exception is stated in the dialog: broker API credentials
+  are never written to snapshots, so deleting a connection is final.
+- **Merges keep every link and never double-count capital.** Trade ids do not change, so legs,
+  attachments and ledger references survive untouched; trades already present in the target are
+  skipped and the skip count reported, never silently dropped; and the capital-compounding
+  marker is carried with arithmetic capped so it can neither compound the same realised P&L
+  twice nor drive "available to compound" negative.
+- **Import Help v2: the cards open as full guides.** Each broker card now opens as a pop-up
+  guide with bigger text, enriched with per-broker OpenAlgo setup detail — Dhan and Upstox
+  verified against live instances; Groww, Paytm Money, Kotak, Angel One and Zerodha documented.
+  Each points to two new files bundled in the client package: **OPENALGO_SETUP_GUIDE.html** and
+  **OPENALGO_SETUP_GUIDE.docx** — a step-by-step multi-broker OpenAlgo manual covering install,
+  running multiple instances, the daily login, per-broker `.env` differences, and
+  troubleshooting drawn from real testing.
+- The tour video now films in the Aurora skin (flat panels) with two Terminal-skin scenes, and
+  its music bed loops the full runtime.
+- Suite: 2,070 tests across 138 files, 15 load cases, 45 e2e flows.
+
 ## v3.0.0 — every connection knows its account, imports explain themselves, and speed is now measured
 
 The public-launch release. Its performance claims were measured on a new 42-route benchmark

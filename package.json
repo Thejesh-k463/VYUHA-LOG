@@ -1,6 +1,6 @@
 {
   "name": "vyuha",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -21,6 +21,7 @@
     "desktop:bundle": "node scripts/build-desktop.mjs",
     "desktop:build": "node scripts/tauri-build.mjs",
     "client:package": "node scripts/build-client-package.mjs",
+    "client:docx": "node scripts/build-openalgo-docx.mjs",
     "desktop:icons": "node scripts/make-logo.mjs && tauri icon src-tauri/icon-source.png",
     "bump-version": "node scripts/bump-version.mjs",
     "verify": "npm run typecheck && npm run lint && npm run test -- --run && npm run build",

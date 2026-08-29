@@ -21,13 +21,19 @@
 // ── What is NOT promised ────────────────────────────────────────────────────
 //
 // Restoring puts back the trade rows, their staged legs, their attachment rows
-// and the attachment BYTES. It does not put back anything that was derived
-// from them and has since moved on: capital snapshots, session reviews and the
-// audit log itself are left exactly as they are. The audit log in particular is
-// append-only by design — a restore adds to the history, it does not rewrite
-// it.
+// and the attachment BYTES — and, for an ACCOUNT-deletion snapshot, the
+// destroyed account-scoped rows carried in `accountRows` below. It does not
+// put back anything else that was derived from them and has since moved on,
+// and the audit log in particular is append-only by design — a restore adds
+// to the history, it does not rewrite it. Broker connections are never
+// restored because they are never snapshotted (credentials stay out of trash
+// files).
 
-export const TRASH_VERSION = 1;
+// v2 (2026-08-29, account deletion): adds the OPTIONAL `account`, `accountRows`
+// and `merge` fields below. The bump is additive — v1 snapshots carry none of
+// them and restore exactly as before, because validation accepts any version
+// <= TRASH_VERSION and every reader treats the fields as optional.
+export const TRASH_VERSION = 2;
 
 export interface TrashEnvelope {
   vyuhaTrash: true;
@@ -54,6 +60,41 @@ export interface TrashEnvelope {
    * Optional: snapshots written before 2026-08-12 do not carry it.
    */
   ledgerRefs?: { ledgerId: number; tradeId: number }[];
+  /**
+   * v2, account deletion only: the `accounts` row that was deleted ALONG WITH
+   * these trades — id, name, broker, capital fields, pnlRolledIn and flags,
+   * exactly as `db.select()` returned it. Restore recreates the account under
+   * its original id when it no longer exists, so the trades land back in their
+   * own book instead of pointing at a dead account_id. Absent on ordinary
+   * trade deletes and on every v1 snapshot.
+   */
+  account?: Record<string, unknown> & { id: number; name: string };
+  /**
+   * v2, account deletion only: rows from the account-scoped tables that were
+   * DESTROYED with the account. A purge carries all of them; a merge carries
+   * only what the merge discards — the colliding sessions and the source's
+   * capital checkpoints (its imports, IPOs and ledger MOVE to the target and
+   * need no snapshot). `broker_connections` rows are DELIBERATELY excluded:
+   * credentials must never enter a trash file, which is why the delete dialog
+   * says they are unrecoverable. `panel_dismissals` are regenerable UI state
+   * and are not carried either.
+   */
+  accountRows?: {
+    ipos?: Record<string, unknown>[];
+    ledgerEntries?: Record<string, unknown>[];
+    importBatches?: Record<string, unknown>[];
+    tradingSessions?: Record<string, unknown>[];
+    capitalSnapshots?: Record<string, unknown>[];
+  };
+  /**
+   * v2, merge only: how much of the source's `pnlRolledIn` marker was carried
+   * into the target — min(source marker, net realised P&L of the trades that
+   * actually MOVED), never the full marker (dedup collisions keep their
+   * realised P&L out of the target). Restore recreates the source with
+   * (original − carried) and subtracts `carried` from the target's marker if
+   * the target still exists (floored at 0).
+   */
+  merge?: { targetId: number; targetName: string; carried: number };
 }
 
 /** What the Deleted-items list shows without reading the whole envelope. */

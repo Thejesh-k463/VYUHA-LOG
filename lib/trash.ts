@@ -4,7 +4,17 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { db, trashDir, attachmentsDir } from "@/lib/db";
-import { trades, tradeLegs, tradeAttachments, ledgerEntries } from "@/lib/db/schema";
+import {
+  trades,
+  tradeLegs,
+  tradeAttachments,
+  ledgerEntries,
+  accounts,
+  ipos,
+  importBatches,
+  tradingSessions,
+  capitalSnapshots,
+} from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -61,9 +71,17 @@ export interface SnapshotInput {
   attachments: Record<string, unknown>[];
   /** Ledger entries about to be UNLINKED (not deleted) — see trash-format.ts. */
   ledgerRefs?: { ledgerId: number; tradeId: number }[];
+  /** The accounts row being deleted WITH these trades (account deletion only). */
+  account?: Record<string, unknown> & { id: number; name: string };
+  /** Destroyed account-scoped rows — see trash-format.ts. NEVER broker_connections. */
+  accountRows?: TrashEnvelope["accountRows"];
+  /** merge only: how the source's pnlRolledIn marker moved — see trash-format.ts. */
+  merge?: TrashEnvelope["merge"];
   reason: string;
   accountId: number;
 }
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Write the snapshot for a delete that is about to happen.
@@ -91,6 +109,11 @@ export function writeTrashSnapshot(input: SnapshotInput): string {
     attachments: input.attachments,
     files: [],
     ledgerRefs: input.ledgerRefs ?? [],
+    // JSON.stringify drops an undefined field, so ordinary trade deletes keep
+    // writing the exact shape they always did.
+    account: input.account,
+    accountRows: input.accountRows,
+    merge: input.merge,
   };
 
   fs.mkdirSync(dir, { recursive: true });
@@ -232,6 +255,11 @@ export interface TrashRestoreResult {
  * derived from the book, which is worse than a restore that reports what it
  * could not do.
  *
+ * An ACCOUNT-deletion snapshot has one stronger rule: if the account's id or
+ * name now belongs to a DIFFERENT account, the whole restore refuses up front
+ * — putting the trades anywhere else would merge two books. Only an account
+ * that matches the envelope (same name and broker) counts as "already back".
+ *
  * The snapshot is left on disk afterwards even on full success. Deleting the
  * only copy of the thing the user has just recovered, at the exact moment they
  * are checking whether the recovery worked, is not a tidy-up.
@@ -244,7 +272,42 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   if (!env) return fail("That snapshot is missing or unreadable. Nothing was changed.");
 
   const rows = env.trades as (Record<string, unknown> & { id: number; symbol?: string })[];
-  if (rows.length === 0) return fail("That snapshot holds no trades.");
+  // A v2 account-deletion snapshot can legitimately hold zero trades (the
+  // account was empty): the account row itself is still worth restoring.
+  if (rows.length === 0 && !env.account) return fail("That snapshot holds no trades.");
+
+  // ── Account conflicts refuse the WHOLE restore (nothing partial) ──────────
+  //
+  // The trades in an account-deletion snapshot belong to that account's book.
+  // If its id or name now belongs to a DIFFERENT account, restoring the trades
+  // anyway would silently merge two books — the exact corruption invariant 8
+  // exists to prevent — so the restore refuses up front and changes nothing.
+  // An account that matches the envelope (same name and broker) is the book
+  // itself already back (an earlier restore, or the user recreated it): that
+  // is "already restored", and the rows proceed under their original ids.
+  let recreateAccount = false;
+  let accountAlreadyPresent = false;
+  if (env.account) {
+    const envBroker = ((env.account as { broker?: string | null }).broker ?? null);
+    const holder = db.select().from(accounts).where(eq(accounts.id, env.account.id)).get();
+    if (holder) {
+      if (holder.name === env.account.name && (holder.broker ?? null) === envBroker) {
+        accountAlreadyPresent = true;
+      } else {
+        return fail(
+          `account id ${env.account.id} now belongs to “${holder.name}” — restore skipped to avoid merging two books. Nothing was changed.`,
+        );
+      }
+    } else {
+      const nameHolder = db.select().from(accounts).where(eq(accounts.name, env.account.name)).get();
+      if (nameHolder) {
+        return fail(
+          `the account name “${env.account.name}” now belongs to account id ${nameHolder.id} — restore skipped to avoid merging two books. Nothing was changed.`,
+        );
+      }
+      recreateAccount = true;
+    }
+  }
 
   const wantedIds = rows.map((r) => r.id);
   const taken = new Set(
@@ -253,9 +316,46 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
 
   const skipped: TrashRestoreResult["skipped"] = [];
   let restored = 0, legs = 0, attachments = 0;
+  let extraRestored = 0, extraSkipped = 0;
 
+  let accountBack = false;
+  let mergeMarkerReturned = false;
   try {
     const res = db.transaction((tx) => {
+      // Recreate the deleted account FIRST (v2 account-deletion snapshots), so
+      // the rows restored below land in a book that exists again. Conflicts
+      // were refused above, so a failure here is genuine and aborts the whole
+      // transaction — no silent catch-and-continue.
+      if (env.account && recreateAccount) {
+        const carried = env.merge?.carried ?? 0;
+        const rawMarker = env.account.pnlRolledIn;
+        const originalMarker = typeof rawMarker === "number" ? rawMarker : 0;
+        // A merged-away source comes back with only the residue of its marker:
+        // the `carried` share now marks the moved trades in the TARGET, and is
+        // subtracted back from the target below — see trash-format.ts.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx.insert(accounts).values({ ...env.account, pnlRolledIn: r2(originalMarker - carried) } as any).run();
+        accountBack = true;
+        recordAudit({
+          entity: "account",
+          entityId: env.account.id,
+          action: "create",
+          summary: `${env.account.name} — recreated from deleted items (${id})`,
+          after: env.account,
+          source,
+        });
+        if (env.merge && carried !== 0) {
+          const target = db.select().from(accounts).where(eq(accounts.id, env.merge.targetId)).get();
+          if (target) {
+            tx.update(accounts)
+              .set({ pnlRolledIn: Math.max(0, r2(target.pnlRolledIn - carried)), updatedAt: new Date().toISOString() })
+              .where(eq(accounts.id, env.merge.targetId))
+              .run();
+            mergeMarkerReturned = true;
+          }
+        }
+      }
+
       const landed = new Set<number>();
       for (const row of rows) {
         if (taken.has(row.id)) {
@@ -305,6 +405,32 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           .run();
       }
 
+      // The account-scoped rows the delete destroyed (v2): imports, sessions,
+      // capital checkpoints, IPOs and the account's own ledger entries come
+      // back with the book. A row that cannot land (id or unique key taken —
+      // e.g. a session date the account has planned again since) is COUNTED,
+      // never silently dropped and never duplicated under a fresh id.
+      if (env.account && env.accountRows) {
+        const groups: [unknown, Record<string, unknown>[] | undefined][] = [
+          [importBatches, env.accountRows.importBatches],
+          [tradingSessions, env.accountRows.tradingSessions],
+          [capitalSnapshots, env.accountRows.capitalSnapshots],
+          [ipos, env.accountRows.ipos],
+          [ledgerEntries, env.accountRows.ledgerEntries],
+        ];
+        for (const [table, tableRows] of groups) {
+          for (const row of tableRows ?? []) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              tx.insert(table as any).values(row as any).run();
+              extraRestored++;
+            } catch {
+              extraSkipped++;
+            }
+          }
+        }
+      }
+
       for (const row of rows) {
         if (!landed.has(row.id)) continue;
         recordAudit({
@@ -342,12 +468,37 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   if (legs) parts.push(`${legs} leg${legs === 1 ? "" : "s"}`);
   if (attachments) parts.push(`${attachments} attachment${attachments === 1 ? "" : "s"}`);
   let message = `${parts.join(", ")}.`;
+  if (env.account) {
+    if (accountBack) {
+      message += ` The account “${env.account.name}” was recreated.`;
+      if (env.merge && env.merge.carried !== 0) {
+        message += mergeMarkerReturned
+          ? ` ₹${env.merge.carried.toLocaleString("en-IN")} of rolled-in P&L moved back from “${env.merge.targetName}”.`
+          : ` The merge target “${env.merge.targetName}” no longer exists, so its rolled-in marker was left untouched.`;
+      }
+    } else if (accountAlreadyPresent) {
+      message += ` The account “${env.account.name}” was already present.`;
+    }
+  }
+  if (extraRestored > 0) {
+    message += ` ${extraRestored} related row${extraRestored === 1 ? "" : "s"} (imports, sessions, capital history, IPOs, ledger) came back with it.`;
+  }
+  if (extraSkipped > 0) {
+    message += ` ${extraSkipped} related row${extraSkipped === 1 ? " was" : "s were"} already present and skipped.`;
+  }
   if (skipped.length > 0) {
     message += ` ${skipped.length} could not be restored — ${skipped[0].symbol}: ${skipped[0].reason}${skipped.length > 1 ? `, and ${skipped.length - 1} more` : ""}.`;
   }
   message += " The snapshot was kept.";
 
-  return { ok: restored > 0 || skipped.length > 0, restored, legs, attachments, skipped, message };
+  return {
+    ok: restored > 0 || skipped.length > 0 || accountBack || accountAlreadyPresent || extraRestored > 0,
+    restored,
+    legs,
+    attachments,
+    skipped,
+    message,
+  };
 }
 
 /** Remove a snapshot and its stashed bytes for good. */

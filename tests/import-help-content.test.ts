@@ -20,7 +20,9 @@ function cardText(c: (typeof IMPORT_HELP_CARDS)[number]): string {
     ...c.formats.map((f) => `${f.label} ${f.hint}`),
     ...c.steps,
     ...(c.api ?? []),
+    ...(c.openalgo ?? []),
     ...(c.notes ?? []),
+    ...(c.guide ? [c.guide.intro, ...c.guide.files] : []),
   ].join(" ");
 }
 

@@ -26,10 +26,45 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-29 (v3.0.0 in progress)
+## 2. Current state — verified 2026-08-29 (v3.1.0 in progress)
 
-**NOW: v3.0.0 IS BEING CUT (2026-08-29, uncommitted docs/claims pass done, bump NOT yet run —
-package.json still 2.99.104).** What v3.0.0 ships, all verified today: (1) the all-accounts
+**NOW: v3.1.0 IS IN PROGRESS (2026-08-29 — docs/claims pass DONE this session, all uncommitted;
+bump NOT yet run, package.json still 3.0.0).** What v3.1.0 ships, per the verified ship list:
+(1) **Account deletion with scoped options** — per-account Delete in Settings; the dialog offers
+Delete-everything or Merge-into-another-account (target picker) plus a broker-connections choice
+(delete, or move under merge); a live server-computed preview shows exact per-table counts,
+duplicate-trade collisions and warnings before a type-the-account-name confirmation arms the
+button. Deletions are snapshot-first and transactional: trades, ledger, IPOs, imports, sessions
+and capital history are recoverable from Deleted items (the snapshot recreates the account);
+broker credentials are NEVER written to snapshots — gone for good, and the dialog says so.
+Merges keep every trade link (account-keyed UPDATEs, ids unchanged), skip-and-report duplicates,
+and carry the compounding marker as `min(source.pnlRolledIn, max(0, moved realised P&L))` with
+`compoundRealised` refusing a negative available figure (full rationale: DECISIONS 2026-08-29,
+account-deletion entry; code `lib/queries/account-delete.ts`, trash envelope v2 in
+`lib/trash-format.ts`). (2) **Import Help v2** — cards open as full pop-up guides (bigger text)
+with verified per-broker OpenAlgo setup (Dhan + Upstox live-verified; Groww/Paytm/Kotak/Angel/
+Zerodha documented), each pointing at two NEW client-package files:
+`docs/client/OPENALGO_SETUP_GUIDE.html` + `.docx` (install, multi-instance, daily login,
+per-broker .env deltas, troubleshooting from real testing). (3) Tour video films in the Aurora
+skin (flat panels) with two Terminal-skin scenes; the music bed now loops the full runtime.
+(4) **Suite: 2,070 tests / 138 files / 15 load cases / 45 e2e flows** (orchestrator-verified;
+e2e run IN PROGRESS at the time of this docs pass — confirm its exit before the bump).
+**Docs pass done here (this session, all uncommitted): CHANGELOG `## v3.1.0` entry; README
+Now-line → v3.1.0 + new first history quote; client README `## New in v3.1.0` (names both
+OpenAlgo guide files); deck chips → v3.1.0; INSTALLATION_GUIDE installer example
+`Vyuha_3.1.0_x64-setup.exe` + footer `v3.1`; PRIVACY/TERMS/REFUND → "Applies to: Vyuha v3.1.0
+and later" dated 2026-08-29; DECISIONS 2026-08-29 account-deletion entry. The four doc-guard
+suites re-run green after the edits: `readme-claims` + `client-docs-version` + `help-content` +
+`no-indicators-in-client-docs` = 39 passed / 4 files, EXIT 0 (2026-08-29). README test-count
+figures untouched (already synced to 2,070 by the orchestrator).**
+**Remaining for v3.1.0, in order: confirm the running e2e → film the tour → bump 3.1.0 →
+desktop build → client ZIP (must pack the two OpenAlgo guides) → release, per the `release`
+skill.**
+
+*Below: the v3.0.0 cut, verified 2026-08-29 — accurate history.*
+
+**v3.0.0 (2026-08-29, docs/claims pass was done uncommitted, bump then run —
+this block written when package.json was still 2.99.104).** What v3.0.0 ships, all verified today: (1) the all-accounts
 Import view lists EVERY connected broker API + OpenAlgo instance with per-account labels (was:
 silently collapsed to account 1), saving a connection asks which account it belongs to, and
 Pull & commit always books into the connection's own account — invariant-9 fix, latent

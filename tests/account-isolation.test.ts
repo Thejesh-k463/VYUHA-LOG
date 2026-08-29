@@ -251,18 +251,22 @@ describe("account-scoped table registry", () => {
    * (defects D9/D15, 2026-08-12). Now each table must name its owners, and
    * each owner must actually invoke the account resolver.
    */
+  // lib/queries/account-delete.ts touches ALL eight scoped tables: deleting or
+  // merging an account is the one operation whose subject IS an account, so it
+  // takes the id as an explicit parameter (validated like getWriteAccountId)
+  // rather than reading the request-cached selection.
   const OWNERS: Record<string, string[]> = {
-    trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts"],
-    import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts"],
-    ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts"],
-    ledger_entries: ["lib/queries/ledger.ts"],
-    trading_sessions: ["lib/queries/sessions.ts", "app/api/sessions/route.ts"],
+    trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
+    import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
+    ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],
+    ledger_entries: ["lib/queries/ledger.ts", "lib/queries/account-delete.ts"],
+    trading_sessions: ["lib/queries/sessions.ts", "app/api/sessions/route.ts", "lib/queries/account-delete.ts"],
     // app/api/capital/route.ts delegates wholly to compoundRealised() here,
     // so the query module owns the boundary and the route never touches the
     // table — which is the shape D1's fix deliberately produced.
-    capital_snapshots: ["lib/queries/capital.ts"],
-    broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts"],
-    panel_dismissals: ["lib/queries/dismissals.ts"],
+    capital_snapshots: ["lib/queries/capital.ts", "lib/queries/account-delete.ts"],
+    broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts", "lib/queries/account-delete.ts"],
+    panel_dismissals: ["lib/queries/dismissals.ts", "lib/queries/account-delete.ts"],
   };
 
   it("every table carrying account_id has a declared owner", () => {

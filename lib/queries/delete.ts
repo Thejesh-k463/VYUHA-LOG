@@ -71,14 +71,17 @@ export interface DeleteResult {
  * machine's. The extra statements are a rounding error next to the per-trade
  * audit write this same transaction already makes.
  */
-const ID_CHUNK = 900;
+export const ID_CHUNK = 900;
 
-function forEachIdChunk(ids: number[], run: (chunk: number[]) => void): void {
+/** Exported for lib/queries/account-delete.ts, which deletes whole accounts
+ *  through the same parameter-ceiling-safe chunking. */
+export function forEachIdChunk(ids: number[], run: (chunk: number[]) => void): void {
   for (let i = 0; i < ids.length; i += ID_CHUNK) run(ids.slice(i, i + ID_CHUNK));
 }
 
 /** The same chunking for reads, concatenating each chunk's rows. */
-function collectIdChunks<T>(ids: number[], run: (chunk: number[]) => T[]): T[] {
+export function collectIdChunks<T>(ids: number[], run: (chunk: number[]) => T[]): T[] {
+  if (ids.length === 0) return [];
   if (ids.length <= ID_CHUNK) return run(ids);
   const out: T[] = [];
   for (let i = 0; i < ids.length; i += ID_CHUNK) out.push(...run(ids.slice(i, i + ID_CHUNK)));

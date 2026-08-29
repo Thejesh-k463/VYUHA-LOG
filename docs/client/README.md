@@ -3,6 +3,15 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.1.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **Delete an account — or merge it into another** | Every account in Settings now has a Delete button. You choose what happens: delete everything the account owns, or **merge its trades into another account** you pick — and, separately, whether its broker connections are deleted or moved along with a merge. Before anything happens, a preview computed from your actual data shows exactly how many trades, ledger entries, IPOs, imports, sessions and capital records are affected, plus any trades the merge target already has (those are skipped and counted, never silently dropped). Nothing is armed until you type the account's name back. |
+| **Deleted accounts are recoverable — with one honest exception** | Deletion takes a snapshot first, so the account and its trades, ledger, IPOs, import history, sessions and capital history can all be brought back from **Backup & Restore → Deleted items** — restoring recreates the account itself. The exception, stated in the dialog before you confirm: broker API credentials are never written to snapshots, so a deleted connection must be re-entered. |
+| **Merges keep your books honest** | Every trade keeps its legs, attachments and ledger links, and the capital-compounding marker moves with arithmetic that can never count the same realised P&L twice. |
+| **Import Help cards are now full guides** | Each broker card in Import Help opens as a pop-up guide with bigger text and step-by-step OpenAlgo setup for that broker — Dhan and Upstox verified against live instances; Groww, Paytm Money, Kotak, Angel One and Zerodha documented. Your client package now includes two new files: **OPENALGO_SETUP_GUIDE.html** and **OPENALGO_SETUP_GUIDE.docx** — a complete multi-broker OpenAlgo manual covering install, running one instance per broker, the daily login, each broker's settings, and troubleshooting from real testing. |
+
 ## New in v3.0.0
 
 | Upgrade | What it gives you |

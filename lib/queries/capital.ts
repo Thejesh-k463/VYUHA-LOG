@@ -129,6 +129,15 @@ export function compoundRealised(bucket: Bucket): CompoundResult {
   const summary = getCapitalSummary();
   const add = summary.available;
   if (Math.abs(add) < 0.005) return { ok: false, message: "No new realised P&L to compound." };
+  // A negative figure means the rolled-in marker exceeds realised P&L (e.g. a
+  // marker inherited from a state an old merge produced). Compounding it would
+  // silently WITHDRAW capital — refuse instead of moving money.
+  if (add < 0) {
+    return {
+      ok: false,
+      message: `Realised P&L is ₹${Math.abs(Math.round(add)).toLocaleString("en-IN")} below the rolled-in marker — compounding now would withdraw capital, so nothing was changed. If this account's capital really changed, edit it in Settings instead.`,
+    };
+  }
 
   // The account may not carry its own capital yet (NULL falls back to the
   // settings figure on reads). Compounding materialises it onto the account,

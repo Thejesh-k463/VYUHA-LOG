@@ -29,17 +29,24 @@ function walk(dir: string): string[] {
   });
 }
 
+// Binary formats (the generated Word guide) cannot be line-scanned as UTF-8 —
+// their deflated bytes could match anything. Their TEXT source is what gets
+// checked: the .docx is rendered from scripts/build-openalgo-docx.mjs, whose
+// content strings this test cannot miss because the HTML twin in docs/client
+// carries the same copy and IS scanned.
+const BINARY_EXTENSIONS = new Set([".docx", ".pdf", ".png", ".zip"]);
+
 const files = [
   ...walk(path.join(root, "docs", "client")),
   path.join(root, "docs", "sales", "landing-page.html"),
-];
+].filter((f) => !BINARY_EXTENSIONS.has(path.extname(f).toLowerCase()));
 
 const stripHtmlComments = (s: string) => s.replace(/<!--[\s\S]*?-->/g, "");
 
 describe("client-facing docs never mention the invite-only indicators", () => {
   it("covers the files that ship to buyers", () => {
     const names = files.map((f) => path.basename(f));
-    for (const must of ["README.md", "TERMS.md", "PRIVACY.md", "REFUND_POLICY.md", "INSTALLATION_GUIDE.md", "GETTING_STARTED_DECK.html", "landing-page.html"]) {
+    for (const must of ["README.md", "TERMS.md", "PRIVACY.md", "REFUND_POLICY.md", "INSTALLATION_GUIDE.md", "GETTING_STARTED_DECK.html", "OPENALGO_SETUP_GUIDE.html", "landing-page.html"]) {
       expect(names, `${must} missing from the checked set`).toContain(must);
     }
   });

@@ -159,9 +159,12 @@ const BASE_SETTINGS = {
   equityCapital: 1_300_000,
   activeCapital: 400_000,
   theme: "dark",
-  // The tour films in Ember + Glow (owner's pick, 2026-08-28). Override for a
-  // different look without editing this file:  DEMO_SKIN=terminal npm run demo
-  accentSkin: process.env.DEMO_SKIN || "ember",
+  // The tour films in Aurora + flat. Override for a different look without
+  // editing this file:  DEMO_SKIN=ember npm run demo   (or sapphire, rose, …)
+  // CAREFUL: the flat Terminal skin's id is "mono" — the legacy string
+  // "terminal" is accepted by the API but maps to Luxe, so DEMO_SKIN=terminal
+  // would NOT give you the flat look. Use DEMO_SKIN=mono for that.
+  accentSkin: process.env.DEMO_SKIN || "aurora",
   density: "compact",
   workspace: "both",
   fyStartMonth: 4,
@@ -169,8 +172,8 @@ const BASE_SETTINGS = {
   defaultSellOrders: 1,
   colorblindSafe: false,
   autoMtmEnabled: false,
-  tintIntensity: 50,
-  panelStyle: "glow",
+  tintIntensity: 5,
+  panelStyle: "flat",
   wallpaperOpacity: 35,
 };
 

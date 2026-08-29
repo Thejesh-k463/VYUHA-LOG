@@ -8,6 +8,7 @@ import {
   settings as settingsTable,
   mtmPrices,
   tradeLegs,
+  accounts as accountsTable,
 } from "@/lib/db/schema";
 import { eq, and, ne, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
@@ -466,6 +467,14 @@ export function commitParsedFile(
   const overrides = loadOverrides(parsed.broker);
 
   return db.transaction((tx) => {
+    // A live pull or import can race an account delete: the id resolved above
+    // may be gone by the time this transaction runs, and writing anyway would
+    // put ghost trades into a dead account_id — rows no scoped read can ever
+    // show. Verify INSIDE the transaction, where the answer cannot change
+    // again before the writes land.
+    if (!tx.select({ id: accountsTable.id }).from(accountsTable).where(eq(accountsTable.id, accountId)).get()) {
+      throw new Error(`The destination account (id ${accountId}) no longer exists — it was deleted while this import was in flight. Nothing was imported.`);
+    }
     const existing = new Set(
       tx.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
     );

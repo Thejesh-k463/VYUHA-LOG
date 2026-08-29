@@ -6,6 +6,51 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-29 — Account deletion: two coherent ends, capped capital carry, credentials never in trash
+
+**Context:** The v3.1.0 headline — per-account Delete in Settings (`lib/queries/account-delete.ts`, trash envelope in `lib/trash-format.ts` / `lib/trash.ts`). Four decisions worth not re-litigating.
+**Decisions:**
+
+1. **The option set is exactly two: purge everything, or merge everything (with a separate
+   broker-connections choice).** Half-merges — "merge the trades but delete the ledger",
+   "keep the IPOs but drop the imports" — are deliberately NOT offered. The account-scoped
+   tables reference each other (`ledger_entries.refTradeId`, `ipos.tradeId`,
+   `import_batches` ↔ trades), so any partial split either leaves dangling references or
+   silently rewrites a book the user thinks it preserved; and a merge moves rows by
+   account-keyed UPDATEs precisely so trade ids never change and every child link survives.
+   Two coherent ends the preview can state truthfully beat a matrix of options whose
+   consequences nobody can predict from a dialog.
+2. **The capital-compounding marker carried into a merge target is
+   `carried = min(source.pnlRolledIn, max(0, net realised P&L of the trades that MOVED))`,
+   and `compoundRealised` now refuses a negative available figure outright.** Carrying the
+   full source marker was the original design and it was wrong: dedup collisions keep their
+   realised P&L out of the target, so the target's marker could exceed its realised total and
+   "available to compound" went NEGATIVE — a click on Compound would have applied a
+   withdrawal. The cap fixes the arithmetic; the refusal in `compoundRealised` is the second
+   line of defence against any future path that recreates the state. The uncarried share is
+   not lost: the envelope records `merge.carried`, and restore recreates the source with
+   `pnlRolledIn = original − carried` while subtracting `carried` back out of the target
+   (floored at 0). The source's equity/active-capital figures are never added to the target —
+   capital is the user's own statement, not something a merge may fabricate.
+3. **Trash envelope v2 is ADDITIVE — optional `account` + `accountRows` fields — and
+   `broker_connections` rows never enter a trash file.** Additive because v1 trade-deletion
+   snapshots must keep restoring unchanged (old readers ignore unknown optional fields; old
+   files carry no account and restore exactly as before). Credentials are excluded for the
+   same reason backups redact them: a trash file is a plain file on disk, and an encrypted
+   secret sitting next to the journal's vault key is not encrypted in any useful sense. The
+   dialog states the consequence — deleted connections are gone for good. Panel dismissals
+   are regenerable and also not snapshotted.
+4. **Restore refuses the WHOLE account restore on an id or name conflict — nothing partial.**
+   If the snapshot's account id is taken by a different account (or its name now belongs to
+   one), restoring rows into it would merge two books — the exact corruption account
+   isolation (invariant 8) exists to prevent — so the restore refuses up front and changes
+   nothing. An account matching the envelope (same name and broker) counts as "already back"
+   and is reused.
+
+**Invalidated if:** trash files gain their own encryption (then revisit snapshotting
+credentials), or accounts gain rename history (then the name-conflict refusal needs a
+smarter identity test).
+
 ## 2026-08-29 — v3.0.0 perf pass — 42-route sweep at 25k trades
 
 **Context:** The pre-launch performance pass for v3.0.0, measured with the new harness (`npm run perf:seed` — a deterministic 25,000-trade book — then `npm run perf:sweep` — all 42 routes timed on the production build, with a console-error gate). Every number below is a sweep median at the 25k tier.

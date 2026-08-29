@@ -142,6 +142,49 @@ async function escapeDialog() {
   await sleep(700);
 }
 
+/**
+ * Replica of demo-server.mjs BASE_SETTINGS — keep the two in sync by hand.
+ * POST /api/settings validates the WHOLE row, and an omitted accentSkin RESETS
+ * to the schema default (`.default`), so every field is always sent — a partial
+ * body would silently un-style the demo book mid-shoot.
+ *
+ * NOTE: the flat Terminal skin's id is "mono"; the legacy string "terminal" is
+ * accepted by the API but maps to Luxe.
+ */
+const BASE_SETTINGS = {
+  type: "settings",
+  goLiveDate: "2026-06-19",
+  equityCapital: 1_300_000,
+  activeCapital: 400_000,
+  theme: "dark",
+  accentSkin: process.env.DEMO_SKIN || "aurora",
+  density: "compact",
+  workspace: "both",
+  fyStartMonth: 4,
+  defaultBuyOrders: 1,
+  defaultSellOrders: 1,
+  colorblindSafe: false,
+  autoMtmEnabled: false,
+  tintIntensity: 5,
+  panelStyle: "flat",
+  wallpaperOpacity: 35,
+};
+
+/**
+ * Apply a scene's appearance override (or restore the base look with null).
+ * Skin classes are SERVER-rendered, so this must land before the scene's
+ * fresh-context goto — the runner posts it before creating the context, and
+ * posts the base row again once the scene's take is closed.
+ */
+async function applyLook(look) {
+  const res = await fetch(BASE + "/api/settings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...BASE_SETTINGS, ...(look ?? {}) }),
+  });
+  if (!res.ok) throw new Error(`settings POST failed (${res.status}) while ${look ? "applying a scene look" : "restoring the base look"}`);
+}
+
 // ─── Scenes ─────────────────────────────────────────────────────────────────
 
 const SCENES = [
@@ -278,7 +321,9 @@ const SCENES = [
     }
   }},
 
-  { n: 9, name: "charges-broker-costs", run: async () => {
+  // Films in the flat Terminal skin ("mono" — NOT "terminal", which maps to
+  // Luxe) with Glow panels; the runner restores the base look afterwards.
+  { n: 9, name: "charges-broker-costs", look: { accentSkin: "mono", panelStyle: "glow", tintIntensity: 5 }, run: async () => {
     await switchAccount("Primary");
     await navTo("Charges & MTF Leak");
     await sleep(2800);
@@ -288,7 +333,7 @@ const SCENES = [
     await slowScroll(700);
   }},
 
-  { n: 10, name: "tax", run: async () => {
+  { n: 10, name: "tax", look: { accentSkin: "mono", panelStyle: "glow", tintIntensity: 5 }, run: async () => {
     await navTo("Tax Summary");
     await sleep(2800);
     await slowScroll(700);
@@ -331,6 +376,9 @@ async function main() {
     if (ONLY && scene.n !== ONLY) continue;
     const label = `${String(scene.n).padStart(2, "0")}-${scene.name}`;
     process.stdout.write(`→ scene ${label} … `);
+    // Per-scene appearance: post the FULL settings row (base + this scene's
+    // look) before the fresh-context goto — skin classes are server-rendered.
+    if (scene.look) await applyLook(scene.look);
     const context = await browser.newContext({
       viewport: { width: W, height: H },
       recordVideo: { dir: OUT, size: { width: W, height: H } },
@@ -351,6 +399,9 @@ async function main() {
     }
     const video = page.video();
     await context.close(); // finalises the file
+    // Restore the base look even when the scene failed, so later scenes (and
+    // the demo book itself) never inherit this scene's skin.
+    if (scene.look) await applyLook(null);
     if (video) {
       const p = await video.path();
       const dest = path.join(OUT, `${label}${ok ? "" : ".FAILED"}.webm`);
