@@ -26,9 +26,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-30 (v3.1.1 build in progress)
+## 2. Current state — verified 2026-08-30 (v3.1.1 cut; owner publishes)
 
-**2026-08-30 — v3.1.1 BUILT AND VERIFIED LOCALLY (release sequence in progress; see the
+**2026-08-30 — v3.1.1 CUT, VERIFIED AND TAGGED; the draft awaits the owner's publish (see the
 bottom of this block for exactly where it stopped).** The live-demo failure is CLOSED. The
 owner supplied the four exact demo files (Paytm tradebook + Equity P&L for UCC AG847854,
 Zerodha tradebook + Console P&L for PJ7736), and they are BIGGER than the private fixtures
@@ -127,8 +127,39 @@ dated 2026-08-30; greps for `OWNER:`, `macos`, `pine script|tradingview` all ret
 packed `.sig` decodes to the live key. Installer **33.3 MB**, SHA-256
 `A0A73A33A052A770E7B3AF6BF95510CCC85FAA88ECAA97A877971FE1985FBC24`.
 
-**RELEASE SEQUENCE — where it stands: see the "STOPPED AT" line at the end of this block.
-Everything above it is verified; anything after it was not reached.**
+**LIVE-API PROOF ON THE EXACT DEMO FILES (dev server on :3007, preview mode, no writes —
+server stopped immediately after):** Paytm previewed as
+`shape {sourceRows:7544, positions:804, open:82, openingSells:72}`, gross ₹1,65,73,163.77, and
+**0 of 804 rows still show a numeric scrip code** (was 603 rows / 215 distinct codes before
+the snapshot). Zerodha previewed as `{sourceRows:3530, positions:79, open:4, openingSells:11}`,
+gross ₹9,02,987.40, 0 coded rows. **Three warnings each, and the false conservation alarm is
+gone from both.** The `/import` page SSR renders the column header exactly as
+`Executions → positions`; sidebar footer reads `Local · Offline · v3.1` (correct — PATCH does
+not move it).
+
+**v3.1.1 CUT AND VERIFIED (2026-08-30 ~02:10 IST):** commit **`80230ee`** pushed;
+**CI run 33271950732 ALL 5 JOBS GREEN BEFORE TAGGING** (Lint/typecheck/unit/build, Windows
+install + tests, Playwright e2e ubuntu, Playwright e2e macOS-14, desktop bundle macOS — both
+e2e suites green IS this release's e2e evidence; e2e was not run locally); tag **`v3.1.1`**
+pushed; **Release workflow 33272126202 success, all 3 platform jobs** (Windows x64, macOS
+Intel, macOS Apple silicon); `npm run release:verify v3.1.1` → **all 3 `.sig` =
+`4FF85F3BBE1DA21D`, "Safe to publish"**.
+**Draft release: 9 assets. `releases/latest` still v3.1.0 (a draft steals nothing);
+`revocations` re-checked and still `prerelease=true`, untouched.**
+**Two-binaries gap reproduced a SIXTH time:** GitHub asset **34,923,776 B** vs the local/ZIP
+build's **34,941,480 B** — 17,704 B apart. winget takes the GitHub hash, WDSI and buyers take
+the ZIP's (`A0A73A33…5FBC24`).
+
+**OWNER STEPS REMAINING (nothing else is blocked):** publish the draft → `npm run mirror:push`
+**from a real terminal** (agent sessions run with `GIT_TERMINAL_PROMPT=0`, which blocks the
+Codeberg OAuth refresh) → WDSI with the CLIENT ZIP's installer, not the GitHub asset →
+**no winget PR while microsoft/winget-pkgs #421585 is open** → install on a non-build machine.
+
+**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** e2e was not run locally (CI's two suites
+are the evidence); the installer was not installed on a non-build machine; the Zerodha F&O
+compact grammar is still unparsed and still has no real sample; the human-facing NSE/BSE
+portal pages were not navigated (the three DIRECT download URLs were verified, the portal
+click-paths were not).
 
 *Below: the v3.1.0 cut, verified 2026-08-29 — accurate history.*
 
