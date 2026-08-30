@@ -155,11 +155,19 @@ the ZIP's (`A0A73A33…5FBC24`).
 Codeberg OAuth refresh) → WDSI with the CLIENT ZIP's installer, not the GitHub asset →
 **no winget PR while microsoft/winget-pkgs #421585 is open** → install on a non-build machine.
 
-**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** e2e was not run locally (CI's two suites
-are the evidence); the installer was not installed on a non-build machine; the Zerodha F&O
-compact grammar is still unparsed and still has no real sample; the human-facing NSE/BSE
-portal pages were not navigated (the three DIRECT download URLs were verified, the portal
-click-paths were not).
+**e2e RUN LOCALLY AFTER THE TAG: 45/45 PASSED, 2.5 min, EXIT 0** (2026-08-30 ~02:25 IST, on
+`0c6ce92`). Playwright serves `next dev -p 3100` against its OWN isolated database
+(`data/e2e.sqlite` via `VYUHA_DB_PATH`), so the live journal is untouched; port 3100 confirmed
+free afterwards. This supersedes the earlier "e2e not run locally" caveat — the release now has
+BOTH local and CI e2e evidence. **Note it runs Next in DEV mode, so it leaves a dev `.next`
+behind: any later `npm run verify` must rebuild, and no dev server may be up while it does
+(DECISIONS 2026-08-27).** The shipped artifact is unaffected — `desktop-dist/` and the signed
+installer were produced before this run.
+
+**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** the installer was not installed on a
+non-build machine; the Zerodha F&O compact grammar is still unparsed and still has no real
+sample; the human-facing NSE/BSE portal pages were not navigated (the three DIRECT download
+URLs were verified, the portal click-paths were not).
 
 *Below: the v3.1.0 cut, verified 2026-08-29 — accurate history.*
 
