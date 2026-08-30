@@ -26,188 +26,111 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-30 (v3.1.1 cut; owner publishes)
+## 2. Current state — verified 2026-08-30 (v3.2.0 cut; owner publishes)
 
-**2026-08-30 — v3.1.1 CUT, VERIFIED AND TAGGED; the draft awaits the owner's publish (see the
-bottom of this block for exactly where it stopped).** The live-demo failure is CLOSED. The
-owner supplied the four exact demo files (Paytm tradebook + Equity P&L for UCC AG847854,
-Zerodha tradebook + Console P&L for PJ7736), and they are BIGGER than the private fixtures
-the diagnosis was built on — which is why the "data loss" impression was worse than the
-investigation predicted:
+**2026-08-30 — v3.2.0 CUT, VERIFIED AND TAGGED.** Built from two independent research batches
+(deep-analytics market research, 16 agents; a competitor teardown, 14 agents), each with an
+adversarial critic, plus ten owner decisions and a schema audit. **The plan, the decisions and
+what was deliberately NOT built are in `docs/V320_BUILD_PLAN.md`.**
 
-| | diagnosis fixtures | **the demo files** |
-|---|---|---|
-| Paytm | 414 → 142 | **7,544 executions → 804 positions** (650 closed / 82 open / 72 opening sells) |
-| Zerodha | 1,554 → 28 | **3,530 fills → 79 positions** (64 closed / 4 open / 11 opening sells) |
+**What v3.2.0 ships:**
 
-Reconciliation on the demo files: Paytm closed net **₹1,54,39,611** vs Paytm's own in-window
-realised **₹1,64,58,423** = **−6.19%**, the gap being pre-window cost basis the tradebook
-cannot see (same cause as the −1.4% on the older file, larger because this book has more
-pre-window inventory). Zerodha gross **₹9,02,987** vs Console's stated realised
-**₹9,53,951**; Zerodha's tradebook carries NO charge columns, so its charges are
-engine-computed by design.
+1. **Effective-dated charge rates (WS1).** `charge_config_uq` was
+   `(broker, plan, segment, exchange)` with NO date column, so one rate row existed per key and
+   every trade of every vintage priced at today's rate. Migration **0050** adds
+   `effective_from`/`effective_to` and puts `effective_from` in the key. **Nothing re-prices on
+   upgrade** — existing rows are stamped `1970-01-01` open-ended. `findRates` takes a REQUIRED
+   date (that is what made the compiler find all 12 call sites across 8 files) and REFUSES,
+   naming the windows on file, when no epoch covers it. Real epochs seeded from the primary
+   source: **Finance Act 2026, NSE Circular 02/2026 ref NSE/FATAX/73524 dated 31 Mar 2026** —
+   only three derivative rates moved (option sale 0.10→0.15%, option exercised 0.125→0.15% on
+   intrinsic, futures sale 0.02→0.05%); equity delivery and intraday are explicitly "No Change";
+   commodity CTT untouched. `settlement.ts` had been carrying BOTH superseded figures and so
+   understated the STT jump it exists to warn about.
+   **Scope stated precisely: `/reports/broker-compare` re-prices and is directly affected;
+   `/reports/charges` accumulates stored `chargesTotal`, so effective dating reaches it only
+   through what future imports write.**
+2. **Statistical inference (WS2).** New pure `lib/analytics/inference.ts` — Wilson intervals
+   (not Wald, which claims certainty from k=0), a t-interval for means, and **Benjamini–Yekutieli
+   as the DEFAULT** multiplicity control because slices of one book overlap and BH's PRDS
+   assumption does not hold. Wired into `/reports/edge`. **Show, never hide**: a slice failing
+   correction is marked "not yet distinguishable" and stays (invariant 7).
+3. **Segment depth (WS3).** The five books inside a book — Equity Intraday / Delivery / MTF /
+   Options (Index) / Options (Stock). `SEGMENTS` already distinguished `index_option` from
+   `stock_option`, so this needed NO data-model change — the single biggest de-risk. Verified on
+   the real book: *"Equity Delivery made ₹28,133 over 48 trades while Options (Index) lost
+   ₹1,05,416 over 79. The headline number is the two of them cancelling."*
+4. **Four dead columns brought to life (WS4).** Exit session (`exitTime` was only a sort
+   tiebreak), time in trade, order fragmentation (`buyOrderCount`/`sellOrderCount` were only
+   charge inputs), and **why a trade was closed** (migration **0051**, `exit_trigger`) crossed
+   with the `capturedPct` `mae-mfe.ts` already computes. Plus **stop migration**, mined from
+   `audit_log` before/after — the journal stores the FINAL stop, so a trade whose stop was
+   widened three times looked identical to one left alone.
+5. **A latent bug (WS6).** `effectiveStop` returns the trailing stop UNCONDITIONALLY, so a long
+   whose TSL is typed below its SL silently widened the working stop — and it governs both
+   breach detection and capital-at-risk, so the position looked safer than it was on two screens
+   at once. New `tsl_less_protective` warning; behaviour deliberately unchanged, because
+   silently substituting the tighter stop would hide a data-entry error.
+6. **Help gains truthful credential-protection copy**, folded into the `/settings` entry (the
+   help guard enforces 1:1 entries↔screens, which is the right design). Every claim verified
+   first: AES-256-GCM vault under an OS-held key, a sweep that rewrites plaintext as ciphertext
+   on launch, **zero telemetry dependencies in package.json**, one outbound call at launch.
+   **It names no competitor.**
 
-**All four demo files are now local regression fixtures** in `tests/fixtures/private/`
-(gitignored), named `… (demo 2026-08-30).xlsx/.xls`.
+**ADVERSARIAL REVIEW FOUND A BLOCKER AND IT WAS FIXED BEFORE SHIPPING.** `seed-core`'s refresh
+looked rows up by the PRE-0050 identity, so a second epoch let an app update write today's rate
+straight over the historical window — reproduced against real SQLite, silent in every direction
+(the seeder logs "1 refreshed", the settings screen showed two identical rows). Pinned by
+`tests/charge-epoch-seed.test.ts`. The review also caught **four false claims in comments and
+docs**, including that `/reports/charges` re-prices; all corrected.
 
-**What v3.1.1 ships (4 items, all verified):**
+**Two review follow-ups were closed in the SAME release rather than deferred**, because both
+would have made the release's own documentation false: MTF accrual no longer restates stored
+P&L (`epochSpans` splits a holding period into the epochs that governed it; spans always sum to
+the whole period, so one open-ended epoch accrues identically to before), and the charge editor
+now shows plan and the effective window and says when a window is a CLOSED historical one.
 
-1. **Import surfaces state the arithmetic** — new pure module `lib/domain/import-shape.ts`
-   renders `"7,544 executions → 804 positions (82 open, 72 opening sells without buy
-   history)"`, used by the PREVIEW, the COMMIT result and the RECENT-IMPORTS row (whose
-   column is now headed *Executions → positions*). Previously each surface said something
-   different and the top-of-screen count said only "804". `PreviewResult.shape` and
-   `CommitResult.shape` carry it; per-batch open/opening-sell counts are DERIVED in
-   `getImportBatchShapes()` (one grouped, account-scoped query — no migration, no second
-   copy of a fact already on `trades`).
-2. **The "—" cells explain themselves** — `openingSellNote()` names the count, says the
-   cost basis is not in the file, and says setting the buy price fills it in. Banned-claims
-   regex `/\breturns?\b(?! to)/` pinned in tests.
-3. **NEW DEFECT FOUND AND FIXED: a false "conservation check FAILED — please report this
-   file" was firing on BOTH demo files, on screen.** `summarisePairing` treated any non-zero
-   `valueDelta` as a lost lot, but each paired position rounds to the paisa, so N positions
-   carry up to N × 0.01 of residue. Measured: **₹0.04 on ₹75.8 crore of Paytm turnover (804
-   positions) and ₹0.01 on Zerodha's (79)**, `qtyDelta` exactly 0 in both — 1e-9 of turnover.
-   Tolerance is now DERIVED (`positions × 0.01`, floor 0.05) and lives in ONE `conserved`
-   flag in `pair-legs.ts`; all four parsers (paytm, zerodha, dhan-gtr, groww) now read it
-   instead of each copying the expression. Quantity stays exactly strict.
-   `tests/load/c8-pairing-depth.load.ts` had already encoded this (`relDrift < 1e-6`).
-4. **Bundled full ISIN→symbol snapshot** — `lib/data/isin-symbols.json`, **5,671 securities,
-   142 KB, `asOf` 2026-08-30**, built by `node scripts/build-isin-symbols.mjs --fetch`
-   (NSE EQUITY_L 2,559 + NSE Emerge SME 565 + BSE ListofScripData 2,547 new). Resolution
-   chain is now user instruments → THIS snapshot → bundled index map → keep the code; the
-   index map STAYS as an independent second source. **All 215 distinct scrip codes in the
-   demo book resolve, and all 66 in the older fixture** (was 76 of 215).
+**Suite: 2,184 tests / 146 files** (was 2,089/140). `npm run verify` **EXIT 0 pre- AND
+post-bump** including the production build, no dev server running. **e2e 45/45 EXIT 0** (2.1 min).
+Four doc guards green. Bump printed **4 files — correct for a MINOR**, footer moved to `v3.2`;
+`package-lock` roots hand-edited (diff exactly 2/2, lock re-parses); Cargo.lock 1/1 via the build.
 
-**Zerodha F&O: the demo file is EQUITY-ONLY — every row's Segment is `EQ`, zero symbols match
-the compact grammar. `lib/engine/classify.ts` was NOT touched.** The `NIFTY26JUN24500CE`
-defect still has no real sample; AGENTS.md's rule stands.
+**Desktop build EXIT 0.** BUILD_ID `aSVMM39M9opB0dhqcX-HN` → **`dgicfH57tmsg4kuiEtMjE`**
+(16:26 IST). Bundle carries `Segment depth`, `not yet distinguishable`, `five different
+businesses`, `rounding tolerance` and the new `Trailing stop` warning. Both `.sig` files decode
+to **`4FF85F3BBE1DA21D`**. Client ZIP **12 entries**, WHATS_NEW first heading `## New in v3.2.0`,
+all three policies "Applies to v3.2.0" dated 2026-08-30, forbidden greps clean, packed `.sig` on
+the live key. Installer SHA-256
+`64C3C67B2312F135DCEC25093D8DAE2FC044095045FE5CAA3FB687CC34BC68DA`.
 
-**Downloads for the ISIN snapshot (verified 2026-08-30, encoded in `SOURCES` in the build
-script):** `nseindia.com` itself answers **403** to a plain client while
-`nsearchives.nseindia.com` serves the CSVs fine; the Emerge list is at
-`/emerge/corporates/content/SME_EQUITY_L.csv` and the plausible
-`/content/equities/SME_EQUITY_L.csv` returns a **224-byte error page under HTTP 200** (the
-script rejects any body < 2 KB for this reason); BSE's API returns an **empty array when
-`segment` is blank**, and `segment=Equity` already includes the BSE SME board. Downloads
-land in `.isin-lists/` (gitignored).
-
-**Suite: 2,089 tests / 140 files** (+19 / +2 over v3.1.0's 2,070/138 — new
-`tests/import-shape.test.ts` and `tests/isin-bundle-coverage.test.ts`). `npm run verify`
-**EXIT 0 twice** — pre-bump and post-bump, including the production build, with no dev server
-running. All six README figures re-synced by pattern; four doc guards (readme-claims +
-client-docs-version + help-content + no-indicators-in-client-docs) **48 passed, EXIT 0**.
-
-**Docs pass DONE (uncommitted):** CHANGELOG `## v3.1.1`; README Now-line → v3.1.1 + new first
-history quote; client README `## New in v3.1.1` (4 rows); deck chips + footer → v3.1.1;
-INSTALLATION_GUIDE installer example `Vyuha_3.1.1_x64-setup.exe` (footer stays `v3.1`);
-PRIVACY/TERMS/REFUND → "Applies to: Vyuha v3.1.1 and later" dated 2026-08-30; TWO DECISIONS
-entries dated 2026-08-30; new AGENTS.md section "Bundled ISIN → symbol map".
-
-**Bump 3.1.1 done — printed 3 files, which is CORRECT for a PATCH** (footer stays `v3.1`).
-`package-lock.json` root strings hand-edited: `git diff --numstat` = **2 additions, 2
-deletions**, lock re-parses. `npm` was never run against the lock.
-
-**DESKTOP BUILD EXIT 0 (2026-08-30 01:15 IST).** Freshness proven two ways, not taken from
-the build's own "✓ signed": `BUILD_ID` moved **`5aVqKlBd-FpsB5k_wujCI` → `aSVMM39M9opB0dhqcX-HN`**
-(01:15:10 IST), and the bundle carries v3.1.1's own literals — `without buy history` and
-`Executions → positions` in **both** the server AND client chunks, `rounding tolerance` in the
-server chunk (parser warnings are server-side, so client 0 is correct there). **NOTE for the
-next freshness check: `opening sells without buy history` greps to ZERO and that is CORRECT** —
-`importShapeSentence` assembles it from `"opening "` + a plural + `" without buy history"`, so
-the whole phrase is never a literal. Grep the fragments. Best proof of the ISIN snapshot
-shipping: `INE0UZO01024` (a BSE SME name from the demo book that the OLD bundle could not
-resolve) is present in `desktop-dist/.next/server/chunks/lib_0zircx0._.js`.
-**Both `.sig` files decode to `4FF85F3BBE1DA21D`** (NSIS + MSI, decoded from the signature
-bytes), byte-matching `tauri.conf.json` `plugins.updater.pubkey`. `src-tauri/Cargo.lock` is at
-3.1.1 via the build.
-**Client ZIP `Vyuha_3.1.1_Client_Package.zip`** — 12 entries, extracted and audited: WHATS_NEW
-first heading `## New in v3.1.1`; TERMS/PRIVACY/REFUND all "Applies to: Vyuha v3.1.1 and later"
-dated 2026-08-30; greps for `OWNER:`, `macos`, `pine script|tradingview` all return NOTHING;
-packed `.sig` decodes to the live key. Installer **33.3 MB**, SHA-256
-`A0A73A33A052A770E7B3AF6BF95510CCC85FAA88ECAA97A877971FE1985FBC24`.
-
-**LIVE-API PROOF ON THE EXACT DEMO FILES (dev server on :3007, preview mode, no writes —
-server stopped immediately after):** Paytm previewed as
-`shape {sourceRows:7544, positions:804, open:82, openingSells:72}`, gross ₹1,65,73,163.77, and
-**0 of 804 rows still show a numeric scrip code** (was 603 rows / 215 distinct codes before
-the snapshot). Zerodha previewed as `{sourceRows:3530, positions:79, open:4, openingSells:11}`,
-gross ₹9,02,987.40, 0 coded rows. **Three warnings each, and the false conservation alarm is
-gone from both.** The `/import` page SSR renders the column header exactly as
-`Executions → positions`; sidebar footer reads `Local · Offline · v3.1` (correct — PATCH does
-not move it).
-
-**v3.1.1 CUT AND VERIFIED (2026-08-30 ~02:10 IST):** commit **`80230ee`** pushed;
-**CI run 33271950732 ALL 5 JOBS GREEN BEFORE TAGGING** (Lint/typecheck/unit/build, Windows
-install + tests, Playwright e2e ubuntu, Playwright e2e macOS-14, desktop bundle macOS — both
-e2e suites green IS this release's e2e evidence; e2e was not run locally); tag **`v3.1.1`**
-pushed; **Release workflow 33272126202 success, all 3 platform jobs** (Windows x64, macOS
-Intel, macOS Apple silicon); `npm run release:verify v3.1.1` → **all 3 `.sig` =
-`4FF85F3BBE1DA21D`, "Safe to publish"**.
-**Draft release: 9 assets. `releases/latest` still v3.1.0 (a draft steals nothing);
+**RELEASE CUT AND VERIFIED (2026-08-30 ~17:30 IST):** commit **`a9b36a1`** pushed; **CI run
+33307860318 ALL 5 JOBS GREEN BEFORE TAGGING** (Lint/typecheck/unit/build, Windows install +
+tests, Playwright e2e ubuntu, Playwright e2e macOS-14, desktop bundle macOS); tag **`v3.2.0`**
+pushed; **Release workflow 33308028543 success, all 3 platform jobs**; `npm run release:verify
+v3.2.0` → **all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"**.
+**Draft release: 9 assets. `releases/latest` still v3.1.1 (a draft steals nothing);
 `revocations` re-checked and still `prerelease=true`, untouched.**
-**Two-binaries gap reproduced a SIXTH time:** GitHub asset **34,923,776 B** vs the local/ZIP
-build's **34,941,480 B** — 17,704 B apart. winget takes the GitHub hash, WDSI and buyers take
-the ZIP's (`A0A73A33…5FBC24`).
+**Two-binaries gap reproduced a SEVENTH time:** GitHub asset **34,939,395 B** vs the local/ZIP
+build's **34,950,440 B** — 11,045 B apart. winget takes the GitHub hash; WDSI and buyers take
+the ZIP's (`64C3C67B…4BC68DA`).
 
-**OWNER STEPS — DONE 2026-08-30 (reported by the owner): the release is PUBLISHED and the
-mirror is PUSHED.** WDSI submission is the only one still outstanding — use the CLIENT ZIP's
-installer (SHA-256 `A0A73A33…5FBC24`), not the GitHub asset, which is a different binary.
+**OWNER STEPS REMAINING:** publish the draft → `npm run mirror:push` **from a real terminal**
+(agent sessions run with `GIT_TERMINAL_PROMPT=0`, which blocks the Codeberg OAuth refresh) →
+WDSI with the CLIENT ZIP's installer, not the GitHub asset → **no winget PR while
+microsoft/winget-pkgs #421585 is open** → install on a non-build machine.
 
-**"INSTALL ON A NON-BUILD MACHINE" IS DISCHARGED (2026-08-30).** The owner reports v3.1.1
-installed and running fine on another user's machine. This item had been open since **v2.90.0**,
-which passed every automated check and then ran on no machine but the one that built it — the
-standing caveat that motivated step 7 of the release skill. It is now satisfied by a real
-install of a real release, not by winget's `08. Installation Validation` (which only proves the
-installer runs on a clean VM, never that the app launches and is usable).
+**DEFERRED DELIBERATELY: the LIFO analysis lens.** Indian tax PRESCRIBES FIFO for demat-held
+listed shares, so LIFO can only ever be a what-if view; a second P&L number that looks equally
+official is a support and correctness hazard for marginal gain. The owner asked for it as an
+analysis-only lens and it is the lowest-value item in the plan — held for a later release rather
+than rushed into this one.
 
-**winget re-checked 2026-08-30: PR microsoft/winget-pkgs [#421585] is STILL OPEN and has not
-moved since 2026-08-20T20:29:09Z — ten days, zero activity.** Labels unchanged
-(`Azure-Pipeline-Passed` + `Validation-Completed` + `New-Package`), `mergeable: MERGEABLE`,
-`reviewDecision: REVIEW_REQUIRED`, still exactly one comment (the CLA agreement). It is waiting
-on a community-volunteer moderator and nothing else. **No movement is NORMAL for a first-time
-package — do NOT nudge it, and do NOT open a second PR for 3.1.1 while it is open.** It is
-submitted for 2.99.99 and that is fine: the v2.99.99 release and its asset URL stay live, so
-the PR remains valid and mergeable. Correct order is still: let it merge, THEN
-`wingetcreate update ThejeshK.Vyuha --version 3.1.1 --urls <installer-url> --submit`, with the
-PUBLISHED GitHub asset's hash, not the local build's.
+**NOT DONE / NOT VERIFIABLE HERE:** the installer has not been run on a non-build machine for
+THIS version; the Zerodha F&O compact grammar is still unparsed and still has no real sample;
+first-run onboarding (§8.4) remains genuinely unbuilt — the 2026-08-30 "onboarding completed"
+was a BUYER onboarding, recorded separately and deliberately kept apart from the feature.
 
-**e2e RUN LOCALLY AFTER THE TAG: 45/45 PASSED, 2.5 min, EXIT 0** (2026-08-30 ~02:25 IST, on
-`0c6ce92`). Playwright serves `next dev -p 3100` against its OWN isolated database
-(`data/e2e.sqlite` via `VYUHA_DB_PATH`), so the live journal is untouched; port 3100 confirmed
-free afterwards. This supersedes the earlier "e2e not run locally" caveat — the release now has
-BOTH local and CI e2e evidence. **Note it runs Next in DEV mode, so it leaves a dev `.next`
-behind: any later `npm run verify` must rebuild, and no dev server may be up while it does
-(DECISIONS 2026-08-27).** The shipped artifact is unaffected — `desktop-dist/` and the signed
-installer were produced before this run.
-
-**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** the Zerodha F&O compact grammar is still
-unparsed and still has no real sample; the human-facing NSE/BSE portal pages were not navigated
-(the three DIRECT download URLs were verified, the portal click-paths were not); WDSI for
-v3.1.1 is not yet submitted.
-
-**KNOWN GAP, MEASURED 2026-08-30 — the ISIN snapshot has NO ETFs or MF units (candidate for
-v3.1.2).** The owner supplied nine exchange downloads for cross-checking. Four add NOTHING
-because the bundle already has them: `EQUITY_L.csv` (2,559 ISINs, 0 new), `SME_EQUITY_L.csv`
-(565, 0 new), **`Equity.csv` — which IS BSE's manual `ListOfScrips` export and matched the API
-pull the build script uses at 4,979 rows / 0 new ISINs, independently confirming that source**,
-and `EQT0.csv` (513 BSE T+0-eligible, a pure subset). Two are unusable:
-`Eligible_T0_Securities_4.xlsx` has NO ISIN column (it is a formatted schedule, not a data
-list), and `eq_ilseclist.csv` is EMPTY — header only, zero rows (the build script's <2 KB /
-<2-row guards already refuse both).
-
-Three DO add coverage, all of it `INF…` (ETF and mutual-fund units, which no `INE` equity list
-carries): `eq_etfseclist.csv` (349 NSE ETFs, **156 new**), `MF.csv` (563 BSE MF-segment rows,
-**302 new** — note BSE labels these `Instrument = Equity`, so the existing equity filter would
-pass them unchanged) and `mf_close-end.csv` (115 NSE close-ended MF, **115 new**). About 573
-new ISINs, roughly 15 KB.
-
-**Neither demo book contains a single INF ISIN** (Paytm 281 distinct ISINs, Zerodha 58, zero
-INF in both), so this gap is REAL BUT NOT YET HIT. It matters because GOLDBEES / SILVERBEES /
-NIFTYBEES / LIQUIDBEES are ordinary retail holdings that trade in the equity segment, and a
-Paytm tradebook would state them as numeric codes exactly like any share. Adding them is
-low-risk by construction: `resolveCodedSymbols` only ever fires on an ALL-DIGIT symbol, so more
-ISINs can only turn numbers into tickers — it can never corrupt a ticker that is already right.
+*Below: the v3.1.1 and v3.1.0 cuts — accurate history.*
 
 *Below: the v3.1.0 cut, verified 2026-08-29 — accurate history.*
 
