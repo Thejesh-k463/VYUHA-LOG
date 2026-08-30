@@ -51,13 +51,22 @@ confirmed independently by its adversarial critic.
    the staged engine's `legChargeShapes` path. Recorded here so nobody later reads it as
    an oversight.
 
-6. **Restatement of stored charges is deliberately NOT automatic — with ONE known
-   exception, named here rather than left to be discovered.** `lib/jobs/mtf-accrual.ts`
-   prices at TODAY's epoch and applies that rate across the whole holding period, then
-   writes `chargesTotal` and `netPnl` back. So an open MTF position does silently
-   restate when an MTF-interest epoch changes. That path is not epoch-segmented yet;
-   it is a follow-up, and until then this decision has a hole in it that the
-   adversarial review found and this sentence records. Showing a user a
+6. **Restatement of stored charges is deliberately NOT automatic — and the one path
+   that violated it has been closed.** Showing a user a different P&L than yesterday
+   without their consent is precisely the failure this product exists to avoid.
+   Reports price correctly by date; rewriting stored `chargesTotal` on historical
+   trades stays an explicit, audited user action.
+
+   The adversarial review found `lib/jobs/mtf-accrual.ts` breaking this: it priced at
+   TODAY's epoch, applied that rate across the WHOLE holding period, and wrote
+   `chargesTotal`/`netPnl` back — so an open MTF position silently restated the moment
+   an interest epoch changed. Fixed with `epochSpans()`, which splits a holding period
+   into the epochs that actually governed it. **Its spans always sum to the whole
+   period, so a broker with one open-ended epoch — every broker today — accrues
+   arithmetically identically to before.** The common case does not move at all; only a
+   period that genuinely straddles a rate change now accrues at two rates. Where no
+   epoch covers part of the period it accrues NOTHING rather than stretching a
+   neighbouring rate over the gap. Showing a user a
    different P&L than yesterday without their consent is precisely the failure this
    product exists to avoid. Reports price correctly by date; rewriting the stored
    `chargesTotal` on historical trades stays an explicit, audited user action.

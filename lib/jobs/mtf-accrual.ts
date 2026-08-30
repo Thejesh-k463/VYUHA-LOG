@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates, todayIso } from "@/lib/engine/rates";
+import { epochSpans, todayIso } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getMarginRates } from "@/lib/queries/margin";
@@ -45,10 +45,29 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
     // T+1 settlement start through the day before sale proceeds settle = exactly
     // (today − buyDate) calendar days for a still-open position — confirmed
     // against Dhan's MTF docs. No extra "-1": that undercounted by one day.
-    const days = Math.max(0, Math.floor((new Date(today + "T00:00:00").getTime() - new Date(t.buyDate + "T00:00:00").getTime()) / 86400000));
-    const r = findRates(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, today);
-    const rate = mtfRateFor(funded, r);
-    const interest = r2((funded * rate * days) / 365);
+    /**
+     * Interest accrues PER EPOCH, not at today's rate for the whole period.
+     *
+     * Pricing the full holding period at today's rate would retroactively
+     * restate interest the user already accrued under the old one — and this
+     * job writes `chargesTotal` and `netPnl` back, so that is a stored P&L
+     * changing with no prompt and no audit entry. DECISIONS 2026-08-30
+     * decision 6 forbids exactly that.
+     *
+     * `epochSpans` days always sum to (today − buyDate), so a broker with one
+     * open-ended epoch — every broker today — accrues precisely as before.
+     */
+    let interest: number;
+    try {
+      const spans = epochSpans(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, t.buyDate, today);
+      let acc = 0;
+      for (const s of spans) acc += (funded * mtfRateFor(funded, s.rates) * s.days) / 365;
+      interest = r2(acc);
+    } catch {
+      // No rate epoch covers part of this holding period. Accruing at a
+      // neighbouring rate would invent a number; leaving it alone is honest.
+      continue;
+    }
     const fundedChanged = t.mtfFundedAmount == null || t.mtfFundedAmount <= 0;
     if (interest === t.mtfInterest && !fundedChanged) continue;
 

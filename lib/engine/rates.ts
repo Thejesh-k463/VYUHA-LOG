@@ -156,6 +156,91 @@ export function epochsFor(
   return map.get(key(broker, plan, segment, exchange)) ?? [];
 }
 
+/** One epoch's slice of a holding period. */
+export interface EpochSpan {
+  rates: ChargeRates;
+  /** Inclusive start of the slice, `YYYY-MM-DD`. */
+  from: string;
+  /** Exclusive end of the slice, `YYYY-MM-DD`. */
+  to: string;
+  /** Calendar days in the slice. Spans always sum to the whole period. */
+  days: number;
+}
+
+/** Whole calendar days between two ISO dates. Both are date-only, so UTC is exact. */
+function daysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+
+/**
+ * Split a holding period into the rate epochs that actually governed it.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * MTF interest accrues DAILY over a period that can straddle a rate change.
+ * Pricing the whole period at today's rate silently restates interest the user
+ * already accrued under the old one — and because the accrual job writes
+ * `chargesTotal` and `netPnl` back to the trade, that is a stored P&L changing
+ * with no prompt and no audit entry. DECISIONS 2026-08-30 decision 6 forbids
+ * exactly that, and an adversarial review found the job doing it anyway.
+ *
+ * Spans are returned oldest-first and their `days` ALWAYS sum to
+ * `daysBetween(from, to)`, so a single open-ended epoch yields one span and
+ * arithmetic identical to the un-segmented version. That is deliberate: the
+ * common case must not change at all.
+ *
+ * Refuses (throws) when the period is not fully covered, for the same reason
+ * `findRates` does — a gap silently priced at a neighbouring rate is a wrong
+ * number that looks exactly like a right one.
+ */
+export function epochSpans(
+  map: RatesMap,
+  broker: Broker,
+  segment: Segment,
+  exchange: Exchange,
+  from: string,
+  to: string,
+  plan = "default",
+): EpochSpan[] {
+  if (to <= from) return [];
+  const list = map.get(key(broker, plan, segment, exchange));
+  if (!list || list.length === 0) {
+    throw new Error(`No charge_config for ${broker} / ${plan} / ${segment} / ${exchange}`);
+  }
+  // Oldest-first for the walk; the stored list is newest-first.
+  const asc = [...list].sort((a, b) =>
+    (a.effectiveFrom ?? "1970-01-01").localeCompare(b.effectiveFrom ?? "1970-01-01"),
+  );
+
+  const spans: EpochSpan[] = [];
+  let cursor = from;
+  for (const r of asc) {
+    const eFrom = r.effectiveFrom ?? "1970-01-01";
+    const eTo = r.effectiveTo ?? null;
+    if (eTo != null && eTo <= cursor) continue; // epoch ended before we get there
+    if (eFrom > cursor) break; // gap — caught below
+    const end = eTo == null ? to : (eTo < to ? eTo : to);
+    if (end > cursor) {
+      spans.push({ rates: r, from: cursor, to: end, days: daysBetween(cursor, end) });
+      cursor = end;
+    }
+    if (cursor >= to) break;
+  }
+
+  if (cursor < to) {
+    const windows = asc
+      .map((r) => `${r.effectiveFrom ?? "1970-01-01"}→${r.effectiveTo ?? "open"}`)
+      .join(", ");
+    throw new Error(
+      `No charge_config epoch covers ${cursor}..${to} for ${broker} / ${plan} / ${segment} / ${exchange}. On file: ${windows}`,
+    );
+  }
+  return spans;
+}
+
 export function findRates(
   map: RatesMap,
   broker: Broker,

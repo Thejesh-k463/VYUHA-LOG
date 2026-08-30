@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addEpoch,
+  epochSpans,
   epochsFor,
   findRates,
   pricingDate,
@@ -167,5 +168,65 @@ describe("pricingDate — one rule, not eleven call-site opinions", () => {
     // 31-03-2026 is day-first for 2026-03-31 → the OLD epoch.
     expect(findRates(m, "zerodha", "future", "NSE", pricingDate({ sellDate: "31-03-2026" }, "2026-08-30")).sttPct).toBe(0.0002);
     expect(findRates(m, "zerodha", "future", "NSE", pricingDate({ sellDate: "01-04-2026" }, "2026-08-30")).sttPct).toBe(0.0005);
+  });
+});
+
+describe("epochSpans — interest that accrues across a rate change", () => {
+  /**
+   * The MTF accrual job writes `chargesTotal` and `netPnl` back to the trade,
+   * so pricing a whole holding period at TODAY's rate silently restates
+   * interest already accrued under the old one — a stored P&L changing with no
+   * prompt. DECISIONS 2026-08-30 decision 6 forbids that; an adversarial review
+   * found the job doing it anyway.
+   */
+  it("returns ONE span for a single open-ended epoch, so nothing changes for anybody today", () => {
+    const m = ratesMapOf([base({ segment: "eq_mtf" })]);
+    const spans = epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-01-01", "2026-03-02");
+    expect(spans.length).toBe(1);
+    // 31 (Jan) + 28 (Feb) + 1 = 60 days, identical to (to − from).
+    expect(spans[0].days).toBe(60);
+  });
+
+  it("splits the period at the boundary and the days still sum to the whole", () => {
+    const m = ratesMapOf([
+      base({ segment: "eq_mtf", effectiveFrom: "1970-01-01", effectiveTo: "2026-04-01", mtfInterestAnnual: 0.12 }),
+      base({ segment: "eq_mtf", effectiveFrom: "2026-04-01", effectiveTo: null, mtfInterestAnnual: 0.18 }),
+    ]);
+    const spans = epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-03-02", "2026-05-01");
+    expect(spans.length).toBe(2);
+    expect(spans[0].to).toBe("2026-04-01");
+    expect(spans[1].from).toBe("2026-04-01");
+    expect(spans[0].days).toBe(30); // 2 Mar → 1 Apr
+    expect(spans[1].days).toBe(30); // 1 Apr → 1 May
+    // The whole period is accounted for exactly once — no day double-counted,
+    // none dropped. This is the property that keeps the total honest.
+    expect(spans[0].days + spans[1].days).toBe(60);
+    expect(spans[0].rates.mtfInterestAnnual).toBe(0.12);
+    expect(spans[1].rates.mtfInterestAnnual).toBe(0.18);
+  });
+
+  it("stays inside the period when an epoch starts before or ends after it", () => {
+    const m = ratesMapOf([
+      base({ segment: "eq_mtf", effectiveFrom: "1970-01-01", effectiveTo: "2026-04-01" }),
+      base({ segment: "eq_mtf", effectiveFrom: "2026-04-01", effectiveTo: null }),
+    ]);
+    const spans = epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-04-10", "2026-04-20");
+    expect(spans.length).toBe(1);
+    expect(spans[0].from).toBe("2026-04-10");
+    expect(spans[0].to).toBe("2026-04-20");
+    expect(spans[0].days).toBe(10);
+  });
+
+  it("REFUSES a period it cannot fully cover rather than stretching a neighbour", () => {
+    const m = ratesMapOf([base({ segment: "eq_mtf", effectiveFrom: "2026-04-01", effectiveTo: null })]);
+    expect(() => epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-01-01", "2026-05-01")).toThrow(
+      /No charge_config epoch covers/,
+    );
+  });
+
+  it("returns nothing for a zero-length or inverted period", () => {
+    const m = ratesMapOf([base({ segment: "eq_mtf" })]);
+    expect(epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-04-01", "2026-04-01")).toEqual([]);
+    expect(epochSpans(m, "zerodha", "eq_mtf", "NSE", "2026-04-02", "2026-04-01")).toEqual([]);
   });
 });

@@ -27,9 +27,25 @@ const FIELDS: { key: keyof ChargeConfigRow; label: string }[] = [
   { key: "mtfInterestAnnual", label: "MTF interest (annual)" },
 ];
 
+/**
+ * A rate row's window, rendered so two epochs of one key never look alike.
+ * "Current" for the open-ended one, an explicit range for a closed one.
+ */
+function periodLabel(r: ChargeConfigRow): string {
+  const from = r.effectiveFrom ?? "1970-01-01";
+  if (r.effectiveTo == null) return from === "1970-01-01" ? "current" : `from ${from}`;
+  return `${from} to ${r.effectiveTo}`;
+}
+
+/** A window that has already closed — editing it re-prices the PAST. */
+function isHistorical(r: ChargeConfigRow): boolean {
+  return r.effectiveTo != null && r.effectiveTo <= new Date().toISOString().slice(0, 10);
+}
+
 export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
   const router = useRouter();
   const [id, setId] = React.useState<number>(rows[0]?.id ?? 0);
+  const selected = rows.find((r) => r.id === id);
   const [vals, setVals] = React.useState<Record<string, string>>(() => initVals(rows[0]));
   const [pending, setPending] = React.useState(false);
 
@@ -77,17 +93,39 @@ export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {
       <CardContent>
         <div className="space-y-4">
           <div className="space-y-1">
-            <Label>Rate row (broker × segment × exchange)</Label>
+            {/*
+              The window is part of a row's IDENTITY (migration 0050), so it has
+              to be on screen. A key can now hold several dated epochs, and
+              without the dates two of them render identically — the user picks
+              one at random and edits history without knowing it. `plan` was
+              always part of the key too and was never shown either.
+            */}
+            <Label>Rate row (broker × plan × segment × exchange × period)</Label>
             <Select value={id} onChange={(e) => selectRow(Number(e.target.value))} className="max-w-md">
               {rows
                 .slice()
-                .sort((a, b) => a.broker.localeCompare(b.broker) || a.segment.localeCompare(b.segment) || a.exchange.localeCompare(b.exchange))
+                .sort(
+                  (a, b) =>
+                    a.broker.localeCompare(b.broker) ||
+                    (a.plan ?? "default").localeCompare(b.plan ?? "default") ||
+                    a.segment.localeCompare(b.segment) ||
+                    a.exchange.localeCompare(b.exchange) ||
+                    // Newest window first, so today's rate is the obvious pick.
+                    (b.effectiveFrom ?? "").localeCompare(a.effectiveFrom ?? ""),
+                )
                 .map((r) => (
                   <option key={r.id} value={r.id}>
-                    {BROKER_LABELS[r.broker as Broker]} · {SEGMENT_LABELS[r.segment as Segment]} · {r.exchange}
+                    {BROKER_LABELS[r.broker as Broker]}
+                    {r.plan && r.plan !== "default" ? ` (${r.planLabel ?? r.plan})` : ""} ·{" "}
+                    {SEGMENT_LABELS[r.segment as Segment]} · {r.exchange} · {periodLabel(r)}
                   </option>
                 ))}
             </Select>
+            <p className="text-xs text-muted-foreground">
+              {selected && isHistorical(selected)
+                ? "This is a CLOSED historical window. Editing it changes how past trades are priced, not future ones."
+                : "This window is in force today."}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
