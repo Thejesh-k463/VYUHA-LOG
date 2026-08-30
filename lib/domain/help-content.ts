@@ -362,9 +362,13 @@ export const HELP_ENTRIES: HelpEntry[] = [
       "Capital buckets, risk and charge/margin rate tables (every statutory rate is editable — nothing is hard-coded), theme, accent skins, colorblind-safe mode and licence activation.",
       "Your first configuration is kept as My Default Settings; change anything freely and one click brings the whole configuration back to your baseline. Trades and journal data are never part of that restore.",
       "Integrations (advanced) is where the OpenAlgo connection is switched on. It is off on every install, the switch opens a disclosure you have to accept, and the acceptance is written to the Audit Log with the version of the risks you read. Turning it off hides it again and leaves every trade already imported exactly where it is.",
+      "HOW YOUR CREDENTIALS ARE HELD. Broker API keys, secrets and access tokens are never stored as readable text: each one is encrypted with AES-256-GCM before it touches the database, under a key held by your operating system's own credential store. If an older install ever wrote one in the clear, Vyuha rewrites it as ciphertext on the next launch rather than leaving it there. Nothing in this app describes itself as encrypted unless it is.",
+      "WHERE YOUR DATA LIVES. Your journal is one SQLite file on your own machine. There is no account to create, no server to sign in to, and no copy of your trades anywhere else — not a synced folder, not a cloud drive, not a database anyone else operates. Deleting the file deletes the data.",
+      "WHAT LEAVES THE MACHINE. Vyuha ships no analytics, no crash reporter and no session recorder, so there is no third-party code in it that could see your screen or your book. The only outbound call it makes on its own is the update and licence-revocation check at launch. Everything else is something you ask for: an end-of-day price download you switch on, or a broker pull you trigger. OpenAlgo is shaped so your broker credentials go into YOUR OpenAlgo instance and never into Vyuha.",
     ],
-    keywords: ["settings", "capital", "rates", "theme", "default", "restore defaults", "licence", "integrations", "openalgo"],
+    keywords: ["settings", "capital", "rates", "theme", "default", "restore defaults", "licence", "integrations", "openalgo", "privacy", "security", "encryption", "credentials", "api key", "vault", "telemetry", "offline"],
   },
+
   {
     href: "/help",
     title: "Help Desk",

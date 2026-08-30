@@ -28,7 +28,21 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v3.1.1** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v3.2.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v3.2.0 — the journal stops guessing, and starts saying how sure it is.** Charge rates are
+> now **effective-dated**: a rate row had no time dimension, so every trade of every vintage was
+> priced at today's rate, and a book spanning the 1 April 2026 STT revision (NSE circular
+> 02/2026 — options 0.10→0.15%, exercised options 0.125→0.15%, futures 0.02→0.05%) was priced
+> wholly at the newer regime. Vyuha now keeps a dated history per rate and refuses rather than
+> substituting when a date has none; **nothing re-prices on upgrade**. Every rate on the Edge
+> report now carries a **Wilson confidence interval**, corrected across the whole table with
+> **Benjamini–Yekutieli** — a 68% win rate on 15 trades spans roughly 42–86%, and slices that
+> are not yet distinguishable from the book's own rate are marked and still shown. New
+> **segment depth** separates the five books inside a book — Intraday, Delivery, MTF, Options
+> (Index), Options (Stock) — and four columns the journal always captured and never read now
+> answer when you exit, how long you hold, how many orders a position took, and **why** you
+> closed it, crossed with how much of the move that exit caught.
 >
 > **v3.1.1 — an import says what it did with every row.** A tradebook states executions;
 > Vyuha stores positions. The screen used to announce only the second number, so 7,544

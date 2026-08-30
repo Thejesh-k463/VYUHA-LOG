@@ -6,6 +6,80 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-30 — Statistical inference, segment depth, and the columns nobody read (v3.2.0)
+
+**Context:** two independent research batches (deep-analytics market research; a competitor
+teardown), each with an adversarial critic, plus a schema audit that cross-referenced every
+column against every read.
+
+**Decisions:**
+
+1. **Benjamini–YEKUTIELI is the default multiplicity control, not Benjamini–Hochberg.** BH
+   controls the false-discovery rate only under independence or positive regression dependence
+   (PRDS). Slices of one trade book are neither — "morning trades" and "NIFTY trades" overlap,
+   share trades, and can correlate in either direction. BY (2001) is valid under ARBITRARY
+   dependence at the cost of a log-factor of power. Given the alternative is telling someone
+   their edge is real when it is not, that is the right trade. BH stays exported for the
+   genuinely independent case and every result NAMES the method that produced it.
+
+2. **Wilson, not Wald, for every proportion.** The textbook Wald interval returns the single
+   point 0 at k = 0 — absolute certainty from no evidence — and routinely runs outside [0,1].
+   Wilson never leaves the interval and has far better small-sample coverage (Brown, Cai &
+   DasGupta 2001), which is the only regime a per-setup slice ever lives in.
+
+3. **Show, never hide (owner's decision).** A slice that fails correction is MARKED "not yet
+   distinguishable" and stays on screen. It is the user's own record (invariant 7); suppressing
+   it would also make a new user's first week emptier, which the research critic identified as
+   a live activation risk.
+
+4. **Tests pin PUBLISHED values, not the implementation's own output.** Wilson against the
+   Brown/Cai/DasGupta worked examples, BH against the original method, BY worked through by
+   hand. This caught a real error: the BY assertion said one slice would survive, the code said
+   two, and **the code was right**. A statistics module that only agrees with itself is worth
+   nothing.
+
+5. **Segment depth covers FIVE segments, not all eight.** `SEGMENTS` has distinguished
+   `index_option` from `stock_option` since long before this, so the owner's requested split
+   needed no data-model change — the single biggest de-risk in the release. Futures and
+   commodities stay in `bySegment` and are COUNTED on the new surface ("N closed trades sit in
+   futures or commodities, which this table does not cover") rather than padded in as empty
+   rows.
+
+6. **Charge drag refuses a percentage against a negative gross.** A "drag %" computed on a loss
+   reads as a share of profit that was never earned.
+
+7. **`exitTrigger` is free text with a curated list, and blanks are EXCLUDED, never bucketed.**
+   An unanswered question is not an answer. Every analytic over the column reports how many rows
+   it excluded so the screen can say so (invariant 6).
+
+8. **Stop migration reports the expectancy GAP, never a counterfactual.** "You would have lost
+   ₹4,200 less" needs the price path after the edit, which Vyuha does not have at intraday
+   granularity. The same discipline `mistakeReport` has always used.
+
+9. **`effectiveStop` behaviour is deliberately UNCHANGED.** A trailing stop typed on the wrong
+   side of its original silently widens the working stop, and it governs both breach detection
+   and capital-at-risk — the position looks safer than it is on two screens at once. Silently
+   substituting the tighter stop would hide a data-entry error and disagree with what is
+   actually working at the broker, so a fifth warning code (`tsl_less_protective`) tells the
+   user and they decide.
+
+10. **`openRiskPct`'s doc comment was the thing that was wrong.** It claimed the aggregate
+    counted only stopped positions; the code has never done that, and `staged.ts` states the
+    same policy deliberately ("No stop: the honest worst case is the whole position"). Counting
+    an unstopped position as zero risk would be the least honest option available.
+
+**Also verified and NOT acted on:** four Batch-2 recommendations described machinery that
+already ships (`lossIfAllStopsHit`, the staged warning system, `DTE_BANDS`, the lifetime-SKU
+copy) and one Batch-1 evidence claim was fabricated (a competitor's charges page was said to be
+five months stale; it publishes both rate epochs with explicit dates). All deleted before they
+reached this release. Recorded so nobody resurrects them.
+
+**Deferred, deliberately:** the LIFO analysis lens. Indian tax PRESCRIBES FIFO for demat-held
+listed shares, so LIFO can only ever be a what-if view, and shipping a second P&L number that
+looks equally official is a support and correctness hazard for marginal gain. The owner asked
+for it as an analysis-only lens; it is the lowest-value item in the plan and is held for a
+later release rather than rushed into this one.
+
 ## 2026-08-30 — Charge rates become effective-dated (v3.2.0 WS1)
 
 **Context:** `charge_config_uq` was `(broker, plan, segment, exchange)` with no time

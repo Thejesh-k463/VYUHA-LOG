@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.2.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **Charges priced at the rate that applied on the day** | Statutory rates change. STT on futures and options was raised on 1 April 2026, and until now Vyuha priced your whole history at today's rate. It now keeps a dated history per rate and prices each trade at the one that actually applied to it. Your existing numbers do not move on upgrade — and if no rate is on file for a date, Vyuha says so instead of quietly using a nearby one. |
+| **Every win rate now comes with a confidence interval** | A 68% win rate on 15 trades sounds convincing; its real range is about 42%–86%. Vyuha now shows that range, and when a setup is not yet distinguishable from your own overall rate it says so. Nothing is hidden — it is your record — but you will no longer be pointed at an edge that is really a coin toss. |
+| **Segment depth: the five books inside your book** | Equity Intraday, Delivery, MTF, Options (Index) and Options (Stock) are five different businesses with different taxes, different holding costs and different settlement. Seeing them apart tells you which one is paying for the others — something a single overall number cannot. |
+| **The exit half of the journal** | Which market session you exit in, how long you actually hold a position, how many orders it took to build, and **why** you closed it — crossed with how much of the available move that exit caught. |
+| **Stops that moved after entry** | Your journal keeps the final stop, so a trade whose stop was widened three times used to look the same as one you left alone. Now you can see the difference it made. |
+
 ## New in v3.1.1
 
 | Upgrade | What it gives you |

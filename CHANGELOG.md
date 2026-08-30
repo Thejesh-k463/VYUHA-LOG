@@ -1,5 +1,41 @@
 # Changelog
 
+## v3.2.0 — the journal stops guessing, and starts saying how sure it is
+
+- **Charge rates are now effective-dated.** A rate row used to have no time
+  dimension, so every trade of every vintage was priced at today's rate. The
+  Finance Act 2026 raised three derivative STT rates on 1 April 2026 (option
+  sale 0.10% → 0.15%, option exercised 0.125% → 0.15% on intrinsic, futures sale
+  0.02% → 0.05% — NSE circular 02/2026), and a book spanning that date was
+  priced wholly at the newer regime. Vyuha now holds a dated history per rate
+  and prices each trade at the rate that actually applied to it. **Nothing
+  re-prices on upgrade**, and where no rate is on file for a date it says so
+  rather than substituting a nearby one.
+- **Every rate now carries a confidence interval, and the Edge report is
+  corrected for testing many slices at once.** A 68% win rate on 15 trades has a
+  95% interval of roughly 42%–86%; rank twenty such slices and the winner is
+  frequently just the luckiest. Slices that are not yet distinguishable from
+  your own overall rate are marked as such — and still shown, because it is your
+  record.
+- **Segment depth — the five books inside your book.** Equity Intraday,
+  Delivery, MTF, Options (Index) and Options (Stock) are different businesses
+  with different statute, different holding costs and different settlement. A
+  single expectancy over all five hides which one pays for the others.
+- **Four things the journal always recorded and never showed you:** the session
+  you EXIT in (the entry side has had this for months), how long you actually
+  hold a same-day position, how many separate orders a position took to build
+  and unwind, and — new — **why** you closed it, crossed with how much of the
+  available move that exit captured.
+- **Stops that moved after entry are now visible.** The journal stores the final
+  stop, so a trade whose stop was widened three times looked identical to one
+  left alone. Reported as the difference in expectancy, never as a guess at what
+  the trade "would have" made.
+- **Fixed:** a trailing stop typed on the wrong side of its original stop
+  silently widened the working stop and made a position look safer than it was
+  on two screens at once. It is now flagged rather than silently corrected.
+- **Fixed:** settlement warnings were computing the STT jump from superseded
+  rates.
+
 ## v3.1.1 — an import says what it did with every row
 
 - **"7,544 executions → 804 positions (82 open, 72 opening sells without buy history)".** A
