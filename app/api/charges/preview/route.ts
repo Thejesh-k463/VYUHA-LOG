@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, todayIso } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
 import { getMarginPct } from "@/lib/queries/margin";
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   const rates = loadRatesMap();
   let breakdown;
   try {
-    const r = findRates(rates, v.broker, cls.segment, cls.exchange);
+    const r = findRates(rates, v.broker, cls.segment, cls.exchange, todayIso());
     // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
     // understates what actually gets saved: ownCapitalUsed (what YOU put in) is
     // the primary input, funded = buyValue − ownCapitalUsed; no explicit entry →

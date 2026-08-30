@@ -8,7 +8,7 @@ import { riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, todayIso } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
@@ -45,8 +45,19 @@ export default function TargetEquityPage() {
   const rates = loadRatesMap();
   const mtfPos = positions.filter((p) => p.isMtf);
   let funded = 0, dailyInterest = 0, accrued = 0, interestToDate = 0, value = 0;
+  // A guard per position: a broker with no rate epoch covering today must cost
+  // that ONE position its interest line, not blank the entire Target Tracker.
+  // `today` is already in scope above — no second clock read.
   for (const p of mtfPos) {
-    const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange);
+    let r;
+    try {
+      r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, today);
+    } catch {
+      funded += p.fundedAmount;
+      value += p.currentValue;
+      accrued += p.accruedInterest;
+      continue;
+    }
     const rate = mtfRateFor(p.fundedAmount, r);
     funded += p.fundedAmount;
     dailyInterest += (p.fundedAmount * rate) / 365;

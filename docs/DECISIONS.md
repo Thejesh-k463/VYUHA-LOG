@@ -6,6 +6,72 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-30 — Charge rates become effective-dated (v3.2.0 WS1)
+
+**Context:** `charge_config_uq` was `(broker, plan, segment, exchange)` with no time
+dimension (`schema.ts:362`), so exactly one rate row existed per key and EVERY trade —
+of every vintage — was priced at whatever that row holds today. A book spanning a
+statutory rate change was priced wholly at the newer regime. **Scope, stated precisely
+because the first draft of this entry overclaimed it:** `/reports/broker-compare` (Pro)
+re-prices the whole book from the rate table and is directly affected;
+`/reports/charges` accumulates the `chargesTotal` stored at commit time
+(`lib/analytics/charges-report.ts:63`), so effective dating reaches it only through
+what future imports write. Found by the v3.2.0 research pass and
+confirmed independently by its adversarial critic.
+
+**Decisions:**
+
+1. **Epochs, not a rewrite.** Migration 0050 adds `effective_from` (NOT NULL, default
+   `'1970-01-01'`) and `effective_to` (nullable, EXCLUSIVE), and the unique index gains
+   `effective_from` so one key can hold several dated rows. **Every pre-existing row is
+   stamped `1970-01-01` open-ended, so each key still covers all of history and NOTHING
+   re-prices on upgrade.** The migration creates only the CAPACITY to be correct about
+   time; it changes no number by itself. That property is pinned in
+   `tests/rate-epochs.test.ts` ("migration 0050 safety").
+
+2. **The date argument is REQUIRED, not optional.** `findRates` gained `onDate` as a
+   required parameter specifically so the compiler would find all 12 call sites across
+   8 files. An optional date would have let every existing site keep the old behaviour
+   silently — which is the bug being fixed. The compiler found them; each was then given
+   the date that is correct for what it prices.
+
+3. **Inclusive-from / exclusive-to.** Adjacent epochs abut without overlapping and a
+   boundary date belongs to exactly one epoch. Pinned both ways in tests.
+
+4. **It REFUSES rather than substituting.** With no covering epoch, `findRates` throws
+   and names the windows on file. A silently-substituted rate is a wrong number wearing
+   the same typeface as a right one (invariant 6). `broker-compare` catches the throw and
+   counts the trade as `missing` rather than pricing it at the wrong regime.
+
+5. **One pricing-date rule, not eleven call-site opinions.** `pricingDate()` prefers the
+   SELL date (STT and DP both fall there), falls back to the buy date for an open
+   position, then to the caller's date. **A position that SPANS an epoch boundary is
+   priced wholly at its sell date's epoch** — a stated approximation, because
+   `computeCharges` takes one rate set for both sides; true per-leg resolution would need
+   the staged engine's `legChargeShapes` path. Recorded here so nobody later reads it as
+   an oversight.
+
+6. **Restatement of stored charges is deliberately NOT automatic — with ONE known
+   exception, named here rather than left to be discovered.** `lib/jobs/mtf-accrual.ts`
+   prices at TODAY's epoch and applies that rate across the whole holding period, then
+   writes `chargesTotal` and `netPnl` back. So an open MTF position does silently
+   restate when an MTF-interest epoch changes. That path is not epoch-segmented yet;
+   it is a follow-up, and until then this decision has a hole in it that the
+   adversarial review found and this sentence records. Showing a user a
+   different P&L than yesterday without their consent is precisely the failure this
+   product exists to avoid. Reports price correctly by date; rewriting the stored
+   `chargesTotal` on historical trades stays an explicit, audited user action.
+
+**A bug this introduced, and what caught it.** `pricingDate` first sliced the raw date
+string. But `buildRow` prices a trade BEFORE `normalizeDate` runs at insert time, so a
+Groww row still reads `06-05-2026` (day-first) there. Compared against an ISO window
+that matched no epoch, and `findRates` refused a perfectly valid trade — the whole Groww
+import test failed. **Review did not catch this; the existing import test did.** The
+helper now normalises both conventions, and the regression is pinned.
+
+**Verified:** `npm run verify` EXIT 0 with the production build, **2,103 tests / 141
+files** (was 2,089/140), no dev server running.
+
 ## 2026-08-30 — The live-demo failure was three sentences, not three bugs
 
 **Context:** A live demo of v3.1.0 importing the owner's own Paytm Money and Zerodha

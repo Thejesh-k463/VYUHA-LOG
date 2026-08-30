@@ -45,7 +45,7 @@ describe("Reconciliation — Dhan P&L", () => {
   let gross = 0;
   for (const t of trades) {
     const c = classify({ tradingsymbol: t.tradingsymbol, broker: t.broker, productHint: t.productHint });
-    const r = findRates(rates, t.broker, c.segment, c.exchange);
+    const r = findRates(rates, t.broker, c.segment, c.exchange, "2026-06-15");
     agg = add(agg, computeCharges(
       { segment: c.segment, buyValue: t.buyValue, sellValue: t.sellValue, buyQty: t.buyQty, sellQty: t.sellQty },
       r,
@@ -97,7 +97,7 @@ describe("Reconciliation — Groww P&L", () => {
   let unreal = 0;
   for (const t of trades) {
     const c = classify({ tradingsymbol: t.tradingsymbol, broker: t.broker, productHint: t.productHint });
-    const r = findRates(rates, t.broker, c.segment, c.exchange);
+    const r = findRates(rates, t.broker, c.segment, c.exchange, "2026-06-15");
     agg = add(agg, computeCharges(
       { segment: c.segment, buyValue: t.buyValue, sellValue: t.sellValue, buyQty: t.buyQty, sellQty: t.sellQty },
       r,

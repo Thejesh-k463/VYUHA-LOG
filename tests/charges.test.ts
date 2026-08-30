@@ -6,7 +6,7 @@ const rates = seedRatesMap();
 
 describe("computeCharges — exact statutory values", () => {
   it("Zerodha equity delivery (NSE): zero brokerage, STT both sides, DP on sell", () => {
-    const r = findRates(rates, "zerodha", "eq_delivery", "NSE");
+    const r = findRates(rates, "zerodha", "eq_delivery", "NSE", "2026-06-15");
     const c = computeCharges(
       { segment: "eq_delivery", buyValue: 100000, sellValue: 110000, buyQty: 100, sellQty: 100 },
       r,
@@ -22,7 +22,7 @@ describe("computeCharges — exact statutory values", () => {
   });
 
   it("Zerodha index option (NSE): ₹20/order flat, STT on sell premium", () => {
-    const r = findRates(rates, "zerodha", "index_option", "NSE");
+    const r = findRates(rates, "zerodha", "index_option", "NSE", "2026-06-15");
     const c = computeCharges(
       { segment: "index_option", buyValue: 10000, sellValue: 12000, buyQty: 50, sellQty: 50 },
       r,
@@ -38,7 +38,7 @@ describe("computeCharges — exact statutory values", () => {
   });
 
   it("Zerodha equity intraday (NSE): brokerage capped at ₹20/order, STT on sell", () => {
-    const r = findRates(rates, "zerodha", "eq_intraday", "NSE");
+    const r = findRates(rates, "zerodha", "eq_intraday", "NSE", "2026-06-15");
     const c = computeCharges(
       { segment: "eq_intraday", buyValue: 200000, sellValue: 200000, buyQty: 100, sellQty: 100 },
       r,
@@ -53,7 +53,7 @@ describe("computeCharges — exact statutory values", () => {
   });
 
   it("Dhan commodity option (MCX): CTT 0.05% sell, no IPFT", () => {
-    const r = findRates(rates, "dhan", "commodity_option", "MCX");
+    const r = findRates(rates, "dhan", "commodity_option", "MCX", "2026-06-15");
     const c = computeCharges(
       { segment: "commodity_option", buyValue: 27500, sellValue: 27550, buyQty: 500, sellQty: 500 },
       r,
@@ -67,7 +67,7 @@ describe("computeCharges — exact statutory values", () => {
   });
 
   it("open position (sell qty 0): only buy-side brokerage & STT base", () => {
-    const r = findRates(rates, "zerodha", "eq_delivery", "NSE");
+    const r = findRates(rates, "zerodha", "eq_delivery", "NSE", "2026-06-15");
     const c = computeCharges(
       { segment: "eq_delivery", buyValue: 50000, sellValue: 0, buyQty: 50, sellQty: 0 },
       r,
@@ -79,7 +79,7 @@ describe("computeCharges — exact statutory values", () => {
 
 describe("MTF interest", () => {
   it("picks the right tier (Dhan slabs)", () => {
-    const r = findRates(rates, "dhan", "eq_mtf", "NSE");
+    const r = findRates(rates, "dhan", "eq_mtf", "NSE", "2026-06-15");
     expect(mtfRateFor(400000, r)).toBe(0.1249);
     expect(mtfRateFor(800000, r)).toBe(0.1349);
     expect(mtfRateFor(2000000, r)).toBe(0.1449);
@@ -87,7 +87,7 @@ describe("MTF interest", () => {
   });
 
   it("accrues daily interest from funded amount", () => {
-    const r = findRates(rates, "dhan", "eq_mtf", "NSE");
+    const r = findRates(rates, "dhan", "eq_mtf", "NSE", "2026-06-15");
     const c = computeCharges(
       {
         segment: "eq_mtf",
@@ -105,14 +105,14 @@ describe("MTF interest", () => {
   });
 
   it("flat-rate broker (Groww) uses annual rate", () => {
-    const r = findRates(rates, "groww", "eq_mtf", "NSE");
+    const r = findRates(rates, "groww", "eq_mtf", "NSE", "2026-06-15");
     expect(mtfRateFor(999999999, r)).toBe(0.1495);
   });
 });
 
 describe("Groww floor brokerage", () => {
   it("equity brokerage floored at ₹5 per order", () => {
-    const r = findRates(rates, "groww", "eq_delivery", "NSE");
+    const r = findRates(rates, "groww", "eq_delivery", "NSE", "2026-06-15");
     const c = computeCharges(
       { segment: "eq_delivery", buyValue: 2000, sellValue: 2000, buyQty: 10, sellQty: 10 },
       r,

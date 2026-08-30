@@ -28,7 +28,7 @@ function priceLadder(
   segment: string,
   exchange = "NSE",
 ) {
-  const rates = findRates(ratesMap, broker as never, segment as never, exchange as never);
+  const rates = findRates(ratesMap, broker as never, segment as never, exchange as never, "2026-06-15");
   return legChargeShapes(legs, direction).map((shape) => {
     const legRates: ChargeRates = shape.suppressDp ? { ...rates, dpCharge: 0 } : rates;
     return computeCharges(
@@ -74,7 +74,7 @@ describe("a single-entry ladder prices identically to the classic round trip", (
           buyOrderCount: 1,
           sellOrderCount: 1,
         },
-        findRates(ratesMap, broker as never, segment as never, "NSE"),
+        findRates(ratesMap, broker as never, segment as never, "NSE", "2026-06-15"),
       );
 
       // Allow a rupee of slack ONLY where statutory rounding is applied per
@@ -149,7 +149,7 @@ describe("DP is charged once per day, not once per fill", () => {
     const dpTotal = sum(priced.map((c) => c.dpCharges));
     const single = computeCharges(
       { segment: "eq_delivery", buyValue: 0, sellValue: 110000, buyQty: 0, sellQty: 100 },
-      findRates(ratesMap, "zerodha", "eq_delivery", "NSE"),
+      findRates(ratesMap, "zerodha", "eq_delivery", "NSE", "2026-06-15"),
     );
     expect(dpTotal).toBeCloseTo(single.dpCharges, 2); // exactly one DP hit
   });
@@ -164,7 +164,7 @@ describe("DP is charged once per day, not once per fill", () => {
     const priced = priceLadder(legs, "long", "zerodha", "eq_delivery");
     const single = computeCharges(
       { segment: "eq_delivery", buyValue: 0, sellValue: 110000, buyQty: 0, sellQty: 100 },
-      findRates(ratesMap, "zerodha", "eq_delivery", "NSE"),
+      findRates(ratesMap, "zerodha", "eq_delivery", "NSE", "2026-06-15"),
     );
     expect(sum(priced.map((c) => c.dpCharges))).toBeCloseTo(single.dpCharges * 3, 1);
   });

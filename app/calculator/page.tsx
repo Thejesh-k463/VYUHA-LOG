@@ -2,13 +2,27 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { TradeCalculator } from "@/components/calculator/trade-calculator";
 import { loadRatesMap } from "@/lib/engine/rates-db";
+import { todayIso } from "@/lib/engine/rates";
 import { getMarginRates, getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getIndexLotSizes } from "@/lib/queries/instruments";
 
 export const dynamic = "force-dynamic";
 
 export default function CalculatorPage() {
-  const rates = Object.fromEntries(loadRatesMap());
+  // The calculator prices a trade you are about to place, so it wants the rates
+  // in force TODAY — one epoch per key, resolved here on the server. Sending the
+  // whole rate history across the boundary would make the client component
+  // responsible for epoch resolution, which is exactly the logic that belongs in
+  // one place (lib/engine/rates.ts).
+  const today = todayIso();
+  const rates = Object.fromEntries(
+    [...loadRatesMap()].flatMap(([k, epochs]) => {
+      const live = epochs.find(
+        (e) => (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo),
+      );
+      return live ? [[k, live] as const] : [];
+    }),
+  );
   const mtfMarginByBroker = getMtfMarginByBroker();
   // Every DB read stays here — the calculator is a client component and must
   // not reach for a query. A plain object crosses the boundary; the component

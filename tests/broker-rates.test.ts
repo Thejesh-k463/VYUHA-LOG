@@ -20,7 +20,8 @@ import type { ChargeRates } from "@/lib/engine/types";
 const rates = seedRatesMap();
 /** Returns undefined instead of throwing, so a gap can be asserted on. */
 const get = (b: Broker, s: Segment, ex = "NSE", plan = "default"): ChargeRates | undefined =>
-  rates.get(`${b}|${plan}|${s}|${ex}`);
+  // Epochs are newest-first; the seed carries exactly one, open-ended.
+  (rates.get(`${b}|${plan}|${s}|${ex}`) ?? [])[0];
 
 /** One round trip, sized so percentage and flat brokerage differ visibly. */
 const roundTrip = (segment: Segment, value = 500_000) => ({

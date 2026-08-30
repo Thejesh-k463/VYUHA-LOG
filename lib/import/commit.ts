@@ -13,7 +13,7 @@ import {
 import { eq, and, ne, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, pricingDate, todayIso, type RatesMap } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
@@ -71,7 +71,7 @@ interface BuiltRow {
 /** Apply auto-classification + any persisted override, then compute charges. */
 function buildRow(
   t: NormalizedTrade,
-  rates: Map<string, ChargeRates>,
+  rates: RatesMap,
   overrides: Map<string, Override>,
   defaults: { buyOrders: number; sellOrders: number; perTradeRisk: number },
 ): BuiltRow {
@@ -98,7 +98,7 @@ function buildRow(
   const buyOrderCount = t.buyQty > 0 ? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? defaults.sellOrders : 0;
 
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange);
+  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIso()));
   const computed = computeCharges(
     {
       segment: cls.segment,
@@ -704,7 +704,7 @@ export function commitManualTrade(
 
   const buyOrderCount = t.buyQty > 0 ? fields.buyOrders ?? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? fields.sellOrders ?? defaults.sellOrders : 0;
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange);
+  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIso()));
 
   // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short option/future)
   // row has buyQty=0 and must still be OPEN, not silently marked closed.
@@ -867,7 +867,10 @@ export function closePosition(
   const sellOrderCount = isShort ? t.sellOrderCount : t.sellOrderCount || 1;
 
   const { rates } = loadContext();
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange);
+  // The COMPUTED dates, not the stale row: `t.sellDate` is null for an open long,
+  // so pricing off `t` would charge the exit at the ENTRY date's epoch — the exact
+  // inverse of pricingDate's own rule that the sell side dominates the bill.
+  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIso()));
 
   // MTF interest over the holding period (buy → exit), if this is an MTF position.
   // MTF is equity-only (never a short-open segment), so buyDate is always the entry.
@@ -990,7 +993,6 @@ export function updateManualTrade(
   if (!t) return { ok: false, message: "Trade not found" };
 
   const { rates, defaults } = loadContext();
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange);
 
   const buyQty = fields.buyQty ?? t.buyQty;
   const avgBuyPrice = fields.avgBuyPrice ?? t.avgBuyPrice;
@@ -998,6 +1000,11 @@ export function updateManualTrade(
   const sellQty = fields.sellQty ?? t.sellQty;
   const avgSellPrice = fields.avgSellPrice ?? t.avgSellPrice;
   const sellDate = fields.sellDate !== undefined ? normalizeDate(fields.sellDate) : t.sellDate;
+
+  // Resolved AFTER the edited dates are known. Moving a trade's sell date across
+  // an epoch boundary must re-price it at the epoch it now falls in, otherwise
+  // the stored charges disagree with what importing the same trade would produce.
+  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIso()));
 
   if (buyQty <= 0 && sellQty <= 0) return { ok: false, message: "At least one side (buy or sell) needs a positive quantity." };
 
@@ -1140,7 +1147,7 @@ export function applyOverride(
 
   // recompute charges for the trade under the new segment/exchange
   const { rates } = loadContext();
-  const r = findRates(rates, t.broker as Broker, segment, exchange);
+  const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIso()));
   const charges = computeCharges(
     {
       segment,

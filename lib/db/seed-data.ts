@@ -33,30 +33,67 @@ type ChargeSeedRow = {
   mtfTiers: { upTo: number | null; rate: number }[] | null;
   pledgeCharge: number;
   unpledgeCharge: number;
+  /** Start of this rate's window, inclusive. Absent = covers all history. */
+  effectiveFrom?: string;
+  /** End of this rate's window, EXCLUSIVE. Absent/null = open-ended. */
+  effectiveTo?: string | null;
 };
 
 const SEBI_PCT = 0.000001; // 0.0001% = ₹10/crore, both sides
 const IPFT_NSE_PCT = 0.000000001; // ~₹0.01/crore, NSE only, both sides
 const GST = 0.18;
 
-// --- STT / CTT by segment ---------------------------------------------------
-function sttFor(segment: Segment): { pct: number; side: "both" | "sell" | "none" } {
+// --- STT / CTT by segment, EFFECTIVE-DATED -----------------------------------
+/**
+ * THE STT EPOCH BOUNDARY.
+ *
+ * The Finance Act, 2026 (Presidential assent 30 March 2026) revised three
+ * derivative STT rates with effect from 1 April 2026. Primary source:
+ * **NSE Circular Ref. No. 02/2026, Download Ref. No. NSE/FATAX/73524, dated
+ * 31 March 2026**, and NSE's own STT page
+ * <https://www.nseindia.com/static/products-services/equity-derivatives-securities-transaction-tax>.
+ *
+ * What changed — and, just as importantly, what did NOT:
+ *
+ * | Circular row | Transaction                          | ≤ 31-Mar-2026 | ≥ 1-Apr-2026 | Payable by |
+ * |--------------|--------------------------------------|---------------|--------------|------------|
+ * | 4(a)         | Sale of an option in securities      | 0.10%         | **0.15%**    | Seller     |
+ * | 4(b)         | Sale of an option, where exercised   | 0.125%        | **0.15%**    | Purchaser  |
+ * | 4(c)         | Sale of a futures in securities      | 0.02%         | **0.05%**    | Seller     |
+ * | 1 & 2        | Equity delivery, purchase and sale   | 0.1%          | 0.1% (No Change) | both   |
+ * | 3            | Equity sale settled otherwise (intraday) | 0.025%    | 0.025% (No Change) | Seller |
+ *
+ * Commodity segments are deliberately untouched: they carry CTT, a different
+ * levy under a different head, which this circular does not address.
+ */
+export const STT_EPOCH_2026 = "2026-04-01";
+
+/** Which rate regime a seed row describes. */
+export type SttEpoch = "pre-2026-04" | "current";
+
+function sttFor(segment: Segment, epoch: SttEpoch = "current"): { pct: number; side: "both" | "sell" | "none" } {
+  const old = epoch === "pre-2026-04";
   switch (segment) {
     case "eq_delivery":
     case "eq_mtf":
-      return { pct: 0.001, side: "both" }; // 0.1% buy + sell
+      return { pct: 0.001, side: "both" }; // 0.1% buy + sell — unchanged by FA 2026
     case "eq_intraday":
-      return { pct: 0.00025, side: "sell" }; // 0.025% sell
+      return { pct: 0.00025, side: "sell" }; // 0.025% sell — unchanged by FA 2026
     case "future":
-      return { pct: 0.0005, side: "sell" }; // 0.05% sell
+      return { pct: old ? 0.0002 : 0.0005, side: "sell" }; // 0.02% → 0.05% sell
     case "index_option":
     case "stock_option":
-      return { pct: 0.0015, side: "sell" }; // 0.15% of premium on sell
+      return { pct: old ? 0.001 : 0.0015, side: "sell" }; // 0.10% → 0.15% of premium on sell
     case "commodity_future":
-      return { pct: 0.0001, side: "sell" }; // CTT 0.01% sell
+      return { pct: 0.0001, side: "sell" }; // CTT 0.01% sell — a different levy
     case "commodity_option":
-      return { pct: 0.0005, side: "sell" }; // CTT 0.05% sell
+      return { pct: 0.0005, side: "sell" }; // CTT 0.05% sell — a different levy
   }
+}
+
+/** True only for the segments FA 2026 actually moved. */
+export function sttChangedIn2026(segment: Segment): boolean {
+  return segment === "future" || segment === "index_option" || segment === "stock_option";
 }
 
 // --- Exchange transaction charges by segment + exchange ----------------------
@@ -438,7 +475,7 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         // A paid plan overrides only what it actually changes; everything
         // else falls through to the broker's standard rates.
         const b = plan?.brokerage?.[segment] ?? brokerageFor(broker, segment);
-        const stt = sttFor(segment);
+        const stt = sttFor(segment, "current");
         const isDeliveryLike = segment === "eq_delivery" || segment === "eq_mtf";
         const isMtf = segment === "eq_mtf";
         const dp = isDeliveryLike
@@ -480,6 +517,27 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
           pledgeCharge: mtf.pledgeCharge,
           unpledgeCharge: mtf.unpledgeCharge,
         });
+
+        /**
+         * The pre-1-Apr-2026 epoch, for the three rates FA 2026 moved.
+         *
+         * Emitted as a SECOND row for the same key, closed at the boundary, so
+         * a trade from before the change is priced at the rate that actually
+         * applied to it. Segments the circular left alone get one open-ended
+         * row exactly as before — no needless history where nothing changed.
+         */
+        if (sttChangedIn2026(segment)) {
+          const prevStt = sttFor(segment, "pre-2026-04");
+          const current = rows[rows.length - 1];
+          current.effectiveFrom = STT_EPOCH_2026;
+          rows.push({
+            ...current,
+            sttPct: prevStt.pct,
+            sttSide: prevStt.side,
+            effectiveFrom: "1970-01-01",
+            effectiveTo: STT_EPOCH_2026,
+          });
+        }
       }
     }
   };

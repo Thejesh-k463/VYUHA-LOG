@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compare";
 import type { ChargeRates } from "@/lib/engine/types";
+import { addEpoch, type RatesMap } from "@/lib/engine/rates";
 import { report, rng, time } from "./helpers/measure";
 
 /**
@@ -46,15 +47,16 @@ function makeTrades(count: number): CompareTrade[] {
 }
 
 /** A rates map covering every broker × plan × segment × exchange combination. */
-function makeRates(): { ratesMap: Map<string, ChargeRates>; pairCount: number } {
-  const ratesMap = new Map<string, ChargeRates>();
+function makeRates(): { ratesMap: RatesMap; pairCount: number } {
+  const ratesMap: RatesMap = new Map();
   let pairCount = 0;
   for (const broker of BROKERS) {
     for (const plan of PLANS) {
       pairCount++;
       for (const segment of SEGMENTS) {
         for (const exchange of EXCHANGES) {
-          ratesMap.set(`${broker}|${plan}|${segment}|${exchange}`, {
+          addEpoch(ratesMap, {
+            broker, plan, segment, exchange,
             brokeragePct: 0.03,
             brokerageMax: 20,
             brokerageMin: 0,

@@ -868,6 +868,13 @@ priority; it is no longer the state.)*
 |---|---|---|---|
 | `35CF-B8B5-8E` | Shivangi Kulkarni | **2027-08-23** | 2027-07-23 (the app shows the buyer a 30-day countdown from then; you see nothing) |
 
+**2026-08-30 — a BUYER ONBOARDING was completed (owner reported).** Recorded here as a sales fact.
+**It does NOT discharge §8.4's first-run onboarding item**, which is the in-app flow and is still
+genuinely unbuilt — verified this session: the only two greps for `onboard|first-run|welcome-wizard`
+in `app/`, `components/` and `lib/` are unrelated comments (an empty-dashboard branch in
+`dashboard-client.tsx:433`, and trial-day arithmetic in `license.ts:162`). The two facts are
+deliberately kept apart so nobody later reads "onboarding completed" as "the feature shipped".
+
 **Recommended next move:** the sale flow is proven on both SKUs. First-run onboarding (§8.4) is now
 the highest-leverage build — it is the only item that changes whether a STRANGER buys.
 

@@ -4,17 +4,21 @@ import { db } from "@/lib/db";
 import { chargeConfig } from "@/lib/db/schema";
 import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
 import type { ChargeRates } from "./types";
+import { addEpoch, type RatesMap } from "./rates";
 
-function key(broker: string, plan: string, segment: string, exchange: string) {
-  return `${broker}|${plan}|${segment}|${exchange}`;
-}
-
-/** Load all charge_config rows into an in-memory lookup (one query per import). */
-export const loadRatesMap = cache((): Map<string, ChargeRates> => {
+/**
+ * Load all charge_config rows into an in-memory lookup (one query per import).
+ *
+ * Each key holds a LIST of dated epochs (migration 0050), so the map is built
+ * through `addEpoch`, which keeps each list sorted newest-first.
+ */
+export const loadRatesMap = cache((): RatesMap => {
   const rows = db.select().from(chargeConfig).all();
-  const map = new Map<string, ChargeRates>();
+  const map: RatesMap = new Map();
   for (const r of rows) {
-    map.set(key(r.broker, r.plan ?? "default", r.segment, r.exchange), {
+    addEpoch(map, {
+      effectiveFrom: r.effectiveFrom ?? "1970-01-01",
+      effectiveTo: r.effectiveTo ?? null,
       broker: r.broker as Broker,
       plan: r.plan ?? "default",
       planLabel: r.planLabel ?? null,

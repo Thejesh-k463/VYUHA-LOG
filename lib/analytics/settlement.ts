@@ -54,10 +54,27 @@ export interface SettlementRates {
   futExitSttPct: number;
 }
 
+/**
+ * Rates in force TODAY, per the Finance Act 2026 (assent 30 March 2026),
+ * effective 1 April 2026 — NSE Circular Ref. No. 02/2026, Download Ref. No.
+ * NSE/FATAX/73524 dated 31 March 2026, rows 4(b) and 4(c).
+ *
+ * These are deliberately the CURRENT rates and not effective-dated, because
+ * settlement projects FORWARD: it prices what an open position would cost if
+ * carried into an expiry that has not happened yet. There is no historical date
+ * to resolve. `deliverySttPct` and `futExitSttPct` are overridden from
+ * `charge_config` by the page (which does resolve by date); `exerciseSttPct`
+ * has no charge_config column, because STT on EXERCISE is charged on intrinsic
+ * value and is a different levy from the premium STT the option segments carry.
+ *
+ * Previously `exerciseSttPct` was 0.00125 and `futExitSttPct` 0.0002 — both the
+ * pre-April-2026 figures, which understated the "STT jump" this module exists
+ * to warn about.
+ */
 export const DEFAULT_SETTLEMENT_RATES: SettlementRates = {
-  deliverySttPct: 0.001, // 0.1% equity delivery (fallback; page overrides from charge_config)
-  exerciseSttPct: 0.00125, // 0.125% on intrinsic — STT on exercised options
-  futExitSttPct: 0.0002, // 0.02% futures sell side
+  deliverySttPct: 0.001, // 0.1% equity delivery — unchanged by FA 2026 (circular rows 1 & 2)
+  exerciseSttPct: 0.0015, // 0.15% on intrinsic — circular row 4(b), was 0.125% to 31-Mar-2026
+  futExitSttPct: 0.0005, // 0.05% futures sell side — circular row 4(c), was 0.02% to 31-Mar-2026
 };
 
 export interface SettlementObligation {

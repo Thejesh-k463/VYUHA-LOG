@@ -89,6 +89,14 @@ export function seedDatabase(log = false): SeedReport {
     report.chargeAdded += inserted;
     if (inserted > 0) continue;
 
+    /**
+     * `effectiveFrom` is part of the identity (migration 0050) and MUST be in
+     * this lookup. Without it, a key that now holds two dated epochs returns an
+     * arbitrary one, and the update below would overwrite one epoch with the
+     * other's rate — either colliding on the unique index or silently swapping
+     * the pre- and post-2026 STT rows. Found by reading the seeder while adding
+     * the second epoch, not by a test: no test seeds twice over a migrated DB.
+     */
     const existing = db
       .select()
       .from(chargeConfig)
@@ -98,6 +106,7 @@ export function seedDatabase(log = false): SeedReport {
           eq(chargeConfig.plan, row.plan),
           eq(chargeConfig.segment, row.segment),
           eq(chargeConfig.exchange, row.exchange),
+          eq(chargeConfig.effectiveFrom, row.effectiveFrom ?? "1970-01-01"),
         ),
       )
       .get();

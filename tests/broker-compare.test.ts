@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { compareBrokers, type CompareTrade } from "@/lib/analytics/broker-compare";
+import { ratesMapOf } from "@/lib/engine/rates";
 import { seedRatesMap } from "@/lib/engine/rates";
 import { BROKERS } from "@/lib/domain/constants";
 import type { ChargeRates } from "@/lib/engine/types";
@@ -18,10 +19,10 @@ const rate = (broker: string, over: Partial<ChargeRates>): ChargeRates => ({
 });
 
 describe("compareBrokers — deterministic", () => {
-  const map = new Map<string, ChargeRates>([
-    ["A|default|eq_delivery|NSE", rate("A", { brokeragePct: 0 })], // zero brokerage
-    ["B|default|eq_delivery|NSE", rate("B", { brokerageFlat: 20 })], // ₹20/order
-    // "C" intentionally has no rate row.
+  // "C" intentionally has no rate row.
+  const map = ratesMapOf([
+    rate("A", { brokeragePct: 0 }),   // zero brokerage
+    rate("B", { brokerageFlat: 20 }), // ₹20/order
   ]);
   const trades: CompareTrade[] = [
     { segment: "eq_delivery", exchange: "NSE", buyValue: 100000, sellValue: 100000, buyQty: 100, sellQty: 100, buyOrderCount: 1, sellOrderCount: 1, actualCharges: 160 },

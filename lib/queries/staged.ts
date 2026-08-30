@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, todayIso, type RatesMap } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
@@ -152,9 +152,9 @@ export function priceLegs(
     mtfFundedAmount?: number | null;
     asOf?: string;
   },
-  ratesMap: Map<string, ChargeRates>,
+  ratesMap: RatesMap,
 ): PricedLeg[] {
-  const rates = findRates(ratesMap, ctx.broker, ctx.segment, ctx.exchange);
+  const rates = findRates(ratesMap, ctx.broker, ctx.segment, ctx.exchange, ctx.asOf ?? todayIso());
   const shapes = legChargeShapes(legs, ctx.direction);
   const ordered = sortLegs(legs);
 

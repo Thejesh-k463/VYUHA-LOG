@@ -8,7 +8,8 @@
 
 import { computeCharges } from "@/lib/engine/charges";
 import type { ChargeRates } from "@/lib/engine/types";
-import type { Segment } from "@/lib/domain/constants";
+import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
+import { findRates, pricingDate, todayIso, type RatesMap } from "@/lib/engine/rates";
 
 export interface CompareTrade {
   segment: string;
@@ -21,7 +22,9 @@ export interface CompareTrade {
   sellOrderCount: number;
   mtf?: { fundedAmount: number; daysHeld: number; pledgeScrips?: number } | null;
   actualCharges: number; // chargesTotal actually recorded for this trade
-  /** Dates, used ONLY to work out how many months a subscription would cover. */
+  /** Dates. Used to span the subscription months AND to pick the rate epoch
+   *  each trade is priced under — a book crossing a statutory rate change must
+   *  be compared at the rates that actually applied on each date. */
   buyDate?: string | null;
   sellDate?: string | null;
 }
@@ -68,7 +71,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function compareBrokers(
   trades: CompareTrade[],
-  ratesMap: Map<string, ChargeRates>,
+  ratesMap: RatesMap,
   brokers: string[],
   currentBroker?: string,
 ): BrokerCompareReport {
@@ -113,13 +116,25 @@ export function compareBrokers(
     if (seen.size === 0) pairs.push({ broker, plan: "default" });
   }
 
+  // Hoisted: `todayIso()` is a wall-clock read and this runs pairs × trades —
+  // 400,000 calls at the load suite's heavy tier, where it measured ~44% of the
+  // whole comparison's compute. The fallback date is loop-invariant.
+  const today = todayIso();
+  const inForce = (e: ChargeRates) =>
+    (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo);
+
   const costs: BrokerCost[] = pairs.map(({ broker, plan }) => {
     const acc = { total: 0, brokerage: 0, statutory: 0, gst: 0, dp: 0, mtfInterest: 0 };
     let covered = 0;
     let missing = 0;
     for (const t of trades) {
-      const rates = ratesMap.get(`${broker}|${plan}|${t.segment}|${t.exchange}`);
-      if (!rates) {
+      // Priced at the epoch covering THIS trade's date, not today's rate.
+      // findRates throws when no epoch covers it; an unpriceable trade is
+      // counted as missing rather than silently priced at the wrong regime.
+      let rates;
+      try {
+        rates = findRates(ratesMap, broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate(t, today), plan);
+      } catch {
         missing++;
         continue;
       }
@@ -154,7 +169,11 @@ export function compareBrokers(
     }
     // The subscription is part of what the plan costs, so it belongs in the
     // total rather than in a footnote nobody reads.
-    const sample = ratesMap.get(`${broker}|${plan}|eq_delivery|NSE`);
+    // Subscription is a plan-level fact, but it must come from the epoch in
+    // force TODAY — the newest row could be a future-dated plan that is not
+    // sellable yet, which would quote a fee nobody can pay.
+    const epochs = ratesMap.get(`${broker}|${plan}|eq_delivery|NSE`) ?? [];
+    const sample = epochs.find(inForce) ?? epochs[0];
     const subscription = r2((sample?.subscriptionMonthly ?? 0) * months);
 
     return {

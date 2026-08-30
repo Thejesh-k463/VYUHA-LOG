@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, todayIso } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getMarginRates } from "@/lib/queries/margin";
@@ -46,7 +46,7 @@ export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10))
     // (today − buyDate) calendar days for a still-open position — confirmed
     // against Dhan's MTF docs. No extra "-1": that undercounted by one day.
     const days = Math.max(0, Math.floor((new Date(today + "T00:00:00").getTime() - new Date(t.buyDate + "T00:00:00").getTime()) / 86400000));
-    const r = findRates(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange);
+    const r = findRates(rates, t.broker as Broker, "eq_mtf", t.exchange as Exchange, today);
     const rate = mtfRateFor(funded, r);
     const interest = r2((funded * rate * days) / 365);
     const fundedChanged = t.mtfFundedAmount == null || t.mtfFundedAmount <= 0;

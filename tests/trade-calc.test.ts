@@ -12,7 +12,7 @@ import { toRupees } from "@/lib/money";
 
 const rates = (broker: string, segment: string, exchange = "NSE") =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  findRates(seedRatesMap(), broker as any, segment as any, exchange as any);
+  findRates(seedRatesMap(), broker as any, segment as any, exchange as any, "2026-06-15");
 
 describe("computeTradeCalc — equity delivery (long)", () => {
   const input: TradeCalcInput = {

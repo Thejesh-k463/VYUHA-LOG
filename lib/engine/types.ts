@@ -128,6 +128,14 @@ export interface Execution {
 
 /** Subset of charge_config the pure engine needs (broker × segment × exchange). */
 export interface ChargeRates {
+  /**
+   * Start of the window this rate applies to, inclusive (`YYYY-MM-DD`).
+   * Optional on the type so pure fixtures stay terse; absent means 1970-01-01.
+   */
+  effectiveFrom?: string;
+  /** End of the window, EXCLUSIVE. Null/absent means open-ended. */
+  effectiveTo?: string | null;
+
   broker: Broker;
   /** Pricing plan: "default" is the free tier most accounts are on. */
   plan: string;

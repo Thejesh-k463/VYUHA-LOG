@@ -354,12 +354,31 @@ export const chargeConfig = sqliteTable(
      */
     userEdited: integer("user_edited", { mode: "boolean" }).notNull().default(false),
 
+    /**
+     * The date this rate row STARTS applying, inclusive (YYYY-MM-DD).
+     *
+     * Statutory rates change, and a book that spans a change must be priced at
+     * the rate that applied on each trade's own date — not at today's. Rows
+     * that predate migration 0050 carry '1970-01-01', so every key still covers
+     * all of history and nothing re-prices until a second epoch is added.
+     */
+    effectiveFrom: text("effective_from").notNull().default("1970-01-01"),
+    /**
+     * The date this row STOPS applying, EXCLUSIVE. Null means open-ended.
+     *
+     * Exclusive so adjacent epochs abut without overlapping and a boundary date
+     * belongs to exactly one epoch.
+     */
+    effectiveTo: text("effective_to"),
+
     updatedAt: text("updated_at").notNull().default(now),
   },
   (t) => [
     // Plan is part of the key: a paid tier shares broker+segment+exchange with
-    // the free one and must still be storable alongside it.
-    uniqueIndex("charge_config_uq").on(t.broker, t.plan, t.segment, t.exchange),
+    // the free one and must still be storable alongside it. effectiveFrom joins
+    // it so one key can hold several dated epochs.
+    uniqueIndex("charge_config_uq").on(t.broker, t.plan, t.segment, t.exchange, t.effectiveFrom),
+    index("charge_config_window_idx").on(t.broker, t.plan, t.segment, t.exchange, t.effectiveFrom, t.effectiveTo),
   ],
 );
 

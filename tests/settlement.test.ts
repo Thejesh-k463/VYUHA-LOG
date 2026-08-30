@@ -32,8 +32,19 @@ describe("computeSettlement — stock future", () => {
   it("computes notional + the delivery-STT jump", () => {
     expect(o.notional).toBe(750000); // 3000 × 250
     expect(o.physicalStt).toBe(750); // 0.1% × 750000
-    expect(o.exitStt).toBe(150); // 0.02% × 750000
-    expect(o.sttJump).toBe(600);
+    // 0.05% × 750,000. Was 150 at the pre-1-Apr-2026 rate of 0.02%; raised by
+    // the Finance Act 2026 (NSE circular 02/2026, ref NSE/FATAX/73524, row 4(c)).
+    // The number moved because the STATUTE moved, not to make a test pass.
+    expect(o.exitStt).toBe(375);
+    /**
+     * 750 − 375 = 375. The jump USED to be 600, and it shrank — a real and
+     * slightly counter-intuitive consequence of the Finance Act 2026: because
+     * the cost of squaring a future off tripled (0.02% → 0.05%) while delivery
+     * STT was left alone at 0.1%, the PENALTY for letting a stock future go to
+     * physical delivery is now smaller than it was. The warning this module
+     * exists to give is therefore weaker than before, and correctly so.
+     */
+    expect(o.sttJump).toBe(375);
   });
 
   it("short future gives delivery", () => {
@@ -60,7 +71,11 @@ describe("computeSettlement — stock option (spot known)", () => {
     expect(o.settles).toBe("yes");
     expect(o.deliveryAction).toBe("Take delivery (buy)");
     expect(o.notional).toBe(725000); // strike 2900 × 250
-    expect(o.physicalStt).toBe(31); // 0.125% × 100 × 250 = 31.25 → ₹31
+    // 0.15% × 100 × 250 = 37.5 → ₹38. Was 31 at the pre-1-Apr-2026 rate of
+    // 0.125% on intrinsic (NSE circular 02/2026 row 4(b), "sale of an option in
+    // securities, where option is exercised"). Understating this understated the
+    // very "STT jump" this module exists to warn about.
+    expect(o.physicalStt).toBe(38);
     expect(o.warn).toBe("danger"); // dte 2 ≤ 7
   });
 

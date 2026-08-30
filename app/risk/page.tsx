@@ -12,6 +12,7 @@ import { getSectorMap } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { loadRatesMap } from "@/lib/engine/rates-db";
+import { todayIso } from "@/lib/engine/rates";
 import { getStagedViews } from "@/lib/queries/staged";
 import type { ExposureInput } from "@/lib/analytics/exposure";
 import {
@@ -64,8 +65,11 @@ const DERIVATIVE_SEGMENTS = new Set([
  *  Statutory rates are identical across brokers, so any row with the segment
  *  answers; the pure default is only the no-config fallback. */
 function sttFromConfig(segment: string, fallback: number): number {
-  for (const r of loadRatesMap().values()) {
-    if (r.segment === segment && r.sttPct > 0) return r.sttPct;
+  const today = todayIso();
+  for (const epochs of loadRatesMap().values()) {
+    // Epochs are newest-first; take the one in force today.
+    const r = epochs.find((e) => (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo));
+    if (r && r.segment === segment && r.sttPct > 0) return r.sttPct;
   }
   return fallback;
 }
@@ -296,9 +300,10 @@ export default function RiskPage() {
       deliverySttPct: sttFromConfig("eq_delivery", DEFAULT_SETTLEMENT_RATES.deliverySttPct),
       // Futures sell STT fits charge_config's own shape, so it comes from
       // there too (defect D18). exerciseSttPct stays a named default: STT on
-      // EXERCISE (0.125% of intrinsic) is a different rate from the premium
-      // STT charge_config carries for option segments, and inventing a column
-      // for one advisory figure would be worse — recorded in DECISIONS.md.
+      // EXERCISE (0.15% of intrinsic since 1-Apr-2026, NSE circular 02/2026
+      // row 4(b)) is a different levy from the premium STT charge_config
+      // carries for option segments, and inventing a column for one advisory
+      // figure would be worse — recorded in DECISIONS.md.
       futExitSttPct: sttFromConfig("future", DEFAULT_SETTLEMENT_RATES.futExitSttPct),
     },
     today,

@@ -6,7 +6,7 @@ import { getSettings } from "@/lib/queries/settings";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, todayIso } from "@/lib/engine/rates";
 import { computeTradeCalc } from "@/lib/analytics/trade-calc";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
@@ -15,7 +15,18 @@ export const dynamic = "force-dynamic";
 
 export default function EquityTrackerPage() {
   const today = new Date().toISOString().slice(0, 10);
-  accrueMtfInterest(today); // daily MTF interest accrual (idempotent, runs on open)
+  /**
+   * Guarded: `accrueMtfInterest` resolves charge rates, and `findRates` now
+   * throws when no epoch covers the date. A missing rate row must not blank the
+   * whole Equity Tracker — the accrual is a background convenience, the page is
+   * the user's book. The cosmetic breakeven call below was already guarded; this
+   * one, which is load-bearing, was not (adversarial review, 2026-08-30).
+   */
+  try {
+    accrueMtfInterest(today);
+  } catch {
+    // Interest simply does not accrue this render; nothing is written.
+  }
   // Column-trimmed book (same rows, same order as getTrades — see the
   // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
   const trades = getTrackerTrades();
@@ -31,7 +42,7 @@ export default function EquityTrackerPage() {
       // interest accrued so far — needs charge_config rates, which the pure
       // positions.ts module deliberately doesn't touch.
       try {
-        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange);
+        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, todayIso());
         const calc = computeTradeCalc(
           {
             segment: "eq_mtf",
