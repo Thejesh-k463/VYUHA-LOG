@@ -6,6 +6,7 @@ import {
   parentAggregate,
   legChargeShapes,
   effectiveStop,
+  tslLessProtective,
   sortLegs,
   type Leg,
 } from "@/lib/domain/staged";
@@ -513,3 +514,37 @@ describe("round-trip consistency with the classic single-entry model", () => {
 function r(n: number) {
   return Math.round(n * 100) / 100;
 }
+
+describe("tsl_less_protective — a trailing stop that moved the wrong way", () => {
+  /**
+   * `effectiveStop` returns the trailing stop UNCONDITIONALLY, and it governs
+   * both breach detection (lib/risk/alerts.ts) and capital-at-risk
+   * (lib/analytics/exposure.ts). So a long whose TSL is typed BELOW its SL
+   * silently widens the working stop and the position looks safer than it is on
+   * two screens at once. Found by adversarial review, 2026-08-30.
+   */
+  it("flags a long whose trailing stop sits below its original stop", () => {
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: 95 }, "long")).toBe(true);
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: 105 }, "long")).toBe(false);
+  });
+
+  it("flags a short whose trailing stop sits above its original stop", () => {
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: 105 }, "short")).toBe(true);
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: 95 }, "short")).toBe(false);
+  });
+
+  it("says nothing when either stop is absent — that is a different warning", () => {
+    expect(tslLessProtective({ slPlanned: null, trailingSl: 95 }, "long")).toBe(false);
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: null }, "long")).toBe(false);
+  });
+
+  it("does not flag an equal stop", () => {
+    expect(tslLessProtective({ slPlanned: 100, trailingSl: 100 }, "long")).toBe(false);
+  });
+
+  it("still lets effectiveStop return the trailing stop — we warn, never substitute", () => {
+    // Silently using the tighter stop would hide a data-entry error and
+    // disagree with what is actually working at the broker.
+    expect(effectiveStop({ slPlanned: 100, trailingSl: 95 })).toBe(95);
+  });
+});

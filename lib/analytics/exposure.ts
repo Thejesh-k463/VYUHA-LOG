@@ -67,7 +67,17 @@ export interface ExposureSummary {
   unrealised: number;
   allocatedPct: number;
   openPnlPct: number;
-  openRiskPct: number; // Σ open risk @ SL (only stopped positions)
+  /**
+   * Σ open risk at the stop, over EVERY position — including unstopped ones,
+   * which contribute their whole market value.
+   *
+   * The comment here used to say "only stopped positions", which the code has
+   * never done (see the reduce below and `lib/domain/staged.ts`, which states
+   * the same policy deliberately: "No stop: the honest worst case is the whole
+   * position"). Counting an unstopped position as zero risk would be the least
+   * honest option available, so the comment was the thing that was wrong.
+   */
+  openRiskPct: number;
   initialRiskPct: number;
   capitalAtRiskPct: number;
   unstoppedCount: number;

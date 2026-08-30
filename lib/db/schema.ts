@@ -108,6 +108,15 @@ export const trades = sqliteTable(
     rMultiple: real("r_multiple"),
     ruleViolations: text("rule_violations", { mode: "json" }).$type<string[]>(),
     mistakeTags: text("mistake_tags", { mode: "json" }).$type<string[]>(),
+    /**
+     * WHY the trade was closed — "target", "stop", "trailing stop", "time",
+     * "panic", "thesis changed"… Free text rather than an enum so a user's own
+     * vocabulary survives; the UI offers a curated list.
+     *
+     * Blank means UNANSWERED, and every analytic over this column excludes
+     * blanks rather than bucketing them as "other" (invariant 6).
+     */
+    exitTrigger: text("exit_trigger"),
 
     // Staged (scaled) position — S1. When true, this trade's quantities and
     // prices are DERIVED from its trade_legs rows rather than typed directly:

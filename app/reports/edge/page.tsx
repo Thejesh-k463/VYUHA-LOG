@@ -5,6 +5,8 @@ import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { bySegment, bySetup, type GroupStat } from "@/lib/analytics/metrics";
 import { benjaminiYekutieli, fmtIntervalPct, proportionPValue, rateVerdict, wilsonInterval } from "@/lib/analytics/inference";
+import { segmentDepth, segmentFinding, type SegmentDepthReport } from "@/lib/analytics/segment-depth";
+import { hasKnownBasis } from "@/lib/analytics/acquisition";
 import { num, inr } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { computeMaeMfe, stopTuningReport, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
@@ -64,6 +66,29 @@ export default function EdgeReportPage() {
     getIndexMembershipMap(),
   );
 
+  /**
+   * The five books inside the book. Intraday, delivery, MTF, index options and
+   * stock options differ in statute, in what holding costs, and in settlement —
+   * a single expectancy over all five hides which one actually pays.
+   *
+   * `basisKnown` mirrors the gate every other rate on this page uses: a trade
+   * with no cost basis is excluded from rates and counted, never bucketed.
+   */
+  const depth = segmentDepth(
+    trades.map((t) => ({
+      segment: t.segment,
+      netPnl: t.netPnl,
+      grossPnl: t.grossPnl,
+      chargesTotal: t.chargesTotal,
+      buyValue: t.buyValue,
+      isOpen: t.isOpen,
+      basisKnown: hasKnownBasis(t),
+      buyOrderCount: t.buyOrderCount,
+      sellOrderCount: t.sellOrderCount,
+      exitTime: t.exitTime,
+    })),
+  );
+
   return (
     <>
       <PageHeader title="Edge / Setup Analytics" description="Which edges pay — expectancy, win rate and avg R per setup and segment." />
@@ -71,6 +96,7 @@ export default function EdgeReportPage() {
         <ProGate>
         <EdgeTable title="By setup tag" rows={bySetup(trades)} labelFor={(k) => k} exportName="vyuha-edge-by-setup" />
         <EdgeTable title="By segment" rows={bySegment(trades)} labelFor={(k) => SEGMENT_LABELS[k as Segment] ?? k} exportName="vyuha-edge-by-segment" />
+        <SegmentDepthCard report={depth} />
         <ThemeEdgeCard report={themes} />
         <MaeMfeCard report={maeReport} />
         <StopTuningCard tuning={tuning} />
@@ -343,6 +369,93 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
               })}
             </tbody>
           </ReportTable>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * SEGMENT DEPTH — the five books inside the book.
+ *
+ * Every rate carries its interval, and the five are corrected together: with
+ * five simultaneous comparisons an uncorrected "best segment" is frequently a
+ * coin that came up heads. A segment that fails correction is MARKED and stays.
+ */
+function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
+  const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+  const finding = segmentFinding(report);
+  const rows = report.rows.filter((r) => r.count > 0 || r.excluded > 0);
+
+  return (
+    <Card className="p-0">
+      <CardHeader className="flex-row items-center justify-between">
+        <div>
+          <CardTitle>Segment depth</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Intraday, delivery, MTF, index options and stock options are five different businesses —
+            different statute, different holding cost, different settlement. One expectancy over all
+            five hides which one pays.
+          </p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 p-0">
+        {rows.length === 0 ? (
+          <div className="p-6 text-sm text-muted-foreground">No closed trades in these five segments yet.</div>
+        ) : (
+          <>
+            {finding && <p className="px-6 pt-3 text-sm font-medium">{finding}</p>}
+            <ReportTable>
+              <ReportThead>
+                <ReportTh>Segment</ReportTh>
+                <ReportTh align="right">Trades</ReportTh>
+                <ReportTh align="right">Net P&L</ReportTh>
+                <ReportTh align="right">Expectancy</ReportTh>
+                <ReportTh align="right">Win rate</ReportTh>
+                <ReportTh align="right">95% CI</ReportTh>
+                <ReportTh align="right">Charge drag</ReportTh>
+                <ReportTh align="right">Avg fills</ReportTh>
+              </ReportThead>
+              <tbody>
+                {rows.map((r) => (
+                  <ReportTr key={r.segment}>
+                    <ReportTd className="font-medium">
+                      {r.label}
+                      <span className="block text-[0.65rem] font-normal text-muted-foreground">{r.note}</span>
+                    </ReportTd>
+                    <ReportTd align="right">
+                      {r.count}
+                      {r.excluded > 0 && (
+                        <span className="block text-[0.65rem] text-warning" title="Closed trades with no cost basis — excluded from every rate above, never bucketed.">
+                          {r.excluded} unpriced
+                        </span>
+                      )}
+                    </ReportTd>
+                    <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
+                    <ReportTd align="right" className={pnl(r.expectancy)}>{num(r.expectancy, 0)}</ReportTd>
+                    <ReportTd align="right">{r.count ? (r.winRate * 100).toFixed(1) : "—"}%</ReportTd>
+                    <ReportTd align="right" muted title={rateVerdict(r.winRateCi, report.bookWinRate)}>
+                      <span className="whitespace-nowrap">{fmtIntervalPct(r.winRateCi)}</span>
+                      {r.count > 0 && !r.distinguishable && (
+                        <span className="block text-[0.65rem] text-warning" title="Not yet distinguishable from your book's overall win rate once all five segments are accounted for (Benjamini-Yekutieli, q=0.05). Shown, not hidden.">
+                          not yet distinguishable
+                        </span>
+                      )}
+                    </ReportTd>
+                    <ReportTd align="right" muted title="Charges as a share of GROSS profit. Blank when the segment did not make a gross profit — a percentage of a loss is not a drag figure.">
+                      {r.chargeDragPct == null ? "—" : `${r.chargeDragPct.toFixed(1)}%`}
+                    </ReportTd>
+                    <ReportTd align="right" muted>{r.avgFills == null ? "—" : r.avgFills.toFixed(1)}</ReportTd>
+                  </ReportTr>
+                ))}
+              </tbody>
+            </ReportTable>
+            <p className="px-6 pb-4 text-[0.6875rem] text-muted-foreground">
+              Rates are over closed trades with a known cost basis.
+              {report.totalExcluded > 0 && <> {report.totalExcluded} closed trade{report.totalExcluded === 1 ? " is" : "s are"} excluded for want of one.</>}
+              {report.otherSegmentTrades > 0 && <> {report.otherSegmentTrades} closed trade{report.otherSegmentTrades === 1 ? " sits" : "s sit"} in futures or commodities, which this table does not cover.</>}
+            </p>
+          </>
         )}
       </CardContent>
     </Card>

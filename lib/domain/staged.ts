@@ -106,7 +106,8 @@ export interface StagedWarning {
     | "averaging_down"
     | "unstopped_tranche"
     | "risk_exceeds_initial"
-    | "no_initial_stop";
+    | "no_initial_stop"
+    | "tsl_less_protective";
   message: string;
   legId?: number;
 }
@@ -167,11 +168,44 @@ export function sortLegs(legs: Leg[]): Leg[] {
   return [...legs].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.id - b.id));
 }
 
-/** The stop actually working on a tranche — a trailing stop supersedes the
- *  original whenever one is set. */
+/**
+ * The stop actually working on a tranche — a trailing stop supersedes the
+ * original whenever one is set.
+ *
+ * UNCONDITIONALLY, and that is the trap: a trailing stop is meant to RATCHET
+ * toward the entry, but nothing here checks direction. A long whose TSL is
+ * typed BELOW its SL (a fat finger, or a short's habit) silently widens the
+ * working stop, and because this function governs both `lib/risk/alerts.ts`
+ * (breach detection) and `lib/analytics/exposure.ts` (capital at risk), the
+ * position then looks safer than it is on two screens at once.
+ *
+ * The behaviour is deliberately NOT changed here — silently substituting the
+ * tighter stop would hide a real data-entry error and disagree with what the
+ * user believes is working at the broker. Instead `validateLegs` raises
+ * `tsl_less_protective`, so the user is told and decides.
+ */
 export function effectiveStop(leg: { slPlanned?: number | null; trailingSl?: number | null }): number | null {
   if (leg.trailingSl != null) return leg.trailingSl;
   return leg.slPlanned ?? null;
+}
+
+/**
+ * True when a trailing stop is LESS protective than the original stop it
+ * supersedes — below it on a long, above it on a short.
+ *
+ * A trailing stop only ever moves in the direction that reduces risk. One that
+ * has moved the other way is almost always a typo, and its cost is silent:
+ * every R, every capital-at-risk figure and every breach alert on that position
+ * is then computed from a stop the trader did not intend.
+ */
+export function tslLessProtective(
+  leg: { slPlanned?: number | null; trailingSl?: number | null },
+  direction: Direction,
+): boolean {
+  const sl = leg.slPlanned;
+  const tsl = leg.trailingSl;
+  if (sl == null || tsl == null) return false;
+  return direction === "long" ? tsl < sl - 1e-9 : tsl > sl + 1e-9;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +330,18 @@ export function summarise(legs: Leg[], direction: Direction): StagedPosition {
             message: `Averaging down — added at ${r2(leg.price)} against an average of ${r2(avg)}.`,
           });
         }
+      }
+
+      if (tslLessProtective(leg, direction)) {
+        warnings.push({
+          level: "action",
+          code: "tsl_less_protective",
+          legId: leg.id,
+          message:
+            direction === "long"
+              ? `Trailing stop ${r2(leg.trailingSl!)} sits BELOW the original stop ${r2(leg.slPlanned!)} — it is widening the risk, not reducing it. The trailing stop is what counts, so check it.`
+              : `Trailing stop ${r2(leg.trailingSl!)} sits ABOVE the original stop ${r2(leg.slPlanned!)} — it is widening the risk, not reducing it. The trailing stop is what counts, so check it.`,
+        });
       }
 
       if (stop == null) {
