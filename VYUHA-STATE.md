@@ -150,10 +150,27 @@ Intel, macOS Apple silicon); `npm run release:verify v3.1.1` → **all 3 `.sig` 
 build's **34,941,480 B** — 17,704 B apart. winget takes the GitHub hash, WDSI and buyers take
 the ZIP's (`A0A73A33…5FBC24`).
 
-**OWNER STEPS REMAINING (nothing else is blocked):** publish the draft → `npm run mirror:push`
-**from a real terminal** (agent sessions run with `GIT_TERMINAL_PROMPT=0`, which blocks the
-Codeberg OAuth refresh) → WDSI with the CLIENT ZIP's installer, not the GitHub asset →
-**no winget PR while microsoft/winget-pkgs #421585 is open** → install on a non-build machine.
+**OWNER STEPS — DONE 2026-08-30 (reported by the owner): the release is PUBLISHED and the
+mirror is PUSHED.** WDSI submission is the only one still outstanding — use the CLIENT ZIP's
+installer (SHA-256 `A0A73A33…5FBC24`), not the GitHub asset, which is a different binary.
+
+**"INSTALL ON A NON-BUILD MACHINE" IS DISCHARGED (2026-08-30).** The owner reports v3.1.1
+installed and running fine on another user's machine. This item had been open since **v2.90.0**,
+which passed every automated check and then ran on no machine but the one that built it — the
+standing caveat that motivated step 7 of the release skill. It is now satisfied by a real
+install of a real release, not by winget's `08. Installation Validation` (which only proves the
+installer runs on a clean VM, never that the app launches and is usable).
+
+**winget re-checked 2026-08-30: PR microsoft/winget-pkgs [#421585] is STILL OPEN and has not
+moved since 2026-08-20T20:29:09Z — ten days, zero activity.** Labels unchanged
+(`Azure-Pipeline-Passed` + `Validation-Completed` + `New-Package`), `mergeable: MERGEABLE`,
+`reviewDecision: REVIEW_REQUIRED`, still exactly one comment (the CLA agreement). It is waiting
+on a community-volunteer moderator and nothing else. **No movement is NORMAL for a first-time
+package — do NOT nudge it, and do NOT open a second PR for 3.1.1 while it is open.** It is
+submitted for 2.99.99 and that is fine: the v2.99.99 release and its asset URL stay live, so
+the PR remains valid and mergeable. Correct order is still: let it merge, THEN
+`wingetcreate update ThejeshK.Vyuha --version 3.1.1 --urls <installer-url> --submit`, with the
+PUBLISHED GitHub asset's hash, not the local build's.
 
 **e2e RUN LOCALLY AFTER THE TAG: 45/45 PASSED, 2.5 min, EXIT 0** (2026-08-30 ~02:25 IST, on
 `0c6ce92`). Playwright serves `next dev -p 3100` against its OWN isolated database
@@ -164,10 +181,33 @@ behind: any later `npm run verify` must rebuild, and no dev server may be up whi
 (DECISIONS 2026-08-27).** The shipped artifact is unaffected — `desktop-dist/` and the signed
 installer were produced before this run.
 
-**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** the installer was not installed on a
-non-build machine; the Zerodha F&O compact grammar is still unparsed and still has no real
-sample; the human-facing NSE/BSE portal pages were not navigated (the three DIRECT download
-URLs were verified, the portal click-paths were not).
+**NOT DONE / NOT VERIFIABLE HERE, stated plainly:** the Zerodha F&O compact grammar is still
+unparsed and still has no real sample; the human-facing NSE/BSE portal pages were not navigated
+(the three DIRECT download URLs were verified, the portal click-paths were not); WDSI for
+v3.1.1 is not yet submitted.
+
+**KNOWN GAP, MEASURED 2026-08-30 — the ISIN snapshot has NO ETFs or MF units (candidate for
+v3.1.2).** The owner supplied nine exchange downloads for cross-checking. Four add NOTHING
+because the bundle already has them: `EQUITY_L.csv` (2,559 ISINs, 0 new), `SME_EQUITY_L.csv`
+(565, 0 new), **`Equity.csv` — which IS BSE's manual `ListOfScrips` export and matched the API
+pull the build script uses at 4,979 rows / 0 new ISINs, independently confirming that source**,
+and `EQT0.csv` (513 BSE T+0-eligible, a pure subset). Two are unusable:
+`Eligible_T0_Securities_4.xlsx` has NO ISIN column (it is a formatted schedule, not a data
+list), and `eq_ilseclist.csv` is EMPTY — header only, zero rows (the build script's <2 KB /
+<2-row guards already refuse both).
+
+Three DO add coverage, all of it `INF…` (ETF and mutual-fund units, which no `INE` equity list
+carries): `eq_etfseclist.csv` (349 NSE ETFs, **156 new**), `MF.csv` (563 BSE MF-segment rows,
+**302 new** — note BSE labels these `Instrument = Equity`, so the existing equity filter would
+pass them unchanged) and `mf_close-end.csv` (115 NSE close-ended MF, **115 new**). About 573
+new ISINs, roughly 15 KB.
+
+**Neither demo book contains a single INF ISIN** (Paytm 281 distinct ISINs, Zerodha 58, zero
+INF in both), so this gap is REAL BUT NOT YET HIT. It matters because GOLDBEES / SILVERBEES /
+NIFTYBEES / LIQUIDBEES are ordinary retail holdings that trade in the equity segment, and a
+Paytm tradebook would state them as numeric codes exactly like any share. Adding them is
+low-risk by construction: `resolveCodedSymbols` only ever fires on an ALL-DIGIT symbol, so more
+ISINs can only turn numbers into tickers — it can never corrupt a ticker that is already right.
 
 *Below: the v3.1.0 cut, verified 2026-08-29 — accurate history.*
 
