@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { bySegment, bySetup, type GroupStat } from "@/lib/analytics/metrics";
+import { benjaminiYekutieli, fmtIntervalPct, proportionPValue, rateVerdict, wilsonInterval } from "@/lib/analytics/inference";
 import { num, inr } from "@/lib/format";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { computeMaeMfe, stopTuningReport, type MaeTradeInput } from "@/lib/analytics/mae-mfe";
@@ -266,6 +267,27 @@ function MaeMfeCard({ report }: { report: ReturnType<typeof computeMaeMfe> }) {
 
 function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows: GroupStat[]; labelFor: (k: string) => string; exportName: string }) {
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
+
+  /**
+   * This table RANKS slices, which makes it a multiple-comparison machine: with
+   * twenty setups you expect one to look "best at p<0.05" even when every one
+   * is identical underneath. So each row carries a Wilson interval on its win
+   * rate, and the whole table is corrected together.
+   *
+   * Benjamini-YEKUTIELI, not Hochberg: setups overlap (one trade can be tagged
+   * into several), so the dependence is arbitrary and BH's PRDS assumption does
+   * not hold. See lib/analytics/inference.ts.
+   *
+   * Nothing is hidden — a row that fails correction is MARKED and stays. It is
+   * the user's own record (invariant 7).
+   */
+  const bookWins = rows.reduce((s, r) => s + r.wins, 0);
+  const bookCount = rows.reduce((s, r) => s + r.count, 0);
+  const bookRate = bookCount > 0 ? bookWins / bookCount : null;
+  const corrected = bookRate == null
+    ? []
+    : benjaminiYekutieli(rows.map((r) => ({ item: r.key, p: proportionPValue(r.wins, r.count, bookRate) })));
+  const verdictFor = new Map(corrected.map((c) => [c.item, c.significant]));
   return (
     <Card className="p-0">
       <CardHeader className="flex-row items-center justify-between">
@@ -287,6 +309,7 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
               <ReportTh align="right">Net P&L</ReportTh>
               <ReportTh align="right">Expectancy</ReportTh>
               <ReportTh align="right">Win rate</ReportTh>
+              <ReportTh align="right">95% CI</ReportTh>
               <ReportTh align="right">Avg R</ReportTh>
               <ReportTh align="right">Charges</ReportTh>
             </ReportThead>
@@ -300,6 +323,17 @@ function EdgeTable({ title, rows, labelFor, exportName }: { title: string; rows:
                     <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
                     <ReportTd align="right" className={pnl(expectancy)}>{num(expectancy, 0)}</ReportTd>
                     <ReportTd align="right">{(r.winRate * 100).toFixed(1)}%</ReportTd>
+                    <ReportTd align="right" muted title={rateVerdict(wilsonInterval(r.wins, r.count), bookRate)}>
+                      <span className="whitespace-nowrap">{fmtIntervalPct(wilsonInterval(r.wins, r.count))}</span>
+                      {bookRate != null && !verdictFor.get(r.key) && (
+                        <span
+                          className="ml-1.5 text-[10px] text-warning"
+                          title="This slice's win rate is not yet distinguishable from your book's overall rate once every slice on this table is accounted for (Benjamini-Yekutieli, q=0.05). It is shown, not hidden — but do not trade on it yet."
+                        >
+                          not yet distinguishable
+                        </span>
+                      )}
+                    </ReportTd>
                     <ReportTd align="right">
                       {r.avgR == null ? "—" : <span className={pnl(r.avgR)}>{r.avgR.toFixed(2)}R</span>}
                     </ReportTd>
