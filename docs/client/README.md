@@ -28,7 +28,7 @@ single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
 
-## New in v3.5.0
+## New in v3.5.1
 
 | Upgrade | What it gives you |
 |---|---|
