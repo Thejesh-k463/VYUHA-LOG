@@ -6,6 +6,59 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-31 — v3.3.0 post-release checks: updater cryptography, and a perf re-sweep
+
+### The updater signature was verified against the PUBLISHED BINARY, not just decoded
+
+`release:verify` decodes each `.sig`'s key id, which proves a signature was MADE by the right
+key. It does not prove the signature VERIFIES over the bytes a user downloads — and that gap is
+exactly what v2.98.0 fell into, where the build reported "signed" while every installed copy
+rejected the update.
+
+Done properly this time, using only the pubkey shipped inside the app
+(`tauri.conf.json` → `plugins.updater.pubkey`): downloaded the published
+`Vyuha_3.3.0_x64-setup.exe` (34,935,482 B), decoded the `windows-x86_64` signature out of the
+published `latest.json`, and verified it. **✓ verifies.**
+
+**The trap, recorded because it nearly produced a false alarm:** minisign's algorithm codes are
+`Ed` = PureEdDSA over the file and **`ED` = HashEdDSA over a BLAKE2b-512 prehash**. Inverting
+them makes a perfectly good release report "SIGNATURE DOES NOT VERIFY". The first run did
+exactly that. **Verify the verifier before believing a negative result.** Node can do the whole
+check with no dependencies: `crypto.createHash("blake2b512")`, then `crypto.verify(null, hash,
+key, sig)` with the 32-byte Ed25519 key wrapped as SPKI (`302a300506032b6570032100` + key).
+
+Windows only — macOS is not a surface this product sells, so 120 MB of dmg was not downloaded
+to prove something that does not ship.
+
+Also confirmed post-publish: `releases/latest` → **v3.3.0**; `revocations` still
+`prerelease=true` and did NOT steal latest; manifest carries all six platform entries, every
+signature on `4FF85F3BBE1DA21D`.
+
+### Perf re-sweep at 25k trades — v3.3.0 added no regression
+
+`npm run perf:seed` (25,001 trades, 3,460 open, 60k ledger rows, 100k audit rows) →
+`npm run perf:sweep` (42 routes × 3 rounds, 126 visits) against the production build.
+
+| | v3.0.0 baseline | **v3.3.0** |
+|---|---|---|
+| Overall route median | 987 ms | **985 ms** |
+| Budget breaches (of 42) | 6 | **6 — the same six** |
+| Console errors | 0 | **0** |
+
+Still breaching, unchanged and all payload-bound: `/strategies` 6026 ms, `/options-journal`
+5770 ms, `/equity` 3208 ms, `/risk` 2503 ms, `/trades` 2256 ms, `/lenses` 2114 ms. **The
+v3.0.0 six-route deferral therefore still stands and is not superseded.**
+
+The three routes v3.3.0 added O(n) passes to are all comfortably inside budget:
+**`/reports/tax` 911 ms** (monthly-by-head), **`/reports/monthly` 1156 ms** (month detail),
+**`/reports/harvest` 1304 ms** (three tax levers + 3 extra projected columns). Harvest has the
+least headroom of any report at ~200 ms under, which is where to look first if it is extended
+again.
+
+Harness note: `vyuha-perf` in `.claude/launch.json` starts a PRODUCTION server against
+`data/perf.sqlite` on port 3100, which is what `perf:sweep` expects. `data/` is gitignored and
+`perf:seed` rewrites the file every run, so a baseline can never accrete.
+
 ## 2026-08-31 — Empty-book sweep: what a new buyer's first launch actually renders
 
 **Context:** the owner wiped app-data during an install, which briefly made a real

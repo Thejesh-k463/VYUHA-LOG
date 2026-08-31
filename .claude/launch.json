@@ -12,6 +12,16 @@
       "autoPort": true
     },
     {
+      "name": "vyuha-perf",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VYUHA_DB_PATH=data\\perf.sqlite&& npx next start -p 3100"
+      ],
+      "port": 3100,
+      "autoPort": false
+    },
+    {
       "name": "vyuha-dev-empty-db",
       "runtimeExecutable": "cmd",
       "runtimeArgs": [
