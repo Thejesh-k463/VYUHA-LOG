@@ -41,6 +41,17 @@ describe("computeExposure", () => {
     expect(t.positions[0].capitalAtRiskAmt).toBe(0);
   });
 
+  it("open risk floors at 0 when the stop locks in profit beyond mtm", () => {
+    // stop trailed ABOVE the current mtm on a long: risk is already eliminated,
+    // not negative — the raw (mtm-stop) figure would be -5000 here.
+    const t = computeExposure([pos({ qty: 100, entry: 1000, mtm: 1100, originalSl: 950, trailingSl: 1150 })], capital);
+    expect(t.positions[0].openRiskAmt).toBe(0);
+    expect(t.positions[0].openRiskPct).toBe(0);
+    // same for a short whose stop sits below the current mtm
+    const s = computeExposure([pos({ qty: 100, entry: 100, mtm: 80, originalSl: 70, side: "short" })], capital);
+    expect(s.positions[0].openRiskAmt).toBe(0);
+  });
+
   it("unstopped position counts full invested as capital-at-risk", () => {
     const c = e.positions[2];
     expect(c.hasStop).toBe(false);

@@ -152,6 +152,43 @@ describe("applyMapping — execution shape", () => {
     expect(t.broker).toBe("kotakneo");
   });
 
+  it("aggregates laddered fills per scrip-day — ONE position, not one per fill", () => {
+    // SME books fill 11 + 2 + 2 + 3 shares at a time; pairLegs emits one
+    // closed position per SELL leg, so raw fills would report ~10x the
+    // positions the trader took. Fills must merge into one leg per
+    // symbol|date|side before pairing (same as the Zerodha tradebook parser).
+    const rows = [
+      ["06-07-2026", "SMESTK", "BUY", "11", "100"],
+      ["06-07-2026", "SMESTK", "BUY", "2", "101"],
+      ["06-07-2026", "SMESTK", "BUY", "2", "102"],
+      ["06-07-2026", "SMESTK", "BUY", "3", "103"],
+      ["07-07-2026", "SMESTK", "SELL", "18", "110"],
+    ];
+    const r = applyMapping(headers, rows, m, OPTS);
+    expect(r.trades).toHaveLength(1);
+    const t = r.trades[0];
+    expect(t.buyQty).toBe(18);
+    expect(t.sellQty).toBe(18);
+    expect(t.buyValue).toBe(1815); // 11×100 + 2×101 + 2×102 + 3×103
+    expect(t.avgBuyPrice).toBe(100.83); // weighted, not any single fill's price
+    expect(t.grossPnl).toBe(165); // 18×110 − 1815
+    expect(t.buyDate).toBe("2026-07-06");
+    expect(t.sellDate).toBe("2026-07-07");
+  });
+
+  it("laddered SELL fills on one day also close as one position", () => {
+    const rows = [
+      ["06-07-2026", "SMESTK", "BUY", "18", "100"],
+      ["07-07-2026", "SMESTK", "SELL", "10", "110"],
+      ["07-07-2026", "SMESTK", "SELL", "8", "111"],
+    ];
+    const r = applyMapping(headers, rows, m, OPTS);
+    expect(r.trades).toHaveLength(1);
+    expect(r.trades[0].sellQty).toBe(18);
+    expect(r.trades[0].sellValue).toBe(1988); // 10×110 + 8×111
+    expect(r.trades[0].avgSellPrice).toBe(110.44);
+  });
+
   it("a sell with no buy is flagged basis-unknown, not scored as pure profit", () => {
     // The IPO-allotment case. Reporting 100% gain because buyValue is 0 would
     // be a fabrication — pairLegs marks it and the caller excludes it.

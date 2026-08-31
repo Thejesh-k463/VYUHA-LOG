@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { computePerformance, timeWeightedReturn, type DailyPoint } from "@/lib/analytics/performance";
 
 describe("computePerformance", () => {
@@ -128,5 +130,44 @@ describe("timeWeightedReturn", () => {
 
   it("returns null for an empty series", () => {
     expect(timeWeightedReturn([], 100000)).toBeNull();
+  });
+});
+
+describe("no configured capital — never fabricate a denominator (AGENTS.md #6)", () => {
+  // The page used to paper over an unset capital with `|| 1700000`, so a fresh
+  // install showed Sharpe/CAGR/total return computed on an invented ₹17 lakh.
+  // The page now gates every capital-relative figure on `capitalKnown`; this
+  // reads the real source so the fallback cannot quietly come back.
+  const pageSrc = fs.readFileSync(
+    path.join(__dirname, "..", "app", "reports", "performance", "page.tsx"),
+    "utf8",
+  );
+
+  it("the ₹17,00,000 fallback literal is gone from the performance page", () => {
+    expect(pageSrc).not.toMatch(/1700000|17_00_000|1_700_000/);
+  });
+
+  it("capital-relative flows are gated on capitalKnown", () => {
+    expect(pageSrc).toMatch(/const capitalKnown = capital > 0/);
+    // XIRR, TWR, Monte Carlo and benchmark all divide by the capital base and
+    // must be withheld — not approximated — when it is unknown.
+    expect(pageSrc).toMatch(/capitalKnown \? xirr\(/);
+    expect(pageSrc).toMatch(/capitalKnown \? timeWeightedReturn\(/);
+    expect(pageSrc).toMatch(/capitalKnown \? monteCarloEquity\(/);
+    expect(pageSrc).toMatch(/capitalKnown \? computeBenchmark\(/);
+  });
+
+  it("₹ drawdown is base-independent, so it survives capital 0 unchanged", () => {
+    // The page keeps rendering maxDrawdownAmt without a capital: equity − peak
+    // is a difference, so the starting base cancels. Pin that property.
+    const daily: DailyPoint[] = [
+      { date: "2026-01-01", net: 1000 },
+      { date: "2026-01-02", net: -500 },
+      { date: "2026-01-05", net: 2000 },
+    ];
+    const withCapital = computePerformance(daily, 100000, 0);
+    const withoutCapital = computePerformance(daily, 0, 0);
+    expect(withoutCapital.maxDrawdownAmt).toBe(withCapital.maxDrawdownAmt);
+    expect(withoutCapital.maxDrawdownAmt).toBe(500);
   });
 });

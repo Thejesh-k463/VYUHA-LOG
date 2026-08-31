@@ -6,7 +6,7 @@ import { ItrExportButtons } from "@/components/reports/itr-export";
 import { getSettings } from "@/lib/queries/settings";
 import { getDividendLedgerEntries } from "@/lib/queries/ledger";
 import { getTaxBase, countItrRows } from "@/lib/queries/tax-itr";
-import { taxByFy } from "@/lib/analytics/tax";
+import { taxByFy, currentFy as deriveCurrentFy } from "@/lib/analytics/tax";
 import { monthlyByHead, MONTHLY_HEAD_CAVEAT } from "@/lib/analytics/monthly";
 import {
   aggregateTradesByFy,
@@ -60,7 +60,10 @@ export default function TaxReportPage() {
   // drift. Same rows, same order, same JS filters as before — only the 59
   // never-read columns stopped being fetched.
   const { trades, closedTrades, ipoTaxRows, cgTrades } = getTaxBase();
-  const rows = taxByFy([...trades, ...ipoTaxRows], fyStartMonth);
+  // Undated closed trades bucket under TODAY'S FY — passed explicitly so this
+  // page and the analytics module can never disagree on the fallback year.
+  const currentFy = deriveCurrentFy(fyStartMonth);
+  const rows = taxByFy([...trades, ...ipoTaxRows], fyStartMonth, currentFy);
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
   const hasPreGrandfatherLot = cgTrades.some((t) => t.buyDate != null && t.buyDate < GRANDFATHER_DATE);
@@ -74,10 +77,6 @@ export default function TaxReportPage() {
   // never-rendered rows into every visit's RSC payload at 25k trades. Only
   // the count (for the disabled state) is computed here.
   const itrCount = countItrRows();
-  const today = new Date();
-  const todayY = today.getFullYear();
-  const todayFyStart = today.getMonth() + 1 >= fyStartMonth ? todayY : todayY - 1;
-  const currentFy = `${todayFyStart}-${String((todayFyStart + 1) % 100).padStart(2, "0")}`;
   const byFy = aggregateTradesByFy(cgTrades, fyStartMonth, currentFy);
   const timeline = computeTaxTimeline(byFy);
 

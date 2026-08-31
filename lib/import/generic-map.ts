@@ -273,7 +273,12 @@ export function applyMapping(
 
 function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions): ApplyResult {
   const warnings: string[] = [];
-  const legs: Leg[] = [];
+  // A LEG is a scrip-DAY, not a fill — same aggregation as the Zerodha
+  // tradebook parser. `pairLegs` emits one closed position per SELL leg, so
+  // feeding it raw fills makes a laddered book (11 + 2 + 2 + 3 shares at a
+  // time) report one "trade" per fill instead of the position the trader
+  // actually took. Fills are summed per symbol|date|side before pairing.
+  const legs = new Map<string, Leg>();
   const times = new Map<string, { first: string | null; last: string | null }>();
   let skipped = 0;
   let undated = 0;
@@ -288,16 +293,25 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
     if (!symbol || !side || qty == null || price == null || qty <= 0) { skipped++; continue; }
     if (!date) { skipped++; undated++; continue; }
 
-    legs.push({
-      symbol,
-      side,
-      date,
-      qty,
-      value: qty * price,
-      charges: readNumber(cell(row, m.charges)) ?? 0,
-      exchange: readExchange(cell(row, m.exchange)),
-      product: "unknown",
-    });
+    const legKey = `${symbol}|${date}|${side}`;
+    const existing = legs.get(legKey);
+    if (existing) {
+      existing.qty += qty;
+      existing.value += qty * price;
+      existing.charges += readNumber(cell(row, m.charges)) ?? 0;
+      if (!existing.exchange) existing.exchange = readExchange(cell(row, m.exchange));
+    } else {
+      legs.set(legKey, {
+        symbol,
+        side,
+        date,
+        qty,
+        value: qty * price,
+        charges: readNumber(cell(row, m.charges)) ?? 0,
+        exchange: readExchange(cell(row, m.exchange)),
+        product: "unknown",
+      });
+    }
 
     const t = extractTime(cell(row, m.time));
     if (t) {
@@ -319,7 +333,7 @@ function applyExecutions(rows: string[][], m: ColumnMapping, opts: ApplyOptions)
   }
 
   const product = productFromRows(rows, m) ?? opts.defaultProduct ?? null;
-  const paired = pairLegs(legs);
+  const paired = pairLegs([...legs.values()]);
 
   const trades: NormalizedTrade[] = paired.map((p) => {
     const t = times.get(p.symbol);

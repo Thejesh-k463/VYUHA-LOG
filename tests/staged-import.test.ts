@@ -42,7 +42,7 @@ function isStaged(t: NormalizedTrade): boolean {
 
 /** Mirrors commit.ts#orderExecutions. */
 function toLegs(t: NormalizedTrade): Leg[] {
-  const isShort = t.sellQty > 0 && t.buyQty === 0;
+  const isShort = t.sellQty > t.buyQty;
   const opening = isShort ? "sell" : "buy";
   const ordered = [...(t.executions ?? [])]
     .map((e, i) => ({ e, i }))

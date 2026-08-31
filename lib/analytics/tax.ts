@@ -57,11 +57,24 @@ function isLongTerm(buyDate: string | null, sellDate: string | null): boolean {
   return days >= 365;
 }
 
-export function taxByFy(trades: TaxTrade[], fyStartMonth = 4, goLiveFy = "2026-27"): FySummary[] {
+// FY containing `today`. The fallback bucket for closed trades with no sell
+// date — it must be DERIVED, not a literal: a frozen "2026-27" default filed
+// undated trades under a stale year forever once that FY passed.
+export function currentFy(fyStartMonth: number, today: Date = new Date()): string {
+  const y = today.getFullYear();
+  const start = today.getMonth() + 1 >= fyStartMonth ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+export function taxByFy(
+  trades: TaxTrade[],
+  fyStartMonth = 4,
+  fallbackFy: string = currentFy(fyStartMonth),
+): FySummary[] {
   const map = new Map<string, FySummary>();
   for (const t of trades) {
     if (t.isOpen) continue;
-    const fy = fyOf(t.sellDate, fyStartMonth, goLiveFy);
+    const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
     const s = map.get(fy) ?? {
       fy, stcg: 0, ltcg: 0, intradaySpeculative: 0, fnoBusiness: 0,
       fnoTurnover: 0, charges: 0, totalRealised: 0, trades: 0,

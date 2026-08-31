@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taxByFy, type TaxTrade } from "@/lib/analytics/tax";
+import { currentFy, taxByFy, type TaxTrade } from "@/lib/analytics/tax";
 import { itrPackByFy, type ItrTrade } from "@/lib/analytics/itr";
 
 // lib/analytics/tax.ts is the module behind the primary /reports/tax FY table and
@@ -61,6 +61,28 @@ describe("taxByFy — head segregation", () => {
       t({ sellDate: "2026-04-01", netPnl: 200 }),
     ]);
     expect(rows.map((r) => r.fy)).toEqual(["2025-26", "2026-27"]);
+  });
+});
+
+describe("taxByFy — undated fallback bucket", () => {
+  it("buckets an undated closed trade under the fallback FY passed by the caller", () => {
+    const rows = taxByFy([t({ sellDate: null, netPnl: 100 })], 4, "2031-32");
+    expect(rows.map((r) => r.fy)).toEqual(["2031-32"]);
+  });
+
+  it("defaults the fallback to TODAY'S FY, never a frozen literal", () => {
+    // The old default was the literal "2026-27" — once that FY passed, every
+    // undated trade kept filing under a stale year. Assert against the derived
+    // value so this test cannot itself freeze a year.
+    const rows = taxByFy([t({ sellDate: null, netPnl: 100 })]);
+    expect(rows.map((r) => r.fy)).toEqual([currentFy(4)]);
+  });
+
+  it("currentFy rolls over on fyStartMonth, not the calendar year", () => {
+    expect(currentFy(4, new Date("2028-03-31T00:00:00"))).toBe("2027-28");
+    expect(currentFy(4, new Date("2028-04-01T00:00:00"))).toBe("2028-29");
+    // January start: the FY label tracks the calendar year.
+    expect(currentFy(1, new Date("2027-12-15T00:00:00"))).toBe("2027-28");
   });
 });
 

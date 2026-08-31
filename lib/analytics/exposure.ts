@@ -185,7 +185,9 @@ export function computeExposure(inputs: ExposureInput[], capital: number): Expos
           0,
         )
       : hasStop
-        ? (p.mtm - (effectiveStop as number)) * p.qty * sign
+        ? // floor at 0: a stop beyond mtm (e.g. trailed above entry on a long) means
+          // risk already eliminated, not negative risk
+          Math.max(0, (p.mtm - (effectiveStop as number)) * p.qty * sign)
         : null;
 
     const initialRiskAmt = tr

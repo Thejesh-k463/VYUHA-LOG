@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
+import { guardReadable, unreadableError } from "@/lib/import/parse-guard";
 import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
 import type { ProductHint } from "@/lib/engine/types";
 import { BROKERS, type Broker } from "@/lib/domain/constants";
@@ -38,6 +39,13 @@ export async function POST(req: Request) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
+
+  // Refuse unreadable bytes (an image, an encrypted workbook) BEFORE detection:
+  // detectors open the workbook themselves, and an XLSX throw there used to
+  // escape as a raw 500 instead of copy the user can act on.
+  const guard = guardReadable(file.name, bytes);
+  if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: 422 });
+
   const ctx = buildContext(file.name, bytes);
 
   // Column mapping for the generic "any other broker" source. Absent on the
@@ -60,10 +68,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const ranked = rankParsers(ctx);
-  const chosen = forcedSource
-    ? ranked.find((p) => p.sourceId === forcedSource) ?? null
-    : detectParser(ctx);
+  // The guard above catches every known throw; this keeps an unforeseen one
+  // (a container XLSX opens but a detector's cell read chokes on) at 422
+  // rather than a 500 the client cannot JSON-parse.
+  let ranked, chosen;
+  try {
+    ranked = rankParsers(ctx);
+    chosen = forcedSource
+      ? ranked.find((p) => p.sourceId === forcedSource) ?? null
+      : detectParser(ctx);
+  } catch (e) {
+    return NextResponse.json({ error: unreadableError(e) }, { status: 422 });
+  }
 
   if (!chosen) {
     return NextResponse.json(

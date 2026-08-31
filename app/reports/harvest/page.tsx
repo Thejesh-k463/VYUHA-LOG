@@ -30,7 +30,7 @@ const statusBadge = { offsets: "profit", partial: "warning", carry: "secondary" 
 
 export default function HarvestPage() {
   const today = new Date().toISOString().slice(0, 10);
-  // The book projected to the 11 harvest columns (of 74) — same rows, same
+  // The book projected to the 13 harvest columns (of 74) — same rows, same
   // order, and the filters below are unchanged, so every figure and every
   // rendered row order is identical; only never-read columns stopped being
   // fetched and mapped (this was the whole-book getTrades() call).
@@ -54,12 +54,15 @@ export default function HarvestPage() {
     });
 
   // Realised capital gains booked this FY (closed equity, by holding period).
+  // NET (post-charge) P&L — the basis /reports/tax states and taxByFy/
+  // classifyGain use; gross here once showed the same FY two different
+  // realised-gain figures across the two tax surfaces.
   let realisedStcg = 0;
   let realisedLtcg = 0;
   for (const t of trades) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
-    if (daysHeld(t.buyDate, t.sellDate) >= 365) realisedLtcg += t.grossPnl;
-    else realisedStcg += t.grossPnl;
+    if (daysHeld(t.buyDate, t.sellDate) >= 365) realisedLtcg += t.netPnl;
+    else realisedStcg += t.netPnl;
   }
 
   const r = computeHarvest(lots, realisedStcg, realisedLtcg, today, fyEnd);
@@ -248,7 +251,7 @@ export default function HarvestPage() {
         <div className="space-y-2 text-[0.6875rem] text-muted-foreground">
           <p>
             Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Rates are
-            resolved from the date of sale.
+            resolved from the date of sale. Realised figures are net (post-charge), matching the Tax Summary.
           </p>
           <p>{LTCG_THRESHOLD_CAVEAT}</p>
           <p>{NO_WASH_SALE_CAVEAT}</p>

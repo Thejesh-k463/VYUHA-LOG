@@ -214,17 +214,19 @@ export const getTaxTrades = cache((): TaxPageTrade[] => scopedBookRows(TAX_FIELD
 const HARVEST_FIELDS = [
   "id", "symbol", "segment", "isOpen",
   "buyQty", "sellQty", "avgBuyPrice", "closingPrice",
-  "buyDate", "sellDate", "grossPnl",
+  "buyDate", "sellDate",
   // Added for the tax levers (v3.3.0): the STT split by head, and the
   // set-off position. Columns only — no new WHERE — so row order and both
   // float sums are unchanged by construction.
+  // No `grossPnl`: the realised STCG/LTCG sums moved to `netPnl` so both tax
+  // surfaces report one figure per FY, and nothing else on the page read it.
   "netPnl", "chargesTotal", "sttCtt",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;
 
 /**
- * /reports/harvest: the whole book projected to the 14 columns the harvest
+ * /reports/harvest: the whole book projected to the 13 columns the harvest
  * report reads — the open-lot mapping, the realised STCG/LTCG window, and the
  * tax levers (STT split by head, set-off position, holding clock). Same
  * pure-projection contract as `getTaxTrades` (no new WHERE; the page keeps

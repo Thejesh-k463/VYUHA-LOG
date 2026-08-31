@@ -36,16 +36,13 @@ import {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** A short position is one whose entries are sells. */
-export function directionOf(t: { buyQty: number; sellQty: number; staged?: boolean }, legs?: Leg[]): Direction {
-  // For a staged trade the direction is recorded by which side opened it; for
-  // legacy rows fall back to the classic heuristic (sell-first == short).
-  if (legs && legs.length > 0) {
-    // Direction is stored on the parent via buy/sell ordering; callers pass it
-    // explicitly where known. Default long — every manual staged trade is
-    // created with an explicit direction.
-    return t.sellQty > 0 && t.buyQty === 0 ? "short" : "long";
-  }
-  return t.sellQty > 0 && t.buyQty === 0 ? "short" : "long";
+export function directionOf(t: { buyQty: number; sellQty: number; staged?: boolean }, _legs?: Leg[]): Direction {
+  // sellQty > buyQty, NOT buyQty === 0: a short that has been PARTIALLY
+  // covered has buyQty > 0, and the === 0 test flipped it long — which
+  // sign-inverted the P&L rebuilt onto the parent row. Equal quantities
+  // (fully closed) stay "long", the long-standing shape of closed rows.
+  // Heuristic until a stored direction column lands (deferred to v3.6).
+  return t.sellQty > t.buyQty ? "short" : "long";
 }
 
 export interface DbLegRow {
@@ -654,8 +651,8 @@ export function convertToStaged(tradeId: number): LegMutationResult {
   if (t.staged) return { ok: true, message: "Already a staged position." };
   if (loadLegs(tradeId).length > 0) return { ok: true, message: "Already has legs." };
 
-  const isShort = t.sellQty > 0 && t.buyQty === 0;
-  const dir: Direction = isShort ? "short" : "long";
+  const dir: Direction = directionOf(t);
+  const isShort = dir === "short";
   const today = new Date().toISOString().slice(0, 10);
 
   const entryQty = isShort ? t.sellQty : t.buyQty;

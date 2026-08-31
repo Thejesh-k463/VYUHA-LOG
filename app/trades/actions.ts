@@ -279,9 +279,9 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
 function tradeDirection(id: number): "long" | "short" {
   const t = db.select().from(trades).where(eq(trades.id, id)).get();
   if (!t) return "long";
-  // Legs already exist → the opening side is whichever the first leg used; for
-  // a fresh conversion fall back to the classic sell-first heuristic.
-  return t.sellQty > 0 && t.buyQty === 0 ? "short" : "long";
+  // sellQty > buyQty, not buyQty === 0 — a partially covered short has
+  // buyQty > 0 and must stay short, or the rebuilt P&L sign-inverts (fix A6).
+  return t.sellQty > t.buyQty ? "short" : "long";
 }
 
 /** Turn a plain trade into a staged one by seeding the ladder from its own

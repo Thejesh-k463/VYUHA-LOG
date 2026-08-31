@@ -197,7 +197,9 @@ function loadOverrides(broker: string): Map<string, Override> {
  */
 function orderExecutions(t: NormalizedTrade): Execution[] {
   const ex = t.executions ?? [];
-  const isShort = t.sellQty > 0 && t.buyQty === 0;
+  // sellQty > buyQty, not buyQty === 0 — a partially covered short has
+  // buyQty > 0 and must not be ordered as a long (fix A6).
+  const isShort = t.sellQty > t.buyQty;
   const opening = isShort ? "sell" : "buy";
   return [...ex]
     .map((e, i) => ({ e, i }))
@@ -604,7 +606,7 @@ export function commitParsedFile(
       // staged panel reprices per fill.
       if (inserted && stagedFromExecutions(t)) {
         let seq = 1;
-        const isShort = t.sellQty > 0 && t.buyQty === 0;
+        const isShort = t.sellQty > t.buyQty; // must match orderExecutions (fix A6)
         for (const ex of orderExecutions(t)) {
           const opening = isShort ? ex.side === "sell" : ex.side === "buy";
           tx.insert(tradeLegs)

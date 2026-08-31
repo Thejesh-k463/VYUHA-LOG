@@ -67,6 +67,21 @@ interface PreviewResp {
   };
 }
 
+/**
+ * Read a response body that SHOULD be JSON but may not be: a crash before the
+ * route's own error handling returns an HTML/plain error page, and a blind
+ * `res.json()` on that surfaced as "Unexpected token" — a parser error message
+ * about the ERROR PAGE, shown where the import error belongs.
+ */
+async function readJson<T>(res: Response): Promise<T & { error?: string }> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T & { error?: string };
+  } catch {
+    return { error: `The import request failed (HTTP ${res.status}). Try the file again.` } as T & { error?: string };
+  }
+}
+
 export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAccountOption[] }) {
   const router = useRouter();
   // A6 — which book do these trades belong to? Only asked in the aggregate
@@ -100,7 +115,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
       if (accountId > 0) fd.append("accountId", String(accountId));
       if (withMapping) fd.append("mapping", JSON.stringify(withMapping));
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await res.json();
+      const json = await readJson<PreviewResp>(res);
       if (!res.ok) { setError(json.error ?? "Failed to parse file"); return; }
       setPreview(json);
     } catch (e) {
@@ -125,7 +140,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
         fd.append("productOverrides", JSON.stringify(productOverrides));
       }
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await res.json();
+      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape } }>(res);
       if (!res.ok) { setError(json.error ?? "Commit failed"); return; }
       setCommitted(json.result);
       setPreview(null);
@@ -172,7 +187,7 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
       fd.append("productOverrides", JSON.stringify(next));
       if (accountId > 0) fd.append("accountId", String(accountId));
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await res.json();
+      const json = await readJson<PreviewResp>(res);
       if (!res.ok) { setError(json.error ?? "Failed to re-price"); return; }
       setPreview(json);
     } catch (e) {

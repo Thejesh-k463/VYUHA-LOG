@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { capitalGainsRatesFor } from "@/lib/analytics/capital-gains";
 
@@ -76,5 +78,28 @@ describe("computeHarvest — candidates & misc", () => {
     expect(r.rates).toEqual(capitalGainsRatesFor("2024-06-01"));
     expect(r.rates.stcgPct).toBe(0.15);
     expect(r.rates.ltcgExemption).toBe(100000);
+  });
+});
+
+// The realised STCG/LTCG the page feeds computeHarvest must be NET (post-
+// charge) — the basis /reports/tax states and taxByFy/classifyGain use.
+// Summing gross here once showed the same FY two different realised-gain
+// figures across the two tax surfaces (audit A4, 2026-09-01).
+describe("harvest page — realised gains are net, matching /reports/tax", () => {
+  const read = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
+
+  it("sums realised STCG/LTCG from netPnl and never reads grossPnl", () => {
+    const src = read("app/reports/harvest/page.tsx");
+    expect(src).toMatch(/realisedStcg \+= t\.netPnl/);
+    expect(src).toMatch(/realisedLtcg \+= t\.netPnl/);
+    expect(src).not.toContain("grossPnl");
+  });
+
+  it("the harvest projection carries netPnl and dropped grossPnl", () => {
+    const q = read("lib/queries/trades.ts");
+    const block = q.slice(q.indexOf("const HARVEST_FIELDS"), q.indexOf("HarvestTrade"));
+    expect(block.length).toBeGreaterThan(0); // both anchors found, in order
+    expect(block).toContain('"netPnl"');
+    expect(block).not.toContain('"grossPnl"'); // Pick<> then rejects t.grossPnl at compile time
   });
 });
