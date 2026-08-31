@@ -21,6 +21,9 @@
  *    winners" is an observation. It is never phrased as "you should".
  */
 
+import { runRules } from "@/lib/intelligence/insight";
+import { COCKPIT_RULES, toFinding, type CockpitRuleInput } from "@/lib/intelligence/rules/cockpit";
+
 export const MIN_SAMPLE = 15;
 
 export interface CockpitTrade {
@@ -368,6 +371,12 @@ export interface Finding {
  * Turn the analysis into plain statements a trader can act on — every one
  * gated behind MIN_SAMPLE, and every one phrased as an observation rather
  * than an instruction.
+ *
+ * Since v3.5.0 this is a thin adapter over the COCKPIT_RULES registry
+ * (lib/intelligence/rules/cockpit.ts), which holds the same six rules —
+ * thresholds and prose unchanged — under the insight contract. The registry's
+ * trade-level rules need `input.trades` and refuse on the empty array passed
+ * here; a caller holding the trade rows runs the registry directly.
  */
 export function findings(
   time: TimeEdge,
@@ -376,81 +385,8 @@ export function findings(
   tilt: TiltBehaviour,
   segments: SegmentRow[],
 ): Finding[] {
-  const out: Finding[] = [];
-
-  // Best vs worst session.
-  const sessions = time.bySession.filter((b) => !b.thin && b.expectancy != null);
-  if (sessions.length >= 2) {
-    const sorted = [...sessions].sort((a, b) => (b.expectancy ?? 0) - (a.expectancy ?? 0));
-    const best = sorted[0], worst = sorted[sorted.length - 1];
-    if (best.key !== worst.key && (best.expectancy ?? 0) > (worst.expectancy ?? 0)) {
-      out.push({
-        tone: "info",
-        title: `${best.label} is your strongest window`,
-        detail: `₹${Math.round(best.expectancy ?? 0).toLocaleString("en-IN")} per trade across ${best.trades} trades, against ₹${Math.round(worst.expectancy ?? 0).toLocaleString("en-IN")} in the ${worst.label.toLowerCase()} over ${worst.trades}.`,
-      });
-    }
-  }
-
-  // Holding asymmetry.
-  if (!hold.insufficient && hold.ratio != null && hold.ratio > 1.5) {
-    out.push({
-      tone: "warn",
-      title: "Losers are held longer than winners",
-      detail: `Losing trades average ${hold.avgLossDays} days against ${hold.avgWinDays} for winners — ${hold.ratio}x. Cutting winners early while giving losers room is the most common structural leak in retail trading.`,
-    });
-  } else if (!hold.insufficient && hold.ratio != null && hold.ratio < 0.8) {
-    out.push({
-      tone: "good",
-      title: "Winners are held longer than losers",
-      detail: `Winners average ${hold.avgWinDays} days against ${hold.avgLossDays} for losers. That is the right way round.`,
-    });
-  }
-
-  // Sizing.
-  if (!sizing.insufficient && sizing.biggerIsBetter === false) {
-    const sm = sizing.quartiles[0], lg = sizing.quartiles[3];
-    out.push({
-      tone: "warn",
-      title: "Your largest positions are not your best",
-      detail: `Biggest quartile: ₹${Math.round(lg.expectancy ?? 0).toLocaleString("en-IN")} per trade. Smallest: ₹${Math.round(sm.expectancy ?? 0).toLocaleString("en-IN")}. Conviction is not being rewarded — that is a sizing question, not a selection one.`,
-    });
-  }
-
-  // Tilt.
-  if (!tilt.insufficient && tilt.afterLoss.expectancy != null && tilt.afterWin.expectancy != null) {
-    const gap = tilt.afterWin.expectancy - tilt.afterLoss.expectancy;
-    if (gap > 0 && tilt.afterLoss.expectancy < 0) {
-      out.push({
-        tone: "warn",
-        title: "You trade worse immediately after a loss",
-        detail: `₹${Math.round(tilt.afterLoss.expectancy).toLocaleString("en-IN")} per trade after a loser, against ₹${Math.round(tilt.afterWin.expectancy).toLocaleString("en-IN")} after a winner${tilt.sameDayReentryAfterLoss > 0 ? `, with ${tilt.sameDayReentryAfterLoss} same-day re-entries` : ""}.`,
-      });
-    }
-  }
-
-  // Segment worth questioning.
-  const weak = segments.filter((s) => !s.thin && s.expectancy != null && s.expectancy < 0);
-  if (weak.length > 0) {
-    const worst = weak[weak.length - 1];
-    out.push({
-      tone: "warn",
-      title: `${worst.label} is losing money`,
-      detail: `₹${Math.round(worst.expectancy ?? 0).toLocaleString("en-IN")} per trade over ${worst.trades} trades, ${worst.winRate}% of them winners.`,
-    });
-  }
-
-  // Charge drag.
-  const dragged = segments.filter((s) => !s.thin && s.chargeDragPct != null && s.chargeDragPct > 30);
-  for (const s of dragged.slice(0, 1)) {
-    out.push({
-      tone: "warn",
-      title: `Charges eat ${s.chargeDragPct}% of your ${s.label} gross`,
-      detail: `₹${Math.round(s.charges).toLocaleString("en-IN")} in costs across ${s.trades} trades. Fewer, larger positions carry the same edge for less friction.`,
-    });
-  }
-
-  return out;
+  const input: CockpitRuleInput = { time, holding: hold, sizing, tilt, segments, trades: [] };
+  return runRules(COCKPIT_RULES, input).map(toFinding);
 }
 
 export interface CockpitReport {

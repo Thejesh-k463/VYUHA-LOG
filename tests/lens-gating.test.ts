@@ -25,8 +25,11 @@ describe("the split is an allow-list", () => {
   it("free totals carry exactly the free fields — a new Kpis field lands nowhere by default", () => {
     const row = toLensRow(kpisOf([trade()]), false);
     expect(Object.keys(row.totals).sort()).toEqual(
-      ["charges", "closedCount", "count", "netPnl", "openCount", "unpricedCount", "unpricedNetPnl"].sort(),
+      // chargeHeads is a deliberate free-side addition (v3.5.0): charges are
+      // the user's own costs, the same side of the line as `charges` itself.
+      ["chargeHeads", "charges", "closedCount", "count", "netPnl", "openCount", "unpricedCount", "unpricedNetPnl"].sort(),
     );
+    expect(row.totals.chargeHeads).toBeNull(); // not computed unless a caller aggregates
     expect(row.edge).toBeNull();
   });
 
@@ -34,7 +37,12 @@ describe("the split is an allow-list", () => {
     const row = toLensRow(kpisOf([trade()]), true);
     expect(row.edge).not.toBeNull();
     expect(Object.keys(row.edge!).sort()).toEqual(
-      ["avgR", "expectancy", "losses", "profitFactor", "winRate", "wins"].sort(),
+      // The v3.5.0 additions (streaks, avg win/loss) land PRO side — every new
+      // derived-edge figure does, and the unlicensed-wire test proves absence.
+      [
+        "avgR", "expectancy", "losses", "profitFactor", "winRate", "wins",
+        "avgWin", "avgLoss", "maxWinStreak", "maxLossStreak", "currentStreak",
+      ].sort(),
     );
   });
 });
@@ -44,12 +52,31 @@ describe("the serialisation proof", () => {
     const trades = [trade({ netPnl: 777 }), trade({ netPnl: -333 })];
     const k = kpisOf(trades);
     const wire = JSON.stringify(toLensRow(k, false));
-    for (const field of ["winRate", "profitFactor", "expectancy", "avgR", "wins", "losses"]) {
+    for (const field of [
+      "winRate", "profitFactor", "expectancy", "avgR", "wins", "losses",
+      "avgWin", "avgLoss", "maxWinStreak", "maxLossStreak", "currentStreak",
+    ]) {
       expect(wire, `${field} leaked to an unlicensed client`).not.toContain(field);
     }
     // The expectancy value itself must be absent too, not just its label.
     expect(wire).not.toContain(String(k.expectancy));
     expect(wire).toContain('"edge":null');
+  });
+
+  it("insights never cross the wire unlicensed, even when a caller passes them", () => {
+    // The gate lives in toLensRow, not in the page: a future call site that
+    // forgets to check `pro` before running the rules still cannot leak.
+    const k = kpisOf([trade({ netPnl: 777 }), trade({ netPnl: -333 })]);
+    const insight = {
+      id: "test-insight", tone: "warn" as const,
+      headline: "SECRET-HEADLINE", evidence: [], sampleSize: 10,
+    };
+    const wire = JSON.stringify(toLensRow(k, false, { insights: [insight] }));
+    expect(wire).not.toContain("insights");
+    expect(wire).not.toContain("SECRET-HEADLINE");
+
+    const proWire = JSON.stringify(toLensRow(k, true, { insights: [insight] }));
+    expect(proWire).toContain("SECRET-HEADLINE");
   });
 
   it("a licensed row's edge matches computeKpis exactly — the gate changes visibility, never the maths", () => {

@@ -12,6 +12,7 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { toast } from "@/components/ui/toaster";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
+import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
 
 interface PreviewResp {
   breakdown: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number; total: number };
@@ -66,6 +67,7 @@ export function EditTradeDialog({
   });
   const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [setupTag, setSetupTag] = useState(trade.setupTag ?? "");
+  const [exitTrigger, setExitTrigger] = useState(trade.exitTrigger ?? "");
   const [notes, setNotes] = useState(trade.notes ?? "");
   const [currentPrice, setCurrentPrice] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
@@ -207,6 +209,7 @@ export function EditTradeDialog({
           </Field>
         )}
         <Field label="Setup tag"><Input name="setupTag" value={setupTag} onChange={(e) => setSetupTag(e.target.value)} /></Field>
+        <Field label="Exit trigger"><ExitTriggerField name="exitTrigger" value={exitTrigger} onChange={setExitTrigger} /></Field>
         <Field label="Notes"><Input name="notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
       </div>
 

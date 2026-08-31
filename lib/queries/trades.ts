@@ -76,6 +76,26 @@ export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
  */
 export const getLensTrades = cache((): LensRowTrade[] => scopedBookRows(LENS_FIELDS));
 
+const LENS_CHARGE_FIELDS = [
+  // id joins the row back to its lens group; isOpen lets the aggregation keep
+  // to closed trades so the head split reconciles with the Charges KPI.
+  "id", "isOpen", "segment", "sellDate",
+  // ChargeReportTrade (lib/analytics/charges-report.ts)
+  "buyValue", "sellValue", "grossPnl", "netPnl",
+  "brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty", "ipft",
+  "gst", "dpCharges", "mtfInterest", "pledgeCharges", "chargesTotal",
+] as const satisfies readonly (keyof Trade)[];
+
+export type LensChargeRow = Pick<Trade, (typeof LENS_CHARGE_FIELDS)[number]>;
+
+/**
+ * /lenses charge popups: the 10 charge heads plus turnover, as a SECOND narrow
+ * projection rather than a widening of LENS_FIELDS — the per-trade charge
+ * columns are aggregated to ~10 numbers per GROUP on the server and never
+ * cross the RSC stream row-by-row.
+ */
+export const getLensChargeRows = cache((): LensChargeRow[] => scopedBookRows(LENS_CHARGE_FIELDS));
+
 const JOURNAL_EXTRA_FIELDS = [
   "acquisition", "acquisitionPrice", "acquisitionDate", "suggestedBasisPrice",
 ] as const satisfies readonly (keyof Trade)[];
@@ -190,6 +210,31 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
     .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all() as StrategyLegRow[];
 });
 
+const ARJUN_FIELDS = [
+  // CockpitTrade (lib/analytics/cockpit.ts) plus the charges the scorecard maps by id …
+  "id", "symbol", "segment", "netPnl", "buyValue", "sellValue",
+  "buyDate", "sellDate", "entryTime", "exitTime", "isOpen", "rMultiple",
+  "acquisition", "acquisitionPrice", "chargesTotal",
+  // … AnalyticsTrade for winLossReport (lib/analytics/win-loss.ts) …
+  "broker", "bucket", "grossPnl",
+  // … SlTrade quantities/prices (lib/analytics/sl-analysis.ts) and the plan fields …
+  "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice",
+  "slPlanned", "trailingSl", "targetPlanned", "riskAmount",
+  // … and the behaviour fields the Trade Craft tabs read (exit-behaviour.ts).
+  "setupTag", "playbookId", "buyOrderCount", "sellOrderCount", "exitTrigger",
+] as const satisfies readonly (keyof Trade)[];
+
+export type ArjunTrade = Pick<Trade, (typeof ARJUN_FIELDS)[number]>;
+
+/**
+ * /arjuns-eye: the whole book projected to the 31 columns the Trade Craft
+ * cockpit reads (of 74) — it pulled every column through `getTrades()` until
+ * v3.5.0. Same pure-projection contract as the rest of this file: columns
+ * only, NO new WHERE, canonical ORDER BY, so row order and every float sum
+ * are identical by construction.
+ */
+export const getArjunTrades = cache((): ArjunTrade[] => scopedBookRows(ARJUN_FIELDS));
+
 const TAX_FIELDS = [
   "id", "symbol", "segment", "instrumentType",
   "buyQty", "avgBuyPrice", "buyValue", "sellValue",
@@ -221,6 +266,10 @@ const HARVEST_FIELDS = [
   // No `grossPnl`: the realised STCG/LTCG sums moved to `netPnl` so both tax
   // surfaces report one figure per FY, and nothing else on the page read it.
   "netPnl", "chargesTotal", "sttCtt",
+  // Added v3.5.0 for grandfathering on the realised-LTCG sum: classifyGain
+  // needs the actual cost, the consideration and the 31-Jan-2018 FMV so
+  // /reports/harvest matches /reports/tax on pre-2018 lots. Columns only.
+  "fmv31Jan2018", "buyValue", "sellValue",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;

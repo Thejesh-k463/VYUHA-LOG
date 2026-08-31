@@ -1,11 +1,13 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { LensesClient } from "@/components/lenses/lenses-client";
-import { getLensTrades, getImportBatches } from "@/lib/queries/trades";
+import { getLensTrades, getLensChargeRows, getImportBatches } from "@/lib/queries/trades";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getEntitlement } from "@/lib/queries/license";
 import { LENSES, lensGroups, groupIds, type LensKind } from "@/lib/domain/lenses";
-import { toLensRow, type LensRow } from "@/lib/domain/lens-edge";
+import { toLensRow, lensChargeHeads, type LensRow } from "@/lib/domain/lens-edge";
 import { computeKpis } from "@/lib/analytics/metrics";
+import { runRules } from "@/lib/intelligence/insight";
+import { GROUP_RULES } from "@/lib/intelligence/rules/group";
 
 export const dynamic = "force-dynamic";
 
@@ -29,14 +31,26 @@ export default function LensesPage() {
   // pro-gating free list and must never grow a whole-page gate component).
   const pro = getEntitlement().pro;
   const byId = new Map(trades.map((t) => [t.id, t]));
+  // Second narrow projection: the 10 charge heads per trade, aggregated to one
+  // LensChargeHeads per group HERE — the per-trade charge columns never reach
+  // the client (LENS_FIELDS stays 19 columns, the render-windowing budget).
+  const chargeById = new Map(getLensChargeRows().map((c) => [c.id, c]));
   const rows = {} as Record<LensKind, Record<string, LensRow>>;
   for (const lens of LENSES) {
     const perGroup: Record<string, LensRow> = {};
     for (const group of lensGroups(lens.kind, trades, { batches, playbooks })) {
-      const members = groupIds(group, trades)
-        .map((id) => byId.get(id))
-        .filter((t) => t != null);
-      perGroup[group.key] = toLensRow(computeKpis(members), pro);
+      const ids = groupIds(group, trades);
+      const members = ids.map((id) => byId.get(id)).filter((t) => t != null);
+      const kpis = computeKpis(members);
+      const chargeHeads = lensChargeHeads(
+        ids.map((id) => chargeById.get(id)).filter((c) => c != null),
+      );
+      // Insights cite edge-class figures (loss shares, streaks, drag), so they
+      // are computed and ATTACHED only when licensed — same wire proof as edge.
+      const insights = pro
+        ? runRules(GROUP_RULES, { label: group.label, kpis, members })
+        : undefined;
+      perGroup[group.key] = toLensRow(kpis, pro, { chargeHeads, insights });
     }
     rows[lens.kind] = perGroup;
   }

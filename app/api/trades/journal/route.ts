@@ -30,6 +30,11 @@ export async function POST(req: Request) {
     ? [...new Set(body.mistakeTags.map(String).filter((t) => MISTAKES.has(t)))]
     : [];
   const notes = String(body.notes ?? "").trim() || null;
+  // U3 — WHY the trade was closed (migration 0051). The curated EXIT_TRIGGERS
+  // list is a UI convenience, not a validation set: the schema says free text,
+  // so any non-blank string is stored verbatim (trimmed). Blank means
+  // UNANSWERED and stays null — "" is never written as a value.
+  const exitTrigger = typeof body.exitTrigger === "string" ? body.exitTrigger.trim() || null : null;
 
   // T1.2 — rule checklist. Broken rules are validated against the selected
   // playbook's actual rules (no free-text injection into rule_violations), then
@@ -50,6 +55,7 @@ export async function POST(req: Request) {
       emotionTag,
       mistakeTags: mistakeTags.length ? mistakeTags : null,
       notes,
+      exitTrigger,
       ruleViolations: ruleViolations.length ? ruleViolations : null,
       updatedAt: sql`(datetime('now'))`,
     })
@@ -60,8 +66,8 @@ export async function POST(req: Request) {
     entityId: id,
     action: "update",
     summary: `${prev.symbol} journal updated (playbook ${playbookId ?? "—"} · ${emotionTag ?? "no emotion"} · ${mistakeTags.length} mistake${mistakeTags.length === 1 ? "" : "s"} · ${brokenRules.length} rule${brokenRules.length === 1 ? "" : "s"} broken)`,
-    before: { playbookId: prev.playbookId, emotionTag: prev.emotionTag, mistakeTags: prev.mistakeTags, notes: prev.notes, ruleViolations: prev.ruleViolations },
-    after: { playbookId, emotionTag, mistakeTags, notes, ruleViolations },
+    before: { playbookId: prev.playbookId, emotionTag: prev.emotionTag, mistakeTags: prev.mistakeTags, notes: prev.notes, exitTrigger: prev.exitTrigger, ruleViolations: prev.ruleViolations },
+    after: { playbookId, emotionTag, mistakeTags, notes, exitTrigger, ruleViolations },
   });
   for (const p of ["/trades", "/reports/discipline"]) revalidatePath(p);
   return NextResponse.json({ ok: true, message: "Journal saved." });

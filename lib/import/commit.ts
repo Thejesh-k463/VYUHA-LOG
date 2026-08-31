@@ -973,6 +973,8 @@ export interface UpdateTradeFields {
   /** MTF only; omit/undefined = keep the persisted funded amount unchanged. */
   ownCapitalUsed?: number | null;
   setupTag?: string | null;
+  /** WHY the trade was closed — free text; null = unanswered (never ""). */
+  exitTrigger?: string | null;
   notes?: string | null;
   currentPrice?: number | null; // MTM for a still-open position
 }
@@ -1076,6 +1078,7 @@ export function updateManualTrade(
       trailingSl: fields.trailingSl !== undefined ? fields.trailingSl : t.trailingSl,
       targetPlanned: fields.targetPlanned !== undefined ? fields.targetPlanned : t.targetPlanned,
       setupTag: fields.setupTag !== undefined ? fields.setupTag : t.setupTag,
+      exitTrigger: fields.exitTrigger !== undefined ? fields.exitTrigger : t.exitTrigger,
       notes: fields.notes !== undefined ? fields.notes : t.notes,
       brokerage: charges.brokerage,
       sttCtt: charges.sttCtt,

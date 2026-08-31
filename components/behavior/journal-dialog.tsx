@@ -17,6 +17,7 @@ import {
 } from "@/lib/analytics/behavior";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import { TradeAttachments } from "@/components/trades/trade-attachments";
+import { ExitTriggerField } from "@/components/trades/exit-trigger-field";
 
 export interface PlaybookOption {
   id: number;
@@ -41,6 +42,7 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
     ),
   );
   const [notes, setNotes] = React.useState(trade.notes ?? "");
+  const [exitTrigger, setExitTrigger] = React.useState(trade.exitTrigger ?? "");
   const [pending, setPending] = React.useState(false);
 
   // Archived playbooks stay pickable only when the trade already points at one.
@@ -80,6 +82,8 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
           // switching playbooks drops stale rule texts.
           brokenRules: selected ? [...brokenRules].filter((r) => selected.rules.includes(r)) : [],
           notes,
+          // Blank = unanswered, never a value (schema comment on exit_trigger).
+          exitTrigger: exitTrigger.trim() || null,
         }),
       });
       const data = await res.json();
@@ -115,6 +119,10 @@ export function JournalDialog({ trade, playbooks, onDone }: { trade: Trade; play
               <option key={t} value={t}>{EMOTION_LABELS[t]}</option>
             ))}
           </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>Exit trigger — why it was closed</Label>
+          <ExitTriggerField value={exitTrigger} onChange={setExitTrigger} />
         </div>
       </div>
 

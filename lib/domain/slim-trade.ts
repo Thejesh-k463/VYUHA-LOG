@@ -74,6 +74,7 @@ export const SLIM_TRADE_FIELDS = [
   "mistakeTags",
   "notes",
   "ruleViolations",
+  "exitTrigger",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;
