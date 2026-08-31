@@ -39,11 +39,15 @@ export function resolveRules(bucket: string, segment: string): RiskRules {
   };
 }
 
-/** Capital for a bucket scope ("" / "all" → both buckets combined). */
+/** Capital for a bucket scope ("" / "all" → both buckets combined).
+ *  0 means NOT CONFIGURED (a clean install seeds exactly that) — never a
+ *  stand-in number. The old ₹13L/₹4L fallbacks made the concentration check
+ *  compute a % of fictional capital on every fresh install (invariant 6);
+ *  `evaluateLimits` now reports that rule as "skipped" instead. */
 function bucketCapital(bucket: string): number {
   const s = getSettings();
-  const eq = s?.equityCapital ?? 1300000;
-  const ac = s?.activeCapital ?? 400000;
+  const eq = s?.equityCapital ?? 0;
+  const ac = s?.activeCapital ?? 0;
   if (bucket === "equity") return eq;
   if (bucket === "active") return ac;
   return eq + ac;

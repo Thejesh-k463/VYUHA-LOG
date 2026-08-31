@@ -33,7 +33,13 @@ const cls = (v: number | null) => (v == null ? "" : v > 0 ? "text-profit" : v < 
 export default function MonthlyReportPage() {
   const trades = getTrades();
   const settings = getSettings();
-  const capital = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0) || 1700000;
+  // Never fabricate a denominator (AGENTS.md #6). This used to fall back to an
+  // invented ₹17,00,000 when no capital was configured — which is every fresh
+  // install — so a PRINTED, shareable report stated a total return on fiction.
+  // With no capital, %-of-equity figures render "—" and the rupee figures
+  // (Net P&L, ₹ drawdown, month detail) stay exact. Same rule as /reports/performance.
+  const capital = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0);
+  const capitalKnown = capital > 0;
   const today = new Date().toISOString().slice(0, 10);
 
   const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
@@ -86,7 +92,7 @@ export default function MonthlyReportPage() {
             <h1 className="text-2xl font-bold tracking-tight">Vyuha — Performance Report</h1>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Generated {today} · {closed.length} closed trades over {p.tradingDays} trading days · capital {inr(capital, { decimals: 0 })}
+            Generated {today} · {closed.length} closed trades over {p.tradingDays} trading days · capital {capitalKnown ? inr(capital, { decimals: 0 }) : "not set"}
           </p>
         </div>
         <PrintButton />
@@ -100,14 +106,30 @@ export default function MonthlyReportPage() {
         />
       ) : (
         <>
+          {/* Same rule as /reports/performance, for the denominator: no
+              configured capital means no %-of-equity figure. "—" plus a nudge
+              beats a printed report claiming a return on an invented ₹17 lakh. */}
+          {!capitalKnown && (
+            <Card className="border-warning/40">
+              <CardContent className="p-4 text-sm">
+                <div className="font-medium text-warning">No starting capital is configured.</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Total return, CAGR, Sharpe, Sortino, drawdown % and the monthly-returns matrix all divide
+                  by your capital base, so they show &quot;—&quot; rather than a number computed on an invented one.
+                  Rupee figures (Net P&amp;L, ₹ drawdown, month detail) need no base and are exact. Set it under{" "}
+                  <Link href="/settings" className="underline">Settings → Capital &amp; Go-Live</Link>.
+                </p>
+              </CardContent>
+            </Card>
+          )}
           {/* Scorecard */}
           <section className="grid grid-cols-3 gap-3 md:grid-cols-4">
             <KpiCard label="Net P&L" valueNum={net} format="inr0" valueClassName={cls(net)} />
-            <KpiCard label="Total return" value={`${sign(p.totalReturnPct)}${p.totalReturnPct}%`} valueClassName={cls(p.totalReturnPct)} />
+            <KpiCard label="Total return" value={capitalKnown ? `${sign(p.totalReturnPct)}${p.totalReturnPct}%` : "—"} valueClassName={capitalKnown ? cls(p.totalReturnPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
             <KpiCard label="Win rate" value={`${winRate}%`} sub={`${wins}/${closed.length} trades`} />
-            <KpiCard label="Max drawdown" value={`-${p.maxDrawdownPct}%`} valueClassName="text-loss" sub={inr(p.maxDrawdownAmt, { decimals: 0 })} />
-            <KpiCard label="Sharpe" value={p.sharpe == null ? "—" : p.sharpe.toFixed(2)} sub={`Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} />
-            <KpiCard label="CAGR" value={p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={cls(p.cagrPct)} />
+            <KpiCard label="Max drawdown" value={capitalKnown ? `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : "₹ from peak · set capital for %"} />
+            <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} sub={!capitalKnown ? "set capital in Settings" : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} />
+            <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
             <KpiCard label="Charges paid" valueNum={charges} format="inr0" valueClassName="text-grad-gold" />
             <KpiCard label="Discipline score" value={disciplineAvg == null ? "—" : `${disciplineAvg}`} sub="weekly average" />
           </section>
@@ -122,6 +144,9 @@ export default function MonthlyReportPage() {
           <Card className="p-0">
             <CardHeader><CardTitle>Monthly returns</CardTitle></CardHeader>
             <CardContent className="p-0">
+              {!capitalKnown ? (
+                <p className="p-4 text-sm text-muted-foreground">Monthly % returns need a capital base — set capital in Settings. The Month detail table below carries the same months in exact rupees.</p>
+              ) : (
               <ReportTable>
                 <ReportThead>
                   <ReportTh>Year</ReportTh>
@@ -143,6 +168,7 @@ export default function MonthlyReportPage() {
                   ))}
                 </tbody>
               </ReportTable>
+              )}
             </CardContent>
           </Card>
 
@@ -236,9 +262,11 @@ export default function MonthlyReportPage() {
           </div>
 
           <p className="border-t border-border pt-3 text-[10px] text-muted-foreground">
-            Generated by Vyuha — local-first trade journal for Indian markets. Time-weighted figures computed on
-            running equity from configured capital; Sharpe/Sortino vs {Math.round(RISK_FREE * 100)}% risk-free,
-            annualised over 252 trading days. Informational only — not investment advice.
+            Generated by Vyuha — local-first trade journal for Indian markets.{" "}
+            {capitalKnown
+              ? <>Time-weighted figures computed on running equity from configured capital; Sharpe/Sortino vs {Math.round(RISK_FREE * 100)}% risk-free, annualised over 252 trading days.</>
+              : <>No starting capital is configured, so every figure that divides by an equity base shows &quot;—&quot; rather than a number computed on an invented one; rupee figures are exact.</>}{" "}
+            Informational only — not investment advice.
           </p>
         </>
       )}

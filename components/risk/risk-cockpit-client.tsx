@@ -61,11 +61,26 @@ export function RiskCockpitClient({
     [inputs, scope],
   );
   const capital = capitals[scope];
+  // 0 means NOT CONFIGURED (invariant 6) — computeExposure falls back to a ₹1
+  // base internally, so every %-of-capital figure it returns is garbage in
+  // that case. The ₹ figures (which need no base) stay exact, and every %
+  // below is gated on capitalKnown: "—" beats a confident % of fiction, and
+  // equally beats the exploded ₹1-base numbers reading as fake danger.
+  const capitalKnown = capital > 0;
   const e = React.useMemo(() => computeExposure(filtered, capital), [filtered, capital]);
   const sectors = React.useMemo(() => sectorConcentration(e.positions, capital), [e.positions, capital]);
+  // ₹ equivalents of the summary's %-of-capital sums — same per-position
+  // inclusion rules (a position with no amount contributes 0, exactly as its
+  // null pct does in the summary), so these are the pct sums with the capital
+  // base factored back out.
+  const initialRiskAmt = e.positions.reduce((s, p) => s + (p.initialRiskAmt ?? 0), 0);
+  const openRiskAmt = e.positions.reduce((s, p) => s + (p.openRiskAmt ?? 0), 0);
   // DOM window only — every figure on this page is computed over `e.positions`
   // in full, above. Windowing the maths would change the numbers; this does not.
   const positionWindow = useRowWindow(e.positions);
+  // riskLevel is graded on capitalAtRiskPct, which on the ₹1 fallback base
+  // reads as thousands of % — every book would grade "high" (fake danger).
+  // With no capital the heat is honestly unrated.
   const rs = RISK_STYLE[e.riskLevel];
 
   async function trailBreakeven(id: number) {
@@ -105,10 +120,17 @@ export function RiskCockpitClient({
                 </button>
               ))}
             </div>
-            <div className={`flex items-center gap-1.5 rounded-full bg-background/50 px-3 py-1.5 text-sm font-semibold ring-1 ${rs.ring} ${rs.text}`}>
-              <span className={`size-2 rounded-full ${rs.dot}`} />
-              {rs.label}
-            </div>
+            {capitalKnown ? (
+              <div className={`flex items-center gap-1.5 rounded-full bg-background/50 px-3 py-1.5 text-sm font-semibold ring-1 ${rs.ring} ${rs.text}`}>
+                <span className={`size-2 rounded-full ${rs.dot}`} />
+                {rs.label}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 rounded-full bg-background/50 px-3 py-1.5 text-sm font-semibold text-muted-foreground ring-1 ring-border" title="Risk heat grades capital-at-risk as a % of bucket capital — set capital in Settings">
+                <span className="size-2 rounded-full bg-muted-foreground/50" />
+                Risk unrated — set capital
+              </div>
+            )}
           </div>
         </div>
 
@@ -116,31 +138,39 @@ export function RiskCockpitClient({
         <div className="grid grid-cols-2 gap-3 px-6 pb-6 lg:grid-cols-4">
           <Tile
             label="Initial Risk"
-            value={`${e.initialRiskPct.toFixed(2)}%`}
+            value={capitalKnown ? `${e.initialRiskPct.toFixed(2)}%` : inrCompact(initialRiskAmt)}
             valueCls="text-primary"
             detail={{
               title: "Initial risk — what you signed up to lose",
-              summary: "Distance from entry to your ORIGINAL stop, as a share of bucket capital.",
+              summary: capitalKnown
+                ? "Distance from entry to your ORIGINAL stop, as a share of bucket capital."
+                : "Distance from entry to your ORIGINAL stop, in rupees — the % needs a capital base.",
               rows: [
-                { label: "Initial risk", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "of bucket capital" },
-                { label: "Bucket capital", value: inrCompact(e.capital) },
+                capitalKnown
+                  ? { label: "Initial risk", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "of bucket capital" }
+                  : { label: "Initial risk", value: inrCompact(initialRiskAmt), hint: "₹ — % needs capital" },
+                { label: "Bucket capital", value: capitalKnown ? inrCompact(e.capital) : "— (set in Settings)" },
                 { label: "Open positions", value: `${e.count}` },
                 { label: "Positions without a stop", value: `${e.unstoppedCount}`, tone: e.unstoppedCount > 0 ? "loss" : "profit", hint: e.unstoppedCount > 0 ? "their full invested value counts as capital-at-risk" : "every position has a stop" },
-                { label: "Capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? "loss" : "neutral" },
+                capitalKnown
+                  ? { label: "Capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? ("loss" as const) : ("neutral" as const) }
+                  : { label: "Capital at risk", value: "—", hint: "% needs capital" },
               ],
               note: "This is the plan you entered with. Open Risk @ SL shows what's actually still exposed right now.",
             }}
           />
           <Tile
             label="Open P&L"
-            value={`${inrCompact(e.unrealised)} · ${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`}
-            valueCls={e.openPnlPct >= 0 ? "text-profit" : "text-loss"}
+            value={capitalKnown ? `${inrCompact(e.unrealised)} · ${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%` : inrCompact(e.unrealised)}
+            valueCls={e.unrealised >= 0 ? "text-profit" : "text-loss"}
             detail={{
               title: "Open P&L — unrealised, on paper",
               summary: "Marked against your latest MTM prices, not live quotes.",
               rows: [
                 { label: "Unrealised P&L", value: inrCompact(e.unrealised), tone: e.unrealised >= 0 ? "profit" : "loss" },
-                { label: "As % of capital", value: `${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`, tone: e.openPnlPct >= 0 ? "profit" : "loss" },
+                capitalKnown
+                  ? { label: "As % of capital", value: `${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`, tone: e.openPnlPct >= 0 ? ("profit" as const) : ("loss" as const) }
+                  : { label: "As % of capital", value: "—", hint: "set capital in Settings" },
                 { label: "Invested", value: inrCompact(e.invested) },
                 { label: "Return on invested", value: e.invested ? `${((e.unrealised / e.invested) * 100).toFixed(2)}%` : "—" },
                 { label: "Positions in profit", value: `${e.positions.filter((p) => p.unrealised > 0).length} of ${e.count}` },
@@ -150,35 +180,45 @@ export function RiskCockpitClient({
           />
           <Tile
             label="Open Risk @ SL"
-            value={`${e.openRiskPct.toFixed(2)}%`}
+            value={capitalKnown ? `${e.openRiskPct.toFixed(2)}%` : inrCompact(openRiskAmt)}
             valueCls="text-warning"
             highlight
             detail={{
               title: "Open risk @ SL — what you lose from HERE",
               summary: "From current marks down to your effective stop (trailing SL wins over the original).",
               rows: [
-                { label: "Open risk @ stop", value: `${e.openRiskPct.toFixed(2)}%`, tone: "loss", hint: "of bucket capital, if every stop hits" },
-                { label: "Initial risk (at entry)", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "compare: lower now means profit is locked in" },
+                capitalKnown
+                  ? { label: "Open risk @ stop", value: `${e.openRiskPct.toFixed(2)}%`, tone: "loss" as const, hint: "of bucket capital, if every stop hits" }
+                  : { label: "Open risk @ stop", value: inrCompact(openRiskAmt), tone: "loss" as const, hint: "₹, if every stop hits — % needs capital" },
+                capitalKnown
+                  ? { label: "Initial risk (at entry)", value: `${e.initialRiskPct.toFixed(2)}%`, hint: "compare: lower now means profit is locked in" }
+                  : { label: "Initial risk (at entry)", value: inrCompact(initialRiskAmt), hint: "compare: lower now means profit is locked in" },
                 { label: "Stopped positions", value: `${e.count - e.unstoppedCount} of ${e.count}` },
                 { label: "Unstopped positions", value: `${e.unstoppedCount}`, tone: e.unstoppedCount > 0 ? "loss" : "profit", hint: e.unstoppedCount > 0 ? "no stop = the whole position is the risk" : undefined },
-                { label: "Total capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? "loss" : "neutral" },
+                capitalKnown
+                  ? { label: "Total capital at risk", value: `${e.capitalAtRiskPct.toFixed(2)}%`, tone: e.capitalAtRiskPct > 5 ? ("loss" as const) : ("neutral" as const) }
+                  : { label: "Total capital at risk", value: "—", hint: "% needs capital" },
               ],
               note: "Trail a stop to breakeven and this number drops — that's the whole point of the trail button on each position.",
             }}
           />
           <Tile
             label="Allocated"
-            value={`${e.allocatedPct.toFixed(2)}%`}
+            value={capitalKnown ? `${e.allocatedPct.toFixed(2)}%` : inrCompact(e.invested)}
             valueCls="text-violet-400"
             detail={{
               title: "Allocated — how much capital is working",
-              summary: "Invested value against this bucket's capital.",
+              summary: capitalKnown
+                ? "Invested value against this bucket's capital."
+                : "Invested value in rupees — the % needs this bucket's capital.",
               rows: [
                 { label: "Invested", value: inrCompact(e.invested) },
-                { label: "Bucket capital", value: inrCompact(e.capital) },
-                { label: "Allocated", value: `${e.allocatedPct.toFixed(2)}%` },
-                { label: "Dry powder", value: inrCompact(Math.max(0, e.capital - e.invested)), tone: "profit" },
-                { label: "Largest position", value: e.positions.length ? `${[...e.positions].sort((a, b) => b.allocPct - a.allocPct)[0].symbol} · ${[...e.positions].sort((a, b) => b.allocPct - a.allocPct)[0].allocPct.toFixed(1)}%` : "—", hint: "concentration is the risk that hides inside allocation" },
+                { label: "Bucket capital", value: capitalKnown ? inrCompact(e.capital) : "— (set in Settings)" },
+                { label: "Allocated", value: capitalKnown ? `${e.allocatedPct.toFixed(2)}%` : "—" },
+                capitalKnown
+                  ? { label: "Dry powder", value: inrCompact(Math.max(0, e.capital - e.invested)), tone: "profit" as const }
+                  : { label: "Dry powder", value: "—", hint: "needs capital" },
+                { label: "Largest position", value: e.positions.length ? (() => { const top = [...e.positions].sort((a, b) => b.invested - a.invested)[0]; return `${top.symbol} · ${capitalKnown ? `${top.allocPct.toFixed(1)}%` : inrCompact(top.invested)}`; })() : "—", hint: "concentration is the risk that hides inside allocation" },
               ],
             }}
           />
@@ -235,6 +275,7 @@ export function RiskCockpitClient({
                 <PositionRow
                   key={p.id}
                   p={p}
+                  capitalKnown={capitalKnown}
                   open={expanded === p.id}
                   onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
                   onEdit={() => setEditing(p)}
@@ -254,7 +295,7 @@ export function RiskCockpitClient({
         )}
       </Card>
 
-      {sectors.totalInvested > 0 && <SectorPanel s={sectors} />}
+      {sectors.totalInvested > 0 && <SectorPanel s={sectors} capitalKnown={capitalKnown} />}
 
       {e.unstoppedCount > 0 && (
         <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-warning/90">
@@ -294,10 +335,15 @@ export function RiskCockpitClient({
   );
 }
 
-function SectorPanel({ s }: { s: SectorConcentration }) {
+function SectorPanel({ s, capitalKnown }: { s: SectorConcentration; capitalKnown: boolean }) {
   // Concentrated = HHI high or one sector dominates capital. Mirrors the cockpit's
-  // low/medium/high vocabulary so the signal reads consistently.
-  const heat = s.topAllocPct > 35 || s.hhi > 0.5 ? "high" : s.topAllocPct > 20 || s.hhi > 0.33 ? "medium" : "low";
+  // low/medium/high vocabulary so the signal reads consistently. With no capital
+  // configured, topAllocPct sits on the ₹1 fallback base (fake danger), so the
+  // heat grades on HHI alone and the %-of-capital reads become share-of-invested.
+  const topSharePct = s.slices[0]?.sharePct ?? 0;
+  const heat = capitalKnown
+    ? s.topAllocPct > 35 || s.hhi > 0.5 ? "high" : s.topAllocPct > 20 || s.hhi > 0.33 ? "medium" : "low"
+    : s.hhi > 0.5 ? "high" : s.hhi > 0.33 ? "medium" : "low";
   const heatCls = heat === "high" ? "text-loss" : heat === "medium" ? "text-warning" : "text-profit";
   const palette = ["bg-violet-500", "bg-sky-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-teal-500", "bg-fuchsia-500", "bg-slate-500"];
   return (
@@ -308,7 +354,7 @@ function SectorPanel({ s }: { s: SectorConcentration }) {
           <h3 className="mt-0.5 text-lg font-semibold">By Sector</h3>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <div>Top: <span className={`font-medium ${heatCls}`}>{s.topSector}</span> {s.topAllocPct.toFixed(1)}% of capital</div>
+          <div>Top: <span className={`font-medium ${heatCls}`}>{s.topSector}</span> {capitalKnown ? `${s.topAllocPct.toFixed(1)}% of capital` : `${topSharePct.toFixed(1)}% of invested`}</div>
           <div>HHI {s.hhi.toFixed(2)} · {s.classifiedPct.toFixed(0)}% classified</div>
         </div>
       </div>
@@ -320,7 +366,7 @@ function SectorPanel({ s }: { s: SectorConcentration }) {
               <div className={`h-full rounded-full ${palette[i % palette.length]}`} style={{ width: `${Math.min(100, slice.sharePct)}%` }} />
             </div>
             <span className="w-28 text-right tabular-nums text-muted-foreground">
-              {inrCompact(slice.invested)} · {slice.allocPct.toFixed(1)}%
+              {inrCompact(slice.invested)} · {capitalKnown ? `${slice.allocPct.toFixed(1)}%` : `${slice.sharePct.toFixed(1)}% of open`}
             </span>
           </div>
         ))}
@@ -408,9 +454,12 @@ function Tile({
 }
 
 function PositionRow({
-  p, open, onToggle, onEdit, onClose, onTrailBreakeven, trailing,
+  p, capitalKnown, open, onToggle, onEdit, onClose, onTrailBreakeven, trailing,
 }: {
   p: ExposurePosition;
+  /** false = no bucket capital configured: %-of-capital cells show ₹ or "—"
+   *  instead of the ₹1-fallback garbage (invariant 6). */
+  capitalKnown: boolean;
   open: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -440,7 +489,7 @@ function PositionRow({
         </div>
         <div className="w-28 text-right">
           <span className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums ${impactCls}`}>
-            {p.runningImpactPct >= 0 ? "+" : ""}{p.runningImpactPct.toFixed(2)}%
+            {capitalKnown ? `${p.runningImpactPct >= 0 ? "+" : ""}${p.runningImpactPct.toFixed(2)}%` : "—"}
           </span>
           <div className={`mt-1 text-[10px] font-medium tabular-nums ${p.unrealised >= 0 ? "text-profit" : "text-loss"}`}>
             {p.unrealised >= 0 ? "+" : ""}{inrCompact(p.unrealised)}
@@ -448,14 +497,20 @@ function PositionRow({
         </div>
         <div className="w-28 text-right">
           <span className="rounded-md bg-warning/15 px-2 py-1 text-xs font-medium tabular-nums text-warning">
-            {p.openRiskPct == null ? "—" : `${p.openRiskPct.toFixed(2)}%`}
+            {p.openRiskAmt == null ? "—" : capitalKnown ? `${(p.openRiskPct as number).toFixed(2)}%` : inrCompact(p.openRiskAmt)}
           </span>
         </div>
         <div className="flex w-36 items-center justify-end gap-2">
-          <span className="text-xs font-medium tabular-nums text-violet-400">{p.allocPct.toFixed(1)}%</span>
-          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-card-hover">
-            <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(100, p.allocPct)}%` }} />
-          </div>
+          {capitalKnown ? (
+            <>
+              <span className="text-xs font-medium tabular-nums text-violet-400">{p.allocPct.toFixed(1)}%</span>
+              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-card-hover">
+                <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(100, p.allocPct)}%` }} />
+              </div>
+            </>
+          ) : (
+            <span className="text-xs font-medium tabular-nums text-violet-400" title="Allocation % needs bucket capital — set it in Settings">{inrCompact(p.invested)}</span>
+          )}
         </div>
       </button>
 

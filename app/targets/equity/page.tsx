@@ -24,13 +24,22 @@ export default function TargetEquityPage() {
 
   const equityRisk = risk.find((r) => r.scope === "bucket" && r.key === "equity");
   const globalRisk = risk.find((r) => r.scope === "global");
-  const equityCapital = settings?.equityCapital ?? 1300000;
+  // 0 means NOT CONFIGURED — the old ₹13,00,000 fallback fabricated every
+  // %-of-capital gauge on a fresh install (invariant 6). Capital-relative
+  // figures render "—" with a nudge instead; ₹ figures stay exact.
+  const equityCapital = settings?.equityCapital ?? 0;
 
   const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker()).filter((p) => p.bucket === "equity");
-  const top = positions.reduce<{ symbol: string; pct: number } | null>((best, p) => {
-    const pct = equityCapital > 0 ? (p.invested / equityCapital) * 100 : 0;
-    return best == null || pct > best.pct ? { symbol: p.symbol, pct } : best;
-  }, null);
+  // Largest position by invested ₹ (same winner as largest % when capital is
+  // known); its pct is null when no capital is configured — the client renders
+  // "—" rather than a fake 0% concentration.
+  const topByInvested = positions.reduce<{ symbol: string; invested: number } | null>(
+    (best, p) => (best == null || p.invested > best.invested ? { symbol: p.symbol, invested: p.invested } : best),
+    null,
+  );
+  const top = topByInvested
+    ? { symbol: topByInvested.symbol, pct: equityCapital > 0 ? (topByInvested.invested / equityCapital) * 100 : null }
+    : null;
 
   // combined monthly ladder
   const daily = dailyPnl(trades);

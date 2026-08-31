@@ -29,17 +29,22 @@ export function TargetEquityClient({
   mtf,
 }: {
   defaultRisk: number;
+  /** 0 means NOT CONFIGURED — capital-relative figures render "—", never a
+   *  stand-in number (the ₹13L fallback fabricated every gauge on a fresh
+   *  install; invariant 6). */
   equityCapital: number;
   openCount: number;
   maxOpen: number;
-  topConcentration: { symbol: string; pct: number } | null;
+  /** pct is null when capital is unknown — the ₹-largest position still names
+   *  itself, but no concentration % is invented for it. */
+  topConcentration: { symbol: string; pct: number | null } | null;
   concentrationLimit: number;
   monthly: { month: string; net: number }[];
   monthlyBase: number;
   monthlyStretch: number;
   mtf: MtfSummary;
 }) {
-  const concBreach = topConcentration && topConcentration.pct > concentrationLimit;
+  const concBreach = topConcentration?.pct != null && topConcentration.pct > concentrationLimit;
 
   return (
     <div className="space-y-5">
@@ -50,10 +55,16 @@ export function TargetEquityClient({
         <Card className="p-3">
           <div className="text-xs text-muted-foreground">Top concentration</div>
           <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-lg font-semibold tabular-nums">{topConcentration ? `${topConcentration.pct.toFixed(1)}%` : "—"}</span>
+            <span className="text-lg font-semibold tabular-nums">{topConcentration?.pct != null ? `${topConcentration.pct.toFixed(1)}%` : "—"}</span>
             {concBreach && <Badge variant="loss">over {concentrationLimit}%</Badge>}
           </div>
-          <div className="text-[10px] text-muted-foreground">{topConcentration?.symbol ?? "no open positions"} · limit {concentrationLimit}%</div>
+          <div className="text-[10px] text-muted-foreground">
+            {topConcentration == null
+              ? <>no open positions · limit {concentrationLimit}%</>
+              : topConcentration.pct == null
+                ? <>{topConcentration.symbol} · % of capital needs capital — set it in Settings</>
+                : <>{topConcentration.symbol} · limit {concentrationLimit}%</>}
+          </div>
         </Card>
         <KpiCard label="Per-trade max loss" valueNum={defaultRisk} format="inr0" sub={`${equityCapital > 0 ? ((defaultRisk / equityCapital) * 100).toFixed(2) : "—"}% of bucket`} />
       </section>

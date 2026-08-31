@@ -133,7 +133,12 @@ export async function createManualTrade(
         getPortfolioState(bkt, cls.symbol),
       );
       if (verdict.status !== "pass") {
-        ruleViolations = verdict.checks.filter((c) => c.status !== "pass").map((c) => `${c.label}: ${c.message}`);
+        // Only real breaches belong in the journal's violation history — a
+        // "skipped" check (rule configured but not evaluable, e.g. no capital
+        // set) is neither a pass nor a violation.
+        ruleViolations = verdict.checks
+          .filter((c) => c.status === "warn" || c.status === "block")
+          .map((c) => `${c.label}: ${c.message}`);
       }
     } catch { /* never block a save on the limits check */ }
   }
@@ -259,6 +264,7 @@ export async function updateTradeAction(_prev: ActionState, formData: FormData):
     riskAmount: num(formData.get("riskAmount")) || null,
     ownCapitalUsed: num(formData.get("ownCapitalUsed")) || null,
     setupTag: str(formData.get("setupTag")),
+    exitTrigger: str(formData.get("exitTrigger")),
     notes: str(formData.get("notes")),
     currentPrice: num(formData.get("currentPrice")) || null,
   };

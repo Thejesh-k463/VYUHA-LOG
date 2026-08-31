@@ -6,15 +6,16 @@ import { LedgerExportButtons } from "@/components/cash/ledger-export";
 import { LedgerForm } from "@/components/cash/ledger-form";
 import { LedgerImport } from "@/components/cash/ledger-import";
 import { LedgerTable } from "@/components/cash/ledger-table";
-import { getLedgerGroups, getLedgerRunningRows, getOpeningByBucketPaise } from "@/lib/queries/ledger";
+import { getCapitalConfigured, getLedgerGroups, getLedgerRunningRows, getOpeningByBucketPaise } from "@/lib/queries/ledger";
 import { LEDGER_PAGE_SIZE, summariseLedgerGroups, type BucketLedger } from "@/lib/analytics/ledger";
 import { formatPaise } from "@/lib/money";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 const BUCKET_LABEL: Record<string, string> = { equity: "Equity", active: "Trade F&O", "": "Unassigned" };
 
-function BucketCard({ b }: { b: BucketLedger }) {
+function BucketCard({ b, configured }: { b: BucketLedger; configured: boolean }) {
   const grew = b.availablePaise >= b.openingPaise;
   return (
     <Card>
@@ -26,7 +27,11 @@ function BucketCard({ b }: { b: BucketLedger }) {
         <div className={`text-2xl font-bold tabular-nums ${grew ? "text-profit" : "text-loss"}`}>
           {formatPaise(b.availablePaise, { decimals: 0 })}
         </div>
-        <div className="mt-1 text-[0.6875rem] text-muted-foreground">available · opening {formatPaise(b.openingPaise, { decimals: 0 })}</div>
+        <div className="mt-1 text-[0.6875rem] text-muted-foreground">
+          {/* "—" over an invented ₹0 opening (invariant 6): unset capital means
+              the big number above is net flows, and the label says which. */}
+          {configured ? <>available · opening {formatPaise(b.openingPaise, { decimals: 0 })}</> : <>net flows · opening —</>}
+        </div>
         <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[0.6875rem]">
           <Line label="Deposits" v={b.depositsPaise} />
           <Line label="Withdrawals" v={b.withdrawalsPaise} />
@@ -54,6 +59,7 @@ export default function CashPage() {
   // page of rows. At 60k entries the old entry-level path materialised the
   // whole ledger into the RSC payload twice (table + export) — a 27 s render.
   const opening = getOpeningByBucketPaise();
+  const configured = getCapitalConfigured();
   const s = summariseLedgerGroups(getLedgerGroups(), opening);
   const display = getLedgerRunningRows({ limit: LEDGER_PAGE_SIZE }); // latest first
 
@@ -65,16 +71,33 @@ export default function CashPage() {
         actions={<Badge variant="secondary">{s.totalCount} entries</Badge>}
       />
       <div className="space-y-5 p-6">
+        {/* Same rule as the trackers: no configured capital means no invented
+            opening balance. Balances below are then honest net-flow figures,
+            and this one line says so — "—" plus a nudge beats a confident
+            ledger reconciled against a fabricated opening (invariant 6). */}
+        {!configured.any && (
+          <Card className="border-warning/40">
+            <CardContent className="p-4 text-sm">
+              <div className="font-medium text-warning">No opening capital is configured.</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Running balances and &quot;available&quot; figures show net ledger flows only — no opening
+                balance is added, because none is set. Set your bucket capital under{" "}
+                <Link href="/settings" className="underline">Settings → Capital &amp; Go-Live</Link> to
+                reconcile the ledger against a real opening.
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <KpiCard label="Total available" value={formatPaise(s.totalAvailablePaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub="opening + ledger" />
-          <KpiCard label="Opening capital" value={formatPaise(s.totalOpeningPaise, { decimals: 0 })} sub="from settings" />
+          <KpiCard label="Total available" value={formatPaise(s.totalAvailablePaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub={configured.any ? "opening + ledger" : "ledger flows only — no opening set"} />
+          <KpiCard label="Opening capital" value={configured.any ? formatPaise(s.totalOpeningPaise, { decimals: 0 }) : "—"} sub={configured.any ? "from settings" : "set capital in Settings"} />
           <KpiCard label="Net fund flows" value={formatPaise(s.totalFlowsPaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub="Σ all entries" />
           <KpiCard label="Deposits − withdrawals" value={formatPaise(s.byType.deposit + s.byType.withdrawal, { decimals: 0 })} sub="external cash" />
         </section>
 
         <div className="grid gap-3 md:grid-cols-2">
           {s.buckets.filter((b) => b.bucket === "equity" || b.bucket === "active").map((b) => (
-            <BucketCard key={b.bucket} b={b} />
+            <BucketCard key={b.bucket} b={b} configured={b.bucket === "equity" ? configured.equity : configured.active} />
           ))}
         </div>
 

@@ -1,18 +1,23 @@
 "use client";
 
-import { CheckCircle2, AlertTriangle, ShieldX } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ShieldX, CircleDashed } from "lucide-react";
 import type { LimitResult, LimitStatus } from "@/lib/risk/limits";
 
 const META: Record<LimitStatus, { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
   pass: { label: "Cleared", cls: "text-profit border-profit/40 bg-profit/10", Icon: CheckCircle2 },
   warn: { label: "Warning", cls: "text-warning border-warning/40 bg-warning/10", Icon: AlertTriangle },
   block: { label: "Limit breached (you can override)", cls: "text-loss border-loss/40 bg-loss/10", Icon: ShieldX },
+  // A configured rule that COULD not run (e.g. %-of-capital with no capital
+  // set). Never the overall verdict — shown per-check, in a neutral tone:
+  // neither a green pass nor a red breach, because neither would be true.
+  skipped: { label: "Not evaluated", cls: "text-muted-foreground border-border bg-card-hover/30", Icon: CircleDashed },
 };
 
 const dot: Record<LimitStatus, string> = {
   pass: "text-profit",
   warn: "text-warning",
   block: "text-loss",
+  skipped: "text-muted-foreground",
 };
 
 export function LimitVerdict({ result, compact = false }: { result: LimitResult; compact?: boolean }) {

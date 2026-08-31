@@ -73,18 +73,28 @@ export function MarginPanel({ summary, rates }: { summary: MarginSummary; rates:
                   {b.bucket === "active" ? "Trade F&O" : b.bucket}
                 </span>
                 <span className="tabular-nums">
-                  {inr(b.margin, { decimals: 0 })} / {inr(b.capital, { decimals: 0 })}
+                  {inr(b.margin, { decimals: 0 })} / {b.utilisationPct == null ? "—" : inr(b.capital, { decimals: 0 })}
                 </span>
               </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded bg-border/60">
-                <div
-                  className={`h-full ${utilColor(b.utilisationPct)}`}
-                  style={{ width: `${Math.min(100, b.utilisationPct)}%` }}
-                />
-              </div>
-              <p className="mt-1 text-[0.6875rem] text-muted-foreground">
-                {b.utilisationPct}% of bucket capital blocked as estimated margin
-              </p>
+              {/* null utilisation = capital not configured. No gauge at all:
+                  an empty bar reads as 0% utilised, which is fake safety. */}
+              {b.utilisationPct == null ? (
+                <p className="mt-1 text-[0.6875rem] text-muted-foreground">
+                  utilisation % needs this bucket&apos;s capital — set it in Settings
+                </p>
+              ) : (
+                <>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded bg-border/60">
+                    <div
+                      className={`h-full ${utilColor(b.utilisationPct)}`}
+                      style={{ width: `${Math.min(100, b.utilisationPct)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[0.6875rem] text-muted-foreground">
+                    {b.utilisationPct}% of bucket capital blocked as estimated margin
+                  </p>
+                </>
+              )}
             </div>
           ))}
           {summary.byBucket.length === 0 && (

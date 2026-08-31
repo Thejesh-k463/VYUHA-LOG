@@ -101,14 +101,32 @@ export function getLedgerAggregates(): { internalNetPaise: number; minDate: stri
 
 /**
  * Opening balance per bucket in PAISE, from settings (rupees at rest there,
- * converted once here). The defaults mirror the historical /cash fallbacks.
+ * converted once here). 0 means NOT CONFIGURED — a clean install seeds exactly
+ * that. The old ₹13L/₹4L fallbacks seeded every running balance and "available"
+ * figure on /cash with fictional opening capital (invariant 6: never fabricate
+ * a denominator). With 0, running balances are honest NET-FLOW figures; the UI
+ * reads `getCapitalConfigured()` to say so instead of printing an invented ₹0
+ * opening as if it were real.
  */
 export function getOpeningByBucketPaise(): Record<string, number> {
   const settings = getSettings();
   return {
-    equity: toPaise(settings?.equityCapital ?? 1300000),
-    active: toPaise(settings?.activeCapital ?? 400000),
+    equity: toPaise(settings?.equityCapital ?? 0),
+    active: toPaise(settings?.activeCapital ?? 0),
   };
+}
+
+/**
+ * Whether each bucket's opening capital is actually configured (> 0; a clean
+ * install seeds 0 = unset — same convention as the trackers' bucketCapital).
+ * Carried to the UI so /cash can label balances as flows-only rather than
+ * presenting a fabricated ₹0 opening as a real figure.
+ */
+export function getCapitalConfigured(): { equity: boolean; active: boolean; any: boolean } {
+  const settings = getSettings();
+  const equity = (settings?.equityCapital ?? 0) > 0;
+  const active = (settings?.activeCapital ?? 0) > 0;
+  return { equity, active, any: equity || active };
 }
 
 /**

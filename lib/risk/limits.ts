@@ -7,7 +7,13 @@
 // except the always-on "no stop-loss" guardrail. The overall status is the worst
 // of all checks (block > warn > pass).
 
-export type LimitStatus = "pass" | "warn" | "block";
+/**
+ * "skipped" = the rule is configured but could not be evaluated (e.g. a
+ * %-of-capital rule with no capital configured — invariant 6: never fabricate
+ * a denominator). It is reported, never silent, and never worsens the overall
+ * verdict: a check that did not run is not a pass and not a breach.
+ */
+export type LimitStatus = "pass" | "warn" | "block" | "skipped";
 
 export interface ProspectiveOrder {
   bucket: string; // equity | active
@@ -51,7 +57,7 @@ export interface LimitResult {
 const WARN_RATIO = 0.8; // ≥80% of a limit → warn
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-const rank: Record<LimitStatus, number> = { pass: 0, warn: 1, block: 2 };
+const rank: Record<LimitStatus, number> = { skipped: 0, pass: 0, warn: 1, block: 2 };
 function worst(a: LimitStatus, b: LimitStatus): LimitStatus {
   return rank[a] >= rank[b] ? a : b;
 }
@@ -130,8 +136,18 @@ export function evaluateLimits(
     }
   }
 
-  // 5) Single-symbol concentration.
-  if (rules.concentrationPct != null && rules.concentrationPct > 0 && state.capital > 0) {
+  // 5) Single-symbol concentration — the one capital-RELATIVE rule. With no
+  // capital configured it is reported as NOT EVALUATED: zeroing the % would
+  // pass every order (fake safety), and any invented base could block one
+  // (fake danger). This used to be silently dropped, which read as a pass.
+  if (rules.concentrationPct != null && rules.concentrationPct > 0 && state.capital <= 0) {
+    add(
+      "concentration",
+      "Concentration",
+      "skipped",
+      `Not evaluated — the ${rules.concentrationPct}% cap is a share of capital, and no capital is configured. Set it in Settings → Capital.`,
+    );
+  } else if (rules.concentrationPct != null && rules.concentrationPct > 0 && state.capital > 0) {
     const limit = rules.concentrationPct;
     const newValue = state.existingSymbolValue + orderValue;
     const pct = r2((newValue / state.capital) * 100);

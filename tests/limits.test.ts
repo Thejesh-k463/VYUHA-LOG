@@ -122,3 +122,33 @@ describe("rule toggles", () => {
     expect(r.status).toBe("block");
   });
 });
+
+describe("unknown capital — invariant 6 (never fabricate a denominator)", () => {
+  // A fresh install seeds capital 0 = NOT CONFIGURED. The concentration rule is
+  // the one capital-RELATIVE check: with no capital it must be reported as not
+  // evaluated — dropping it silently reads as a pass, and any invented base
+  // could block a legitimate order.
+  it("reports the configured concentration rule as skipped, not silently dropped", () => {
+    const r = evaluateLimits(order(), rules(), state({ capital: 0 }));
+    const c = r.checks.find((c) => c.rule === "concentration");
+    expect(c?.status).toBe("skipped");
+    expect(c?.message).toMatch(/not evaluated/i);
+    expect(c?.message).toMatch(/settings/i);
+  });
+
+  it("a skipped check never worsens the overall verdict", () => {
+    const r = evaluateLimits(order(), rules(), state({ capital: 0 }));
+    expect(r.status).toBe("pass");
+  });
+
+  it("a skipped check does not mask a real breach elsewhere", () => {
+    const r = evaluateLimits(order(), rules(), state({ capital: 0, openCount: 5 }));
+    expect(r.status).toBe("block");
+    expect(r.checks.find((c) => c.rule === "concentration")?.status).toBe("skipped");
+  });
+
+  it("stays silent when the concentration rule itself is not configured", () => {
+    const r = evaluateLimits(order(), rules({ concentrationPct: null }), state({ capital: 0 }));
+    expect(r.checks.find((c) => c.rule === "concentration")).toBeUndefined();
+  });
+});

@@ -35,6 +35,16 @@ describe("estimateMargin", () => {
     expect(s.positions[0].rateUsed).toBeNull();
   });
 
+  it("utilisation is null — never a fabricated 0% — when a bucket's capital is not configured", () => {
+    // Invariant 6: a fresh install seeds capital 0 = NOT CONFIGURED. 0% here
+    // read as "nothing blocked", which is fake safety; the ₹ margin stays exact.
+    const s = estimateMargin([pos({})], rates, { equity: 0, active: 0 });
+    const active = s.byBucket.find((b) => b.bucket === "active")!;
+    expect(active.margin).toBe(7500);
+    expect(active.capital).toBe(0);
+    expect(active.utilisationPct).toBeNull();
+  });
+
   it("short option margin = pct × strike notional when no spot", () => {
     const s = estimateMargin([pos({ side: "short" })], rates, capitals);
     // 12% × 75 × 24000 = 216000

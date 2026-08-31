@@ -90,8 +90,15 @@ export default function RiskPage() {
   const mtm = getMtmMap();
   const spot = getSpotMap();
   const settings = getSettings();
-  const equityCapital = settings?.equityCapital ?? 1300000;
-  const activeCapital = settings?.activeCapital ?? 400000;
+  // Never fabricate a denominator (AGENTS.md #6). These used to fall back to
+  // an invented ₹13L/₹4L when no capital was configured — which is every fresh
+  // install — so every exposure %, allocation % and margin-utilisation gauge
+  // below silently computed on fiction. 0 means NOT CONFIGURED: the cockpit
+  // and margin panel render "—" for %-of-capital figures in that scope (one
+  // nudge card below, not one per panel) while ₹ figures stay exact.
+  const equityCapital = settings?.equityCapital ?? 0;
+  const activeCapital = settings?.activeCapital ?? 0;
+  const anyCapitalMissing = equityCapital <= 0 || activeCapital <= 0;
   const sectorMap = getSectorMap();
   const aliasMap = getAliasMap();
   const sectorFor = (symbol: string): string | null => {
@@ -315,6 +322,28 @@ export default function RiskPage() {
       <div className="space-y-5 p-6">
         <ProGate>
         <BreachBanner breaches={scanBreaches()} />
+        {/* The page's ONE capital nudge — the cockpit, margin gauge and limits
+            check below all show "—" for %-of-capital figures instead of a
+            number computed on an invented base (invariant 6). */}
+        {anyCapitalMissing && (
+          <Card className="border-warning/40">
+            <CardContent className="p-4 text-sm">
+              <div className="font-medium text-warning">
+                {equityCapital <= 0 && activeCapital <= 0
+                  ? "No bucket capital is configured."
+                  : equityCapital <= 0
+                    ? "The equity bucket has no capital configured."
+                    : "The Trade F&O bucket has no capital configured."}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Exposure, allocation, open-risk and margin-utilisation percentages divide by bucket
+                capital, so they show &quot;—&quot; for that scope rather than a number computed on an
+                invented base — and the concentration limit is not evaluated. Rupee figures need no base
+                and are exact. Set it in Settings → Capital &amp; Go-Live.
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <RiskCockpitClient
           inputs={inputs}
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}

@@ -63,8 +63,11 @@ export interface PositionMargin {
 export interface BucketMargin {
   bucket: string;
   margin: number;
-  capital: number;
-  utilisationPct: number; // margin / capital × 100 (0 when capital unknown)
+  capital: number; // 0 = not configured
+  /** margin / capital × 100 — null when capital is not configured. A 0 here
+   *  used to read as "0% utilised", which is fake safety on a fresh install
+   *  (invariant 6: never fabricate a denominator). */
+  utilisationPct: number | null;
 }
 
 export interface MarginSummary {
@@ -205,7 +208,7 @@ export function estimateMargin(
         bucket,
         margin: r2(margin),
         capital,
-        utilisationPct: capital > 0 ? r2((margin / capital) * 100) : 0,
+        utilisationPct: capital > 0 ? r2((margin / capital) * 100) : null,
       };
     })
     .sort((a, b) => a.bucket.localeCompare(b.bucket));
