@@ -36,6 +36,7 @@ format needs an **in-content fingerprint**. Every file examined has one:
 |---|---|
 | Zerodha Tradebook | `Auction` column — no other broker emits it. Plus `Trade ID` + `Order ID`. |
 | Zerodha Console P&L | Charge account heads suffixed `- Z` (`Brokerage - Z`, `Central GST - Z`) |
+| Zerodha Console tax P&L | `View Zerodha's guide…` preamble line + `Tradewise Exits` table (`Entry Date`/`Exit Date`/`Turnover`/`Profit`) on sheet 0, `- Z` heads on sheet 1 — detection must read ALL sheets |
 | Paytm Money Tradebook | `UCC` label in A1 + `Script` (sic) + `ETT` column |
 | Paytm Money P&L | `UCC` in A1 + `Unrealized P/L Summary` / `Realized P/L Summary` |
 | Angel One Tax P&L | `Angel One Limited` in `Summary!A1` |
@@ -100,6 +101,38 @@ the charges block in column A (8 `- Z` heads — no `Brokerage - Z` — plus
 rows carry an ISIN in the `Symbol` cell with an empty ISIN and zero quantity
 and values (delisted/merged scrips) — skipped, not imported as empty trades.
 `Open Quantity` / `Unrealized P&L` describe holdings, not trades.
+
+### Console tax P&L (`taxpnl-<client>-<fy>-Q1-Q4.xlsx`) — per EXIT, with full charges
+**VERIFIED with two real F&O exports (2026-09-01: FY2024-25, 632 rows; FY2025-26,
+59 rows).** Two sheets; **data begins at column B** on both.
+
+- Sheet 0 `Tradewise Exits from <date>`: preamble (`View Zerodha's guide on
+  using tax reports for filing.` — the in-content broker name — then
+  `Client ID`/`Client Name`/`PAN`, the FY window line), then one or more
+  SECTIONS: a single-cell label row (`F&O`, `Currency`, `Commodity`), its own
+  header row, then data. Sections after the first can be empty (the FY24-25
+  file carries empty Currency and Commodity sections with bare headers).
+  ```
+  Symbol | Entry Date | Exit Date | Quantity | Buy Value | Sell Value |
+  Profit | Turnover | Brokerage | Exchange Transaction Charges | IPFT |
+  SEBI Charges | CGST | SGST | IGST | Stamp Duty | STT
+  ```
+  Entry/Exit are FULL timestamps (`2025-04-02T09:29:49`). Symbols are compact
+  NSE/BSE contract names (`NIFTY2540323750CE`) — see `parseCompactName` in
+  `lib/engine/classify.ts`. `Profit` is GROSS (≡ Sell − Buy); Zerodha's
+  `Turnover` ≡ |Profit| (differences-only basis, NO premium — 6.5–8.7× below
+  the ICAI 11th-ed. figure on the same rows). Zerodha splits one order into a
+  row per execution; the parser groups rows per symbol + entry day + exit day
+  (the tradebook's scrip-day unit) and keeps each row as an execution pair.
+- Sheet 1 `F&O`: realized-profit + turnover breakdown and a charges block with
+  the `- Z` heads (`IPFT` unsuffixed) — the fingerprint sheet. Reconciliation
+  on the real files: Σ Profit matches the stated realized profit EXACTLY both
+  years; charges match to the paisa on FY25-26, and FY24-25's summary carries
+  ₹187.31 the tradewise rows don't (entry-side charges of positions still open
+  at FY end — the sheet lists exits).
+- Detection trap this format exposed: the trade table and the fingerprint live
+  on DIFFERENT sheets, so a first-sheet-only `toMatrix` scored it 0 and the
+  file fell to the column mapper. Detection reads all sheets now.
 
 ---
 

@@ -14,21 +14,35 @@ const toNum = (v: unknown): number => {
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s_.]/g, "");
 
-/** Convert a CSV/XLSX file into a matrix of rows. */
-function toMatrix(ctx: ParseContext): string[][] {
+/** Convert a CSV/XLSX file into per-sheet matrices of rows.
+ *
+ *  ALL sheets, not just the first: Zerodha's Console tax P&L puts its trade
+ *  table on sheet 0 and its "- Z" charge-head fingerprint on sheet 1, so a
+ *  first-sheet-only read left the richest file Zerodha produces scoring 0 and
+ *  falling to the generic column mapper (found against a real export,
+ *  2026-09-01). A CSV is one "sheet". */
+function toMatrices(ctx: ParseContext): string[][][] {
   if (ctx.text != null) {
-    return (Papa.parse<string[]>(ctx.text, { skipEmptyLines: true }).data ?? []).map((r) =>
-      r.map((c) => String(c ?? "")),
-    );
+    return [
+      (Papa.parse<string[]>(ctx.text, { skipEmptyLines: true }).data ?? []).map((r) =>
+        r.map((c) => String(c ?? "")),
+      ),
+    ];
   }
   if (ctx.buffer) {
     const wb = XLSX.read(ctx.buffer, { type: "buffer" });
-    const ws = wb.Sheets[wb.SheetNames[0]!];
-    return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(
-      (r) => r.map((c) => String(c ?? "")),
+    return wb.SheetNames.map((name) =>
+      (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name]!, { header: 1, raw: false, defval: "" }) as unknown[][]).map(
+        (r) => r.map((c) => String(c ?? "")),
+      ),
     );
   }
   return [];
+}
+
+/** First sheet only — the tradebook/Console P&L formats live there. */
+function toMatrix(ctx: ParseContext): string[][] {
+  return toMatrices(ctx)[0] ?? [];
 }
 
 /** Find the header row index (first row that contains a recognizable column).
@@ -73,32 +87,72 @@ function colFinder(header: string[]) {
  *     `Trade ID` + `Order ID` pair.
  *   - Console P&L: charge account heads suffixed "- Z" ("Brokerage - Z",
  *     "Central GST - Z", … 9 heads on a real export).
+ *   - Console tax P&L (taxpnl-*.xlsx): a "Tradewise Exits" table (Symbol /
+ *     Entry Date / Exit Date / Turnover / Profit) on one sheet, the "- Z"
+ *     heads AND an in-content "Zerodha's guide" line on the workbook — the
+ *     table shape counts only once the workbook has named the broker.
  */
 export function detectZerodha(ctx: ParseContext): number {
   // Only strings that actually name the broker. "tradebook" and "console" are
   // generic English — Paytm's export is literally called "… - Tradebook.xlsx".
-  const named = /zerodha|kite/i.test(ctx.filename);
-  const rows = toMatrix(ctx);
-  const h = findHeader(rows);
+  // The tax P&L export names no broker in its FILENAME (taxpnl-<name>-<fy>…)
+  // but names one in its preamble ("View Zerodha's guide on using tax
+  // reports…", verified on a real export 2026-09-01) — an in-content name is
+  // as good as a filename one, and bounded to the preamble rows so a stray
+  // mention deep in another broker's data cannot qualify a file.
+  const matrices = toMatrices(ctx);
+  const named =
+    /zerodha|kite/i.test(ctx.filename) ||
+    matrices.some((rows) => rows.slice(0, 10).flat().some((c) => /zerodha/i.test(c)));
+
+  // Fingerprints are scored across EVERY sheet: the tax P&L keeps its trade
+  // table and its "- Z" heads on different sheets.
+  let h = -1;
+  let cells: string[] = [];
+  let tradewiseFp = false;
+  let consoleFp = false;
+  for (const rows of matrices) {
+    const hi = findHeader(rows);
+    if (hi >= 0) {
+      const c = rows[hi].map(norm);
+      if (h < 0) {
+        h = hi;
+        cells = c;
+      }
+      if (
+        c.includes("entrydate") &&
+        c.includes("exitdate") &&
+        c.includes("turnover") &&
+        c.includes("profit")
+      )
+        tradewiseFp = true;
+    }
+    // The "- Z" heads live in the charges block, one per ROW ("Brokerage - Z"
+    // / "Central GST - Z" / …), not in the trade-table header — so this counts
+    // across the sheet, bounded. Two are required: one "- Z"-suffixed label
+    // could be anyone's abbreviation; a column of them is Zerodha's Console.
+    if (
+      rows
+        .slice(0, 100)
+        .flat()
+        .filter((c) => /\s-\s?Z$/.test(String(c).trim())).length >= 2
+    )
+      consoleFp = true;
+  }
   if (h < 0) {
     // A named file with no readable table still routes here so the parser can
     // say "no recognizable header" by name, rather than the mapper offering
     // columns that do not exist.
     return named ? 0.3 : 0;
   }
-  const cells = rows[h].map(norm);
 
   const tradebookFp =
     cells.includes("auction") || (cells.includes("tradeid") && cells.includes("orderid"));
-  // The "- Z" heads live in the charges block, one per ROW ("Brokerage - Z" /
-  // "Central GST - Z" / …), not in the trade-table header — so this counts
-  // across the sheet, bounded. Two are required: one "- Z"-suffixed label
-  // could be anyone's abbreviation; a column of them is Zerodha's Console.
-  const consoleFp =
-    rows
-      .slice(0, 100)
-      .flat()
-      .filter((c) => /\s-\s?Z$/.test(String(c).trim())).length >= 2;
+  // The tradewise table SHAPE never claims on its own — entry/exit/turnover
+  // columns are conceivable from another broker — it needs the workbook to
+  // have named Zerodha or shown the "- Z" heads first (the house rule: a
+  // broker-named parser must see the broker's name before it claims a file).
+  const taxpnlFp = tradewiseFp && (named || consoleFp);
 
   if (!named && !tradebookFp && !consoleFp) return 0; // No name, no fingerprint, no claim.
 
@@ -112,6 +166,7 @@ export function detectZerodha(ctx: ParseContext): number {
   let score = named ? 0.35 : 0;
   if (tradebookFp) score += 0.5;
   if (consoleFp) score += 0.55;
+  if (taxpnlFp) score += 0.5;
   // Shape refines a qualified score; it can no longer create one.
   if (cells.includes("tradingsymbol") || (cells.includes("symbol") && cells.includes("isin")))
     score += 0.15;
@@ -162,7 +217,251 @@ function productHint(raw: string): ProductHint {
  * classifier will treat unrecognized symbols as equity — re-tag F&O in Trades until a
  * real Zerodha F&O sample is available to pin the exact symbol grammar.
  */
+/** Header test for the Console tax P&L's tradewise table. */
+function isTradewiseHeader(cells: string[]): boolean {
+  return (
+    cells.includes("symbol") &&
+    cells.includes("entrydate") &&
+    cells.includes("exitdate") &&
+    cells.includes("turnover") &&
+    cells.includes("profit")
+  );
+}
+
+/**
+ * Console tax P&L "Tradewise Exits" sheet — the richest file Zerodha
+ * produces: one row per EXIT with entry/exit timestamps, quantity, values,
+ * gross profit, and every charge the broker actually levied on that trade.
+ *
+ * Pinned against two real exports (2026-09-01): the sheet opens with a
+ * preamble (client identity, a "Zerodha's guide" link, the FY window), then
+ * one or more SECTIONS — a single-cell label row ("F&O", "Currency",
+ * "Commodity"), its own header row, then data rows. Sections other than the
+ * first can be empty.
+ *
+ * The honest position unit is the same scrip-day the tradebook branch uses:
+ * Zerodha splits one order into a row per execution (six 75-lot rows sharing
+ * one entry AND one exit second), so rows are grouped by
+ * symbol + entry DAY + exit DAY. A buy consumed by exits on different days
+ * stays separate positions — exactly what FIFO pairing of day-legs yields —
+ * and every source row survives as an entry+exit execution pair so ladders
+ * keep their shape.
+ *
+ * "Profit" is GROSS (sell − buy; verified: the Turnover column ≡ |Profit| on
+ * all 693 real rows). Charges are reported per head; CGST+SGST+IGST fold into
+ * the engine's single `gst` head, and the stated figures ride
+ * `reportedCharges` so they are stored as the truth (engine figures stay a
+ * cross-check).
+ */
+function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | null {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  let headerAt = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (isTradewiseHeader(rows[i].map(norm))) {
+      headerAt = i;
+      break;
+    }
+  }
+  if (headerAt < 0) return null;
+
+  type ChargeCols = {
+    brokerage: number; exchangeTxn: number; ipft: number; sebi: number;
+    cgst: number; sgst: number; igst: number; stampDuty: number; stt: number;
+  };
+  type Cols = ChargeCols & {
+    symbol: number; entry: number; exit: number; qty: number; buyVal: number; sellVal: number; profit: number;
+  };
+  const readHeader = (cells: string[]): Cols => {
+    const find = colFinder(cells);
+    return {
+      symbol: find("symbol"),
+      entry: find("entry date"),
+      exit: find("exit date"),
+      qty: find("quantity", "qty"),
+      buyVal: find("buy value"),
+      sellVal: find("sell value"),
+      profit: find("profit"),
+      brokerage: find("brokerage"),
+      exchangeTxn: find("exchange transaction charges"),
+      ipft: find("ipft"),
+      sebi: find("sebi charges"),
+      cgst: find("cgst"),
+      sgst: find("sgst"),
+      igst: find("igst"),
+      stampDuty: find("stamp duty"),
+      stt: find("stt"),
+    };
+  };
+
+  type Group = {
+    symbol: string;
+    section: string | null;
+    entryDate: string;
+    exitDate: string;
+    qty: number;
+    buyValue: number;
+    sellValue: number;
+    profit: number;
+    charges: { brokerage: number; exchangeTxn: number; ipft: number; sebi: number; gst: number; stampDuty: number; sttCtt: number };
+    /** Keyed side|date|time|price — identical executions (one order split by
+     *  the exchange) merge; distinct fills keep the ladder. */
+    fills: Map<string, Execution>;
+  };
+  const groups = new Map<string, Group>();
+  const unreadable: string[] = [];
+  let cols: Cols | null = null;
+  let section: string | null = null;
+  let lastSingleton: string | null = null;
+  let rowCount = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const raw = rows[i];
+    const cells = raw.map((c) => c.trim());
+    const nonEmpty = cells.filter((c) => c !== "");
+    if (nonEmpty.length === 0) continue;
+    if (isTradewiseHeader(raw.map(norm))) {
+      cols = readHeader(raw);
+      section = lastSingleton;
+      continue;
+    }
+    if (nonEmpty.length === 1) {
+      lastSingleton = nonEmpty[0];
+      continue;
+    }
+    if (!cols) continue; // preamble (Client ID / Name / PAN rows)
+
+    const symbol = cells[cols.symbol] ?? "";
+    if (!symbol) continue;
+    const qty = toNum(raw[cols.qty]);
+    const entryDate = extractDate(raw[cols.entry]);
+    const exitDate = extractDate(raw[cols.exit]);
+    // Refuse, never coerce: a row with no readable dates or quantity cannot
+    // become a position without inventing one of them.
+    if (qty <= 0 || !entryDate || !exitDate) {
+      unreadable.push(symbol);
+      continue;
+    }
+    rowCount += 1;
+
+    const buyValue = toNum(raw[cols.buyVal]);
+    const sellValue = toNum(raw[cols.sellVal]);
+    const key = `${symbol}|${entryDate}|${exitDate}`;
+    const g = groups.get(key) ?? {
+      symbol,
+      section,
+      entryDate,
+      exitDate,
+      qty: 0,
+      buyValue: 0,
+      sellValue: 0,
+      profit: 0,
+      charges: { brokerage: 0, exchangeTxn: 0, ipft: 0, sebi: 0, gst: 0, stampDuty: 0, sttCtt: 0 },
+      fills: new Map<string, Execution>(),
+    };
+    g.qty += qty;
+    g.buyValue += buyValue;
+    g.sellValue += sellValue;
+    g.profit += toNum(raw[cols.profit]);
+    g.charges.brokerage += toNum(raw[cols.brokerage]);
+    g.charges.exchangeTxn += toNum(raw[cols.exchangeTxn]);
+    g.charges.ipft += toNum(raw[cols.ipft]);
+    g.charges.sebi += toNum(raw[cols.sebi]);
+    g.charges.gst += toNum(raw[cols.cgst]) + toNum(raw[cols.sgst]) + toNum(raw[cols.igst]);
+    g.charges.stampDuty += toNum(raw[cols.stampDuty]);
+    g.charges.sttCtt += toNum(raw[cols.stt]);
+
+    for (const [side, date, cell, value] of [
+      ["buy", entryDate, raw[cols.entry], buyValue],
+      ["sell", exitDate, raw[cols.exit], sellValue],
+    ] as const) {
+      const time = extractTime(cell);
+      const price = qty > 0 ? value / qty : 0;
+      const fk = `${side}|${date}|${time ?? ""}|${price}`;
+      const existing = g.fills.get(fk);
+      if (existing) existing.qty += qty;
+      else g.fills.set(fk, { side, qty, price: r2(price), date, time });
+    }
+    groups.set(key, g);
+  }
+
+  if (rowCount === 0 && unreadable.length === 0) return null;
+
+  const trades: NormalizedTrade[] = [];
+  for (const g of groups.values()) {
+    // Round each head FIRST and total the rounded heads: the stored heads must
+    // sum to the stored total exactly, and rounding them independently of the
+    // total leaves a stray paisa between them.
+    const heads = {
+      brokerage: r2(g.charges.brokerage),
+      exchangeTxn: r2(g.charges.exchangeTxn),
+      ipft: r2(g.charges.ipft),
+      sebi: r2(g.charges.sebi),
+      gst: r2(g.charges.gst),
+      stampDuty: r2(g.charges.stampDuty),
+      sttCtt: r2(g.charges.sttCtt),
+    };
+    const total = r2(
+      heads.brokerage + heads.exchangeTxn + heads.ipft + heads.sebi + heads.gst + heads.stampDuty + heads.sttCtt,
+    );
+    const fills = [...g.fills.values()];
+    const buys = fills.filter((f) => f.side === "buy");
+    const sells = fills.filter((f) => f.side === "sell");
+    trades.push({
+      broker: "zerodha",
+      tradingsymbol: g.symbol,
+      isin: null,
+      buyQty: g.qty,
+      avgBuyPrice: g.qty > 0 ? r2(g.buyValue / g.qty) : 0,
+      buyValue: r2(g.buyValue),
+      sellQty: g.qty,
+      avgSellPrice: g.qty > 0 ? r2(g.sellValue / g.qty) : 0,
+      sellValue: r2(g.sellValue),
+      closingPrice: null,
+      grossPnl: r2(g.profit),
+      unrealisedPnl: 0,
+      buyDate: g.entryDate,
+      sellDate: g.exitDate,
+      entryTime: buys.map((f) => f.time).filter(Boolean).sort()[0] ?? null,
+      exitTime: sells.map((f) => f.time).filter(Boolean).sort().at(-1) ?? null,
+      // NRML derivatives state no product; the classifier reads the contract
+      // from the symbol itself. Commodity/currency sections hint the venue.
+      productHint: null,
+      exchangeHint: g.section && /commodit/i.test(g.section) ? "MCX" : null,
+      sourceFile: ctx.filename,
+      executions: fills.length > 0 ? fills : null,
+      reportedCharges: { ...heads, total },
+      importNotes: g.section ? [`Tax P&L section: ${g.section}`] : null,
+    });
+  }
+
+  const warnings: string[] = [
+    `${rowCount} exit row${rowCount === 1 ? "" : "s"} → ${trades.length} position${trades.length === 1 ? "" : "s"} (grouped per symbol + entry day + exit day). Charges are Zerodha's own per-trade figures, stored as reported.`,
+  ];
+  if (unreadable.length > 0) {
+    warnings.push(
+      `${unreadable.length} row${unreadable.length === 1 ? "" : "s"} had no readable date or quantity and ${unreadable.length === 1 ? "was" : "were"} refused rather than guessed: ${[...new Set(unreadable)].slice(0, 5).join(", ")}.`,
+    );
+  }
+
+  return {
+    sourceId: "zerodha",
+    broker: "zerodha",
+    format: "taxpnl",
+    trades,
+    sourceRows: rowCount,
+    warnings,
+  };
+}
+
 export function parseZerodha(ctx: ParseContext): ParsedFile {
+  // The tax P&L's tradewise table may sit on any sheet; every other Zerodha
+  // format lives on the first. Tradewise wins when present — it is the only
+  // format that states real per-trade charges.
+  for (const sheet of toMatrices(ctx)) {
+    const tw = parseTradewiseSheet(sheet, ctx);
+    if (tw) return tw;
+  }
   const rows = toMatrix(ctx);
   const h = findHeader(rows);
   if (h < 0) {

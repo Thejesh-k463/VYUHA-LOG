@@ -57,6 +57,15 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   { file: "upstox-realized-pnl.xlsx", broker: "upstox", expect: "upstox", label: "Upstox realised P&L report" },
   // No column header at all — nothing can read it; nothing may claim it.
   { file: "upstox-ledger.xlsx", broker: "upstox", expect: "generic-or-none", label: "Upstox ledger" },
+  // ── 2026-09-01 batch: Zerodha Console TAX P&L (taxpnl-*.xlsx), redacted
+  // from two real multi-sheet exports. The trade table sits on sheet 0 and
+  // the "- Z" charge heads on sheet 1 — the exact layout that fell to the
+  // column mapper while detection read only the first sheet. Real filenames
+  // name no broker (taxpnl-<name>-<fy>-Q1-Q4.xlsx), so both load NEUTRAL:
+  // the claim is carried by the in-content "Zerodha's guide" line + the
+  // tradewise table + the "- Z" heads.
+  { file: "zerodha-taxpnl-fy2425.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console tax P&L (FY24-25, F&O + empty Currency/Commodity sections)" },
+  { file: "zerodha-taxpnl-fy2526.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console tax P&L (FY25-26, single F&O section)" },
 ];
 
 /**
@@ -74,12 +83,15 @@ const PRIVATE: { file: string; expect: string }[] = [
   { file: "Upstox trade report (schema-only).xlsx", expect: "upstox" },
   { file: "Upstox realizedPnL (schema-only).xlsx", expect: "upstox" },
   { file: "Upstox ledger (schema-only).xlsx", expect: "generic-or-none" },
+  { file: "Zerodha TaxPnL FY2024-25 (real).xlsx", expect: "zerodha" },
+  { file: "Zerodha TaxPnL FY2025-26 (real).xlsx", expect: "zerodha" },
+  { file: "Zerodha Console PnL Ravi (real).xlsx", expect: "zerodha" },
 ];
 const havePrivate = PRIVATE.every((p) => fs.existsSync(path.join(PRIVATE_DIR, p.file)));
 
 // The 2026-08-20 batch is loaded under a NEUTRAL filename so that a claim can
 // only come from the file's content — the real exports name no broker.
-const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx"]);
+const NEUTRAL = new Set(["paytm-tradebook-v2.xlsx", "paytm-equity-pnl.xls", "zerodha-tradebook-console.xlsx", "zerodha-console-pnl-cola.xlsx", "upstox-trade-report.xlsx", "upstox-realized-pnl.xlsx", "upstox-ledger.xlsx", "zerodha-taxpnl-fy2425.xlsx", "zerodha-taxpnl-fy2526.xlsx"]);
 const load = (file: string) =>
   buildContext(NEUTRAL.has(file) ? "export" + path.extname(file) : file, fs.readFileSync(path.join(DIR, file)));
 

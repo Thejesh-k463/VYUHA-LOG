@@ -36,6 +36,80 @@ describe("parseInstrumentName", () => {
   });
 });
 
+describe("parseInstrumentName — NSE/BSE compact grammar (real Zerodha tax P&L, 2026-09-01)", () => {
+  it("weekly option states its full expiry date: NIFTY2540323750CE", () => {
+    expect(parseInstrumentName("NIFTY2540323750CE")).toEqual({
+      kind: "option",
+      symbol: "NIFTY",
+      expiry: "2025-04-03",
+      strike: 23750,
+      optionType: "CE",
+    });
+  });
+
+  it("weekly month letters O/N/D map to Oct/Nov/Dec", () => {
+    expect(parseInstrumentName("NIFTY25O0725900PE").expiry).toBe("2025-10-07");
+    expect(parseInstrumentName("NIFTY25N1125900PE").expiry).toBe("2025-11-11");
+    expect(parseInstrumentName("NIFTY25D3025900PE").expiry).toBe("2025-12-30");
+  });
+
+  it("monthly option: symbol states only year+month, so expiry is null — never a guessed day", () => {
+    expect(parseInstrumentName("TVSMOTOR25APR2480CE")).toEqual({
+      kind: "option",
+      symbol: "TVSMOTOR",
+      expiry: null,
+      strike: 2480,
+      optionType: "CE",
+    });
+  });
+
+  it("BSE index weekly classifies to BSE: SENSEX2540874000PE", () => {
+    expect(classify({ tradingsymbol: "SENSEX2540874000PE" })).toMatchObject({
+      segment: "index_option",
+      exchange: "BSE",
+      symbol: "SENSEX",
+      expiry: "2025-04-08",
+      strike: 74000,
+    });
+  });
+
+  it("digit-leading underlyings still split correctly: 360ONE25APR1000CE", () => {
+    const p = parseInstrumentName("360ONE25APR1000CE");
+    expect(p).toMatchObject({ kind: "option", symbol: "360ONE", strike: 1000 });
+  });
+
+  it("decimal strikes parse: USDINR25APR83.25CE", () => {
+    expect(parseInstrumentName("USDINR25APR83.25CE").strike).toBe(83.25);
+  });
+
+  it("compact futures: NIFTY25APRFUT", () => {
+    expect(parseInstrumentName("NIFTY25APRFUT")).toEqual({
+      kind: "future",
+      symbol: "NIFTY",
+      expiry: null,
+      strike: null,
+      optionType: null,
+    });
+  });
+
+  it("compact contracts classify without a productHint (NRML states none)", () => {
+    expect(classify({ tradingsymbol: "NIFTY2540323750CE" })).toMatchObject({
+      segment: "index_option",
+      bucket: "active",
+      instrumentType: "option",
+    });
+    expect(classify({ tradingsymbol: "LAURUSLABS25APR580CE" })).toMatchObject({
+      segment: "stock_option",
+    });
+  });
+
+  it("plain equity tickers never match the compact grammar", () => {
+    for (const sym of ["RELIANCE", "3MINDIA", "63MOONS", "360ONE", "NIFTYBEES", "M&M", "ITC"]) {
+      expect(parseInstrumentName(sym).kind).toBe("equity");
+    }
+  });
+});
+
 describe("classify — segment & bucket rules (§4)", () => {
   it("index options → index_option / active; NSE vs BSE underlyings", () => {
     expect(classify({ tradingsymbol: "OPT NIFTY 09 Jun 2026 22800 PE" })).toMatchObject({
