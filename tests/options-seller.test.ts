@@ -75,6 +75,30 @@ describe("options seller — premium capture", () => {
   });
 });
 
+describe("options seller — who counts as a seller (B2)", () => {
+  it("counts a partially covered short (sold 100, bought back 40) as a seller position", () => {
+    // The direction heuristic must not be buyQty === 0: a short that has
+    // partially covered carries buyQty > 0 and is still a seller (fix A6 /
+    // the sellQty > buyQty family, commit 242f11e applied to staged legs).
+    const r = optionsSellerReport([seller({ sellQty: 100, buyQty: 40, avgSellPrice: 100, avgBuyPrice: 30, isOpen: true })]);
+    expect(r.count).toBe(1);
+    expect(r.rows[0].premiumSold).toBe(10000); // 100 × 100
+    expect(r.rows[0].premiumCaptured).toBe(8800); // 10000 − 30 × min(40, 100)
+  });
+
+  it("still counts a short covered exactly in full (sellQty === buyQty)", () => {
+    // A strict sellQty > buyQty test would drop every fully covered short.
+    const r = optionsSellerReport([seller({ sellQty: 50, buyQty: 50 })]);
+    expect(r.count).toBe(1);
+  });
+
+  it("excludes a pure long position that has sold nothing", () => {
+    const r = optionsSellerReport([seller({ sellQty: 0, avgSellPrice: 0, buyQty: 100, isOpen: true })]);
+    expect(r.count).toBe(0);
+    expect(r.capturePct).toBeNull();
+  });
+});
+
 describe("options seller — IV and risk", () => {
   it("reports IV change only when both ends are recorded", () => {
     expect(optionsSellerReport([seller({ entryIv: 20, exitIv: 15 })]).rows[0].ivChange).toBe(-5);

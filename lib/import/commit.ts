@@ -535,6 +535,20 @@ export function commitParsedFile(
       }
       seenInThisFile.add(b.dedup);
 
+      // A derived fact must not wear a reported fact's clothes (invariant 6):
+      // when an MTF trade's file states no interest figure, whatever later
+      // shows in mtfInterest (the daily accrual job for open positions, the
+      // close path) is the engine's estimate from charge_config, not a broker
+      // statement — say so on the row, where importNotes already surfaces.
+      const mtfInterestDerived =
+        b.classification.segment === "eq_mtf" && t.reportedCharges?.mtfInterest == null;
+      const noteLines = [
+        ...(t.importNotes ?? []),
+        ...(mtfInterestDerived
+          ? ["MTF interest not stated by the file — any interest shown is estimated from your configured rates"]
+          : []),
+      ];
+
       const inserted = tx.insert(tradesTable)
         .values({
           accountId,
@@ -592,7 +606,7 @@ export function commitParsedFile(
           // is flagged rather than reported as an all-profit trade.
           acquisition: t.basisUnknown ? "unknown" : null,
           suggestedBasisPrice: t.suggestedBasisPrice ?? null,
-          importNotes: t.importNotes?.length ? t.importNotes.join(" | ") : null,
+          importNotes: noteLines.length ? noteLines.join(" | ") : null,
         })
         .returning({ id: tradesTable.id })
         .get();
@@ -1153,6 +1167,23 @@ export function applyOverride(
   // recompute charges for the trade under the new segment/exchange
   const { rates } = loadContext();
   const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIso()));
+  // MTF accrual follows the segment (same rules as updateManualTrade): a flip
+  // TO eq_mtf estimates the funded principal (persisted amount first, else the
+  // margin-config estimate) and, for a closed trade, the held days; a flip
+  // AWAY zeroes interest/pledge. Without this the stored mtfInterest column
+  // kept its OLD segment's figure while chargesTotal was recomputed without
+  // it, so the breakdown no longer summed to the total (B4).
+  const isMtf = segment === "eq_mtf";
+  const fundedAmount = isMtf
+    ? t.mtfFundedAmount && t.mtfFundedAmount > 0
+      ? t.mtfFundedAmount
+      : defaultMtfFundedAmount(t.buyValue, mtfOwnMarginPct(t.broker))
+    : null;
+  // Open positions accrue nothing here — the daily job (lib/jobs/mtf-accrual.ts)
+  // takes over from its next run, per-epoch.
+  const daysHeld = isMtf && !t.isOpen && t.buyDate && t.sellDate
+    ? Math.max(0, Math.floor((new Date(t.sellDate).getTime() - new Date(t.buyDate).getTime()) / 86400000))
+    : 0;
   const charges = computeCharges(
     {
       segment,
@@ -1162,6 +1193,7 @@ export function applyOverride(
       sellQty: t.sellQty,
       buyOrderCount: t.buyOrderCount,
       sellOrderCount: t.sellOrderCount,
+      mtf: isMtf ? { fundedAmount: fundedAmount!, daysHeld, pledgeScrips: 1 } : null,
     },
     r,
   );
@@ -1184,6 +1216,9 @@ export function applyOverride(
       ipft: charges.ipft,
       gst: charges.gst,
       dpCharges: charges.dpCharges,
+      mtfInterest: charges.mtfInterest,
+      mtfFundedAmount: fundedAmount,
+      pledgeCharges: charges.pledgeCharges,
     })
     .where(eq(tradesTable.id, tradeId))
     .run();

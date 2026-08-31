@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { inr, inrCompact, num } from "@/lib/format";
-import type { KpiDetail } from "@/components/kpi-card";
+import { KpiDetailDialog, type KpiDetail } from "@/components/kpi-card";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
 import { ShowMore, useRowWindow } from "@/components/ui/show-more";
@@ -420,35 +420,14 @@ function Tile({
     </div>
   );
   if (!clickable) return tile;
+  // The dialog half is the SHARED KpiDetailDialog — this tile used to carry a
+  // local re-implementation of KpiCard's popup, deleted in v3.5.0. The tile
+  // shell itself stays local: the banner's density (bold 2xl coloured values on
+  // a gradient card) is deliberately not KpiCard's.
   return (
     <>
       {tile}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{detail.title}</DialogTitle>
-            {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
-          </DialogHeader>
-          <div className="divide-y divide-border/50">
-            {detail.rows.map((r, i) => (
-              <div key={i} className="flex items-baseline justify-between gap-4 py-2">
-                <div>
-                  <div className="text-xs">{r.label}</div>
-                  {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
-                </div>
-                <div
-                  className={`shrink-0 font-mono text-sm tabular-nums ${
-                    r.tone === "profit" ? "text-profit" : r.tone === "loss" ? "text-loss" : ""
-                  }`}
-                >
-                  {r.value}
-                </div>
-              </div>
-            ))}
-          </div>
-          {detail.note && <p className="text-[0.6875rem] text-muted-foreground">{detail.note}</p>}
-        </DialogContent>
-      </Dialog>
+      <KpiDetailDialog detail={detail} open={open} onOpenChange={setOpen} />
     </>
   );
 }

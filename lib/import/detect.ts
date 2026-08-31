@@ -117,9 +117,9 @@ export function detectParser(ctx: ParseContext): DetectedParser | null {
   return ranked[0] && ranked[0].confidence > 0 ? ranked[0] : null;
 }
 
-/** Build a ParseContext from a filename + bytes (CSV decoded to text). */
+/** Build a ParseContext from a filename + bytes (CSV/TXT decoded to text). */
 export function buildContext(filename: string, bytes: Buffer): ParseContext {
-  const isText = /\.csv$/i.test(filename);
+  const isText = /\.(csv|txt)$/i.test(filename);
   return {
     filename,
     text: isText ? bytes.toString("utf-8") : undefined,

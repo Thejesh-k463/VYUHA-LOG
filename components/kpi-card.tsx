@@ -179,8 +179,12 @@ export function KpiCard({
       <div className="flex flex-wrap items-end justify-between gap-x-2 gap-y-1">
         {/* 1.65rem = 26.4px, inside the 23–28px band, and it tracks the
             comfortable-density root. `whitespace-nowrap` is MANDATORY: without
-            it a long value breaks between the sign and the first digit. */}
-        <div className={cn("mt-2 whitespace-nowrap font-mono text-[1.65rem] font-light leading-none tracking-tight tabular-nums", valueClassName)}>
+            it a long value breaks between the sign and the first digit.
+            `min-w-0 max-w-full overflow-hidden text-ellipsis` is the B8 audit
+            fix: a long ₹ value in a narrow grid cell used to overflow the card
+            edge; now it truncates with an ellipsis, which at least SAYS there
+            are more digits instead of painting them over the neighbour. */}
+        <div className={cn("mt-2 min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[1.65rem] font-light leading-none tracking-tight tabular-nums", valueClassName)}>
           {valueNum !== undefined ? (
             // CountUp applies quietCurrency itself, per frame.
             <CountUp value={valueNum} format={KPI_FORMATTERS[format ?? "inr"]} />
@@ -219,60 +223,79 @@ export function KpiCard({
   return (
     <>
       {card}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{detail.title}</DialogTitle>
-            {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
-          </DialogHeader>
-          <div className="divide-y divide-border/50">
-            {detail.rows.map((r, i) => {
-              const body = (
-                <>
-                  <div>
-                    <div className={cn("text-xs", r.href && "text-accent underline-offset-2 group-hover/row:underline")}>
-                      {r.label}
-                      {r.href && <span className="ml-1 text-[10px]">→</span>}
-                    </div>
-                    {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
-                  </div>
-                  <div
-                    className={cn(
-                      "shrink-0 font-mono text-sm tabular-nums",
-                      r.tone === "profit" && "text-profit",
-                      r.tone === "loss" && "text-loss",
-                    )}
-                  >
-                    {r.value}
-                  </div>
-                </>
-              );
-              return r.href ? (
-                <Link
-                  key={i}
-                  href={r.href}
-                  className="group/row flex items-baseline justify-between gap-4 py-2 transition-colors hover:bg-card-hover/60"
-                  onClick={() => setOpen(false)}
-                >
-                  {body}
-                </Link>
-              ) : (
-                <div key={i} className="flex items-baseline justify-between gap-4 py-2">{body}</div>
-              );
-            })}
-          </div>
-          {detail.note && <p className="text-[0.6875rem] text-muted-foreground">{detail.note}</p>}
-          {detail.footerHref && (
-            <Link
-              href={detail.footerHref}
-              onClick={() => setOpen(false)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary"
-            >
-              {detail.footerLabel ?? "Show me the trades"} →
-            </Link>
-          )}
-        </DialogContent>
-      </Dialog>
+      <KpiDetailDialog detail={detail} open={open} onOpenChange={setOpen} />
     </>
+  );
+}
+
+/** The dialog half of KpiCard, exported on its own so surfaces that are NOT a
+ *  KpiCard (the risk cockpit's banner tiles, dense stat strips) can join the
+ *  same popup pattern instead of re-implementing it. Controlled: the caller
+ *  owns `open`; row links and the footer CTA close via `onOpenChange(false)`
+ *  so navigation doesn't leave a dialog behind. */
+export function KpiDetailDialog({
+  detail,
+  open,
+  onOpenChange,
+}: {
+  detail: KpiDetail;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{detail.title}</DialogTitle>
+          {detail.summary && <DialogDescription>{detail.summary}</DialogDescription>}
+        </DialogHeader>
+        <div className="divide-y divide-border/50">
+          {detail.rows.map((r, i) => {
+            const body = (
+              <>
+                <div>
+                  <div className={cn("text-xs", r.href && "text-accent underline-offset-2 group-hover/row:underline")}>
+                    {r.label}
+                    {r.href && <span className="ml-1 text-[10px]">→</span>}
+                  </div>
+                  {r.hint && <div className="text-[10px] text-muted-foreground">{r.hint}</div>}
+                </div>
+                <div
+                  className={cn(
+                    "shrink-0 font-mono text-sm tabular-nums",
+                    r.tone === "profit" && "text-profit",
+                    r.tone === "loss" && "text-loss",
+                  )}
+                >
+                  {r.value}
+                </div>
+              </>
+            );
+            return r.href ? (
+              <Link
+                key={i}
+                href={r.href}
+                className="group/row flex items-baseline justify-between gap-4 py-2 transition-colors hover:bg-card-hover/60"
+                onClick={() => onOpenChange(false)}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={i} className="flex items-baseline justify-between gap-4 py-2">{body}</div>
+            );
+          })}
+        </div>
+        {detail.note && <p className="text-[0.6875rem] text-muted-foreground">{detail.note}</p>}
+        {detail.footerHref && (
+          <Link
+            href={detail.footerHref}
+            onClick={() => onOpenChange(false)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            {detail.footerLabel ?? "Show me the trades"} →
+          </Link>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

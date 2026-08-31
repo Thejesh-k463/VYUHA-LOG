@@ -28,11 +28,23 @@ export interface SessionReview {
   findings: string[];
 }
 
-export function reviewSession(plan: SessionPlanInput, trades: SessionTradeInput[]): SessionReview {
+/**
+ * Compare a plan with the recorded day. PURE — the optional `aliasMap`
+ * (alias → canonical ticker, both upper) is passed IN by the query layer so
+ * this module stays DB-free. Both sides of the watchlist comparison resolve
+ * through it: a position stored under a broker's full name must not be
+ * convicted as "off-watchlist" when its canonical ticker was planned (that
+ * exact false conviction shipped before the map existed).
+ */
+export function reviewSession(plan: SessionPlanInput, trades: SessionTradeInput[], aliasMap?: Map<string, string>): SessionReview {
+  const canon = (s: string): string => {
+    const up = s.trim().toUpperCase();
+    return aliasMap?.get(up) ?? up;
+  };
   const actual = trades.filter((t) => t.entryDate === plan.sessionDate);
-  const allowedSymbols = new Set(plan.plannedSymbols.map((s) => s.trim().toUpperCase()).filter(Boolean));
+  const allowedSymbols = new Set(plan.plannedSymbols.map(canon).filter(Boolean));
   const allowedPlaybooks = new Set(plan.plannedPlaybookIds);
-  const offPlanSymbols = [...new Set(actual.filter((t) => allowedSymbols.size > 0 && !allowedSymbols.has(t.symbol.toUpperCase())).map((t) => t.symbol))];
+  const offPlanSymbols = [...new Set(actual.filter((t) => allowedSymbols.size > 0 && !allowedSymbols.has(canon(t.symbol))).map((t) => t.symbol))];
   const offPlanPlaybooks = actual.filter((t) => allowedPlaybooks.size > 0 && (t.playbookId == null || !allowedPlaybooks.has(t.playbookId))).length;
   const afterCutoff = actual.filter((t) => plan.cutoffTime && t.entryTime && t.entryTime > plan.cutoffTime).length;
   const netPnl = Math.round(actual.reduce((s, t) => s + t.netPnl, 0) * 100) / 100;

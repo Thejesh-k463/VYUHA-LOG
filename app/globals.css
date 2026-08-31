@@ -771,6 +771,14 @@
 @utility animate-badge-pop {
   animation: badge-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+/* Back-button attention pulse (v3.5.0). Two soft expanding rings on mount —
+   PageHeader remounts per navigation, so this fires exactly when the button
+   gains (or keeps) somewhere to go — then the animation ends and the element's
+   static shadow (--shadow-primary-glow) reads as the steady "I can act" glow.
+   Chrome, not CTA: two iterations, then quiet. */
+@utility animate-back-pulse {
+  animation: back-pulse 1.4s ease-out 2;
+}
 
 @keyframes shimmer {
   from { background-position: 200% 0; }
@@ -792,6 +800,10 @@
   from { opacity: 0; transform: scale(0.7); }
   to { opacity: 1; transform: scale(1); }
 }
+@keyframes back-pulse {
+  from { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent); }
+  to { box-shadow: 0 0 0 7px transparent; }
+}
 @keyframes pulse-dot {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-profit) 45%, transparent); }
   50% { box-shadow: 0 0 0 4px transparent; }
@@ -802,6 +814,7 @@
   .animate-dialog-in,
   .animate-fade-up,
   .animate-badge-pop,
+  .animate-back-pulse,
   .skeleton {
     animation: none;
   }

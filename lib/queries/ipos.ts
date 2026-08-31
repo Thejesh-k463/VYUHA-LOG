@@ -16,12 +16,24 @@ import { getSelectedAccountId } from "./accounts";
  * because an allotment is not a brokered order. Only an IPO that names no
  * broker (or a broker with no rates row) falls back to the pure static
  * estimate, which the analytics module documents as exactly that.
+ *
+ * Rates are resolved AT THE EXIT DATE, not today: an exit sold before a rate
+ * change (e.g. an STT epoch boundary) must keep pricing at the epoch it
+ * actually traded in — pricing it at today's rates silently restated its
+ * realised net, which flows into capital compounding (B7). A not-yet-exited
+ * IPO passes no exit date and prices prospectively at today, which is the
+ * only honest choice for a sale that has not happened.
  */
-function chargerFor(broker: string | null, exchange: string, ratesMap: ReturnType<typeof loadRatesMap>): IpoSellCharger {
+export function chargerFor(
+  broker: string | null,
+  exchange: string,
+  exitDate: string | null,
+  ratesMap: ReturnType<typeof loadRatesMap>,
+): IpoSellCharger {
   if (!broker) return ipoSellCharges;
   let rates;
   try {
-    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange, todayIso());
+    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange, exitDate ?? todayIso());
   } catch {
     return ipoSellCharges;
   }
@@ -58,7 +70,7 @@ export function getIposComputed(): { rows: IpoComputed[]; summary: IpoSummary } 
       listingDate: r.listingDate,
       exitDate: r.exitDate,
       notes: r.notes,
-    }, chargerFor(r.broker, r.exchange, ratesMap)),
+    }, chargerFor(r.broker, r.exchange, r.exitDate, ratesMap)),
   );
   return { rows, summary: summariseIpos(rows) };
 }

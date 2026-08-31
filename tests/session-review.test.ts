@@ -67,6 +67,30 @@ describe("session review — watchlist", () => {
     expect(r.adherencePct).toBe(100);
   });
 
+  it("does not convict an alias of its own planned ticker (the v3.4 latent bug)", () => {
+    // The trade is stored under the broker's full name; the plan holds the
+    // canonical ticker. Without the alias map this scored as "traded
+    // off-watchlist" — with it, both sides resolve to the same symbol.
+    const aliasMap = new Map([["BAJAJ AUTO LIMITED", "BAJAJ-AUTO"]]);
+    const trades = [trade({ symbol: "BAJAJ AUTO LIMITED" })];
+    const withMap = reviewSession(plan({ plannedSymbols: ["BAJAJ-AUTO"] }), trades, aliasMap);
+    expect(withMap.offPlanSymbols).toEqual([]);
+    expect(withMap.adherencePct).toBe(100);
+    // And the map resolves the PLANNED side too: a plan typed as the broker
+    // name must match a trade recorded under the ticker.
+    const planned = reviewSession(plan({ plannedSymbols: ["BAJAJ AUTO LIMITED"] }), [trade({ symbol: "BAJAJ-AUTO" })], aliasMap);
+    expect(planned.offPlanSymbols).toEqual([]);
+    // Without the map the old behaviour (and the bug) is unchanged.
+    const withoutMap = reviewSession(plan({ plannedSymbols: ["BAJAJ-AUTO"] }), trades);
+    expect(withoutMap.offPlanSymbols).toEqual(["BAJAJ AUTO LIMITED"]);
+  });
+
+  it("still reports the off-plan symbol AS RECORDED, not its resolved form", () => {
+    const aliasMap = new Map([["HDFC BANK LIMITED", "HDFCBANK"]]);
+    const r = reviewSession(plan({ plannedSymbols: ["NIFTY"] }), [trade({ symbol: "HDFC BANK LIMITED" })], aliasMap);
+    expect(r.offPlanSymbols).toEqual(["HDFC BANK LIMITED"]);
+  });
+
   it("lists each off-plan symbol once even when traded repeatedly", () => {
     const r = reviewSession(plan({ plannedSymbols: ["NIFTY"] }), [
       trade({ id: 1, symbol: "BANKNIFTY" }),

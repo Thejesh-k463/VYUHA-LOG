@@ -288,10 +288,55 @@ function IpoStatement({ r }: { r: IpoComputed }) {
 }
 
 function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary }) {
+  // v3.5.0 popup rollout — drill-downs only where the summary already holds a
+  // real breakdown. Gated on count/exitedCount so an empty book never opens a
+  // popup of zeros; the ₹0 tone helper stays out of the tax row (an estimate,
+  // not a P&L). Refunded is Σ(application − invested), which is exact because
+  // each IPO's refundAmount is that same difference.
+  const tone = (v: number) => (v > 0 ? ("profit" as const) : v < 0 ? ("loss" as const) : undefined);
+  const i0 = (v: number) => inr(v, { decimals: 0 });
+  const statusDetail =
+    summary.count > 0
+      ? {
+          title: "IPO applications — where they stand",
+          rows: [
+            { label: "Applied", value: String(summary.count) },
+            { label: "Allotted", value: String(summary.allottedCount), hint: "includes listed & exited" },
+            { label: "Not allotted", value: String(summary.notAllottedCount) },
+            { label: "Listed (holding)", value: String(summary.listedCount) },
+            { label: "Exited", value: String(summary.exitedCount) },
+          ],
+        }
+      : undefined;
+  const appliedDetail =
+    summary.count > 0
+      ? {
+          title: "Applied amount — where the money went",
+          summary: "Blocked at application; released as refunds where lots weren't allotted.",
+          rows: [
+            { label: "Applied (blocked)", value: i0(summary.applicationAmount) },
+            { label: "Invested in allotments", value: i0(summary.investedAllotted) },
+            { label: "Refunded", value: i0(summary.applicationAmount - summary.investedAllotted) },
+          ],
+        }
+      : undefined;
+  const realisedDetail =
+    summary.exitedCount > 0
+      ? {
+          title: "Realised net — after charges and tax",
+          summary: `Across ${summary.exitedCount} exited IPO${summary.exitedCount === 1 ? "" : "s"}.`,
+          rows: [
+            { label: "Realised net P&L", value: i0(summary.realisedNet), tone: tone(summary.realisedNet), hint: "after sell charges" },
+            { label: "Est. tax (STCG/LTCG)", value: summary.estTax > 0 ? `− ${i0(summary.estTax)}` : "—", hint: summary.estTax > 0 ? "informational estimate" : "no taxable gain estimated" },
+            { label: "Post-tax net", value: i0(summary.postTaxNet), tone: tone(summary.postTaxNet) },
+          ],
+          note: "Tax is an FY-blind per-IPO estimate — the LTCG exemption and loss set-offs apply at filing, not here.",
+        }
+      : undefined;
   return (
     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-      <KpiCard label="IPOs" valueNum={summary.count} format="int" sub={`${summary.allottedCount} allotted · ${summary.notAllottedCount} not`} />
-      <KpiCard label="Applied amount" valueNum={summary.applicationAmount} format="inrCompact" sub="blocked at apply" />
+      <KpiCard label="IPOs" valueNum={summary.count} format="int" sub={`${summary.allottedCount} allotted · ${summary.notAllottedCount} not`} detail={statusDetail} />
+      <KpiCard label="Applied amount" valueNum={summary.applicationAmount} format="inrCompact" sub="blocked at apply" detail={appliedDetail} />
       <KpiCard label="Invested (allotted)" valueNum={summary.investedAllotted} format="inrCompact" />
       <KpiCard label="Listing gains" valueNum={summary.listingGains} format="inrCompact" valueClassName={pnl(summary.listingGains)} />
       <KpiCard
@@ -300,6 +345,7 @@ function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary
         format="inr0"
         valueClassName={pnl(summary.realisedNet)}
         sub={summary.estTax > 0 ? `est. tax ${inr(summary.estTax, { decimals: 0 })} → post-tax ${inr(summary.postTaxNet, { decimals: 0 })}` : `${summary.exitedCount} exited`}
+        detail={realisedDetail}
       />
       <KpiCard label="Unrealised" valueNum={summary.unrealised} format="inr0" valueClassName={pnl(summary.unrealised)} sub={`${summary.listedCount} holding`} />
     </section>

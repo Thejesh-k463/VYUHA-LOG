@@ -1,19 +1,35 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { KpiCard } from "@/components/kpi-card";
+import { KpiCard, type KpiDetail, type KpiDetailRow } from "@/components/kpi-card";
 import { LedgerExportButtons } from "@/components/cash/ledger-export";
 import { LedgerForm } from "@/components/cash/ledger-form";
 import { LedgerImport } from "@/components/cash/ledger-import";
 import { LedgerTable } from "@/components/cash/ledger-table";
 import { getCapitalConfigured, getLedgerGroups, getLedgerRunningRows, getOpeningByBucketPaise } from "@/lib/queries/ledger";
-import { LEDGER_PAGE_SIZE, summariseLedgerGroups, type BucketLedger } from "@/lib/analytics/ledger";
+import { LEDGER_PAGE_SIZE, LEDGER_TYPES, summariseLedgerGroups, type BucketLedger, type LedgerType } from "@/lib/analytics/ledger";
 import { formatPaise } from "@/lib/money";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 const BUCKET_LABEL: Record<string, string> = { equity: "Equity", active: "Trade F&O", "": "Unassigned" };
+
+const TYPE_LABEL: Record<LedgerType, string> = {
+  deposit: "Deposits",
+  withdrawal: "Withdrawals",
+  charge: "Charges",
+  realised_pnl: "Realised P&L",
+  mtf_interest: "MTF interest",
+  interest: "Interest",
+  dividend: "Dividends",
+  dividend_tds: "Dividend TDS",
+  margin_penalty: "Margin penalties",
+  adjustment: "Adjustments",
+};
+
+const flowTone = (v: number) => (v > 0 ? ("profit" as const) : v < 0 ? ("loss" as const) : undefined);
+const fp0 = (v: number) => formatPaise(v, { decimals: 0 });
 
 function BucketCard({ b, configured }: { b: BucketLedger; configured: boolean }) {
   const grew = b.availablePaise >= b.openingPaise;
@@ -63,6 +79,63 @@ export default function CashPage() {
   const s = summariseLedgerGroups(getLedgerGroups(), opening);
   const display = getLedgerRunningRows({ limit: LEDGER_PAGE_SIZE }); // latest first
 
+  // KPI drill-downs (v3.5.0 popup rollout). Every row is a figure the summary
+  // already holds — nothing is recomputed, nothing invented. Each detail is
+  // gated: an empty ledger (or unset capital where capital IS the answer)
+  // would make a popup that restates the card, and a dead-end popup is worse
+  // than none.
+  const detailBuckets = s.buckets.filter((b) => b.bucket === "equity" || b.bucket === "active" || b.count > 0);
+  const availableDetail: KpiDetail | undefined =
+    configured.any || s.totalCount > 0
+      ? {
+          title: "Total available — how it's built",
+          summary: configured.any
+            ? "Opening capital plus every ledger entry, summed in integer paise."
+            : "Net ledger flows only — no opening capital is set, so none is invented.",
+          rows: [
+            {
+              label: "Opening capital",
+              value: configured.any ? fp0(s.totalOpeningPaise) : "—",
+              hint: configured.any ? "from Settings" : "not set — Settings → Capital & Go-Live",
+            },
+            { label: "Net fund flows", value: fp0(s.totalFlowsPaise), tone: flowTone(s.totalFlowsPaise), hint: "Σ all ledger entries" },
+            ...detailBuckets.map((b): KpiDetailRow => {
+              const bucketConfigured = b.bucket === "equity" ? configured.equity : b.bucket === "active" ? configured.active : false;
+              return {
+                label: BUCKET_LABEL[b.bucket] ?? b.bucket,
+                value: fp0(b.availablePaise),
+                hint: bucketConfigured ? `opening ${fp0(b.openingPaise)} + flows ${fp0(b.flowsPaise)}` : "net flows only — no opening set",
+              };
+            }),
+          ],
+        }
+      : undefined;
+  const flowsDetail: KpiDetail | undefined =
+    s.totalCount > 0
+      ? {
+          title: "Net fund flows — by entry type",
+          summary: "Every ledger entry, grouped by what it was.",
+          rows: LEDGER_TYPES.filter((t) => s.byType[t] !== 0).map((t): KpiDetailRow => ({
+            label: TYPE_LABEL[t],
+            value: fp0(s.byType[t]),
+            tone: flowTone(s.byType[t]),
+          })),
+          note: "Signed as recorded: withdrawals, charges and losses are negative. Types with no entries are omitted.",
+        }
+      : undefined;
+  const externalDetail: KpiDetail | undefined =
+    s.byType.deposit !== 0 || s.byType.withdrawal !== 0
+      ? {
+          title: "External cash — in vs out",
+          summary: "Money you moved across the broker boundary, ignoring everything the book earned or paid internally.",
+          rows: [
+            { label: "Deposits", value: fp0(s.byType.deposit), tone: flowTone(s.byType.deposit) },
+            { label: "Withdrawals", value: fp0(s.byType.withdrawal), tone: flowTone(s.byType.withdrawal) },
+            { label: "Net external cash", value: fp0(s.byType.deposit + s.byType.withdrawal), tone: flowTone(s.byType.deposit + s.byType.withdrawal) },
+          ],
+        }
+      : undefined;
+
   return (
     <>
       <PageHeader
@@ -89,10 +162,10 @@ export default function CashPage() {
           </Card>
         )}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <KpiCard label="Total available" value={formatPaise(s.totalAvailablePaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub={configured.any ? "opening + ledger" : "ledger flows only — no opening set"} />
+          <KpiCard label="Total available" value={formatPaise(s.totalAvailablePaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub={configured.any ? "opening + ledger" : "ledger flows only — no opening set"} detail={availableDetail} />
           <KpiCard label="Opening capital" value={configured.any ? formatPaise(s.totalOpeningPaise, { decimals: 0 }) : "—"} sub={configured.any ? "from settings" : "set capital in Settings"} />
-          <KpiCard label="Net fund flows" value={formatPaise(s.totalFlowsPaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub="Σ all entries" />
-          <KpiCard label="Deposits − withdrawals" value={formatPaise(s.byType.deposit + s.byType.withdrawal, { decimals: 0 })} sub="external cash" />
+          <KpiCard label="Net fund flows" value={formatPaise(s.totalFlowsPaise, { decimals: 0 })} valueClassName={s.totalFlowsPaise >= 0 ? "text-profit" : "text-loss"} sub="Σ all entries" detail={flowsDetail} />
+          <KpiCard label="Deposits − withdrawals" value={formatPaise(s.byType.deposit + s.byType.withdrawal, { decimals: 0 })} sub="external cash" detail={externalDetail} />
         </section>
 
         <div className="grid gap-3 md:grid-cols-2">

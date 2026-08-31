@@ -165,5 +165,56 @@ describe("Override persistence", () => {
     const reimported = db.select().from(trades).all().find((t) => t.dedupHash === target.dedupHash)!;
     expect(reimported.segment).toBe("eq_mtf");
     expect(reimported.bucket).toBe("equity");
+
+    // B5 — a derived fact must not wear a reported fact's clothes: the Groww
+    // file states no per-trade MTF interest, so the row that just became
+    // eq_mtf must say its interest figure is an engine estimate.
+    expect(reimported.importNotes).toContain("estimated from your configured rates");
+  });
+});
+
+describe("applyOverride — MTF accrual follows the segment (B4)", () => {
+  const sum = (t: { brokerage: number; sttCtt: number; exchangeTxn: number; sebi: number; stampDuty: number; ipft: number; gst: number; dpCharges: number; mtfInterest: number; pledgeCharges: number }) =>
+    t.brokerage + t.sttCtt + t.exchangeTxn + t.sebi + t.stampDuty + t.ipft + t.gst + t.dpCharges + t.mtfInterest + t.pledgeCharges;
+
+  it("eq_delivery → eq_mtf recomputes interest, funded amount, total and net coherently", async () => {
+    const { db } = dbMod;
+    const { trades } = await import("@/lib/db/schema");
+    const res = commit.commitManualTrade(
+      {
+        broker: "zerodha", tradingsymbol: "RELIANCE", isin: null,
+        buyQty: 100, avgBuyPrice: 2500, buyValue: 250000,
+        sellQty: 100, avgSellPrice: 2600, sellValue: 260000,
+        closingPrice: null, grossPnl: 10000, unrealisedPnl: 0,
+        buyDate: "2026-01-05", sellDate: "2026-02-04", // 30 held days
+        productHint: null, exchangeHint: null, sourceFile: "manual",
+      },
+      { forcedSegment: "eq_delivery" },
+    );
+    expect(res.id).toBeTruthy();
+
+    expect(commit.applyOverride(res.id!, { segment: "eq_mtf" })).toBe(true);
+    const mtf = db.select().from(trades).where(eq(trades.id, res.id!)).get()!;
+    expect(mtf.segment).toBe("eq_mtf");
+    // Interest accrued for the 30 closed days on an estimated funded principal.
+    expect(mtf.mtfFundedAmount).toBeGreaterThan(0);
+    expect(mtf.mtfInterest).toBeGreaterThan(0);
+    // The stored breakdown sums to the stored total, and net follows.
+    expect(sum(mtf)).toBeCloseTo(mtf.chargesTotal, 1);
+    expect(mtf.netPnl).toBeCloseTo(mtf.grossPnl - mtf.chargesTotal, 2);
+  });
+
+  it("eq_mtf → eq_delivery zeroes interest and pledge so the breakdown still sums", async () => {
+    const { db } = dbMod;
+    const { trades } = await import("@/lib/db/schema");
+    const row = db.select().from(trades).all().find((t) => t.tradingsymbol === "RELIANCE" && t.segment === "eq_mtf")!;
+    expect(commit.applyOverride(row.id, { segment: "eq_delivery" })).toBe(true);
+    const back = db.select().from(trades).where(eq(trades.id, row.id)).get()!;
+    expect(back.segment).toBe("eq_delivery");
+    expect(back.mtfInterest).toBe(0);
+    expect(back.pledgeCharges).toBe(0);
+    expect(back.mtfFundedAmount).toBeNull();
+    expect(sum(back)).toBeCloseTo(back.chargesTotal, 1);
+    expect(back.netPnl).toBeCloseTo(back.grossPnl - back.chargesTotal, 2);
   });
 });
