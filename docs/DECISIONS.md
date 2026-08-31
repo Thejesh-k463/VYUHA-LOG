@@ -6,6 +6,40 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-31 — Empty-book sweep: what a new buyer's first launch actually renders
+
+**Context:** the owner wiped app-data during an install, which briefly made a real
+zero-trade database available — the exact state every new buyer starts in, and a state that
+disappears the moment anything is imported. v3.3.0 added three surfaces that had been verified
+WITH data and never rendered empty.
+
+**Method (repeatable — `vyuha-dev-empty-db` in `.claude/launch.json`):**
+`VYUHA_DB_PATH=data/empty-check.sqlite npm run db:migrate && npm run seed`, which yields the
+representative first-run state — **162 charge_config rows, 1 account, seeded settings, 0
+trades** — rather than a bare schema. Seeding matters: an unseeded DB is a HARSHER test than
+reality (no rates at all) and would report failures a real user can never hit. The repo dev DB
+was left untouched (252 trades, verified after).
+
+**Result: 44/44 page routes HTTP 200, zero server errors, zero occurrences of
+`NaN` / `Infinity` / `[object Object]` / `undefined%`.**
+
+**What the three new surfaces do on an empty book — all correct:**
+- `/reports/monthly` "Month detail" and `/reports/tax` "Realised by head, by month" **hide
+  entirely** rather than render a zero-filled table.
+- `/reports/harvest` keeps the **set-off rule card** (the statute is worth reading before you
+  have trades) with `finding: null` and no fabricated numbers, and says "No STT recorded on
+  closed trades yet" instead of ₹0 with no explanation. "Holding clock" hides — no open lots.
+- Harvest KPIs read ₹0, which is **honest rather than fabricated**: nothing was realised, and
+  0 is the true realised figure. Invariant 6 forbids inventing a DENOMINATOR, not reporting a
+  true zero.
+
+**Incidental confirmations:** the 7-day Pro trial arms correctly on a fresh install
+("Pro trial — 7 days left"), and the sidebar footer reads `v3.3`.
+
+**Kept:** `data/empty-check.sqlite` is gitignored, so the `vyuha-dev-empty-db` launch config
+needs the two commands above re-run on a fresh clone. That is deliberate — a committed
+fixture database would rot silently against future migrations.
+
 ## 2026-08-31 — The governing statute changed, and turnover had been wrong for three years (v3.3.0)
 
 **Context:** four independent research streams (a competitor workspace teardown, an internal
