@@ -26,7 +26,45 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-31 (v3.3.0 LIVE; v3.4.0 cut)
+## 2. Current state — verified 2026-09-01 (v3.5.0 BUILT this session; v3.4.0 draft awaits owner publish)
+
+**2026-09-01 — v3.5.0: the demo-hardening + Vyuha Intelligence release.** Owner-approved plan
+in `docs/V350_BUILD_PLAN.md`; five DECISIONS entries dated 2026-09-01 carry the measured
+numbers. Suite grew 2,288 → **2,602 tests / 171 files**; every stage gate was a full
+`npm run verify` (typecheck+lint+test+build), all green. What shipped, verified:
+
+- **Zerodha Console tax P&L imports natively** (was: fell to the column mapper — detection
+  read only sheet 0). Reconciled vs Zerodha's own summary on two real FYs: profit Δ=0 both,
+  charges Δ=₹0.00 / −₹187.31 (the file's own exits-only gap, test-pinned). Broker charges
+  stored via `reportedCharges`; NSE compact contract grammar in `classify.ts` (693 rows that
+  used to classify as EQUITY now index/stock options). Fixtures:
+  `tests/fixtures/redacted/zerodha-taxpnl-fy2425/2526.xlsx` + real files in `private/`.
+- **Vyuha Intelligence**: deterministic engine (`lib/intelligence/`), Insight contract
+  (descriptive-only regex, sample floors, coverage-with-claim) enforced by
+  `tests/intelligence-contract.test.ts` over both registries (cockpit 8 rules incl.
+  revenge-reentry-minutes + sizing-after-loss with Wilson CIs; lens-group 6 rules).
+- **Arjun's Eye = five-tab Trade Craft cockpit** (Cockpit / Stop-losses / Trailing /
+  Winners-vs-losers / Exits) on a new 31-col ARJUN_FIELDS projection; lens drill-down cards
+  are insight popups (LensEdge widened Pro-side, per-group charge heads server-summed).
+- **Turnover on BOTH bases** (owner decision) with an audit read on each — measured 6.5–8.7×
+  apart on the real book; stale 8th-ed banner gone; audit badge resolves per-FY via statute.
+- **Bucket A/B/C audit fixes all landed** incl. the systemic capital purge (9 files;
+  `tests/capital-fallback-guard.test.ts` bites), staged-short heuristic (migration → v3.6),
+  generic-mapper scrip-day aggregation, import guards (422s), harvest→net+grandfathering,
+  s.72(1) b/f set-off, charge-symmetric scaling, applyOverride MTF resync, IPO exit-date
+  rate epoch, exitTrigger writers (column was 100% null — writers now exist).
+- **Tax pair enhanced**: harvest what-if simulator (nothing pre-selected), LTCG headroom,
+  s.425(4) relief inputs, presumptive single-instalment, persisted calc inputs, loss ledger
+  with expiry FYs (`lib/analytics/loss-ledger.ts`), harvest→instalment link.
+- **Session plan**: watchlist import (txt/csv/xlsx/pdf-confirm), alias/ISIN canonicalisation
+  (fixed the off-watchlist false positive), per-symbol own-book stats, review loop closed.
+- **Metric education**: 33-entry `lib/domain/metric-help.ts` + two-way drift test; both
+  max-drawdown conventions named in-product.
+- Demo runbook: `docs/owner/DEMO_RUNBOOK.md`. Deferred to v3.6 (recorded): direction column
+  migration + backfill; dated challan ledger; Ollama narration adapter; futures fixture
+  (no provided file has a futures row — path still unexercised).
+
+## 2b. Previous state — verified 2026-08-31 (v3.3.0 LIVE; v3.4.0 cut)
 
 **2026-08-31 — v3.3.0 IS PUBLISHED AND INSTALLED** on the owner's machine and one other user's,
 both clean fresh installs. `releases/latest` moved to v3.3.0; `revocations` still
