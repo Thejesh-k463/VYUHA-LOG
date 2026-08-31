@@ -47,6 +47,26 @@ describe("computeSettlement — stock future", () => {
     expect(o.sttJump).toBe(375);
   });
 
+  it("physicalSttTotal sums the STT settlement will LEVY — never futures deltas mixed with options absolutes", () => {
+    // One future (physicalStt 750, sttJump 375) + one ITM call (physicalStt
+    // only — an option's exit STT needs its current premium, unknowable
+    // offline). The old total summed 375 + option-absolute under a "extra STT"
+    // label; the summary figure is now Σ physicalStt, labelled as such, and
+    // per-row sttJump keeps the honest futures-only delta.
+    const s2 = computeSettlement(
+      [
+        inputs[0],
+        { ...base, id: 2, symbol: "RELIANCE", tradingsymbol: "OPT RELIANCE 25 Jun 2026 2900 CE", segment: "stock_option", optionType: "CE", strike: 2900, expiry: "2026-06-25", netQty: 250, refPrice: 3000 },
+      ],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    );
+    const opt = s2.obligations.find((o2) => o2.kind === "stock_option")!;
+    expect(opt.sttJump).toBeNull(); // no invented option delta
+    expect(opt.physicalStt).not.toBeNull();
+    expect(s2.physicalSttTotal).toBe(750 + opt.physicalStt!);
+  });
+
   it("short future gives delivery", () => {
     const sh = computeSettlement(
       [{ ...inputs[0], side: "short" }],

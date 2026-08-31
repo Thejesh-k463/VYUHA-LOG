@@ -60,8 +60,8 @@ export default function EquityTrackerPage() {
         return p; // no rate card for this broker/exchange combo — leave null
       }
     });
-  const closed = trades
-    .filter((t) => !t.isOpen && t.bucket === "equity")
+  const closedAll = trades.filter((t) => !t.isOpen && t.bucket === "equity");
+  const closed = closedAll
     .slice(0, 60)
     .map((t) => ({ symbol: t.symbol, segment: t.segment, broker: t.broker, netPnl: t.netPnl, grossPnl: t.grossPnl, sellDate: t.sellDate, rMultiple: t.rMultiple }));
 
@@ -69,7 +69,10 @@ export default function EquityTrackerPage() {
     <>
       <PageHeader title="Position Tracker — Equity" description="Delivery + MTF holdings, MTM, MTF interest & break-even." />
       <div className="space-y-5 p-6">
-        <TrackerClient variant="equity" positions={positions} closed={closed} bucketCapital={settings?.equityCapital ?? 1300000} />
+        {/* 0 = capital not configured; the client renders "—" + a Settings
+            nudge. The old ?? 1300000 fabricated every utilisation figure on a
+            fresh install (invariant 6). */}
+        <TrackerClient variant="equity" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={settings?.equityCapital ?? 0} />
       </div>
     </>
   );

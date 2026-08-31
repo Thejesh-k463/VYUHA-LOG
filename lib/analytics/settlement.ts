@@ -113,7 +113,14 @@ export interface SettlementSummary {
   certainDeliveryCount: number; // positions that will settle (futures + ITM options)
   notionalAtRisk: number; // Σ notional of settling / likely-to-settle positions
   fundsNeeded: number; // Σ cash to take delivery (long settlements)
-  sttJumpTotal: number; // Σ sttJump where computable
+  /** Σ physicalStt — the STT physical settlement WILL levy on positions that
+   *  settle. This is deliberately NOT a "extra vs squaring off" delta: the
+   *  delta is only computable for futures (exit STT rides notional). For an
+   *  option, exiting means selling the option and paying premium STT on its
+   *  CURRENT PREMIUM, which an offline journal does not know — the old total
+   *  summed futures deltas with options ABSOLUTES under a delta label and
+   *  overstated "extra" on any book with ITM options (v3.5.0 audit C3). */
+  physicalSttTotal: number;
   nearestExpiry: string | null;
   obligations: SettlementObligation[]; // physical first, then by dte asc
 }
@@ -286,7 +293,7 @@ export function computeSettlement(
         .filter((o) => o.deliveryAction === "Take delivery (buy)")
         .reduce((s, o) => s + o.notional, 0),
     ),
-    sttJumpTotal: rupee(settling.reduce((s, o) => s + (o.sttJump ?? o.physicalStt ?? 0), 0)),
+    physicalSttTotal: rupee(settling.reduce((s, o) => s + (o.physicalStt ?? 0), 0)),
     nearestExpiry: expiries[0] ?? null,
     obligations,
   };

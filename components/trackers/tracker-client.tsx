@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,11 +23,18 @@ export function TrackerClient({
   variant,
   positions,
   closed,
+  closedTotal,
   bucketCapital,
 }: {
   variant: "equity" | "active";
   positions: OpenPosition[];
+  /** The most recent slice the server ships — NOT the whole history. */
   closed: ClosedLite[];
+  /** Every closed trade in the bucket, so the slice never masquerades as the count. */
+  closedTotal: number;
+  /** 0 means NOT CONFIGURED — capital-relative figures render "—", never a
+   *  stand-in number (the ₹13L/₹4L fallbacks fabricated every utilisation %
+   *  on a fresh install; invariant 6). */
   bucketCapital: number;
 }) {
   const [seg, setSeg] = React.useState("");
@@ -40,6 +48,7 @@ export function TrackerClient({
   }, [positions, seg, funding]);
 
   const deployed = positions.reduce((s, p) => s + p.invested, 0);
+  const capitalKnown = bucketCapital > 0;
   const available = bucketCapital - deployed;
   const unrealised = positions.reduce((s, p) => s + p.unrealised, 0);
   const mtfFunded = positions.reduce((s, p) => s + p.fundedAmount, 0);
@@ -148,14 +157,28 @@ export function TrackerClient({
       <Card>
         <CardContent className="p-4">
           <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Bucket capital · {inr(bucketCapital, { decimals: 0 })}</span>
+            <span className="text-muted-foreground">
+              Bucket capital ·{" "}
+              {capitalKnown ? (
+                inr(bucketCapital, { decimals: 0 })
+              ) : (
+                <>
+                  — <Link href="/settings" className="underline decoration-dotted underline-offset-2">set it in Settings</Link>
+                </>
+              )}
+            </span>
             <span className="tabular-nums">
-              Deployed <span className="font-medium">{inrCompact(deployed)}</span> · Available{" "}
-              <span className={available >= 0 ? "text-profit" : "text-loss"}>{inrCompact(available)}</span>
+              Deployed <span className="font-medium">{inrCompact(deployed)}</span>
+              {capitalKnown && (
+                <>
+                  {" "}· Available{" "}
+                  <span className={available >= 0 ? "text-profit" : "text-loss"}>{inrCompact(available)}</span>
+                </>
+              )}
             </span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-card-hover">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, bucketCapital ? (deployed / bucketCapital) * 100 : 0)}%` }} />
+            <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, capitalKnown ? (deployed / bucketCapital) * 100 : 0)}%` }} />
           </div>
         </CardContent>
       </Card>
@@ -183,14 +206,14 @@ export function TrackerClient({
           label="Invested"
           valueNum={deployed}
           format="inrCompact"
-          sub={`${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(0) : 0}% of bucket`}
+          sub={capitalKnown ? `${((deployed / bucketCapital) * 100).toFixed(0)}% of bucket` : "capital not set"}
           detail={{
             title: "Capital deployed in this bucket",
             summary: "How much of the bucket is working, and how much is still dry powder.",
             rows: [
-              { label: "Bucket capital", value: inr(bucketCapital, { decimals: 0 }) },
-              { label: "Deployed", value: inr(deployed, { decimals: 0 }), hint: `${bucketCapital ? ((deployed / bucketCapital) * 100).toFixed(1) : 0}% utilised` },
-              { label: "Available", value: inr(available, { decimals: 0 }), tone: available >= 0 ? "profit" : "loss" },
+              { label: "Bucket capital", value: capitalKnown ? inr(bucketCapital, { decimals: 0 }) : "— (set in Settings)" },
+              { label: "Deployed", value: inr(deployed, { decimals: 0 }), hint: capitalKnown ? `${((deployed / bucketCapital) * 100).toFixed(1)}% utilised` : undefined },
+              ...(capitalKnown ? [{ label: "Available", value: inr(available, { decimals: 0 }), tone: (available >= 0 ? "profit" : "loss") as "profit" | "loss" }] : []),
               { label: "Current value", value: inr(deployed + unrealised, { decimals: 0 }) },
               ...(variant === "equity" ? [{ label: "Own capital in MTF", value: inr(positions.reduce((s, p) => s + p.ownCapital, 0), { decimals: 0 }), hint: "your money; the rest is broker-funded" }] : []),
             ],
@@ -289,9 +312,21 @@ export function TrackerClient({
         <DataTable columns={columns} data={data} maxHeight="460px" virtual emptyMessage="No open positions. Import or add trades, then set MTM prices." />
       </Card>
 
-      {/* Recent closed */}
+      {/* Recent closed — the server ships a recent SLICE; the title carries
+          the real total so the window never reads as the whole history. */}
       <Card>
-        <CardHeader><CardTitle>Recent closed ({closed.length})</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>
+            Recent closed{" "}
+            {closedTotal > closed.length ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                (most recent {closed.length} of {closedTotal})
+              </span>
+            ) : (
+              <span className="text-xs font-normal text-muted-foreground">({closed.length})</span>
+            )}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           <div className="max-h-[320px] overflow-auto rounded-md border border-border">
             <table className="w-full text-xs">

@@ -721,5 +721,15 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     });
   }
   warnings.push("Zerodha Console P&L is aggregated; segment/MTF may need re-tagging.");
+  // The Console P&L states no exit dates at all (and often no dates, full
+  // stop). Rows land with "—" in every date column, which reads as a failed
+  // import unless the import screen says so up front — inventing a date to
+  // make the table look complete is the one thing worse than the dashes.
+  const undated = trades.filter((t) => !t.buyDate && !t.sellDate).length;
+  if (undated > 0) {
+    warnings.push(
+      `${undated} row${undated === 1 ? "" : "s"} carry no dates because this report states none — they will show "—" for dates and sit outside FY, holding-period and time-of-day analytics rather than being guessed. The tradebook or tax P&L export carries real dates if you need them.`,
+    );
+  }
   return { sourceId: "zerodha", broker: "zerodha", format: "console", trades, warnings };
 }

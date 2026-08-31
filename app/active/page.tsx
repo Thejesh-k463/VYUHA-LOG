@@ -16,8 +16,8 @@ export default function ActiveTrackerPage() {
   const settings = getSettings();
 
   const positions = deriveOpenPositions(trades, mtm, today).filter((p) => p.bucket === "active");
-  const closed = trades
-    .filter((t) => !t.isOpen && t.bucket === "active")
+  const closedAll = trades.filter((t) => !t.isOpen && t.bucket === "active");
+  const closed = closedAll
     .slice(0, 60)
     .map((t) => ({ symbol: t.symbol, segment: t.segment, broker: t.broker, netPnl: t.netPnl, grossPnl: t.grossPnl, sellDate: t.sellDate, rMultiple: t.rMultiple }));
 
@@ -25,7 +25,10 @@ export default function ActiveTrackerPage() {
     <>
       <PageHeader title="Position Tracker — Trade F&O" description="Index/stock options, intraday equity, commodities." />
       <div className="space-y-5 p-6">
-        <TrackerClient variant="active" positions={positions} closed={closed} bucketCapital={settings?.activeCapital ?? 400000} />
+        {/* 0 = capital not configured; the client renders "—" + a Settings
+            nudge. The old ?? 400000 fabricated every utilisation figure on a
+            fresh install (invariant 6). */}
+        <TrackerClient variant="active" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={settings?.activeCapital ?? 0} />
       </div>
     </>
   );

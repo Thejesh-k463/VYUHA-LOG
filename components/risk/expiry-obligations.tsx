@@ -78,10 +78,15 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
               />
               <Stat label="Notional at risk" value={inrCompact(summary.notionalAtRisk)} />
               <Stat label="Funds to take delivery" value={inrCompact(summary.fundsNeeded)} />
+              {/* Labelled as what the number IS — the STT settlement will
+                  levy. "Extra vs squaring off" is only computable for
+                  futures; an option's exit STT needs its current premium,
+                  which an offline journal does not have. Per-row sttJump
+                  still shows the honest delta where it exists. */}
               <Stat
-                label="Extra STT if held"
-                value={inrCompact(summary.sttJumpTotal)}
-                tone={summary.sttJumpTotal > 0 ? "text-loss" : undefined}
+                label="STT on physical settlement"
+                value={inrCompact(summary.physicalSttTotal)}
+                tone={summary.physicalSttTotal > 0 ? "text-loss" : undefined}
               />
             </div>
 
