@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { AdvanceTaxCalc } from "@/components/reports/advance-tax-calc";
 import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
+import { classifyGain } from "@/lib/analytics/capital-gains";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
 import { ProGate } from "@/components/system/pro-gate";
@@ -50,12 +51,23 @@ export default function AdvanceTaxPage() {
       return { id: t.id, symbol: t.symbol, qty, entry: t.avgBuyPrice, mtm: price, term, unrealised: (price - t.avgBuyPrice) * qty };
     });
 
+  // classifyGain keeps this loop identical to /reports/harvest — including
+  // the 31-Jan-2018 grandfathering path — so the two pages state one figure.
   let realisedStcg = 0;
   let realisedLtcg = 0;
   for (const t of trades) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
-    if (daysHeld(t.buyDate, t.sellDate) >= 365) realisedLtcg += t.netPnl;
-    else realisedStcg += t.netPnl;
+    const g = classifyGain({
+      segment: t.segment,
+      buyDate: t.buyDate,
+      sellDate: t.sellDate,
+      buyValue: t.buyValue,
+      sellValue: t.sellValue,
+      netPnl: t.netPnl,
+      fmv31Jan2018: t.fmv31Jan2018,
+    });
+    if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
+    else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;
   }
 
   const harvest = computeHarvest(lots, realisedStcg, realisedLtcg, today, fyEnd);

@@ -7,6 +7,8 @@ import {
   type Insight,
   type InsightRule,
 } from "@/lib/intelligence/insight";
+import { COCKPIT_RULES, CONTRACT_FIXTURES as COCKPIT_FIXTURES } from "@/lib/intelligence/rules/cockpit";
+import { GROUP_RULES, CONTRACT_FIXTURES as GROUP_FIXTURES } from "@/lib/intelligence/rules/group";
 
 /**
  * THE INSIGHT CONTRACT — every Vyuha Intelligence rule registry added to
@@ -26,8 +28,12 @@ type AnyRegistry = {
   fixtures: unknown[];
 };
 
-// Registries self-describe here as they are built (S3 of the v3.5.0 plan).
-const REGISTRIES: AnyRegistry[] = [];
+// Every rule registry in the app registers here. A registry absent from this
+// list is NOT protected by the contract — add it with fixtures that fire it.
+const REGISTRIES: AnyRegistry[] = [
+  { name: "cockpit (Arjun's Eye)", rules: COCKPIT_RULES as unknown as InsightRule<unknown>[], fixtures: COCKPIT_FIXTURES },
+  { name: "lens-group rules", rules: GROUP_RULES as unknown as InsightRule<unknown>[], fixtures: GROUP_FIXTURES },
+];
 
 describe("insight primitives", () => {
   const mkRule = (id: string, out: Insight | null): InsightRule<null> => ({
@@ -88,11 +94,8 @@ describe("insight primitives", () => {
 });
 
 describe("every registered rule registry honours the contract", () => {
-  it("has at least the primitives suite until registries land (S3 wires them here)", () => {
-    // Placeholder assertion so an EMPTY registry list is a visible state, not
-    // a silently green test. S3 replaces this expectation when it registers
-    // the first registry.
-    expect(REGISTRIES.length).toBeGreaterThanOrEqual(0);
+  it("both shipped registries are registered — an unregistered registry is unprotected", () => {
+    expect(REGISTRIES.map((r) => r.name).sort()).toEqual(["cockpit (Arjun's Eye)", "lens-group rules"]);
   });
 
   for (const reg of REGISTRIES) {

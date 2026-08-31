@@ -5,6 +5,7 @@ import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { daysBetween, fyWindowFor, type OpenLot } from "@/lib/analytics/harvest";
+import { classifyGain } from "@/lib/analytics/capital-gains";
 import {
   sttSplit,
   ltcgRunway,
@@ -52,22 +53,24 @@ export default function HarvestPage() {
   // Realised capital gains booked this FY (closed equity, by holding period).
   // NET (post-charge) P&L — the basis /reports/tax states and taxByFy/
   // classifyGain use; gross here once showed the same FY two different
-  // realised-gain figures across the two tax surfaces.
-  //
-  // TODO(grandfathering): /reports/tax runs pre-2018 LTCG lots through
-  // classifyGain (lib/analytics/capital-gains.ts), which raises the cost basis
-  // to the capped 31-Jan-2018 FMV. HARVEST_FIELDS carries none of the three
-  // inputs that computation needs (fmv31Jan2018, buyValue, sellValue), so this
-  // sum deliberately stays on plain netPnl — the figure below can differ from
-  // /reports/tax on a pre-2018 lot until those columns are added to the
-  // projection (columns only, never a new WHERE; lib/queries/trades.ts is
-  // owned elsewhere this round — flagged to the integrator instead).
+  // realised-gain figures across the two tax surfaces. classifyGain also
+  // applies the 31-Jan-2018 grandfathering (capped-FMV cost basis), so a
+  // pre-2018 lot reads the same on both pages.
   let realisedStcg = 0;
   let realisedLtcg = 0;
   for (const t of trades) {
     if (t.isOpen || !EQUITY_SEGMENTS.has(t.segment) || !t.sellDate || t.sellDate < fyStart) continue;
-    if (daysHeld(t.buyDate, t.sellDate) >= 365) realisedLtcg += t.netPnl;
-    else realisedStcg += t.netPnl;
+    const g = classifyGain({
+      segment: t.segment,
+      buyDate: t.buyDate,
+      sellDate: t.sellDate,
+      buyValue: t.buyValue,
+      sellValue: t.sellValue,
+      netPnl: t.netPnl,
+      fmv31Jan2018: t.fmv31Jan2018,
+    });
+    if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
+    else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;
   }
 
   // ── Tax levers (v3.3.0) ────────────────────────────────────────────────

@@ -2009,4 +2009,39 @@ Perf sweep at 25k trades (data/perf.sqlite, readonly). What was measured:
 the full-scan tie order (re-measure, don't assume), or the ORDER BY gains a
 unique tiebreaker column (then SQL filters become safe everywhere).
 
+## 2026-09-01 — Zerodha's richest export fell to the column mapper because detection read only sheet 0; the new tradewise parser reconciles against Zerodha's own totals exactly
+
+**Context:** Two real Console tax P&L workbooks (taxpnl-*.xlsx, FY24-25 632 F&O exit rows / FY25-26 59) provided for the v3.5.0 live-demo build.
+**Measured / found:** The trade table lives on sheet 0, the `- Z` charge-head fingerprint on sheet 1; `toMatrix` read `SheetNames[0]` only, so `detectZerodha` scored 0 and the file fell to the generic mapper — proven with the real registry, not reasoned from source. The preamble's "View Zerodha's guide…" line is an in-content broker name. Parsed output vs the workbook's own F&O summary: realized profit Δ=0 on both years; charges Δ=₹0.00 (FY25-26) and −₹187.31 (FY24-25 — the FILE's own gap, entry-side charges of positions open at FY end; pinned in tests so a change is investigated, not absorbed). Zerodha's per-trade `Turnover` ≡ |Profit| on all 693 rows. The compact NSE symbols (NIFTY2540323750CE) classified as EQUITY before the classifier learned the grammar — every row would have priced at equity rates.
+**Decision:** Detection scans every sheet; the tradewise shape claims only once the workbook names the broker or shows the `- Z` heads; rows group per symbol + entry day + exit day (the tradebook's scrip-day unit, so counts match across import routes); the broker's stated charges ride `reportedCharges` as the stored truth; monthly compact symbols get `expiry: null` (the symbol states no day, and the exchange's expiry weekday rules moved twice in 2025 — a computed "last Thursday" is a guess).
+**Why not the obvious thing:** one row = one trade (inflates counts ~3×: Zerodha splits one order into a row per execution — six 75-lot rows share one entry AND exit second); trusting the engine's computed charges over the file's (the broker cannot be out-argued about money it actually levied).
+**Invalidated if:** Zerodha changes the taxpnl layout (re-fingerprint against a fresh export), or a populated equity/currency section shows different column semantics.
+
+## 2026-09-01 — Turnover is shown on BOTH bases; on the same real book they differ 6.5–8.7× and can straddle the audit threshold (owner decision)
+
+**Context:** Vyuha implements ICAI GN 11th-ed. 5.11(b) (differences + option premium); Zerodha's tax report prints differences only.
+**Measured / found:** FY24-25: Zerodha tradewise ₹13.94L vs Vyuha ICAI ₹1.21Cr (8.7×); FY25-26: ₹1.64L vs ₹10.6L (6.5×). Zerodha's own two sheets also disagree with each other (26% / 8.8%). At those magnitudes the two bases can land on opposite sides of the ₹10 Cr audit line.
+**Decision (owner, 2026-09-01):** both figures, labelled, with an audit read on each and a warning row when the reads differ; the stale "8th ed." banner (which accidentally described the broker method) now derives from the basis constants; the audit badge resolves its section per FY via statute.ts.
+**Why not the obvious thing:** picking one basis makes either the broker's report or Vyuha look broken — the user's CA holds the broker's number, and the honest product puts both in their hand with the question to ask.
+**Invalidated if:** ICAI issues turnover guidance mapped to the 2025 Act (re-read the PDF, not a blog), or brokers move to the premium-inclusive method.
+
+## 2026-09-01 — Scaling impact was charge-asymmetric: the actual side bore no entry charges while the counterfactual bore the first entry's, crediting every ladder ~one brokerage of phantom "improvement"
+
+**Context:** v3.5.0 audit finding B3 verified against `summarise()`: `realisedNet` nets EXIT-leg charges only (entry charges live on the parent row via the engine).
+**Decision:** on a closed ladder every entry tranche is consumed, so the actual side now subtracts ALL entry-leg charges; each scenario bears its own entry + exit costs, and the extra tranches' brokerage counts against scaling — pinned by a fixture where identical economics net exactly the second tranche's contribution.
+**Invalidated if:** `summarise()` starts folding entry charges into `realisedNet` (then the page-side subtraction double-counts — the test will catch the sign).
+
+## 2026-09-01 — Nine files substituted invented capital (₹17L/₹13L/₹4L) when settings were empty; every fresh install computed returns, risk heat, utilisation and limit checks on fiction
+
+**Context:** audit A1 generalised — the performance page's `|| 1700000` had eight siblings (trackers, risk cockpit, monthly report, targets, cash ledger openings, pre-trade limits).
+**Decision:** capital-unknown is a stated state, chosen per surface: %-metrics render "—" with ONE Settings nudge; risk heat says "unrated" (a ₹1 fallback graded every book fake-dangerous); the pre-trade limits engine gained a fourth status `"skipped"` (reported as "not evaluated", rank 0 — silently dropping the check read as a pass); cash shows flows-only balances with "opening —". A comment-stripping source guard (`tests/capital-fallback-guard.test.ts`) fails the suite if a `?? 1300000`-style fallback returns to any of the nine files.
+**Why not the obvious thing:** defaulting to 0 everywhere — it prints "₹0" (an invented figure), makes `available` negative, and floods limits with false breaches.
+**Invalidated if:** onboarding makes capital REQUIRED before any trade lands (then unknown-state code paths become dead and can go).
+
+## 2026-09-01 — Vyuha Intelligence thresholds adopted with the v3.5.0 build (owner-approved plan)
+
+**Context:** the insight engine's new rules need lines somewhere; these are conventions chosen for the first release, not measurements.
+**Decision:** fast re-entry after a loss = <15 min (timed trades only, coverage stated); sizing escalation after a loss = >25% jump in median buyValue; rule sample floors — cockpit rules 15 (matching `MIN_SAMPLE`), pair-wise comparisons 10, lens-group rules 10, SL/TSL/win-loss verdicts 20 (matching `behavior.ts`); stop-vs-exit tolerance 0.5% of stop price; near-breakeven margin 0.05 win-rate points; group insights capped at 3 per lens group. Every rule refuses below floor and passes the shared PRESCRIPTIVE_LANGUAGE scan (`tests/intelligence-contract.test.ts`).
+**Invalidated if:** real user books show the lines mislabelling behaviour (tune with data, then update this entry — a changed mind is information).
+
 <!-- First entry goes here. -->

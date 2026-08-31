@@ -175,11 +175,22 @@ describe("partialLot — proportional what-if slice of a weighted-average lot", 
 describe("harvest page — realised gains are net, matching /reports/tax", () => {
   const read = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8");
 
-  it("sums realised STCG/LTCG from netPnl and never reads grossPnl", () => {
+  it("sums realised STCG/LTCG through classifyGain (net basis + grandfathering), never grossPnl", () => {
+    // v3.5.0: the loop routes every closed equity row through classifyGain so
+    // the net basis AND the 31-Jan-2018 FMV adjustment match /reports/tax —
+    // one figure per FY across both tax surfaces.
     const src = read("app/reports/harvest/page.tsx");
-    expect(src).toMatch(/realisedStcg \+= t\.netPnl/);
-    expect(src).toMatch(/realisedLtcg \+= t\.netPnl/);
+    expect(src).toMatch(/const g = classifyGain\(/);
+    expect(src).toMatch(/realisedLtcg \+= g\.taxableGain/);
+    expect(src).toMatch(/realisedStcg \+= g\.taxableGain/);
+    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018");
     expect(src).not.toContain("grossPnl");
+  });
+
+  it("the advance-tax page mirrors the same classifyGain loop", () => {
+    const src = read("app/reports/advance-tax/page.tsx");
+    expect(src).toMatch(/const g = classifyGain\(/);
+    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018");
   });
 
   it("derives the FY window from settings.fyStartMonth, never a -03-31 literal", () => {
