@@ -78,10 +78,40 @@ count by 3% would treble it.
   enforced by ABSENCE and a test fails on any export named like a recommendation.
 
 **Verified 2026-08-31:** `npm run verify` **EXIT 0** — **2,266 tests / 151 files** (was
-2,184/146), **lint 0 problems**, production build clean. Rendering verified against the repo dev
-DB (all five tax/report routes HTTP 200, zero server errors, real values: ₹28,478 STT forfeited
-across 42 delivery trades vs 85 business-head trades). Dev server stopped afterwards.
-**Not committed, not bumped, not tagged.**
+2,184/146), **lint 0 problems**, production build clean, **EXIT 0 both pre- and post-bump**.
+Rendering verified against the repo dev DB (all five tax/report routes HTTP 200, zero server
+errors, real values: ₹28,478 STT forfeited across 42 delivery trades vs 85 business-head
+trades). Dev server stopped afterwards.
+
+**RELEASE CUT AND VERIFIED (2026-08-31):** bump printed **4 files — correct for a MINOR**,
+footer → `v3.3`; `package-lock` roots hand-edited (diff exactly **2/2**, lock re-parses, 770
+entries, `npm ls esbuild` resolves clean with vitest's vite on 0.28.1); `Cargo.lock` **1/1**.
+Desktop build EXIT 0; BUILD_ID `dgicfH57tmsg4kuiEtMjE` → **`gBik6qvd85Xf6Tv2_yvty`** (15:03),
+bundle carries all eight v3.3.0 markers (`Realised by head, by month`, `not a monthly tax bill`,
+`Holding clock`, `s.66(31)`, `11th edition`, `Month detail`, `no interest`, `NEVER against
+salary`). Local `.sig` ×2 and the packed ZIP `.sig` all decode to **`4FF85F3BBE1DA21D`**, equal
+to `tauri.conf.json`'s pubkey. Client ZIP **12 entries**, WHATS_NEW first heading
+`## New in v3.3.0`, all three policies "Applies to v3.3.0" dated 2026-08-31, zero macOS mentions
+on client surfaces. Installer SHA-256 (ZIP copy)
+`59C41B0D5CD7EF8EF739B059C1C8790845D02E4E83CFDCA280F7C38F6D44F136`.
+
+Commit **`01332ea`** pushed → **CI run 33379160379 ALL 5 JOBS GREEN BEFORE TAGGING** → tag
+**`v3.3.0`** → **Release workflow 33379504958 success, all 3 platform jobs** →
+`npm run release:verify v3.3.0` → **all 3 `.sig` = `4FF85F3BBE1DA21D`, "Safe to publish"**.
+**Draft release: 9 assets. `releases/latest` still v3.2.0 (a draft steals nothing);
+`revocations` re-checked and still `prerelease=true`, untouched.**
+**Two-binaries gap reproduced an EIGHTH time:** GitHub asset **34,935,482 B** vs the local/ZIP
+build's **34,951,487 B** — 16,005 B apart. winget takes the GitHub hash; WDSI and buyers take
+the ZIP's.
+
+**Landing page was three releases stale (v3.0.0) and is now v3.3.0** — but the screenshot
+caption still says "actual v3.0.0 build", which is TRUE and was deliberately left alone rather
+than relabelled without regenerating the images.
+
+**OWNER STEPS REMAINING FOR v3.3.0:** publish the draft → `npm run mirror:push` **from a real
+terminal** (agent sessions run with `GIT_TERMINAL_PROMPT=0`, which blocks the Codeberg OAuth
+refresh) → WDSI with the CLIENT ZIP's installer, not the GitHub asset → **no winget PR while
+microsoft/winget-pkgs #421585 is open** → install on a non-build machine.
 
 **⚠ THE LIVE DESKTOP DB ON THIS MACHINE IS PRE-0050.** `%APPDATA%/in.vyuha.tradejournal`
 throws `no such column: effective_from` / `exit_trigger`, so **v3.2.0 has never been launched
