@@ -1,3 +1,4 @@
+import { RISK_LIST_CAP, CappedNote } from "@/components/ui/capped-note";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CalendarClock, ShieldCheck, PackageCheck } from "lucide-react";
@@ -99,7 +100,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {obligations.map((o) => {
+                  {obligations.slice(0, RISK_LIST_CAP).map((o) => {
                     const wb = warnBadge[o.warn];
                     return (
                       <tr key={o.id} className={`border-b border-rule border-l-2 ${warnBorder[o.warn]}`}>
@@ -179,6 +180,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                   })}
                 </tbody>
               </table>
+              <CappedNote total={obligations.length} noun="obligations" />
             </div>
 
             <p className="text-[0.6875rem] text-muted-foreground">

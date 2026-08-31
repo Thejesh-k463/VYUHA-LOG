@@ -3,6 +3,16 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.4.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **Five slow screens now open in about a second** | On a 25,000-trade book: Option Strategies ~6.0s → ~1.0s, Options Seller Journal ~5.8s → ~1.1s, the Equity tracker ~3.2s → ~0.9s, Portfolio Risk ~2.5s → ~1.3s, Lenses ~2.1s → ~1.3s. **No number on any of those screens changed** — every total and rate is still worked out over your whole book. Vyuha simply stopped drawing thousands of rows you were never looking at. |
+| **When a list is shortened, it tells you** | Long tables now show a window with a "Showing 150 of 3,460 — show 150 more" button, and the capped panels on Portfolio Risk say "Showing the first 100 of N, most urgent first". A shortened list that looks complete is worse than a slow one, so Vyuha will not do that quietly. |
+| **Payoff diagrams draw as you scroll to them** | Option Strategies was drawing every payoff chart at once — 626 of them on a large book — for a page that shows about two at a time. |
+| **The Trades table is deliberately unchanged** | It is the one screen still slower than we would like on a very large book. Fixing it means changing the order trades come back in, which can shift a tax total by a paisa and change which rows appear first. That is not something to slip into a speed change, so it gets its own release and its own before-and-after check. |
+| **Update signatures are checked against the actual file** | The release check used to confirm a signature came from the right key. It now also confirms the signature matches the installer bytes you actually download — the exact failure that once shipped an update no installed copy would accept. |
+
 ## New in v3.3.0
 
 | Upgrade | What it gives you |

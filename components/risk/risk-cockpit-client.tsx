@@ -19,6 +19,7 @@ import { inr, inrCompact, num } from "@/lib/format";
 import type { KpiDetail } from "@/components/kpi-card";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
+import { ShowMore, useRowWindow } from "@/components/ui/show-more";
 import { toast } from "@/components/ui/toaster";
 import { ChevronDown, SlidersHorizontal, ShieldAlert, ShieldCheck, CircleX } from "lucide-react";
 
@@ -62,6 +63,9 @@ export function RiskCockpitClient({
   const capital = capitals[scope];
   const e = React.useMemo(() => computeExposure(filtered, capital), [filtered, capital]);
   const sectors = React.useMemo(() => sectorConcentration(e.positions, capital), [e.positions, capital]);
+  // DOM window only — every figure on this page is computed over `e.positions`
+  // in full, above. Windowing the maths would change the numbers; this does not.
+  const positionWindow = useRowWindow(e.positions);
   const rs = RISK_STYLE[e.riskLevel];
 
   async function trailBreakeven(id: number) {
@@ -222,8 +226,12 @@ export function RiskCockpitClient({
               <div className="w-36 text-right">Alloc</div>
             </div>
 
+            {/* Windowed: this rendered every open position, ~3,460 at the 25k
+                tier, each an expandable row with its own handlers. The count and
+                every aggregate above are computed over ALL of them — only the
+                DOM is windowed, and the footer says how many are held back. */}
             <div className="space-y-1">
-              {e.positions.map((p) => (
+              {positionWindow.visible.map((p) => (
                 <PositionRow
                   key={p.id}
                   p={p}
@@ -236,6 +244,12 @@ export function RiskCockpitClient({
                 />
               ))}
             </div>
+            <ShowMore
+              hidden={positionWindow.hidden}
+              total={positionWindow.total}
+              onClick={positionWindow.showMore}
+              noun="positions"
+            />
           </div>
         )}
       </Card>

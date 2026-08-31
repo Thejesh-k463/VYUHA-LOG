@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PayoffChart } from "@/components/reports/payoff-chart";
+import { LazyMount } from "@/components/ui/lazy-mount";
 import { getOpenOptionPositions } from "@/lib/queries/trades";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { buildStrategies, type PositionedLeg } from "@/lib/analytics/strategies";
@@ -84,10 +85,13 @@ export default function StrategiesPage() {
                       <Metric label="Max loss" value={amt(g.maxLoss, "Unlimited")} tone="text-loss" />
                     </div>
                   </div>
-                  {/* Payoff diagram */}
-                  <div>
+                  {/* Payoff diagram — mounted on approach. All 626 charts used
+                      to build their SVGs in one commit after hydration, which
+                      was this page's entire cost. 240 is PayoffChart's own
+                      height, so nothing shifts when a chart arrives. */}
+                  <LazyMount minHeight={240}>
                     <PayoffChart data={g.payoff} breakevens={g.breakevens} spot={s} />
-                  </div>
+                  </LazyMount>
                 </CardContent>
               </Card>
             );

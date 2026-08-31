@@ -173,7 +173,7 @@ export function DataTable<T>({
 
   // ── Row windowing ───────────────────────────────────────────────────────
   // The hook is called UNconditionally (rules of hooks); `count: 0` keeps it
-  // fully inert for the tracker tables. Rows are a 3.125rem FLOOR that grows
+  // fully inert wherever `virtual` is not passed. Rows are a 3.125rem FLOOR that grows
   // for two-line cells and scales with the density root font-size, so the 50px
   // here is only the first estimate — `measureElement` corrects every row.
   const scrollRef = React.useRef<HTMLDivElement>(null);

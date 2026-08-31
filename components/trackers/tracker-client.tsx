@@ -281,7 +281,12 @@ export function TrackerClient({
           </div>
           <ExportButtons filename={`vyuha-${variant}-positions`} columns={exportCols} rows={data} />
         </div>
-        <DataTable columns={columns} data={data} maxHeight="460px" emptyMessage="No open positions. Import or add trades, then set MTM prices." />
+        {/* `virtual` — this table was rendering EVERY open position into the DOM.
+            At 25k trades that is ~2,750 rows behind a 460px scroller showing ~9,
+            and the hydration cost of the other 2,741 was the whole of /equity's
+            3.2 s. Same windowing /trades has used since v3.0.0; `measureElement`
+            handles the two-line cells below. */}
+        <DataTable columns={columns} data={data} maxHeight="460px" virtual emptyMessage="No open positions. Import or add trades, then set MTM prices." />
       </Card>
 
       {/* Recent closed */}

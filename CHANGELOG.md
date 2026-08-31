@@ -1,5 +1,36 @@
 # Changelog
 
+## v3.4.0 — the screens that got slow as your book grew
+
+- **Five heavy screens now open in about a second.** Option Strategies went from
+  ~6.0 s to ~1.0 s, the Options Seller Journal from ~5.8 s to ~1.1 s, the Equity
+  tracker from ~3.2 s to ~0.9 s, Portfolio Risk from ~2.5 s to ~1.3 s and Lenses
+  from ~2.1 s to ~1.3 s — measured on a 25,000-trade book. **Not one figure on
+  any of those screens changed.** Every total, rate and interval is still
+  computed over your whole book; what changed is that Vyuha stopped building
+  thousands of rows of screen you were never looking at.
+- **Where a list is shortened, it says so.** Long tables now render a window with
+  a "Showing 150 of 3,460 — show 150 more" control, and the three capped panels
+  on Portfolio Risk say "Showing the first 100 of N, most urgent first". A
+  quietly truncated list that looks complete is worse than a slow one.
+- **Payoff diagrams draw as you reach them.** Option Strategies was building
+  every payoff chart at once — 626 of them on a large book — for a page showing
+  about two at a time.
+- **Less of your data is sent to the screen than before.** The Options Seller
+  Journal was loading all 75 columns of every option trade to read nineteen of
+  them, and Lenses was sending 43 columns per trade to use twenty. Same rows,
+  same order, same numbers.
+- **The Trades table is deliberately unchanged.** It is the one screen still
+  slower than we want on a very large book, and the fix needs a change to how
+  trades are ordered — which can move a paisa in a tax total and change which
+  rows appear first. That is not something to slip into a speed change, so it
+  gets its own release and its own before-and-after check.
+- **Release signatures are now verified against the actual downloaded file.**
+  Previously the release check confirmed a signature was made by the right key;
+  it now also confirms the signature genuinely matches the installer bytes you
+  receive. This is the exact failure that once shipped an update no installed
+  copy would accept.
+
 ## v3.3.0 — the law changed, and the turnover had been wrong for three years
 
 - **The Income-tax Act, 1961 is repealed.** The Income-tax Act, 2025 came into

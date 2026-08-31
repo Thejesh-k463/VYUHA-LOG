@@ -1,3 +1,4 @@
+import { RISK_LIST_CAP, CappedNote } from "@/components/ui/capped-note";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { inr } from "@/lib/format";
@@ -56,7 +57,7 @@ export function MtfDriftCard({
                   </tr>
                 </thead>
                 <tbody>
-                  {drift.map((d) => (
+                  {drift.slice(0, RISK_LIST_CAP).map((d) => (
                     <tr key={d.id} className="border-b border-rule">
                       <td className="px-2.5 py-1.5 font-medium">{d.symbol}<span className="ml-1.5 text-muted-foreground">{d.broker}</span></td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{d.storedOwnPct}%</td>
@@ -71,6 +72,7 @@ export function MtfDriftCard({
                   ))}
                 </tbody>
               </table>
+              <CappedNote total={drift.length} noun="drifted positions" />
             </div>
           </>
         )}

@@ -1,3 +1,4 @@
+import { RISK_LIST_CAP, CappedNote } from "@/components/ui/capped-note";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { num } from "@/lib/format";
@@ -53,7 +54,7 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
               </tr>
             </thead>
             <tbody>
-              {greeks.positions.map((g) => (
+              {greeks.positions.slice(0, RISK_LIST_CAP).map((g) => (
                 <tr key={g.id} className="border-b border-rule">
                   <td className="px-2.5 py-1.5 font-medium">{g.symbol}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
@@ -69,6 +70,7 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
               ))}
             </tbody>
           </table>
+          <CappedNote total={greeks.positions.length} noun="priced options" />
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">

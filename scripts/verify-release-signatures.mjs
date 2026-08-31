@@ -20,14 +20,17 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { verifyMinisign, sigBlobOf, pubBlobOf } from "./minisign-verify.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tag = process.argv[2];
+const argv = process.argv.slice(2);
+const deep = argv.includes("--deep");
+const tag = argv.find((a) => !a.startsWith("--"));
 if (!tag) {
-  console.error("usage: node scripts/verify-release-signatures.mjs <tag>   e.g. v2.99.20");
+  console.error("usage: node scripts/verify-release-signatures.mjs <tag> [--deep]   e.g. v2.99.20 --deep");
   process.exit(2);
 }
 
@@ -103,17 +106,45 @@ if (missing.length > 0) {
 // earlier version left it behind, and a later `git add -A` committed a
 // signature blob into the repo as `.sigcheck.tmp`.
 const tmp = path.join(root, ".sigcheck.tmp");
+const tmpBin = path.join(root, ".sigcheck.bin.tmp");
 let bad = 0;
+let deepFailed = 0;
+let deepChecked = 0;
 try {
   for (const a of assets) {
     execFileSync("gh", ["release", "download", tag, "-p", a.name, "-O", tmp, "--clobber", "-R", "Thejesh-k463/VYUHA-LOG"]);
-    const id = keyIdFromSigFile(readFileSync(tmp, "utf8"));
+    const sigText = readFileSync(tmp, "utf8");
+    const id = keyIdFromSigFile(sigText);
     const ok = id === expected;
     if (!ok) bad++;
     console.log(`${ok ? "✓" : "✗"} ${a.name.padEnd(46)} ${id}`);
+
+    if (!deep || !ok) continue;
+
+    // --deep: the key id was right, but does the signature actually verify over
+    // the published bytes? That is the claim users' machines will test, and the
+    // one v2.98.0 failed while every check above passed.
+    const payloadName = a.name.replace(/\.sig$/, "");
+    if (!names.includes(payloadName)) {
+      console.error(`  ✗ ${payloadName} is not on the release — a .sig with no artefact.`);
+      deepFailed++;
+      continue;
+    }
+    execFileSync("gh", ["release", "download", tag, "-p", payloadName, "-O", tmpBin, "--clobber", "-R", "Thejesh-k463/VYUHA-LOG"]);
+    const bytes = readFileSync(tmpBin);
+    const res = verifyMinisign(pubBlobOf(conf.plugins.updater.pubkey), sigBlobOf(sigText), bytes);
+    deepChecked++;
+    const mb = (statSync(tmpBin).size / 1048576).toFixed(1);
+    if (res.ok) {
+      console.log(`  ✓ verifies over ${payloadName} (${mb} MB, ${res.prehashed ? "prehashed" : "pure"})`);
+    } else {
+      console.error(`  ✗ ${payloadName} (${mb} MB) — ${res.reason}`);
+      deepFailed++;
+    }
   }
 } finally {
   rmSync(tmp, { force: true });
+  rmSync(tmpBin, { force: true });
 }
 
 console.log("");
@@ -123,4 +154,17 @@ if (bad > 0) {
   console.error("  delete the draft, and re-run the release workflow.");
   process.exit(1);
 }
-console.log("✓ every signature matches the pubkey shipped in the app. Safe to publish.");
+if (deepFailed > 0) {
+  console.error(`✗ ${deepFailed} signature(s) did NOT verify over the published bytes. DO NOT PUBLISH.`);
+  console.error("  The key id is right, so the signing key is fine — the ARTEFACT and its signature");
+  console.error("  disagree. Something re-wrote or re-uploaded the asset after it was signed.");
+  console.error("  Delete the draft and re-run the release workflow; do not re-upload by hand.");
+  process.exit(1);
+}
+console.log("✓ every signature matches the pubkey shipped in the app.");
+if (deep) {
+  console.log(`✓ ${deepChecked} signature(s) cryptographically verified over the published bytes.`);
+} else {
+  console.log("  (key ids only — re-run with --deep to verify signatures over the actual binaries)");
+}
+console.log("Safe to publish.");

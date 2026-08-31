@@ -52,6 +52,30 @@ function scopedBookRows<K extends keyof Trade & keyof typeof trades>(
 /** The trades-table wire shape (`SlimTrade`), selected in SQL instead of projected in JS. */
 export const getSlimTrades = cache((): SlimTrade[] => scopedBookRows(SLIM_TRADE_FIELDS));
 
+const LENS_FIELDS = [
+  // DeletableTrade (lib/domain/delete-scope.ts) …
+  "id", "accountId", "broker", "segment", "symbol", "tradingsymbol",
+  "buyDate", "sellDate", "isOpen", "netPnl", "importBatchId", "createdAt", "staged",
+  // … plus what LensTrade adds, and what computeKpis reads.
+  "setupTag", "playbookId", "bucket", "grossPnl", "chargesTotal", "rMultiple",
+] as const satisfies readonly (keyof Trade)[];
+
+export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
+
+/**
+ * /lenses: 19 columns, not the 43 of `SlimTrade`.
+ *
+ * The Lenses tree only ever reads the delete-scope identity fields plus six
+ * grouping/KPI fields — the other 23 (`strike`, `optionType`, `slPlanned`,
+ * `notes`, `mistakeTags`, every per-leg price and quantity …) crossed the RSC
+ * flight stream for 25,001 rows and were never touched.
+ *
+ * This route shares `SLIM_TRADE_FIELDS` with /trades, which genuinely needs the
+ * wider shape, so it gets its OWN projection rather than narrowing that one —
+ * the single-route-projection rule at the head of this file.
+ */
+export const getLensTrades = cache((): LensRowTrade[] => scopedBookRows(LENS_FIELDS));
+
 const JOURNAL_EXTRA_FIELDS = [
   "acquisition", "acquisitionPrice", "acquisitionDate", "suggestedBasisPrice",
 ] as const satisfies readonly (keyof Trade)[];
@@ -107,12 +131,32 @@ export const getPerformanceTrades = cache((): PerformanceTrade[] => scopedBookRo
  * to keep 8,058 (~130 ms). Same ORDER BY as `getTrades` so the rows come back
  * in exactly the order the page always showed them.
  */
-export const getOptionTrades = cache((): Trade[] => {
+const OPTION_JOURNAL_FIELDS = [
+  // read by SellerTrade (lib/analytics/options-seller.ts) …
+  "id", "symbol", "tradingsymbol", "segment", "isOpen",
+  "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice", "netPnl", "riskAmount",
+  "entryIv", "exitIv", "entryDte", "hedgeStatus", "expiryOutcome", "adjustmentGroup",
+  // … plus the two dates SellerTradeWithDates adds (options-seller-depth.ts).
+  "buyDate", "sellDate",
+] as const satisfies readonly (keyof Trade)[];
+
+export type OptionJournalRow = Pick<Trade, (typeof OPTION_JOURNAL_FIELDS)[number]>;
+
+/**
+ * Option trades only, filtered in SQL AND projected to the 19 columns the page
+ * reads. It was `select *` — all 75 columns of 8,058 rows, ~12.3 MB of row
+ * objects materialised to feed nineteen fields.
+ *
+ * Projection, not filtering: no WHERE is added beyond the one already here, so
+ * the plan and therefore the tie order are unchanged — the property that makes
+ * this provably output-identical (see the header of this file).
+ */
+export const getOptionTrades = cache((): OptionJournalRow[] => {
   const accountId = getSelectedAccountId();
   const isOption = eq(trades.instrumentType, "option");
-  return db.select().from(trades)
+  return db.select(pickCols(OPTION_JOURNAL_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isOption, eq(trades.accountId, accountId)) : isOption)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all();
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all() as OptionJournalRow[];
 });
 
 /**
@@ -122,7 +166,14 @@ export const getOptionTrades = cache((): Trade[] => {
  * Same ORDER BY as `getTrades` so leg order inside each strategy group is
  * byte-identical to what the page rendered before.
  */
-export const getOpenOptionPositions = cache((): Trade[] => {
+const STRATEGY_LEG_FIELDS = [
+  "symbol", "expiry", "optionType", "strike",
+  "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice",
+] as const satisfies readonly (keyof Trade)[];
+
+export type StrategyLegRow = Pick<Trade, (typeof STRATEGY_LEG_FIELDS)[number]>;
+
+export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
   const accountId = getSelectedAccountId();
   const isLeg = and(
     eq(trades.isOpen, true),
@@ -130,9 +181,13 @@ export const getOpenOptionPositions = cache((): Trade[] => {
     isNotNull(trades.strike),
     inArray(trades.optionType, ["CE", "PE"]),
   );
-  return db.select().from(trades)
+  // Projected to the 8 columns /strategies reads, of 75. Same WHERE, same
+  // ORDER BY — leg order inside each group is unchanged, which matters because
+  // `classifyStrategy` reads legs[0] and legs[1] POSITIONALLY and a reorder can
+  // rename a strategy on screen.
+  return db.select(pickCols(STRATEGY_LEG_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isLeg, eq(trades.accountId, accountId)) : isLeg)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all();
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all() as StrategyLegRow[];
 });
 
 const TAX_FIELDS = [

@@ -117,8 +117,25 @@ installed copy rejects the update**, which is exactly what it did to v2.98.0.
   signature exists, not that it is the right one.
 
 ```
-npm run release:verify
+npm run release:verify v3.3.0 -- --deep
 ```
+
+**Use `--deep`.** Without it the script decodes key ids, which proves a signature
+was *made* by the right key. `--deep` downloads each artefact and proves the
+signature actually *verifies* over the published bytes — the claim users'
+machines test, and the one v2.98.0 failed while every key id looked fine. It
+costs ~220 MB of downloads and a couple of minutes; a broken update costs a
+release.
+
+If `--deep` fails while the key ids pass, the signing key is fine and the
+**artefact and its signature disagree** — something re-wrote or re-uploaded an
+asset after signing. Delete the draft and re-run the workflow; never re-upload
+by hand.
+
+Two traps recorded in `scripts/minisign-verify.mjs`, both pinned by
+`tests/minisign-verify.test.ts`: minisign's `ED` is prehashed BLAKE2b-512 and
+`Ed` is pure (inverting them reports a good release as broken), and key ids are
+stored little-endian.
 
 ---
 

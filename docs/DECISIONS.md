@@ -6,6 +6,107 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-31 — The render-windowing pass: 6 budget breaches → 1 (v3.4.0)
+
+**Context:** the v3.0.0 six-route deferral, opened by three parallel read-only analyses of the
+routes themselves rather than by trusting the deferral note.
+
+**The deferral note was wrong about half of them.** `docs/DECISIONS.md` (v3.0.0 entry) says the
+six were "all payload-bound with no algorithmic defect found", and describes
+`/strategies` and `/options-journal` together as "~6 s — 8,058 option rows rendered". Measured
+against the code:
+
+| Route | Rows from SQL | Real cause |
+|---|---|---|
+| `/strategies` | **673**, not 8,058 | **626 recharts mounts.** `ResponsiveContainer` returns null until its ResizeObserver fires, so the charts emit ZERO server HTML and then all 626 build their SVGs in one post-hydration commit. |
+| `/options-journal` | 8,058 | ~21 MB of SSR HTML and ~56,000 form controls; every row a stateful component. |
+| `/equity` | ~2,750 open | **Every row in the DOM, unvirtualised** — payload only ~1.2 MB. Not payload-bound. |
+| `/risk` | ~3,460 × **2 arrays** | Two unvirtualised renders plus three more uncapped panels (~1,250 further rows). Not payload-bound. |
+| `/lenses` | 25,001 | ~22 MB payload; **23 of 43 columns never read**. |
+| `/trades` | 25,001 | 23.5 MB payload, already virtualised. |
+
+**Decisions:**
+
+1. **The ordering change was NOT made, deliberately.** Both "Invalidated if" clauses (v3.0.0
+   perf pass; the tax/harvest entry) are discharged by appending `id` to the trades ORDER BY,
+   and it is safe — but it is **not output-neutral**: it moves `taxByFy` per-FY sums in the last
+   paisa (REAL rupee doubles, unlike the ledger's integer paise where SQL SUM and a JS reduce are
+   bit-identical), can flip a harvest lot's `offsets`/`partial`/`carry` status, and changes which
+   lots fill the holding clock's top-15. **A perf pass that changes what a page shows is no
+   longer a perf pass.** It stays a separate change, with its before/after proof written first.
+   **Worth knowing when it happens:** `created_at` defaults to `datetime('now')` (SECOND
+   resolution) and `lib/import/commit.ts:536` never sets it, so **an entire import batch shares
+   one `created_at`** — real-book tie groups are whole batches, not pairs.
+
+2. **Everything here is a RENDER fix — no SQL predicate changed, no ordering changed.** That is
+   what made five of six reachable without the ordering work. `tests/render-windowing.test.ts`
+   asserts every `.orderBy` on `trades` is still the one canonical pair.
+
+3. **`/equity` just needed `virtual`.** `DataTable` has supported row windowing since v3.0.0 and
+   `/trades` uses it; the tracker simply never passed the prop. The comment in `data-table.tsx`
+   saying the virtualizer is "fully inert for the tracker tables" was describing the state of
+   things, not prohibiting it — reworded so it cannot be read as a rule.
+
+4. **Client windows say what they hold back (`components/ui/show-more.tsx`).** A silent
+   `.slice(0, 200)` reads as "this is your whole book". `useRowWindow` + `ShowMore` render a
+   window and state the count, matching the harvest holding clock ("Showing 15 of N") and the
+   lenses drill-down cap. **Only the DOM is windowed — every aggregate is still computed over
+   the full set**, which is why no figure on any of these pages moved.
+
+5. **Server components get a stated cap instead (`components/ui/capped-note.tsx`).** `/risk`'s
+   expiry-obligations, Greeks and MTF-drift panels are server components and cannot hold the
+   client state `useRowWindow` needs. They slice at `RISK_LIST_CAP` and must render a
+   `CappedNote`; a test fails on a hardcoded numeric slice. `CappedNote` deliberately lives in
+   its own module with **no `"use client"`** — importing it from `show-more.tsx` would drag three
+   server components across the client boundary.
+
+6. **`LazyMount` fixed `/strategies` without touching the data.** Charts mount on approach via
+   IntersectionObserver with a `minHeight` placeholder — required, not optional, because a
+   collapsing placeholder makes every card below jump up, fires every observer at once, and
+   restores the storm with layout shift on top. Falls back to mounting immediately where
+   `IntersectionObserver` is absent: a chart that never appears is worse than a slow one. The
+   state is set from an observer callback, and the fallback goes through
+   `Promise.resolve().then` — the repo bans `react-hooks/set-state-in-effect` outright.
+
+7. **`/lenses` got its OWN projection, not a narrower `SLIM_TRADE_FIELDS`.** That constant is
+   shared with `/trades`, which genuinely needs the wider shape. `LensesClient` was already typed
+   `LensTrade[]` rather than `SlimTrade[]`, so a 19-column projection typechecked with no other
+   change.
+
+8. **`/trades` is the one route left over budget, and it is the one that needs the ordering
+   change.** 23.5 MB of RSC payload for ~30 visible rows; it is already virtualised, so the only
+   remaining lever is server pagination — which needs `LIMIT/OFFSET`, which needs a total order.
+   Left explicitly for the ordering pass rather than half-fixed.
+
+**Measured** (`perf:seed` 25,001 trades → `perf:sweep`, 42 routes × 3 rounds, production build):
+
+| Route | v3.3.0 | **v3.4.0** | |
+|---|---|---|---|
+| `/strategies` | 6026 ms | **1022 ms** | −83% |
+| `/options-journal` | 5770 ms | **1082 ms** | −81% |
+| `/equity` | 3208 ms | **931 ms** | −71% |
+| `/risk` | 2503 ms | **1349 ms** | −46% |
+| `/lenses` | 2114 ms | **1276 ms** | −40% |
+| `/trades` | 2256 ms | 2040 ms | untouched |
+| **Breaches (of 42)** | **6** | **1** | |
+| Overall median | 985 ms | **939 ms** | |
+| Slowest route | 6026 ms | **2040 ms** | |
+
+Rendered `<tr>` counts on the perf tier, before → after: `/equity` ~2,810 → **62**,
+`/options-journal` 8,058 → **157**, `/risk` 1,257 → windowed + capped. `/strategies` SSR now
+carries **626 sized placeholders and zero recharts markup**.
+
+**A measurement trap, recorded.** The first post-fix sweep showed `/lenses` at 2557 ms — WORSE
+than its 2114 ms baseline, on a route not yet touched — while `/trades` improved without being
+touched either. Both were run-to-run variance; a second sweep put `/lenses` at 2063 ms. **Two
+routes moving in opposite directions with no code change is the signature of noise.** Re-run
+before believing a single sweep, in either direction.
+
+**Invalidated if:** the trades ORDER BY gains a unique tiebreaker (then `/trades` becomes
+fixable by server pagination and this entry's §8 is discharged), or `perf:sweep` enters CI (it
+is not there today, which is why `tests/render-windowing.test.ts` exists as a source guard —
+none of these five routes has an e2e spec either).
+
 ## 2026-08-31 — v3.3.0 post-release checks: updater cryptography, and a perf re-sweep
 
 ### The updater signature was verified against the PUBLISHED BINARY, not just decoded
