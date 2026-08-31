@@ -26,7 +26,29 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-09-01 (v3.5.0 BUILT this session; v3.4.0 draft awaits owner publish)
+## 2. Current state — verified 2026-09-01 (v3.5.1 TAGGED; v3.5.0 draft DELETED after the audit; owner publishes v3.5.1)
+
+**⚠ v3.5.0 WAS NEVER PUBLISHED AND MUST STAY THAT WAY.** After tagging, a 15-agent
+adversarial audit of the diff confirmed 10 new bugs (0 refuted; two silently rewrite money —
+per-share FMV fed to classifyGain, seed epochs shadowing user-edited charge rates; one
+reintroduced the 2026-08-12 misclaim class). All 10 fixed the same session; the v3.5.0 DRAFT
+was deleted (its tag remains for history); **v3.5.1 is the release** — same feature set plus
+the fixes. Full record: DECISIONS 2026-09-01 (audit entry). The v3.5.0 Release run also
+exposed a flaky release gate (vault DPAPI test asserting an environment property on the CI
+runner) — the test now verifies the designed machine-wrap fallback instead of failing.
+
+**v3.5.1 verified locally:** 2,623 tests / 172 files, `npm run verify` exit 0; BUILD_ID
+2026-09-01 04:07 IST; v3.5.1-only marker strings present in server AND client chunks; both
+installer signatures verify over their actual bytes under key `4FF85F3BBE1DA21D` (deep, not
+"✓ signed"); `Vyuha_3.5.1_Client_Package.zip` packed (installer SHA-256 `DBB5…D3B3`—see
+CHECKSUMS.txt); CI green on the release head BEFORE the tag.
+
+**OWNER PUBLISH STEPS (v3.5.1):** (1) wait for the Release workflow draft, (2) run
+`npm run release:verify v3.5.1 -- --deep` (or via node) and check every key id + deep line,
+(3) publish the draft — `releases/latest` moves off v3.3.0, (4) also publish/decide the
+parked v3.4.0 draft (superseded — safe to delete like v3.5.0's), (5) install v3.5.1 on a
+non-build machine, and exercise the in-app update from the v3.3.0 machine (the one flow
+never yet tested end-to-end), (6) demo prep: `docs/owner/DEMO_RUNBOOK.md`.
 
 **2026-09-01 — v3.5.0: the demo-hardening + Vyuha Intelligence release.** Owner-approved plan
 in `docs/V350_BUILD_PLAN.md`; five DECISIONS entries dated 2026-09-01 carry the measured
