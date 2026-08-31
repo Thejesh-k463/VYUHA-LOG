@@ -13,7 +13,10 @@ import {
   computeTaxTimeline,
   RATE_CUTOVER_DATE,
   GRANDFATHER_DATE,
+  type LossBucket,
 } from "@/lib/analytics/capital-gains";
+import { buildLossLedger } from "@/lib/analytics/loss-ledger";
+import { section } from "@/lib/analytics/statute";
 import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
 import { inr } from "@/lib/format";
 import { Info } from "lucide-react";
@@ -79,6 +82,19 @@ export default function TaxReportPage() {
   const itrCount = countItrRows();
   const byFy = aggregateTradesByFy(cgTrades, fyStartMonth, currentFy);
   const timeline = computeTaxTimeline(byFy);
+
+  // Loss ledger — surviving carry-forward vintages as of the latest FY in the
+  // timeline. Pure re-reading of the timeline (lib/analytics/loss-ledger.ts);
+  // no figure on this page changes because of it.
+  const lossLedger = buildLossLedger(timeline);
+  const ledgerAsOfFy = timeline.length > 0 ? timeline[timeline.length - 1].fy : currentFy;
+  // Set-off reach per bucket, cited under the Act governing the as-of FY.
+  const bucketMeta: Record<LossBucket, { label: string; reach: string }> = {
+    stcl: { label: "Short-term capital loss", reach: `sets off STCG, then LTCG · ${section(ledgerAsOfFy, "cfCapitalLoss")}` },
+    ltcl: { label: "Long-term capital loss", reach: `sets off LTCG only · ${section(ledgerAsOfFy, "cfCapitalLoss")}` },
+    speculative: { label: "Speculative (intraday)", reach: `sets off speculative gains only · ${section(ledgerAsOfFy, "speculationLoss")}` },
+    nonSpeculative: { label: "Non-speculative (F&O)", reach: `once carried forward, sets off business income only · ${section(ledgerAsOfFy, "cfBusinessLoss")}` },
+  };
 
   // IND-6 — dividend & TDS: group "dividend" ledger entries (posted by corporate
   // actions) by company + FY and estimate the 10%-above-₹5,000 TDS per section 194.
@@ -257,6 +273,63 @@ export default function TaxReportPage() {
             )}
           </CardContent>
         </Card>
+
+        {timeline.length > 0 && (
+          <Card className="p-0">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+              <div>
+                <CardTitle>Loss ledger — carry-forward vintages</CardTitle>
+                <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                  Unabsorbed losses still carrying forward as of FY {ledgerAsOfFy}, by the year each was incurred.
+                  Capital and non-speculative business losses live 8 years; speculative losses live 4.
+                </p>
+              </div>
+              {lossLedger.length > 0 && (
+                <Badge variant="secondary">{lossLedger.length} vintage{lossLedger.length === 1 ? "" : "s"}</Badge>
+              )}
+            </CardHeader>
+            <CardContent className="p-0">
+              {lossLedger.length === 0 ? (
+                <EmptyState
+                  variant="journal"
+                  title="No losses awaiting set-off"
+                  hint={`No unabsorbed loss vintages remain as of FY ${ledgerAsOfFy}.`}
+                />
+              ) : (
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Bucket</ReportTh>
+                    <ReportTh>FY incurred</ReportTh>
+                    <ReportTh align="right">Original</ReportTh>
+                    <ReportTh align="right">Absorbed here</ReportTh>
+                    <ReportTh align="right">Remaining</ReportTh>
+                    <ReportTh align="right">Expires after FY</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {lossLedger.map((r) => (
+                      <ReportTr key={`${r.fyIncurred}-${r.bucket}`}>
+                        <ReportTd>
+                          <span className="font-medium">{bucketMeta[r.bucket].label}</span>
+                          <span className="mt-0.5 block text-[0.6875rem] text-muted-foreground">{bucketMeta[r.bucket].reach}</span>
+                        </ReportTd>
+                        <ReportTd className="font-medium">{r.fyIncurred}</ReportTd>
+                        <ReportTd align="right" muted>{r.originalAmount != null ? inr(r.originalAmount, { decimals: 0 }) : "—"}</ReportTd>
+                        <ReportTd align="right" className="text-profit">{r.absorbed > 0 ? inr(r.absorbed, { decimals: 0 }) : "—"}</ReportTd>
+                        <ReportTd align="right" className="font-medium text-loss">{inr(r.remaining, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" muted>{r.expiresAfterFy}</ReportTd>
+                      </ReportTr>
+                    ))}
+                  </tbody>
+                </ReportTable>
+              )}
+              <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
+                Vintages come from journal data only — brought-forward losses from returns filed before this journal
+                began are not yet enterable (planned for v3.6). &ldquo;Absorbed here&rdquo; counts only set-off inside
+                this journal&apos;s timeline.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {grandfatherRows.length > 0 && (
           <Card className="p-0">

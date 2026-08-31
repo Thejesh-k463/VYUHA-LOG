@@ -152,3 +152,61 @@ describe("computeAdvanceTax — s.425(4) relief", () => {
     expect(p.underpaid234B).toBe(true);
   });
 });
+
+// s.408 read with s.58 (old S.211(1)(b) with S.44AD): a presumptive-scheme
+// assessee pays the whole advance tax in ONE instalment by 15 March; s.425 then
+// charges a single month at 1% on any shortfall after that date. Caller-asserted.
+describe("computeAdvanceTax — presumptive (s.58) single instalment", () => {
+  it("collapses the ladder to one instalment: 100% by 15 Mar", () => {
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 0, today: "2026-06-24", presumptive: true });
+    expect(p.fyLabel).toBe("2026-27");
+    expect(p.instalments).toHaveLength(1);
+    expect(p.instalments[0].label).toBe("15 Mar");
+    expect(p.instalments[0].dueDate).toBe("2027-03-15");
+    expect(p.instalments[0].cumPct).toBe(100);
+    expect(p.instalments[0].cumRequired).toBe(100000);
+    expect(p.instalments[0].safeHarbourPct).toBeNull();
+  });
+
+  it("shortfall BEFORE 15 Mar → nothing due, no interest", () => {
+    // 20 Dec: under the normal ladder Q1-Q3 would all be due and charging.
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 0, today: "2026-12-20", presumptive: true });
+    expect(p.instalments[0].isDue).toBe(false);
+    expect(p.interest234C).toBe(0);
+    expect(p.totalShortfallNow).toBe(0);
+    expect(p.nextDue?.label).toBe("15 Mar");
+  });
+
+  it("shortfall AFTER 15 Mar → exactly one instalment's interest (1 month × 1%)", () => {
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 40000, today: "2027-03-20", presumptive: true });
+    expect(p.instalments[0].isDue).toBe(true);
+    expect(p.instalments[0].shortfall).toBe(60000);
+    expect(p.instalments[0].monthsForInterest).toBe(1);
+    expect(p.interest234C).toBe(600); // 60000 × 1% × 1 month — never the 3/3/3/1 ladder
+    expect(p.nextDue).toBeNull();
+  });
+
+  it("paid in full by 15 Mar → no interest at all", () => {
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 100000, today: "2027-03-20", presumptive: true });
+    expect(p.interest234C).toBe(0);
+    expect(p.instalments[0].shortfall).toBe(0);
+    expect(p.underpaid234B).toBe(false);
+  });
+
+  it("names the election on screen, cited to the governing Act", () => {
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 0, today: "2026-12-20", presumptive: true });
+    // FY 2026-27 → Income-tax Act, 2025: presumptive is s.58, instalments s.408.
+    expect(p.notes.some((n) => n.includes("s.58") && n.includes("s.408"))).toBe(true);
+  });
+
+  it("s.425(4) relief still shrinks the interest base under the election", () => {
+    const p = computeAdvanceTax({
+      estimatedAnnualTax: 100000, taxPaidToDate: 0, today: "2027-03-20",
+      presumptive: true, reliefEligibleTax: 40000, reliefTaxPaidInFull: true,
+    });
+    expect(p.reliefApplied).toBe(40000);
+    expect(p.interest234C).toBe(600); // (100000−40000) × 1% × 1 month
+    // Payment obligation stays on the full figure.
+    expect(p.instalments[0].cumRequired).toBe(100000);
+  });
+});

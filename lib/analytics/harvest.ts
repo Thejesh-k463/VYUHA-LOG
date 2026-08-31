@@ -71,11 +71,70 @@ export interface HarvestReport {
 
 const rupee = (n: number) => Math.round(n);
 
-function daysBetween(a: string, b: string): number {
+export function daysBetween(a: string, b: string): number {
   const x = new Date(a + "T00:00:00").getTime();
   const y = new Date(b + "T00:00:00").getTime();
   if (Number.isNaN(x) || Number.isNaN(y)) return 0;
   return Math.max(0, Math.round((y - x) / 86400000));
+}
+
+// ── FY window ───────────────────────────────────────────────────────────────
+
+export interface FyWindow {
+  fyStartYear: number;
+  /** First day of the FY containing `today` (YYYY-MM-DD). */
+  fyStart: string;
+  /** Last day of that FY — the day BEFORE the next FY starts (YYYY-MM-DD). */
+  fyEnd: string;
+  /** e.g. "2026-27". */
+  fyLabel: string;
+}
+
+/**
+ * The FY window containing `today`, derived from the configured FY start month.
+ * The end is computed as the day before the next FY starts — the page used to
+ * hardcode `${fyStartYear + 1}-03-31`, which is wrong for any fyStartMonth
+ * other than April (a January FY ends 31-Dec, not 31-Mar).
+ */
+export function fyWindowFor(today: string, fyStartMonth: number): FyWindow {
+  const [y, m] = today.split("-").map(Number);
+  const fyStartYear = m >= fyStartMonth ? y : y - 1;
+  const fyStart = `${fyStartYear}-${String(fyStartMonth).padStart(2, "0")}-01`;
+  // Day 0 of the next FY's start month is the last day of the month before it.
+  const fyEnd = new Date(Date.UTC(fyStartYear + 1, fyStartMonth - 1, 0)).toISOString().slice(0, 10);
+  const fyLabel = `${fyStartYear}-${String((fyStartYear + 1) % 100).padStart(2, "0")}`;
+  return { fyStartYear, fyStart, fyEnd, fyLabel };
+}
+
+// ── LTCG exemption headroom ─────────────────────────────────────────────────
+
+/**
+ * Rupees of the annual long-term exemption not yet consumed by taxable realised
+ * LTCG this FY, floored at 0. A realised long-term LOSS does not enlarge the
+ * headroom beyond the threshold — the exemption caps at itself.
+ *
+ * This is an UPPER BOUND on the user's real headroom: the threshold is per
+ * PERSON per tax year across every qualifying gain they have anywhere, and the
+ * journal sees only imported gains. Render it WITH `LTCG_THRESHOLD_CAVEAT`
+ * (lib/analytics/tax-levers.ts), never bare.
+ */
+export function ltcgExemptionHeadroom(realisedLtcg: number, exemption: number): number {
+  return rupee(Math.max(0, exemption - Math.max(0, realisedLtcg)));
+}
+
+// ── Partial-lot simulation ──────────────────────────────────────────────────
+
+/**
+ * A lot restricted to `qty` units for what-if simulation. Unrealised P&L scales
+ * proportionally: an open lot carries one weighted-average entry price, so every
+ * unit has the same per-unit basis. `qty` is floored to whole units and clamped
+ * to [0, lot.qty].
+ */
+export function partialLot(lot: OpenLot, qty: number): OpenLot {
+  const q = Math.min(Math.max(0, Math.floor(qty)), lot.qty);
+  const frac = lot.qty > 0 ? q / lot.qty : 0;
+  // `|| 0` normalises the -0 a loss × 0-fraction produces.
+  return { ...lot, qty: q, unrealised: lot.unrealised * frac || 0 };
 }
 
 /** Walk loss lots (largest first), allocating up to `offsettable` and tagging status. */

@@ -219,6 +219,17 @@ function pruneExpired(lots: CarryForwardLot[], asOfFy: string): CarryForwardLot[
 }
 
 /**
+ * The LAST FY in which a loss vintage can still be set off — it expires AFTER
+ * this FY. Mirrors pruneExpired exactly (a lot survives while
+ * fyStart(asOf) − fyStart(incurred) <= window), so the two can never disagree;
+ * tests/loss-ledger.test.ts pins the agreement in both directions.
+ */
+export function lossExpiryFy(bucket: LossBucket, fyIncurred: string): string {
+  const y = fyYearStart(fyIncurred) + CARRY_WINDOW[bucket];
+  return `${y}-${String((y + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
  * Process one FY: same-year intra/inter-head set-off per sections 70/71, then
  * absorb still-available brought-forward losses (oldest vintage first, since it
  * expires soonest), then emit whatever remains as new carry-forward lots.

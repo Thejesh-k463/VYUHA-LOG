@@ -40,6 +40,12 @@
 // number. s.425(4) relief never touches it; the only protection there is
 // s.408(3), under which anything paid by 31 March counts as advance tax.)
 //
+// PRESUMPTIVE — s.408 read with s.58 (old S.211(1)(b) with S.44AD/44ADA): an
+// assessee who has elected the presumptive scheme pays the WHOLE advance tax in
+// one instalment by 15 March, and s.425 charges one month at 1% on a shortfall
+// after that date. Opt-in via `presumptive` — the election cannot be derived
+// from trade data, so the caller asserts it.
+//
 // KNOWN SIMPLIFICATION: `taxPaidToDate` is a single cumulative figure applied to
 // every instalment, so a payment made late in the year is treated as though it
 // were available at every earlier due date. Modelling this properly needs a
@@ -66,6 +72,15 @@ export interface AdvanceTaxInput {
    * this it does not arise, so it defaults to false and the relief is not applied.
    */
   reliefTaxPaidInFull?: boolean;
+  /**
+   * Presumptive-scheme election (s.58 of the 2025 Act; old S.44AD/44ADA).
+   * s.408 gives such an assessee a SINGLE instalment — 100% of the advance tax
+   * by 15 March — and s.425 then charges one month's interest (1%) on any
+   * shortfall after that date; the Jun/Sep/Dec ladder and its s.425(2) safe
+   * harbours do not apply. Caller-asserted: the election is a filing choice
+   * the journal cannot derive from trade data.
+   */
+  presumptive?: boolean;
 }
 
 export interface Instalment {
@@ -133,12 +148,16 @@ export function computeAdvanceTax(input: AdvanceTaxInput): AdvanceTaxPlan {
 
   // Standard advance-tax due dates (assumes April-start FY).
   // s.425(2) safe-harbour thresholds attach to the first two instalments ONLY.
-  const defs = [
-    { quarter: 1, label: "15 Jun", date: iso(fyStartYear, 6, 15), cumPct: 15, months: 3, harbour: 12 },
-    { quarter: 2, label: "15 Sep", date: iso(fyStartYear, 9, 15), cumPct: 45, months: 3, harbour: 36 },
-    { quarter: 3, label: "15 Dec", date: iso(fyStartYear, 12, 15), cumPct: 75, months: 3, harbour: null },
-    { quarter: 4, label: "15 Mar", date: iso(fyEndYear, 3, 15), cumPct: 100, months: 1, harbour: null },
-  ];
+  // Under the presumptive election the ladder collapses to the statutory single
+  // instalment: 100% by 15 March, one month's interest on a shortfall after it.
+  const defs = input.presumptive
+    ? [{ quarter: 1, label: "15 Mar", date: iso(fyEndYear, 3, 15), cumPct: 100, months: 1, harbour: null as number | null }]
+    : [
+        { quarter: 1, label: "15 Jun", date: iso(fyStartYear, 6, 15), cumPct: 15, months: 3, harbour: 12 as number | null },
+        { quarter: 2, label: "15 Sep", date: iso(fyStartYear, 9, 15), cumPct: 45, months: 3, harbour: 36 },
+        { quarter: 3, label: "15 Dec", date: iso(fyStartYear, 12, 15), cumPct: 75, months: 3, harbour: null },
+        { quarter: 4, label: "15 Mar", date: iso(fyEndYear, 3, 15), cumPct: 100, months: 1, harbour: null },
+      ];
 
   let prevCum = 0;
   const instalments: Instalment[] = defs.map((d) => {
@@ -185,6 +204,11 @@ export function computeAdvanceTax(input: AdvanceTaxInput): AdvanceTaxPlan {
   const instalmentsS = st.sections.advanceTaxInstalments;
 
   const notes: string[] = [statuteNote(fyLabel)];
+  if (input.presumptive) {
+    notes.push(
+      `Presumptive scheme (${st.sections.presumptive}) asserted: the whole advance tax falls due in ONE instalment — 100% by 15 March (${instalmentsS}). ${deferment} then charges a single month's interest (1%) on any shortfall after that date; the June/September/December instalments and their safe harbours do not apply. The election itself is yours to make and to sustain — this planner takes it as asserted.`,
+    );
+  }
   const harbourHit = instalments.filter((i) => i.safeHarbourMet && i.isDue);
   if (harbourHit.length > 0) {
     notes.push(

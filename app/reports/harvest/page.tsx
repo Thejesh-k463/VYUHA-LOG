@@ -1,32 +1,28 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { KpiCard } from "@/components/kpi-card";
 import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
-import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
+import { daysBetween, fyWindowFor, type OpenLot } from "@/lib/analytics/harvest";
 import {
   sttSplit,
   ltcgRunway,
   setOffAsymmetry,
-  LTCG_THRESHOLD_CAVEAT,
   LIABILITY_CAVEAT,
   NO_WASH_SALE_CAVEAT,
 } from "@/lib/analytics/tax-levers";
 import { FNO_SEGMENTS } from "@/lib/analytics/turnover";
 import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
+import { HarvestSim } from "@/components/reports/harvest-sim";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
-import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
 const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
 const daysHeld = (a: string | null, b: string) =>
   a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
-
-const statusBadge = { offsets: "profit", partial: "warning", carry: "secondary" } as const;
 
 export default function HarvestPage() {
   const today = new Date().toISOString().slice(0, 10);
@@ -38,10 +34,10 @@ export default function HarvestPage() {
   const mtm = getMtmMap();
   const settings = getSettings();
   const fyStartMonth = settings?.fyStartMonth ?? 4;
-  const [ty, tm] = today.split("-").map(Number);
-  const fyStartYear = tm >= fyStartMonth ? ty : ty - 1;
-  const fyStart = `${fyStartYear}-${String(fyStartMonth).padStart(2, "0")}-01`;
-  const fyEnd = `${fyStartYear + 1}-03-31`;
+  // FY window derived from settings.fyStartMonth — the end is the day before
+  // the next FY starts, not a hardcoded 31-Mar (see fyWindowFor).
+  const { fyStart, fyEnd, fyLabel: currentFy } = fyWindowFor(today, fyStartMonth);
+  const daysToFyEnd = daysBetween(today, fyEnd);
 
   // Open equity-delivery lots with an unrealised mark.
   const lots: OpenLot[] = trades
@@ -57,6 +53,15 @@ export default function HarvestPage() {
   // NET (post-charge) P&L — the basis /reports/tax states and taxByFy/
   // classifyGain use; gross here once showed the same FY two different
   // realised-gain figures across the two tax surfaces.
+  //
+  // TODO(grandfathering): /reports/tax runs pre-2018 LTCG lots through
+  // classifyGain (lib/analytics/capital-gains.ts), which raises the cost basis
+  // to the capped 31-Jan-2018 FMV. HARVEST_FIELDS carries none of the three
+  // inputs that computation needs (fmv31Jan2018, buyValue, sellValue), so this
+  // sum deliberately stays on plain netPnl — the figure below can differ from
+  // /reports/tax on a pre-2018 lot until those columns are added to the
+  // projection (columns only, never a new WHERE; lib/queries/trades.ts is
+  // owned elsewhere this round — flagged to the integrator instead).
   let realisedStcg = 0;
   let realisedLtcg = 0;
   for (const t of trades) {
@@ -65,13 +70,9 @@ export default function HarvestPage() {
     else realisedStcg += t.netPnl;
   }
 
-  const r = computeHarvest(lots, realisedStcg, realisedLtcg, today, fyEnd);
-  const lossCandidates = r.candidates;
-
   // ── Tax levers (v3.3.0) ────────────────────────────────────────────────
   // Everything here is (A): computable exactly from executed trades. Nothing
   // recommends a transaction. See lib/analytics/tax-levers.ts.
-  const currentFy = `${fyStartYear}-${String((fyStartYear + 1) % 100).padStart(2, "0")}`;
   const fyClosed = trades.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
 
   const stt = sttSplit(
@@ -113,62 +114,20 @@ export default function HarvestPage() {
       <PageHeader
         title="Tax-loss harvesting"
         description="Book unrealised equity losses before 31-Mar to offset realised gains — India has no wash-sale rule."
-        actions={<Badge variant={r.daysToFyEnd <= 45 ? "warning" : "secondary"}>{r.daysToFyEnd}d to FY end</Badge>}
+        actions={<Badge variant={daysToFyEnd <= 45 ? "warning" : "secondary"}>{daysToFyEnd}d to FY end</Badge>}
       />
       <div className="space-y-5 p-6">
         <ProGate>
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <KpiCard label="Realised STCG (FY)" valueNum={r.realisedStcg} format="inr0" valueClassName={r.realisedStcg >= 0 ? "text-profit" : "text-loss"} sub="short-term" />
-          <KpiCard label="Realised LTCG (FY)" valueNum={r.realisedLtcg} format="inr0" valueClassName={r.realisedLtcg >= 0 ? "text-profit" : "text-loss"} sub={`₹1.25L exempt`} />
-          <KpiCard label="Harvestable loss" valueNum={r.stLoss + r.ltLoss} format="inr0" valueClassName="text-loss" sub={`ST ${inr(r.stLoss, { decimals: 0 })} · LT ${inr(r.ltLoss, { decimals: 0 })}`} />
-          <KpiCard label="Est. tax saved" valueNum={r.taxSaved} format="inr0" valueClassName={r.taxSaved > 0 ? "text-profit" : "text-muted-foreground"} sub="if harvested now" />
-          <KpiCard label="Carries forward" valueNum={r.carryForward} format="inr0" sub="beyond this year's gains" />
-        </section>
-
-        <Card className="p-0">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Harvest candidates</CardTitle>
-            {lossCandidates.length > 0 ? (
-              <Badge variant="secondary">{lossCandidates.length} loss positions</Badge>
-            ) : null}
-          </CardHeader>
-          <CardContent className="p-0">
-            {lossCandidates.length === 0 ? (
-              <EmptyState
-                variant="journal"
-                title="No open equity positions showing an unrealised loss"
-                hint="F&O and intraday are business income and not eligible for capital-gains harvesting."
-              />
-            ) : (
-              <ReportTable>
-                <ReportThead>
-                  <ReportTh>Symbol</ReportTh>
-                  <ReportTh>Term</ReportTh>
-                  <ReportTh align="right">Qty</ReportTh>
-                  <ReportTh align="right">Unrealised loss</ReportTh>
-                  <ReportTh align="right">Offsets now</ReportTh>
-                  <ReportTh>Action</ReportTh>
-                </ReportThead>
-                <tbody>
-                  {lossCandidates.map((c) => (
-                    <ReportTr key={c.id}>
-                      <ReportTd className="font-medium">{c.symbol}</ReportTd>
-                      <ReportTd><Badge variant="outline">{c.term}</Badge></ReportTd>
-                      <ReportTd align="right">{c.qty}</ReportTd>
-                      <ReportTd align="right" className="text-loss">{inr(c.loss, { decimals: 0 })}</ReportTd>
-                      <ReportTd align="right">{c.offsetAmount > 0 ? inr(c.offsetAmount, { decimals: 0 }) : "—"}</ReportTd>
-                      <ReportTd>
-                        <Badge variant={statusBadge[c.status]}>
-                          {c.status === "offsets" ? "harvest — offsets gains" : c.status === "partial" ? "harvest — partial offset" : "harvest — carries forward"}
-                        </Badge>
-                      </ReportTd>
-                    </ReportTr>
-                  ))}
-                </tbody>
-              </ReportTable>
-            )}
-          </CardContent>
-        </Card>
+        {/* KPIs + what-if simulator. computeHarvest is pure, so it moved into
+            the client component and re-runs live on the user's selection —
+            the props are all serializable (advance-tax-calc pattern). */}
+        <HarvestSim
+          lots={lots}
+          realisedStcg={realisedStcg}
+          realisedLtcg={realisedLtcg}
+          today={today}
+          fyEnd={fyEnd}
+        />
 
         {/* The levers a trade book can compute exactly. Deliberately no "sell
             these" ranking: naming a security and prompting a transaction is
@@ -253,7 +212,8 @@ export default function HarvestPage() {
             Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Rates are
             resolved from the date of sale. Realised figures are net (post-charge), matching the Tax Summary.
           </p>
-          <p>{LTCG_THRESHOLD_CAVEAT}</p>
+          {/* LTCG_THRESHOLD_CAVEAT renders verbatim in HarvestSim, directly
+              under the headroom KPI it qualifies. */}
           <p>{NO_WASH_SALE_CAVEAT}</p>
           <p>{LIABILITY_CAVEAT}</p>
         </div>

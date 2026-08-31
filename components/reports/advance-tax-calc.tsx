@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import * as React from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,23 +10,112 @@ import { KpiCard } from "@/components/kpi-card";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
 import { section } from "@/lib/analytics/statute";
 import { inr, fmtDate } from "@/lib/format";
+import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
+
+// ── Persistence ────────────────────────────────────────────────────────────
+// Inputs survive a revisit via localStorage under the versioned envelope the
+// project standard requires. Storage stays the single source of truth: every
+// field below is DERIVED from the stored envelope (or its default), and edits
+// write the whole envelope back — no useState mirror, so hydration renders the
+// server-prefilled defaults and the stored values land right after.
+const STORE_KEY = "vyuha-advance-tax-calc";
+
+interface StoredCalc {
+  v: 1;
+  /** Absent = track this FY's server-computed figure (the safe default). */
+  gains?: number;
+  ratePct?: number;
+  paid?: number;
+  reliefTax?: number;
+  reliefPaidInFull?: boolean;
+  presumptive?: boolean;
+}
+
+function parseStored(raw: string | null): StoredCalc | null {
+  if (!raw) return null;
+  try {
+    const p: unknown = JSON.parse(raw);
+    if (!p || typeof p !== "object" || (p as { v?: unknown }).v !== 1) return null;
+    return p as StoredCalc;
+  } catch {
+    return null;
+  }
+}
+
+/** A stored number is only trusted when it is a finite non-negative number. */
+const num = (x: unknown, fallback: number): number =>
+  typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : fallback;
 
 export function AdvanceTaxCalc({
   initialGains,
   today,
   fyStartMonth,
+  harvestableLoss = 0,
 }: {
   initialGains: number;
   today: string;
   fyStartMonth: number;
+  /** Current harvestable ST+LT unrealised loss (₹), from computeHarvest on the server. */
+  harvestableLoss?: number;
 }) {
-  const [gains, setGains] = useState(Math.max(0, Math.round(initialGains)));
-  const [ratePct, setRatePct] = useState(20);
-  const [paid, setPaid] = useState(0);
+  const stored = parseStored(useStoredValue(STORE_KEY));
+
+  const fyGains = Math.max(0, Math.round(initialGains));
+  const gains = Math.round(num(stored?.gains, fyGains));
+  const ratePct = num(stored?.ratePct, 20);
+  const paid = num(stored?.paid, 0);
+  const reliefTax = num(stored?.reliefTax, 0);
+  const reliefPaidInFull = stored?.reliefPaidInFull === true;
+  const presumptive = stored?.presumptive === true;
+
+  // A stored gains figure is a snapshot of a past visit — it must never
+  // silently masquerade as this FY's number, so it wears a reset affordance.
+  const usingSavedGains = stored?.gains != null && gains !== fyGains;
+
+  const save = (patch: Partial<Omit<StoredCalc, "v">>) => {
+    // An explicit `undefined` in the patch clears that key (JSON drops it),
+    // which is how "gains" returns to tracking the server figure.
+    writeStored(
+      STORE_KEY,
+      JSON.stringify({ v: 1, gains: stored?.gains, ratePct, paid, reliefTax, reliefPaidInFull, presumptive, ...patch }),
+    );
+  };
 
   const estTax = Math.round((gains * ratePct) / 100);
-  const plan = computeAdvanceTax({ estimatedAnnualTax: estTax, taxPaidToDate: paid, today, fyStartMonth });
+  const plan = computeAdvanceTax({
+    estimatedAnnualTax: estTax,
+    taxPaidToDate: paid,
+    today,
+    fyStartMonth,
+    reliefEligibleTax: reliefTax,
+    reliefTaxPaidInFull: reliefPaidInFull,
+    presumptive,
+  });
+
+  // ── Harvest what-if (estimate at the user's blended rate) ────────────────
+  // One line only; the per-head set-off arithmetic and lot detail live on
+  // /reports/harvest. Applying the whole loss at the blended rate is the same
+  // simplification the calculator itself makes, and it is labelled as such.
+  let harvest: { taxCut: number; nextCut: number | null } | null = null;
+  if (harvestableLoss > 0 && estTax > 0) {
+    const estTaxAfter = Math.round((Math.max(0, gains - harvestableLoss) * ratePct) / 100);
+    const planAfter = computeAdvanceTax({
+      estimatedAnnualTax: estTaxAfter,
+      taxPaidToDate: paid,
+      today,
+      fyStartMonth,
+      reliefEligibleTax: reliefTax,
+      reliefTaxPaidInFull: reliefPaidInFull,
+      presumptive,
+    });
+    const nextPayNow = plan.nextDue ? Math.max(0, plan.nextDue.cumRequired - paid) : null;
+    const nextPayAfter = planAfter.nextDue ? Math.max(0, planAfter.nextDue.cumRequired - paid) : null;
+    harvest = {
+      taxCut: Math.max(0, estTax - estTaxAfter),
+      nextCut: nextPayNow != null && nextPayAfter != null ? Math.max(0, nextPayNow - nextPayAfter) : null,
+    };
+  }
 
   const numIn = (v: number, set: (n: number) => void) => (
     <Input
@@ -36,6 +126,8 @@ export function AdvanceTaxCalc({
     />
   );
 
+  const deferment = section(plan.fyLabel, "interestDeferment");
+
   return (
     <div className="space-y-5">
       <Card>
@@ -44,20 +136,66 @@ export function AdvanceTaxCalc({
           <div className="flex flex-wrap gap-5">
             <div className="space-y-1">
               <Label className="text-xs">Estimated taxable gains (FY)</Label>
-              {numIn(gains, setGains)}
+              {numIn(gains, (n) => save({ gains: n }))}
+              {usingSavedGains && (
+                <p className="text-[0.6875rem] text-warning">
+                  Using your saved figure —{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => save({ gains: undefined })}
+                  >
+                    reset to this FY&apos;s {inr(fyGains, { decimals: 0 })}
+                  </button>
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Effective tax rate %</Label>
-              {numIn(ratePct, setRatePct)}
+              {numIn(ratePct, (n) => save({ ratePct: n }))}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Advance tax paid so far</Label>
-              {numIn(paid, setPaid)}
+              {numIn(paid, (n) => save({ paid: n }))}
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">{deferment}(4) relief-eligible tax</Label>
+              {numIn(reliefTax, (n) => save({ reliefTax: n }))}
+              <p className="max-w-56 text-[0.6875rem] text-muted-foreground">
+                Tax on capital gains, dividend, casual income, or business income arising for the FIRST time, that the
+                shortfall traces to.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            <label className="flex cursor-pointer items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={reliefPaidInFull}
+                onChange={(e) => save({ reliefPaidInFull: e.target.checked })}
+                className="mt-0.5 size-3.5"
+              />
+              <span>
+                The tax on that income was (or will be) paid in full in a remaining instalment or by 31 March — the{" "}
+                {deferment}(4) relief is conjunctive and does not arise without this.
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={presumptive}
+                onChange={(e) => save({ presumptive: e.target.checked })}
+                className="mt-0.5 size-3.5"
+              />
+              <span>
+                Presumptive taxation ({section(plan.fyLabel, "presumptive")}) elected — the whole advance tax then falls
+                due in one instalment, 100% by 15 March.
+              </span>
+            </label>
           </div>
           <p className="mt-2 text-[0.6875rem] text-muted-foreground">
             Gains prefilled from realised FY P&amp;L in this journal. Rate is your blended effective rate (STCG 15/20%,
-            LTCG 12.5%, F&amp;O at slab) — adjust to your bracket.
+            LTCG 12.5%, F&amp;O at slab) — adjust to your bracket. Inputs are saved on this device.
           </p>
         </CardContent>
       </Card>
@@ -66,8 +204,20 @@ export function AdvanceTaxCalc({
         <KpiCard label={`Est. tax ${plan.fyLabel}`} valueNum={plan.estimatedAnnualTax} format="inr0" sub={`${ratePct}% of gains`} />
         <KpiCard label="Paid so far" value={`${plan.paidPct}%`} valueClassName={plan.paidPct >= 90 ? "text-profit" : plan.paidPct > 0 ? "text-warning" : "text-loss"} sub={inr(plan.taxPaidToDate, { decimals: 0 })} />
         <KpiCard label="Next instalment" value={plan.nextDue ? plan.nextDue.label : "—"} sub={plan.nextDue ? `pay ${inr(Math.max(0, plan.nextDue.cumRequired - plan.taxPaidToDate), { decimals: 0 })}` : "year complete"} />
-        <KpiCard label="Deferment interest" valueNum={plan.interest234C} format="inr0" valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub={`${section(plan.fyLabel, "interestDeferment")} · on shortfalls so far`} />
+        <KpiCard label="Deferment interest" valueNum={plan.interest234C} format="inr0" valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub={`${deferment} · on shortfalls so far`} />
       </section>
+
+      {harvest && (
+        <div className="rounded-lg border-l-2 border-l-accent bg-accent/5 px-3 py-2 text-xs text-foreground">
+          Harvesting all currently-available losses ({inr(harvestableLoss, { decimals: 0 })}) would reduce the estimated
+          tax by {inr(harvest.taxCut, { decimals: 0 })}
+          {harvest.nextCut != null && <> and the next instalment by {inr(harvest.nextCut, { decimals: 0 })}</>}.{" "}
+          <span className="text-muted-foreground">
+            Estimate at your blended {ratePct}% rate — the per-head set-off and lot detail live on{" "}
+            <Link href="/reports/harvest" className="underline underline-offset-2">Tax-loss harvesting</Link>.
+          </span>
+        </div>
+      )}
 
       <Card className="p-0">
         <CardHeader><CardTitle>Instalment schedule — {plan.fyLabel}</CardTitle></CardHeader>
@@ -142,9 +292,19 @@ export function AdvanceTaxCalc({
       )}
 
       <p className="text-[0.6875rem] text-muted-foreground">
-        Planning estimate, not filing advice. Due dates 15 Jun / 15 Sep / 15 Dec / 15 Mar at 15 / 45 / 75 / 100%;
-        deferment interest is 3% / 3% / 3% / 1% of each shortfall ({section(plan.fyLabel, "interestDeferment")} — the
-        2025 Act states these as flat rates; the 1961 Act reached the same figures as 1%/month).
+        Planning estimate, not filing advice.{" "}
+        {presumptive ? (
+          <>
+            Under the presumptive election the single due date is 15 Mar at 100%; deferment interest is 1% of the
+            shortfall for one month ({deferment}).
+          </>
+        ) : (
+          <>
+            Due dates 15 Jun / 15 Sep / 15 Dec / 15 Mar at 15 / 45 / 75 / 100%; deferment interest is 3% / 3% / 3% / 1%
+            of each shortfall ({deferment} — the 2025 Act states these as flat rates; the 1961 Act reached the same
+            figures as 1%/month).
+          </>
+        )}
       </p>
     </div>
   );
