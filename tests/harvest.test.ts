@@ -183,14 +183,20 @@ describe("harvest page — realised gains are net, matching /reports/tax", () =>
     expect(src).toMatch(/const g = classifyGain\(/);
     expect(src).toMatch(/realisedLtcg \+= g\.taxableGain/);
     expect(src).toMatch(/realisedStcg \+= g\.taxableGain/);
-    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018");
+    // PER-SHARE column → TOTAL units for classifyGain (the tax-itr.ts scaling).
+    // Passing the raw per-share figure overstated realised LTCG on every
+    // pre-2018 lot (audit 2026-09-01) — the ×buyQty IS the fix, pin it.
+    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null");
     expect(src).not.toContain("grossPnl");
   });
 
   it("the advance-tax page mirrors the same classifyGain loop", () => {
     const src = read("app/reports/advance-tax/page.tsx");
     expect(src).toMatch(/const g = classifyGain\(/);
-    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018");
+    // PER-SHARE column → TOTAL units for classifyGain (the tax-itr.ts scaling).
+    // Passing the raw per-share figure overstated realised LTCG on every
+    // pre-2018 lot (audit 2026-09-01) — the ×buyQty IS the fix, pin it.
+    expect(src).toContain("fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null");
   });
 
   it("derives the FY window from settings.fyStartMonth, never a -03-31 literal", () => {

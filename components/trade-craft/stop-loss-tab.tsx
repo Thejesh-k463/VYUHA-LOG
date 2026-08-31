@@ -83,7 +83,7 @@ export function StopLossTab({ report, setups }: { report: SlReport; setups: Setu
               {report.losersClassified === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No stop-recorded loser could be classified
-                  {report.excluded > 0 && <> — {report.excluded} row{report.excluded === 1 ? "" : "s"} had no derivable direction or missing prices and {report.excluded === 1 ? "was" : "were"} excluded rather than guessed</>}.
+                  {report.excludedLosers > 0 && <> — {report.excludedLosers} losing row{report.excludedLosers === 1 ? "" : "s"} had no derivable direction or missing prices and {report.excludedLosers === 1 ? "was" : "were"} excluded rather than guessed</>}.
                 </p>
               ) : (
                 <>
@@ -105,9 +105,9 @@ export function StopLossTab({ report, setups }: { report: SlReport; setups: Setu
                       R here is derived from the recorded stop distance, never from a generic risk cap.
                     </p>
                   )}
-                  {report.excluded > 0 && (
+                  {report.excludedLosers > 0 && (
                     <p className="text-[0.6875rem] text-muted-foreground">
-                      {report.excluded} stop-recorded row{report.excluded === 1 ? "" : "s"} excluded: the flat trade row
+                      {report.excludedLosers} stop-recorded losing row{report.excludedLosers === 1 ? "" : "s"} excluded: the flat trade row
                       stores no direction, and where the stop sits between the two average prices — exactly where
                       slipped stops land — long and short cannot be told apart honestly.
                     </p>
@@ -130,7 +130,9 @@ export function StopLossTab({ report, setups }: { report: SlReport; setups: Setu
                 <p className="text-sm text-muted-foreground">
                   {report.winnersWithSl > 0
                     ? "No winner with a recorded stop has price-history coverage yet, so how close they came to stopping out is unmeasured — not assumed safe. Load daily bhavcopies (Portfolio Risk → Auto-MTM) to measure it."
-                    : "No winners carry a recorded stop yet."}
+                    : report.excludedWinners > 0
+                      ? `${report.excludedWinners} winner${report.excludedWinners === 1 ? "" : "s"} recorded a stop, but ${report.excludedWinners === 1 ? "its" : "their"} direction could not be derived, so ${report.excludedWinners === 1 ? "it was" : "they were"} excluded rather than guessed.`
+                      : "No winners carry a recorded stop yet."}
                 </p>
               ) : (
                 <>
@@ -143,6 +145,12 @@ export function StopLossTab({ report, setups }: { report: SlReport; setups: Setu
                     Measured at EOD granularity — intraday extremes are invisible, so &quot;nearly stopped out&quot; is a floor, not a ceiling.
                   </p>
                 </>
+              )}
+              {report.excludedWinners > 0 && report.winnersWithSl > 0 && (
+                <p className="text-[0.6875rem] text-muted-foreground">
+                  {report.excludedWinners} stop-recorded winner{report.excludedWinners === 1 ? "" : "s"} excluded: direction
+                  could not be derived from the flat row, so {report.excludedWinners === 1 ? "it is" : "they are"} left out rather than guessed.
+                </p>
               )}
             </CardContent>
           </Card>

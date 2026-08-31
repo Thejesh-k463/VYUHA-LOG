@@ -78,6 +78,36 @@ describe("extractStopEdits", () => {
     expect(edits[0].after).toBeNull();
   });
 
+  it("EXCLUDES a fully-closed short rather than misclassifying its widening (v3.5.0 regression)", () => {
+    // A short entered at 120 with a stop at 130, raised to 160 — a REAL
+    // widening — then fully closed. The flat row has buyQty === sellQty, so
+    // direction is unknowable from it; the page used to guess "long"
+    // (sellQty > buyQty ? short : long), and under "long" the same edit
+    // classifies as a TIGHTENING. The fix leaves flat rows out of the
+    // direction map entirely, so the edit falls to the drop path and is
+    // COUNTED, never inverted.
+    const raise = entry({ tradeId: 7, before: { slPlanned: 130 }, after: { slPlanned: 160 } });
+
+    // The inversion the old guess produced, pinned so nobody reintroduces it:
+    expect(classifyMove({ tradeId: 7, ts: raise.ts, before: 130, after: 160, direction: "short" })).toBe("widened");
+    expect(classifyMove({ tradeId: 7, ts: raise.ts, before: 130, after: 160, direction: "long" })).toBe("tightened");
+
+    // Page rule after the fix: a flat row (sellQty === buyQty) never enters the map.
+    const flatRows = [{ id: 7, buyQty: 50, sellQty: 50 }];
+    const directionByTrade = new Map<number, "long" | "short">();
+    for (const t of flatRows) {
+      if (t.sellQty !== t.buyQty) directionByTrade.set(t.id, t.sellQty > t.buyQty ? "short" : "long");
+    }
+
+    const { edits, noDirection } = extractStopEdits([raise], directionByTrade);
+    expect(edits).toEqual([]);
+    expect(noDirection).toBe(1);
+
+    const r = stopMigration(edits, new Map([[7, -2500]]));
+    expect(r.widenedTrades).toBe(0); // excluded — not counted as widened, and NOT as tightened either
+    expect(r.measured).toBe(0);
+  });
+
   it("feeds stopMigration end to end — a long stop moved down twice is one widened trade, two events", () => {
     const { edits } = extractStopEdits(
       [

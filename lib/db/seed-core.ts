@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, or } from "drizzle-orm";
 import { db } from "./index";
 import { capitalSnapshots, chargeConfig, marginConfig, regulatoryRulePacks, riskConfig, settings, accounts } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
@@ -85,6 +85,42 @@ export function seedDatabase(log = false): SeedReport {
    * on an app update would be the app silently disagreeing with the broker.
    */
   for (const row of buildChargeConfigSeed()) {
+    /**
+     * A USER-EDITED row whose window covers this epoch's start owns every date
+     * this row would claim, so the seed must not touch that key at all.
+     *
+     * `onConflictDoNothing` alone is not that guard: `effectiveFrom` is part of
+     * the unique index (migration 0050), so a seed epoch (e.g. the 2026-04-01
+     * F&O STT row) never CONFLICTS with a user-edited 1970-01-01→open row — it
+     * inserts cleanly beside it, and `findRates` picks the NEWEST covering
+     * epoch, silently shadowing the rates the user verified against their own
+     * contract note for every trade dated ≥ its effectiveFrom. That is the
+     * exact silent-rate-substitution the epoch work exists to prevent.
+     *
+     * The check sits BEFORE both the insert and the refresh below so the two
+     * paths agree: a covered epoch is neither added nor refreshed. Windows are
+     * inclusive-from / exclusive-to, and a null effectiveTo counts as open.
+     * A user edit that covers only PART of history (a closed epoch) blocks only
+     * the seed rows starting inside its window — the rest still refresh.
+     */
+    const from = row.effectiveFrom ?? "1970-01-01";
+    const editedCover = db
+      .select({ id: chargeConfig.id })
+      .from(chargeConfig)
+      .where(
+        and(
+          eq(chargeConfig.broker, row.broker),
+          eq(chargeConfig.plan, row.plan),
+          eq(chargeConfig.segment, row.segment),
+          eq(chargeConfig.exchange, row.exchange),
+          eq(chargeConfig.userEdited, true),
+          lte(chargeConfig.effectiveFrom, from),
+          or(isNull(chargeConfig.effectiveTo), gt(chargeConfig.effectiveTo, from)),
+        ),
+      )
+      .get();
+    if (editedCover) continue;
+
     const inserted = db.insert(chargeConfig).values(row).onConflictDoNothing().run().changes;
     report.chargeAdded += inserted;
     if (inserted > 0) continue;

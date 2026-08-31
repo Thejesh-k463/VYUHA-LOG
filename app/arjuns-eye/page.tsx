@@ -159,12 +159,20 @@ export default function ArjunsEyePage() {
   const tsl = tslReport(slTrades);
 
   // ── Stop migration, mined from the audit log ────────────────────────────
-  // Direction per trade uses the staged engine's own heuristic (queries/staged
-  // `directionOf`): entries that are sells make a short. The intersection with
-  // this page's scoped trade ids is what account-scopes the unscoped audit read.
-  const directionByTrade = new Map<number, "long" | "short">(
-    trades.map((t) => [t.id, t.sellQty > t.buyQty ? "short" : "long"]),
-  );
+  // Direction per trade is knowable from the flat row ONLY while the position
+  // is lopsided (open or partially closed): a FULLY-CLOSED trade has
+  // sellQty === buyQty, and the flat row cannot say which side entered first.
+  // The old `sellQty > buyQty ? "short" : "long"` read every flat short as a
+  // long, and widen/tighten INVERTS with direction — a short's stop raised
+  // 130→160 (a real widening) classified as a tightening. Flat rows are left
+  // OUT of the map, fall to the mining code's unknown-direction drop path, and
+  // are counted (`mined.noDirection`) — surfaced on the Trailing tab so the
+  // shrunken coverage is stated, never guessed. The intersection with this
+  // page's scoped trade ids is what account-scopes the unscoped audit read.
+  const directionByTrade = new Map<number, "long" | "short">();
+  for (const t of trades) {
+    if (t.sellQty !== t.buyQty) directionByTrade.set(t.id, t.sellQty > t.buyQty ? "short" : "long");
+  }
   const mined = extractStopEdits(getTradeStopEditEntries(), directionByTrade);
   const migration = stopMigration(mined.edits, new Map(closed.map((t) => [t.id, t.netPnl])));
 
@@ -188,6 +196,13 @@ export default function ArjunsEyePage() {
       buyValue: t.buyValue,
       slPlanned: t.slPlanned,
       trailingSl: t.trailingSl,
+      // hasPlanR's verification inputs: a stop counts as plan-derived only when
+      // riskAmount reproduces |avgPrice − stop| × qty (either price side — the
+      // flat row states no direction).
+      avgBuyPrice: t.avgBuyPrice,
+      avgSellPrice: t.avgSellPrice,
+      qty: Math.max(t.buyQty, t.sellQty),
+      riskAmount: t.riskAmount,
     }));
   const wlRep = winLossReport(wlTrades);
   const rDist = rDistribution(wlTrades);
@@ -482,7 +497,7 @@ export default function ArjunsEyePage() {
               tabs={[
                 { key: "cockpit", label: "Cockpit", content: cockpitTab },
                 { key: "stops", label: "Stop-losses", content: <StopLossTab report={slRep} setups={slSetups} /> },
-                { key: "trailing", label: "Trailing stops", content: <TrailingTab tsl={tsl} migration={migration} /> },
+                { key: "trailing", label: "Trailing stops", content: <TrailingTab tsl={tsl} migration={migration} excludedNoDirection={mined.noDirection} /> },
                 { key: "winloss", label: "Winners vs losers", content: <WinLossTab report={wlRep} dist={rDist} tail={tail} /> },
                 { key: "exits", label: "Exits", content: <ExitsTab clock={clock} holding={holdingRep} frag={frag} triggers={triggers} /> },
               ]}

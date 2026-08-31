@@ -50,6 +50,7 @@ export async function POST(req: Request) {
 
 const patchInput = z.object({
   id: z.number().int().positive(),
+  accountId: z.number().int().positive(),
   status: z.enum(["planned", "reviewed"]),
   reviewNotes: z.string().nullable().optional(),
 });
@@ -64,7 +65,14 @@ export async function PATCH(req: Request) {
   const parsed = patchInput.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Invalid review." }, { status: 400 });
   const v = parsed.data;
-  const accountId = getWriteAccountId(null);
+  // A review updates an EXISTING row, so the target account is the row's own —
+  // the session card sends it. getWriteAccountId validates the explicit id
+  // against the accounts table (archived included: a past session on an
+  // archived book stays reviewable) and never resolves to 0 (invariant 9).
+  // Resolving getWriteAccountId(null) here instead fell back to the SELECTED
+  // account — in the All-accounts view that is the lowest-id account, which
+  // 404'd "Mark reviewed" for every other account's sessions (v3.5.0).
+  const accountId = getWriteAccountId(v.accountId);
   // Scoped to (id, account) like the POST: an id from another account is "no
   // such session", never a cross-boundary write (invariant 9 / defect D7).
   const existing = db.select().from(tradingSessions).where(and(eq(tradingSessions.id, v.id), eq(tradingSessions.accountId, accountId))).get();

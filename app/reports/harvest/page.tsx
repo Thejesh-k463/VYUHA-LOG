@@ -67,7 +67,10 @@ export default function HarvestPage() {
       buyValue: t.buyValue,
       sellValue: t.sellValue,
       netPnl: t.netPnl,
-      fmv31Jan2018: t.fmv31Jan2018,
+      // fmv31Jan2018 is stored PER SHARE (schema); classifyGain wants the
+      // same TOTAL units as buyValue/sellValue — the exact scaling
+      // lib/queries/tax-itr.ts uses, so both tax surfaces agree.
+      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
     });
     if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
     else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;

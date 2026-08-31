@@ -51,7 +51,7 @@ export default function SessionsPage() {
       {s.thesis && <p className="border-t border-rule pt-2 text-xs text-muted-foreground">Plan: {s.thesis}</p>}
       {s.status === "reviewed"
         ? (s.reviewNotes && <p className="border-t border-rule pt-2 text-xs text-muted-foreground">Review: {s.reviewNotes}</p>)
-        : <SessionReviewControls sessionId={s.id} />}
+        : <SessionReviewControls sessionId={s.id} accountId={s.accountId} />}
     </CardContent>
   </Card>)}{sessions.length === 0 && <EmptyState variant="playbook" title="No session plans yet" hint="Commit a pre-market plan above and it will show up here with its review." />}</div></div></>;
 }

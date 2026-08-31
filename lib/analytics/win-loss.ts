@@ -13,8 +13,14 @@
 // - Payoff ratio is NULL when there are no losses or no wins — never Infinity
 //   in the wire shape (a book with no losses yet has an unmeasurable payoff,
 //   not an infinitely good one).
-// - The R histogram is SPLIT by provenance: a row with a recorded plan
-//   (slPlanned or trailingSl) carries plan-derived R; everything else carries
+// - The R histogram is SPLIT by provenance: a row carries plan-derived R only
+//   when its R DENOMINATOR verifiably derives from a recorded stop —
+//   riskAmount within PLAN_R_RISK_TOLERANCE of |avgEntryPrice − stop| × qty
+//   (see hasPlanR). Merely RECORDING a stop is not enough: the Stop-losses
+//   tab's own suggested workflow records a stop on a trade whose riskAmount
+//   stays the import default (edit-trade-dialog's riskTouched blocks the
+//   SL-derived recompute), and rMultiple = netPnl / riskAmount, so that row's
+//   R is still measured in cap units. Everything unverifiable carries
 //   default-cap R — netPnl over the per-trade cap (₹9,500 default, see
 //   lib/import/commit.ts) — which measures P&L in cap units, NOT plan
 //   adherence, and must never be presented unlabelled.
@@ -30,10 +36,18 @@ import {
 import { wilsonInterval, type Interval } from "@/lib/analytics/inference";
 
 export interface WinLossTrade extends AnalyticsTrade {
-  /** Planned stop-loss LEVEL (per-unit rupees, REAL) — presence marks plan-derived R. */
+  /** Planned stop-loss LEVEL (per-unit rupees, REAL) — a candidate stop for hasPlanR. */
   slPlanned: number | null;
-  /** Trailing stop LEVEL (per-unit rupees, REAL) — presence marks plan-derived R. */
+  /** Trailing stop LEVEL (per-unit rupees, REAL) — a candidate stop for hasPlanR. */
   trailingSl: number | null;
+  /** Weighted-average buy price (per-unit rupees, REAL). Null/0 when unknown. */
+  avgBuyPrice: number | null;
+  /** Weighted-average sell price (per-unit rupees, REAL). Null/0 when unknown. */
+  avgSellPrice: number | null;
+  /** Traded quantity — max(buyQty, sellQty) on the flat row. Null/0 when unknown. */
+  qty: number | null;
+  /** The R denominator actually stored on the row (₹, runtime rupees). */
+  riskAmount: number | null;
 }
 
 /** Closed priced trades needed before a verdict stops being mostly noise. */
@@ -131,7 +145,7 @@ export interface RBucket {
   /** Upper edge, null for the open right tail. */
   hi: number | null;
   label: string;
-  /** Trades whose R derives from a recorded plan (slPlanned or trailingSl). */
+  /** Trades whose R denominator verifiably derives from a recorded stop (hasPlanR). */
   plan: number;
   /** Trades whose R is netPnl over the per-trade cap — NOT plan adherence. */
   defaultCap: number;
@@ -148,9 +162,46 @@ export interface RDistribution {
   noRCount: number;
 }
 
-/** True when the row records a plan its R can be derived from. */
+/**
+ * Relative tolerance for tying riskAmount back to a recorded stop:
+ * |riskAmount − |avgPrice − stop| × qty| / (|avgPrice − stop| × qty) ≤ 2%.
+ * Wide enough to absorb rupee-rounding of riskAmount and weighted-average
+ * price truncation; narrow enough that the ₹9,500 import default cannot
+ * coincidentally pass except by an actual match.
+ */
+export const PLAN_R_RISK_TOLERANCE = 0.02;
+
+/**
+ * True when the row's R DENOMINATOR verifiably derives from a recorded stop —
+ * not merely when a stop exists. rMultiple = netPnl / riskAmount, and a trade
+ * can record a stop while riskAmount remains the import default (the
+ * Stop-losses tab's suggested workflow produces exactly this: edit-trade-dialog
+ * sets riskTouched, which blocks the SL-derived risk recompute). Presence-only
+ * classification put cap-unit R in the plan series; here the tie is proven:
+ * some recorded stop (slPlanned or trailingSl) must reproduce riskAmount as
+ * |avgPrice − stop| × qty within PLAN_R_RISK_TOLERANCE.
+ *
+ * The match is accepted against EITHER avgBuyPrice or avgSellPrice: direction
+ * (long/short) is not derivable from a flat row, so we cannot know which side
+ * was the entry — but matching either side proves the denominator was computed
+ * from the stop and an actual traded price, which is the provenance claim the
+ * plan series makes. When any verification input is absent, the row is
+ * default-cap: never overclaim provenance.
+ */
 export function hasPlanR(t: WinLossTrade): boolean {
-  return t.slPlanned != null || t.trailingSl != null;
+  const risk = t.riskAmount;
+  const qty = t.qty;
+  if (risk == null || risk <= 0 || qty == null || qty <= 0) return false;
+  const stops = [t.slPlanned, t.trailingSl].filter((s): s is number => s != null);
+  if (stops.length === 0) return false;
+  const prices = [t.avgBuyPrice, t.avgSellPrice].filter((p): p is number => p != null && p > 0);
+  for (const stop of stops) {
+    for (const price of prices) {
+      const implied = Math.abs(price - stop) * qty;
+      if (implied > 0 && Math.abs(risk - implied) / implied <= PLAN_R_RISK_TOLERANCE) return true;
+    }
+  }
+  return false;
 }
 
 const fmtR = (x: number) => `${x}R`;
@@ -216,9 +267,10 @@ export interface TailReport {
   worst5PctShare: number | null;
   /**
    * Coverage for the deep-loss economics: how many of the losses carry a
-   * plan-derived R. Say "recorded of total" wherever the gap is shown —
-   * default-cap R cannot say whether a stop was overrun, so those rows are
-   * excluded, not assumed clean.
+   * plan-derived R (hasPlanR — the R denominator verifiably ties to a recorded
+   * stop). Say "recorded of total" wherever the gap is shown — default-cap R
+   * cannot say whether a stop was overrun, so those rows are excluded, not
+   * assumed clean.
    */
   planLossCoverage: { recorded: number; total: number };
   /** Plan-derived losses with R <= DEEP_LOSS_R. */

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { classifyMove, stopMigration, stopMigrationFinding, type StopEdit } from "@/lib/analytics/stop-migration";
+import {
+  classifyMove,
+  stopMigration,
+  stopMigrationFinding,
+  MIN_WIDENED_SAMPLE,
+  type StopEdit,
+} from "@/lib/analytics/stop-migration";
 
 /**
  * Widening a stop while a trade is against you converts a planned, sized loss
@@ -84,6 +90,41 @@ describe("stopMigrationFinding", () => {
   it("stays silent below the sample threshold rather than asserting on three trades", () => {
     const r = stopMigration(many(2, 1), new Map([[1, -100], [2, -100], [3, 50]]));
     expect(stopMigrationFinding(r, 10)).toBeNull();
+  });
+
+  it("refuses an n=1 expectancy claim — one widened trade in a ten-trade book stays silent (v3.5.0 regression)", () => {
+    // The old gate summed widenedTrades + disciplinedTrades: 1 + 9 = 10 passed
+    // minSample and the screen asserted "your widened stops average ₹X worse"
+    // over a single trade. The floor now binds the widened wing itself.
+    const pnl = new Map<number, number>();
+    pnl.set(1, -9000);
+    for (let i = 2; i <= 10; i++) pnl.set(i, 500);
+    const r = stopMigration(many(1, 1), pnl);
+    expect(r.widenedTrades).toBe(1);
+    expect(r.widenedTrades + r.disciplinedTrades).toBeGreaterThanOrEqual(10); // total gate alone would pass
+    expect(stopMigrationFinding(r, 10)).toBeNull();
+  });
+
+  it("concludes exactly at the widened-wing floor, and the floor is 5", () => {
+    expect(MIN_WIDENED_SAMPLE).toBe(5);
+    const pnl = new Map<number, number>();
+    for (let i = 1; i <= 5; i++) pnl.set(i, -1000);
+    for (let i = 6; i <= 12; i++) pnl.set(i, 400);
+    expect(stopMigrationFinding(stopMigration(many(5, 1), pnl), 10)).toMatch(/WORSE per trade/);
+    // One fewer widened trade, same total sample: silent.
+    const pnl4 = new Map(pnl);
+    const r4 = stopMigration(many(4, 1), pnl4);
+    expect(r4.widenedTrades + r4.disciplinedTrades).toBe(12);
+    expect(stopMigrationFinding(r4, 10)).toBeNull();
+  });
+
+  it("states the baseline for what it is — trades with no widening on record, not a verified untouched set", () => {
+    const pnl = new Map<number, number>();
+    for (let i = 1; i <= 6; i++) pnl.set(i, -1000);
+    for (let i = 7; i <= 14; i++) pnl.set(i, 500);
+    const msg = stopMigrationFinding(stopMigration(many(6, 1), pnl), 10)!;
+    expect(msg).toMatch(/no widening on the audit record/);
+    expect(msg).not.toMatch(/where the stop stood/);
   });
 
   it("states the cost when widening really is worse", () => {

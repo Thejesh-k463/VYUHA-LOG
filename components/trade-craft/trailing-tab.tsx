@@ -3,15 +3,28 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { inr, num } from "@/lib/format";
 import { MIN_SAMPLE as SL_MIN_SAMPLE, type TslReport } from "@/lib/analytics/sl-analysis";
-import { stopMigrationFinding, type StopMigrationReport } from "@/lib/analytics/stop-migration";
+import { stopMigrationFinding, MIN_WIDENED_SAMPLE, type StopMigrationReport } from "@/lib/analytics/stop-migration";
 
 /**
  * Trailing-stops tab — M1's tslReport plus the audit-mined stop-migration
  * story. Both refuse below their floors on screen rather than thinning the
  * claim: a win rate over five TSL trades is a coin story, and "you widen
  * stops" off two edits is an accusation, not an insight.
+ *
+ * `excludedNoDirection` is the count of stop edits the mining DROPPED because
+ * the trade's direction is unknowable from its flat row (fully closed:
+ * buyQty === sellQty). Guessing "long" there inverted widen/tighten for every
+ * flat short, so the edits are excluded and the shrunken coverage is stated.
  */
-export function TrailingTab({ tsl, migration }: { tsl: TslReport; migration: StopMigrationReport }) {
+export function TrailingTab({
+  tsl,
+  migration,
+  excludedNoDirection,
+}: {
+  tsl: TslReport;
+  migration: StopMigrationReport;
+  excludedNoDirection: number;
+}) {
   const finding = stopMigrationFinding(migration);
   return (
     <div className="space-y-5">
@@ -66,7 +79,7 @@ export function TrailingTab({ tsl, migration }: { tsl: TslReport; migration: Sto
                 <KpiCard label="Trades widened" valueNum={migration.widenedTrades} format="int" valueClassName={migration.widenedTrades > 0 ? "text-warning" : ""} sub={`${migration.widenEvents} widening edit${migration.widenEvents === 1 ? "" : "s"}`} />
                 <KpiCard label="Stops removed" valueNum={migration.removedTrades} format="int" valueClassName={migration.removedTrades > 0 ? "text-loss" : ""} sub="deleted after being set" />
                 <KpiCard label="Worst single trade" value={migration.worstTradeWidenings > 0 ? `${migration.worstTradeWidenings}×` : "—"} sub="widenings on one position" />
-                <KpiCard label="Widened expectancy" value={migration.expectancyWidened == null ? "—" : inr(migration.expectancyWidened, { decimals: 0 })} valueClassName={migration.expectancyWidened != null && migration.expectancyWidened < 0 ? "text-loss" : ""} sub={`vs ${migration.expectancyDisciplined == null ? "—" : inr(migration.expectancyDisciplined, { decimals: 0 })} untouched`} />
+                <KpiCard label="Widened expectancy" value={migration.expectancyWidened == null ? "—" : inr(migration.expectancyWidened, { decimals: 0 })} valueClassName={migration.expectancyWidened != null && migration.expectancyWidened < 0 ? "text-loss" : ""} sub={`vs ${migration.expectancyDisciplined == null ? "—" : inr(migration.expectancyDisciplined, { decimals: 0 })} with no widening on record`} />
               </div>
             </>
           ) : migration.widenedTrades === 0 ? (
@@ -79,14 +92,22 @@ export function TrailingTab({ tsl, migration }: { tsl: TslReport; migration: Sto
           ) : (
             <p className="text-sm text-muted-foreground">
               {migration.widenedTrades} trade{migration.widenedTrades === 1 ? "" : "s"} had a stop widened, but
-              that is below the sample this panel concludes on. It is counted here rather than dressed up as
-              a pattern.
+              an average needs at least <b>{MIN_WIDENED_SAMPLE}</b> widened trades before it stops being a story
+              about one trade. It is counted here rather than dressed up as a pattern.
+            </p>
+          )}
+          {excludedNoDirection > 0 && (
+            <p className="text-[0.6875rem] text-muted-foreground">
+              {excludedNoDirection} stop edit{excludedNoDirection === 1 ? "" : "s"} excluded: the trade is fully
+              closed, so its flat row cannot state long or short — and widen vs tighten flips with direction.
+              Coverage above is the open and partially-closed book only, not the whole audit trail.
             </p>
           )}
           <p className="text-[0.6875rem] text-muted-foreground">
             Widening means moving the stop AWAY from entry — the edit that grows the loss already agreed to.
-            The cost is stated as an expectancy gap against untouched trades, never as counterfactual P&amp;L:
-            what the original stop &quot;would have saved&quot; needs a price path the journal does not have.
+            The cost is stated as an expectancy gap against the other closed trades (those with no widening on
+            the audit record — not a verified untouched set), never as counterfactual P&amp;L: what the original
+            stop &quot;would have saved&quot; needs a price path the journal does not have.
           </p>
         </CardContent>
       </Card>

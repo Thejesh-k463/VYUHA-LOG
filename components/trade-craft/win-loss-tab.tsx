@@ -128,9 +128,11 @@ export function WinLossTab({ report, dist, tail }: { report: WinLossReport; dist
               <RHistogram buckets={dist.buckets} />
               <p className="mt-2 text-[0.6875rem] text-muted-foreground">
                 Two series because the R means two different things. <b>Plan-derived R</b> is measured against a
-                stop the trade actually recorded. <b>Default-cap R</b> is net P&amp;L over the per-trade cap
-                (₹9,500 by default) that imports fall back to — it measures P&amp;L in cap units, <b>not</b> plan
-                adherence, and a &minus;2 there does not mean a stop was overrun.
+                risk amount that verifiably derives from a recorded stop (the stored risk matches
+                |entry &minus; stop| &times; qty). <b>Default-cap R</b> is everything else — including trades that
+                recorded a stop but whose risk stayed the per-trade cap (₹9,500 by default) that imports fall
+                back to — it measures P&amp;L in cap units, <b>not</b> plan adherence, and a &minus;2 there does
+                not mean a stop was overrun.
                 {dist.noRCount > 0 && <> {dist.noRCount} trade{dist.noRCount === 1 ? "" : "s"} carry no R at all and sit in neither series.</>}
               </p>
             </>
@@ -157,7 +159,7 @@ export function WinLossTab({ report, dist, tail }: { report: WinLossReport; dist
               </div>
               <p className="text-[0.6875rem] text-muted-foreground">
                 Deep-loss economics are computed on <b>{tail.planLossCoverage.recorded} of {tail.planLossCoverage.total}</b>{" "}
-                losses — the ones whose R derives from a recorded plan. Default-cap R cannot say whether a stop
+                losses — the ones whose R denominator verifiably derives from a recorded stop. Default-cap R cannot say whether a stop
                 was overrun, so those losses are excluded from this comparison, not assumed clean. The gap is an
                 expectancy difference against the clean-loss average, never a counterfactual &quot;would have saved&quot;.
               </p>

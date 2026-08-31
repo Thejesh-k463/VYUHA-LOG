@@ -95,15 +95,23 @@ function colFinder(header: string[]) {
 export function detectZerodha(ctx: ParseContext): number {
   // Only strings that actually name the broker. "tradebook" and "console" are
   // generic English — Paytm's export is literally called "… - Tradebook.xlsx".
+  const matrices = toMatrices(ctx);
+  const filenameNamed = /zerodha|kite/i.test(ctx.filename);
   // The tax P&L export names no broker in its FILENAME (taxpnl-<name>-<fy>…)
   // but names one in its preamble ("View Zerodha's guide on using tax
-  // reports…", verified on a real export 2026-09-01) — an in-content name is
-  // as good as a filename one, and bounded to the preamble rows so a stray
-  // mention deep in another broker's data cannot qualify a file.
-  const matrices = toMatrices(ctx);
-  const named =
-    /zerodha|kite/i.test(ctx.filename) ||
-    matrices.some((rows) => rows.slice(0, 10).flat().some((c) => /zerodha/i.test(c)));
+  // reports…", verified on a real export 2026-09-01). An in-content name
+  // counts ONLY when it looks like a preamble line — a row with at most two
+  // non-empty cells in the first 10 rows. A DATA cell saying "Zerodha" (a
+  // user's own multi-broker log with a Broker column) sits in a wide row and
+  // must NOT qualify the file: that is the 2026-08-12 misclaim class again,
+  // and it belongs to the column mapper's question, not to this parser.
+  const contentNamed = matrices.some((rows) =>
+    rows.slice(0, 10).some((row) => {
+      const nonEmpty = row.filter((c) => c.trim() !== "");
+      return nonEmpty.length <= 2 && nonEmpty.some((c) => /zerodha/i.test(c));
+    }),
+  );
+  const named = filenameNamed || contentNamed;
 
   // Fingerprints are scored across EVERY sheet: the tax P&L keeps its trade
   // table and its "- Z" heads on different sheets.
@@ -140,10 +148,11 @@ export function detectZerodha(ctx: ParseContext): number {
       consoleFp = true;
   }
   if (h < 0) {
-    // A named file with no readable table still routes here so the parser can
-    // say "no recognizable header" by name, rather than the mapper offering
-    // columns that do not exist.
-    return named ? 0.3 : 0;
+    // A FILENAME-named file with no readable table still routes here so the
+    // parser can say "no recognizable header" by name, rather than the mapper
+    // offering columns that do not exist. A content mention never earns this
+    // routing on its own.
+    return filenameNamed ? 0.3 : 0;
   }
 
   const tradebookFp =
@@ -154,7 +163,11 @@ export function detectZerodha(ctx: ParseContext): number {
   // broker-named parser must see the broker's name before it claims a file).
   const taxpnlFp = tradewiseFp && (named || consoleFp);
 
-  if (!named && !tradebookFp && !consoleFp) return 0; // No name, no fingerprint, no claim.
+  // No claim without a filename name or a format fingerprint. A preamble
+  // content mention alone (contentNamed) deliberately does NOT qualify: it
+  // only ever ADDS to a fingerprint (the taxpnl case), so a stray "zerodha"
+  // string in someone else's file can never out-rank the column mapper.
+  if (!filenameNamed && !tradebookFp && !consoleFp && !taxpnlFp) return 0;
 
   // The FINGERPRINT carries the claim on its own — the filename only adds to
   // it. Real Console exports are named "Tradebook_EQ…" / "statement…" and name
@@ -437,6 +450,12 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
 
   const warnings: string[] = [
     `${rowCount} exit row${rowCount === 1 ? "" : "s"} → ${trades.length} position${trades.length === 1 ? "" : "s"} (grouped per symbol + entry day + exit day). Charges are Zerodha's own per-trade figures, stored as reported.`,
+    // The report states WHEN a position opened and closed but never WHICH SIDE
+    // opened it. Sides are recorded on the buy-first assumption; for a short
+    // (sold first) the execution ladder and buy/sell dates read inverted while
+    // quantity, values, P&L and charges stay exact. Saying so beats silently
+    // wearing a derived fact as a reported one.
+    "Direction is not stated by this report — sides are recorded as buy-at-entry / sell-at-exit. Values, P&L and charges are exact either way; a short's ladder reads inverted. Re-tag shorts in Trades if the distinction matters to you.",
   ];
   if (unreadable.length > 0) {
     warnings.push(

@@ -138,16 +138,37 @@ export function stopMigration(
 }
 
 /**
- * The sentence the screen shows. Returns null when there is nothing honest to
- * say — no widenings, or no comparison population.
+ * The WIDENED wing must itself clear this floor before the sentence claims an
+ * average over it. The old gate summed widenedTrades + disciplinedTrades, so a
+ * ten-trade book with ONE widened trade passed and the screen asserted "your
+ * widened stops average ₹X worse per trade" — an expectancy claim over n = 1.
+ * The claimed average is computed over the widened trades alone, so the wing
+ * carries the sample requirement alone; the total floor still applies on top.
  */
-export function stopMigrationFinding(r: StopMigrationReport, minSample = 10): string | null {
+export const MIN_WIDENED_SAMPLE = 5;
+
+/**
+ * The sentence the screen shows. Returns null when there is nothing honest to
+ * say — no widenings, no comparison population, or a widened wing too small to
+ * average over (the screen then shows the descriptive count-only form instead).
+ *
+ * The comparison baseline is stated for what it is: every OTHER closed trade —
+ * trades with no widening on the audit record, which includes trades whose
+ * stop edits the log never saw — not a verified "untouched" set.
+ */
+export function stopMigrationFinding(
+  r: StopMigrationReport,
+  minSample = 10,
+  minWidened = MIN_WIDENED_SAMPLE,
+): string | null {
   if (r.widenedTrades === 0) return null;
   if (r.expectancyGap == null) return null;
   const n = r.widenedTrades + r.disciplinedTrades;
   if (n < minSample) return null;
+  if (r.widenedTrades < minWidened) return null;
+  const baseline = `the other ${r.disciplinedTrades} closed trade${r.disciplinedTrades === 1 ? "" : "s"} with no widening on the audit record`;
   if (r.expectancyGap >= 0) {
-    return `You widened a stop on ${r.widenedTrades} trade${r.widenedTrades === 1 ? "" : "s"}. On this book those trades did NOT do worse — the gap is ₹${r.expectancyGap} per trade in their favour, so this is not currently costing you.`;
+    return `You widened a stop on ${r.widenedTrades} trade${r.widenedTrades === 1 ? "" : "s"}. On this book those trades did NOT do worse than ${baseline} — the gap is ₹${r.expectancyGap} per trade in their favour, so this is not currently costing you.`;
   }
-  return `You widened a stop after entry on ${r.widenedTrades} trade${r.widenedTrades === 1 ? "" : "s"} (${r.widenEvents} edit${r.widenEvents === 1 ? "" : "s"}). Those trades average ₹${Math.abs(r.expectancyGap)} WORSE per trade than the ones where the stop stood.`;
+  return `You widened a stop after entry on ${r.widenedTrades} trade${r.widenedTrades === 1 ? "" : "s"} (${r.widenEvents} edit${r.widenEvents === 1 ? "" : "s"}). Those trades average ₹${Math.abs(r.expectancyGap)} WORSE per trade than ${baseline}.`;
 }

@@ -55,6 +55,17 @@ describe("the Trade Craft page keeps its structural wiring", () => {
     expect(src).toContain("getTradeStopEditEntries");
     expect(src).toContain("directionByTrade");
   });
+
+  it("never guesses a direction for a flat row — fully-closed trades stay OUT of the direction map", () => {
+    // sellQty === buyQty says the trade is fully closed, not that it was long;
+    // guessing "long" inverted widen/tighten for every flat short (F3).
+    expect(src).toContain("if (t.sellQty !== t.buyQty) directionByTrade.set");
+    expect(src, "the flat-row long guess is back").not.toContain(
+      "trades.map((t) => [t.id, t.sellQty > t.buyQty",
+    );
+    // The dropped edits are surfaced, not silently vanished.
+    expect(src).toContain("excludedNoDirection={mined.noDirection}");
+  });
 });
 
 describe("the tab shell derives, persists, and never syncs state", () => {

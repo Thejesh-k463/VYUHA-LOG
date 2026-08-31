@@ -138,6 +138,8 @@ describe("slReport", () => {
     expect(r.avgSlippageR).toBe(0.4);
     expect(r.slippageRFrom).toBe(2);
     expect(r.excluded).toBe(0);
+    expect(r.excludedLosers).toBe(0);
+    expect(r.excludedWinners).toBe(0);
   });
 
   it("excludes and counts rows whose direction cannot be derived", () => {
@@ -146,8 +148,33 @@ describe("slReport", () => {
     expect(r.withSl).toBe(2);
     expect(r.losersClassified).toBe(1);
     expect(r.excluded).toBe(1);
+    expect(r.excludedLosers).toBe(1);
+    expect(r.excludedWinners).toBe(0);
     // But its LOSS still counts in the coverage and averages — netPnl needs no direction.
     expect(r.losingWithSl).toBe(2);
+  });
+
+  it("counts unresolvable stop-recorded WINNERS separately from loser exclusions", () => {
+    // Stop between the two prices on a winner: neither reading protective —
+    // direction underivable, excluded, and it must NOT appear as a loser exclusion.
+    const unresolvableWinner = () =>
+      trade({ netPnl: 100, avgBuyPrice: 100, avgSellPrice: 110, slPlanned: 105 });
+    const r = slReport([unresolvableWinner(), unresolvableWinner(), unresolvableWinner()]);
+    expect(r.excludedWinners).toBe(3);
+    expect(r.excludedLosers).toBe(0); // the losers card shows 0, not 3
+    expect(r.excluded).toBe(3); // sum of the two, always
+    expect(r.winnersWithSl).toBe(0); // none resolvable
+    expect(r.winnersMeasured).toBe(0);
+    expect(r.losersClassified).toBe(0);
+  });
+
+  it("keeps excluded === excludedLosers + excludedWinners when both populations exclude", () => {
+    const ambiguousLoser = trade({ netPnl: -70, avgBuyPrice: 100, avgSellPrice: 93, slPlanned: 95 });
+    const unresolvableWinner = trade({ netPnl: 100, avgBuyPrice: 100, avgSellPrice: 110, slPlanned: 105 });
+    const r = slReport([ambiguousLoser, unresolvableWinner, longHeld]);
+    expect(r.excludedLosers).toBe(1);
+    expect(r.excludedWinners).toBe(1);
+    expect(r.excluded).toBe(2);
   });
 
   it("reports SL coverage over losing trades and the loss gap", () => {

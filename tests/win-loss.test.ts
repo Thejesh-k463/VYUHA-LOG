@@ -26,8 +26,24 @@ function trade(p: Partial<WinLossTrade>): WinLossTrade {
     setupTag: null,
     slPlanned: null,
     trailingSl: null,
+    avgBuyPrice: 100,
+    avgSellPrice: 98,
+    qty: 10,
+    riskAmount: null,
     ...p,
   };
+}
+
+/**
+ * A trade whose riskAmount VERIFIABLY derives from its recorded stop:
+ * riskAmount = |avgBuyPrice − stop| × qty, which is what hasPlanR requires
+ * before it will call the row plan-derived.
+ */
+function planTrade(p: Partial<WinLossTrade>): WinLossTrade {
+  const t = trade(p);
+  const stop = t.slPlanned ?? t.trailingSl;
+  if (stop == null) throw new Error("planTrade needs slPlanned or trailingSl");
+  return { ...t, riskAmount: Math.abs(t.avgBuyPrice! - stop) * t.qty! };
 }
 
 /** n wins of `win` ₹ and m losses of `loss` ₹ (loss passed positive). */
@@ -103,14 +119,64 @@ describe("winLossReport", () => {
   });
 });
 
+describe("hasPlanR — provenance means the R DENOMINATOR derives from the stop", () => {
+  // Fixture geometry: avgBuyPrice 100, avgSellPrice 98, qty 10.
+  it("stop recorded but riskAmount left at the ₹9,500 import cap → default-cap", () => {
+    // The Stop-losses tab's own suggested workflow produces exactly this row:
+    // a stop recorded after the fact while riskTouched blocks the recompute.
+    const t = trade({ rMultiple: -0.5, slPlanned: 95, riskAmount: 9500 });
+    expect(hasPlanR(t)).toBe(false);
+    const d = rDistribution([t]);
+    expect(d.planCount).toBe(0);
+    expect(d.defaultCapCount).toBe(1);
+  });
+
+  it("stop recorded AND riskAmount ≈ |entry − stop| × qty → plan series", () => {
+    // |100 − 95| × 10 = 50, exact.
+    const exact = trade({ rMultiple: -1, slPlanned: 95, riskAmount: 50 });
+    expect(hasPlanR(exact)).toBe(true);
+    const d = rDistribution([exact]);
+    expect(d.planCount).toBe(1);
+    expect(d.defaultCapCount).toBe(0);
+    // Within the 2% tolerance (rupee-rounded risk): 51/50 = +2.0% exactly.
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: 51 }))).toBe(true);
+    // Beyond it: +3% is not a match.
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: 51.5 }))).toBe(false);
+  });
+
+  it("matches either avg price — a flat row states no direction", () => {
+    // Short-shaped: the stop sits above both prices; only the sell side
+    // reproduces the risk (|98 − 103| × 10 = 50). Matching either side proves
+    // the tie to the stop, which is the whole provenance claim.
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 103, riskAmount: 50 }))).toBe(true);
+  });
+
+  it("trailingSl can be the verifying stop, and a zero-distance side never divides", () => {
+    // trailingSl 98 equals avgSellPrice (implied 0 — skipped), but the buy
+    // side gives |100 − 98| × 10 = 20.
+    expect(hasPlanR(trade({ rMultiple: -1, trailingSl: 98, riskAmount: 20 }))).toBe(true);
+  });
+
+  it("missing verification inputs → default-cap, never overclaimed", () => {
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: null }))).toBe(false);
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: 50, qty: null }))).toBe(false);
+    expect(hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: 50, qty: 0 }))).toBe(false);
+    expect(
+      hasPlanR(trade({ rMultiple: -1, slPlanned: 95, riskAmount: 50, avgBuyPrice: null, avgSellPrice: null })),
+    ).toBe(false);
+    // No stop at all — a risk amount alone proves nothing.
+    expect(hasPlanR(trade({ rMultiple: -1, riskAmount: 50 }))).toBe(false);
+  });
+});
+
 describe("rDistribution", () => {
   it("splits plan-derived R from default-cap R and counts each series", () => {
     const trades = [
-      trade({ rMultiple: 1.5, slPlanned: 95 }),
-      trade({ rMultiple: 1.5, trailingSl: 98 }),
+      planTrade({ rMultiple: 1.5, slPlanned: 95 }),
+      planTrade({ rMultiple: 1.5, trailingSl: 97 }),
       trade({ rMultiple: 1.5 }), // default-cap
       trade({ rMultiple: -0.7 }), // default-cap
-      trade({ rMultiple: null, slPlanned: 95 }), // no R at all
+      planTrade({ rMultiple: null, slPlanned: 95 }), // no R at all
     ];
     expect(hasPlanR(trades[0])).toBe(true);
     expect(hasPlanR(trades[2])).toBe(false);
@@ -128,12 +194,12 @@ describe("rDistribution", () => {
 
   it("buckets are [lo, hi) with open tails", () => {
     const d = rDistribution([
-      trade({ rMultiple: -3.5, slPlanned: 1 }), // open left tail
-      trade({ rMultiple: -3, slPlanned: 1 }), // lower edge is inclusive → [-3,-2)
-      trade({ rMultiple: 0, slPlanned: 1 }), // [0, 0.5)
-      trade({ rMultiple: 0.5, slPlanned: 1 }), // [0.5, 1)
-      trade({ rMultiple: 5, slPlanned: 1 }), // open right tail, edge inclusive
-      trade({ rMultiple: 9, slPlanned: 1 }),
+      planTrade({ rMultiple: -3.5, slPlanned: 1 }), // open left tail
+      planTrade({ rMultiple: -3, slPlanned: 1 }), // lower edge is inclusive → [-3,-2)
+      planTrade({ rMultiple: 0, slPlanned: 1 }), // [0, 0.5)
+      planTrade({ rMultiple: 0.5, slPlanned: 1 }), // [0.5, 1)
+      planTrade({ rMultiple: 5, slPlanned: 1 }), // open right tail, edge inclusive
+      planTrade({ rMultiple: 9, slPlanned: 1 }),
     ]);
     expect(d.edges).toEqual([...R_BUCKET_EDGES]);
     expect(d.buckets).toHaveLength(R_BUCKET_EDGES.length + 1);
@@ -145,7 +211,7 @@ describe("rDistribution", () => {
   });
 
   it("skips open trades and renders at any n", () => {
-    const d = rDistribution([trade({ rMultiple: 2, isOpen: true, slPlanned: 1 })]);
+    const d = rDistribution([planTrade({ rMultiple: 2, isOpen: true, slPlanned: 1 })]);
     expect(d.planCount).toBe(0);
     expect(d.defaultCapCount).toBe(0);
     expect(d.noRCount).toBe(0);
@@ -175,11 +241,11 @@ describe("tailReport", () => {
   it("computes the deep-loss expectancy gap over plan-derived rows only, with coverage", () => {
     const trades = [
       // clean plan losses: avg -100
-      trade({ netPnl: -90, rMultiple: -0.9, slPlanned: 95 }),
-      trade({ netPnl: -110, rMultiple: -1.1, trailingSl: 98 }),
+      planTrade({ netPnl: -90, rMultiple: -0.9, slPlanned: 95 }),
+      planTrade({ netPnl: -110, rMultiple: -1.1, trailingSl: 98 }),
       // deep plan losses (R <= -2): avg -400
-      trade({ netPnl: -300, rMultiple: -3, slPlanned: 95 }),
-      trade({ netPnl: -500, rMultiple: -2, slPlanned: 95 }), // boundary: -2 counts as deep
+      planTrade({ netPnl: -300, rMultiple: -3, slPlanned: 95 }),
+      planTrade({ netPnl: -500, rMultiple: -2, slPlanned: 95 }), // boundary: -2 counts as deep
       // default-cap loss — excluded from the gap, counted in coverage total
       trade({ netPnl: -800, rMultiple: -0.08 }),
       trade({ netPnl: 200 }),
@@ -204,7 +270,7 @@ describe("tailReport", () => {
     expect(noLosses.deepLossGapTotal).toBeNull();
 
     // deep losses exist but no clean plan losses → no clean-loss average to compare against
-    const onlyDeep = tailReport([trade({ netPnl: -300, rMultiple: -3, slPlanned: 95 })]);
+    const onlyDeep = tailReport([planTrade({ netPnl: -300, rMultiple: -3, slPlanned: 95 })]);
     expect(onlyDeep.deepLossCount).toBe(1);
     expect(onlyDeep.cleanLossCount).toBe(0);
     expect(onlyDeep.deepLossAvg).toBe(-300);
@@ -214,7 +280,7 @@ describe("tailReport", () => {
   });
 
   it("ignores open trades everywhere", () => {
-    const t = tailReport([trade({ netPnl: -500, isOpen: true, rMultiple: -5, slPlanned: 95 })]);
+    const t = tailReport([planTrade({ netPnl: -500, isOpen: true, rMultiple: -5, slPlanned: 95 })]);
     expect(t.lossCount).toBe(0);
     expect(t.grossLoss).toBe(0);
     expect(t.planLossCoverage).toEqual({ recorded: 0, total: 0 });

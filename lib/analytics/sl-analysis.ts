@@ -148,9 +148,19 @@ export function classifyLoser(t: SlTrade): LoserClassification | null {
 export interface SlReport {
   closed: number; // closed trades seen
   withSl: number; // closed trades with a recorded stop
-  /** Rows with a stop whose direction could not be derived (or prices were
-   *  missing) — EXCLUDED from the classification, never guessed. */
+  /**
+   * Rows with a stop whose direction could not be derived (or prices were
+   * missing) — EXCLUDED from the classification, never guessed.
+   * `excluded` is ALWAYS `excludedLosers + excludedWinners`; the split exists
+   * because the two counts come from different populations and must be
+   * reported against their own population (a winner exclusion phrased as a
+   * loser exclusion is a wrong sentence with a right-looking number).
+   */
   excluded: number;
+  /** Stop-recorded LOSERS `classifyLoser` refused (no derivable direction / bad prices). */
+  excludedLosers: number;
+  /** Stop-recorded WINNERS `resolve` refused (no derivable direction / bad prices). */
+  excludedWinners: number;
 
   // ── losing trades, classified against their stop ────────────────────────
   losersClassified: number;
@@ -193,14 +203,14 @@ export function slReport(trades: SlTrade[]): SlReport {
   const losersWithSl = losers.filter((t) => t.slPlanned != null);
   const losersWithoutSl = losers.filter((t) => t.slPlanned == null);
 
-  let excluded = 0;
+  let excludedLosers = 0;
   let held = 0, slipped = 0, early = 0;
   let totalSlippage = 0;
   let rSum = 0, rCount = 0;
   for (const t of losersWithSl) {
     const c = classifyLoser(t);
     if (c == null) {
-      excluded++;
+      excludedLosers++;
       continue;
     }
     if (c.outcome === "held-to-stop") held++;
@@ -215,10 +225,11 @@ export function slReport(trades: SlTrade[]): SlReport {
   // Winners: did the trade ever come near the stop it recorded?
   const winnersWithSl = closed.filter((t) => t.netPnl > 0 && t.slPlanned != null);
   let winnersResolvable = 0, winnersMeasured = 0, neverRisked = 0, nearStop = 0;
+  let excludedWinners = 0;
   for (const t of winnersWithSl) {
     const rz = resolve(t);
     if (rz == null) {
-      excluded++;
+      excludedWinners++;
       continue;
     }
     winnersResolvable++;
@@ -240,7 +251,9 @@ export function slReport(trades: SlTrade[]): SlReport {
   return {
     closed: closed.length,
     withSl: withSl.length,
-    excluded,
+    excluded: excludedLosers + excludedWinners,
+    excludedLosers,
+    excludedWinners,
     losersClassified,
     heldToStop: held,
     slippedPast: slipped,

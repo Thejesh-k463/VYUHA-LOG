@@ -433,9 +433,12 @@ function SegmentDepthCard({ report }: { report: SegmentDepthReport }) {
                     </ReportTd>
                     <ReportTd align="right" className={`font-medium ${pnl(r.net)}`}>{num(r.net, 0)}</ReportTd>
                     <ReportTd align="right" className={pnl(r.expectancy)}>{num(r.expectancy, 0)}</ReportTd>
-                    <ReportTd align="right">{r.count ? (r.winRate * 100).toFixed(1) : "—"}%</ReportTd>
-                    <ReportTd align="right" muted title={rateVerdict(r.winRateCi, report.bookWinRate)}>
-                      <span className="whitespace-nowrap">{fmtIntervalPct(r.winRateCi)}</span>
+                    {/* % sign INSIDE the ternary — an all-unpriced segment
+                        (count 0, excluded > 0) used to render the literal
+                        "—%", and its empty-sample CI printed 0%–100%. */}
+                    <ReportTd align="right">{r.count ? `${(r.winRate * 100).toFixed(1)}%` : "—"}</ReportTd>
+                    <ReportTd align="right" muted title={r.count ? rateVerdict(r.winRateCi, report.bookWinRate) : undefined}>
+                      <span className="whitespace-nowrap">{r.count ? fmtIntervalPct(r.winRateCi) : "—"}</span>
                       {r.count > 0 && !r.distinguishable && (
                         <span className="block text-[0.65rem] text-warning" title="Not yet distinguishable from your book's overall win rate once all five segments are accounted for (Benjamini-Yekutieli, q=0.05). Shown, not hidden.">
                           not yet distinguishable

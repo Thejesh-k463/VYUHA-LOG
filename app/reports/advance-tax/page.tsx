@@ -64,7 +64,9 @@ export default function AdvanceTaxPage() {
       buyValue: t.buyValue,
       sellValue: t.sellValue,
       netPnl: t.netPnl,
-      fmv31Jan2018: t.fmv31Jan2018,
+      // Per-share in the column, TOTAL units into classifyGain — same
+      // scaling as tax-itr.ts and /reports/harvest.
+      fmv31Jan2018: t.fmv31Jan2018 != null && t.buyQty > 0 ? t.fmv31Jan2018 * t.buyQty : null,
     });
     if (g?.bucket === "ltcg") realisedLtcg += g.taxableGain;
     else if (g?.bucket === "stcg") realisedStcg += g.taxableGain;

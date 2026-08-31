@@ -179,6 +179,34 @@ describe("a populated Paytm P&L reaches the generic mapper", () => {
   });
 });
 
+describe("a content mention of 'zerodha' is not a claim (v3.5.1 audit fix)", () => {
+  it("a user's multi-broker log with Zerodha in a DATA column goes to the mapper, not to parseZerodha", () => {
+    // The 2026-08-12 misclaim class, nearly reintroduced by the taxpnl
+    // in-content name check: a wide row's data cell saying "Zerodha" is not
+    // the broker naming its own export. Verified live by the v3.5.0 audit.
+    const csv = [
+      "Date,Broker,Symbol,Type,Qty,Price",
+      "2026-08-01,Zerodha,TCS,BUY,10,4100",
+      "2026-08-02,Groww,TCS,SELL,10,4180",
+    ].join("\n");
+    const ctx = buildContext("MyTrades.csv", Buffer.from(csv));
+    expect(detectZerodha(ctx)).toBe(0);
+    expect(rankParsers(ctx).filter((r) => r.confidence > 0)[0]?.sourceId).toBe("generic-table");
+  });
+
+  it("a preamble-shaped mention WITHOUT any Zerodha fingerprint still claims nothing", () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Exported with help from Zerodha's guide"],
+      ["Symbol", "Qty", "Price", "Amount"],
+      ["TCS", "10", "4100", "41000"],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    expect(detectZerodha(buildContext("export.xlsx", buf))).toBe(0);
+  });
+});
+
 describe("the incident files, replayed", () => {
   it("a Groww order history with a NEUTRAL filename is still claimed by content", () => {
     // The word "Groww" appears nowhere in the file; the Unique Client Code

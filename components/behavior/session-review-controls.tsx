@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/toaster";
  * upsert would replace the whole plan). Route handler + fetch +
  * router.refresh(), never a server action (house convention).
  */
-export function SessionReviewControls({ sessionId }: { sessionId: number }) {
+export function SessionReviewControls({ sessionId, accountId }: { sessionId: number; accountId: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState("");
@@ -21,7 +21,10 @@ export function SessionReviewControls({ sessionId }: { sessionId: number }) {
     const res = await fetch("/api/sessions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: sessionId, status: "reviewed", reviewNotes: notes.trim() || null }),
+      // accountId is the session row's OWN account: the PATCH validates it and
+      // scopes the update by (id, account), so a review works from the
+      // All-accounts view instead of resolving to the lowest-id account.
+      body: JSON.stringify({ id: sessionId, accountId, status: "reviewed", reviewNotes: notes.trim() || null }),
     });
     const data = await res.json().catch(() => ({ ok: false, message: "Request failed." }));
     setBusy(false);
