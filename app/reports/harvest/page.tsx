@@ -6,6 +6,15 @@ import { getHarvestTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
+import {
+  sttSplit,
+  ltcgRunway,
+  setOffAsymmetry,
+  LTCG_THRESHOLD_CAVEAT,
+  LIABILITY_CAVEAT,
+  NO_WASH_SALE_CAVEAT,
+} from "@/lib/analytics/tax-levers";
+import { FNO_SEGMENTS } from "@/lib/analytics/turnover";
 import { inr } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -55,6 +64,46 @@ export default function HarvestPage() {
 
   const r = computeHarvest(lots, realisedStcg, realisedLtcg, today, fyEnd);
   const lossCandidates = r.candidates;
+
+  // ── Tax levers (v3.3.0) ────────────────────────────────────────────────
+  // Everything here is (A): computable exactly from executed trades. Nothing
+  // recommends a transaction. See lib/analytics/tax-levers.ts.
+  const currentFy = `${fyStartYear}-${String((fyStartYear + 1) % 100).padStart(2, "0")}`;
+  const fyClosed = trades.filter((t) => !t.isOpen && t.sellDate != null && t.sellDate >= fyStart);
+
+  const stt = sttSplit(
+    fyClosed.map((t) => ({
+      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      netPnl: t.netPnl, chargesTotal: t.chargesTotal, sttCtt: t.sttCtt, isOpen: t.isOpen,
+    })),
+    currentFy,
+  );
+
+  // The set-off position for THIS year, across every head — not just equity.
+  let fnoBusiness = 0;
+  let speculative = 0;
+  for (const t of fyClosed) {
+    if (t.segment === "eq_intraday") speculative += t.netPnl;
+    else if (FNO_SEGMENTS.has(t.segment)) fnoBusiness += t.netPnl;
+  }
+  const setOff = setOffAsymmetry(
+    { fnoBusiness, speculative, capitalGains: realisedStcg + realisedLtcg },
+    currentFy,
+  );
+
+  const runway = ltcgRunway(
+    trades
+      .filter((t) => t.isOpen)
+      .map((t) => {
+        const qty = Math.max(t.buyQty - t.sellQty, 0) || t.buyQty;
+        const price = mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
+        return {
+          id: t.id, symbol: t.symbol, segment: t.segment, buyDate: t.buyDate,
+          unrealised: (price - t.avgBuyPrice) * qty,
+        };
+      }),
+    today,
+  );
 
   return (
     <>
@@ -118,11 +167,93 @@ export default function HarvestPage() {
           </CardContent>
         </Card>
 
-        <p className="text-[0.6875rem] text-muted-foreground">
-          Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Tax estimated at the
-          post-23-Jul-2024 regime (STCG 20%, LTCG 12.5% beyond the ₹1.25L exemption). No wash-sale rule means you may
-          re-buy, but a same-day round-trip can be questioned and changes your holding clock — informational, not advice.
-        </p>
+        {/* The levers a trade book can compute exactly. Deliberately no "sell
+            these" ranking: naming a security and prompting a transaction is
+            advice, not computation. See lib/analytics/tax-levers.ts. */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle>Set-off: this year vs carried forward</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              <p>{setOff.rule}</p>
+              {setOff.finding && <p className="font-medium text-foreground">{setOff.finding}</p>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>STT: deductible on one head, forfeited on another</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              {stt.total > 0 ? (
+                <>
+                  <p>
+                    <span className="font-medium text-profit">{inr(stt.deductible, { decimals: 0 })}</span> of STT/CTT
+                    sat on business-head legs across {stt.deductibleTrades} trades and is an allowable expense
+                    ({stt.deductibleSection}).{" "}
+                    <span className="font-medium text-loss">{inr(stt.forfeited, { decimals: 0 })}</span> sat on
+                    {" "}{stt.forfeitedTrades} delivery trades, where it is expressly not deductible
+                    ({stt.forfeitedSection}).
+                  </p>
+                  <p>The same levy, two treatments. Only the head decides which you get.</p>
+                </>
+              ) : (
+                <p>No STT recorded on closed trades yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {runway.rows.length > 0 && (
+          <Card className="p-0">
+            <CardHeader>
+              <CardTitle>Holding clock — open delivery lots</CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Days to the 12-month line. This is a fact about dates, not a reason to hold: price risk over the
+                remaining days can cost far more than the rate difference saves.
+                {runway.undated > 0 && ` ${runway.undated} open lot${runway.undated === 1 ? "" : "s"} carry no buy date and cannot be aged.`}
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Symbol</ReportTh>
+                  <ReportTh>Bought</ReportTh>
+                  <ReportTh align="right">Days held</ReportTh>
+                  <ReportTh align="right">To long-term</ReportTh>
+                  <ReportTh align="right">Unrealised</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {runway.rows.slice(0, 15).map((row) => (
+                    <ReportTr key={row.id}>
+                      <ReportTd className="font-medium">{row.symbol}</ReportTd>
+                      <ReportTd muted>{row.buyDate}</ReportTd>
+                      <ReportTd align="right">{row.daysHeld}</ReportTd>
+                      <ReportTd align="right">
+                        {row.alreadyLongTerm ? <Badge variant="profit">long-term</Badge> : `${row.daysToLongTerm}d`}
+                      </ReportTd>
+                      <ReportTd align="right" className={row.unrealised >= 0 ? "text-profit" : "text-loss"}>
+                        {inr(row.unrealised, { decimals: 0 })}
+                      </ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
+              {runway.rows.length > 15 && (
+                <p className="px-4 py-2 text-xs text-muted-foreground">
+                  Showing 15 of {runway.rows.length} open delivery lots, soonest to cross first.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="space-y-2 text-[0.6875rem] text-muted-foreground">
+          <p>
+            Set-off rules: short-term losses offset STCG then LTCG; long-term losses offset LTCG only. Rates are
+            resolved from the date of sale.
+          </p>
+          <p>{LTCG_THRESHOLD_CAVEAT}</p>
+          <p>{NO_WASH_SALE_CAVEAT}</p>
+          <p>{LIABILITY_CAVEAT}</p>
+        </div>
       </ProGate>
       </div>
     </>

@@ -38,7 +38,8 @@ export default function ItrPackPage() {
   const packs = itrPackByFy(
     trades.map((t) => ({
       segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
-      grossPnl: t.grossPnl, netPnl: t.netPnl, chargesTotal: t.chargesTotal, isOpen: t.isOpen,
+      grossPnl: t.grossPnl, netPnl: t.netPnl, sellValue: t.sellValue,
+      chargesTotal: t.chargesTotal, isOpen: t.isOpen,
     })),
     fyStartMonth,
   );
@@ -64,7 +65,8 @@ export default function ItrPackPage() {
   const schedules = itrScheduleByFy(
     trades.map((t) => ({
       segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
-      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+      buyValue: t.buyValue, sellValue: t.sellValue,
+      grossPnl: t.grossPnl, netPnl: t.netPnl,
       chargesTotal: t.chargesTotal, sttCtt: t.sttCtt,
       fmv31Jan2018: t.fmv31Jan2018, isOpen: t.isOpen,
     })),
@@ -165,8 +167,8 @@ export default function ItrPackPage() {
                   <FileSpreadsheet className="size-4" /> Schedule-format line items
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Schedule CG (A3 · 111A, B4 · 112A), Schedule BP and Schedule CFL, in the return&apos;s own
-                  item codes.
+                  Schedule CG (A3 · short-term, B4 · long-term), Schedule BP and Schedule CFL, in the
+                  return&apos;s own item codes. Statutory citations follow the Act in force for each year.
                 </p>
               </div>
               <ExportButtons filename="vyuha-itr-schedules" columns={SCHEDULE_COLS} rows={scheduleExportRows(schedules)} />

@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { epochSpans, todayIso } from "@/lib/engine/rates";
+import { epochSpans } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getMarginRates } from "@/lib/queries/margin";

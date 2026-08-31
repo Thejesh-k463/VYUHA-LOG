@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KpiCard } from "@/components/kpi-card";
 import { computeAdvanceTax } from "@/lib/analytics/advance-tax";
+import { section } from "@/lib/analytics/statute";
 import { inr, fmtDate } from "@/lib/format";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 
@@ -65,7 +66,7 @@ export function AdvanceTaxCalc({
         <KpiCard label={`Est. tax ${plan.fyLabel}`} valueNum={plan.estimatedAnnualTax} format="inr0" sub={`${ratePct}% of gains`} />
         <KpiCard label="Paid so far" value={`${plan.paidPct}%`} valueClassName={plan.paidPct >= 90 ? "text-profit" : plan.paidPct > 0 ? "text-warning" : "text-loss"} sub={inr(plan.taxPaidToDate, { decimals: 0 })} />
         <KpiCard label="Next instalment" value={plan.nextDue ? plan.nextDue.label : "—"} sub={plan.nextDue ? `pay ${inr(Math.max(0, plan.nextDue.cumRequired - plan.taxPaidToDate), { decimals: 0 })}` : "year complete"} />
-        <KpiCard label="234C interest" valueNum={plan.interest234C} format="inr0" valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub="on shortfalls so far" />
+        <KpiCard label="Deferment interest" valueNum={plan.interest234C} format="inr0" valueClassName={plan.interest234C > 0 ? "text-loss" : "text-profit"} sub={`${section(plan.fyLabel, "interestDeferment")} · on shortfalls so far`} />
       </section>
 
       <Card className="p-0">
@@ -102,6 +103,12 @@ export function AdvanceTaxCalc({
                     <ReportTd>
                       {!i.isDue ? (
                         <Badge variant={isNext ? "accent" : "secondary"}>{isNext ? "next" : "upcoming"}</Badge>
+                      ) : i.shortfall > 0 && i.safeHarbourMet ? (
+                        // Short on the instalment, but s.425(2) waives the interest.
+                        // Without this the row reads as a bug: a shortfall with no interest.
+                        <Badge variant="secondary" title={`s.425(2): at least ${i.safeHarbourPct}% paid by ${i.label}`}>
+                          short · no interest
+                        </Badge>
                       ) : i.shortfall > 0 ? (
                         <Badge variant="loss">short</Badge>
                       ) : (
@@ -118,14 +125,26 @@ export function AdvanceTaxCalc({
 
       {plan.underpaid234B && (
         <div className="rounded-lg border-l-2 border-l-warning bg-warning/5 px-3 py-2 text-xs text-foreground">
-          You&apos;ve paid {plan.paidPct}% (&lt; 90%). If the year closes underpaid, §234B adds 1%/month on the unpaid
-          balance from 1 Apr of the assessment year until you pay — on top of the 234C above.
+          You&apos;ve paid {plan.paidPct}% (&lt; 90%). If the year closes underpaid,{" "}
+          {section(plan.fyLabel, "interestAdvanceTax")} adds 1%/month on the unpaid balance from 1 April of the
+          following year until you pay — on top of the deferment interest above.
         </div>
       )}
 
+      {plan.notes.length > 0 && (
+        <ul className="space-y-1.5 text-xs text-muted-foreground">
+          {plan.notes.map((n) => (
+            <li key={n} className="border-l-2 border-l-border pl-3">
+              {n}
+            </li>
+          ))}
+        </ul>
+      )}
+
       <p className="text-[0.6875rem] text-muted-foreground">
-        Planning estimate, not filing advice. Due dates 15 Jun / 15 Sep / 15 Dec / 15 Mar at 15 / 45 / 75 / 100%; 234C is
-        1%/month (3 months on the first three instalments, 1 on the last) on each shortfall.
+        Planning estimate, not filing advice. Due dates 15 Jun / 15 Sep / 15 Dec / 15 Mar at 15 / 45 / 75 / 100%;
+        deferment interest is 3% / 3% / 3% / 1% of each shortfall ({section(plan.fyLabel, "interestDeferment")} — the
+        2025 Act states these as flat rates; the 1961 Act reached the same figures as 1%/month).
       </p>
     </div>
   );

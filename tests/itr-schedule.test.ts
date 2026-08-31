@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { itrScheduleByFy, transferExpenditure, scheduleExportRows, type ItrScheduleTrade } from "@/lib/analytics/itr-schedule";
 import type { CarryForwardLot } from "@/lib/analytics/capital-gains";
+import { section } from "@/lib/analytics/statute";
 
 /**
  * C — the ITR schedule export.
@@ -22,6 +23,7 @@ const trade = (over: Partial<ItrScheduleTrade> = {}): ItrScheduleTrade => ({
   sellDate: "2026-06-01",
   buyValue: 100000,
   sellValue: 110000,
+  grossPnl: 10000,
   netPnl: 9800,
   chargesTotal: 200,
   sttCtt: 110,
@@ -147,13 +149,34 @@ describe("Schedule BP — business heads", () => {
     expect(lineOf(packs, "BP-SPEC-EXP")?.amount).toBe(300);
   });
 
-  it("computes Guidance-Note turnover as the absolute sum of per-trade P&L", () => {
+  // Was: "the absolute sum of per-trade P&L", asserting |netPnl|. That was wrong
+  // twice over — net is after charges, and it omitted option premium entirely.
+  // ICAI GN 11th ed. (2026) para 5.11(b)(i)+(ii). See lib/analytics/turnover.ts.
+  it("computes turnover from GROSS differences plus option premium, never net", () => {
     const packs = itrScheduleByFy([
-      trade({ segment: "index_option", netPnl: 8000 }),
-      trade({ segment: "index_option", netPnl: -3000 }),
+      trade({ segment: "index_option", grossPnl: 8500, netPnl: 8000, sellValue: 120000 }),
+      trade({ segment: "index_option", grossPnl: -2700, netPnl: -3000, sellValue: 60000 }),
     ]);
+    // The head's income is still NET of charges — only turnover uses gross.
     expect(lineOf(packs, "BP-NONSPEC")?.amount).toBe(5000);
-    expect(lineOf(packs, "BP-NONSPEC-TO")?.amount).toBe(11000);
+    // differences 8500 + 2700 = 11200; premium 120000 + 60000 = 180000
+    expect(lineOf(packs, "BP-NONSPEC-TO")?.amount).toBe(191200);
+  });
+
+  it("matches the turnover /reports/tax shows for the same F&O book", async () => {
+    const { taxByFy } = await import("@/lib/analytics/tax");
+    const packs = itrScheduleByFy([
+      trade({ segment: "index_option", grossPnl: 8500, netPnl: 8000, sellValue: 120000 }),
+    ]);
+    const rows = taxByFy([
+      {
+        segment: "index_option", instrumentType: "option",
+        buyDate: "2026-05-01", sellDate: "2026-06-01",
+        grossPnl: 8500, netPnl: 8000, buyValue: 100000, sellValue: 120000,
+        chargesTotal: 200, isOpen: false,
+      },
+    ]);
+    expect(lineOf(packs, "BP-NONSPEC-TO")?.amount).toBe(rows[0].fnoTurnover);
   });
 
   it("treats every F&O segment as non-speculative", () => {
@@ -239,7 +262,28 @@ describe("scoping and cautions", () => {
   it("always carries the preparation-not-advice caution and the STT asymmetry", () => {
     const packs = itrScheduleByFy([trade()]);
     expect(packs[0].cautions.some((c) => /not a filed return/i.test(c))).toBe(true);
-    expect(packs[0].cautions.some((c) => /S\.48/.test(c))).toBe(true);
+    // The fixture sells in FY 2026-27, so the STT caution cites the 2025 Act.
+    expect(packs[0].cautions.some((c) => c.includes(section("2026-27", "sttNotDeductibleCg")))).toBe(true);
+  });
+
+  it("cites the Act that governed the YEAR, not today's, and names it", () => {
+    // A 2024-25 pack must keep its 1961 Act citations; retro-labelling it would
+    // make it cite law that never governed it.
+    const old = itrScheduleByFy([trade({ buyDate: "2024-05-01", sellDate: "2024-09-01" })]);
+    expect(old[0].fy).toBe("2024-25");
+    expect(old[0].cautions.some((c) => c.includes("proviso to S.48"))).toBe(true);
+    expect(old[0].cautions.some((c) => c.includes("Income-tax Act, 1961"))).toBe(true);
+    expect(old[0].cautions.some((c) => c.includes("repealed"))).toBe(true);
+
+    const now = itrScheduleByFy([trade()]);
+    expect(now[0].cautions.some((c) => c.includes("Income-tax Act, 2025"))).toBe(true);
+    // …and the BP labels move with it.
+    const spec = itrScheduleByFy([trade({ segment: "eq_intraday", netPnl: 100 })]);
+    expect(lineOf(spec, "BP-SPEC")?.label).toContain("s.66(31)");
+    const specOld = itrScheduleByFy([
+      trade({ segment: "eq_intraday", netPnl: 100, buyDate: "2024-05-01", sellDate: "2024-09-01" }),
+    ]);
+    expect(lineOf(specOld, "BP-SPEC")?.label).toContain("S.43(5)");
   });
 
   it("never states an amount it cannot derive as zero", () => {

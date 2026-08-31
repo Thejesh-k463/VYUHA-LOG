@@ -6,8 +6,19 @@
 //   • Short-term capital LOSS (STCL) → offsets STCG first, then LTCG.
 //   • Long-term capital LOSS  (LTCL) → offsets LTCG only.
 //   • LTCG enjoys a ₹1.25L annual exemption (FY2024-25 onward).
-// Rates here are the post-23-Jul-2024 regime (STCG 20%, LTCG 12.5%). F&O / intraday
-// are business income — NOT eligible — so the caller passes equity-delivery lots only.
+// Rates are RESOLVED BY DATE from lib/analytics/capital-gains.ts, not hardcoded
+// here. F&O / intraday are business income — NOT eligible — so the caller passes
+// equity-delivery lots only.
+//
+// On the law, stated precisely because this is where journals give bad advice:
+// there is no wash-sale rule in the Income-tax Act, 2025, and GAAR is out of
+// reach for retail (Rule 128 of the Income-tax Rules, 2026 disapplies Chapter XI
+// below ₹3 crore of aggregate tax benefit). The residual exposure is the
+// ordinary colourable-device doctrine applied to a trade where beneficial
+// ownership never really changed. NEVER tell the user to wait N days before
+// re-buying: that implies a rule India does not have.
+
+import { capitalGainsRatesFor } from "./capital-gains";
 
 export type Term = "ST" | "LT";
 
@@ -27,7 +38,11 @@ export interface HarvestRates {
   ltcgExemption: number;
 }
 
-export const CG_RATES: HarvestRates = { stcgPct: 0.2, ltcgPct: 0.125, ltcgExemption: 125000 };
+// There is deliberately NO `CG_RATES` constant here any more. It held a second,
+// hardcoded copy of the post-23-Jul-2024 pair while `capitalGainsRatesFor`
+// resolved by date, so the two modules could disagree on a historical year.
+// Replacing it with a clock read would only have moved the staleness. Callers
+// take the schedule from `capitalGainsRatesFor(date)`, which is the one source.
 
 export interface HarvestCandidate {
   id: number;
@@ -85,7 +100,8 @@ export function computeHarvest(
   realisedLtcg: number,
   today: string,
   fyEnd: string,
-  rates: HarvestRates = CG_RATES,
+  // Resolved from the date the loss would be booked, matching capital-gains.ts.
+  rates: HarvestRates = capitalGainsRatesFor(today),
 ): HarvestReport {
   const stLots = lots.filter((l) => l.term === "ST" && l.unrealised < 0);
   const ltLots = lots.filter((l) => l.term === "LT" && l.unrealised < 0);

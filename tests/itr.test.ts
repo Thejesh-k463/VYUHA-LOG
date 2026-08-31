@@ -7,6 +7,7 @@ const t = (over: Partial<ItrTrade>): ItrTrade => ({
   sellDate: "2026-05-01",
   grossPnl: 0,
   netPnl: 0,
+  sellValue: 0,
   chargesTotal: 0,
   isOpen: false,
   ...over,
@@ -30,7 +31,7 @@ describe("itrPackByFy — head segregation", () => {
     expect(p.speculative.net).toBe(1650);
     expect(p.speculative.turnover).toBe(8000);
     expect(p.speculative.charges).toBe(350);
-    // F&O: turnover = 10000 + 7000 = 17000 (Guidance Note absolute-sum; NO premium add-on)
+    // F&O: differences 10000 + 7000, plus option sell premium (0 in this fixture).
     expect(p.nonSpeculative.trades).toBe(2);
     expect(p.nonSpeculative.net).toBe(2200);
     expect(p.nonSpeculative.turnover).toBe(17000);
@@ -64,7 +65,9 @@ describe("auditVerdict", () => {
   it("within limit → audit unlikely, presumptive note under ₹3 Cr", () => {
     const v = auditVerdict(50_00_000, false);
     expect(v.level).toBe("audit-unlikely");
-    expect(v.notes.some((n) => n.includes("44AD"))).toBe(true);
+    // Cited under the Act in force for the year the verdict is about.
+    expect(v.notes.some((n) => n.includes("s.58"))).toBe(true);
+    expect(auditVerdict(1_00_00_000, false, "2024-25").notes.some((n) => n.includes("S.44AD"))).toBe(true);
   });
 
   it("business loss adds the carry-forward / 44AD-opt-out caution", () => {

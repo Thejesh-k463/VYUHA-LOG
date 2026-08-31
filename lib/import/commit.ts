@@ -15,7 +15,7 @@ import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, todayIso, type RatesMap } from "@/lib/engine/rates";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import type { ChargeBreakdown, ChargeRates, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";

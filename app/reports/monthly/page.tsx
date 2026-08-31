@@ -8,6 +8,7 @@ import { getSettings } from "@/lib/queries/settings";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { dailyPnl, equityCurve } from "@/lib/analytics/metrics";
 import { computePerformance } from "@/lib/analytics/performance";
+import { monthlyBreakdown } from "@/lib/analytics/monthly";
 import { playbookStats, mistakeReport } from "@/lib/analytics/behavior";
 import { disciplineByWeek } from "@/lib/analytics/discipline";
 import { db } from "@/lib/db";
@@ -60,6 +61,19 @@ export default function MonthlyReportPage() {
 
   const years = [...new Set(p.monthly.map((m) => m.year))].sort();
   const byYM = new Map(p.monthly.map((m) => [`${m.year}-${m.month}`, m.retPct]));
+
+  // The matrix above is computed from the equity series and can only carry a
+  // percentage. This reads the same months off the TRADES.
+  const monthly = monthlyBreakdown(
+    trades.map((t) => ({
+      sellDate: t.sellDate, buyDate: t.buyDate, segment: t.segment,
+      netPnl: t.netPnl, grossPnl: t.grossPnl, chargesTotal: t.chargesTotal, isOpen: t.isOpen,
+    })),
+  );
+  // Bounded so a long history does not print forty pages. The header says so
+  // when it truncates — a silent cap reads as "this is everything".
+  const MONTH_DETAIL_CAP = 24;
+  const monthShown = monthly.rows.slice(-MONTH_DETAIL_CAP).reverse();
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6 print:max-w-none print:p-2">
@@ -131,6 +145,57 @@ export default function MonthlyReportPage() {
               </ReportTable>
             </CardContent>
           </Card>
+
+          {/* Month detail — the matrix above can only show one number per cell,
+              because it is computed from the equity series. This reads the same
+              months as units of WORK: how many trades, how many won, what it cost. */}
+          {monthly.rows.length > 0 && (
+            <Card className="p-0">
+              <CardHeader>
+                <CardTitle>Month detail</CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {monthShown.length < monthly.rows.length
+                    ? `Most recent ${monthShown.length} of ${monthly.rows.length} months with trades. `
+                    : ""}
+                  Month-over-month is blank where the previous calendar month had no trades — there is no
+                  comparison to make.
+                  {monthly.undated > 0 && ` ${monthly.undated} closed trade${monthly.undated === 1 ? "" : "s"} carry no exit date and sit in no month.`}
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ReportTable>
+                  <ReportThead>
+                    <ReportTh>Month</ReportTh>
+                    <ReportTh align="right">Trades</ReportTh>
+                    <ReportTh align="right">Win rate</ReportTh>
+                    <ReportTh align="right">Net</ReportTh>
+                    <ReportTh align="right">vs prev</ReportTh>
+                    <ReportTh align="right">Charges</ReportTh>
+                    <ReportTh align="right">Drag</ReportTh>
+                    <ReportTh align="right">Best</ReportTh>
+                    <ReportTh align="right">Worst</ReportTh>
+                  </ReportThead>
+                  <tbody>
+                    {monthShown.map((m) => (
+                      <ReportTr key={m.ym}>
+                        <ReportTd className="font-medium">{MONTHS[m.month - 1]} {m.year}</ReportTd>
+                        <ReportTd align="right">{m.trades}</ReportTd>
+                        <ReportTd align="right">{Math.round(m.winRate * 1000) / 10}%</ReportTd>
+                        <ReportTd align="right" className={`font-medium ${cls(m.net)}`}>{inr(m.net, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className={cls(m.momNet)}>
+                          {m.momNet == null ? "—" : `${sign(m.momNet)}${inr(m.momNet, { decimals: 0 })}`}
+                        </ReportTd>
+                        <ReportTd align="right" className="text-grad-gold">{inr(m.charges, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right">{m.chargeDragPct == null ? "—" : `${m.chargeDragPct}%`}</ReportTd>
+                        <ReportTd align="right" className={cls(m.best)}>{inr(m.best, { decimals: 0 })}</ReportTd>
+                        <ReportTd align="right" className={cls(m.worst)}>{inr(m.worst, { decimals: 0 })}</ReportTd>
+                      </ReportTr>
+                    ))}
+                  </tbody>
+                </ReportTable>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Behavior snapshot */}
           <div className="grid gap-5 md:grid-cols-2 print:grid-cols-2">

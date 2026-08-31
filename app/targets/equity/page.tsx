@@ -8,7 +8,7 @@ import { riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { dailyPnl } from "@/lib/analytics/metrics";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates, todayIso } from "@/lib/engine/rates";
+import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";

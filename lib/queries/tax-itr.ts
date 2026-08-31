@@ -3,6 +3,7 @@ import { cache } from "react";
 import { getTaxTrades } from "./trades";
 import { getIposComputed } from "./ipos";
 import type { TaxTrade } from "@/lib/analytics/tax";
+import { sectionOn } from "@/lib/analytics/statute";
 import {
   classifyGain,
   classifyTerm,
@@ -100,7 +101,15 @@ export function getItrExportRows() {
         consideration: t.sellValue,
         netGain: t.netPnl,
         term: t.segment === "eq_delivery" || t.segment === "eq_mtf" ? classifyTerm(t.buyDate, t.sellDate) : "",
-        head: g.bucket === "stcg" ? "STCG (111A)" : g.bucket === "ltcg" ? "LTCG (112A)" : g.bucket === "speculative" ? "Speculative business" : "Non-speculative business (F&O)",
+        // Cited under the Act that governed the year of the sale, not today's.
+        head:
+          g.bucket === "stcg"
+            ? `STCG (${sectionOn(t.sellDate, "stcgEquity")})`
+            : g.bucket === "ltcg"
+              ? `LTCG (${sectionOn(t.sellDate, "ltcgEquity")})`
+              : g.bucket === "speculative"
+                ? "Speculative business"
+                : "Non-speculative business (F&O)",
         taxableGain: g.taxableGain,
       };
     })

@@ -1,5 +1,15 @@
 // Pure tax-summary scaffold. INFORMATIONAL ONLY — not filing advice.
 // Figures use net (post-charge) realised P&L; charges are generally deductible.
+//
+// Turnover comes from lib/analytics/turnover.ts — the single method shared with
+// /reports/itr. Do not re-derive it here; two screens showing two turnovers for
+// the same year is the defect that module was created to end.
+
+import {
+  DELIVERY_SEGMENTS,
+  FNO_SEGMENTS,
+  turnoverContribution,
+} from "./turnover";
 
 export interface TaxTrade {
   segment: string;
@@ -27,9 +37,10 @@ export interface FySummary {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const FNO = new Set(["index_option", "stock_option", "commodity_option", "commodity_future", "future"]);
-const OPTIONS = new Set(["index_option", "stock_option", "commodity_option"]);
-const DELIVERY = new Set(["eq_delivery", "eq_mtf"]);
+// Segment sets and the turnover method live in one place — three modules had
+// their own copies and two of them disagreed. See lib/analytics/turnover.ts.
+const FNO = FNO_SEGMENTS;
+const DELIVERY = DELIVERY_SEGMENTS;
 
 function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): string {
   if (!dateStr) return fallback;
@@ -62,7 +73,7 @@ export function taxByFy(trades: TaxTrade[], fyStartMonth = 4, goLiveFy = "2026-2
       s.intradaySpeculative += t.netPnl;
     } else if (FNO.has(t.segment)) {
       s.fnoBusiness += t.netPnl;
-      s.fnoTurnover += Math.abs(t.grossPnl) + (OPTIONS.has(t.segment) ? t.sellValue : 0);
+      s.fnoTurnover += turnoverContribution(t);
     }
     s.charges += t.chargesTotal;
     s.totalRealised += t.netPnl;

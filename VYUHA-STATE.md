@@ -26,7 +26,80 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-30 (v3.2.0 cut; owner publishes)
+## 2. Current state — verified 2026-08-31 (v3.2.0 LIVE; v3.3.0 in build)
+
+**2026-08-31 — v3.2.0 IS PUBLISHED, MIRRORED, AND INSTALLED ON A NON-BUILD MACHINE** (owner
+confirmed). The v3.2.0 owner-steps list below is therefore DISCHARGED except WDSI.
+
+**2026-08-31 — v3.3.0 IN BUILD. Phase 0 (correctness) is CODE COMPLETE AND VERIFIED.** Built
+from four independent research streams. **Owner cancelled the separate v3.2.1 patch on
+2026-08-31: Phases 0–3 ship as ONE v3.3.0 minor.** **Plan, phases and every statutory citation:
+`docs/V330_BUILD_PLAN.md`. Reasoning: `docs/DECISIONS.md` 2026-08-31.**
+
+**THE HEADLINE FINDING — the governing statute changed under us.** The Income-tax Act, 1961 is
+repealed; the **Income-tax Act, 2025 came into force on 1 April 2026** (verified in the Gazette
+text, not commentary). Every section number this app displays is repealed law for tax year
+2026-27: 111A→s.196, 112A→s.198, 43(5)→s.66(31)/(33), 44AB→s.63, 44AD→s.58, 234C→s.425,
+87A→s.156, 115BAC→s.202. **The arithmetic survives; the citations do not** — the ₹10 Cr/₹3 Cr
+limits and the 15/45/75/100 instalments are unchanged and grandfathering survives verbatim as
+s.90. Re-labelling is **Phase 1**, done as effective-dated epochs (WS1's shape) so historical
+FYs keep their 1961 citations.
+
+**What Phase 0 fixes (all verified against the ENACTED Finance Act, 2026, No. 4 of 2026, which
+the owner supplied — note the Bill, No. 3 of 2026, is NOT authoritative and differs):**
+
+1. **F&O turnover omitted option premium, and that number fed `auditVerdict`.** Current ICAI
+   Guidance Note **11th ed. (2026) para 5.11(b)(ii)** requires it. The trap: premium was removed
+   in the 8th ed. (2022) and **REINSTATED in the 9th (2023)** — web search still returns the
+   superseded answer confidently.
+2. **Three turnover formulas → one module** (`lib/analytics/turnover.ts`), which also now owns
+   the segment sets that had four copies. `itr-schedule.ts` had been using `abs(NET P&L)`.
+3. **s.425(2) safe harbour** (≥12% by 15 Jun, ≥36% by 15 Sep — **first two instalments only**)
+   was unimplemented, so the planner charged interest the statute does not.
+4. **s.425(4) relief**, opt-in and payment-tested, never inferred.
+5. **`harvest.ts`'s frozen rate copy deleted**; rates resolve by date.
+6. **`lib/analytics/tax.ts` now has tests** — it was the only tax module without any.
+
+**DO NOT "FIX" THE s.425 INTEREST RATE.** The Act's Table states flat 3/3/3/1; the existing
+`1% × months` with months 3/3/3/1 reaches the same figures and is correct. Multiplying the month
+count by 3% would treble it.
+
+**Phases 1–3 are also COMPLETE** (2026-08-31):
+- **Phase 1 — statute epochs.** `lib/analytics/statute.ts` resolves citations BY TAX YEAR via
+  concept keys. Wired through `itr.ts`, `itr-schedule.ts`, `advance-tax.ts`, `tax-itr.ts` and
+  the advance-tax UI. A 2024-25 pack keeps "S.111A"; a 2026-27 pack says "s.196".
+- **Phase 2 — monthly depth on EXISTING screens.** `lib/analytics/monthly.ts`:
+  "Month detail" on `/reports/monthly` (trades, win rate, net, charges, drag, best/worst, and a
+  month-over-month that is BLANK across a gap rather than inventing a trend), and
+  "Realised by head, by month" on `/reports/tax` — deliberately NOT called a monthly tax
+  breakdown, with `MONTHLY_HEAD_CAVEAT` travelling with it.
+- **Phase 3 — tax levers on `/reports/harvest`.** `lib/analytics/tax-levers.ts`: the s.109
+  in-year set-off asymmetry, the STT deductible/forfeited split, and the holding clock. (C) is
+  enforced by ABSENCE and a test fails on any export named like a recommendation.
+
+**Verified 2026-08-31:** `npm run verify` **EXIT 0** — **2,266 tests / 151 files** (was
+2,184/146), **lint 0 problems**, production build clean. Rendering verified against the repo dev
+DB (all five tax/report routes HTTP 200, zero server errors, real values: ₹28,478 STT forfeited
+across 42 delivery trades vs 85 business-head trades). Dev server stopped afterwards.
+**Not committed, not bumped, not tagged.**
+
+**⚠ THE LIVE DESKTOP DB ON THIS MACHINE IS PRE-0050.** `%APPDATA%/in.vyuha.tradejournal`
+throws `no such column: effective_from` / `exit_trigger`, so **v3.2.0 has never been launched
+here** and migrations 0050/0051 have not run against it. Not a code defect — but note that
+`getHarvestTrades`' column projection hid the drift while full `db.select().from(trades)` pages
+threw. Launch the installed app once before trusting any live-DB check.
+
+**Owner decisions taken 2026-08-31:** epoch the statute (not a wholesale relabel); **ONE v3.3.0
+carrying Phases 0–3** (the v3.2.1 patch was cancelled); bundle the 31-Jan-2018 FMV snapshot but
+**NOT** dividend/bonus record dates — which **drops the s.175 stripping check**, the one lever
+no competitor computes; owner supplies primary tax documents (done: enacted Finance Act 2026 +
+Finance Bill 2026).
+
+**REMAINING FOR v3.3.0:** Phase 1 statute epochs → Phase 2 monthly depth on existing screens →
+Phase 3 tax-saving surface → docs/client pass → release ritual. **The Act change also reaches
+the SALES surfaces** — any 1961-Act section number on the landing page, brochure or client docs
+is stale for tax year 2026-27 and must be fixed in the same release, or the claims audit
+(release skill §10) fails honestly.
 
 **2026-08-30 — v3.2.0 CUT, VERIFIED AND TAGGED.** Built from two independent research batches
 (deep-analytics market research, 16 agents; a competitor teardown, 14 agents), each with an

@@ -3,15 +3,34 @@
 // change with Finance Acts; the caution notes are part of the output on purpose.
 //
 // Head-wise segregation follows how Indian ITRs treat a retail trader's book:
-//   - eq_intraday        → SPECULATIVE business income (S.43(5))
-//   - options/futures    → NON-SPECULATIVE business income (S.43(5) proviso (d)/(e))
+//   - eq_intraday        → SPECULATIVE business income   (S.43(5) → s.66(31))
+//   - options/futures    → NON-SPECULATIVE business income (S.43(5) proviso (d)/(e) → s.66(33))
 //   - eq_delivery/eq_mtf → CAPITAL GAINS (STCG < 12m, LTCG ≥ 12m)
 //
-// Turnover uses the ICAI Guidance Note (8th edition, 2022): the ABSOLUTE sum of
-// per-trade profits and losses. Option sale premium is NOT added separately when
-// it already flows through the P&L (it does here) — note that the older 2012
-// method (premium added) shows a much larger turnover; ask your CA which your
-// filing history uses.
+// Section numbers shown to the user are resolved by tax year in
+// lib/analytics/statute.ts — the 1961 Act was repealed with effect from
+// 1 April 2026, but a report for an earlier year must keep its own citations.
+//
+// Turnover comes from lib/analytics/turnover.ts, which implements the CURRENT
+// ICAI Guidance Note (11th edition, 2026) para 5.11(b): differences PLUS premium
+// received on the sale of options.
+//
+// This file previously used the 8th-edition (2022) method — absolute P&L only,
+// no premium — and described the premium method as "the older 2012 method". That
+// was wrong: premium was removed in the 8th edition and REINSTATED in the 9th
+// (2023), and has been in every edition since. Because this figure feeds
+// `auditVerdict`, an options seller could be told an audit was not required on a
+// book far above the threshold. Corrected 2026-08-31 against the PDFs.
+
+import {
+  DELIVERY_SEGMENTS,
+  FNO_SEGMENTS,
+  TURNOVER_BASIS,
+  turnoverContribution,
+} from "./turnover";
+import { section, STATUTE_CUTOVER_FY } from "./statute";
+
+export { TURNOVER_BASIS };
 
 export interface ItrTrade {
   segment: string;
@@ -19,6 +38,8 @@ export interface ItrTrade {
   sellDate: string | null;
   grossPnl: number;
   netPnl: number;
+  /** Sell-side consideration — the option premium half of turnover. Required. */
+  sellValue: number;
   chargesTotal: number;
   isOpen: boolean;
 }
@@ -27,7 +48,7 @@ export interface HeadSummary {
   trades: number;
   net: number; // post-charge realised P&L for the head
   gross: number;
-  turnover: number; // Guidance-Note absolute-sum turnover (business heads only)
+  turnover: number; // ICAI GN 11th ed. 5.11(b): differences + option premium (business heads only)
   charges: number; // deductible expenses for business heads; cost-adjusting for CG
 }
 
@@ -62,8 +83,8 @@ export const AUDIT_LIMIT_DIGITAL = 10_00_00_000;
 export const PRESUMPTIVE_44AD_LIMIT_DIGITAL = 3_00_00_000;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const FNO = new Set(["index_option", "stock_option", "commodity_option", "commodity_future", "future"]);
-const DELIVERY = new Set(["eq_delivery", "eq_mtf"]);
+const FNO = FNO_SEGMENTS;
+const DELIVERY = DELIVERY_SEGMENTS;
 
 function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): string {
   if (!dateStr) return fallback;
@@ -79,7 +100,20 @@ function emptyHead(): HeadSummary {
   return { trades: 0, net: 0, gross: 0, turnover: 0, charges: 0 };
 }
 
-export function auditVerdict(combinedBusinessTurnover: number, hasBusinessLoss: boolean): AuditVerdict {
+/**
+ * `fy` decides which Act the verdict CITES. The thresholds themselves are
+ * unchanged across the 1961→2025 transition (₹10 Cr audit, ₹3 Cr presumptive),
+ * so only the section numbers move. It defaults to the current Act rather than
+ * the repealed one: a citation that is current-but-unqualified misleads far less
+ * than one that confidently names repealed law.
+ */
+export function auditVerdict(
+  combinedBusinessTurnover: number,
+  hasBusinessLoss: boolean,
+  fy: string = STATUTE_CUTOVER_FY,
+): AuditVerdict {
+  const auditS = section(fy, "audit");
+  const presumptiveS = section(fy, "presumptive");
   const t = r2(combinedBusinessTurnover);
   const notes: string[] = [];
   let level: AuditLevel;
@@ -87,16 +121,16 @@ export function auditVerdict(combinedBusinessTurnover: number, hasBusinessLoss: 
 
   if (t === 0) {
     level = "no-business-income";
-    headline = "No business-head turnover this FY — 44AB does not arise from trading alone.";
+    headline = `No business-head turnover this year — ${auditS} does not arise from trading alone.`;
   } else if (t > AUDIT_LIMIT_DIGITAL) {
     level = "audit-required";
-    headline = `Business turnover ₹${t.toLocaleString("en-IN")} exceeds the ₹10 Cr digital-transactions limit — a tax audit under S.44AB is required.`;
+    headline = `Business turnover ₹${t.toLocaleString("en-IN")} exceeds the ₹10 Cr digital-transactions limit — a tax audit under ${auditS} is required.`;
   } else {
     level = "audit-unlikely";
     headline = `Business turnover ₹${t.toLocaleString("en-IN")} is within the ₹10 Cr digital limit — an audit is generally NOT required on turnover alone.`;
     if (t <= PRESUMPTIVE_44AD_LIMIT_DIGITAL) {
       notes.push(
-        "Turnover is within the ₹3 Cr (digital) presumptive limit of S.44AD — declaring ≥6% deemed profit is an option, but it binds you for 5 years and rarely suits loss years. Discuss with your CA.",
+        `Turnover is within the ₹3 Cr (digital) presumptive limit of ${presumptiveS} — declaring ≥6% deemed profit is an option, but it binds you for 5 years and rarely suits loss years. Discuss with your CA.`,
       );
     }
     if (hasBusinessLoss) {
@@ -122,13 +156,13 @@ export function itrPackByFy(trades: ItrTrade[], fyStartMonth = 4, fallbackFy = "
       b.spec.trades++;
       b.spec.net = r2(b.spec.net + t.netPnl);
       b.spec.gross = r2(b.spec.gross + t.grossPnl);
-      b.spec.turnover = r2(b.spec.turnover + Math.abs(t.grossPnl));
+      b.spec.turnover = r2(b.spec.turnover + turnoverContribution(t));
       b.spec.charges = r2(b.spec.charges + t.chargesTotal);
     } else if (FNO.has(t.segment)) {
       b.fno.trades++;
       b.fno.net = r2(b.fno.net + t.netPnl);
       b.fno.gross = r2(b.fno.gross + t.grossPnl);
-      b.fno.turnover = r2(b.fno.turnover + Math.abs(t.grossPnl));
+      b.fno.turnover = r2(b.fno.turnover + turnoverContribution(t));
       b.fno.charges = r2(b.fno.charges + t.chargesTotal);
     } else if (DELIVERY.has(t.segment)) {
       b.cg.trades++;
@@ -145,7 +179,7 @@ export function itrPackByFy(trades: ItrTrade[], fyStartMonth = 4, fallbackFy = "
       speculative: b.spec,
       nonSpeculative: b.fno,
       capitalGains: b.cg,
-      audit: auditVerdict(b.spec.turnover + b.fno.turnover, b.spec.net < 0 || b.fno.net < 0),
+      audit: auditVerdict(b.spec.turnover + b.fno.turnover, b.spec.net < 0 || b.fno.net < 0, fy),
     }))
     .sort((a, b) => a.fy.localeCompare(b.fy));
 }

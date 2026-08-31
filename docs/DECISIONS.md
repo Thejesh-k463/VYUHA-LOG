@@ -6,6 +6,154 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-08-31 — The governing statute changed, and turnover had been wrong for three years (v3.3.0)
+
+**Context:** four independent research streams (a competitor workspace teardown, an internal
+tax/KPI inventory, primary-source Indian tax research, a third-party repo teardown). The tax
+stream turned up something that outranked the brief it was given. Full plan and citations:
+`docs/V330_BUILD_PLAN.md`.
+
+**Decisions:**
+
+1. **The Income-tax Act, 1961 is repealed; the Income-tax Act, 2025 came into force on
+   1 April 2026.** Verified in the Gazette text, not commentary: *"it shall come into force on
+   the 1st April, 2026."* Every section number this app displays — 111A, 112A, 43(5), 44AB,
+   44AD, 234C, 87A, 115BAC — is repealed law for the current year, mapping to s.196, s.198,
+   s.66(31)/(33), s.63, s.58, s.425, s.156, s.202. **The arithmetic survives; the citations do
+   not.** The ₹10 Cr / ₹3 Cr limits in `itr.ts:61-62` and the 15/45/75/100 instalments are
+   unchanged, and grandfathering survives verbatim as s.90. This is therefore an
+   EFFECTIVE-DATING problem of exactly the shape WS1 solved for charge rates — deferred to
+   Phase 1, so historical FYs keep 1961 citations rather than being retro-labelled.
+
+2. **F&O turnover omitted option premium, and that number decided the audit verdict.**
+   `itr.ts:131` used `abs(grossPnl)` and fed `auditVerdict`. The CURRENT ICAI Guidance Note —
+   **11th edition, 2026, para 5.11(b)(ii)** — says *"Premium received on sale of options is
+   also to be included in turnover."* For an options seller premium can exceed |P&L| by orders
+   of magnitude, so this could report "audit generally NOT required" on a book far over the
+   line.
+   **Why the obvious source loses:** premium was REMOVED in the 8th edition (2022) and
+   **REINSTATED in the 9th (2023)**, unchanged through the 10th and 11th. The widely repeated
+   "premium never counts" is the 2022 position and has been wrong since 2023 — and a web search
+   returns it confidently across several otherwise reputable sources. It was caught only by
+   reading the Guidance Note PDFs. The file's own header had documented the 8th-edition choice
+   and called the premium method "the older 2012 method"; that comment was false.
+   **Invalidated if:** ICAI issues guidance mapped to s.63. The 11th edition's Preface calls
+   itself the concluding edition under the 1961 Act, so carrying 5.11(b) forward is PRACTICE,
+   not authority — which is why `TURNOVER_BASIS` is shown to the user rather than buried.
+
+3. **Three turnover formulas collapsed into one module.** `tax.ts` added premium,
+   `itr.ts` did not, and `itr-schedule.ts:161` used `abs(NET P&L)` — net is after charges and
+   wrong under every edition. Two of the three were on screen simultaneously on different
+   pages, so the same book showed two turnovers for one year. `lib/analytics/turnover.ts` now
+   owns the method and the segment sets; a test asserts `/reports/tax` and `/reports/itr` agree.
+
+4. **s.425(2)'s safe harbour was never implemented, so the planner charged interest the statute
+   does not.** Gazette text: no interest where advance tax paid by 15 June is **≥12%**, or by
+   15 September **≥36%**, of tax due on the returned income. **First two instalments only —
+   there is no tolerance for December or March.** The shortfall is still REPORTED (the payment
+   obligation is real); only the interest is waived, and the row is badged "short · no interest"
+   so it does not read as a bug.
+
+5. **The s.425 interest RATE was already correct — do not "fix" it.** s.425's Table states flat
+   3% / 3% / 3% / 1%. The old §234C reached the same figures as 1%/month × 3/3/3/1 months, which
+   is what `advance-tax.ts` computes. A reviewer reading "the Act says 3%" and multiplying the
+   existing month count by 3% would treble the interest. Recorded because the research stream
+   itself flagged this as a defect, and it is not one.
+
+6. **s.425(4) relief is opt-in, not inferred.** It waives interest on a shortfall from
+   underestimating capital gains, dividend, casual income, or business income *"accruing or
+   arising for the FIRST TIME"* — but only if the tax on it is paid in full by 31 March. The
+   conditions are CONJUNCTIVE and there is no statutory "could not reasonably have estimated"
+   test, so the payment test is what was built. **An established F&O or intraday trader gets no
+   relief on a windfall quarter**, and "first time" needs history predating the journal, so the
+   caller must assert it. Defaulting it on would understate a real liability.
+
+7. **`harvest.ts`'s `CG_RATES` was DELETED rather than re-pointed.** It held a second hardcoded
+   copy of the post-23-Jul-2024 pair while `capitalGainsRatesFor` resolved by date, so the two
+   modules could disagree on a historical year. **Why not the obvious thing:** replacing the
+   literal with a `new Date()` read would have made a `lib/analytics` module time-dependent at
+   import and merely moved the staleness. Rates now come from `capitalGainsRatesFor(date)`.
+
+8. **The s.175 dividend/bonus stripping check was scoped OUT, deliberately.** It is the one
+   lever no surveyed competitor computes, it is statutory and computable, and it runs *against*
+   the user — which is exactly why it is safe to ship and why nobody else will. It needs a
+   bundled record-date dataset, which the owner declined on 2026-08-31. **Recorded as a visible
+   scope decision, not a silent absence.**
+
+9. **A competitor's floating-window workspace was assessed and declined.** Their 40 widgets are
+   500-byte wrappers re-mounting existing pages (`TaxMetricsWidget` is 494 B); the windowing
+   layer is ~200 lines plus a localStorage hook. The expensive work is all upstream in broker
+   ingestion. It was declined for Vyuha on three grounds: it has no print story and this app's
+   reports are paper-bound; it multiplies the pointer-only accessibility debt already recorded
+   for sidebar reorder; and the widgets are worthless without the pages behind them. Persisted
+   dashboard filters, pinned KPI cards and saved views get the value at a fraction of the cost.
+   Note `settings.workspace` is already taken (`both|equity|fno`) — any such feature needs
+   another name.
+
+10. **`lib/analytics/tax.ts` had no test file** while every sibling tax module had one. It is
+    the module behind the primary `/reports/tax` FY table. Now covered.
+
+11. **Citations are resolved BY TAX YEAR, not relabelled wholesale** (`lib/analytics/statute.ts`).
+    Call sites reference a CONCEPT key (`"audit"`, `"interestDeferment"`), never a number, so a
+    future Act is one table away rather than a repo-wide find-and-replace. **Why not the obvious
+    thing:** swapping every citation to the 2025 Act is one sed away and would make every
+    historical FY report cite law that never governed it — the same class of error effective
+    dating exists to prevent. An unparseable year falls back to the CURRENT Act, because a
+    citation that is current-but-unqualified misleads far less than one confidently naming
+    repealed law. A test asserts no key resolves to the same string under both Acts.
+
+12. **A monthly TAX breakdown is not a thing, and saying so is the feature.** Competitors ship a
+    widget called "Monthly Tax Breakdown". Set-off between heads, the long-term exemption
+    threshold and the slab rates are ALL annual, so no month has a tax figure of its own. Vyuha
+    ships **"Realised by head, by month"** with `MONTHLY_HEAD_CAVEAT` travelling with it wherever
+    it renders. The honest label is the differentiation.
+
+13. **`monthlyBreakdown` does not recompute retPct.** The geometric monthly return needs the
+    equity series and already exists in `performance.ts`. Duplicating it over trades would create
+    two monthly return figures that could disagree — precisely the defect three turnover formulas
+    caused. This module aggregates TRADES (count, wins, charges, drag); the matrix keeps the
+    percentage.
+
+14. **Month-over-month is null across a gap, never carried.** `momNet` is set only when the
+    preceding row is the immediately preceding CALENDAR month. A trader who did not trade in
+    November has no November-to-December comparison, and quietly comparing December against
+    October would invent a trend.
+
+15. **The tax-lever module enforces (C) by ABSENCE, and a test enforces the absence.** There is
+    deliberately no export that selects a scrip to sell, ranks "opportunities" or estimates a
+    liability; `tests/tax-levers.test.ts` fails on any export name matching
+    `/recommend|suggest|advice|shouldSell|opportunit|.../`. Naming a security and prompting a
+    transaction falls outside the SEBI (Investment Advisers) Regulations 2013 reg. 4 exemption for
+    general comments "without specifying particular securities". **The most dangerous thing a
+    journal can say here is "wait 30 days before buying back" — India has NO wash-sale rule, and
+    inventing a holding period teaches the user false law.**
+
+16. **The set-off asymmetry is the lever worth shipping.** A current-year F&O loss can meet
+    capital gains but NEVER salary; carried forward it can only ever meet business income again.
+    So the same rupee is frequently worth more used now. Every shipped competitor harvesting
+    screen is equity-holdings-only and misses this entirely.
+
+17. **`HARVEST_FIELDS` gained three columns, not a second query.** `netPnl`, `chargesTotal` and
+    `sttCtt` were added to the existing projection. Columns only — no new WHERE — so the stated
+    contract (identical row order feeding `allocate()`'s stable sort, identical float sums) holds
+    by construction.
+
+**Measured:** `npm run verify` EXIT 0 — **2,266 tests / 151 files** (was 2,184 / 146), lint **0
+problems** (the three WS1 unused imports were removed here), production build clean. Verified
+rendering against the repo dev DB: the STT split reported ₹28,478 forfeited across 42 delivery
+trades versus 85 business-head trades, and the holding clock aged real open lots.
+
+**Environment finding, not a code defect:** the live desktop DB at
+`%APPDATA%/in.vyuha.tradejournal` is still PRE-0050 — `no such column: effective_from` and
+`no such column: exit_trigger`. Migrations 0050/0051 have never run against it, so v3.2.0 has
+not been launched on the build machine. Note WHY only some screens failed: `getHarvestTrades`
+uses a column projection and never selects `exit_trigger`, while pages using
+`db.select().from(trades)` select every column and throw. A projection can hide a schema drift
+that a full select surfaces.
+**Flaky, pre-existing:** `tests/account-delete.test.ts` "the upsert schema stores a trimmed
+name" timed out at the 5 s default under full-suite parallelism once, then passed in isolation
+(19/19, 1.57 s) and on the next full run. Not caused by this work; noted rather than hidden.
+
 ## 2026-08-30 — Statistical inference, segment depth, and the columns nobody read (v3.2.0)
 
 **Context:** two independent research batches (deep-analytics market research; a competitor

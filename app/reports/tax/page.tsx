@@ -7,6 +7,7 @@ import { getSettings } from "@/lib/queries/settings";
 import { getDividendLedgerEntries } from "@/lib/queries/ledger";
 import { getTaxBase, countItrRows } from "@/lib/queries/tax-itr";
 import { taxByFy } from "@/lib/analytics/tax";
+import { monthlyByHead, MONTHLY_HEAD_CAVEAT } from "@/lib/analytics/monthly";
 import {
   aggregateTradesByFy,
   computeTaxTimeline,
@@ -40,6 +41,13 @@ const COLS = [
   { key: "intradaySpeculative", label: "Intraday speculative" },
   { key: "fnoBusiness", label: "F&O business" }, { key: "fnoTurnover", label: "F&O turnover" },
   { key: "charges", label: "Charges" }, { key: "totalRealised", label: "Net realised" },
+];
+
+const MONTH_HEAD_COLS = [
+  { key: "ym", label: "Month" },
+  { key: "stcg", label: "STCG" }, { key: "ltcg", label: "LTCG" },
+  { key: "speculative", label: "Intraday speculative" }, { key: "fnoBusiness", label: "F&O business" },
+  { key: "charges", label: "Charges" }, { key: "trades", label: "Trades" },
 ];
 
 export default function TaxReportPage() {
@@ -85,6 +93,16 @@ export default function TaxReportPage() {
     }));
   const dividendRows = summariseByCompanyFy(dividendEvents);
 
+  // WHEN income arrived, split the way the return splits it. Not a monthly bill.
+  const monthHeads = monthlyByHead(
+    [...trades, ...ipoTaxRows].map((t) => ({
+      sellDate: t.sellDate, buyDate: t.buyDate, segment: t.segment,
+      netPnl: t.netPnl, grossPnl: t.grossPnl, chargesTotal: t.chargesTotal, isOpen: t.isOpen,
+    })),
+  );
+  const MONTH_HEAD_CAP = 24;
+  const monthHeadsShown = monthHeads.slice(-MONTH_HEAD_CAP).reverse();
+
   return (
     <>
       <PageHeader title="Tax Summary (informational)" description="Per financial year — scaffold only." />
@@ -94,8 +112,10 @@ export default function TaxReportPage() {
           <Info className="size-4 shrink-0" />
           <div>
             <span className="font-medium">Informational only — not filing advice.</span> Figures use net (post-charge)
-            realised P&amp;L and a simplified holding-period rule. F&amp;O turnover uses absolute settlement P&amp;L plus
-            option sell premium. Verify with a qualified tax professional before filing.
+            realised P&amp;L and a simplified holding-period rule. F&amp;O turnover follows the ICAI Guidance Note on
+            Tax Audit, 11th edition (2026), para 5.11(b) — absolute settlement differences plus premium received on
+            the sale of options. That is ICAI guidance, not statute, and your CA may use a different basis. Verify
+            with a qualified tax professional before filing.
           </div>
         </div>
 
@@ -142,6 +162,52 @@ export default function TaxReportPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Realised by head, by MONTH. Deliberately not called a monthly tax
+            breakdown: set-off, the LTCG threshold and slab rates are annual, so
+            no month has a tax figure of its own. MONTHLY_HEAD_CAVEAT says so. */}
+        {monthHeads.length > 0 && (
+          <Card className="p-0">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+              <div>
+                <CardTitle>Realised by head, by month</CardTitle>
+                <p className="mt-1 max-w-3xl text-xs text-muted-foreground">{MONTHLY_HEAD_CAVEAT}</p>
+              </div>
+              <ExportButtons filename="vyuha-monthly-by-head" columns={MONTH_HEAD_COLS} rows={monthHeads} />
+            </CardHeader>
+            <CardContent className="p-0">
+              <ReportTable>
+                <ReportThead>
+                  <ReportTh>Month</ReportTh>
+                  <ReportTh align="right">STCG</ReportTh>
+                  <ReportTh align="right">LTCG</ReportTh>
+                  <ReportTh align="right">Intraday speculative</ReportTh>
+                  <ReportTh align="right">F&O business</ReportTh>
+                  <ReportTh align="right">Charges</ReportTh>
+                  <ReportTh align="right">Trades</ReportTh>
+                </ReportThead>
+                <tbody>
+                  {monthHeadsShown.map((m) => (
+                    <ReportTr key={m.ym}>
+                      <ReportTd className="font-medium">{m.ym}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.stcg)}>{inr(m.stcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.ltcg)}>{inr(m.ltcg, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.speculative)}>{inr(m.speculative, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className={pnl(m.fnoBusiness)}>{inr(m.fnoBusiness, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" className="text-warning">{inr(m.charges, { decimals: 0 })}</ReportTd>
+                      <ReportTd align="right" muted>{m.trades}</ReportTd>
+                    </ReportTr>
+                  ))}
+                </tbody>
+              </ReportTable>
+              {monthHeadsShown.length < monthHeads.length && (
+                <p className="px-4 py-2 text-xs text-muted-foreground">
+                  Showing the most recent {monthHeadsShown.length} of {monthHeads.length} months. Export for all.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="p-0">
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeHarvest, CG_RATES, type OpenLot } from "@/lib/analytics/harvest";
+import { computeHarvest, type OpenLot } from "@/lib/analytics/harvest";
+import { capitalGainsRatesFor } from "@/lib/analytics/capital-gains";
 
 const lot = (id: number, symbol: string, term: "ST" | "LT", unrealised: number): OpenLot => ({
   id, symbol, term, qty: 100, entry: 1000, mtm: 1000 + unrealised / 100, unrealised,
@@ -61,9 +62,19 @@ describe("computeHarvest — candidates & misc", () => {
     expect(r.candidates.every((c) => c.status === "carry")).toBe(true);
   });
 
-  it("counts days to FY end and carries the rate card", () => {
+  it("counts days to FY end and resolves the rate card BY DATE", () => {
     const r = computeHarvest([], 0, 0, "2027-03-01", "2027-03-31");
     expect(r.daysToFyEnd).toBe(30);
-    expect(r.rates).toBe(CG_RATES);
+    expect(r.rates).toEqual(capitalGainsRatesFor("2027-03-01"));
+  });
+
+  // The defect this replaced: harvest.ts held its own frozen post-2024 rate pair
+  // while capital-gains.ts resolved by date, so a pre-cutover sale was priced at
+  // post-cutover rates on this screen alone.
+  it("uses the PRE-cutover schedule for a sale before 23 Jul 2024", () => {
+    const r = computeHarvest([], 0, 0, "2024-06-01", "2025-03-31");
+    expect(r.rates).toEqual(capitalGainsRatesFor("2024-06-01"));
+    expect(r.rates.stcgPct).toBe(0.15);
+    expect(r.rates.ltcgExemption).toBe(100000);
   });
 });

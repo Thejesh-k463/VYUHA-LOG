@@ -40,6 +40,10 @@ import {
   RATE_CUTOVER_DATE,
   type CarryForwardLot,
 } from "./capital-gains";
+import { DELIVERY_SEGMENTS, FNO_SEGMENTS, turnoverContribution } from "./turnover";
+// Citations are resolved BY TAX YEAR — a 2023-24 pack must keep its 1961 Act
+// sections, not be retro-labelled with the 2025 Act's.
+import { section, statuteNote } from "./statute";
 
 export interface ItrScheduleTrade {
   segment: string;
@@ -49,9 +53,11 @@ export interface ItrScheduleTrade {
   buyValue: number;
   /** Full value of consideration, pre-charge. */
   sellValue: number;
+  /** Pre-charge trade difference. Turnover is built from gross, never net. */
+  grossPnl: number;
   netPnl: number;
   chargesTotal: number;
-  /** Excluded from capital-gains deductions per the proviso to S.48. */
+  /** Excluded from capital-gains deductions — S.48 proviso, now s.72(3)(b). */
   sttCtt: number;
   fmv31Jan2018?: number | null;
   isOpen: boolean;
@@ -79,8 +85,8 @@ export interface ItrScheduleFy {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const FNO = new Set(["index_option", "stock_option", "commodity_option", "commodity_future", "future"]);
-const DELIVERY = new Set(["eq_delivery", "eq_mtf"]);
+const FNO = FNO_SEGMENTS;
+const DELIVERY = DELIVERY_SEGMENTS;
 
 function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): string {
   if (!dateStr) return fallback;
@@ -89,7 +95,11 @@ function fyOf(dateStr: string | null, fyStartMonth: number, fallback: string): s
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
-/** Deductible transfer expenditure: every charge EXCEPT STT/CTT (proviso to S.48). */
+/**
+ * Deductible transfer expenditure: every charge EXCEPT STT.
+ * S.48 proviso under the 1961 Act; s.72(3)(b) under the 2025 Act — the rule is
+ * unchanged, and note both name only STT, never CTT.
+ */
 export function transferExpenditure(t: { chargesTotal: number; sttCtt: number }): number {
   return r2(Math.max(0, t.chargesTotal - t.sttCtt));
 }
@@ -157,8 +167,10 @@ export function itrScheduleByFy(
       const bucket = t.segment === "eq_intraday" ? b.spec : b.fno;
       bucket.trades++;
       bucket.net = r2(bucket.net + t.netPnl);
-      // ICAI Guidance Note (8th ed.) turnover: absolute sum of per-trade P&L.
-      bucket.turnover = r2(bucket.turnover + Math.abs(t.netPnl));
+      // Shared method — see lib/analytics/turnover.ts. This used |NET P&L|, which
+      // is after charges and therefore wrong under every edition of the Guidance
+      // Note; and it omitted option premium. Corrected 2026-08-31.
+      bucket.turnover = r2(bucket.turnover + turnoverContribution(t));
       // STT is an allowable business expense for these heads, unlike capital gains.
       bucket.expenses = r2(bucket.expenses + t.chargesTotal);
     }
@@ -232,7 +244,7 @@ function buildFy(
       {
         schedule: "Schedule CG",
         code: "B4(d)",
-        label: `Deduction u/s 112A (exemption threshold ₹${rates.ltcgExemption.toLocaleString("en-IN")})`,
+        label: `Deduction u/s ${section(fy, "ltcgEquity")} (exemption threshold ₹${rates.ltcgExemption.toLocaleString("en-IN")})`,
         amount: exemption,
         note: "FY-level exemption across ALL your 112A gains — if you hold equity outside this journal, the threshold is shared.",
       },
@@ -243,8 +255,8 @@ function buildFy(
   // ── Schedule BP — business heads ──────────────────────────────────────────
   if (b.spec.trades > 0) {
     lines.push(
-      { schedule: "Schedule BP", code: "BP-SPEC", label: "Speculative business income — intraday equity (S.43(5))", amount: b.spec.net },
-      { schedule: "Schedule BP", code: "BP-SPEC-TO", label: "Speculative turnover (ICAI Guidance Note, 8th ed.)", amount: b.spec.turnover },
+      { schedule: "Schedule BP", code: "BP-SPEC", label: `Speculative business income — intraday equity (${section(fy, "speculative")})`, amount: b.spec.net },
+      { schedule: "Schedule BP", code: "BP-SPEC-TO", label: "Speculative turnover (ICAI Guidance Note, 11th ed.)", amount: b.spec.turnover },
       {
         schedule: "Schedule BP",
         code: "BP-SPEC-EXP",
@@ -256,8 +268,8 @@ function buildFy(
   }
   if (b.fno.trades > 0) {
     lines.push(
-      { schedule: "Schedule BP", code: "BP-NONSPEC", label: "Non-speculative business income — F&O (proviso (d)/(e) to S.43(5))", amount: b.fno.net },
-      { schedule: "Schedule BP", code: "BP-NONSPEC-TO", label: "Non-speculative turnover (ICAI Guidance Note, 8th ed.)", amount: b.fno.turnover },
+      { schedule: "Schedule BP", code: "BP-NONSPEC", label: `Non-speculative business income — F&O (${section(fy, "derivativeCarveOut")})`, amount: b.fno.net },
+      { schedule: "Schedule BP", code: "BP-NONSPEC-TO", label: "Non-speculative turnover (ICAI Guidance Note, 11th ed.)", amount: b.fno.turnover },
       {
         schedule: "Schedule BP",
         code: "BP-NONSPEC-EXP",
@@ -309,8 +321,11 @@ function buildFy(
     "These are preparation figures in the ITR's own item codes, not a filed return. Your broker's contract notes and your CA remain the source of record.",
   );
   cautions.push(
-    "STT is excluded from capital-gains deductions (proviso to S.48) but IS included as a business expense for the speculative and F&O heads. The same rupees are treated differently by head — this is deliberate.",
+    `STT is excluded from capital-gains deductions (${section(fy, "sttNotDeductibleCg")}) but IS included as a business expense for the speculative and F&O heads (${section(fy, "sttBusinessExpense")}). The same rupees are treated differently by head — this is deliberate.`,
   );
+  // Which Act governed this year. A pack spanning the changeover needs this more
+  // than any single citation does.
+  cautions.push(statuteNote(fy));
   if (straddles) {
     cautions.push(
       `FY ${fy} straddles the 23-Jul-2024 rate cutover. The 112A exemption above uses the regime in force at the LAST sale of the year; gains realised on either side of the cutover carry different rates, so verify the split with your CA.`,

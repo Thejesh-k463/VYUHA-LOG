@@ -3,6 +3,18 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## New in v3.3.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **India's income-tax law changed, and Vyuha changed with it** | The Income-tax Act, 1961 was repealed and the Income-tax Act, 2025 came into force on 1 April 2026. Almost every section number you have seen on a tax report — 111A, 112A, 44AB, 234C — belongs to the old Act. Vyuha now cites the Act that governed **each year**: a 2024-25 pack still says S.111A, and a 2026-27 pack says s.196, with the governing Act named on the report. Your figures do not move; the law they point at is finally right. |
+| **A turnover figure that had been wrong for three years** | The tax-audit turnover for F&O must include the premium you received on options you sold. That rule was removed from the ICAI guidance in 2022 and **put back in 2023** — and the older answer is still what most of the internet tells you. Vyuha was using the older one, and it is the number that decides whether you are told an audit applies. If you sell options, your turnover figure may now be substantially larger, and it is the correct one. Vyuha also shows which guidance it followed, because this is professional guidance rather than statute. |
+| **The Tax Summary and the ITR Pack now agree** | They were computing turnover two different ways, so the same year could show two different figures on two screens. One calculation now feeds both. |
+| **Advance tax stops charging interest the law does not** | If you paid at least 12% by 15 June, or 36% by 15 September, no deferment interest arises at all — even though the instalment asks for more. Vyuha now applies that, shows the shortfall anyway (you still owe it), and marks the row "short · no interest" so it does not look like a mistake. There is no such tolerance for December or March, and it says so. |
+| **What you realised each month, by head** | Split the way your return splits it. It is deliberately not called a monthly tax bill: set-off, the long-term exemption and the slab rates are all worked out for the whole year, so no single month has a tax figure of its own. |
+| **Months as units of work** | The monthly grid could only ever show one percentage per box. Now you also get trades, win rate, net, charges, cost drag and your best and worst trade of each month — with a month-on-month column that stays blank when you did not trade the month before, rather than inventing a trend. |
+| **Three things your own trades can prove about your tax** | Which losses can meet gains **this** year instead of only future business income; how much of your STT was deductible because it sat on an intraday or F&O leg and how much was simply lost on a delivery leg; and how many days each open holding has before it turns long-term. Vyuha will not tell you which share to sell, will not estimate what you owe, and will never tell you to wait a number of days before buying back — India has no wash-sale rule, and any tool that gives you a waiting period is inventing one. |
+
 ## New in v3.2.0
 
 | Upgrade | What it gives you |
@@ -255,7 +267,7 @@ leaves your computer — there is no account, no cloud, and no telemetry.
 
 | Workspace | What it gives you |
 |---|---|
-| **ITR Pack → Schedules** | Your figures in the return's own item codes — Schedule CG (A3 · 111A, B4 · 112A), Schedule BP and Schedule CFL — with the form indicated (ITR-2 or ITR-3). STT is handled correctly per head: excluded from capital-gains deductions, allowed as a business expense against intraday and F&O. |
+| **ITR Pack → Schedules** | Your figures in the return's own item codes — Schedule CG (A3 short-term, B4 long-term), Schedule BP and Schedule CFL — with the form indicated (ITR-2 or ITR-3). STT is handled correctly per head: excluded from capital-gains deductions, allowed as a business expense against intraday and F&O. Since v3.3.0 the statutory sections quoted alongside these follow the Act in force for each year. |
 | **Safer restore** | Restoring a backup no longer removes chart screenshots, and a restore that fails partway leaves your journal exactly as it was. |
 | **Stronger backup passwords** | Encrypted backups use a much costlier key derivation. Files made with older versions still open. |
 | **Clearer multi-account writes** | Adding or importing a trade while viewing all accounts now asks which account it belongs to. |

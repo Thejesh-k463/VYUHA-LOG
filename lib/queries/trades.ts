@@ -160,13 +160,18 @@ const HARVEST_FIELDS = [
   "id", "symbol", "segment", "isOpen",
   "buyQty", "sellQty", "avgBuyPrice", "closingPrice",
   "buyDate", "sellDate", "grossPnl",
+  // Added for the tax levers (v3.3.0): the STT split by head, and the
+  // set-off position. Columns only — no new WHERE — so row order and both
+  // float sums are unchanged by construction.
+  "netPnl", "chargesTotal", "sttCtt",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type HarvestTrade = Pick<Trade, (typeof HARVEST_FIELDS)[number]>;
 
 /**
- * /reports/harvest: the whole book projected to the 11 columns the harvest
- * report reads — the open-lot mapping and the realised STCG/LTCG window. Same
+ * /reports/harvest: the whole book projected to the 14 columns the harvest
+ * report reads — the open-lot mapping, the realised STCG/LTCG window, and the
+ * tax levers (STT split by head, set-off position, holding clock). Same
  * pure-projection contract as `getTaxTrades` (no new WHERE; the page keeps
  * its JS filters), so lot order — which feeds `allocate()`'s stable sort and
  * therefore the rendered candidate order — and both float sums are identical

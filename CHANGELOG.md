@@ -1,5 +1,54 @@
 # Changelog
 
+## v3.3.0 — the law changed, and the turnover had been wrong for three years
+
+- **The Income-tax Act, 1961 is repealed.** The Income-tax Act, 2025 came into
+  force on 1 April 2026, so every section number Vyuha displayed — 111A, 112A,
+  43(5), 44AB, 44AD, 234C, 87A, 115BAC — is repealed law for the current year.
+  The arithmetic almost all survives; the citations do not. Citations are now
+  resolved **by tax year**: a 2024-25 pack keeps "S.111A", a 2026-27 pack says
+  "s.196", and a report for a year names the Act that governed it. Verified
+  against the Gazette text and the enacted Finance Act, 2026 — which amends 88
+  sections of the new Act, none of them in a way that moves the rules Vyuha
+  relies on.
+- **F&O turnover was omitting option premium, and that number decided whether
+  you were told an audit applies.** The current ICAI Guidance Note on Tax Audit
+  (11th edition, 2026, para 5.11(b)) requires premium received on the sale of
+  options to be included. Premium was removed from the method in the 8th edition
+  (2022) and **reinstated in the 9th (2023)** — the widely repeated "premium
+  never counts" has been wrong for three years, and a web search still returns
+  it. For an options seller, premium can exceed absolute P&L by orders of
+  magnitude. Fixed, and the basis is now stated on screen rather than assumed.
+- **Turnover had three different formulas in three modules, two of them on
+  screen at once.** The Tax Summary and the ITR pack could report different
+  turnovers for the same year, and the ITR schedule was computing it from *net*
+  P&L, which is after charges and wrong under every edition. One module now owns
+  the method, and a test asserts the two screens agree.
+- **Advance tax was charging interest the statute does not.** s.425(2) waives
+  deferment interest entirely where at least 12% is paid by 15 June or 36% by
+  15 September — first two instalments only, with no tolerance for December or
+  March. The shortfall is still shown, because the payment obligation is real;
+  the row now reads "short · no interest" so it does not look like a bug. The
+  s.425(4) relief for capital gains is available too, opt-in and payment-tested.
+- **Realised by head, by month.** What you actually booked each month, split the
+  way the return splits it — deliberately *not* called a monthly tax bill, since
+  set-off, the exemption threshold and the slab rates are all annual and no
+  month has a tax figure of its own.
+- **Month detail.** The monthly matrix could only ever show one percentage per
+  cell, because it is computed from the equity curve. Months now also read as
+  units of work: trades, win rate, net, charges, drag, best and worst — and a
+  month-over-month column that stays blank across a gap rather than inventing a
+  trend.
+- **Three tax levers a trade book can compute exactly**, on the harvesting
+  screen: which losses can meet gains *this* year instead of only future
+  business income (the asymmetry every competing screen misses, because they are
+  all equity-holdings-only); how much STT was deductible on a business-head leg
+  versus forfeited on a delivery leg; and how many days each open lot has left
+  before it turns long-term. Vyuha does not name a security to sell, does not
+  estimate what you owe, and does not tell you to wait before buying back —
+  India has no wash-sale rule, and inventing a waiting period would be teaching
+  false law.
+
 ## v3.2.0 — the journal stops guessing, and starts saying how sure it is
 
 - **Charge rates are now effective-dated.** A rate row used to have no time

@@ -236,15 +236,18 @@ export const HELP_ENTRIES: HelpEntry[] = [
     href: "/reports/advance-tax",
     title: "Advance Tax",
     answers: "What are my instalments, and what does missing one cost?",
-    body: ["The 15/45/75/100 schedule prefilled from realised FY P&L, with 234C interest per instalment. 234B is stated as a caveat, not computed — it cannot be assessed in a forward planner."],
-    keywords: ["advance tax", "234b", "234c", "instalment"],
+    body: ["The 15/45/75/100 schedule prefilled from realised FY P&L, with deferment interest per instalment (s.425 of the Income-tax Act, 2025 — the old §234C). A shortfall can show no interest: s.425(2) waives it entirely where at least 12% is paid by 15 June or 36% by 15 September, and there is no equivalent tolerance for December or March. The s.424 short-payment interest (the old §234B) is stated as a caveat, not computed — it cannot be assessed in a forward planner."],
+    keywords: ["advance tax", "234b", "234c", "instalment", "s.425", "safe harbour"],
   },
   {
     href: "/reports/harvest",
     title: "Tax Harvest",
     answers: "Which unrealised losses are worth realising before year-end?",
-    body: ["Open delivery lots with unrealised losses set against realised FY gains, with the estimated tax saved. F&O and intraday are excluded — business income does not harvest."],
-    keywords: ["harvesting", "ltcg", "stcg", "losses"],
+    body: [
+      "Open delivery lots with unrealised losses set against realised FY gains, with the estimated tax saved. F&O and intraday are excluded — business income does not harvest.",
+      "Alongside it, three things a trade book can compute exactly: which of your losses can meet gains THIS year rather than only future business income; how much of your STT was deductible because it sat on a business-head leg and how much was forfeited on a delivery leg; and how many days each open lot has until it turns long-term. Vyuha never names a security to sell and never tells you to wait before buying back — India has no wash-sale rule, and a journal that invents a waiting period is teaching you law that does not exist.",
+    ],
+    keywords: ["harvesting", "ltcg", "stcg", "losses", "set-off", "stt", "holding period"],
   },
   {
     href: "/reports/expiry",
