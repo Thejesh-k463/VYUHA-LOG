@@ -30,6 +30,49 @@ const staged = (legs: Leg[], over: Partial<ScalingTradeInput> = {}): ScalingTrad
   ...over,
 });
 
+describe("scaling quality — charge symmetry (v3.5.0 fix)", () => {
+  it("each scenario bears its OWN entry+exit charges — identical economics net to zero impact", () => {
+    // Both tranches at the same price, exit at the same price: scaling changed
+    // nothing except paying a second entry brokerage. The impact must be
+    // exactly minus that extra brokerage (inside the dead-band → neutral),
+    // NOT plus the first entry's charges — the old asymmetry credited every
+    // ladder roughly one brokerage of phantom "improvement".
+    const r = scalingQuality([
+      staged([
+        leg({ id: 1, kind: "entry", seq: 1, qty: 100, price: 10, chargesTotal: 40 }),
+        leg({ id: 2, kind: "entry", seq: 2, qty: 100, price: 10, chargesTotal: 40 }),
+        leg({ id: 3, kind: "exit", seq: 3, qty: 200, price: 14, chargesTotal: 20 }),
+      ]),
+    ]);
+    // actual: gross 800 − exit 20 − entries 80 = 700
+    // counterfactual: gross 400 − first entry 40 − exit share 10 = 350
+    // impact: 700 − 350 = 350 — the second tranche's real net contribution
+    // (400 gross − 40 entry − 10 exit share = 350). Charge-symmetric.
+    expect(r.rows[0].actualNet).toBe(700);
+    expect(r.rows[0].firstEntryOnlyNet).toBe(350);
+    expect(r.rows[0].scalingImpact).toBe(350);
+  });
+
+  it("a flat second tranche costs exactly its own charges, never earns the first's", () => {
+    // Second tranche breaks even on price; the only difference scaling made is
+    // its ₹40 brokerage. Impact must be ≈ −40+(−10 exit share)… precisely:
+    // actual = (12−11)*200 gross=200 −20 exit −80 entries = 100
+    // base    = (12−10)*100=200 −40 −10 = 150 → impact −50 (the added tranche
+    // lost its charges plus its below-average exit share) — HARMED, honestly.
+    const r = scalingQuality([
+      staged([
+        leg({ id: 1, kind: "entry", seq: 1, qty: 100, price: 10, chargesTotal: 40 }),
+        leg({ id: 2, kind: "entry", seq: 2, qty: 100, price: 12, chargesTotal: 40 }),
+        leg({ id: 3, kind: "exit", seq: 3, qty: 200, price: 12, chargesTotal: 20 }),
+      ]),
+    ]);
+    expect(r.rows[0].actualNet).toBe(100);
+    expect(r.rows[0].firstEntryOnlyNet).toBe(150);
+    expect(r.rows[0].scalingImpact).toBe(-50);
+    expect(r.rows[0].verdict).toBe("harmed");
+  });
+});
+
 describe("scaling quality — verdicts", () => {
   it("calls a winning pyramid an improvement", () => {
     // Added at 110, exited everything at 120: the second tranche made money.

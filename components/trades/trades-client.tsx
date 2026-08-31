@@ -45,6 +45,11 @@ import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, 
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
+/** Selection ids ride the report URL; ~500 seven-digit ids is the ceiling a
+ *  URL carries reliably across servers and browsers. Beyond it the link
+ *  truncates SILENTLY and the "report" drops rows without saying so. */
+const PDF_EXPORT_ID_CAP = 500;
+
 function daysBetween(a: string, b: string): number | null {
   const d1 = new Date(a + "T00:00:00").getTime();
   const d2 = new Date(b + "T00:00:00").getTime();
@@ -620,13 +625,26 @@ export function TradesClient({
                   old behaviour, and it read as a bug, not an offer. The page's
                   own <ProGate> stays as the enforcement for a typed URL. */}
               {pro ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => window.open(`/trades/report?ids=${[...visibleSelected].join(",")}`, "_blank")}
-                >
-                  <Printer className="mr-1 size-3.5" /> Export PDF ({visibleSelected.size})
-                </Button>
+                visibleSelected.size > PDF_EXPORT_ID_CAP ? (
+                  // The ids travel in the URL; past ~500 seven-digit ids the
+                  // link exceeds what servers/browsers reliably accept and
+                  // FAILS SILENTLY — rows quietly vanish from the "report".
+                  // A refused button with a reason beats a truncated PDF that
+                  // looks complete (invariant 6 in UI form).
+                  <Tip label={`PDF export carries the selection in the link, which holds up to ${PDF_EXPORT_ID_CAP} trades reliably. For more, use the Monthly report or the free CSV export.`}>
+                    <Button size="sm" variant="outline" disabled>
+                      <Printer className="mr-1 size-3.5" /> Export PDF (max {PDF_EXPORT_ID_CAP})
+                    </Button>
+                  </Tip>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`/trades/report?ids=${[...visibleSelected].join(",")}`, "_blank")}
+                  >
+                    <Printer className="mr-1 size-3.5" /> Export PDF ({visibleSelected.size})
+                  </Button>
+                )
               ) : (
                 <Tip label="Pro — print-ready PDF of any selection. CSV/JSON export stays free.">
                   <Button size="sm" variant="outline" asChild>

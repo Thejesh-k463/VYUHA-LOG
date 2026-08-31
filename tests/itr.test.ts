@@ -41,6 +41,28 @@ describe("itrPackByFy — head segregation", () => {
     expect(p.capitalGains.trades).toBe(2);
   });
 
+  it("carries BOTH turnover bases and an audit read on each (owner decision 2026-09-01)", () => {
+    // An options seller: tiny differences, huge premium — the shape where the
+    // two bases land on OPPOSITE sides of the ₹10 Cr line (a real Zerodha
+    // book measured 6.5–8.7× apart; here exaggerated to cross the limit).
+    const pack = itrPackByFy([
+      t({ segment: "index_option", grossPnl: -50_00_000, netPnl: -50_10_000, sellValue: 10_10_00_000, chargesTotal: 10_000 }),
+    ]);
+    const p = pack[0];
+    // ICAI 11th ed.: |−50L| + 10.1Cr premium = 10.6Cr → over the limit.
+    expect(p.nonSpeculative.turnover).toBe(10_60_00_000);
+    expect(p.audit.level).toBe("audit-required");
+    // Broker basis: differences only = 50L → well inside it.
+    expect(p.nonSpeculative.turnoverBroker).toBe(50_00_000);
+    expect(p.auditBroker.level).toBe("audit-unlikely");
+  });
+
+  it("the broker basis on a futures-only book equals the ICAI basis (no premium term)", () => {
+    const pack = itrPackByFy([t({ segment: "future", grossPnl: 40_000, sellValue: 9_00_000 })]);
+    expect(pack[0].nonSpeculative.turnover).toBe(40_000);
+    expect(pack[0].nonSpeculative.turnoverBroker).toBe(40_000);
+  });
+
   it("open trades are excluded; FY assignment follows sell date and fyStartMonth", () => {
     const pack = itrPackByFy([
       t({ isOpen: true, grossPnl: 99999 }),

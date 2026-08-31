@@ -6,7 +6,8 @@ import { ExportButtons } from "@/components/ui/export-button";
 import { getTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
-import { itrPackByFy } from "@/lib/analytics/itr";
+import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analytics/itr";
+import { section } from "@/lib/analytics/statute";
 import { itrScheduleByFy, scheduleExportRows } from "@/lib/analytics/itr-schedule";
 import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
 import { inr } from "@/lib/format";
@@ -21,7 +22,9 @@ export const dynamic = "force-dynamic";
 const EXPORT_COLS = [
   { key: "fy", label: "FY" }, { key: "head", label: "Head" },
   { key: "trades", label: "Trades" }, { key: "net", label: "Net P&L" },
-  { key: "turnover", label: "Turnover" }, { key: "charges", label: "Charges/Expenses" },
+  { key: "turnover", label: "Turnover (ICAI 11th ed.)" },
+  { key: "turnoverBroker", label: "Turnover (broker basis)" },
+  { key: "charges", label: "Charges/Expenses" },
 ];
 
 const SCHEDULE_COLS = [
@@ -76,10 +79,10 @@ export default function ItrPackPage() {
   );
 
   const exportRows = packs.flatMap((p) => [
-    { fy: p.fy, head: "Speculative business (intraday equity)", trades: p.speculative.trades, net: p.speculative.net, turnover: p.speculative.turnover, charges: p.speculative.charges },
-    { fy: p.fy, head: "Non-speculative business (F&O)", trades: p.nonSpeculative.trades, net: p.nonSpeculative.net, turnover: p.nonSpeculative.turnover, charges: p.nonSpeculative.charges },
-    { fy: p.fy, head: "Capital gains — STCG", trades: p.capitalGains.trades, net: p.capitalGains.stcg, turnover: 0, charges: p.capitalGains.charges },
-    { fy: p.fy, head: "Capital gains — LTCG", trades: 0, net: p.capitalGains.ltcg, turnover: 0, charges: 0 },
+    { fy: p.fy, head: "Speculative business (intraday equity)", trades: p.speculative.trades, net: p.speculative.net, turnover: p.speculative.turnover, turnoverBroker: p.speculative.turnoverBroker, charges: p.speculative.charges },
+    { fy: p.fy, head: "Non-speculative business (F&O)", trades: p.nonSpeculative.trades, net: p.nonSpeculative.net, turnover: p.nonSpeculative.turnover, turnoverBroker: p.nonSpeculative.turnoverBroker, charges: p.nonSpeculative.charges },
+    { fy: p.fy, head: "Capital gains — STCG", trades: p.capitalGains.trades, net: p.capitalGains.stcg, turnover: 0, turnoverBroker: 0, charges: p.capitalGains.charges },
+    { fy: p.fy, head: "Capital gains — LTCG", trades: 0, net: p.capitalGains.ltcg, turnover: 0, turnoverBroker: 0, charges: 0 },
   ]);
 
   const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -88,21 +91,27 @@ export default function ItrPackPage() {
     <>
       <PageHeader
         title="ITR Pack (India)"
-        description="Head-wise segregation + Guidance-Note turnover + 44AB read — a preparation pack for you and your CA."
+        description="Head-wise segregation + turnover on BOTH bases + the audit read — a preparation pack for you and your CA."
         actions={<Badge variant="secondary">informational</Badge>}
       />
       <div className="space-y-5 p-6">
         <ProGate>
         <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-4 text-xs">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-          <p>
-            <span className="font-semibold">This is preparation, not filing advice.</span> Heads follow the
-            standard treatment (intraday = speculative business, F&amp;O = non-speculative business,
-            delivery/MTF = capital gains) and turnover follows the ICAI Guidance Note (8th ed., 2022 —
-            absolute sum of per-trade P&amp;L, option premium NOT double-added). Your CA may use the older
-            premium-inclusive method for consistency with past filings; thresholds also depend on your
-            OVERALL income. Take this pack to a professional — don&apos;t file off it directly.
-          </p>
+          <div className="space-y-1.5">
+            <p>
+              <span className="font-semibold">This is preparation, not filing advice.</span> Heads follow the
+              standard treatment (intraday = speculative business, F&amp;O = non-speculative business,
+              delivery/MTF = capital gains). Turnover is shown on BOTH bases in use, because your
+              broker&apos;s tax report and this pack will otherwise disagree by design — on a real F&amp;O
+              book the two differed by 6.5–8.7×. Thresholds also depend on your OVERALL income. Take
+              this pack to a professional — don&apos;t file off it directly.
+            </p>
+            {/* Both basis sentences come from lib/analytics/turnover.ts — the one
+                module allowed to describe what the numbers are. */}
+            <p className="text-muted-foreground">{TURNOVER_BASIS}</p>
+            <p className="text-muted-foreground">{BROKER_TURNOVER_BASIS}</p>
+          </div>
         </div>
 
         {packs.length === 0 ? (
@@ -118,7 +127,13 @@ export default function ItrPackPage() {
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle>FY {p.fy}</CardTitle>
                 <span className={`text-xs font-medium ${p.audit.level === "audit-required" ? "text-loss" : "text-muted-foreground"}`}>
-                  {p.audit.level === "audit-required" ? "⚠ 44AB audit required" : p.audit.level === "audit-unlikely" ? "44AB audit unlikely" : "no business income"}
+                  {/* Section label resolves per FY (1961 Act vs 2025 Act) — a
+                      hard-coded "44AB" mislabels every year from 2026-27 on. */}
+                  {p.audit.level === "audit-required"
+                    ? `⚠ ${section(p.fy, "audit")} audit required`
+                    : p.audit.level === "audit-unlikely"
+                      ? `${section(p.fy, "audit")} audit unlikely`
+                      : "no business income"}
                 </span>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -128,6 +143,53 @@ export default function ItrPackPage() {
                   <KpiCard label="STCG (delivery/MTF)" valueNum={p.capitalGains.stcg} format="inr0" valueClassName={pnl(p.capitalGains.stcg)} sub={`${p.capitalGains.trades} CG trades`} />
                   <KpiCard label="LTCG (≥ 12m)" valueNum={p.capitalGains.ltcg} format="inr0" valueClassName={pnl(p.capitalGains.ltcg)} sub="grandfathering on Tax Summary" />
                 </section>
+
+                {/* Turnover, both ways — the same book produces BOTH numbers,
+                    and they can land on opposite sides of an audit threshold.
+                    Showing one would make either the broker's report or this
+                    pack look broken; showing both, labelled, is the product's
+                    stance (owner decision, 2026-09-01). */}
+                {(p.speculative.turnover > 0 || p.nonSpeculative.turnover > 0) && (
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-card-hover/40 text-left text-muted-foreground">
+                        <tr>
+                          <th className="p-2 font-medium">Turnover basis</th>
+                          <th className="p-2 text-right font-medium">Intraday</th>
+                          <th className="p-2 text-right font-medium">F&amp;O</th>
+                          <th className="p-2 text-right font-medium">Combined</th>
+                          <th className="p-2 font-medium">Audit read</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono tabular-nums">
+                        <tr className="border-t border-border">
+                          <td className="p-2 font-sans">ICAI 11th ed. (differences + option premium)</td>
+                          <td className="p-2 text-right">{inr(p.speculative.turnover, { decimals: 0 })}</td>
+                          <td className="p-2 text-right">{inr(p.nonSpeculative.turnover, { decimals: 0 })}</td>
+                          <td className="p-2 text-right font-semibold">{inr(p.audit.combinedBusinessTurnover, { decimals: 0 })}</td>
+                          <td className={`p-2 font-sans ${p.audit.level === "audit-required" ? "text-loss" : "text-muted-foreground"}`}>
+                            {p.audit.level === "audit-required" ? "audit required" : p.audit.level === "audit-unlikely" ? "audit unlikely" : "—"}
+                          </td>
+                        </tr>
+                        <tr className="border-t border-border">
+                          <td className="p-2 font-sans">Broker reports (differences only)</td>
+                          <td className="p-2 text-right">{inr(p.speculative.turnoverBroker, { decimals: 0 })}</td>
+                          <td className="p-2 text-right">{inr(p.nonSpeculative.turnoverBroker, { decimals: 0 })}</td>
+                          <td className="p-2 text-right font-semibold">{inr(p.auditBroker.combinedBusinessTurnover, { decimals: 0 })}</td>
+                          <td className={`p-2 font-sans ${p.auditBroker.level === "audit-required" ? "text-loss" : "text-muted-foreground"}`}>
+                            {p.auditBroker.level === "audit-required" ? "audit required" : p.auditBroker.level === "audit-unlikely" ? "audit unlikely" : "—"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {p.audit.level !== p.auditBroker.level && (
+                      <p className="border-t border-warning/40 bg-warning/10 p-2 text-[0.6875rem]">
+                        The two bases land on DIFFERENT sides of the threshold this year — which method
+                        applies is exactly the question to put to your CA, with this table in hand.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="rounded-md border border-border bg-card-hover/30 p-3 text-xs">
                   <p className="font-medium">{p.audit.headline}</p>

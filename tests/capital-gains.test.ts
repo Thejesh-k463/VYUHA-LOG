@@ -216,6 +216,43 @@ describe("computeFySetOff — carry-forward absorption + expiry", () => {
   });
 });
 
+describe("computeTaxTimeline — b/f non-speculative loss meets ANY business income (S.72(1))", () => {
+  const base = { stcg: 0, ltcg: 0, stcgRate: 0.2, ltcgRate: 0.125, ltcgExemption: 125000 };
+
+  it("a carried F&O loss absorbs a later year's SPECULATIVE gain", () => {
+    // The module header and the user-facing footnote both state this rule;
+    // the code used to implement a narrower one (non-spec b/f → non-spec gain
+    // only), silently overtaxing an intraday year that followed an F&O loss.
+    const [, y2] = computeTaxTimeline([
+      { fy: "2024-25", ...base, speculative: 0, nonSpeculative: -100000 },
+      { fy: "2025-26", ...base, speculative: 60000, nonSpeculative: 0 },
+    ]);
+    expect(y2.taxableSpeculative).toBe(0);
+    expect(y2.usedCarryForward).toEqual([{ bucket: "nonSpeculative", fyIncurred: "2024-25", amount: 60000 }]);
+    expect(y2.newCarryForward).toEqual([{ bucket: "nonSpeculative", fyIncurred: "2024-25", amount: 40000 }]);
+  });
+
+  it("non-speculative gain absorbs FIRST; the remainder reaches speculative", () => {
+    const [, y2] = computeTaxTimeline([
+      { fy: "2024-25", ...base, speculative: 0, nonSpeculative: -100000 },
+      { fy: "2025-26", ...base, speculative: 50000, nonSpeculative: 70000 },
+    ]);
+    expect(y2.taxableNonSpeculative).toBe(0);
+    expect(y2.taxableSpeculative).toBe(20000); // 100k − 70k = 30k left for the 50k spec gain
+    expect(y2.newCarryForward).toEqual([]);
+  });
+
+  it("the barred direction stays barred: b/f SPECULATIVE loss never touches F&O gain (S.73)", () => {
+    const [, y2] = computeTaxTimeline([
+      { fy: "2024-25", ...base, speculative: -100000, nonSpeculative: 0 },
+      { fy: "2025-26", ...base, speculative: 0, nonSpeculative: 80000 },
+    ]);
+    expect(y2.taxableNonSpeculative).toBe(80000);
+    expect(y2.usedCarryForward).toEqual([]);
+    expect(y2.newCarryForward).toEqual([{ bucket: "speculative", fyIncurred: "2024-25", amount: 100000 }]);
+  });
+});
+
 describe("computeTaxTimeline — chains carry-forward across FYs", () => {
   it("a loss in one FY reduces tax in the following FY", () => {
     const byFy: FyGrossGains[] = [

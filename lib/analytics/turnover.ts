@@ -99,6 +99,26 @@ export const SPECULATIVE_SEGMENT = "eq_intraday";
 export const TURNOVER_BASIS =
   "Basis: ICAI Guidance Note on Tax Audit, 11th edition (2026), para 5.11(b) — the sum of favourable and unfavourable differences, plus premium received on the sale of options. This is ICAI guidance, not statute: neither the Income-tax Act, 2025 nor the Rules prescribe a turnover method for derivatives. Your CA may use a different basis; ask which your filing history uses.";
 
+/**
+ * The DIFFERENCES-ONLY basis — what broker tax reports print.
+ *
+ * Verified empirically 2026-09-01 against a real Zerodha Console tax P&L (693
+ * F&O rows over two FYs): Zerodha's per-trade "Turnover" column ≡ |Profit|
+ * exactly, i.e. option premium is NOT included — the superseded 8th-edition
+ * (2022) method. On the same book the ICAI 11th-ed. figure ran 6.5–8.7×
+ * higher. (Zerodha's own tradewise and summary sheets also disagreed with
+ * each other by 8.8–26%.) Both figures are therefore shown, labelled: the
+ * user's CA has one number from the broker and should see how Vyuha's
+ * differs and why, rather than concluding one of the two tools is broken.
+ */
+export const BROKER_TURNOVER_BASIS =
+  "Broker basis: the sum of favourable and unfavourable differences only, option premium NOT added — the method most broker tax P&L reports still print (it matches the superseded 2022 edition of the Guidance Note). Shown so the figure your broker's report states is recognisable next to the current ICAI method.";
+
+/** One trade's differences-only contribution — the broker-report method. */
+export function brokerTurnoverContribution(t: TurnoverTrade): number {
+  return t.isOpen ? 0 : Math.abs(t.grossPnl);
+}
+
 export interface TurnoverTrade {
   segment: string;
   /** Pre-charge trade difference. A "difference" under 5.11(b)(i) is gross. */

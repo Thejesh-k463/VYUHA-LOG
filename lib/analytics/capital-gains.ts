@@ -289,13 +289,16 @@ export function computeFySetOff(
     return remaining;
   }
   // Order matches how the same-year set-off resolved: stcl b/f -> stcg then ltcg;
-  // ltcl b/f -> ltcg only; speculative b/f -> speculative gain only;
-  // nonSpeculative b/f -> only against non-speculative gain (no inter-head once carried forward).
+  // ltcl b/f -> ltcg only; speculative b/f -> speculative gain ONLY (S.73);
+  // nonSpeculative b/f -> any BUSINESS income — non-speculative first, then
+  // speculative (S.72(1): a carried-forward business loss meets profits of any
+  // business; only the speculative→non-speculative direction is barred).
   if (stcg > 0) stcg = absorb("stcl", stcg);
   if (ltcg > 0) ltcg = absorb("ltcl", ltcg);
   if (ltcg > 0) ltcg = absorb("stcl", ltcg); // remaining b/f STCL can still reach LTCG
   if (speculative > 0) speculative = absorb("speculative", speculative);
   if (nonSpeculative > 0) nonSpeculative = absorb("nonSpeculative", nonSpeculative);
+  if (speculative > 0) speculative = absorb("nonSpeculative", speculative);
 
   // ---- New carry-forward: unabsorbed b/f lots + any new loss generated this FY ----
   const newCarryForward: CarryForwardLot[] = bf.filter((l) => l.amount > 0.5).map((l) => ({ ...l, amount: rupee(l.amount) }));

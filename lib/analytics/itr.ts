@@ -23,14 +23,17 @@
 // book far above the threshold. Corrected 2026-08-31 against the PDFs.
 
 import {
+  BROKER_TURNOVER_BASIS,
   DELIVERY_SEGMENTS,
   FNO_SEGMENTS,
   TURNOVER_BASIS,
+  brokerTurnoverContribution,
   turnoverContribution,
 } from "./turnover";
 import { section, STATUTE_CUTOVER_FY } from "./statute";
+import { currentFy } from "./tax";
 
-export { TURNOVER_BASIS };
+export { TURNOVER_BASIS, BROKER_TURNOVER_BASIS };
 
 export interface ItrTrade {
   segment: string;
@@ -49,6 +52,9 @@ export interface HeadSummary {
   net: number; // post-charge realised P&L for the head
   gross: number;
   turnover: number; // ICAI GN 11th ed. 5.11(b): differences + option premium (business heads only)
+  /** Differences only — the figure most broker tax reports print (owner
+   *  decision 2026-09-01: BOTH bases are shown, labelled, never one). */
+  turnoverBroker: number;
   charges: number; // deductible expenses for business heads; cost-adjusting for CG
 }
 
@@ -73,7 +79,12 @@ export interface ItrFyPack {
   speculative: HeadSummary; // intraday equity
   nonSpeculative: HeadSummary; // F&O
   capitalGains: CapitalGainsSummary;
+  /** The primary read — ICAI 11th-ed. turnover. */
   audit: AuditVerdict;
+  /** The same threshold tested on the broker (differences-only) figure. At
+   *  ₹1.2 Cr ICAI vs ₹14 L broker on one real book, the two can land on
+   *  OPPOSITE sides of a limit — the user sees both reads, labelled. */
+  auditBroker: AuditVerdict;
 }
 
 // S.44AB: 1 Cr base; 10 Cr when cash receipts AND payments ≤ 5% (retail broker
@@ -97,7 +108,7 @@ const isLongTerm = (buy: string | null, sell: string | null) =>
   !!buy && !!sell && (new Date(sell).getTime() - new Date(buy).getTime()) / 86400000 >= 365;
 
 function emptyHead(): HeadSummary {
-  return { trades: 0, net: 0, gross: 0, turnover: 0, charges: 0 };
+  return { trades: 0, net: 0, gross: 0, turnover: 0, turnoverBroker: 0, charges: 0 };
 }
 
 /**
@@ -145,8 +156,14 @@ export function auditVerdict(
   return { combinedBusinessTurnover: t, level, headline, notes };
 }
 
-/** Head-wise ITR-3 preparation pack per financial year, oldest FY first. */
-export function itrPackByFy(trades: ItrTrade[], fyStartMonth = 4, fallbackFy = "2026-27"): ItrFyPack[] {
+/** Head-wise ITR-3 preparation pack per financial year, oldest FY first.
+ *  The undated-sell fallback FY derives from TODAY (the A5 fix) — a frozen
+ *  literal here filed undated trades under a stale year forever. */
+export function itrPackByFy(
+  trades: ItrTrade[],
+  fyStartMonth = 4,
+  fallbackFy: string = currentFy(fyStartMonth),
+): ItrFyPack[] {
   const map = new Map<string, { spec: HeadSummary; fno: HeadSummary; cg: CapitalGainsSummary }>();
   for (const t of trades) {
     if (t.isOpen) continue;
@@ -157,12 +174,14 @@ export function itrPackByFy(trades: ItrTrade[], fyStartMonth = 4, fallbackFy = "
       b.spec.net = r2(b.spec.net + t.netPnl);
       b.spec.gross = r2(b.spec.gross + t.grossPnl);
       b.spec.turnover = r2(b.spec.turnover + turnoverContribution(t));
+      b.spec.turnoverBroker = r2(b.spec.turnoverBroker + brokerTurnoverContribution(t));
       b.spec.charges = r2(b.spec.charges + t.chargesTotal);
     } else if (FNO.has(t.segment)) {
       b.fno.trades++;
       b.fno.net = r2(b.fno.net + t.netPnl);
       b.fno.gross = r2(b.fno.gross + t.grossPnl);
       b.fno.turnover = r2(b.fno.turnover + turnoverContribution(t));
+      b.fno.turnoverBroker = r2(b.fno.turnoverBroker + brokerTurnoverContribution(t));
       b.fno.charges = r2(b.fno.charges + t.chargesTotal);
     } else if (DELIVERY.has(t.segment)) {
       b.cg.trades++;
@@ -174,12 +193,16 @@ export function itrPackByFy(trades: ItrTrade[], fyStartMonth = 4, fallbackFy = "
   }
 
   return [...map.entries()]
-    .map(([fy, b]) => ({
-      fy,
-      speculative: b.spec,
-      nonSpeculative: b.fno,
-      capitalGains: b.cg,
-      audit: auditVerdict(b.spec.turnover + b.fno.turnover, b.spec.net < 0 || b.fno.net < 0, fy),
-    }))
+    .map(([fy, b]) => {
+      const hasLoss = b.spec.net < 0 || b.fno.net < 0;
+      return {
+        fy,
+        speculative: b.spec,
+        nonSpeculative: b.fno,
+        capitalGains: b.cg,
+        audit: auditVerdict(b.spec.turnover + b.fno.turnover, hasLoss, fy),
+        auditBroker: auditVerdict(b.spec.turnoverBroker + b.fno.turnoverBroker, hasLoss, fy),
+      };
+    })
     .sort((a, b) => a.fy.localeCompare(b.fy));
 }
