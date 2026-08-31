@@ -341,7 +341,7 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 > **Current (2026-08-15, owner decision):** list prices are **₹13,000/yr**
 > (Pro — Annual) and **₹35,999** (Journal — Lifetime) — the owner has committed
 > to charging these from **2027-01-01**, which is what makes the strike-through
-> honest. Until then the launch offer sells at **₹9,999/yr (23% off)** and
+> honest. Until then the launch offer sells at **₹7,999/yr (38% off)** and
 > **₹29,999 (16% off, featured/best-value — the owner sells lifetime first)**.
 > The offer end date is deliberately NOT shown in-app (owner's call); it lives
 > here and in `docs/DECISIONS.md`. The percentages are DERIVED via `offerPct()`

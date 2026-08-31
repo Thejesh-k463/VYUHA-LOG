@@ -55,7 +55,7 @@ describe("shape", () => {
     // 2027-01-01 list prices, not invented strike-throughs.
     expect(featuredSku().id).toBe("lifetime");
     expect(skuById("lifetime").amountInr).toBe(29999);
-    expect(skuById("annual").amountInr).toBe(9999);
+    expect(skuById("annual").amountInr).toBe(7999);
     expect(skuById("lifetime").wasInr).toBe(35999);
     expect(skuById("annual").wasInr).toBe(13000);
   });
@@ -66,7 +66,7 @@ describe("shape", () => {
     // displayed percentage can never disagree with the arithmetic. Floored:
     // lifetime's true 16.67% must display as 16, never round up to 17 —
     // a discount claim never overstates.
-    expect(offerPct(skuById("annual"))).toBe(23);
+    expect(offerPct(skuById("annual"))).toBe(38);
     expect(offerPct(skuById("lifetime"))).toBe(16);
     expect(offerPct({ ...skuById("annual"), wasInr: undefined })).toBeNull();
   });
@@ -119,8 +119,8 @@ describe("the buy message carries the quote", () => {
     expect(msg).toContain("Journal — Lifetime");
     expect(msg).toContain("₹29,999");
     expect(msg).toContain(PRICING_AS_OF);
-    // Annual quotes per-year, so nobody pays ₹9,999 expecting lifetime.
-    expect(buyMessageFor(skuById("annual"))).toContain("₹9,999/yr");
+    // Annual quotes per-year, so nobody pays ₹7,999 expecting lifetime.
+    expect(buyMessageFor(skuById("annual"))).toContain("₹7,999/yr");
   });
 
   it("buyUrlFor() with no SKU is byte-identical to the frozen BUY_URL", () => {
@@ -132,7 +132,7 @@ describe("the buy message carries the quote", () => {
   it("per-SKU links stay on the same WhatsApp channel and embed the price", () => {
     const url = buyUrlFor("annual");
     expect(url).toMatch(/^https:\/\/wa\.me\/\d+\?text=/);
-    expect(decodeURIComponent(url)).toContain("₹9,999/yr");
+    expect(decodeURIComponent(url)).toContain("₹7,999/yr");
   });
 });
 
@@ -167,7 +167,7 @@ describe("annual → lifetime upgrade — one sentence, one formula, every surfa
     const life = skuById("lifetime").amountInr;
     const year = skuById("annual").amountInr;
     expect(upgradeCredit({ lifetime: life, paidForYear: year })).toEqual({ credit: year, due: life - year });
-    expect(upgradeCredit({ lifetime: 29999, paidForYear: 9999 }).due).toBe(20000);
+    expect(upgradeCredit({ lifetime: 29999, paidForYear: 7999 }).due).toBe(22000);
     expect(upgradeCredit({ lifetime: 100, paidForYear: 500 })).toEqual({ credit: 100, due: 0 });
     expect(() => upgradeCredit({ lifetime: 0, paidForYear: 1 })).toThrow();
     expect(() => upgradeCredit({ lifetime: 100, paidForYear: -1 })).toThrow();

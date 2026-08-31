@@ -33,7 +33,7 @@ file walks every clause that is a commercial or legal decision — not a
 technical one — so you can answer each question once, edit the exact line, and
 delete the banners.
 
-**Pricing is settled and is NOT reopened here:** Pro — Annual ₹9,999/yr launch
+**Pricing is settled and is NOT reopened here:** Pro — Annual ₹7,999/yr launch
 (₹13,000 list), Journal — Lifetime ₹29,999 launch (₹35,999 list). See
 `MONETIZATION_PLAN.md` §2 and DECISIONS.md 2026-08-15.
 

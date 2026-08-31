@@ -3,6 +3,31 @@
 A fully local, offline trade journal for Indian retail traders. Your data never
 leaves your computer — there is no account, no cloud, and no telemetry.
 
+## Built by one person, shaped by the people who use it
+
+There are plenty of trade journals now, and AI has made it easy for anyone to
+build another. Vyuha is different in what it does — and in where it runs.
+
+- **It works offline.** Everything happens on your machine. The app barely
+  touches the internet at all: one check for updates at launch, and nothing else.
+- **It takes behaviour as seriously as P&L.** When you exit, how long you hold,
+  whether you moved a stop after entry — the parts of a trade a profit column
+  cannot hold.
+- **It goes deep on Indian tax.** Head-wise segregation, set-off and
+  carry-forward, the return's own schedule codes — cited under the Act that
+  governed each year.
+- **And it has begun on option strategy.** Payoff at expiry, Greeks across the
+  book, premium capture, roll chains.
+
+That last one is a start, not a finished article — and saying so is the point.
+
+**The promise.** As the user base grows, the app grows with it, and what you ask
+for shapes the roadmap and the architecture rather than a backlog nobody reads.
+If a request is feasible, it gets built. And where a group of traders — or a
+single trader — needs something specific, a tuned build is on the table.
+
+You don't get that from software with a support queue.
+
 ## New in v3.4.0
 
 | Upgrade | What it gives you |

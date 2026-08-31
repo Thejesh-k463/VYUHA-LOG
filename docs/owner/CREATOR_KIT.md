@@ -65,7 +65,7 @@ These sentences are true, verified, and safe to use verbatim:
 - "The free tier never holds your own record hostage — the journal is free
   forever; the analytics intelligence is what's paid."
 - Prices, if you mention them: **Lifetime ₹29,999** (list ₹35,999) ·
-  **Pro Annual ₹9,999** (list ₹13,000). Please always say "price as of today —
+  **Pro Annual ₹7,999** (list ₹13,000). Please always say "price as of today —
   confirm before paying."
 
 ## What NOT to say — this protects you as much as us

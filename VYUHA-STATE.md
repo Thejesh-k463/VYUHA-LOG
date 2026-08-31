@@ -26,7 +26,70 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-08-31 (v3.2.0 LIVE; v3.3.0 in build)
+## 2. Current state — verified 2026-08-31 (v3.3.0 LIVE; v3.4.0 cut)
+
+**2026-08-31 — v3.3.0 IS PUBLISHED AND INSTALLED** on the owner's machine and one other user's,
+both clean fresh installs. `releases/latest` moved to v3.3.0; `revocations` still
+`prerelease=true`. **The updater's cryptographic path is PROVEN** — the published
+`windows-x86_64` signature verifies over the published 34,935,482-byte installer under the app's
+own pubkey. The in-app update FLOW (prompt → download → relaunch) from a v3.2.0 machine is still
+unexercised; only the crypto failure mode is ruled out.
+
+**2026-08-31 — v3.4.0 CUT: the render-windowing pass. Six perf-budget breaches → ONE.**
+Opened the v3.0.0 six-route deferral with three parallel read-only analyses instead of trusting
+the deferral note — **and the note was wrong about half of them.** Full anatomy and every
+measured number: `docs/DECISIONS.md` 2026-08-31 "The render-windowing pass".
+
+| Route | v3.3.0 | **v3.4.0** | What it actually was |
+|---|---|---|---|
+| `/strategies` | 6026 ms | **1022** | 673 rows, not 8,058 — **626 recharts mounts** in one commit |
+| `/options-journal` | 5770 ms | **1082** | ~21 MB SSR HTML, ~56k form controls |
+| `/equity` | 3208 ms | **931** | every row in the DOM; `DataTable` never got `virtual` |
+| `/risk` | 2503 ms | **1349** | two unwindowed tables + three uncapped panels |
+| `/lenses` | 2114 ms | **1276** | 23 of 43 columns never read |
+| `/trades` | 2256 ms | 2040 | **deliberately untouched — see below** |
+
+**NOT ONE FIGURE ON ANY SCREEN MOVED.** No SQL predicate changed, no ORDER BY changed; only the
+DOM is windowed, every aggregate is still computed over the full set. Every shortened list
+STATES what it held back (`components/ui/show-more.tsx` client-side,
+`components/ui/capped-note.tsx` for server components — the latter has no `"use client"` on
+purpose, or it would drag three server panels across the boundary).
+
+**⚠ WHY `/trades` WAS LEFT.** It is already virtualised, so its 23.5 MB payload needs server
+pagination → `LIMIT/OFFSET` → **a total order on trades**. Appending `id` is SAFE and discharges
+both "Invalidated if" clauses on record, **but it is NOT output-neutral**: `taxByFy` per-FY sums
+move in the last paisa (REAL rupee doubles — the ledger's integer-paise guarantee does NOT
+transfer), a harvest lot's `offsets`/`partial`/`carry` status can flip, and the holding clock's
+top-15 can change membership. **Do it as its own change with its own before/after proof — never
+inside a perf pass.** Note also: `created_at` defaults to `datetime('now')` (SECOND resolution)
+and `lib/import/commit.ts:536` never sets it, so **a whole import batch shares one `created_at`**
+— real-book tie groups are batches, not pairs.
+
+**`release:verify --deep` now exists** and verifies a signature over the published BYTES, not
+just its key id — the v2.98.0 failure mode, which key-id decoding structurally cannot see.
+9 tests in `tests/minisign-verify.test.ts` generate a real Ed25519 keypair, including the
+`ED`/`Ed` inversion trap (minisign `ED` = prehashed BLAKE2b-512) that makes a GOOD release report
+as broken, and the right-key-id-wrong-key case.
+
+**Verified 2026-08-31:** `npm run verify` **EXIT 0** — **2,288 tests / 153 files** (was
+2,266/151), lint **0 problems**, production build clean, EXIT 0 pre- AND post-bump. Bump printed
+**4 files** (footer → `v3.4`); `package-lock` roots hand-edited (diff exactly **2/2**, parses,
+770 entries); `Cargo.lock` **1/1**. Desktop build EXIT 0; BUILD_ID
+`gBik6qvd85Xf6Tv2_yvty` → **`EBcGUYFxPIPOxy2zLQ31h`**; both local `.sig` **verify over their
+binaries** on `4FF85F3BBE1DA21D`. Client ZIP 12 entries, `## New in v3.4.0`, policies at v3.4.0,
+zero macOS claims. Installer SHA-256
+`8B710E0A068985322415579C3E5323AF4FEE449FEFFF894A0F349C0CE9C65B49`.
+
+**A measurement trap, recorded.** The first post-fix sweep showed `/lenses` at 2557 ms — worse
+than baseline, on a route not yet touched — while `/trades` improved untouched. Both were noise;
+a second sweep put `/lenses` at 2063. **Two untouched routes moving in opposite directions is the
+signature of variance. Re-run before believing one sweep.**
+
+**Regression net:** `tests/render-windowing.test.ts` (13 source guards) pins every window, cap
+and projection, because `perf:sweep` is NOT in CI and **none of these five routes has an e2e
+spec** — which is exactly how six breaches accumulated unnoticed for two releases.
+
+## 2. Superseded — v3.2.0 era (kept for the v3.3.0 build record)
 
 **2026-08-31 — v3.2.0 IS PUBLISHED, MIRRORED, AND INSTALLED ON A NON-BUILD MACHINE** (owner
 confirmed). The v3.2.0 owner-steps list below is therefore DISCHARGED except WDSI.

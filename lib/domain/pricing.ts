@@ -53,7 +53,7 @@ export interface PricingSku {
 }
 
 /** The date these numbers were last confirmed against the landing page. */
-export const PRICING_AS_OF = "2026-08-15";
+export const PRICING_AS_OF = "2026-08-31";
 
 /** After this many days, rendered prices say "confirm before paying". */
 export const PRICING_STALE_AFTER_DAYS = 120;
@@ -93,7 +93,11 @@ export const PRICING: readonly PricingSku[] = [
     id: "annual",
     licenseSku: "app",
     name: "Pro — Annual",
-    amountInr: 9999,
+    // Repriced 2026-08-31 (owner decision): 9,999 → 7,999. The anchor is
+    // unchanged, so offerPct() now derives 38% (13,000 → 7,999 is 38.46%,
+    // floored). Lifetime deliberately untouched — the gap between the two is
+    // the point, and the owner sells lifetime first.
+    amountInr: 7999,
     wasInr: 13000,
     term: "annual",
     blurb: "per year · renews with a fresh key",

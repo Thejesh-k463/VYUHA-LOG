@@ -60,7 +60,7 @@ record-keeping and analytics tool, not advice).
 
 **Revenue stage:** Early revenue *(if ≥1 paid licence has been issued; else Pre-revenue)*
 
-**Revenue run rate (in Rs):** [[e.g. "₹X annualised — N licences sold to date at ₹9,999/yr and
+**Revenue run rate (in Rs):** [[e.g. "₹X annualised — N licences sold to date at ₹7,999/yr and
 ₹29,999 lifetime; launch pricing until 2027-01-01, list ₹13,000/₹35,999 after"]] — use the ledger
 (`node scripts/license-list.mjs`) for N; never overstate.
 

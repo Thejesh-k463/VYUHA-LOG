@@ -61,8 +61,8 @@ Licence Key ID F6A7-B8C9-D0            (new lifetime key)
 Replaces       A1B2-C3D4-E5            (annual key, retired on upgrade)
 
 Lifetime price ₹29,999
-Credit         − ₹9,999                 (paid for the year on <date of annual receipt>, receipt VY-2026-00X)
-Amount paid    ₹20,000
+Credit         − ₹7,999                 (paid for the year on <date of annual receipt>, receipt VY-2026-00X)
+Amount paid    ₹22,000
 Paid via       UPI
 Payment ref    <UTR / txn id — the buyer's own reference>
 ```
