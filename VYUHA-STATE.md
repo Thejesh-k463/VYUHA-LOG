@@ -26,7 +26,29 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-09-01 (v3.5.1 TAGGED; v3.5.0 draft DELETED after the audit; owner publishes v3.5.1)
+## 2. Current state — verified 2026-09-01 (v3.5.1 PUBLISHED, mirrored, installed clean, IN-APP UPDATE VERIFIED end-to-end)
+
+**v3.5.1 is LIVE (owner-confirmed 2026-09-01):** draft published (`releases/latest` moved
+off v3.3.0), mirror pushed, installed and working on a non-build machine, and — closing the
+one flow never before exercised — the IN-APP UPDATE (prompt → download → relaunch) completed
+on another user's machine. No open release actions. The parked v3.4.0 draft is superseded
+(safe to delete whenever). Demo prep: `docs/owner/DEMO_RUNBOOK.md`.
+
+**v3.6 candidate backlog (deferred deliberately this release, in rough priority):**
+1. `direction` column migration + backfill (the A6 heuristic's full fix; also unlocks
+   stop-migration coverage on fully-closed rows, taxpnl short-side handling, and richer
+   seller analytics — three surfaces currently exclude-and-say-so).
+2. Advance-tax dated challan ledger (real payment tracking; the engine header documents
+   today's single-cumulative-figure simplification).
+3. Pre-journal brought-forward losses input (computeTaxTimeline's seed-lots param already
+   accepts them; needs a small table + editor).
+4. Vyuha Intelligence LLM narration adapters (Ollama-if-present first, BYO-key later) —
+   the fact contract in lib/intelligence/insight.ts is built for exactly this.
+5. Futures import path still unexercised — no provided file has a futures row.
+6. Popup rollout remainder (~10 ad-hoc stat tiles listed in the shell recon), TradeReplay's
+   duplicated caveat line, e2e specs for lens popups / Trade Craft tabs.
+7. Closed imported eq_mtf trades get no interest estimate (open ones accrue via the daily
+   job); route through the accrual job's epochSpans path if built. Upstox remains schema-only.
 
 **⚠ v3.5.0 WAS NEVER PUBLISHED AND MUST STAY THAT WAY.** After tagging, a 15-agent
 adversarial audit of the diff confirmed 10 new bugs (0 refuted; two silently rewrite money —
@@ -43,12 +65,11 @@ installer signatures verify over their actual bytes under key `4FF85F3BBE1DA21D`
 "✓ signed"); `Vyuha_3.5.1_Client_Package.zip` packed (installer SHA-256 `DBB5…D3B3`—see
 CHECKSUMS.txt); CI green on the release head BEFORE the tag.
 
-**OWNER PUBLISH STEPS (v3.5.1):** (1) wait for the Release workflow draft, (2) run
-`npm run release:verify v3.5.1 -- --deep` (or via node) and check every key id + deep line,
-(3) publish the draft — `releases/latest` moves off v3.3.0, (4) also publish/decide the
-parked v3.4.0 draft (superseded — safe to delete like v3.5.0's), (5) install v3.5.1 on a
-non-build machine, and exercise the in-app update from the v3.3.0 machine (the one flow
-never yet tested end-to-end), (6) demo prep: `docs/owner/DEMO_RUNBOOK.md`.
+**Release proofs on record:** deep verification ran against the PUBLISHED draft assets —
+all 3 platform signatures verified over the published bytes under key `4FF85F3BBE1DA21D`
+("Safe to publish", the verifier's own verdict) — and CI + the Release workflow were green
+before the tag (the v3.5.0 Release run's Windows failure was the vault DPAPI test asserting
+an environment property; fixed to verify the designed fallback).
 
 **2026-09-01 — v3.5.0: the demo-hardening + Vyuha Intelligence release.** Owner-approved plan
 in `docs/V350_BUILD_PLAN.md`; five DECISIONS entries dated 2026-09-01 carry the measured
