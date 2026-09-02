@@ -2,19 +2,26 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  type AccountDraft,
+  type AccountSnapshot,
   FIRST_STEP,
   LAST_STEP,
   ONBOARDING_STEP_KEY,
   ONBOARDING_COPY,
+  accountFormFields,
+  accountFormOwner,
   accountStepIsDirty,
+  capitalText,
   clampStep,
   dismissalSurvives,
   isLastStep,
   nextStep,
   parseOptionalCapital,
   parseStoredStep,
+  planAccountStep,
   prevStep,
   readCapitalEntry,
+  seededAccountFields,
   serializeStep,
 } from "@/lib/domain/onboarding";
 
@@ -147,18 +154,24 @@ describe("a box we could not read is NOT a box the user emptied", () => {
   });
 
   it("the wizard refuses the step instead of sending a NULL it invented", () => {
-    // The component half: a save that reads `.value` off an entry it never
-    // classified is the defect back again.
-    expect(WIZARD).toMatch(/readCapitalEntry\(equity\)/);
-    expect(WIZARD).toMatch(/readCapitalEntry\(active\)/);
+    // The classification now lives in planAccountStep (pure, exercised below).
+    // The component half: a save that classifies the boxes itself, or sends
+    // anything other than what the plan returned, is the defect back again.
+    expect(WIZARD).toMatch(/planAccountStep\(server, fields\)/);
     expect(WIZARD, "the flattening parser is back on the write path").not.toMatch(/parseOptionalCapital/);
-    // Unreadable → a named box, a message, and no request at all.
-    expect(WIZARD).toMatch(/kind === "unreadable"/);
-    expect(WIZARD).toMatch(/toast\.error\(C\.step1\.capitalUnreadable\(unreadable\)\)/);
-    const guard = WIZARD.indexOf("if (unreadable)");
+    expect(WIZARD).toMatch(/plan\.kind === "refuse"/);
+    expect(WIZARD).toMatch(/C\.step1\.capitalUnreadable\(/);
+    expect(WIZARD).toMatch(/equityCapital: plan\.equityCapital/);
+    expect(WIZARD).toMatch(/activeCapital: plan\.activeCapital/);
+    const guard = WIZARD.indexOf('plan.kind === "refuse"');
     const post = WIZARD.indexOf('fetch("/api/accounts"');
     expect(guard).toBeGreaterThan(0);
-    expect(guard, "the unreadable check runs after the POST").toBeLessThan(post);
+    expect(guard, "the refusal check runs after the POST").toBeLessThan(post);
+    // …and the pure half still classifies rather than flattening: an entry it
+    // cannot read names its box and produces no write at all.
+    const configured: AccountSnapshot = { accountId: 1, name: "Zerodha", equityCapital: 500000, activeCapital: 200000 };
+    expect(planAccountStep(configured, { name: "Zerodha", equity: "₹500000", active: "200000" })).toEqual({ kind: "refuse", box: "equity" });
+    expect(planAccountStep(configured, { name: "Zerodha", equity: "500000", active: "5 lakh" })).toEqual({ kind: "refuse", box: "active" });
   });
 
   it("and the message says which box, and what IS read", () => {
@@ -216,6 +229,122 @@ describe("step 1 writes only when something changed", () => {
     expect(accountStepIsDirty(before, { ...before, name: "Swing" })).toBe(true);
     expect(accountStepIsDirty(before, { ...before, activeCapital: 100000 })).toBe(true);
     expect(accountStepIsDirty(before, { ...before, equityCapital: null })).toBe(true);
+  });
+});
+
+describe("step 1's boxes belong to the account the server sent", () => {
+  // The v3.7 path that destroyed user data. The wizard is mounted in the root
+  // layout, so "Run setup again" re-opens it WITHOUT a remount — and the boxes
+  // were `useState(prop)`, seeded once. On a configured install that one seeding
+  // render is the steady state (show:false, every field null), so the capital
+  // boxes came back empty over an account holding ₹5,00,000 and ₹2,00,000.
+  // Continue read empty as "cleared on purpose", wrote NULL over both, and
+  // reported success; every %-of-equity figure in the app then read "—".
+  //
+  // Probed 2026-09-02 end to end through the real /api/accounts route.
+
+  /** What app/layout.tsx sends before "Run setup again" — the seeding render. */
+  const STEADY: AccountSnapshot = { accountId: null, name: "", equityCapital: null, activeCapital: null };
+  /** …and what it sends the instant the flag is cleared, with no remount between. */
+  const CONFIGURED: AccountSnapshot = { accountId: 1, name: "Zerodha", equityCapital: 500000, activeCapital: 200000 };
+  /** A first run on a real install: an account, and no capital yet. */
+  const FRESH: AccountSnapshot = { accountId: 1, name: "Primary", equityCapital: null, activeCapital: null };
+
+  it("re-opening over an account that HAS capital produces no clearing write", () => {
+    // Typing that belongs to the steady-state snapshot: empty boxes, plus the
+    // name the user types into the empty name box (which is what got the old
+    // code past its own early return and into the POST).
+    const stale: AccountDraft = { owner: accountFormOwner(STEADY), name: "Zerodha", equity: "", active: "" };
+    const fields = accountFormFields(stale, accountFormOwner(CONFIGURED), CONFIGURED);
+    // The boxes show the account, not the render that predates it.
+    expect(fields).toEqual({ name: "Zerodha", equity: "500000", active: "200000" });
+    // …so there is nothing to send at all, and no NULL to send.
+    expect(planAccountStep(CONFIGURED, fields)).toEqual({ kind: "skip" });
+  });
+
+  it("keys on the whole snapshot, not the account id — capital changed elsewhere counts", () => {
+    // Same account, same name, capital set in Settings mid-session. Keying the
+    // draft on accountId alone would leave this variant of the defect alive:
+    // the empty boxes typed against FRESH would still look like this form.
+    const typedEarlier: AccountDraft = { owner: accountFormOwner(FRESH), name: "Primary", equity: "", active: "" };
+    const later: AccountSnapshot = { ...FRESH, equityCapital: 500000 };
+    expect(accountFormFields(typedEarlier, accountFormOwner(later), later).equity).toBe("500000");
+    expect(planAccountStep(later, accountFormFields(typedEarlier, accountFormOwner(later), later))).toEqual({ kind: "skip" });
+  });
+
+  it("a box the user actually emptied is still a clear — the other half of the distinction", () => {
+    // Typed against the snapshot on screen, so it IS this form: the user looked
+    // at ₹5,00,000 and deleted it. That must still reach the account as a NULL.
+    const owner = accountFormOwner(CONFIGURED);
+    const cleared: AccountDraft = { owner, name: "Zerodha", equity: "", active: "200000" };
+    const fields = accountFormFields(cleared, owner, CONFIGURED);
+    expect(fields.equity).toBe("");
+    expect(planAccountStep(CONFIGURED, fields)).toEqual({
+      kind: "write",
+      name: "Zerodha",
+      equityCapital: null,
+      activeCapital: 200000,
+    });
+  });
+
+  it("a fresh install with blank boxes still writes NULL — capital stays OPTIONAL", () => {
+    // Owner decision Q4 and invariant 6. Nothing here demands a capital base;
+    // blank remains a real answer that keeps the "—" paths live.
+    expect(accountFormFields(null, accountFormOwner(FRESH), FRESH)).toEqual({ name: "Primary", equity: "", active: "" });
+    expect(planAccountStep(FRESH, { name: "Swing", equity: "", active: "" })).toEqual({
+      kind: "write",
+      name: "Swing",
+      equityCapital: null,
+      activeCapital: null,
+    });
+    // …and clicking straight through, touching nothing, sends nothing.
+    expect(planAccountStep(FRESH, accountFormFields(null, accountFormOwner(FRESH), FRESH))).toEqual({ kind: "skip" });
+  });
+
+  it("an empty name refuses the step instead of advancing as though it saved", () => {
+    // The companion defect: saveAccount returned TRUE here, so Continue moved
+    // on with nothing sent — and that same exit masked the staleness above,
+    // because a stale-empty name box took it too. The server refuses an empty
+    // name (z.string().trim().min(1)); this is the same answer, said sooner.
+    expect(planAccountStep(FRESH, { name: "", equity: "500000", active: "" })).toEqual({ kind: "refuse", box: "name" });
+    expect(planAccountStep(FRESH, { name: "   ", equity: "", active: "" })).toEqual({ kind: "refuse", box: "name" });
+    // An unreadable capital box is still named first — it is the more specific
+    // thing that is wrong, and neither one writes.
+    expect(planAccountStep(FRESH, { name: "", equity: "5 lakh", active: "" })).toEqual({ kind: "refuse", box: "equity" });
+    // No account to write to is not a refusal: there is simply nothing to send.
+    expect(planAccountStep(STEADY, { name: "", equity: "", active: "" })).toEqual({ kind: "skip" });
+  });
+
+  it("says which box is empty, without turning the step into a demand", () => {
+    const msg = ONBOARDING_COPY.step1.nameMissing(ONBOARDING_COPY.step1.nameLabel);
+    expect(msg).toContain("Name this account");
+    expect(msg).toMatch(/nothing on this step was saved/i);
+    expect(msg).toMatch(/any name works/i);
+  });
+
+  it("renders the account's own values, and an empty box for an absent one", () => {
+    expect(capitalText(null)).toBe("");
+    expect(capitalText(0)).toBe("0");
+    expect(capitalText(500000)).toBe("500000");
+    expect(seededAccountFields(CONFIGURED)).toEqual({ name: "Zerodha", equity: "500000", active: "200000" });
+  });
+
+  it("the wizard DERIVES the boxes rather than seeding state from props", () => {
+    // The shape of the defect, pinned: a prop copied into useState is a second
+    // copy of the server's answer, and it falls behind the moment the wizard is
+    // re-opened without a remount. A useEffect re-seed is banned outright
+    // (AGENTS.md) — the fix is ownership, as components/review/note-draft.ts.
+    expect(WIZARD).toMatch(/accountFormFields\(draft, owner, server\)/);
+    expect(WIZARD).toMatch(/accountFormOwner\(server\)/);
+    expect(WIZARD, "a prop is being seeded into state again").not.toMatch(/useState\(accountName\)/);
+    expect(WIZARD, "a prop is being seeded into state again").not.toMatch(/useState\(money\(/);
+    expect(WIZARD, "a state-sync effect is back in the wizard").not.toMatch(/useEffect/);
+    // The inputs read from the derived fields, not from any second copy.
+    expect(WIZARD).toMatch(/value=\{fields\.name\}/);
+    expect(WIZARD).toMatch(/value=\{fields\.equity\}/);
+    expect(WIZARD).toMatch(/value=\{fields\.active\}/);
+    // And typing stamps the snapshot it was typed against.
+    expect(WIZARD).toMatch(/setDraft\(\{ owner, \.\.\.fields, \.\.\.patch \}\)/);
   });
 });
 

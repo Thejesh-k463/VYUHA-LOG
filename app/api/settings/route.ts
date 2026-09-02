@@ -143,27 +143,52 @@ export async function POST(req: Request) {
   if (body.type === "charge") {
     const id = Number(body.id);
     if (!Number.isFinite(id)) return NextResponse.json({ ok: false, message: "No row selected" }, { status: 400 });
+    // The row as it stands, read BEFORE the write — an audit entry with no
+    // `before` at all is not a diff, it is a claim that every rate was set
+    // from nothing.
+    const prior = db.select().from(chargeConfig).where(eq(chargeConfig.id, id)).get();
+    // Every written rate computed ONCE and used by both the UPDATE and the
+    // snapshot (the lib/queries/review.ts rule). The old audit re-derived three
+    // of these from `body` WITHOUT the coalesce, so clearing the STT box —
+    // which really moves stt_pct to 0 and reprices every trade in the segment —
+    // stored `"sttPct": null` next to a row holding 0, while reporting
+    // `brokeragePct` and `gstPct` as changes that never happened.
+    const rates = {
+      brokerageFlat: numOrNull(body.brokerageFlat),
+      brokeragePct: numOrNull(body.brokeragePct) ?? 0,
+      brokerageCap: numOrNull(body.brokerageCap),
+      brokerageFloor: numOrNull(body.brokerageFloor) ?? 0,
+      sttPct: numOrNull(body.sttPct) ?? 0,
+      exchangeTxnPct: numOrNull(body.exchangeTxnPct) ?? 0,
+      sebiPct: numOrNull(body.sebiPct) ?? 0,
+      stampPct: numOrNull(body.stampPct) ?? 0,
+      ipftPct: numOrNull(body.ipftPct) ?? 0,
+      gstPct: numOrNull(body.gstPct) ?? 0.18,
+      dpCharge: numOrNull(body.dpCharge) ?? 0,
+      mtfInterestAnnual: numOrNull(body.mtfInterestAnnual) ?? 0,
+    };
     db.update(chargeConfig)
       .set({
-        brokerageFlat: numOrNull(body.brokerageFlat),
-        brokeragePct: numOrNull(body.brokeragePct) ?? 0,
-        brokerageCap: numOrNull(body.brokerageCap),
-        brokerageFloor: numOrNull(body.brokerageFloor) ?? 0,
-        sttPct: numOrNull(body.sttPct) ?? 0,
-        exchangeTxnPct: numOrNull(body.exchangeTxnPct) ?? 0,
-        sebiPct: numOrNull(body.sebiPct) ?? 0,
-        stampPct: numOrNull(body.stampPct) ?? 0,
-        ipftPct: numOrNull(body.ipftPct) ?? 0,
-        gstPct: numOrNull(body.gstPct) ?? 0.18,
-        dpCharge: numOrNull(body.dpCharge) ?? 0,
-        mtfInterestAnnual: numOrNull(body.mtfInterestAnnual) ?? 0,
+        ...rates,
         // Pins the row against the seed refresh — see chargeConfig.userEdited.
         userEdited: true,
         updatedAt: now,
       })
       .where(eq(chargeConfig.id, id))
       .run();
-    recordAudit({ entity: "charge_config", entityId: id, action: "update", summary: `charge rate #${id} edited`, after: { sttPct: numOrNull(body.sttPct), brokeragePct: numOrNull(body.brokeragePct), gstPct: numOrNull(body.gstPct) } });
+    // Key-identical sides over all twelve priced columns — a rate that moved
+    // can no longer be the one the log leaves out. `userEdited` and
+    // `updatedAt` are deliberately on NEITHER side: the first is a constant
+    // `true` on this path and the second is SQLite's datetime('now'), a SQL
+    // expression rather than a value this code holds. Symmetry is the rule.
+    recordAudit({
+      entity: "charge_config",
+      entityId: id,
+      action: "update",
+      summary: `charge rate #${id} edited`,
+      before: prior ? (Object.fromEntries(Object.keys(rates).map((k) => [k, prior[k as keyof typeof rates]])) as Record<string, unknown>) : null,
+      after: rates,
+    });
     return NextResponse.json({ ok: true, message: "Charge rate saved." });
   }
 

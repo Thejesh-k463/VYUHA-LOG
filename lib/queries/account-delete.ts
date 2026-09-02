@@ -625,12 +625,23 @@ export function deleteAccount(opts: {
                 ? src.originalAmount
                 : Math.max(src.originalAmount, tgt.originalAmount);
           const mergeNote = `merge ${new Date().toISOString().slice(0, 10)}: “${account.name}” also recorded this vintage (₹${src.amount}) — kept the larger of the two, not the sum; verify against the filed return`;
+          // ONE binding per written value, used by BOTH the UPDATE and the
+          // audit snapshot below (the lib/queries/review.ts rule). Computing
+          // the note twice, or snapshotting a different key set, is the class-1
+          // defect: diffFields (lib/analytics/audit-diff) walks the UNION of
+          // the two key sets and normalises a missing key to null, so an
+          // `after` of {amount, originalAmount} against a full-row `before`
+          // rendered `incurredFy`, `head` and `note` as cleared on a tax
+          // carry-forward record that kept all three — and hid the one thing
+          // that DID change: the row gaining the merge-provenance sentence.
+          const keptNote = tgt.note ? `${tgt.note} · ${mergeNote}` : mergeNote;
+          const keptUpdatedAt = new Date().toISOString();
           tx.update(bfLossLots)
             .set({
               amount: keptAmount,
               originalAmount: keptOriginal,
-              note: tgt.note ? `${tgt.note} · ${mergeNote}` : mergeNote,
-              updatedAt: new Date().toISOString(),
+              note: keptNote,
+              updatedAt: keptUpdatedAt,
             })
             .where(eq(bfLossLots.id, c.targetId))
             .run();
@@ -640,8 +651,16 @@ export function deleteAccount(opts: {
             entityId: c.targetId,
             action: "update",
             summary: `b/f loss ${c.fy} ${c.head} — both accounts held this vintage; kept the larger ₹${keptAmount} (source ₹${src.amount}, target ₹${tgt.amount}), never the sum`,
+            // Same shape both sides: the surviving row as it was, and the same
+            // row carrying exactly the four values the UPDATE just wrote.
             before: tgt as unknown as Record<string, unknown>,
-            after: { amount: keptAmount, originalAmount: keptOriginal },
+            after: {
+              ...(tgt as unknown as Record<string, unknown>),
+              amount: keptAmount,
+              originalAmount: keptOriginal,
+              note: keptNote,
+              updatedAt: keptUpdatedAt,
+            },
             source,
           });
         }
@@ -658,14 +677,22 @@ export function deleteAccount(opts: {
           const tgt = weeklyRowById.get(c.targetId);
           if (!src || !tgt) continue; // gathered pre-tx; cannot happen inside it
           const srcNote = (src.note ?? "").trim();
+          // ONE binding per written value, shared by the UPDATE and the audit
+          // snapshot. `keptNote`/`keptUpdatedAt` fall back to the row's OWN
+          // values on the no-source-note path, which is exactly what that path
+          // leaves in the column — so the snapshot describes the row that
+          // exists rather than a second derivation of it.
+          const header = `merged from “${account.name}” (${new Date().toISOString().slice(0, 10)}):`;
+          const tgtNote = (tgt.note ?? "").trim();
+          const keptNote = srcNote
+            ? tgtNote
+              ? `${tgtNote}\n\n${header}\n${srcNote}`
+              : `${header}\n${srcNote}`
+            : tgt.note;
+          const keptUpdatedAt = srcNote ? new Date().toISOString() : tgt.updatedAt;
           if (srcNote) {
-            const header = `merged from “${account.name}” (${new Date().toISOString().slice(0, 10)}):`;
-            const tgtNote = (tgt.note ?? "").trim();
             tx.update(weeklyReviews)
-              .set({
-                note: tgtNote ? `${tgtNote}\n\n${header}\n${srcNote}` : `${header}\n${srcNote}`,
-                updatedAt: new Date().toISOString(),
-              })
+              .set({ note: keptNote, updatedAt: keptUpdatedAt })
               .where(eq(weeklyReviews.id, c.targetId))
               .run();
           }
@@ -677,8 +704,20 @@ export function deleteAccount(opts: {
             summary: srcNote
               ? `week ${c.weekStart} — both accounts reviewed it; kept “${r.target!.name}”'s review and appended “${account.name}”'s note`
               : `week ${c.weekStart} — both accounts held a review; “${account.name}”'s carried no note, so “${r.target!.name}”'s is unchanged`,
+            // Same shape both sides. The old `after` was {weekStart,
+            // appendedFrom, appended} — two of those are not even columns —
+            // against a full-row `before`, so diffFields emitted NINE rows,
+            // every one of them false: the surviving row read as having lost
+            // its `id`, its `accountId`, its completion AND the sentence the
+            // user wrote, on the one screen checked after an irreversible
+            // merge. The provenance those keys carried is in the summary
+            // above; the snapshot's job is the row.
             before: tgt as unknown as Record<string, unknown>,
-            after: { weekStart: c.weekStart, appendedFrom: account.name, appended: srcNote.length > 0 },
+            after: {
+              ...(tgt as unknown as Record<string, unknown>),
+              note: keptNote,
+              updatedAt: keptUpdatedAt,
+            },
             source,
           });
         }

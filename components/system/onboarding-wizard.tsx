@@ -14,7 +14,11 @@
 //    you left, when you come back.
 //  • Progress is DERIVED from localStorage through useStoredValue, not mirrored
 //    into React state — the project's "derive, never set-state-in-effect" rule,
-//    and the reason a mid-wizard navigation resumes correctly.
+//    and the reason a mid-wizard navigation resumes correctly. Step 1's boxes
+//    are derived for the same reason and by the same rule: they hold typing
+//    that carries the server snapshot it was typed against, and fall back to
+//    that snapshot otherwise (accountFormOwner in lib/domain/onboarding.ts).
+//    Seeding them from props once at mount is the defect this file carried.
 //  • It is not in NAV_ITEMS. The /pricing precedent (app/pricing/page.tsx:11-18)
 //    keeps a real surface out of nav to avoid the help-content coupling; a
 //    first-run wizard has no standing surface to describe at all.
@@ -35,16 +39,20 @@ import { useStoredValue, writeStored } from "@/components/layout/use-stored-valu
 import { brokersWithNativeParser } from "@/lib/import/registry-meta";
 import { TRIAL_DAYS } from "@/lib/license";
 import {
+  type AccountDraft,
+  type AccountFormFields,
+  type AccountSnapshot,
   LAST_STEP,
   ONBOARDING_COPY as C,
   ONBOARDING_STEP_KEY,
-  accountStepIsDirty,
+  accountFormFields,
+  accountFormOwner,
   dismissalSurvives,
   isLastStep,
   nextStep,
   parseStoredStep,
+  planAccountStep,
   prevStep,
-  readCapitalEntry,
   serializeStep,
 } from "@/lib/domain/onboarding";
 
@@ -56,8 +64,6 @@ export interface OnboardingWizardProps {
   equityCapital: number | null;
   activeCapital: number | null;
 }
-
-const money = (n: number | null) => (n == null ? "" : String(n));
 
 export function OnboardingWizard({ show, accountId, accountName, equityCapital, activeCapital }: OnboardingWizardProps) {
   const router = useRouter();
@@ -81,42 +87,62 @@ export function OnboardingWizard({ show, accountId, accountName, equityCapital, 
     setDismissed(closed);
   }
   const [pending, setPending] = React.useState(false);
-  const [name, setName] = React.useState(accountName);
-  const [equity, setEquity] = React.useState(money(equityCapital));
-  const [active, setActive] = React.useState(money(activeCapital));
+  // Step 1's boxes are DERIVED from the server snapshot, never seeded from it.
+  // Seeding them once at mount is what let "Run setup again" render empty
+  // capital boxes over an account holding real capital, and then read that
+  // emptiness as a deliberate clear. Typing carries the snapshot it was typed
+  // against (accountFormOwner); anything else shows the server's own values.
+  // The precedent is components/review/note-draft.ts — ownership, not a
+  // re-seeding effect.
+  const server: AccountSnapshot = { accountId, name: accountName, equityCapital, activeCapital };
+  const owner = accountFormOwner(server);
+  const [draft, setDraft] = React.useState<AccountDraft | null>(null);
+  const fields = accountFormFields(draft, owner, server);
+  const setField = (patch: Partial<AccountFormFields>) => setDraft({ owner, ...fields, ...patch });
 
   const open = show && !closed && pathname === "/";
   const goto = (n: number) => writeStored(ONBOARDING_STEP_KEY, serializeStep(n));
 
-  /** Write step 1 only when something actually changed — see accountStepIsDirty. */
+  /** Write step 1 only when something actually changed — see planAccountStep. */
   async function saveAccount(): Promise<boolean> {
-    const eq = readCapitalEntry(equity);
-    const ac = readCapitalEntry(active);
-    // An entry this build cannot read is not an emptied box. Sending it as a
-    // NULL cleared a configured capital base and dropped every %-of-equity
-    // figure in the app to a dash, with no message on screen. Naming the box
-    // and saving nothing keeps the step recoverable — and capital itself stays
-    // optional, which is why a genuinely blank box still writes a NULL below.
-    const unreadable = eq.kind === "unreadable" ? C.step1.equityLabel : ac.kind === "unreadable" ? C.step1.activeLabel : null;
-    if (unreadable) {
-      toast.error(C.step1.capitalUnreadable(unreadable));
+    // Every branch of the decision is pure and lives in lib/domain/onboarding.
+    // Two of them refuse: a capital box this build cannot read is not an
+    // emptied box, and an emptied name box is not a saved step. Both name the
+    // box, send nothing, and leave the step where it is — capital itself stays
+    // optional, so a genuinely blank box still writes a NULL below.
+    const plan = planAccountStep(server, fields);
+    if (plan.kind === "refuse") {
+      toast.error(
+        plan.box === "name"
+          ? C.step1.nameMissing(C.step1.nameLabel)
+          : C.step1.capitalUnreadable(plan.box === "equity" ? C.step1.equityLabel : C.step1.activeLabel),
+      );
       return false;
     }
-    const after = { name: name.trim(), equityCapital: eq.value, activeCapital: ac.value };
-    if (!accountId || after.name === "") return true;
-    if (!accountStepIsDirty({ name: accountName, equityCapital, activeCapital }, after)) return true;
+    if (plan.kind === "skip") return true;
     setPending(true);
     try {
       const res = await fetch("/api/accounts", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "upsert", id: accountId, ...after, archived: false }),
+        body: JSON.stringify({
+          action: "upsert",
+          id: accountId,
+          name: plan.name,
+          equityCapital: plan.equityCapital,
+          activeCapital: plan.activeCapital,
+          archived: false,
+        }),
       });
       const json = await res.json();
       if (!json.ok) {
         toast.error(json.message ?? C.step1.saveError);
         return false;
       }
+      // What was typed IS what the server holds now. Dropping the draft keeps
+      // it from coming back later if the snapshot ever returns to the one it
+      // was typed against; a failed save keeps it, so nothing typed is lost.
+      setDraft(null);
       router.refresh();
       return true;
     } catch {
@@ -190,8 +216,8 @@ export function OnboardingWizard({ show, accountId, accountName, equityCapital, 
                 <Label htmlFor="onboarding-account-name">{C.step1.nameLabel}</Label>
                 <Input
                   id="onboarding-account-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={fields.name}
+                  onChange={(e) => setField({ name: e.target.value })}
                   data-testid="onboarding-account-name"
                 />
                 <p className="text-xs text-muted-foreground">{C.step1.nameHint}</p>
@@ -203,16 +229,16 @@ export function OnboardingWizard({ show, accountId, accountName, equityCapital, 
                     aria-label={C.step1.equityLabel}
                     placeholder={C.step1.equityLabel}
                     inputMode="decimal"
-                    value={equity}
-                    onChange={(e) => setEquity(e.target.value)}
+                    value={fields.equity}
+                    onChange={(e) => setField({ equity: e.target.value })}
                     data-testid="onboarding-equity-capital"
                   />
                   <Input
                     aria-label={C.step1.activeLabel}
                     placeholder={C.step1.activeLabel}
                     inputMode="decimal"
-                    value={active}
-                    onChange={(e) => setActive(e.target.value)}
+                    value={fields.active}
+                    onChange={(e) => setField({ active: e.target.value })}
                     data-testid="onboarding-active-capital"
                   />
                 </div>
