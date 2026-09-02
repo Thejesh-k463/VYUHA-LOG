@@ -1,5 +1,40 @@
 # Changelog
 
+## v3.7.1 — the release (v3.7.0 was superseded unpublished)
+
+v3.7.0 was cut, tagged and fully verified — and then audited a **second** time,
+over the fix wave the first audit had produced and never seen. That pass (106
+agents, 33 candidates, a three-skeptic refutation panel per finding, 40 refuted)
+found two things worth stopping a release for. Its draft was deleted without ever
+being published; the v3.7.0 tag remains for history. Everything in v3.7.0's notes
+below ships here.
+
+- **The first-run wizard could erase a capital base you had already set.** Its
+  step-1 boxes were seeded once when the wizard mounted, so re-opening it from
+  Settings → "Run setup again" showed **empty** boxes even when the account held
+  real capital — and Continue read empty as *"cleared on purpose"* and wrote NULL
+  over it, reporting success. Every %-of-equity figure in the app then read "—".
+  The boxes are now derived from the live account rather than copied into state,
+  so there is nothing that can fall behind. Capital is still optional: a box you
+  genuinely empty still clears, and an entry that cannot be read (`₹5,00,000`)
+  still refuses and says which box, instead of clearing it. An empty account name
+  no longer advances the step as though it had saved.
+- **Three audit-log rows described changes that never happened, on paths you
+  cannot undo.** After merging one account into another, the log claimed your
+  weekly-review note, its completion and its score had all been *cleared* — when
+  the note had in fact been appended to and neither other value moved; the
+  brought-forward-loss merge said the same of a tax carry-forward record, and left
+  out the provenance sentence it had just gained. Separately, clearing the STT box
+  in the charge editor really did change what that segment is priced at, and the
+  log said **nothing** about STT while reporting two rates that had not moved.
+  All three now record exactly what was written.
+
+Nothing about money, tax or stored values was wrong in v3.7.0 — the second audit
+re-confirmed the paise boundary, the dated advance-tax engine's agreement with the
+old scalar path, and the migration backfills independently. These were a data-loss
+path and a truthfulness problem in the record of what changed.
+
+
 ## v3.7.0 — review & discipline
 
 - **The Trade Review Desk.** A new screen at **Review** (Pro/lifetime, after the

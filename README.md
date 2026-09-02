@@ -28,7 +28,15 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v3.7.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v3.7.1** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v3.7.1 — the release. v3.7.0 was cut, audited a second time, and superseded
+> before anyone could install it.** A second adversarial audit — run over the *fixes*
+> the first audit had produced, which it had never seen — found that the first-run
+> wizard could write NULL over a capital base you had already set, and that three
+> audit-log rows on irreversible paths described changes that never happened. Both
+> are fixed here, each with a test proven red against the reverted code. The v3.7.0
+> tag remains for history; nothing from it was ever published.
 >
 > **v3.7.0 — read your own trades back, and a discipline score that refuses rather
 > than guesses.** The new **Trade Review Desk** keeps a queue of the closed trades you
