@@ -60,10 +60,31 @@ misstating tax ₹10k in probe; aggregate goal overstatement; missing Dhan conse
 owner live-verified Dhan PIN+TOTP end-to-end on his real account (mint → preview →
 cached-token commit, 5 trades, 0 duplicates); two undocumented Dhan behaviors found and
 fixed same-session (error-in-200 envelope; one mint per 2 minutes → reuse-first token
-cache) — DECISIONS 2026-09-02; (2) commit the tree; (3)
-`release` skill start to finish: bump 3.6.0 (lockfile roots BY HAND, Cargo.lock via cargo),
-desktop build + marker grep, sign-verify deep, CI green BEFORE tag, client ZIP refresh,
-claims audit already done, publish + mirror + WDSI per runbook.
+cache) — DECISIONS 2026-09-02.
+
+**v3.6.0 RELEASE CUT, TAGGED AND DEEP-VERIFIED (2026-09-02).** Feature commit `def0614`
+(100 files; package-lock NOT in the diff — zero new deps) → bump commit `3224547` (bump
+printed 4 files, footer → v3.6; lockfile roots hand-edited diff exactly **2/2**, re-parses,
+770 entries, `npm ls esbuild` resolves 0.28.1; Cargo.lock **1/1** via cargo). Verify EXIT 0
+pre- AND post-bump — **2,899 tests / 188 files** (the client-docs guard caught TERMS.md +
+deck still at 3.5.1 mid-ritual; fixed). Desktop build EXIT 0; BUILD_ID
+`n8bYuGUjAqAjL2dogpBT4`; v3.6 markers ("Back Office", "Expected capital", the Dhan
+second-factor consent, "Vyuha connected — test alert") present in server AND client
+chunks; both local `.sig` decode to **`4FF85F3BBE1DA21D`**. Client ZIP
+`Vyuha_3.6.0_Client_Package.zip` — 12 entries, installer SHA-256
+`040D7B73BF7BECD80A05C810CC493076E96818232E741F171E95A3116C7278FC` (CHECKSUMS.txt). Commit
+pushed → **CI run 33605077412 ALL 5 JOBS GREEN BEFORE TAGGING** → tag `v3.6.0` → **Release
+workflow 33605490343 success, all 3 platform jobs** → `release:verify v3.6.0 --deep` →
+**all 3 signatures cryptographically verified over the PUBLISHED bytes under
+`4FF85F3BBE1DA21D`, "Safe to publish"**. Draft: 9 assets; `releases/latest` still v3.5.1;
+`revocations` re-checked `prerelease:true`, untouched.
+
+**OWNER STEPS REMAINING FOR v3.6.0:** publish the draft → `npm run mirror:push` **from a
+real terminal** (agent sessions run with GIT_TERMINAL_PROMPT=0) → WDSI with the CLIENT
+ZIP's installer, not the GitHub asset → install on a non-build machine (the in-app update
+prompt from a v3.5.1 machine is the interesting flow) → no winget PR while
+microsoft/winget-pkgs #421585 is open. Expect the two-binaries gap (GitHub asset ≠ local
+ZIP build) as on every release — winget takes the GitHub hash, WDSI/buyers take the ZIP's.
 
 *(Superseded planning note: the pre-approval backlog below is retained for history; items
 1–7 are slotted into the roadmap bumps.)*
