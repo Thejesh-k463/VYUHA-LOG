@@ -42,12 +42,47 @@ function selectAccount(id: number) {
 }
 
 /** The page's own path: the projection, the pure grouping, the ids in order. */
+/**
+ * The page path, resolved once per lens and reused.
+ *
+ * This USED to re-read the whole book, re-read the batches and re-run the
+ * grouping on every single call — and it is called once per group, ~45 times
+ * across the six lenses, on top of the six reads in the loop below. Locally
+ * that was merely wasteful; on the Windows CI runner it blew vitest's 5 s
+ * default and failed the one job the release gate depends on, while ubuntu
+ * and macOS passed. Caching cannot weaken the assertion: the route under test
+ * is a GET, nothing mutates between calls, and the comparison is still against
+ * an INDEPENDENT derivation through lensGroups/groupIds rather than against
+ * the route's own output.
+ */
+let bookCache: { trades: ReturnType<typeof q.getLensTrades>; batches: { id: number; fileName: string; broker: string; importedAt: string }[] } | null = null;
+
+function book() {
+  if (!bookCache) {
+    bookCache = {
+      trades: q.getLensTrades(),
+      batches: q.getImportBatches().map((b) => ({
+        id: b.id, fileName: b.fileName, broker: b.broker, importedAt: b.importedAt ?? "",
+      })),
+    };
+  }
+  return bookCache;
+}
+
+const groupsCache = new Map<string, ReturnType<typeof dom.lensGroups>>();
+
+function lensGroupsOnce(lens: Parameters<typeof dom.lensGroups>[0]) {
+  const hit = groupsCache.get(String(lens));
+  if (hit) return hit;
+  const { trades, batches } = book();
+  const groups = dom.lensGroups(lens, trades, { batches, playbooks: [] });
+  groupsCache.set(String(lens), groups);
+  return groups;
+}
+
 function pageMembers(lens: Parameters<typeof dom.lensGroups>[0], key: string) {
-  const trades = q.getLensTrades();
-  const batches = q.getImportBatches().map((b) => ({
-    id: b.id, fileName: b.fileName, broker: b.broker, importedAt: b.importedAt ?? "",
-  }));
-  const group = dom.lensGroups(lens, trades, { batches, playbooks: [] }).find((g) => g.key === key);
+  const { trades } = book();
+  const group = lensGroupsOnce(lens).find((g) => g.key === key);
   if (!group) return null;
   const byId = new Map(trades.map((x) => [x.id, x]));
   return dom.groupIds(group, trades).map((id) => byId.get(id)!);
@@ -140,11 +175,7 @@ describe("it refuses what it cannot resolve", () => {
 describe("the members are the page's own array", () => {
   it("every group of every lens returns exactly what the page path resolves, in order", async () => {
     for (const lens of dom.LENSES) {
-      const trades = q.getLensTrades();
-      const batches = q.getImportBatches().map((b) => ({
-        id: b.id, fileName: b.fileName, broker: b.broker, importedAt: b.importedAt ?? "",
-      }));
-      const groups = dom.lensGroups(lens.kind, trades, { batches, playbooks: [] });
+      const groups = lensGroupsOnce(lens.kind);
       expect(groups.length, `${lens.kind} produced no groups`).toBeGreaterThan(0);
 
       for (const g of groups) {
@@ -159,7 +190,7 @@ describe("the members are the page's own array", () => {
         expect(res.body.members).toHaveLength(g.count);
       }
     }
-  });
+  }, 60_000); // every group of six lenses, one awaited route call each — CI runners are slower than this machine
 
   it("ships the 19-column projection, not the whole row", async () => {
     const res = await get("?lens=month&key=month:2026-05");
