@@ -59,11 +59,15 @@ export function PositionSizeCalc({ defaultRisk, equityCapital }: { defaultRisk: 
   );
 }
 
-export function OptionLotCalc({ defaultRisk }: { defaultRisk: number }) {
+/** `defaultRisk` only SEEDS the risk field. null = no per-trade cap is
+ *  configured, so the box opens BLANK and the trader states their own — the
+ *  lot sizer never opens pre-filled with a limit nobody set (invariant 6).
+ *  The equity tracker still passes a number, so nothing there changes. */
+export function OptionLotCalc({ defaultRisk }: { defaultRisk: number | null }) {
   const [premium, setPremium] = React.useState("50");
   const [stopPremium, setStopPremium] = React.useState("30");
   const [lotSize, setLotSize] = React.useState("75");
-  const [risk, setRisk] = React.useState(String(defaultRisk));
+  const [risk, setRisk] = React.useState(defaultRisk == null ? "" : String(defaultRisk));
 
   const res = optionLotSize({ premium: Number(premium) || 0, stopPremium: Number(stopPremium) || 0, lotSize: Number(lotSize) || 0, riskAmount: Number(risk) || 0 });
 
@@ -75,7 +79,7 @@ export function OptionLotCalc({ defaultRisk }: { defaultRisk: number }) {
           <Lbl t="Entry premium"><Input type="number" step="any" value={premium} onChange={(e) => setPremium(e.target.value)} /></Lbl>
           <Lbl t="SL premium"><Input type="number" step="any" value={stopPremium} onChange={(e) => setStopPremium(e.target.value)} /></Lbl>
           <Lbl t="Lot size"><Input type="number" step="any" value={lotSize} onChange={(e) => setLotSize(e.target.value)} /></Lbl>
-          <Lbl t="Risk (₹)"><Input type="number" step="any" value={risk} onChange={(e) => setRisk(e.target.value)} /></Lbl>
+          <Lbl t="Risk (₹)"><Input type="number" step="any" value={risk} placeholder="your per-trade risk" onChange={(e) => setRisk(e.target.value)} /></Lbl>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label="Max lots" value={String(res.maxLots)} cls="text-primary" />

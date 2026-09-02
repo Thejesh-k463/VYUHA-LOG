@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { getTrades } from "@/lib/queries/trades";
-import { getSettings } from "@/lib/queries/settings";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { SEGMENT_BUCKET, type Segment } from "@/lib/domain/constants";
 import type { RiskRules, PortfolioState } from "@/lib/risk/limits";
 
@@ -43,14 +43,18 @@ export function resolveRules(bucket: string, segment: string): RiskRules {
  *  0 means NOT CONFIGURED (a clean install seeds exactly that) — never a
  *  stand-in number. The old ₹13L/₹4L fallbacks made the concentration check
  *  compute a % of fictional capital on every fresh install (invariant 6);
- *  `evaluateLimits` now reports that rule as "skipped" instead. */
+ *  `evaluateLimits` now reports that rule as "skipped" instead.
+ *
+ *  ACCOUNT-FIRST (v3.7): `getPortfolioState` counts the SELECTED account's open
+ *  positions, so the concentration limit must divide by that account's capital —
+ *  the global settings row let a small account inherit a large one's headroom
+ *  and pass a check it should have failed. Imported from ./bucket-capital, not
+ *  ./capital, so the pre-trade path does not inherit the ipos import graph. */
 function bucketCapital(bucket: string): number {
-  const s = getSettings();
-  const eq = s?.equityCapital ?? 0;
-  const ac = s?.activeCapital ?? 0;
-  if (bucket === "equity") return eq;
-  if (bucket === "active") return ac;
-  return eq + ac;
+  const cap = getBucketCapital();
+  if (bucket === "equity") return cap.equityCapital;
+  if (bucket === "active") return cap.activeCapital;
+  return cap.totalCapital;
 }
 
 /**

@@ -1,5 +1,89 @@
 # Changelog
 
+## v3.7.0 — review & discipline
+
+- **The Trade Review Desk.** A new screen at **Review** (Pro/lifetime, after the
+  7-day trial) that answers "which trades have I not read back yet, and how did
+  I actually trade this week?". A queue of closed trades carrying no review
+  stamp — filtered, windowed, and always stating "showing N of M" rather than
+  presenting a slice as the whole. Each row opens the same journal dialog the
+  Trades screen uses; saving stamps the trade, and a trade with nothing to add
+  can be stamped directly and reopened later. A **Sunday ritual** completes one
+  ISO week with a note: what closed, what it netted and cost, the widest
+  expectancy gaps by mistake tag, best and worst by R, and why positions were
+  closed. Completing a week stores the score that was on screen at that moment
+  beside the score recomputed today. It is in-app only — it sends no reminder,
+  by Telegram or anything else. **The queue does not start from zero on
+  upgrade:** closed trades you have already journalled — carrying a note, an
+  exit trigger or mistake tags — are stamped as reviewed the first time this
+  version opens your database, dated by the last time that row was touched
+  rather than by today. A journalled book therefore opens with a non-zero
+  "Reviewed n of m" and a shorter queue, instead of hundreds of rows of work you
+  had already done; a trade nobody annotated stays in the queue, which is the
+  point. It is not a claim that those trades were reviewed on the desk — the
+  desk did not exist — only that the record shows they were read by hand.
+- **The weekly discipline score is now the Process Score, and your numbers will
+  move.** One weekly figure for how a book was *traded*, built from five
+  equal-weight components — planned (SL or target recorded), risk-cap (loss
+  within its own risk), daily-stop (day net within your stop), rules-followed
+  (a playbook, and no rule broken), reviewed (a review stamp) — each shown as
+  "n of m · pct" with its own coverage, so the arithmetic sits on screen next
+  to the number. Two changes move figures on upgrade, deliberately:
+  - **A week with fewer than 10 closed trades no longer scores.** It shows "—",
+    says what was short, and is **excluded from averages** instead of entering
+    them as a zero. On a representative five-week fixture the honest average is
+    **80 where v3.6 printed 32**, because three un-scoreable weeks were being
+    averaged in as zeros. Averages now state their coverage — "across 7 scoring
+    weeks of 12" — so a mean can no longer hide how little it was computed on.
+  - **The score and the Target Tracker no longer substitute a limit you never
+    set.** The old score fell back to ₹9,500 per trade and ₹25,000 a day when no
+    per-trade cap or daily stop was configured, silently deciding whether your
+    losses were "respected" against a number you had never seen. Those
+    components now refuse and drop out of the mean rather than judge you by an
+    invented limit, and the Target Tracker shows a dash and points at Settings
+    instead of raising a STOP banner against a stop nobody set. Some other
+    screens still carry default figures of their own — this release fixes the
+    two that judged your discipline, not every default in the product.
+- **First-run onboarding.** A fresh install now opens a four-step wizard —
+  account and optional starting capital, then getting trades in, then optional
+  Telegram, then done. **Capital stays optional**: skip it and the reports that
+  need a base keep saying "—" and pointing at Settings, exactly as before.
+  "Run setup again" lives in Settings for anyone who skipped a step. An
+  existing install with a book in it never sees the wizard.
+- **Advance tax is now measured against dated challans, not one running total.**
+  Record what you actually paid — date, amount, and optionally the BSR code and
+  challan serial — on the Advance Tax report. Each instalment is then judged
+  against what had been paid **by its own due date**, replacing a single
+  cumulative figure that treated a March payment as though it had been
+  available in June. The s.425(2) safe harbour is decided by date, and anything
+  paid after 31 March is named as **self-assessment tax, not advance tax**. The
+  ITR pack gains a **"Taxes paid (advance tax)"** table and export in the
+  return's own Schedule IT shape — blank, never 0, for anything it cannot
+  derive. **If you record no challans, no computed figure changes.**
+- **Capital now resolves per account on eight more screens** — both trackers,
+  the risk cockpit, the monthly report, the target tracker, cash openings, the
+  pre-trade concentration limit, and the dashboard's total-capital tile. This
+  is not only a multi-account fix: **it corrects single-account books too.**
+  Compounding realised P&L writes the account's own row, so those eight
+  surfaces had been reading the pre-compound figure while Settings and the
+  performance page showed the compounded one — two numbers for one book, and
+  nothing on screen looked broken.
+- **Lenses opens in about half the time.** 1718/1557 ms → **920/901 ms** on a
+  seeded 25,000-trade book, with 94% less data crossing the wire. **Not one
+  figure on the page moved** — every group, total and rate is still computed
+  over your whole book; what changed is how much of it is rendered and sent.
+- **A failed Telegram digest is now remembered.** The note that a digest could
+  not be sent is durable and visible from **every** route rather than only the
+  dashboard, quotes the job's own reason, and clears on the next successful
+  send. Dismissing it hides the strip without pretending the failure resolved.
+  The strip also carries an opt-in button to ask this device's system for a
+  notification — it promises nothing, because a system notification has **not
+  been proven on a built installer**; the strip stays the record either way.
+- **Week-start fix — some weekly buckets were labelled a day early.** The ISO
+  week bucketer emitted the **Sunday** rather than the Monday in any timezone
+  east of UTC, which is every Indian user. Weekly rows may therefore re-label
+  by one day on upgrade; the trades inside each week are unchanged.
+
 ## v3.6.0 — navigate & connect
 
 - **The sidebar is now grouped around how you work, and yours to change.**

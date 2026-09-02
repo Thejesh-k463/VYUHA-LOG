@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-2896%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-54%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-3417%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-70%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -28,7 +28,30 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v3.2.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v3.7.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v3.7.0 — read your own trades back, and a discipline score that refuses rather
+> than guesses.** The new **Trade Review Desk** keeps a queue of the closed trades you
+> have not read back yet — windowed, and always saying *“showing N of M”* instead of
+> presenting a slice as the whole — and closes an ISO week with a **Sunday ritual**:
+> what closed, what it netted and cost, the widest expectancy gaps by mistake tag, and
+> a note. The weekly discipline score is now a transparent **Process Score** — five
+> equal-weight components (planned · risk-cap · daily-stop · rules-followed · reviewed),
+> each printed as *“n of m · pct”* with its own coverage. **Your numbers will move.**
+> A week with fewer than **10 closed trades no longer scores**: it shows “—”, says what
+> was short, and is *excluded* from averages rather than counted as a zero — on a
+> representative five-week fixture the honest average is **80 where v3.6 printed 32**.
+> And a per-trade cap or daily stop you never configured is no longer substituted with
+> ₹9,500 / ₹25,000; those components refuse instead. **Advance tax** now measures each
+> instalment against **dated challans** actually paid by its own due date, and names
+> anything paid after 31 March as self-assessment tax — a book with no challans
+> recorded sees no computed figure change. **Capital resolves per account** on eight
+> more surfaces, which also corrects *single*-account books: compounding writes the
+> account row, so those screens had been showing the pre-compound figure while Settings
+> showed the compounded one. A fresh install now opens a **four-step setup wizard**
+> (capital still optional), **Lenses** opens in about half the time (1718/1557 ms →
+> **920/901 ms** on a 25,000-trade book, with no figure on the page moving), and a
+> failed Telegram digest is recorded durably and visible from every route.
 >
 > **v3.2.0 — the journal stops guessing, and starts saying how sure it is.** Charge rates are
 > now **effective-dated**: a rate row had no time dimension, so every trade of every vintage was
@@ -385,8 +408,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **2,896** | **43** | **0** |
-| tests, 54 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
+| **3,417** | **43** | **0** |
+| tests, 70 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -417,7 +440,8 @@ embeds the price you saw.
 | Recording **closed** trades — add, edit, delete, tag | **Live open-position tracking** — SL/TSL/target, running risk |
 | All six broker importers + duplicate detection | Portfolio Risk cockpit — VaR, Greeks, margin, breach alerts |
 | Dashboard, P&L calendar with day drill-down & streaks | Arjun's Eye, Edge/Setups, Discipline, Scaling & Replay |
-| Staged positions, playbooks, sessions, calculator | Options Seller Journal, Expiry Analytics, Return on Margin |
+| Staged positions, playbooks, sessions, calculator | **Trade Review Desk** — review queue, Sunday ritual, Process Score |
+| First-run setup wizard — capital always optional | Options Seller Journal, Expiry Analytics, Return on Margin |
 | Chart screenshots, symbol aliases, corporate actions | Tax Summary, ITR Pack, Advance Tax, Harvest, AIS Reconcile |
 | Backup & restore, full CSV/JSON export, audit log | Broker-cost + cross-broker MTF comparison, Charges & MTF Leak |
 | Workspace mode, sidebar layout, appearance (skins, tint, panels, custom theme, wallpaper), multi-account | PDF reports — monthly, and any hand-picked selection of trades |
@@ -545,7 +569,14 @@ forever.** Your own record of your trading is never held hostage.
 - **Browsable preset library — 25 playbooks across 7 global ecosystems** — Intraday & Momentum, Breakout & Trend (Turtle, Darvas, 52-week-high), Positional/Growth (CANSLIM, Minervini SEPA, Wyckoff, Weinstein), Mean Reversion (Connors RSI-2), Price Action/SMC (ICT liquidity sweeps), Options & Events (iron condor, **India weekly expiry theta**), Swing & Overnight (**BTST**). Filter by ecosystem, read every rule on the card, **one-click Add**, then tune every metric to your own risk. Nothing is auto-seeded — 25 untraded setups would bury your real playbooks and turn per-playbook expectancy into noise, so a playbook only becomes yours when you click.
 - **Rule-checklist enforcement**: journaling a trade shows its playbook's rules — tick what you actually followed. Broken rules land on the Discipline page with their real cost.
 - **Per-playbook expectancy cards**: win rate, net, expectancy, profit factor, avg R — with a small-sample caution until 20 closed trades.
-- **Discipline scorecard**: weekly adherence scores, cost-of-mistakes rollup, trading-by-emotion, entry-time limit breaches, and the per-rule cost table.
+- **Discipline scorecard**: the weekly **Process Score** (the same five components the Review Desk shows, each with its arithmetic), cost-of-mistakes rollup, trading-by-emotion, entry-time limit breaches, and the per-rule cost table. **A week with fewer than 10 closed trades does not score** — it says what was short and is excluded from averages instead of counted as zero, and every average states its coverage (“across 7 scoring weeks of 12”).
+
+### 📓 Trade Review Desk — read your own trades back
+- **A queue of what you have not reviewed yet.** Every closed trade carrying no review stamp, filtered and windowed, stating **“showing N of M”** rather than presenting a slice as the whole. Each row opens the same journal dialog the Trades screen uses; saving stamps the trade, and a trade with nothing to add can be stamped directly and reopened later.
+- **A Sunday ritual that closes one ISO week.** What closed, what it netted and cost, the widest expectancy gaps by mistake tag, best and worst by R, why positions were closed — plus a free-text note. Completing a week stores the score that was on screen at that moment beside the score recomputed today. In-app only: it sends no reminder, by Telegram or anything else.
+- **A transparent Process Score.** Five equal-weight components — *planned* (SL or target recorded), *risk-cap* (loss within its own risk), *daily-stop* (day net within your stop), *rules-followed* (a playbook, and no rule broken), *reviewed* — each shown as **“n of m · pct”** with its own coverage, so the arithmetic sits on screen beside the number. A component with nothing honest to measure shows a dash and drops out of the mean; it never scores you against a limit you never set.
+- **On upgrade the queue does not start from zero.** When v3.7.0 first opens your database, closed trades you have already journalled — carrying a note, an exit trigger or mistake tags — are stamped as reviewed, dated by the last time that row was touched rather than by today. A journalled book therefore opens with a non-zero **“Reviewed n of m”** and a shorter queue; a trade nobody annotated stays in it, which is the point. It is not a claim that those trades were reviewed *on the desk* — the desk did not exist — only that the record shows they were read by hand.
+- Pro/lifetime, after the 7-day trial.
 
 ### 📉 Options Seller Journal
 <img src="docs/screenshots/options-journal.png" alt="Options Seller Journal — seller KPIs, outcome mix and per-underlying breakdown" width="900" />
@@ -562,7 +593,7 @@ forever.** Your own record of your trading is never held hostage.
 - **Margin estimate** (SPAN approximation) per broker × segment, fully editable rate table.
 - **Physical-settlement radar**: ITM stock options and futures near expiry get delivery-obligation and extra-STT warnings.
 - **Pre-trade limits check** (per-trade cap, daily stop, max-open, concentration) — advisory with override, and overrides are *recorded* so you see what ignoring the guardrails cost.
-- **SL/TSL/target breach alerts** on Dashboard & Risk with opt-in desktop notifications — every alert reminds you the marks are EOD/manual and to verify live.
+- **SL/TSL/target breach alerts** on Dashboard & Risk — every alert reminds you the marks are EOD/manual and to verify live. A per-device, opt-in button asks your system for notification permission and fires only on a *new* breach set; whether the desktop shell actually surfaces that notification has never been proven on a built installer, so **the banner itself is the record either way**.
 - **SEBI compliance radar** — date- and position-aware reminders for expiry-day margin rules, the weekly-expiry regime and index position limits. Informational only; your broker's RMS stays the source of truth.
 
 ### 🧮 Know your costs before you trade
@@ -580,12 +611,14 @@ forever.** Your own record of your trading is never held hostage.
 
 ### 🧾 India-grade tax tooling
 - **Tax Summary**: STCG/LTCG with **31-Jan-2018 grandfathering** (per-share FMV), rate-cutover handling, dividend TDS tracking.
-- **Advance tax** (234B/234C instalments), **tax-loss harvesting** scanner, **AIS/Form 26AS reconciliation**.
+- **Advance tax** instalments measured against a **dated challan ledger** — record what you actually paid (date, amount, optional BSR code and challan serial) and each instalment is judged on what had been paid **by its own due date**, not on one running total. The safe harbour is decided by date, and anything paid after 31 March is named as **self-assessment tax, not advance tax**. Plus the **tax-loss harvesting** scanner and **AIS/Form 26AS reconciliation**.
 - **ITR Pack**: speculative vs non-speculative vs capital-gains segregation per FY, **ICAI Guidance Note turnover**, and a **44AB/44AD audit-applicability read** with layered cautions — export CSV/XLSX for your CA.
+- **Taxes paid (advance tax)** on the ITR pack — your own challans in the return's Schedule IT shape (BSR code, date of deposit, serial, amount), exportable, and **blank rather than 0** for anything it cannot derive.
 - **Schedule-format export** — the same figures emitted in the return's own item codes: **Schedule CG** (A3 for STCG u/s 111A, B4 for LTCG u/s 112A with the ₹1.25L deduction), **Schedule BP** for both business heads, and **Schedule CFL** with each loss vintage and the year it lapses. It also says which form your book implies — ITR-2, or ITR-3 the moment any intraday or F&O appears.
 - **It gets the STT rule right, which a re-label would not.** STT is excluded from capital-gains deductions (proviso to S.48) but allowed in full as a business expense against intraday and F&O. Every other figure in Vyuha is net of STT, so the Schedule CG balance is deliberately *higher* than the net P&L shown elsewhere — the charge breakdown is stored per trade, so this is a fact here rather than an estimate.
 
 ### 🔄 Automation — with your consent, never without it
+- **First-run setup, four steps and skippable**: account and optional starting capital → get your trades in → optional Telegram → done. **Capital stays optional** — skip it and every report that needs a base still says “— · set your capital in Settings” rather than inventing one. “Run setup again” lives in Settings, and an install that already has a book never sees the wizard.
 - **Opt-in EOD auto-MTM**: once per trading day, fetch NSE's bhavcopy and mark open positions to close. OFF by default; warns that it overwrites matched marks; skips silently offline; every run is audit-logged.
 - **MTF interest accrual** runs idempotently on app open.
 - **Signed auto-updates**: the desktop app checks once at launch and shows *Update now / Later* — nothing ever installs itself, and your DB is **backed up automatically before any migration**.
@@ -661,10 +694,10 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v2.99.100**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v3.7.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
-**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
+**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
 
 **New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
@@ -692,8 +725,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       2896 unit + integration tests across 188 files (+ tests/load: 15 load cases, run separately)
-e2e/         54 Playwright flows through the real app, in 19 specs
+tests/       3417 unit + integration tests across 210 files (+ tests/load: 15 load cases, run separately)
+e2e/         70 Playwright flows through the real app, in 22 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -713,7 +746,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **2,896 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **3,417 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 15 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -729,8 +762,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (2,896 tests) |
-| `npm run test:e2e` | Playwright e2e — 54 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (3,417 tests) |
+| `npm run test:e2e` | Playwright e2e — 70 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 15 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -796,7 +829,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 2896 Vitest unit + integration tests (+ tests/load)
+  tests/          # 3417 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

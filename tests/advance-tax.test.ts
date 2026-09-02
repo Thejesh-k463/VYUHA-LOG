@@ -210,3 +210,161 @@ describe("computeAdvanceTax — presumptive (s.58) single instalment", () => {
     expect(p.instalments[0].cumRequired).toBe(100000);
   });
 });
+
+// v3.7 WS4 — the dated challan ledger. Without `payments` the engine applies
+// ONE cumulative scalar to every rung, so a March payment clears a June
+// shortfall that was real. With it, each rung sees only what was paid on or
+// before its own due date. s.408(3) draws the outer line: anything paid by
+// 31 March is advance tax, anything after it is not.
+describe("computeAdvanceTax — dated payments", () => {
+  const est = { estimatedAnnualTax: 100000, taxPaidToDate: 0 } as const;
+
+  it("without payments, every rung still sees the same scalar — the simplification, stated as data", () => {
+    const p = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 45000, today: "2027-03-20" });
+    expect(p.instalments.map((i) => i.paidAsOfDue)).toEqual([45000, 45000, 45000, 45000]);
+  });
+
+  it("each rung is measured against what was paid ON OR BEFORE its due date", () => {
+    const p = computeAdvanceTax({
+      ...est, today: "2027-03-20",
+      payments: [
+        { date: "2026-06-10", amount: 15000 },
+        { date: "2026-09-10", amount: 30000 },
+        { date: "2026-12-10", amount: 30000 },
+        { date: "2027-03-10", amount: 25000 },
+      ],
+    });
+    expect(p.instalments.map((i) => i.paidAsOfDue)).toEqual([15000, 45000, 75000, 100000]);
+    expect(p.instalments.map((i) => i.shortfall)).toEqual([0, 0, 0, 0]);
+    expect(p.interest234C).toBe(0);
+    expect(p.taxPaidToDate).toBe(100000); // the FY total replaces the scalar
+    expect(p.paidPct).toBe(100);
+    expect(p.underpaid234B).toBe(false);
+  });
+
+  it("a late payment leaves the earlier rungs short — and charges what the scalar path waived", () => {
+    const payments = [{ date: "2027-03-10", amount: 45000 }];
+    const dated = computeAdvanceTax({ ...est, today: "2027-03-20", payments });
+    const scalar = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 45000, today: "2027-03-20" });
+
+    // The scalar path back-dates ₹45,000 to 15 June, which clears BOTH safe
+    // harbours and waives the first two instalments outright.
+    expect(scalar.instalments[0].safeHarbourMet).toBe(true);
+    expect(scalar.instalments[1].safeHarbourMet).toBe(true);
+    expect(scalar.instalments.map((i) => i.shortfall)).toEqual([0, 0, 30000, 55000]);
+    expect(scalar.interest234C).toBe(900 + 550);
+
+    // Dated: nothing at all stood paid on 15 June or 15 September.
+    expect(dated.instalments.map((i) => i.paidAsOfDue)).toEqual([0, 0, 0, 45000]);
+    expect(dated.instalments[0].safeHarbourMet).toBe(false);
+    expect(dated.instalments[1].safeHarbourMet).toBe(false);
+    expect(dated.instalments.map((i) => i.shortfall)).toEqual([15000, 45000, 75000, 55000]);
+    expect(dated.instalments.map((i) => i.interest234C)).toEqual([450, 1350, 2250, 550]);
+    expect(dated.interest234C).toBe(4600);
+    // Same money, same year, ₹3,150 of interest the scalar path never charged.
+    expect(dated.interest234C - scalar.interest234C).toBe(3150);
+  });
+
+  it("the s.425(2) safe harbour is decided by DATE, not by the year's total", () => {
+    const inTime = computeAdvanceTax({ ...est, today: "2026-06-24", payments: [{ date: "2026-06-14", amount: 12000 }] });
+    expect(inTime.instalments[0].safeHarbourMet).toBe(true);
+    expect(inTime.instalments[0].interest234C).toBe(0);
+    expect(inTime.instalments[0].shortfall).toBe(3000); // the obligation is still reported
+
+    // Paid ON the due date still counts — "on or before".
+    const onTheDay = computeAdvanceTax({ ...est, today: "2026-06-24", payments: [{ date: "2026-06-15", amount: 12000 }] });
+    expect(onTheDay.instalments[0].safeHarbourMet).toBe(true);
+
+    // One day late: the same ₹12,000, no harbour, interest on the full rung.
+    const late = computeAdvanceTax({ ...est, today: "2026-06-24", payments: [{ date: "2026-06-16", amount: 12000 }] });
+    expect(late.instalments[0].safeHarbourMet).toBe(false);
+    expect(late.instalments[0].paidAsOfDue).toBe(0);
+    expect(late.instalments[0].shortfall).toBe(15000);
+    expect(late.instalments[0].interest234C).toBe(450);
+    expect(late.taxPaidToDate).toBe(12000);
+    // "Shortfall now" is measured at TODAY, not at the due date — the money did arrive.
+    expect(late.totalShortfallNow).toBe(3000);
+  });
+
+  it("a payment after 31 March is not advance tax, and the note says so", () => {
+    const p = computeAdvanceTax({
+      ...est, today: "2027-03-20",
+      payments: [{ date: "2026-06-10", amount: 60000 }, { date: "2027-04-05", amount: 40000 }],
+    });
+    expect(p.taxPaidToDate).toBe(60000); // NOT 100000
+    expect(p.instalments.map((i) => i.paidAsOfDue)).toEqual([60000, 60000, 60000, 60000]);
+    expect(p.instalments.map((i) => i.interest234C)).toEqual([0, 0, 450, 400]);
+    expect(p.underpaid234B).toBe(true);
+    const note = p.notes.find((n) => n.includes("2027-04-05"));
+    expect(note).toBeDefined();
+    expect(note).toContain("self-assessment");
+    expect(note).toContain("31 March");
+    expect(note).toContain("₹40,000");
+    expect(note).toContain("s.408"); // cited to the governing Act, never "S.211"
+  });
+
+  // The regression that matters: dating payments must not move a single number
+  // when the dating makes no difference.
+  it("scalar and dated paths agree when every payment is dated before 15 June", () => {
+    const payments = [{ date: "2026-04-10", amount: 8000 }, { date: "2026-06-01", amount: 4000 }];
+    for (const today of ["2026-06-24", "2026-11-01", "2027-03-20"]) {
+      const dated = computeAdvanceTax({ ...est, today, payments });
+      const scalar = computeAdvanceTax({ estimatedAnnualTax: 100000, taxPaidToDate: 12000, today });
+      expect({ ...dated, notes: undefined }).toEqual({ ...scalar, notes: undefined });
+      // The dated path only ADDS prose — it never drops a statutory caveat.
+      for (const n of scalar.notes) expect(dated.notes).toContain(n);
+    }
+  });
+
+  it("names the dated basis on screen rather than changing the figures silently", () => {
+    const p = computeAdvanceTax({ ...est, today: "2027-03-20", payments: [{ date: "2026-06-10", amount: 15000 }] });
+    expect(p.notes.some((n) => n.includes("DATED payments"))).toBe(true);
+    expect(p.notes.some((n) => n.includes("1 payment"))).toBe(true);
+  });
+
+  // An EMPTY ledger is a ledger that has SAID NOTHING (invariant 6) — which is
+  // exactly what challanTotalsByFy returns for an FY with no challans in it. It
+  // used to be read as a positive "₹0 paid, dated", which threw away the figure
+  // the caller had typed and charged interest on money the user had told us
+  // about. The guard now sits at the boundary, not at whichever call site
+  // remembers to write `ledger.count > 0`.
+  it("an EMPTY payments array is ABSENT, not ₹0 — it never overrules taxPaidToDate", () => {
+    const empty = computeAdvanceTax({ estimatedAnnualTax: 1000000, taxPaidToDate: 900000, today: "2027-03-20", payments: [] });
+    const none = computeAdvanceTax({ estimatedAnnualTax: 1000000, taxPaidToDate: 900000, today: "2027-03-20" });
+
+    // Indistinguishable from not passing `payments` at all — notes included, so
+    // the plan cannot even claim a "DATED payments" basis it does not have.
+    expect(empty).toEqual(none);
+
+    expect(empty.taxPaidToDate).toBe(900000); // NOT 0
+    expect(empty.paidPct).toBe(90);
+    expect(empty.instalments.map((i) => i.paidAsOfDue)).toEqual([900000, 900000, 900000, 900000]);
+    // Only the March rung is short: ₹1,00,000 × 1% × 1 month. Read as "₹0 paid"
+    // this was ₹50,500 — 4,500 + 13,500 + 22,500 + 10,000 on a full ladder.
+    expect(empty.interest234C).toBe(1000);
+    expect(empty.underpaid234B).toBe(false);
+    expect(empty.notes.some((n) => n.includes("DATED payments"))).toBe(false);
+  });
+
+  it("ONE dated payment still switches the engine to the dated basis", () => {
+    // The empty-is-absent guard must not swallow a real ledger of one row.
+    const p = computeAdvanceTax({ estimatedAnnualTax: 1000000, taxPaidToDate: 900000, today: "2027-03-20", payments: [{ date: "2027-03-10", amount: 450000 }] });
+    expect(p.taxPaidToDate).toBe(450000); // the ledger replaces the scalar
+    expect(p.instalments.map((i) => i.paidAsOfDue)).toEqual([0, 0, 0, 450000]);
+    expect(p.notes.some((n) => n.includes("DATED payments"))).toBe(true);
+  });
+
+  it("works under the presumptive election too — one rung, its own due date", () => {
+    const late = computeAdvanceTax({
+      ...est, today: "2027-03-20", presumptive: true,
+      payments: [{ date: "2027-03-20", amount: 100000 }],
+    });
+    expect(late.instalments[0].paidAsOfDue).toBe(0); // paid AFTER 15 Mar
+    expect(late.interest234C).toBe(1000); // 100000 × 1% × 1 month
+    const onTime = computeAdvanceTax({
+      ...est, today: "2027-03-20", presumptive: true,
+      payments: [{ date: "2027-03-14", amount: 100000 }],
+    });
+    expect(onTime.interest234C).toBe(0);
+  });
+});

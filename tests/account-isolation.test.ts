@@ -250,8 +250,15 @@ describe("account-scoped table registry", () => {
    * queried it at all, and how two API routes wrote unscoped for months
    * (defects D9/D15, 2026-08-12). Now each table must name its owners, and
    * each owner must actually invoke the account resolver.
+   *
+   * AN OWNER IS EVERY FILE THAT TOUCHES THE TABLE, not just the query module.
+   * The v3.7 audit found the registry quietly assuming the opposite for
+   * capital_snapshots and ledger_entries — both had API routes writing them
+   * directly while only the query module was listed, so the scan below passed
+   * over defects D-1 and D-2 for a whole release. If a route inserts, updates
+   * or deletes rows itself, list the route.
    */
-  // lib/queries/account-delete.ts touches ALL eight scoped tables: deleting or
+  // lib/queries/account-delete.ts touches EVERY scoped table: deleting or
   // merging an account is the one operation whose subject IS an account, so it
   // takes the id as an explicit parameter (validated like getWriteAccountId)
   // rather than reading the request-cached selection.
@@ -259,12 +266,27 @@ describe("account-scoped table registry", () => {
     trades: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/staged.ts", "lib/queries/account-delete.ts"],
     import_batches: ["lib/queries/trades.ts", "lib/queries/delete.ts", "lib/queries/account-delete.ts"],
     ipos: ["lib/queries/ipos.ts", "app/api/ipos/route.ts", "lib/queries/account-delete.ts"],
-    ledger_entries: ["lib/queries/ledger.ts", "lib/queries/account-delete.ts"],
+    // Three writers, not one. The registry listed only the query module, and
+    // that omission is WHY the source scan never flagged defect D-2: both API
+    // routes insert into ledger_entries directly and neither was checked.
+    // /api/ledger adds a single manual entry; /api/import/ledger commits a
+    // whole broker statement in one transaction. Both now refuse the
+    // aggregate view before resolving (v3.7 audit, fix wave D).
+    ledger_entries: [
+      "lib/queries/ledger.ts",
+      "app/api/ledger/route.ts",
+      "app/api/import/ledger/route.ts",
+      "lib/queries/account-delete.ts",
+    ],
     trading_sessions: ["lib/queries/sessions.ts", "app/api/sessions/route.ts", "lib/queries/account-delete.ts"],
-    // app/api/capital/route.ts delegates wholly to compoundRealised() here,
-    // so the query module owns the boundary and the route never touches the
-    // table — which is the shape D1's fix deliberately produced.
-    capital_snapshots: ["lib/queries/capital.ts", "lib/queries/account-delete.ts"],
+    // app/api/capital/route.ts delegates wholly to compoundRealised() here, so
+    // for THAT route the query module owns the boundary — the shape D1's fix
+    // deliberately produced. app/api/settings/route.ts does NOT delegate: it
+    // writes capital_snapshots itself, and the registry's claim that the query
+    // module owned every boundary is exactly why the source scan never flagged
+    // defect D-1 (saving Settings from the All-accounts view rewrote account
+    // #1's snapshot). Declared here now, guarded there now.
+    capital_snapshots: ["lib/queries/capital.ts", "app/api/settings/route.ts", "lib/queries/account-delete.ts"],
     // Goal reads scope through getSelectedAccountId (aggregate = pure SUM via
     // aggregateGoals); writes REFUSE the aggregate view like compoundRealised.
     capital_goals: ["lib/queries/goals.ts", "lib/queries/account-delete.ts"],
@@ -272,6 +294,24 @@ describe("account-scoped table registry", () => {
     // accounts' lots — the tax pages blend every account's trades there, so
     // the seed matches); writes REFUSE the aggregate view like goals.
     bf_loss_lots: ["lib/queries/bf-losses.ts", "lib/queries/account-delete.ts"],
+    // v3.7 (migrations 0056/0058). Schema landed in wave 1, the query modules
+    // in wave 2; both are listed below. Keep this registry current — it is the
+    // description of WHERE the account boundary is enforced, and a table whose
+    // real owner is missing here passes the test while enforcing nothing.
+    // Weekly-review reads scope through getSelectedAccountId (the aggregate
+    // view LISTS every account's rows — they carry account_id and can be
+    // labelled — but resolves no single week's note there, because one book's
+    // prose is not the aggregate's); writes REFUSE the aggregate view like
+    // goals and bf-losses.
+    weekly_reviews: ["lib/queries/review.ts", "lib/queries/account-delete.ts"],
+    // Challan reads scope through getSelectedAccountId (the aggregate view
+    // reads ALL accounts' payments, matching the tax pages that blend every
+    // account's trades there); writes REFUSE the aggregate view BEFORE
+    // getWriteAccountId resolves, so its lowest-id fallback can never file a
+    // bank payment against the wrong book. app/api/challans/route.ts delegates
+    // wholly to the query module and never touches the table itself — the same
+    // shape as capital_snapshots above.
+    advance_tax_challans: ["lib/queries/challans.ts", "lib/queries/account-delete.ts"],
     broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts", "lib/queries/account-delete.ts"],
     panel_dismissals: ["lib/queries/dismissals.ts", "lib/queries/account-delete.ts"],
   };
@@ -290,6 +330,46 @@ describe("account-scoped table registry", () => {
       .all() as { tbl: string }[];
 
     expect(rows.map((r) => r.tbl)).toEqual(Object.keys(OWNERS).sort());
+  });
+
+  /**
+   * The gap that hid D-1 and D-2 for a release, pinned so it cannot reopen.
+   *
+   * The scan above only checks files that are ALREADY declared, so a writer
+   * nobody listed is invisible to it — which is exactly what happened:
+   * app/api/settings/route.ts wrote capital_snapshots and both ledger routes
+   * wrote ledger_entries, none of them declared, so none of them scanned.
+   *
+   * This asserts the reverse direction for the writers this audit corrected: a
+   * file that calls .insert/.update/.delete on the table MUST be declared for
+   * it. Deliberately scoped to these four rather than swept repo-wide — the
+   * v3.7 audit inventoried SIX further undeclared writers across other tables
+   * (app/settings/actions.ts and lib/db/seed-core.ts on capital_snapshots;
+   * lib/corporate-actions-apply.ts, lib/queries/delete.ts and lib/trash.ts on
+   * ledger_entries; app/api/playbooks/route.ts on trading_sessions), and some
+   * of those legitimately never resolve an account. Enumerating them is
+   * recorded debt, not approval; widening this scan is its own change.
+   */
+  const MUST_BE_DECLARED: [string, string, string][] = [
+    ["capital_snapshots", "capitalSnapshots", "app/api/settings/route.ts"],
+    ["ledger_entries", "ledgerEntries", "app/api/ledger/route.ts"],
+    ["ledger_entries", "ledgerEntries", "app/api/import/ledger/route.ts"],
+    ["trading_sessions", "tradingSessions", "app/api/sessions/route.ts"],
+  ];
+
+  it("a route that writes an account-scoped table directly is declared as its owner", async () => {
+    const fs = await import("node:fs");
+    for (const [tbl, symbol, rel] of MUST_BE_DECLARED) {
+      const src = fs.readFileSync(rel, "utf8");
+      // Plain substring, not a regex: `db.insert(x)`, `tx.insert(x)` and a
+      // line-broken `.insert(x)` all contain the same seven-plus characters.
+      const writes = ["insert(", "update(", "delete("].some((op) => src.includes(op + symbol));
+      expect(writes, `${rel} no longer writes ${tbl} — drop it from MUST_BE_DECLARED`).toBe(true);
+      expect(
+        OWNERS[tbl],
+        `${rel} writes ${tbl} directly but is not declared as an owner — that omission is why defects D-1/D-2 went unscanned`,
+      ).toContain(rel);
+    }
   });
 
   it("every declared owner actually resolves the account", async () => {

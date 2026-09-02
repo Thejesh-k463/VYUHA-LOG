@@ -54,13 +54,20 @@ export default function TargetActivePage() {
     { segment: "eq_intraday", ...segCfg("eq_intraday") },
     { segment: "commodity_option", ...segCfg("commodity_option") },
   ];
-  function segCfg(key: Segment): { perTradeMaxLoss: number; maxTradesDay: number | null; todayCount: number } {
+  function segCfg(key: Segment): { perTradeMaxLoss: number | null; maxTradesDay: number | null; todayCount: number } {
     const c = segRisk(key);
     const todayCount =
       key === "eq_intraday" ? countOn((s) => s === "eq_intraday")
         : COMMODITY_SEGS.includes(key) ? countOn((s) => COMMODITY_SEGS.includes(s))
           : countOn((s) => s === key);
-    return { perTradeMaxLoss: c?.perTradeMaxLoss ?? 9500, maxTradesDay: c?.maxTradesDay ?? null, todayCount };
+    // Null, never a stand-in (invariant 6). This page used to read `?? 9500`
+    // per segment, `?? 25000` for the day and `?? 9500` for the lot sizer —
+    // three limits the user may never have seen, printed on a risk cockpit as
+    // though they were their own rules. `risk_config` columns are nullable and
+    // the Settings risk editor writes NULL, so this is reachable, not
+    // theoretical. The same refusal the discipline and monthly reports made in
+    // v3.7.0; tests/discipline-page-guard.test.ts now covers this file too.
+    return { perTradeMaxLoss: c?.perTradeMaxLoss ?? null, maxTradesDay: c?.maxTradesDay ?? null, todayCount };
   }
 
   // Expected-capital goal for THIS bucket (v3.6) — nothing renders without one.
@@ -81,7 +88,7 @@ export default function TargetActivePage() {
         <TargetActiveClient
           daily={daily}
           limits={{
-            dailyLossStop: activeRisk?.dailyLossStop ?? 25000,
+            dailyLossStop: activeRisk?.dailyLossStop ?? null,
             optionsMaxTrades: segRisk("index_option")?.maxTradesDay ?? activeRisk?.maxTradesDay ?? 15,
             intradayMaxTrades: segRisk("eq_intraday")?.maxTradesDay ?? 12,
             commodityMaxTrades: segRisk("commodity_option")?.maxTradesDay ?? 10,
@@ -89,7 +96,7 @@ export default function TargetActivePage() {
           }}
           openOptions={openOptions}
           segLimits={segLimits}
-          defaultRisk={risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? 9500}
+          defaultRisk={risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null}
           undatedActive={undatedActive}
         />
       </div>

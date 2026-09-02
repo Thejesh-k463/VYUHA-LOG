@@ -14,6 +14,8 @@ import {
   capitalSnapshots,
   capitalGoals,
   bfLossLots,
+  weeklyReviews,
+  advanceTaxChallans,
   brokerConnections,
   panelDismissals,
 } from "@/lib/db/schema";
@@ -27,15 +29,16 @@ import { forEachIdChunk, collectIdChunks } from "./delete";
  * Two modes, both preceded by a server-computed preview so the confirmation
  * dialog shows the true blast radius:
  *
- *   purge — everything the account owns is removed: rows in all ten
+ *   purge — everything the account owns is removed: rows in all twelve
  *     account-scoped tables (trades, import_batches, ipos, ledger_entries,
  *     trading_sessions, capital_snapshots, capital_goals, bf_loss_lots,
+ *     weekly_reviews, advance_tax_challans,
  *     broker_connections, panel_dismissals), the per-trade children (trade_legs,
  *     trade_attachments + their files on disk) and finally the accounts row.
  *     A trash snapshot is written FIRST (no snapshot, no delete — the same
  *     promise lib/queries/delete.ts makes), carrying the account row itself
  *     AND the destroyed scoped rows (ipos, ledger, imports, sessions, capital
- *     history) so restore can recreate the whole book. Broker connections are
+ *     history, weekly reviews) so restore can recreate the whole book. Broker connections are
  *     never snapshotted — credentials stay out of trash files — and panel
  *     dismissals are regenerable, so both are genuinely unrecoverable.
  *
@@ -108,6 +111,30 @@ import { forEachIdChunk, collectIdChunks } from "./delete";
  * collision keeps the larger non-null figure by the same logic. On purge the
  * lots are deleted and, like goals, NOT snapshotted — a handful of rows the
  * user restates from filed ITRs in seconds.
+ *
+ * ── What happens to WEEKLY REVIEWS (v3.7, documented choice) ────────────────
+ *
+ * `weekly_reviews` rows carry the user's OWN PROSE — the note they sat down
+ * and wrote about a week of their trading. That makes them the one v3.6/v3.7
+ * scoped table that IS snapshotted (goals and b/f lots are a line of numbers
+ * each; a paragraph someone wrote is not restatable "in seconds"). On merge
+ * they MOVE, because the trades they describe move. Where BOTH accounts wrote
+ * a review of the SAME ISO week the unique index allows only one, and the
+ * TARGET'S ROW WINS — it is the book that survives — but the source's note is
+ * APPENDED to it under a dated "merged from …" line rather than dropped: a
+ * sentence the user wrote is never silently destroyed. `completed_at` and
+ * `score_at_completion` stay the TARGET's; they are facts about what the
+ * target's owner saw and did, and they cannot be merged.
+ *
+ * ── What happens to ADVANCE-TAX CHALLANS (v3.7, documented choice) ──────────
+ *
+ * `advance_tax_challans` follow the b/f-lot rule exactly, because they are the
+ * same class of thing: STATEMENTS OF FACT about money that really left a bank
+ * account. On merge they MOVE with the trades — and unconditionally, since the
+ * table deliberately carries no unique key (a challan serial is unique only
+ * per BSR code, and both are optional), so there is no such thing as a
+ * colliding challan. On purge they are deleted and NOT snapshotted, like the
+ * lots: the user holds the receipts these were transcribed from.
  */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -126,6 +153,8 @@ export interface AccountDeleteCounts {
   capitalSnapshots: number;
   capitalGoals: number;
   bfLossLots: number;
+  weeklyReviews: number;
+  advanceTaxChallans: number;
   brokerConnections: number;
   panelDismissals: number;
 }
@@ -225,6 +254,8 @@ function gatherCounts(accountId: number): AccountDeleteCounts {
     capitalSnapshots: countRows(capitalSnapshots, accountId),
     capitalGoals: countRows(capitalGoals, accountId),
     bfLossLots: countRows(bfLossLots, accountId),
+    weeklyReviews: countRows(weeklyReviews, accountId),
+    advanceTaxChallans: countRows(advanceTaxChallans, accountId),
     brokerConnections: countRows(brokerConnections, accountId),
     panelDismissals: countRows(panelDismissals, accountId),
   };
@@ -259,6 +290,17 @@ function bfLossCollisions(accountId: number, targetId: number): { sourceId: numb
         where s.account_id = ${accountId}`,
   ) as { sourceId: number; targetId: number; fy: string; head: string }[];
   return rows.sort((a, b) => a.fy.localeCompare(b.fy) || a.head.localeCompare(b.head));
+}
+
+/** merge: source weekly reviews whose ISO week the target also reviewed (UNIQUE account+week). */
+function weeklyReviewCollisions(accountId: number, targetId: number): { sourceId: number; targetId: number; weekStart: string }[] {
+  const rows = db.all(
+    sql`select s.id as sourceId, t.id as targetId, s.week_start as weekStart
+        from ${weeklyReviews} s join ${weeklyReviews} t
+        on t.account_id = ${targetId} and t.week_start = s.week_start
+        where s.account_id = ${accountId}`,
+  ) as { sourceId: number; targetId: number; weekStart: string }[];
+  return rows.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
 /** merge: source connection brokers the target is already connected to (UNIQUE account+broker). */
@@ -320,6 +362,21 @@ export function previewAccountDelete(opts: { accountId: number; mode: AccountDel
           `${collisions.length} brought-forward loss vintage${collisions.length === 1 ? " (" : "s ("}${collisions.map((c) => `${c.fy} ${c.head}`).join(", ")}) exist${collisions.length === 1 ? "s" : ""} on both accounts — the LARGER amount will be kept with a note, never the sum (two entries may transcribe the same filed loss). Check the kept figure against the actual return.`,
         );
       }
+    }
+    if (counts.weeklyReviews > 0) {
+      const weekly = weeklyReviewCollisions(opts.accountId, r.target.id);
+      const moving = counts.weeklyReviews - weekly.length;
+      if (moving > 0) {
+        warnings.push(`${moving} weekly review${moving === 1 ? "" : "s"} will move to “${r.target.name}” — they are your own notes on the weeks these trades were taken.`);
+      }
+      if (weekly.length > 0) {
+        warnings.push(
+          `${weekly.length} week${weekly.length === 1 ? "" : "s"} (${weekly.map((c) => c.weekStart).join(", ")}) ${weekly.length === 1 ? "was" : "were"} reviewed on both accounts — “${r.target.name}”'s review is kept and this account's note is APPENDED to it, never dropped.`,
+        );
+      }
+    }
+    if (counts.advanceTaxChallans > 0) {
+      warnings.push(`${counts.advanceTaxChallans} advance-tax challan${counts.advanceTaxChallans === 1 ? "" : "s"} will move to “${r.target.name}” — they record payments that really happened and follow the trades.`);
     }
     for (const broker of connectionCollisionBrokers(opts.accountId, r.target.id)) {
       warnings.push(`Target already connected to ${broker} — that connection cannot move and will be removed (credentials are not recoverable).`);
@@ -407,6 +464,12 @@ export function deleteAccount(opts: {
   const bfRowById = new Map(
     (bfCollisions.length > 0 ? db.select().from(bfLossLots).all() : []).map((row) => [row.id, row]),
   );
+  // merge: ISO weeks reviewed on BOTH accounts — the target's row survives and
+  // the source's note is appended to it. Gathered up front for the same reason.
+  const weeklyCollisions = mode === "merge" ? weeklyReviewCollisions(accountId, r.target!.id) : [];
+  const weeklyRowById = new Map(
+    (weeklyCollisions.length > 0 ? db.select().from(weeklyReviews).all() : []).map((row) => [row.id, row]),
+  );
 
   // ── Every account-scoped row about to be DESTROYED goes into the snapshot ─
   // purge: all of them. merge: only what the merge discards — the colliding
@@ -424,6 +487,16 @@ export function deleteAccount(opts: {
         : collectIdChunks(sessionDropIds, (chunk) => db.select().from(tradingSessions).where(inArray(tradingSessions.id, chunk)).all()),
     ),
     capitalSnapshots: asRows(db.select().from(capitalSnapshots).where(eq(capitalSnapshots.accountId, accountId)).all()),
+    // Weekly reviews are the user's own PROSE, so they are snapshotted where
+    // goals and b/f lots are not (module header). purge: all of them. merge:
+    // only the source rows a colliding week consumes — the rest MOVE.
+    weeklyReviews: asRows(
+      mode === "purge"
+        ? db.select().from(weeklyReviews).where(eq(weeklyReviews.accountId, accountId)).all()
+        : collectIdChunks(weeklyCollisions.map((c) => c.sourceId), (chunk) =>
+            db.select().from(weeklyReviews).where(inArray(weeklyReviews.id, chunk)).all(),
+          ),
+    ),
   };
 
   // merge: the marker share that follows the trades whose realised P&L
@@ -500,6 +573,8 @@ export function deleteAccount(opts: {
         tx.delete(capitalSnapshots).where(eq(capitalSnapshots.accountId, accountId)).run();
         tx.delete(capitalGoals).where(eq(capitalGoals.accountId, accountId)).run();
         tx.delete(bfLossLots).where(eq(bfLossLots.accountId, accountId)).run();
+        tx.delete(weeklyReviews).where(eq(weeklyReviews.accountId, accountId)).run();
+        tx.delete(advanceTaxChallans).where(eq(advanceTaxChallans.accountId, accountId)).run();
         tx.delete(brokerConnections).where(eq(brokerConnections.accountId, accountId)).run();
         tx.delete(panelDismissals).where(eq(panelDismissals.accountId, accountId)).run();
       } else {
@@ -572,6 +647,48 @@ export function deleteAccount(opts: {
         }
         tx.update(bfLossLots).set({ accountId: targetId }).where(eq(bfLossLots.accountId, accountId)).run();
 
+        // Weekly reviews MOVE — the notes describe the weeks these trades were
+        // taken in. UNIQUE(account, week): a week BOTH accounts reviewed keeps
+        // the TARGET's row (completion and the score it saw are facts about
+        // the surviving book) and APPENDS the source's note to it. A sentence
+        // the user wrote is never dropped; the source row is then removed and
+        // it is in the trash snapshot either way.
+        for (const c of weeklyCollisions) {
+          const src = weeklyRowById.get(c.sourceId);
+          const tgt = weeklyRowById.get(c.targetId);
+          if (!src || !tgt) continue; // gathered pre-tx; cannot happen inside it
+          const srcNote = (src.note ?? "").trim();
+          if (srcNote) {
+            const header = `merged from “${account.name}” (${new Date().toISOString().slice(0, 10)}):`;
+            const tgtNote = (tgt.note ?? "").trim();
+            tx.update(weeklyReviews)
+              .set({
+                note: tgtNote ? `${tgtNote}\n\n${header}\n${srcNote}` : `${header}\n${srcNote}`,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(weeklyReviews.id, c.targetId))
+              .run();
+          }
+          tx.delete(weeklyReviews).where(eq(weeklyReviews.id, c.sourceId)).run();
+          recordAudit({
+            entity: "weekly_review",
+            entityId: c.targetId,
+            action: "update",
+            summary: srcNote
+              ? `week ${c.weekStart} — both accounts reviewed it; kept “${r.target!.name}”'s review and appended “${account.name}”'s note`
+              : `week ${c.weekStart} — both accounts held a review; “${account.name}”'s carried no note, so “${r.target!.name}”'s is unchanged`,
+            before: tgt as unknown as Record<string, unknown>,
+            after: { weekStart: c.weekStart, appendedFrom: account.name, appended: srcNote.length > 0 },
+            source,
+          });
+        }
+        tx.update(weeklyReviews).set({ accountId: targetId }).where(eq(weeklyReviews.accountId, accountId)).run();
+
+        // Advance-tax challans MOVE unconditionally — statements of fact about
+        // real payments (b/f-lot semantics), and the table carries no unique
+        // key, so there is no such thing as a colliding challan.
+        tx.update(advanceTaxChallans).set({ accountId: targetId }).where(eq(advanceTaxChallans.accountId, accountId)).run();
+
         if (connections === "move") {
           // UNIQUE(account_id, broker): a broker the target already has keeps
           // the TARGET's credentials; the source's copy is removed + reported.
@@ -622,7 +739,7 @@ export function deleteAccount(opts: {
 
   const message =
     mode === "purge"
-      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions and capital history are recoverable from Backup & Restore → Deleted items; broker API credentials, capital goals, brought-forward loss lots and panel dismissals are not.` +
+      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions, capital history and weekly reviews are recoverable from Backup & Restore → Deleted items; broker API credentials, capital goals, brought-forward loss lots, advance-tax challans and panel dismissals are not.` +
         (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : "")
       : `Merged “${account.name}” into “${r.target!.name}” — ${counts.trades - doomedIds.length} trade${counts.trades - doomedIds.length === 1 ? "" : "s"} moved` +
         (doomedIds.length ? `, ${doomedIds.length} duplicate${doomedIds.length === 1 ? "" : "s"} skipped (saved to Deleted items)` : "") +
@@ -633,6 +750,11 @@ export function deleteAccount(opts: {
           ? `, ${counts.bfLossLots - bfCollisions.length} b/f loss lot${counts.bfLossLots - bfCollisions.length === 1 ? "" : "s"} moved` +
             (bfCollisions.length ? ` and ${bfCollisions.length} shared vintage${bfCollisions.length === 1 ? "" : "s"} kept at the larger amount (noted on the row — verify against the filed return)` : "")
           : "") +
+        (counts.weeklyReviews
+          ? `, ${counts.weeklyReviews - weeklyCollisions.length} weekly review${counts.weeklyReviews - weeklyCollisions.length === 1 ? "" : "s"} moved` +
+            (weeklyCollisions.length ? ` and ${weeklyCollisions.length} shared week${weeklyCollisions.length === 1 ? "" : "s"} kept on the target with this account's note appended` : "")
+          : "") +
+        (counts.advanceTaxChallans ? `, ${counts.advanceTaxChallans} advance-tax challan${counts.advanceTaxChallans === 1 ? "" : "s"} moved` : "") +
         (connections === "move" ? `, ${movedConnections} connection${movedConnections === 1 ? "" : "s"} moved` : "") +
         (connCollisions.length ? `, ${connCollisions.length} connection${connCollisions.length === 1 ? "" : "s"} removed (target already connected — credentials are not recoverable)` : "") +
         (connections === "delete" && counts.brokerConnections ? `, ${counts.brokerConnections} connection${counts.brokerConnections === 1 ? "" : "s"} deleted (credentials are not recoverable)` : "") +

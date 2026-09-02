@@ -499,6 +499,114 @@ describe("v3: licence and trial state stay on the machine", () => {
   });
 });
 
+describe("weekly_reviews joins the envelope (v3.7, no version bump — per-key restore semantics)", () => {
+  it("round-trips a week's review, note and score-as-seen included", () => {
+    t.db.delete(t.schema.weeklyReviews).run();
+    t.db.insert(t.schema.weeklyReviews).values({
+      accountId: 1, weekStart: "2026-08-31", note: "Cut size after Tuesday.",
+      completedAt: "2026-09-06T10:00:00Z", scoreAtCompletion: 62,
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    expect(dump.tables.weekly_reviews).toHaveLength(1);
+
+    t.db.delete(t.schema.weeklyReviews).run();
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const row = t.db.select().from(t.schema.weeklyReviews).all()[0];
+    // The user's own prose must survive verbatim — a backup is the only copy.
+    expect(row.note).toBe("Cut size after Tuesday.");
+    expect(row.weekStart).toBe("2026-08-31");
+    // Score-as-seen is a historical fact, restored as-is and never recomputed.
+    expect(row.scoreAtCompletion).toBe(62);
+    expect(row.completedAt).toBe("2026-09-06T10:00:00Z");
+  });
+
+  it("a pre-3.7 v3 envelope leaves today's reviews alone (absent key = preserve)", () => {
+    t.db.delete(t.schema.weeklyReviews).run();
+    t.db.insert(t.schema.weeklyReviews).values({ accountId: 1, weekStart: "2026-07-06", note: "kept" }).run();
+
+    const dump = backup.dumpDatabase(false);
+    delete (dump.tables as Record<string, unknown>).weekly_reviews; // simulate a pre-3.7 file
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.weeklyReviews).all().some((r) => r.weekStart === "2026-07-06")).toBe(true);
+  });
+});
+
+describe("advance_tax_challans joins the envelope (v3.7, no version bump — per-key restore semantics)", () => {
+  it("round-trips a challan — including its paise-at-rest money column, unscaled", () => {
+    t.db.delete(t.schema.advanceTaxChallans).run();
+    t.db.insert(t.schema.advanceTaxChallans).values({
+      accountId: 1, fy: "2026-27", paidOn: "2026-06-14", amount: 45000.55,
+      bsrCode: "0510308", challanSerial: "02931", note: "Q1 instalment",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    expect(dump.tables.advance_tax_challans).toHaveLength(1);
+
+    t.db.delete(t.schema.advanceTaxChallans).run();
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const row = t.db.select().from(t.schema.advanceTaxChallans).all()[0];
+    // Invariant 1: paise at rest, rupees at runtime — a ×100 through the
+    // backup would read as ₹45,00,055 here.
+    expect(row.amount).toBe(45000.55);
+    expect(row.fy).toBe("2026-27");
+    expect(row.paidOn).toBe("2026-06-14");
+    expect(row.bsrCode).toBe("0510308");
+    expect(row.challanSerial).toBe("02931");
+  });
+
+  it("a pre-3.7 v3 envelope leaves today's challans alone (absent key = preserve)", () => {
+    t.db.delete(t.schema.advanceTaxChallans).run();
+    t.db.insert(t.schema.advanceTaxChallans).values({ accountId: 1, fy: "2025-26", paidOn: "2025-09-15", amount: 10000 }).run();
+
+    const dump = backup.dumpDatabase(false);
+    delete (dump.tables as Record<string, unknown>).advance_tax_challans; // simulate a pre-3.7 file
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.advanceTaxChallans).all().some((r) => r.fy === "2025-26")).toBe(true);
+  });
+});
+
+describe("onboarding state (v3.7, migration 0057) is machine state, not journal data", () => {
+  it("never travels in a dump, and a forged envelope cannot set or clear it", () => {
+    // This machine finished its first run months ago.
+    t.db.update(t.schema.settings).set({ onboardingCompletedAt: "2026-06-19T09:00:00Z" }).run();
+
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    expect(dumped.onboardingCompletedAt).toBeNull();
+
+    // Forge an envelope that claims a DIFFERENT first-run date — restoring
+    // someone else's backup must neither re-show the wizard here nor rewrite
+    // when this install was set up.
+    dumped.onboardingCompletedAt = "2020-01-01T00:00:00Z";
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.settings).all()[0].onboardingCompletedAt).toBe("2026-06-19T09:00:00Z");
+  });
+
+  it("restoring into a fresh install leaves the wizard OWED, whatever the envelope says", () => {
+    // No settings row of our own = no machine state to keep, so the column must
+    // land at its dump-blank (null) rather than inheriting the author's stamp —
+    // otherwise a restored backup silently skips a real fresh install's setup.
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    dumped.onboardingCompletedAt = "2020-01-01T00:00:00Z";
+
+    t.db.delete(t.schema.settings).run();
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.settings).all()[0].onboardingCompletedAt).toBeNull();
+  });
+});
+
 describe("connection pragmas", () => {
   it("sets a busy timeout before WAL, so concurrent openers wait instead of erroring", () => {
     // `next build` opens this file from several worker processes at once. With

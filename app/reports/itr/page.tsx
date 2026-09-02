@@ -8,12 +8,13 @@ import { getSettings } from "@/lib/queries/settings";
 import { ProGate } from "@/components/system/pro-gate";
 import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analytics/itr";
 import { section } from "@/lib/analytics/statute";
-import { itrScheduleByFy, scheduleExportRows } from "@/lib/analytics/itr-schedule";
+import { itrScheduleByFy, scheduleExportRows, taxesPaidByFy, taxesPaidExportRows } from "@/lib/analytics/itr-schedule";
+import { getChallans } from "@/lib/queries/challans";
 import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
 import { currentFy as deriveCurrentFy } from "@/lib/analytics/tax";
 import { getBfLossRows, toSeedLots } from "@/lib/queries/bf-losses";
 import { inr } from "@/lib/format";
-import { AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
+import { AlertTriangle, Info, FileSpreadsheet, Receipt } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,15 @@ const SCHEDULE_COLS = [
   { key: "schedule", label: "Schedule" }, { key: "code", label: "Item" },
   { key: "label", label: "Description" }, { key: "amount", label: "Amount" },
   { key: "note", label: "Note" },
+];
+
+// Schedule IT's own four columns, in the return's own order. A row with no
+// challan behind it exports BLANK cells, never 0 (invariant 6) — see
+// taxesPaidExportRows.
+const CHALLAN_COLS = [
+  { key: "fy", label: "FY" }, { key: "bsrCode", label: "BSR code" },
+  { key: "paidOn", label: "Date of deposit" }, { key: "challanSerial", label: "Challan serial no." },
+  { key: "amount", label: "Amount" }, { key: "note", label: "Note" },
 ];
 
 export default function ItrPackPage() {
@@ -84,6 +94,20 @@ export default function ItrPackPage() {
     currentFy,
     carryForwardByFy,
   );
+
+  // ── Taxes paid (advance tax) — Schedule IT, from the challan ledger ───────
+  // Account-scoped by getChallans (aggregate reads every account). Every FY the
+  // pack covers gets a block even with no challan, because an FY silently
+  // omitted here reads as an FY with no tax due — and a blank is not a nil
+  // payment (invariant 6, enforced in taxesPaidByFy).
+  const taxesPaid = taxesPaidByFy(
+    getChallans().map((c) => ({
+      fy: c.fy, paidOn: c.paidOn, amount: c.amount,
+      bsrCode: c.bsrCode, challanSerial: c.challanSerial, note: c.note,
+    })),
+    packs.map((p) => p.fy),
+  );
+  const challanExportRows = taxesPaidExportRows(taxesPaid);
 
   const exportRows = packs.flatMap((p) => [
     { fy: p.fy, head: "Speculative business (intraday equity)", trades: p.speculative.trades, net: p.speculative.net, turnover: p.speculative.turnover, turnoverBroker: p.speculative.turnoverBroker, charges: p.speculative.charges },
@@ -288,6 +312,77 @@ export default function ItrPackPage() {
 
                   <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
                     {s.cautions.map((c, i) => (
+                      <li key={i} className="flex gap-1.5"><Info className="mt-0.5 size-3 shrink-0" />{c}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Taxes paid (advance tax) ────────────────────────────────────────
+            Schedule IT of the return: BSR code, date of deposit, serial number,
+            amount — one row per challan, straight from the dated ledger on the
+            Advance tax planner. An FY with nothing recorded shows blanks and
+            says why; it never shows ₹0, because "paid nothing" and "recorded
+            nothing" are different answers and only one of them is observed. */}
+        {taxesPaid.length > 0 && (
+          <Card className="p-0">
+            <CardHeader className="flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="size-4" /> Taxes paid (advance tax)
+                </CardTitle>
+                <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                  Your recorded challans per year, in Schedule IT&apos;s own columns. Record them on the{" "}
+                  <Link href="/reports/advance-tax" className="underline underline-offset-2">Advance tax planner</Link>,
+                  where the dates also drive the instalment maths.
+                </p>
+              </div>
+              <ExportButtons filename="vyuha-itr-taxes-paid" columns={CHALLAN_COLS} rows={challanExportRows} />
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {taxesPaid.map((b) => (
+                <section key={b.fy} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">FY {b.fy}</h3>
+                    {b.count > 0 ? (
+                      <Badge variant="secondary">
+                        {b.count} challan{b.count === 1 ? "" : "s"} · {inr(b.total ?? 0, { decimals: 0 })}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary">nothing recorded</Badge>
+                    )}
+                  </div>
+
+                  <ReportTable>
+                    <ReportThead>
+                      <ReportTh>BSR code</ReportTh>
+                      <ReportTh>Date of deposit</ReportTh>
+                      <ReportTh>Challan serial no.</ReportTh>
+                      <ReportTh align="right">Amount</ReportTh>
+                      <ReportTh>Note</ReportTh>
+                    </ReportThead>
+                    <tbody>
+                      {b.lines.map((l, i) => (
+                        <ReportTr key={`${b.fy}-${i}`} className={l.amount === null ? "bg-card-hover/30" : undefined}>
+                          <ReportTd className="font-mono" muted={l.bsrCode === null}>{l.bsrCode ?? "—"}</ReportTd>
+                          <ReportTd muted={l.paidOn === null}>{l.paidOn ?? "—"}</ReportTd>
+                          <ReportTd className="font-mono" muted={l.challanSerial === null}>{l.challanSerial ?? "—"}</ReportTd>
+                          <ReportTd align="right">
+                            {/* null ⇒ "—", never 0: the same rule Schedule CFL
+                                follows, and the reason this column exists. */}
+                            {l.amount === null ? <span className="text-muted-foreground">—</span> : inr(l.amount, { decimals: 0 })}
+                          </ReportTd>
+                          <ReportTd className="max-w-72 whitespace-normal text-muted-foreground">{l.note || "—"}</ReportTd>
+                        </ReportTr>
+                      ))}
+                    </tbody>
+                  </ReportTable>
+
+                  <ul className="space-y-1 text-[0.6875rem] text-muted-foreground">
+                    {b.cautions.map((c, i) => (
                       <li key={i} className="flex gap-1.5"><Info className="mt-0.5 size-3 shrink-0" />{c}</li>
                     ))}
                   </ul>

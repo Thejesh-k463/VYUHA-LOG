@@ -40,6 +40,7 @@ import {
   GitBranch,
   Sigma,
   Columns3,
+  NotebookPen,
 } from "lucide-react";
 
 export type NavItem = {
@@ -70,6 +71,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/trades", label: "Trades", icon: ListOrdered, group: "Journal" },
   { href: "/lenses", label: "Lenses", icon: Columns3, group: "Journal" },
   { href: "/sessions", label: "Session Plan", icon: ClipboardCheck, group: "Journal" },
+  { href: "/review", label: "Trade Review Desk", icon: NotebookPen, group: "Journal" },
   { href: "/playbooks", label: "Playbooks", icon: BookOpen, group: "Journal" },
   { href: "/options-journal", label: "Options Seller Journal", icon: Sigma, group: "Journal" },
   { href: "/ipos", label: "IPOs", icon: Rocket, group: "Journal" },
@@ -131,7 +133,7 @@ export const NAV_DEFAULT_VISIBLE: Record<string, string[]> = {
   Overview: ["/"],
   Positions: ["/risk"],
   Risk: ["/targets/equity", "/calculator"],
-  Journal: ["/trades", "/lenses", "/sessions"],
+  Journal: ["/trades", "/lenses", "/sessions", "/review"],
   Import: ["/import"],
   Tax: ["/reports/tax"],
   Analytics: ["/reports/performance", "/arjuns-eye"],

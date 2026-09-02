@@ -5,7 +5,7 @@ import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { LedgerEntryInput, LedgerGroupRow, LedgerType, RunningRow } from "@/lib/analytics/ledger";
 import { toPaise } from "@/lib/money";
 import { getSelectedAccountId } from "./accounts";
-import { getSettings } from "./settings";
+import { getBucketCapital } from "./bucket-capital";
 
 /** All ledger entries (latest first). Amounts are signed paise. */
 export function getLedgerEntries(): (LedgerEntryInput & { symbol: string | null })[] {
@@ -100,19 +100,24 @@ export function getLedgerAggregates(): { internalNetPaise: number; minDate: stri
 }
 
 /**
- * Opening balance per bucket in PAISE, from settings (rupees at rest there,
- * converted once here). 0 means NOT CONFIGURED — a clean install seeds exactly
- * that. The old ₹13L/₹4L fallbacks seeded every running balance and "available"
- * figure on /cash with fictional opening capital (invariant 6: never fabricate
- * a denominator). With 0, running balances are honest NET-FLOW figures; the UI
- * reads `getCapitalConfigured()` to say so instead of printing an invented ₹0
- * opening as if it were real.
+ * Opening balance per bucket in PAISE (rupees at rest, converted once here).
+ * 0 means NOT CONFIGURED — a clean install seeds exactly that. The old ₹13L/₹4L
+ * fallbacks seeded every running balance and "available" figure on /cash with
+ * fictional opening capital (invariant 6: never fabricate a denominator). With
+ * 0, running balances are honest NET-FLOW figures; the UI reads
+ * `getCapitalConfigured()` to say so instead of printing an invented ₹0 opening
+ * as if it were real.
+ *
+ * ACCOUNT-FIRST (v3.7): the ledger rows above are account-scoped (invariant 8),
+ * so the opening they run from must be the SELECTED account's capital, not the
+ * global settings row. `getBucketCapital` is imported from its own module so
+ * /cash does not inherit capital.ts's trades/ipos import graph.
  */
 export function getOpeningByBucketPaise(): Record<string, number> {
-  const settings = getSettings();
+  const cap = getBucketCapital();
   return {
-    equity: toPaise(settings?.equityCapital ?? 0),
-    active: toPaise(settings?.activeCapital ?? 0),
+    equity: toPaise(cap.equityCapital),
+    active: toPaise(cap.activeCapital),
   };
 }
 
@@ -120,12 +125,14 @@ export function getOpeningByBucketPaise(): Record<string, number> {
  * Whether each bucket's opening capital is actually configured (> 0; a clean
  * install seeds 0 = unset — same convention as the trackers' bucketCapital).
  * Carried to the UI so /cash can label balances as flows-only rather than
- * presenting a fabricated ₹0 opening as a real figure.
+ * presenting a fabricated ₹0 opening as a real figure. Resolved account-first,
+ * from the same helper as the openings above — the label and the number it
+ * describes must never disagree about which account they are talking about.
  */
 export function getCapitalConfigured(): { equity: boolean; active: boolean; any: boolean } {
-  const settings = getSettings();
-  const equity = (settings?.equityCapital ?? 0) > 0;
-  const active = (settings?.activeCapital ?? 0) > 0;
+  const cap = getBucketCapital();
+  const equity = cap.equityCapital > 0;
+  const active = cap.activeCapital > 0;
   return { equity, active, any: equity || active };
 }
 

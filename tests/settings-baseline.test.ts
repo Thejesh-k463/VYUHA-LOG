@@ -22,7 +22,10 @@ afterAll(() => t?.cleanup());
 describe("the preference/state split (pure)", () => {
   it("never includes state or fact fields", () => {
     const fields = BASELINE_SETTINGS_FIELDS as readonly string[];
-    for (const forbidden of ["pnlRolledIn", "licenseKey", "trialStartedAt", "clockHighWaterMark", "lastAutoMtmDate", "selectedAccountId", "goLiveDate", "updatedAt", "id"]) {
+    // onboardingCompletedAt (v3.7): whether THIS install has been through its
+    // first run. "Back to my defaults" must not re-run a wizard the user
+    // finished, nor mark one finished that they never saw.
+    for (const forbidden of ["pnlRolledIn", "licenseKey", "trialStartedAt", "clockHighWaterMark", "lastAutoMtmDate", "selectedAccountId", "goLiveDate", "onboardingCompletedAt", "updatedAt", "id"]) {
       expect(fields, `${forbidden} is state, not a preference`).not.toContain(forbidden);
     }
   });
@@ -69,6 +72,7 @@ describe("capture and restore (integration)", () => {
       clockHighWaterMark: "2026-08-06T00:00:00Z",
       pnlRolledIn: 12345.67,
       selectedAccountId: 1,
+      onboardingCompletedAt: "2026-02-02T00:00:00Z",
       theme: "light", // a real preference change, so the restore does something
     }).run();
 
@@ -82,6 +86,8 @@ describe("capture and restore (integration)", () => {
     expect(after.clockHighWaterMark).toBe("2026-08-06T00:00:00Z");
     expect(after.pnlRolledIn).toBe(12345.67);
     expect(after.selectedAccountId).toBe(1);
+    // v3.7: a "back to my defaults" must not re-open the first-run wizard.
+    expect(after.onboardingCompletedAt).toBe("2026-02-02T00:00:00Z");
     expect(after.goLiveDate).toBe(before.goLiveDate);
   });
 

@@ -24,6 +24,39 @@
  * localStorage through `use-stored-value` under a versioned envelope. The open
  * GROUP deliberately does not persist: coming back to the app inside one
  * import file, with no memory of having drilled in, reads as a broken journal.
+ *
+ * ── The book is not here any more ───────────────────────────────────────────
+ *
+ * This component used to receive every trade and re-run `lensGroups` itself.
+ * On a 25,001-trade book that was ~9.3 MB of RSC flight on every visit, to
+ * render a list of 45 rows. The server already grouped the book to compute the
+ * KPIs, so it now ships that OUTPUT (`lenses`) and the drill-down asks
+ * `/api/lenses/members` for one group's trades when it is opened — the same
+ * projection, the same order, the same pure functions. Nothing on screen is
+ * computed from a different set than before: the group rows are the ones the
+ * server built, and every drill-down figure still reads the group's FULL
+ * member array (the `DRILL_LIMIT` slice is a rendering budget, not a data
+ * boundary).
+ *
+ * The fetch is started from click handlers, never from an effect keyed on
+ * state — the shape AGENTS.md bans.
+ *
+ * ── Last click wins ─────────────────────────────────────────────────────────
+ *
+ * Only the clicked row used to be disabled, so a second group could be opened
+ * while the first was still fetching, and both responses painted in RESPONSE
+ * order: click a large (slow) group then a small one and the small one appeared
+ * first, then the large one overwrote it and you landed in the group you had
+ * left behind. `busy` was cleared by whichever finished first, re-enabling a
+ * row that was still loading, and a response outstanding across a tab switch
+ * re-opened a drill-down the user had already closed.
+ *
+ * Every navigation now takes a ticket from `nav`: opening a group, arming a
+ * delete, switching tabs, going back, finishing a delete. A handler that comes
+ * back holding a stale ticket paints NOTHING — not the detail, not the open
+ * key, not even `busy`, which belongs to whoever is still in flight. The data
+ * was already coherent (`openDetail` is key-matched), so this is about which
+ * screen you end up on.
  */
 
 import * as React from "react";
@@ -42,14 +75,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
+import { ShowMore, useRowWindow } from "@/components/ui/show-more";
+import { toast } from "@/components/ui/toaster";
 import { DeleteTradesDialog } from "@/components/trades/delete-trades-dialog";
-import { resolveDeleteScope, type BatchGroup, type ImportFileMeta } from "@/lib/domain/delete-scope";
-import { LENSES, lensDef, lensGroups, groupIds, isLensKind, type LensKind, type LensTrade } from "@/lib/domain/lenses";
+import { resolveDeleteScope, type DeletePreview } from "@/lib/domain/delete-scope";
+import { LENSES, lensDef, isLensKind, type LensKind, type LensTrade } from "@/lib/domain/lenses";
 // DELIBERATELY no computeKpis import: the KPI split is computed on the SERVER
 // (app/lenses/page.tsx via lib/domain/lens-edge.ts) so the Pro figures never
 // reach an unlicensed browser. Re-importing it here would turn the gate back
-// into decoration — tests/pro-gating.test.ts greps this file for it.
-import type { LensRow, LensTotals, LensChargeHeads } from "@/lib/domain/lens-edge";
+// into decoration — tests/render-windowing.test.ts greps this file for it.
+import type { LensGroupRow, LensGroupDetail, LensTotals, LensChargeHeads } from "@/lib/domain/lens-edge";
 import { ProLock } from "@/components/system/pro-lock";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { inr, num, pct, fmtDate, signedClass } from "@/lib/format";
@@ -64,36 +99,46 @@ const TAB_KEY = "vyuha-lenses-tab";
  *  it bites, the UI says so rather than quietly showing a subset. */
 const DRILL_LIMIT = 2000;
 
-interface Row {
-  group: BatchGroup;
-  ids: number[];
-  row: LensRow;
+type Row = LensGroupRow;
+
+/** One group's drill-down payload, plus the key it belongs to — a detail left
+ *  over from another group must never render against this group's row. */
+type OpenGroup = LensGroupDetail & { key: string };
+
+/** Ask the server for one group's members. Returns null on any failure; the
+ *  caller reports it rather than opening an empty drill-down, which would read
+ *  as "this group has no trades". */
+async function fetchGroup(lens: LensKind, key: string): Promise<LensGroupDetail | null> {
+  try {
+    const res = await fetch(`/api/lenses/members?lens=${encodeURIComponent(lens)}&key=${encodeURIComponent(key)}`);
+    const body = (await res.json()) as { ok?: boolean } & LensGroupDetail;
+    if (!res.ok || !body?.ok) return null;
+    return { members: body.members ?? [], chargeHeads: body.chargeHeads ?? null, insights: body.insights };
+  } catch {
+    return null;
+  }
 }
 
-/** An impossible key miss degrades to "—" (inr renders NaN as —), never to a
- *  confident zero; `edge: null` shows the lock, the honest default. */
-const MISSING_ROW: LensRow = {
-  totals: { count: 0, openCount: 0, closedCount: 0, netPnl: NaN, charges: NaN, unpricedCount: 0, unpricedNetPnl: 0, chargeHeads: null },
-  edge: null,
-};
-
 export function LensesClient({
-  trades,
-  batches,
-  playbooks,
-  rows: serverRows,
+  lenses,
   pro,
 }: {
-  trades: LensTrade[];
-  batches: ImportFileMeta[];
-  playbooks: { id: number; name: string }[];
-  /** Per-lens, per-group KPI split, computed server-side with entitlement. */
-  rows: Record<LensKind, Record<string, LensRow>>;
+  /** Per-lens group rows — the descriptor the server's own grouping produced,
+   *  plus its KPI split, computed over each group's full membership. */
+  lenses: Record<LensKind, LensGroupRow[]>;
   pro: boolean;
 }) {
   const router = useRouter();
   const [openKey, setOpenKey] = React.useState<string | null>(null);
-  const [deleting, setDeleting] = React.useState<Row | null>(null);
+  const [detail, setDetail] = React.useState<OpenGroup | null>(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [deleting, setDeleting] = React.useState<{ row: Row; preview: DeletePreview } | null>(null);
+
+  // The ticket every navigation takes. A ref, not state: it must be readable
+  // and bumpable inside an async handler without re-rendering anything.
+  const nav = React.useRef(0);
+  /** Invalidate whatever is in flight and return this navigation's ticket. */
+  const claim = () => ++nav.current;
 
   // The active tab is read straight from storage — no second copy in React
   // state to keep honest. The server snapshot is null, so the default renders
@@ -109,27 +154,76 @@ export function LensesClient({
     return "month";
   }, [storedTab]);
 
-  const byId = React.useMemo(() => new Map(trades.map((t) => [t.id, t])), [trades]);
-
-  const rows: Row[] = React.useMemo(() => {
-    // Client and server run the same pure lensGroups over the same props in
-    // the same request, so the group keys line up by construction; the KPI
-    // halves come pre-split from the server.
-    const groups = lensGroups(kind, trades, { batches, playbooks });
-    return groups.map((group) => ({
-      group,
-      ids: groupIds(group, trades),
-      row: serverRows[kind]?.[group.key] ?? MISSING_ROW,
-    }));
-  }, [kind, trades, batches, playbooks, serverRows]);
+  // No grouping here any more — these are the server's own groups for this
+  // lens, so switching tabs is a lookup, not a re-pass over the book.
+  const rows: Row[] = lenses[kind] ?? [];
 
   // Derived, never stored: a key left over from another tab matches nothing.
   const open = openKey ? rows.find((r) => r.group.key === openKey) ?? null : null;
+  const openDetail = open && detail?.key === open.group.key ? detail : null;
 
   const selectTab = (next: string) => {
     if (!isLensKind(next)) return;
+    claim(); // a group still loading under the old tab must not open under this one
     writeStored(TAB_KEY, JSON.stringify({ v: 1, kind: next }));
     setOpenKey(null);
+    setDetail(null);
+    setBusy(null);
+  };
+
+  /** Close the drill-down. Also a navigation: a fetch still running loses. */
+  const closeGroup = () => {
+    claim();
+    setOpenKey(null);
+    setDetail(null);
+    setBusy(null);
+  };
+
+  /** Open a group: its trades are fetched, not shipped. Last click wins. */
+  const openGroup = async (key: string) => {
+    const ticket = claim();
+    setBusy(key);
+    const got = await fetchGroup(kind, key);
+    // Somebody clicked again, switched tabs or went back while this was in the
+    // air. It is no longer the screen anyone asked for, so it paints nothing —
+    // `busy` included, because it now belongs to the request still running.
+    if (ticket !== nav.current) return;
+    setBusy(null);
+    if (!got) {
+      toast.error("Could not load this group's trades.");
+      return;
+    }
+    setDetail({ key, ...got });
+    setOpenKey(key);
+  };
+
+  /**
+   * Arm a delete. The preview is resolved against the group's OWN members
+   * rather than the whole book, and that is the same set by construction: a
+   * lens group holds exactly the trades its scope matches, in book order, so
+   * `resolveDeleteScope` sees the same rows in the same sequence — same ids,
+   * same net P&L, same dates. `tests/lenses.test.ts` pins that equivalence.
+   */
+  const askDelete = async (row: Row) => {
+    const key = row.group.key;
+    const ticket = claim();
+    // Already drilled in? Reuse the array on screen — the preview describes
+    // the rows the user is looking at, not a second read of the book.
+    let members = detail?.key === key ? detail.members : undefined;
+    if (!members) {
+      setBusy(key);
+      const got = await fetchGroup(kind, key);
+      // A superseded fetch may not arm a delete dialog: the one thing worse
+      // than the wrong screen is the wrong group in a delete confirmation.
+      if (ticket !== nav.current) return;
+      setBusy(null);
+      members = got?.members;
+    }
+    if (!members) {
+      toast.error("Could not load this group's trades.");
+      return;
+    }
+    setDeleting({ row, preview: resolveDeleteScope(members, row.group.scope) });
   };
 
   const def = lensDef(kind);
@@ -151,15 +245,17 @@ export function LensesClient({
               <div className="space-y-4">
                 <p className="text-xs text-muted-foreground">{def.hint}</p>
 
-                {open ? (
+                {open && openDetail ? (
                   <GroupDetail
                     row={open}
-                    trades={open.ids.map((id) => byId.get(id)).filter((t): t is LensTrade => t != null)}
-                    onBack={() => setOpenKey(null)}
-                    onDelete={() => setDeleting(open)}
+                    trades={openDetail.members}
+                    chargeHeads={openDetail.chargeHeads}
+                    insights={openDetail.insights}
+                    onBack={closeGroup}
+                    onDelete={() => askDelete(open)}
                   />
                 ) : (
-                  <GroupList rows={rows} pro={pro} onOpen={setOpenKey} onDelete={setDeleting} />
+                  <GroupList rows={rows} pro={pro} busy={busy} onOpen={openGroup} onDelete={askDelete} />
                 )}
               </div>
             )}
@@ -168,13 +264,13 @@ export function LensesClient({
       </Tabs>
 
       <DeleteTradesDialog
-        preview={deleting ? resolveDeleteScope(trades, deleting.group.scope) : null}
-        reason={`deleted from Lenses — ${def.label}: ${deleting?.group.label ?? ""}`}
+        preview={deleting?.preview ?? null}
+        reason={`deleted from Lenses — ${def.label}: ${deleting?.row.group.label ?? ""}`}
         open={deleting != null}
         onOpenChange={(v) => !v && setDeleting(null)}
         onDone={() => {
           setDeleting(null);
-          setOpenKey(null);
+          closeGroup();
           router.refresh();
         }}
       />
@@ -187,14 +283,24 @@ export function LensesClient({
 function GroupList({
   rows,
   pro,
+  busy,
   onOpen,
   onDelete,
 }: {
   rows: Row[];
   pro: boolean;
+  /** The group key whose trades are being fetched, if any. */
+  busy: string | null;
   onOpen: (key: string) => void;
   onDelete: (row: Row) => void;
 }) {
+  // A lens can produce as many groups as the book has import files or months.
+  // Every one of them used to go into the DOM; this renders a window and SAYS
+  // what it held back. The COUNTS are untouched — each row still reports its
+  // group's full membership, and the window never changes a figure, only how
+  // many rows are mounted at once.
+  const win = useRowWindow(rows);
+
   if (rows.length === 0) {
     return <EmptyState variant="journal" title="Nothing to group yet" hint="Import a tradebook or add a trade by hand, and it will appear here." />;
   }
@@ -213,6 +319,7 @@ function GroupList({
         <Link href="/settings#license" className="text-accent underline-offset-2 hover:underline">Activate a key</Link>
       </div>
     )}
+    {busy && <p className="px-2.5 py-2 text-xs text-muted-foreground">Loading this group&apos;s trades…</p>}
     <ReportTable>
       <ReportThead>
         <ReportTh>Group</ReportTh>
@@ -227,7 +334,7 @@ function GroupList({
         <ReportTh aria-label="Actions" />
       </ReportThead>
       <tbody>
-        {rows.map((row) => {
+        {win.visible.map((row) => {
           const { group } = row;
           const { totals, edge } = row.row;
           return (
@@ -235,6 +342,7 @@ function GroupList({
             <ReportTd>
               <button
                 type="button"
+                disabled={busy === group.key}
                 className="text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => onOpen(group.key)}
               >
@@ -261,10 +369,10 @@ function GroupList({
               render={(e) => (e.avgR == null ? "—" : num(e.avgR))} />
             <ReportTd className="text-right">
               <div className="flex items-center justify-end gap-1">
-                <Button size="sm" variant="ghost" title={`Delete the ${group.count} trades in ${group.label}`} onClick={() => onDelete(row)}>
+                <Button size="sm" variant="ghost" disabled={busy === group.key} title={`Delete the ${group.count} trades in ${group.label}`} onClick={() => onDelete(row)}>
                   <Trash2 className="size-3.5 text-loss" />
                 </Button>
-                <Button size="sm" variant="ghost" title={`Open ${group.label}`} onClick={() => onOpen(group.key)}>
+                <Button size="sm" variant="ghost" disabled={busy === group.key} title={`Open ${group.label}`} onClick={() => onOpen(group.key)}>
                   <ChevronRight className="size-3.5" />
                 </Button>
               </div>
@@ -274,6 +382,8 @@ function GroupList({
         })}
       </tbody>
     </ReportTable>
+    {/* Outside the table: a <div> is not valid inside <tbody>. */}
+    <ShowMore hidden={win.hidden} total={win.total} onClick={win.showMore} noun="groups" />
     </>
   );
 }
@@ -312,17 +422,23 @@ function EdgeCell({
 function GroupDetail({
   row,
   trades,
+  chargeHeads,
+  insights,
   onBack,
   onDelete,
 }: {
   row: Row;
+  /** The group's full member list, from `/api/lenses/members`. */
   trades: LensTrade[];
+  /** Drill-down-only, so it arrives with the members rather than with the
+   *  list — same aggregation over the same closed rows in the same order. */
+  chargeHeads: LensChargeHeads | null;
+  insights?: Insight[];
   onBack: () => void;
   onDelete: () => void;
 }) {
   const { group } = row;
   const { totals, edge } = row.row;
-  const insights = row.row.insights;
   const shown = trades.slice(0, DRILL_LIMIT);
 
   // Free-wire facts for the Trades popup, over the FULL member array (the
@@ -419,11 +535,11 @@ function GroupDetail({
           format="inr0"
           valueClassName="text-grad-gold"
           detail={
-            totals.chargeHeads
+            chargeHeads
               ? {
                   title: `Charges — ${group.label}, head by head`,
                   summary: "Computed per broker × segment × exchange from your editable rate table.",
-                  rows: chargeHeadRows(totals.chargeHeads),
+                  rows: chargeHeadRows(chargeHeads),
                   note:
                     totals.openCount > 0
                       ? `Closed trades only, matching the card — charges booked on the ${totals.openCount} still-open position${totals.openCount === 1 ? "" : "s"} are not in this split.`

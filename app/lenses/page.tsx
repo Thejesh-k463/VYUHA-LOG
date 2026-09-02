@@ -1,21 +1,22 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { LensesClient } from "@/components/lenses/lenses-client";
-import { getLensTrades, getLensChargeRows, getImportBatches } from "@/lib/queries/trades";
+import { getLensTrades, getImportBatches } from "@/lib/queries/trades";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getEntitlement } from "@/lib/queries/license";
 import { LENSES, lensGroups, groupIds, type LensKind } from "@/lib/domain/lenses";
-import { toLensRow, lensChargeHeads, type LensRow } from "@/lib/domain/lens-edge";
+import { toLensRow, type LensGroupRow } from "@/lib/domain/lens-edge";
 import { computeKpis } from "@/lib/analytics/metrics";
-import { runRules } from "@/lib/intelligence/insight";
-import { GROUP_RULES } from "@/lib/intelligence/rules/group";
 
 export const dynamic = "force-dynamic";
 
 export default function LensesPage() {
   // The slim projection is selected in SQL — same rows, order and values as
-  // getTrades().map(toSlimTrade), without mapping 74 columns to keep 43
-  // (perf sweep 2026-08-29).
+  // getTrades().map(toSlimTrade), without mapping every column to keep the
+  // nineteen this page groups on (perf sweep 2026-08-29).
   const trades = getLensTrades();
+  // `batches` and `playbooks` are LABEL SOURCES for the grouping, and the
+  // grouping now happens only here — so neither crosses the RSC payload any
+  // more (2026-09-02: they were shipped whole so the client could re-group).
   const batches = getImportBatches().map((b) => ({
     id: b.id,
     fileName: b.fileName,
@@ -31,28 +32,21 @@ export default function LensesPage() {
   // pro-gating free list and must never grow a whole-page gate component).
   const pro = getEntitlement().pro;
   const byId = new Map(trades.map((t) => [t.id, t]));
-  // Second narrow projection: the 10 charge heads per trade, aggregated to one
-  // LensChargeHeads per group HERE — the per-trade charge columns never reach
-  // the client (LENS_FIELDS stays 19 columns, the render-windowing budget).
-  const chargeById = new Map(getLensChargeRows().map((c) => [c.id, c]));
-  const rows = {} as Record<LensKind, Record<string, LensRow>>;
+
+  // GROUP ROWS, NOT THE BOOK. Every KPI below is still computed over the FULL
+  // membership of its group — only the per-trade rows stopped crossing the
+  // wire. The drill-down asks `/api/lenses/members` for one group's trades,
+  // which is also where the charge heads and the Pro insights are computed:
+  // both are drill-down-only, and running them for all six lenses on every
+  // visit was the bulk of this page's server time.
+  const lenses = {} as Record<LensKind, LensGroupRow[]>;
   for (const lens of LENSES) {
-    const perGroup: Record<string, LensRow> = {};
-    for (const group of lensGroups(lens.kind, trades, { batches, playbooks })) {
-      const ids = groupIds(group, trades);
-      const members = ids.map((id) => byId.get(id)).filter((t) => t != null);
-      const kpis = computeKpis(members);
-      const chargeHeads = lensChargeHeads(
-        ids.map((id) => chargeById.get(id)).filter((c) => c != null),
-      );
-      // Insights cite edge-class figures (loss shares, streaks, drag), so they
-      // are computed and ATTACHED only when licensed — same wire proof as edge.
-      const insights = pro
-        ? runRules(GROUP_RULES, { label: group.label, kpis, members })
-        : undefined;
-      perGroup[group.key] = toLensRow(kpis, pro, { chargeHeads, insights });
-    }
-    rows[lens.kind] = perGroup;
+    lenses[lens.kind] = lensGroups(lens.kind, trades, { batches, playbooks }).map((group) => {
+      const members = groupIds(group, trades)
+        .map((id) => byId.get(id))
+        .filter((t) => t != null);
+      return { group, row: toLensRow(computeKpis(members), pro) };
+    });
   }
 
   return (
@@ -62,15 +56,7 @@ export default function LensesPage() {
         description="The same book, cut six ways — by month, broker, trade type, import file, setup and outcome."
       />
       <div className="space-y-5 p-6">
-        <LensesClient
-          // `toSlimTrade` already carries every field the lenses group on, so
-          // this adds nothing to the RSC payload that /trades does not send.
-          trades={trades}
-          batches={batches}
-          playbooks={playbooks}
-          rows={rows}
-          pro={pro}
-        />
+        <LensesClient lenses={lenses} pro={pro} />
       </div>
     </>
   );

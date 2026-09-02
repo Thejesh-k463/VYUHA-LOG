@@ -85,6 +85,14 @@ export interface TrashEnvelope {
     importBatches?: Record<string, unknown>[];
     tradingSessions?: Record<string, unknown>[];
     capitalSnapshots?: Record<string, unknown>[];
+    /**
+     * v3.7: weekly review rows. Carried for the same reason the sessions are —
+     * the note is the USER'S OWN PROSE, unlike capital goals or b/f loss lots,
+     * which are a line of numbers each and are deliberately not snapshotted.
+     * A merge carries only the rows a colliding week consumed (the rest move).
+     * Optional, like every key here: snapshots written before v3.7 carry none.
+     */
+    weeklyReviews?: Record<string, unknown>[];
   };
   /**
    * v2, merge only: how much of the source's `pnlRolledIn` marker was carried

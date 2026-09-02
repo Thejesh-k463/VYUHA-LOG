@@ -261,6 +261,7 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
   { href: "/reports/edge", label: "Edge / Setups — expectancy by setup, segment and NSE theme" },
   { href: "/reports/discipline", label: "Discipline — which broken rule costs you the most" },
+  { href: "/review", label: "Trade Review Desk" },
   { href: "/reports/scaling", label: "Scaling Quality & Trade Replay" },
   // Options seller
   { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },

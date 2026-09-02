@@ -158,11 +158,34 @@ export async function POST(req: Request) {
     });
   }
 
+  // Invariant 9: 0 is a view, not a place. Defect D9 (2026-08-12) swapped
+  // `getSelectedAccountId() || 1` for getWriteAccountId() and the comment here
+  // claimed the misfiling was gone — it was not. getWriteAccountId's OWN
+  // no-selection fallback is `orderBy(asc(accounts.id)).limit(1)`, i.e. the
+  // lowest account id, which reproduces `|| 1` exactly on the install shape
+  // that matters. Probed on a two-account temp DB with selected_account_id = 0:
+  // POST /api/ipos → 200, ipos.account_id = 1. The resolver cannot be asked
+  // this question, so the aggregate view is refused BEFORE it is called —
+  // the house shape (lib/queries/challans.ts, /api/bf-losses): 403 for the
+  // aggregate-view write ban, 400 for everything else. An account picker on
+  // /ipos (as /import and /trades do) would be friendlier; that is UI work.
+  //
+  // The EDIT branch above needs no such guard: it locates the row first and
+  // only lets the aggregate view touch rows it can already see, which is the
+  // same rule DELETE uses.
+  if (getSelectedAccountId() === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        forbidden: true,
+        message: "An IPO application belongs to one account's book — pick an account in the sidebar first. The All-accounts view only reads.",
+      },
+      { status: 403 },
+    );
+  }
+
   const row = db
     .insert(ipos)
-    // getWriteAccountId, not `getSelectedAccountId() || 1`: 0 is a view, not a
-    // place (invariant 9), and the old fallback silently filed every IPO added
-    // from the All-accounts view into account 1 (defect D9, 2026-08-12).
     .values({ accountId: getWriteAccountId(), ...values, ...(linkedTradeId ? { tradeId: linkedTradeId } : {}) })
     .returning({ id: ipos.id })
     .get();

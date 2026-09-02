@@ -1,0 +1,29 @@
+-- First-run onboarding flag (v3.7, WS3).
+--
+-- One nullable timestamp on the single settings row: NULL means the four-step
+-- wizard has never been finished (or skipped), a value means it has and the
+-- wizard never mounts again. "Skip for now" SETS it — a skipped wizard that
+-- returned every launch would be a nag, not an onboarding.
+--
+-- MACHINE STATE, exactly like trial_started_at (migration 0024) and the
+-- Telegram/auto-pull columns (migration 0053):
+--
+--  * absent from BASELINE_SETTINGS_FIELDS (lib/domain/settings-baseline.ts) —
+--    "back to my defaults" returns CHOICES, and whether this install has been
+--    through its first run is not a choice the user expresses;
+--  * present in SETTINGS_MACHINE_COLUMNS (lib/backup-format.ts) — a restored
+--    backup must neither RE-SHOW the wizard to a user who finished it on this
+--    machine, nor HIDE it because the person who made the backup finished it on
+--    theirs. The install's own state survives the restore untouched.
+--
+-- BACKFILL: an install that already holds trades has a book, so its owner has
+-- self-evidently got past "get your trades in" — stamping the flag is the
+-- honest reading of that evidence, and it is why no upgrading user is shown a
+-- setup wizard for an app they have been journalling in for months. A
+-- zero-trade install (fresh, or an existing one that never imported anything)
+-- gets the wizard, which is exactly who it is for. datetime('now') is correct
+-- here in a way it is NOT in 0055: this stamps the moment the flag became
+-- true — the upgrade — not a claim about when past work happened.
+ALTER TABLE `settings` ADD `onboarding_completed_at` text;
+--> statement-breakpoint
+UPDATE `settings` SET `onboarding_completed_at` = datetime('now') WHERE EXISTS (SELECT 1 FROM `trades`);

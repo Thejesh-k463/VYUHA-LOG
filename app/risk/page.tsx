@@ -7,7 +7,7 @@ import { LimitCheck } from "@/components/risk/limit-check";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap, getSpotMap } from "@/lib/queries/mtm";
-import { getSettings } from "@/lib/queries/settings";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getSectorMap } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
@@ -89,15 +89,16 @@ export default function RiskPage() {
   const trades = getTrackerTrades();
   const mtm = getMtmMap();
   const spot = getSpotMap();
-  const settings = getSettings();
   // Never fabricate a denominator (AGENTS.md #6). These used to fall back to
   // an invented ₹13L/₹4L when no capital was configured — which is every fresh
   // install — so every exposure %, allocation % and margin-utilisation gauge
   // below silently computed on fiction. 0 means NOT CONFIGURED: the cockpit
   // and margin panel render "—" for %-of-capital figures in that scope (one
   // nudge card below, not one per panel) while ₹ figures stay exact.
-  const equityCapital = settings?.equityCapital ?? 0;
-  const activeCapital = settings?.activeCapital ?? 0;
+  // ACCOUNT-FIRST (v3.7): every position on this page is account-scoped
+  // (invariant 8), so the denominator must be too — the global settings row
+  // gauged one account's exposure against another's capital.
+  const { equityCapital, activeCapital } = getBucketCapital();
   const anyCapitalMissing = equityCapital <= 0 || activeCapital <= 0;
   const sectorMap = getSectorMap();
   const aliasMap = getAliasMap();

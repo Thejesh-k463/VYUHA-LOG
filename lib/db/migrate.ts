@@ -24,5 +24,9 @@ try {
 
 // Apply all generated migrations in ./drizzle to the local SQLite file.
 migrate(db, { migrationsFolder: "./drizzle" });
-console.log("✓ Migrations applied to ./data/vyuha.sqlite");
+// Name the file we ACTUALLY migrated. This line used to hard-code
+// "./data/vyuha.sqlite", so a `VYUHA_DB_PATH=data/perf.sqlite npm run db:migrate`
+// migrated the perf database while reporting the dev one — the command looked
+// like it had done nothing, which invites re-running it against the wrong file.
+console.log(`✓ Migrations applied to ${sqlite.name}`);
 sqlite.close();

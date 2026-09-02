@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { accounts, chargeConfig, riskConfig, settings, capitalSnapshots } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { getWriteAccountId, getSelectedAccountId } from "@/lib/queries/accounts";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { WORKSPACES } from "@/lib/domain/workspace";
 import { PANEL_STYLES, parseCustomTheme, serializeCustomTheme } from "@/lib/domain/appearance";
 
@@ -21,8 +21,19 @@ const intOrNull = (v: unknown): number | null => {
   return n == null ? null : Math.round(n);
 };
 
-function syncOpeningSnapshot(bucket: "equity" | "active", asOfDate: string, opening: number) {
-  const accountId = getWriteAccountId();
+/**
+ * Move one bucket's opening-capital checkpoint for ONE account.
+ *
+ * The account id is a PARAMETER, deliberately: this used to call
+ * `getWriteAccountId()` itself, whose no-selection fallback is "the lowest
+ * account id". Saving Settings from the All-accounts view therefore rewrote
+ * account #1's capital_snapshots rows — equity 13,00,000 → 7,77,777 in the
+ * probe — and still answered "Settings saved." `lib/queries/capital.ts` reads
+ * snapshots account-scoped, so account #1 then showed an opening capital that
+ * came from the GLOBAL settings row. 0 is a view, not a place (invariant 9);
+ * the resolver is no longer reachable from this file at all.
+ */
+function syncOpeningSnapshot(accountId: number, bucket: "equity" | "active", asOfDate: string, opening: number) {
   const existing = db
     .select()
     .from(capitalSnapshots)
@@ -246,9 +257,23 @@ export async function POST(req: Request) {
     } else {
       db.insert(settings).values(values).run();
     }
-    syncOpeningSnapshot("equity", v.goLiveDate, v.equityCapital);
-    syncOpeningSnapshot("active", v.goLiveDate, v.activeCapital);
+    // The SAME guard as the accounts write above, for the same reason. A
+    // capital snapshot is one account's dated checkpoint; the All-accounts view
+    // has no account to file one against, and guessing the lowest id moved a
+    // stranger's opening capital. Settings is not a per-account screen, so
+    // refusing the WHOLE save here would be user-hostile — the global row
+    // (including its capital columns, which are exactly what the aggregate view
+    // reads back via getBucketCapital) saves normally, and only the per-account
+    // half is withheld. The response says so rather than claiming a checkpoint
+    // that was never written.
+    if (selectedForCapital > 0) {
+      syncOpeningSnapshot(selectedForCapital, "equity", v.goLiveDate, v.equityCapital);
+      syncOpeningSnapshot(selectedForCapital, "active", v.goLiveDate, v.activeCapital);
+    }
     const capitalChanged = !existing || existing.equityCapital !== v.equityCapital || existing.activeCapital !== v.activeCapital;
+    // Only worth saying when the skipped write would have persisted something:
+    // syncOpeningSnapshot stores the go-live date and the opening capital.
+    const snapshotSkipped = selectedForCapital === 0 && (capitalChanged || existing?.goLiveDate !== v.goLiveDate);
     recordAudit({
       entity: capitalChanged ? "capital" : "settings",
       action: "update",
@@ -272,7 +297,13 @@ export async function POST(req: Request) {
       });
     }
     for (const p of ["/", "/equity", "/active", "/targets/equity", "/targets/active", "/risk", "/trades"]) revalidatePath(p);
-    return NextResponse.json({ ok: true, message: "Settings saved." });
+    return NextResponse.json({
+      ok: true,
+      capitalSnapshotSkipped: snapshotSkipped,
+      message: snapshotSkipped
+        ? "Settings saved — but no capital checkpoint was recorded. “All accounts” is a view, not an account: pick one in the sidebar to set its opening capital."
+        : "Settings saved.",
+    });
   }
 
   return NextResponse.json({ ok: false, message: "Unknown type" }, { status: 400 });

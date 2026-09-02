@@ -63,12 +63,19 @@ const LENS_FIELDS = [
 export type LensRowTrade = Pick<Trade, (typeof LENS_FIELDS)[number]>;
 
 /**
- * /lenses: 19 columns, not the 43 of `SlimTrade`.
+ * /lenses: the `LENS_FIELDS` above, a strict subset of `SLIM_TRADE_FIELDS`.
  *
- * The Lenses tree only ever reads the delete-scope identity fields plus six
- * grouping/KPI fields — the other 23 (`strike`, `optionType`, `slPlanned`,
- * `notes`, `mistakeTags`, every per-leg price and quantity …) crossed the RSC
- * flight stream for 25,001 rows and were never touched.
+ * The Lenses tree only ever reads the delete-scope identity fields plus the
+ * six grouping/KPI fields. Everything else in the wire shape (`strike`,
+ * `optionType`, `slPlanned`, `notes`, `mistakeTags`, `reviewedAt`, every
+ * per-leg price and quantity …) crossed the RSC flight stream for 25,001 rows
+ * and was never touched.
+ *
+ * NO COUNTS IN THIS PROSE, deliberately: it read "19 columns, not the 43 of
+ * SlimTrade" while `SLIM_TRADE_FIELDS` went 43 → 44 → 45 (v3.7.0 added
+ * `reviewedAt`), so the sentence was wrong for two releases and nothing could
+ * fail. The two arrays are the count; `tests/render-windowing.test.ts` pins
+ * that this one stays a subset of the other and does not creep.
  *
  * This route shares `SLIM_TRADE_FIELDS` with /trades, which genuinely needs the
  * wider shape, so it gets its OWN projection rather than narrowing that one —

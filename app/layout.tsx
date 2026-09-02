@@ -5,6 +5,8 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
 import { NavHistoryTracker } from "@/components/layout/nav-history-tracker";
+import { OnboardingWizard, type OnboardingWizardProps } from "@/components/system/onboarding-wizard";
+import { TelegramFailureNote } from "@/components/system/telegram-failure-note";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getSettings } from "@/lib/queries/settings";
@@ -64,6 +66,11 @@ export default function RootLayout({
   let panelStyle: PanelStyle = "luxe";
   let customTheme: CustomTheme | null = null;
   let wallpaper: { storedName: string | null; opacity: number } = { storedName: null, opacity: DEFAULT_WALLPAPER_OPACITY };
+  // First-run wizard (v3.7 WS3). `show` is the only field that costs anything
+  // when the flag is already stamped — the account read below runs ONLY on an
+  // install that has never finished a first run, so the steady state pays for
+  // nothing. Inside the same try/catch: an unmigrated DB has no column to read.
+  let onboarding: OnboardingWizardProps = { show: false, accountId: null, accountName: "", equityCapital: null, activeCapital: null };
   try {
     const s = getSettings();
     colorblind = s?.colorblindSafe ?? false;
@@ -75,6 +82,22 @@ export default function RootLayout({
     panelStyle = asPanelStyle(s?.panelStyle);
     customTheme = parseCustomTheme(s?.customTheme);
     wallpaper = { storedName: s?.wallpaperStoredName ?? null, opacity: clampIntensity(s?.wallpaperOpacity ?? DEFAULT_WALLPAPER_OPACITY) };
+    if (s && s.onboardingCompletedAt == null) {
+      // The book the wizard names in step 1: the selected account, falling back
+      // to the default one. Capital is passed through so "Run setup again" on a
+      // configured install prefills instead of blanking it (invariant 6 — a
+      // wizard must never overwrite a real capital base with a NULL).
+      const all = getAccounts();
+      const selected = getSelectedAccountId();
+      const a = all.find((x) => x.id === selected) ?? all.find((x) => x.isDefault) ?? all[0];
+      onboarding = {
+        show: true,
+        accountId: a?.id ?? null,
+        accountName: a?.name ?? "",
+        equityCapital: a?.equityCapital ?? null,
+        activeCapital: a?.activeCapital ?? null,
+      };
+    }
   } catch {
     // DB not migrated yet — render with defaults.
   }
@@ -118,6 +141,13 @@ export default function RootLayout({
           <CommandPalette workspace={workspace} />
           {/* Mounted once, so each navigation is recorded exactly once. */}
           <NavHistoryTracker />
+          {/* First-run wizard (opens over the dashboard only — it gates on the
+              pathname itself) and the durable Telegram-digest failure strip.
+              Both live here rather than on a page because both have to survive
+              navigation: the wizard so a mid-wizard trip to /import resumes,
+              the strip so a failed send is visible from any route. */}
+          <OnboardingWizard {...onboarding} />
+          <TelegramFailureNote />
         </TooltipProvider>
         <Toaster />
       </body>

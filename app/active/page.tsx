@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { TrackerClient } from "@/components/trackers/tracker-client";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { getSettings } from "@/lib/queries/settings";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,10 @@ export default function ActiveTrackerPage() {
   // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
   const trades = getTrackerTrades();
   const mtm = getMtmMap();
-  const settings = getSettings();
+  // ACCOUNT-FIRST (v3.7): the selected account's own capital, the settings row
+  // only as the single-account fallback. Reading the global settings column
+  // here showed one account's capital base beside another account's positions.
+  const activeCapital = getBucketCapital().activeCapital;
 
   const positions = deriveOpenPositions(trades, mtm, today).filter((p) => p.bucket === "active");
   const closedAll = trades.filter((t) => !t.isOpen && t.bucket === "active");
@@ -28,7 +31,7 @@ export default function ActiveTrackerPage() {
         {/* 0 = capital not configured; the client renders "—" + a Settings
             nudge. The old ?? 400000 fabricated every utilisation figure on a
             fresh install (invariant 6). */}
-        <TrackerClient variant="active" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={settings?.activeCapital ?? 0} />
+        <TrackerClient variant="active" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={activeCapital} />
       </div>
     </>
   );

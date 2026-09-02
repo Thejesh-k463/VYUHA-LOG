@@ -22,6 +22,10 @@ import {
 const PAGES = [
   join(process.cwd(), "app/reports/performance/page.tsx"),
   join(process.cwd(), "app/reports/scaling/page.tsx"),
+  // v3.7 — the Trade Review Desk: the Process Score card carries a
+  // `metricDetail` drill-down and each of the five component rows a
+  // `metricCaveatLine`, so all six ids are literal in this page.
+  join(process.cwd(), "app/review/page.tsx"),
 ];
 
 function usedIds(): Set<string> {

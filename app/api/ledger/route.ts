@@ -75,6 +75,24 @@ export async function POST(req: Request) {
   }
 
   if (body.action === "add") {
+    // Invariant 9 FIRST, before any parsing: a cash entry belongs to ONE book,
+    // and getWriteAccountId()'s no-selection fallback is "the lowest account
+    // id" — so a ₹50,000 deposit added from the All-accounts view landed on
+    // account #1 and answered "Ledger entry added." The refusal shape is the
+    // house one (lib/queries/challans.ts, /api/bf-losses): 403 for the
+    // aggregate-view write ban, 400 for everything else. A WriteAccountPicker
+    // on /cash — the way /import and /trades solve this — would be friendlier
+    // still, but that is UI work; refusing is what stops the misfiling.
+    if (getSelectedAccountId() === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          forbidden: true,
+          message: "A cash entry belongs to one account's book — pick an account in the sidebar first. The All-accounts view only reads.",
+        },
+        { status: 403 },
+      );
+    }
     const type = body.type as LedgerType;
     if (!LEDGER_TYPES.includes(type)) {
       return NextResponse.json({ ok: false, message: "Unknown entry type" }, { status: 400 });

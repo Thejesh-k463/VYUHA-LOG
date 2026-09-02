@@ -92,6 +92,67 @@ describe("every lens is a partition", () => {
   }
 });
 
+describe("a group's members answer for the whole book (the /api/lenses/members contract)", () => {
+  /**
+   * v3.7.0 stopped shipping the book to the browser: `/lenses` sends the group
+   * rows, and the drill-down fetches ONE group's members from
+   * `app/api/lenses/members`. Two things on screen are then resolved against
+   * that member array instead of the whole book — the delete preview, and
+   * every figure in the drill-down.
+   *
+   * That substitution is only safe because a lens group holds exactly the
+   * trades its scope matches, in book order. This pins it. The fixture is
+   * deliberately built so its ARRAY order is the reverse of its id order and
+   * the groups of every lens are interleaved: an implementation that returned
+   * members sorted by id, or grouped-then-concatenated, passes an
+   * order-blind assertion and fails this one.
+   */
+  const built: LensTrade[] = [
+    t({ broker: "zerodha", segment: "eq_mtf", setupTag: "breakout", buyDate: "2026-05-02", sellDate: "2026-05-09", netPnl: 1234.56, importBatchId: 3 }),
+    t({ broker: "dhan", segment: "index_option", setupTag: "fade", buyDate: "2026-06-02", sellDate: "2026-06-03", netPnl: -77.77, importBatchId: 3 }),
+    t({ broker: "zerodha", segment: "eq_delivery", setupTag: "breakout", buyDate: "2026-05-11", sellDate: "2026-06-20", netPnl: 0 }),
+    t({ broker: "groww", segment: "eq_intraday", isOpen: true, sellDate: null, buyDate: "2026-06-25", netPnl: 0, staged: true }),
+    t({ broker: "dhan", segment: "eq_mtf", setupTag: "fade", buyDate: "2026-05-14", sellDate: "2026-05-30", netPnl: -412.4, importBatchId: 8 }),
+    t({ broker: "zerodha", segment: "future", playbookId: 1, buyDate: "2026-06-01", sellDate: "2026-06-06", netPnl: 908.1, importBatchId: 8 }),
+    t({ broker: "groww", segment: "eq_delivery", buyDate: null, sellDate: null, isOpen: true, netPnl: 0 }),
+    t({ broker: "dhan", segment: "eq_delivery", setupTag: "breakout", buyDate: "2026-05-19", sellDate: "2026-05-21", netPnl: 55.55, symbol: "INFY", tradingsymbol: "INFY" }),
+  ];
+  // Newest-first is how the page reads it, and it is NOT id order.
+  const book = [...built].reverse();
+  const byId = new Map(book.map((x) => [x.id, x]));
+  const c = ctx({
+    batches: [
+      { id: 3, fileName: "kite.csv", broker: "zerodha", importedAt: "2026-05-10T00:00:00Z" },
+      { id: 8, fileName: "dhan.xlsx", broker: "dhan", importedAt: "2026-06-02T00:00:00Z" },
+    ],
+    playbooks: [{ id: 1, name: "Gap fade" }],
+  });
+
+  for (const lens of LENSES) {
+    it(`${lens.kind}: the delete preview is the same whether resolved over the group or the book`, () => {
+      const groups = lensGroups(lens.kind, book, c);
+      expect(groups.length).toBeGreaterThan(0);
+      for (const g of groups) {
+        const members = groupIds(g, book).map((id) => byId.get(id)!);
+        // Every figure the confirmation shows: ids AND their order, count,
+        // open/closed/staged, net P&L, symbols, first and last date.
+        expect(resolveDeleteScope(members, g.scope), `${g.key} previews differently`)
+          .toEqual(resolveDeleteScope(book, g.scope));
+      }
+    });
+
+    it(`${lens.kind}: members arrive in book order, not id order`, () => {
+      // The drill-down table, the top-5 winners/losers and every sum read this
+      // array; a different order is a different screen.
+      const pos = new Map(book.map((x, i) => [x.id, i]));
+      for (const g of lensGroups(lens.kind, book, c)) {
+        const idx = groupIds(g, book).map((id) => pos.get(id)!);
+        expect([...idx].sort((a, b) => a - b), `${g.key} is not in book order`).toEqual(idx);
+      }
+    });
+  }
+});
+
 describe("month", () => {
   it("files a closed trade by its EXIT date and an open one by its ENTRY date", () => {
     // The trap: `sellDate ?? buyDate` hands an open position an exit date it

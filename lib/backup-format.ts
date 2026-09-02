@@ -21,6 +21,15 @@
 // envelope without the key leaves today's lots alone, one carrying it is the
 // restored truth; the bounded cost is a pre-3.6 build ignoring a newer file's
 // hand-entered lots (a handful of rows the user can restate from filed ITRs).
+//
+// weekly_reviews and advance_tax_challans (v3.7) join on the SAME rationale and
+// the version STAYS 3. Both are per-key like the two above, so a pre-3.7 file
+// restores into v3.7 cleanly (reviews and challans untouched) and a v3.7 file
+// restores completely; bumping to 4 would only make older builds refuse newer
+// files whole — a strictly worse trade for the same bounded cost (a pre-3.7
+// build ignoring a newer file's weekly notes and challan rows). Both are the
+// user's own hand-entered records, so both TRAVEL in full: a weekly note is
+// prose the user wrote, and a challan is a payment they can prove.
 export const BACKUP_VERSION = 3;
 
 // Order is insert-order for restore (parents-ish first); delete runs in reverse.
@@ -33,6 +42,8 @@ export const BACKUP_TABLES = [
   "capital_snapshots",
   "capital_goals",
   "bf_loss_lots",
+  "weekly_reviews",
+  "advance_tax_challans",
   "import_batches",
   "trades",
   "classification_overrides",
@@ -95,6 +106,11 @@ export const SETTINGS_MACHINE_COLUMNS = [
   "telegramChatId",
   "autoPullEnabled",
   "lastAutoPullDate",
+  // First-run onboarding (v3.7, migration 0057) — machine state, not journal
+  // data: whether THIS install has been through its first run. Restoring
+  // someone else's backup must not hide the wizard from a new install, and
+  // restoring your own must not re-show it on a machine that finished it.
+  "onboardingCompletedAt",
 ] as const;
 
 /**

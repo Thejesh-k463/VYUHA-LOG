@@ -17,7 +17,13 @@ export type AuditEntity =
   | "account"
   | "session"
   | "rule_pack"
-  | "bf_loss";
+  | "bf_loss"
+  // v3.7: the weekly review ritual (the user's own prose + completion) and the
+  // dated advance-tax challan ledger. Both are account-scoped tables whose
+  // rows a merge can move or amend, so their mutations belong in the trail
+  // beside bf_loss's.
+  | "weekly_review"
+  | "advance_tax_challan";
 
 export interface AuditInput {
   entity: AuditEntity;

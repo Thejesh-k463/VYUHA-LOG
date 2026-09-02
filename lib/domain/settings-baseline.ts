@@ -24,6 +24,12 @@
 //                        consent rule, plus credentials (bot token / chat id)
 //                        and once-per-day job stamps; all machine state, see
 //                        SETTINGS_MACHINE_COLUMNS in lib/backup-format.ts
+//   onboardingCompletedAt (v3.7, migration 0057) — whether this INSTALL has
+//                        been through its first run. "Back to my defaults"
+//                        returns choices; it must not re-run a setup wizard the
+//                        user already finished, nor mark one finished that they
+//                        never saw. Machine state, in SETTINGS_MACHINE_COLUMNS
+//                        for the restore half of the same rule.
 //
 // Rate tables (charge/margin/risk) ARE part of the baseline: the user chose
 // those numbers, and "back to my defaults" should mean the rates they trust.

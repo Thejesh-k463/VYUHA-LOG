@@ -51,6 +51,34 @@ function estimatedMtfInterest(from: string, to: string): number {
 }
 
 export async function POST(req: Request) {
+  // Invariant 9 FIRST, before the file is even read. A ledger import writes the
+  // WHOLE statement, and `getWriteAccountId()` below had no selection to
+  // resolve in the All-accounts view — its fallback is
+  // `orderBy(asc(accounts.id)).limit(1)`, so every line of someone's Dhan
+  // ledger landed on account #1 inside one transaction, behind
+  // "Imported N ledger entries". Same defect as the single-row /api/ledger add,
+  // one statement wide.
+  //
+  // PREVIEW is refused too, not just the commit. The preview's newCount,
+  // dupCount and MTF reconciliation all come from existingKeys() and
+  // estimatedMtfInterest(), which read across EVERY account when none is
+  // selected — so an aggregate-view preview shows numbers that no per-account
+  // commit could ever reproduce. Showing a reconciliation that cannot be acted
+  // on is its own dishonesty; refusing at the door says the true thing once.
+  //
+  // House shape (lib/queries/challans.ts, /api/bf-losses): 403 for the
+  // aggregate-view write ban, everything else keeps its existing status.
+  if (getSelectedAccountId() === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        forbidden: true,
+        message: "A ledger import writes one account's money history — pick an account in the sidebar first. The All-accounts view only reads.",
+      },
+      { status: 403 },
+    );
+  }
+
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   const mode = String(form?.get("mode") ?? "preview");

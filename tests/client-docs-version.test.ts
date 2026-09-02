@@ -35,7 +35,13 @@ describe("client docs are not behind package.json", () => {
     expect(cmpVersion("2.99.96", "2.99.96")).toBe(0);
   });
 
-  for (const file of ["docs/client/TERMS.md", "docs/client/PRIVACY.md"]) {
+  // REFUND_POLICY.md was NOT in this list until v3.7.0, and drifted exactly the
+  // way an unguarded doc does: TERMS and PRIVACY were carried forward at every
+  // release while the refund policy sat at v3.4.0 for three of them — in the
+  // same ZIP, on the same "Applies to" line, describing the same product
+  // (owner decision Q8, 2026-09-02). It is the one of the three a buyer reads
+  // when they are already unhappy, so a stale version on it costs the most.
+  for (const file of ["docs/client/TERMS.md", "docs/client/PRIVACY.md", "docs/client/REFUND_POLICY.md"]) {
     it(`${file} "Applies to" version is >= ${pkgVersion}`, () => {
       const m = read(file).match(/\*\*Applies to:\*\* Vyuha v(\d+\.\d+\.\d+)/);
       expect(m, `${file} has no "**Applies to:** Vyuha vX.Y.Z" line`).not.toBeNull();

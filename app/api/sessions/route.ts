@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tradingSessions } from "@/lib/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { getWriteAccountId } from "@/lib/queries/accounts";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
@@ -22,7 +22,30 @@ export async function POST(req: Request) {
   // account (invariant 9). The old shape took the client's number verbatim,
   // so a stale tab could write — and via the update below, MOVE — a session
   // into an account that was never on screen (defect D7, 2026-08-12).
-  const accountId = getWriteAccountId(parsed.data.accountId ?? null);
+  const requested = parsed.data.accountId ?? null;
+  const accountId = getWriteAccountId(requested);
+  // …but "falls back to the selected account" has no answer in the All-accounts
+  // view: getWriteAccountId's last resort is the LOWEST account id. The PATCH
+  // below was fixed for exactly this in v3.5.0 and says so in its own comment;
+  // this POST is its untested twin, and components/behavior/session-planner.tsx
+  // sends no accountId at all — so planning a session from the All-accounts
+  // view filed the plan against account #1 and toasted "Plan saved."
+  //
+  // Accept ONLY an explicit id that survived validation. That is one condition,
+  // not two: it refuses a body with no id AND a body whose id named no real
+  // account (which the resolver silently downgrades to the same lowest-id
+  // guess). A single-account view is untouched — the resolver has a real
+  // selection there, so this never fires.
+  if (getSelectedAccountId() === 0 && accountId !== requested) {
+    return NextResponse.json(
+      {
+        ok: false,
+        forbidden: true,
+        message: "A session plan belongs to one account's book — pick an account in the sidebar first. The All-accounts view only reads.",
+      },
+      { status: 403 },
+    );
+  }
   const v = { ...parsed.data, accountId };
   // CANONICAL tickers are what gets stored: an alias (broker full name) or an
   // ISIN resolves to its exchange ticker so the review compares like with
@@ -73,6 +96,18 @@ export async function PATCH(req: Request) {
   // account — in the All-accounts view that is the lowest-id account, which
   // 404'd "Mark reviewed" for every other account's sessions (v3.5.0).
   const accountId = getWriteAccountId(v.accountId);
+  // …and the id must SURVIVE that validation. getWriteAccountId falls back to
+  // the lowest account id when the explicit one names no real account, so a
+  // client sending accountId 999 was silently retargeted at account #1 — and
+  // when account #1 happened to own the row with that session id, the review
+  // LANDED (found by probe, v3.7 audit: PATCH {id: <account #1 row>,
+  // accountId: 999} → 200, row reviewed). The pre-existing test only covered
+  // the case where the fallback account did NOT own the row, which 404s on the
+  // scoping below and hid this. Naming an account that does not exist is "no
+  // such session in this account", never a write somewhere else.
+  if (accountId !== v.accountId) {
+    return NextResponse.json({ ok: false, message: "No such session in this account." }, { status: 404 });
+  }
   // Scoped to (id, account) like the POST: an id from another account is "no
   // such session", never a cross-boundary write (invariant 9 / defect D7).
   const existing = db.select().from(tradingSessions).where(and(eq(tradingSessions.id, v.id), eq(tradingSessions.accountId, accountId))).get();

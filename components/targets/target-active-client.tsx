@@ -19,7 +19,8 @@ export interface DailySummary {
 }
 export interface SegLimit {
   segment: Segment;
-  perTradeMaxLoss: number;
+  /** null = no per-segment cap configured. NEVER a stand-in — invariant 6. */
+  perTradeMaxLoss: number | null;
   maxTradesDay: number | null;
   todayCount: number;
 }
@@ -33,10 +34,10 @@ export function TargetActiveClient({
   undatedActive,
 }: {
   daily: DailySummary[];
-  limits: { dailyLossStop: number; optionsMaxTrades: number; intradayMaxTrades: number; commodityMaxTrades: number; optionsMaxOpen: number };
+  limits: { dailyLossStop: number | null; optionsMaxTrades: number; intradayMaxTrades: number; commodityMaxTrades: number; optionsMaxOpen: number };
   openOptions: number;
   segLimits: SegLimit[];
-  defaultRisk: number;
+  defaultRisk: number | null;
   undatedActive: number;
 }) {
   // default to the worst-loss day (most relevant for a risk cockpit)
@@ -44,7 +45,12 @@ export function TargetActiveClient({
   const [date, setDate] = React.useState(worst?.date ?? "");
   const day = daily.find((d) => d.date === date) ?? worst ?? null;
 
-  const status = dailyLossStatus({ netToday: day?.net ?? 0, dailyStop: limits.dailyLossStop });
+  // No configured stop, no budget: there is nothing honest to divide the day's
+  // loss by, so this page states the day net and says what is missing rather
+  // than measuring the trader against ₹25,000 nobody set (invariant 6).
+  const stop = limits.dailyLossStop;
+  const status = stop == null ? null : dailyLossStatus({ netToday: day?.net ?? 0, dailyStop: stop });
+  const netToday = day?.net ?? 0;
 
   return (
     <div className="space-y-5">
@@ -59,14 +65,32 @@ export function TargetActiveClient({
         </div>
       </div>
 
-      {status.hit ? (
+      {status == null ? (
+        <Card className="border-border">
+          <CardContent className="flex items-center justify-between gap-3 p-5">
+            <div className="flex items-center gap-3">
+              <OctagonAlert className="size-7 text-muted-foreground" />
+              <div>
+                <div className="text-base font-semibold">No daily loss stop set</div>
+                <div className="text-sm text-muted-foreground">
+                  Set one in Settings → Risk and this cockpit will measure the day against it. Until then there is no budget to report.
+                </div>
+              </div>
+            </div>
+            <div className="text-right text-sm">
+              <div className="text-muted-foreground">Day net</div>
+              <div className={`text-lg font-semibold tabular-nums ${netToday >= 0 ? "text-profit" : "text-loss"}`}>{inr(netToday)}</div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : status.hit ? (
         <Card className="border-loss bg-loss/10">
           <CardContent className="flex items-center gap-3 p-5">
             <OctagonAlert className="size-8 text-loss" />
             <div>
               <div className="text-lg font-bold text-loss">STOP TRADING — daily loss limit hit</div>
               <div className="text-sm text-loss/80">
-                Day net {inr(status.netToday)} · crossed the ₹{limits.dailyLossStop.toLocaleString("en-IN")} aggregate stop.
+                Day net {inr(status.netToday)} · crossed the ₹{status.limit.toLocaleString("en-IN")} aggregate stop.
               </div>
             </div>
           </CardContent>
@@ -89,16 +113,18 @@ export function TargetActiveClient({
         </Card>
       )}
 
-      {/* loss budget meter */}
-      <Card className="p-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">Daily loss used</span>
-          <span className="tabular-nums">{inr(status.lossSoFar, { decimals: 0 })} / {inr(limits.dailyLossStop, { decimals: 0 })}</span>
-        </div>
-        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-card-hover">
-          <div className="h-full rounded-full" style={{ width: `${status.pctUsed * 100}%`, background: status.hit ? "var(--color-loss)" : status.pctUsed > 0.8 ? "var(--color-warning)" : "var(--color-primary)" }} />
-        </div>
-      </Card>
+      {/* loss budget meter — only with a stop to measure against */}
+      {status != null && (
+        <Card className="p-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Daily loss used</span>
+            <span className="tabular-nums">{inr(status.lossSoFar, { decimals: 0 })} / {inr(status.limit, { decimals: 0 })}</span>
+          </div>
+          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-card-hover">
+            <div className="h-full rounded-full" style={{ width: `${status.pctUsed * 100}%`, background: status.hit ? "var(--color-loss)" : status.pctUsed > 0.8 ? "var(--color-warning)" : "var(--color-primary)" }} />
+          </div>
+        </Card>
+      )}
 
       {/* counters */}
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -117,7 +143,7 @@ export function TargetActiveClient({
               <div key={s.segment} className="rounded-md border border-border bg-card-hover/30 p-3">
                 <div className="text-xs font-medium">{SEGMENT_LABELS[s.segment]}</div>
                 <div className="mt-1.5 space-y-1 text-[0.6875rem] text-muted-foreground">
-                  <div className="flex justify-between"><span>Per-trade cap</span><span className="tabular-nums text-foreground">{inr(s.perTradeMaxLoss, { decimals: 0 })}</span></div>
+                  <div className="flex justify-between"><span>Per-trade cap</span><span className="tabular-nums text-foreground">{s.perTradeMaxLoss == null ? "—" : inr(s.perTradeMaxLoss, { decimals: 0 })}</span></div>
                   <div className="flex justify-between"><span>Max trades/day</span><span className="tabular-nums text-foreground">{s.maxTradesDay ?? "—"}</span></div>
                   <div className="flex justify-between"><span>Today</span><span className="tabular-nums text-foreground">{s.todayCount}</span></div>
                 </div>

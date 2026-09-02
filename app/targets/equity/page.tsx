@@ -2,7 +2,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { TargetEquityClient, type MtfSummary } from "@/components/targets/target-equity-client";
 import { getTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { getSettings } from "@/lib/queries/settings";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
@@ -12,7 +11,7 @@ import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getGoalView } from "@/lib/queries/goals";
-import { getBucketCapital } from "@/lib/queries/capital";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { goalProgress } from "@/lib/analytics/goal";
 import { GoalStrip } from "@/components/targets/goal-strip";
 import type { Broker, Exchange } from "@/lib/domain/constants";
@@ -23,7 +22,6 @@ export default function TargetEquityPage() {
   const today = new Date().toISOString().slice(0, 10);
   const trades = getTrades();
   const mtm = getMtmMap();
-  const settings = getSettings();
   const risk = db.select().from(riskConfig).all();
 
   const equityRisk = risk.find((r) => r.scope === "bucket" && r.key === "equity");
@@ -31,7 +29,11 @@ export default function TargetEquityPage() {
   // 0 means NOT CONFIGURED — the old ₹13,00,000 fallback fabricated every
   // %-of-capital gauge on a fresh install (invariant 6). Capital-relative
   // figures render "—" with a nudge instead; ₹ figures stay exact.
-  const equityCapital = settings?.equityCapital ?? 0;
+  // ACCOUNT-FIRST (v3.7): this is now the SAME base the goal strip below reads.
+  // Until v3.7 the sizing calculator and concentration gauge used the global
+  // settings figure while the goal three blocks down already resolved
+  // account-first — one page, two capital bases.
+  const equityCapital = getBucketCapital().equityCapital;
 
   const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker()).filter((p) => p.bucket === "equity");
   // Largest position by invested ₹ (same winner as largest % when capital is
@@ -92,7 +94,7 @@ export default function TargetEquityPage() {
   const equityGoal = getGoalView().goals.find((g) => g.bucket === "equity") ?? null;
   const goalProg = equityGoal
     ? goalProgress(equityGoal, {
-        currentCapital: getBucketCapital().equityCapital > 0 ? getBucketCapital().equityCapital : null,
+        currentCapital: equityCapital > 0 ? equityCapital : null,
         realised: [...dailyPnl(trades.filter((t) => t.bucket === "equity")).entries()].map(([date, net]) => ({ date, net })),
         today,
       })

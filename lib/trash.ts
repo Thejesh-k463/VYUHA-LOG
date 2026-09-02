@@ -14,6 +14,7 @@ import {
   importBatches,
   tradingSessions,
   capitalSnapshots,
+  weeklyReviews,
 } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
@@ -417,6 +418,15 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           [capitalSnapshots, env.accountRows.capitalSnapshots],
           [ipos, env.accountRows.ipos],
           [ledgerEntries, env.accountRows.ledgerEntries],
+          // v3.7: the user's own weekly notes come back with the book. A week
+          // the surviving account has since reviewed keeps ITS row — the
+          // unique index refuses the insert and it is COUNTED as skipped, not
+          // silently duplicated under a fresh id.
+          [weeklyReviews, env.accountRows.weeklyReviews],
+          // v3.7: the user's own weekly notes come back with the book. A week
+          // the surviving account has since reviewed keeps ITS row — the
+          // unique index refuses the insert and it is COUNTED as skipped, not
+          // silently duplicated under a fresh id.
         ];
         for (const [table, tableRows] of groups) {
           for (const row of tableRows ?? []) {
@@ -481,7 +491,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
     }
   }
   if (extraRestored > 0) {
-    message += ` ${extraRestored} related row${extraRestored === 1 ? "" : "s"} (imports, sessions, capital history, IPOs, ledger) came back with it.`;
+    message += ` ${extraRestored} related row${extraRestored === 1 ? "" : "s"} (imports, sessions, capital history, IPOs, ledger, weekly reviews) came back with it.`;
   }
   if (extraSkipped > 0) {
     message += ` ${extraSkipped} related row${extraSkipped === 1 ? " was" : "s were"} already present and skipped.`;

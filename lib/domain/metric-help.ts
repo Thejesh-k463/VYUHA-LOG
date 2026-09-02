@@ -525,6 +525,89 @@ export const METRIC_HELP = {
     whatToDo:
       "Traders on intraday timeframes historically treat the replay as context, not evidence — the fill prices, not the line, are the record.",
   },
+
+  // ── The Trade Review Desk — the Process Score and its five components ─────
+  // Rendered by app/review/page.tsx: the summary card carries `processScore`
+  // as a drill-down, and each component row carries its own one-liner under
+  // "How each component is counted".
+  processScore: {
+    title: "Process Score — how the week was traded",
+    meaning:
+      "One number for how a week was traded rather than for what it made: the mean of five equal-weight components, each measuring a habit the journal already records.",
+    formula:
+      "The arithmetic mean of whichever of the five components could be measured, rounded to a whole number. A component with nothing honest to measure drops out of the mean entirely rather than scoring zero, and the score itself is withheld below ten closed trades in the window.",
+    healthyRange:
+      "Commonly read as a trend across weeks rather than as a level — a book moving from the fifties into the eighties is the signal; what a given level is worth depends on which components could be measured at all, and on the assumption that the journal is filled in consistently week to week.",
+    caveat:
+      "It says nothing about profit. A disciplined week can lose money and a reckless one can make it — this measures the process the record shows, not the outcome it produced.",
+    whatToDo:
+      "Traders historically read the five component rows before the summary figure, because the number moves for five different reasons and only the rows say which one moved.",
+  },
+  processPlanned: {
+    title: "Planned — a stop or target recorded",
+    meaning:
+      "The share of closed trades in the window that carry a stop-loss or a target written down before or at entry.",
+    formula:
+      "Closed trades carrying a planned SL or a planned target, divided by every closed trade in the window. Either field alone counts, and a trade with both counts once.",
+    healthyRange:
+      "Commonly the easiest of the five to move, because it measures record-keeping as much as planning; what it is worth depends on style — some traders plan an exit rule rather than a price, and that assumption is invisible to this component.",
+    caveat:
+      "It reads the field, not the intention: a trade planned in the trader's head and never typed in counts as unplanned, which is an honest reading of the record rather than of the trade.",
+    whatToDo:
+      "Traders historically fill both fields at entry rather than after the close, because a level typed in afterwards records the outcome and not the plan.",
+  },
+  processRiskCap: {
+    title: "Risk cap — losses within the risk taken",
+    meaning:
+      "The share of losing trades in the window whose loss stayed inside the risk that trade was actually taken with.",
+    formula:
+      "Each losing closed trade is measured against its own recorded risk amount, or against the configured per-trade cap where the trade has none. Losses at or inside that limit, divided by every losing trade in the window.",
+    healthyRange:
+      "Commonly read beside its coverage line rather than alone, since a perfect figure over two losers says very little; what counts as acceptable depends on the cap the trader set and assumes the recorded risk was the risk intended.",
+    caveat:
+      "It refuses outright when a losing trade carries neither its own risk amount nor a configured cap. An earlier version measured every book against a hardcoded rupee limit nobody had chosen, and that fallback is gone.",
+    whatToDo:
+      "Traders historically set the per-trade cap in Settings first, since without it this component has no limit to read and stays out of the score altogether.",
+  },
+  processDailyStop: {
+    title: "Daily stop — days inside the loss budget",
+    meaning:
+      "The share of trading days in the window whose net stayed at or above the configured daily loss stop.",
+    formula:
+      "Days are formed from the sell dates of closed trades in the window; each day's net is summed and compared with the configured daily stop. Days within it, divided by every day that traded.",
+    healthyRange:
+      "Commonly read as a count of breach days rather than as a percentage, because one bad day in twenty and one in five can print similar figures; what it means depends on how many days the window held and on the stop the trader chose.",
+    caveat:
+      "The day is built from realised P&L on closed trades only, so an open position running against the book on the same day is invisible to it.",
+    whatToDo:
+      "Traders historically look at the breach days themselves in the Discipline report, since a percentage says how often and never which day.",
+  },
+  processRulesFollowed: {
+    title: "Rules followed — the playbook checklist",
+    meaning:
+      "Among trades taken to a playbook, the share with no rule from that playbook's checklist recorded as broken.",
+    formula:
+      "Closed trades with a playbook and no journal entry marking one of its rules broken, divided by closed trades that have a playbook at all. A trade with no playbook has no rules to have followed and is left out of both sides.",
+    healthyRange:
+      "Commonly read next to its coverage line, which states how many trades had a playbook at all — a perfect figure over three tagged trades and a middling one over forty are different facts, so what it is worth depends on how consistently the book is tagged.",
+    caveat:
+      "It is self-reported: the checklist is ticked by the trader in the journal dialog, so this measures the honesty of the record as much as the discipline of the trading.",
+    whatToDo:
+      "Traders historically tag the playbook at entry, because a playbook chosen after the exit tends to be the one the trade turned out to fit.",
+  },
+  processReviewed: {
+    title: "Reviewed — trades read back",
+    meaning:
+      "The share of closed trades in the window carrying a review stamp. The queue on this desk is exactly its complement.",
+    formula:
+      "Closed trades whose review timestamp is set, divided by every closed trade in the window. Saving the journal sets the stamp, and so does marking a trade reviewed; a blank stamp reads as unreviewed.",
+    healthyRange:
+      "Commonly a housekeeping figure that a weekly ritual keeps near the top of its range; what a lower reading means depends on how the book is worked, and an imported back-history reads as unreviewed because it was never read.",
+    caveat:
+      "A stamp records that the trade was opened and closed on this desk, not that anything was learned from it — it is a measure of attention rather than of insight.",
+    whatToDo:
+      "Traders historically work the queue oldest-first once a week, since the stamp is what takes a trade out of it.",
+  },
 } satisfies Record<string, MetricHelpEntry>;
 
 export type MetricHelpId = keyof typeof METRIC_HELP;

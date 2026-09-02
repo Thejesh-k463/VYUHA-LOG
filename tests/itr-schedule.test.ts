@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { itrScheduleByFy, transferExpenditure, scheduleExportRows, type ItrScheduleTrade } from "@/lib/analytics/itr-schedule";
+import {
+  itrScheduleByFy,
+  transferExpenditure,
+  scheduleExportRows,
+  taxesPaidByFy,
+  taxesPaidExportRows,
+  type ItrScheduleTrade,
+  type TaxPaymentInput,
+} from "@/lib/analytics/itr-schedule";
 import type { CarryForwardLot } from "@/lib/analytics/capital-gains";
 import { section } from "@/lib/analytics/statute";
 
@@ -308,5 +316,114 @@ describe("export rows", () => {
     // A blank cell reads as "not applicable"; a 0 reads as a figure.
     const rows = scheduleExportRows(itrScheduleByFy([trade()]));
     expect(rows.find((r) => r.code === "A3")?.amount).toBe("");
+  });
+});
+
+/**
+ * Schedule IT — taxes paid (advance tax), v3.7 WS4.
+ *
+ * The blank-vs-rows case is the whole point of the surface: a journal with no
+ * challan recorded has not observed a nil payment, it has observed NOTHING, and
+ * Schedule IT is the one schedule where the difference is money — a fabricated
+ * 0 invites an interest computation on a balance the user actually paid
+ * (AGENTS.md invariant 6).
+ */
+const challan = (over: Partial<TaxPaymentInput> = {}): TaxPaymentInput => ({
+  fy: "2026-27",
+  paidOn: "2026-06-14",
+  amount: 25000,
+  bsrCode: "0510308",
+  challanSerial: "02451",
+  note: null,
+  ...over,
+});
+
+describe("taxes paid — blank vs rows", () => {
+  it("an FY with no challan states BLANK, never 0", () => {
+    const [b] = taxesPaidByFy([], ["2026-27"]);
+    expect(b.fy).toBe("2026-27");
+    expect(b.count).toBe(0);
+    // The two assertions that matter: null, and specifically NOT zero.
+    expect(b.total).toBeNull();
+    expect(b.total).not.toBe(0);
+    expect(b.lines).toHaveLength(1);
+    expect(b.lines[0].amount).toBeNull();
+    expect(b.lines[0].amount).not.toBe(0);
+    expect(b.lines[0].paidOn).toBeNull();
+    // …and it says so, rather than leaving the reader to infer it.
+    expect(b.cautions.join(" ")).toMatch(/BLANK IS NOT A NIL PAYMENT/i);
+  });
+
+  it("an FY with challans emits one row per challan, oldest first, totalled", () => {
+    const [b] = taxesPaidByFy(
+      [challan({ paidOn: "2026-09-15", amount: 20000 }), challan({ paidOn: "2026-06-14", amount: 25000 })],
+      ["2026-27"],
+    );
+    expect(b.count).toBe(2);
+    expect(b.total).toBe(45000);
+    expect(b.lines.map((l) => l.paidOn)).toEqual(["2026-06-14", "2026-09-15"]);
+    expect(b.lines[0].bsrCode).toBe("0510308");
+    expect(b.lines[0].challanSerial).toBe("02451");
+  });
+
+  it("keeps an omitted BSR code or serial BLANK instead of inventing a placeholder", () => {
+    // A self-assessment receipt often carries neither. Refusing the payment, or
+    // filling "—"/"0" into the box, would both be worse than an honest blank.
+    const [b] = taxesPaidByFy([challan({ bsrCode: null, challanSerial: "   " })], ["2026-27"]);
+    expect(b.lines[0].bsrCode).toBeNull();
+    expect(b.lines[0].challanSerial).toBeNull();
+    // The amount is still real, so the row is not discarded over a blank field.
+    expect(b.lines[0].amount).toBe(25000);
+    expect(b.cautions.join(" ")).toMatch(/missing a BSR code or serial/i);
+  });
+
+  it("an FY the pack does not cover still appears when the ledger holds one", () => {
+    const blocks = taxesPaidByFy([challan({ fy: "2025-26", paidOn: "2025-06-14" })], ["2026-27"]);
+    expect(blocks.map((b) => b.fy)).toEqual(["2025-26", "2026-27"]);
+    expect(blocks[0].count).toBe(1);
+    expect(blocks[1].count).toBe(0);
+  });
+
+  it("cites the Act that governed THAT year, never a hard-coded 234C", () => {
+    const older = taxesPaidByFy([], ["2024-25"])[0].cautions.join(" ");
+    expect(older).toContain(section("2024-25", "interestAdvanceTax")); // S.234B
+    expect(older).not.toContain("s.424");
+
+    const current = taxesPaidByFy([challan()], ["2026-27"])[0].cautions.join(" ");
+    expect(current).toContain(section("2026-27", "advanceTaxInstalments")); // s.408
+    expect(current).toContain(section("2026-27", "interestDeferment")); // s.425
+    expect(current).not.toContain("234C");
+    expect(current).not.toContain("S.211");
+  });
+});
+
+describe("taxes paid export rows", () => {
+  it("emits challan rows ONLY where rows exist, and blank — not 0 — where they do not", () => {
+    const rows = taxesPaidExportRows(
+      taxesPaidByFy([challan({ fy: "2026-27" })], ["2025-26", "2026-27"]),
+    );
+    const empty = rows.find((r) => r.fy === "2025-26");
+    const real = rows.find((r) => r.fy === "2026-27");
+
+    // The FY with nothing recorded: every derived cell blank. `toBe("")` and
+    // NOT 0 — a 0 in an amount column is a figure someone will file.
+    expect(empty?.amount).toBe("");
+    expect(empty?.amount).not.toBe(0);
+    expect(empty?.bsrCode).toBe("");
+    expect(empty?.paidOn).toBe("");
+    expect(empty?.challanSerial).toBe("");
+
+    // The FY with a challan: the four Schedule IT columns, as transcribed.
+    expect(real?.amount).toBe(25000);
+    expect(real?.bsrCode).toBe("0510308");
+    expect(real?.paidOn).toBe("2026-06-14");
+    expect(real?.challanSerial).toBe("02451");
+  });
+
+  it("blanks an omitted BSR / serial in the export too", () => {
+    const rows = taxesPaidExportRows(taxesPaidByFy([challan({ bsrCode: null, challanSerial: null })], []));
+    expect(rows[0].bsrCode).toBe("");
+    expect(rows[0].challanSerial).toBe("");
+    expect(rows[0].amount).toBe(25000);
   });
 });

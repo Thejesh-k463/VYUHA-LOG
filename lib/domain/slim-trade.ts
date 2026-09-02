@@ -75,6 +75,12 @@ export const SLIM_TRADE_FIELDS = [
   "notes",
   "ruleViolations",
   "exitTrigger",
+  // v3.7: the /trades table shows a reviewed marker and the queue's "Mark
+  // reviewed" acts on the same row — one nullable string, so the marker costs
+  // no fetch-on-render. Deliberately NOT added to LENS_FIELDS
+  // (lib/queries/trades.ts): /lenses groups and aggregates, it never renders a
+  // per-trade review state, and that projection is being REDUCED in v3.7.
+  "reviewedAt",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type SlimTrade = Pick<Trade, (typeof SLIM_TRADE_FIELDS)[number]>;

@@ -49,26 +49,82 @@ export async function POST(req: Request) {
   const keptLimitBreaches = (prev.ruleViolations ?? []).filter((v) => !v.startsWith(PLAYBOOK_RULE_PREFIX));
   const ruleViolations = [...keptLimitBreaches, ...brokenRules.map((r) => `${PLAYBOOK_RULE_PREFIX}${r}`)];
 
+  // The two JSON columns store NULL for "none", never an empty array — an
+  // empty list is not a fact about the trade, it is the absence of one. These
+  // are the values that reach the DB, so both the UPDATE and the audit
+  // snapshot below read from here: writing `[]` into the audit while writing
+  // `null` into the row made every no-mistake save render a phantom
+  // `mistakeTags: null → []` (and the same for `ruleViolations`) in a log the
+  // product calls an append-only record of every mutation. One binding each,
+  // used twice, is what keeps the two from drifting apart again.
+  const storedMistakeTags = mistakeTags.length ? mistakeTags : null;
+  const storedRuleViolations = ruleViolations.length ? ruleViolations : null;
+
+  // v3.7 — saving a review IS reviewing it, so the journal save stamps
+  // `reviewed_at` and the trade leaves the desk's queue without a second
+  // click. Two conditions, both load-bearing:
+  //
+  //  * CLOSED ONLY. The notebook icon renders on EVERY row of /trades, so a
+  //    user can journal a thesis on a position they still hold — and that is
+  //    not a review. A review is of a finished trade (migration 0055's header
+  //    states the same rule for its backfill). Stamping an open row would
+  //    remove that trade from the queue permanently, because nothing clears
+  //    the stamp when it closes: `lib/import/commit.ts` and the close dialog
+  //    set `isOpen:false` and never touch `reviewedAt`, and "Reopen" is the
+  //    only writer that nulls it. It would then close already "reviewed" and
+  //    count in the Process Score's `reviewed` component without ever having
+  //    been looked at as a closed trade. So an open trade is journalled and
+  //    left UNSTAMPED; it enters the queue on the day it closes, still owing
+  //    its review, and the first save after that close is what stamps it.
+  //  * `?? now`, never an unconditional restamp: the date the desk shows is
+  //    when the trade was FIRST reviewed, and re-opening the dialog to fix a
+  //    typo must not move it. "Reopen" (app/api/review/route.ts) is the only
+  //    way back into the queue.
+  //
+  // Note this never CLEARS a stamp either — an already-stamped row keeps its
+  // value whatever its open state, because clearing is "Reopen"'s job alone.
+  //
+  // This route stays FREE, and the stamp does not change that: recording a
+  // trade's own review is record-keeping (invariant 7). Only the DESK — queue,
+  // ritual, Process Score — is gated.
+  const stampsReview = !prev.isOpen && prev.reviewedAt == null;
+  const reviewedAt = stampsReview ? sql`(datetime('now'))` : prev.reviewedAt;
+
   db.update(trades)
     .set({
       playbookId,
       emotionTag,
-      mistakeTags: mistakeTags.length ? mistakeTags : null,
+      mistakeTags: storedMistakeTags,
       notes,
       exitTrigger,
-      ruleViolations: ruleViolations.length ? ruleViolations : null,
+      ruleViolations: storedRuleViolations,
+      reviewedAt,
       updatedAt: sql`(datetime('now'))`,
     })
     .where(eq(trades.id, id))
     .run();
+  // The audit viewer diffs the UNION of the two snapshots' keys
+  // (lib/analytics/audit-diff.ts) and this call site passes no `fields`
+  // allow-list, so a key present on only ONE side reads as a change to null.
+  // `reviewedAt` must therefore appear on BOTH, carrying the value actually
+  // stored: re-saving an already-reviewed trade then produces no `reviewedAt`
+  // row (nothing changed, and this route cannot clear a stamp), and the save
+  // that lands the stamp shows null → the stored time. Read back rather than
+  // recomputed, because the value is `datetime('now')` evaluated by SQLite —
+  // a JS clock would put a second-off number in the log for the row it claims
+  // to describe.
+  const storedReviewedAt = stampsReview
+    ? db.select({ reviewedAt: trades.reviewedAt }).from(trades).where(eq(trades.id, id)).get()?.reviewedAt ?? null
+    : prev.reviewedAt;
   recordAudit({
     entity: "trade",
     entityId: id,
     action: "update",
     summary: `${prev.symbol} journal updated (playbook ${playbookId ?? "—"} · ${emotionTag ?? "no emotion"} · ${mistakeTags.length} mistake${mistakeTags.length === 1 ? "" : "s"} · ${brokenRules.length} rule${brokenRules.length === 1 ? "" : "s"} broken)`,
-    before: { playbookId: prev.playbookId, emotionTag: prev.emotionTag, mistakeTags: prev.mistakeTags, notes: prev.notes, exitTrigger: prev.exitTrigger, ruleViolations: prev.ruleViolations },
-    after: { playbookId, emotionTag, mistakeTags, notes, exitTrigger, ruleViolations },
+    before: { playbookId: prev.playbookId, emotionTag: prev.emotionTag, mistakeTags: prev.mistakeTags, notes: prev.notes, exitTrigger: prev.exitTrigger, ruleViolations: prev.ruleViolations, reviewedAt: prev.reviewedAt },
+    after: { playbookId, emotionTag, mistakeTags: storedMistakeTags, notes, exitTrigger, ruleViolations: storedRuleViolations, reviewedAt: storedReviewedAt },
   });
-  for (const p of ["/trades", "/reports/discipline"]) revalidatePath(p);
+  // /review joins the list: a save takes the trade out of the desk's queue.
+  for (const p of ["/trades", "/reports/discipline", "/review"]) revalidatePath(p);
   return NextResponse.json({ ok: true, message: "Journal saved." });
 }

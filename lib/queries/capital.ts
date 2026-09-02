@@ -7,6 +7,13 @@ import { getSettings } from "./settings";
 import { getIpoRealisedNet } from "./ipos";
 import { getSelectedAccount, getSelectedAccountId } from "./accounts";
 import { getTrades } from "./trades";
+import { getBucketCapital } from "./bucket-capital";
+
+// Re-exported so the dozen existing `from "@/lib/queries/capital"` importers
+// keep working after the helper moved to its own module (see the header of
+// ./bucket-capital for why it had to move).
+export { getBucketCapital };
+export type { BucketCapital } from "./bucket-capital";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -20,32 +27,6 @@ export interface CapitalSummary {
   totalRealised: number;
   rolledIn: number; // already compounded
   available: number; // realised not yet compounded
-}
-
-export interface BucketCapital {
-  equityCapital: number;
-  activeCapital: number;
-  totalCapital: number;
-}
-
-/**
- * The bucket capitals every denominator should use, resolved ACCOUNT-FIRST:
- * the selected account's own figure wins, the global settings row is only the
- * single-account fallback (migration 0044 moved capital onto accounts; the
- * settings columns remain for installs that never created a second account).
- *
- * This is the one copy of the `account ?? settings ?? 0` chain — pages that
- * read `settings.equityCapital` directly silently show the GLOBAL figure in a
- * per-account view (the performance-page defect this helper was extracted
- * for). 0 still means NOT CONFIGURED (invariant 6): callers render "—", never
- * a return on an invented base.
- */
-export function getBucketCapital(): BucketCapital {
-  const s = getSettings();
-  const account = getSelectedAccount();
-  const equityCapital = account?.equityCapital ?? s?.equityCapital ?? 0;
-  const activeCapital = account?.activeCapital ?? s?.activeCapital ?? 0;
-  return { equityCapital, activeCapital, totalCapital: r2(equityCapital + activeCapital) };
 }
 
 export function getCapitalSummary(): CapitalSummary {

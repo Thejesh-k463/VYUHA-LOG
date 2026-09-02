@@ -17,11 +17,19 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Bad request" }, { status: 400 });
 
-  if (parsed.data.action === "dismiss") {
-    dismissPanel(parsed.data.panel as DismissiblePanel, parsed.data.fingerprint);
-  } else {
-    undismissPanels(parsed.data.panel as DismissiblePanel | undefined);
-  }
+  // The query module REFUSES the aggregate view (invariant 9: 0 is a view, not
+  // a place — getWriteAccountId's lowest-id fallback used to file every
+  // All-accounts dismissal against account #1). This route used to discard the
+  // result and answer {ok:true} regardless. Nothing lied to the user, because
+  // the only caller shows no toast — but a route that drops a refusal on the
+  // floor is one UI change away from doing so. Same mapping as /api/bf-losses:
+  // 403 for the aggregate-view write ban, 400 for anything else.
+  const res =
+    parsed.data.action === "dismiss"
+      ? dismissPanel(parsed.data.panel as DismissiblePanel, parsed.data.fingerprint)
+      : undismissPanels(parsed.data.panel as DismissiblePanel | undefined);
+
+  if (!res.ok) return NextResponse.json(res, { status: res.forbidden ? 403 : 400 });
   for (const p of ["/trades", "/"]) revalidatePath(p);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(res);
 }

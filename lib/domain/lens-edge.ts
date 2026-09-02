@@ -32,6 +32,8 @@
 import type { Kpis } from "@/lib/analytics/metrics";
 import { chargesTotals, type ChargeReportTrade } from "@/lib/analytics/charges-report";
 import type { Insight } from "@/lib/intelligence/insight";
+import type { BatchGroup } from "./delete-scope";
+import type { LensTrade } from "./lenses";
 
 /**
  * Per-head charge sums for one group — the ~10 numbers behind the Charges KPI.
@@ -165,4 +167,44 @@ export function toLensRow(
   };
   if (extras?.insights?.length) row.insights = extras.insights.slice(0, GROUP_INSIGHT_CAP);
   return row;
+}
+
+/**
+ * ONE ROW OF THE LENSES LIST — the wire shape /lenses actually ships.
+ *
+ * The page used to send the whole book (`LensTrade[]`) and let the client
+ * re-run `lensGroups` to rebuild these; on the 25,001-trade perf book that was
+ * ~9.3 MB of RSC flight for a list of 45 rows (measured 2026-09-02). The
+ * grouping already ran on the server to compute the KPIs, so shipping its
+ * OUTPUT costs nothing extra and the client stops grouping altogether.
+ *
+ * The descriptor keeps its `scope` — including the ids a `filter` group
+ * carries. That is the delete guarantee (`delete-scope.ts`): what the row
+ * counted and what a delete removes are the same list, fixed at the moment the
+ * page was rendered, not re-derived later from a different read.
+ */
+export interface LensGroupRow {
+  group: BatchGroup;
+  row: LensRow;
+}
+
+/**
+ * What the DRILL-DOWN adds, fetched per group from `/api/lenses/members`.
+ *
+ * These three are rendered only after a group is opened, so computing them for
+ * every group of all six lenses on every page load was work for screens nobody
+ * had asked for: `runRules` alone was 214 ms of the 381 ms server loop, and the
+ * charge heads cost a second whole-book projection read.
+ *
+ * `chargeHeads` and `insights` still route through `toLensRow`, so the paywall
+ * allow-list stays the single gate — an unlicensed copy gets no `insights` key
+ * from the route either.
+ */
+export interface LensGroupDetail {
+  /** The group's FULL member list, in the same order `groupIds` produced —
+   *  the drill-down's own `DRILL_LIMIT` slice is a rendering budget, and the
+   *  top-5 ledger and delete preview read the whole array. */
+  members: LensTrade[];
+  chargeHeads: LensChargeHeads | null;
+  insights?: Insight[];
 }

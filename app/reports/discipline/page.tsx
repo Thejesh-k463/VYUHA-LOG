@@ -1,16 +1,20 @@
+import { Fragment } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard } from "@/components/kpi-card";
 import { ExportButtons } from "@/components/ui/export-button";
 import { SebiRealityCard } from "@/components/reports/sebi-reality-card";
+import { ProcessScoreDetail } from "@/components/reports/process-score-detail";
+import { weeklyScoreAverage } from "@/components/reports/weekly-score-average";
 import { getTrades } from "@/lib/queries/trades";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { breachReport, disciplineByWeek } from "@/lib/analytics/discipline";
+import { PROCESS_SCORE_FLOOR } from "@/lib/analytics/process-score";
 import { computeFnoReality } from "@/lib/analytics/sebi-reality";
 import { playbookStats, mistakeReport, emotionReport, playbookRuleCost, PLAYBOOK_RULE_PREFIX } from "@/lib/analytics/behavior";
 import { getPlaybooks } from "@/lib/queries/playbooks";
-import { inr } from "@/lib/format";
+import { inr, num } from "@/lib/format";
 import Link from "next/link";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -18,26 +22,47 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
+// The export carries the honest pair: a refused week exports a BLANK score plus
+// the reason it refused, never a 0 that a spreadsheet would happily average.
 const COLS = [
   { key: "week", label: "Week" }, { key: "weekStart", label: "Starting" },
   { key: "trades", label: "Trades" }, { key: "riskCapRespectedPct", label: "Risk cap %" },
   { key: "dailyStopRespectedPct", label: "Daily stop %" }, { key: "planningPct", label: "Planned %" },
-  { key: "score", label: "Score" },
+  { key: "processScore", label: "Process score" }, { key: "refusal", label: "Why no score" },
 ];
 
 function scoreColor(s: number) {
   return s >= 80 ? "text-profit" : s >= 60 ? "text-warning" : "text-loss";
 }
 
+const pctCell = (v: number | null) => (v == null ? "—" : `${v}%`);
+
 export default function DisciplineReportPage() {
   const trades = getTrades();
   const risk = db.select().from(riskConfig).all();
-  const cap = risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? 9500;
-  const stop = risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? 25000;
+  // Invariant 6, applied to a LIMIT rather than a denominator: v3.6 read
+  // `?? 9500` / `?? 25000` here, so a user who never set a per-trade cap or a
+  // daily stop was still scored against one — and told they had respected it.
+  // Null flows through to the Process Score, whose risk-cap and daily-stop
+  // components then refuse and drop out of the mean instead.
+  const cap = risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null;
+  const stop = risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? null;
 
   const weeks = disciplineByWeek(trades, cap, stop);
-  const avg = weeks.length ? Math.round((weeks.reduce((s, w) => s + w.score, 0) / weeks.length) * 10) / 10 : 0;
+  // Sub-floor weeks carry `processScore: null` and a stated refusal. They are
+  // excluded from the average and never handed to `scoreColor` — averaging the
+  // legacy `score` field (0 on refusal) is what dragged this number down.
+  const weekly = weeklyScoreAverage(weeks);
   const latest = weeks[weeks.length - 1];
+  const latestScore = latest?.processScore ?? null;
+  const weekRows = weeks.map((w) => ({
+    week: w.week, weekStart: w.weekStart, trades: w.trades,
+    riskCapRespectedPct: w.riskCapRespectedPct,
+    dailyStopRespectedPct: w.dailyStopRespectedPct,
+    planningPct: w.planningPct,
+    processScore: w.processScore,
+    refusal: w.refusal?.reason ?? "",
+  }));
   const fnoReality = computeFnoReality(trades);
 
   // P2.4 — behavioral rollups: which playbooks pay, what mistakes cost, how emotions trade.
@@ -65,10 +90,28 @@ export default function DisciplineReportPage() {
       <div className="space-y-5 p-6">
         <ProGate>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <KpiCard label="Avg weekly score" value={`${avg}`} valueClassName={scoreColor(avg)} sub={`${weeks.length} weeks`} />
-          <KpiCard label="Latest week" value={latest ? `${latest.score}` : "—"} valueClassName={latest ? scoreColor(latest.score) : ""} sub={latest?.week} />
-          <KpiCard label="Risk cap respected" valueNum={cap} format="int" sub="per-trade max loss" />
-          <KpiCard label="Daily stop" valueNum={stop} format="int" sub="aggregate/day" />
+          <KpiCard
+            label="Avg weekly score"
+            value={weekly.display}
+            valueClassName={weekly.avg == null ? "" : scoreColor(weekly.avg)}
+            sub={weekly.coverage}
+          />
+          <KpiCard
+            label="Latest week"
+            value={latestScore == null ? "—" : `${latestScore}`}
+            valueClassName={latestScore == null ? "" : scoreColor(latestScore)}
+            sub={latest?.refusal ? `${latest.week} · ${latest.refusal.reason}` : latest?.week}
+          />
+          <KpiCard
+            label="Per-trade risk cap"
+            value={cap == null ? "—" : num(cap, 0)}
+            sub={cap == null ? "not configured in Settings" : "max loss per trade"}
+          />
+          <KpiCard
+            label="Daily loss stop"
+            value={stop == null ? "—" : num(stop, 0)}
+            sub={stop == null ? "not configured in Settings" : "aggregate per day"}
+          />
         </section>
 
         <SebiRealityCard reality={fnoReality} />
@@ -280,7 +323,7 @@ export default function DisciplineReportPage() {
         <Card className="p-0">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Weekly scores</CardTitle>
-            <ExportButtons filename="vyuha-discipline" columns={COLS} rows={weeks} />
+            <ExportButtons filename="vyuha-discipline" columns={COLS} rows={weekRows} />
           </CardHeader>
           <CardContent className="p-0">
             {weeks.length === 0 ? (
@@ -301,15 +344,30 @@ export default function DisciplineReportPage() {
                 </ReportThead>
                 <tbody>
                   {weeks.map((w) => (
-                    <ReportTr key={w.week}>
-                      <ReportTd className="font-medium">{w.week}</ReportTd>
-                      <ReportTd muted>{w.weekStart}</ReportTd>
-                      <ReportTd align="right">{w.trades}</ReportTd>
-                      <ReportTd align="right">{w.riskCapRespectedPct}%</ReportTd>
-                      <ReportTd align="right">{w.dailyStopRespectedPct}%</ReportTd>
-                      <ReportTd align="right">{w.planningPct}%</ReportTd>
-                      <ReportTd align="right" className={`font-semibold ${scoreColor(w.score)}`}>{w.score}</ReportTd>
-                    </ReportTr>
+                    <Fragment key={w.week}>
+                      <ReportTr>
+                        <ReportTd className="font-medium">{w.week}</ReportTd>
+                        <ReportTd muted>{w.weekStart}</ReportTd>
+                        <ReportTd align="right">{w.trades}</ReportTd>
+                        <ReportTd align="right">{pctCell(w.riskCapRespectedPct)}</ReportTd>
+                        <ReportTd align="right">{pctCell(w.dailyStopRespectedPct)}</ReportTd>
+                        <ReportTd align="right">{pctCell(w.planningPct)}</ReportTd>
+                        <ReportTd
+                          align="right"
+                          className={w.processScore == null ? "text-muted-foreground" : `font-semibold ${scoreColor(w.processScore)}`}
+                        >
+                          {w.processScore == null ? "—" : w.processScore}
+                        </ReportTd>
+                      </ReportTr>
+                      {/* The arithmetic, one row down: five components as "n of m · pct"
+                          with their coverage. A week that refused states why here
+                          instead of scoring. */}
+                      <tr className="border-b border-rule">
+                        <td colSpan={7} className="p-0">
+                          <ProcessScoreDetail components={w.components} refusal={w.refusal} />
+                        </td>
+                      </tr>
+                    </Fragment>
                   ))}
                 </tbody>
               </ReportTable>
@@ -317,7 +375,11 @@ export default function DisciplineReportPage() {
           </CardContent>
         </Card>
         <p className="text-[0.6875rem] text-muted-foreground">
-          Score = average of three sub-scores: losses kept within the per-trade cap, days kept within the daily stop, and trades with an SL/target recorded. Tag SL/targets in Trades to lift the planning score.
+          Score = the mean of five components: SL or target recorded, losses within the risk taken, days within
+          the daily stop, playbook rules followed, and trades reviewed. Each carries its own denominator, so a
+          component with nothing to measure sits out of the mean rather than counting as zero — open the row
+          under any week to see the arithmetic. A week with fewer than {PROCESS_SCORE_FLOOR} closed trades states
+          that in place of a score, and stays out of the average above.
         </p>
       </ProGate>
       </div>

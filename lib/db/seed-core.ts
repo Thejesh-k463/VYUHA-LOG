@@ -52,6 +52,13 @@ export function seedDatabase(log = false): SeedReport {
         colorblindSafe: false,
         defaultBuyOrders: 1,
         defaultSellOrders: 1,
+        // First-run onboarding (v3.7, migration 0057). The dev/e2e profile
+        // stamps it: the Playwright suite shares ONE database across the run
+        // and specs must not assume they run first (e2e/helpers.ts), so a
+        // modal wizard over the app on first navigation would fail whichever
+        // spec happened to go first. The DESKTOP TEMPLATE leaves it NULL —
+        // a real fresh install is exactly who the wizard is for.
+        onboardingCompletedAt: CLEAN ? null : new Date().toISOString(),
       })
       .run();
     report.settings = "seeded";

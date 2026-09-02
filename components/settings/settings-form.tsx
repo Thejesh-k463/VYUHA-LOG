@@ -67,6 +67,9 @@ export function SettingsForm({ current }: { current: Settings }) {
   );
   const [openalgoDialogOpen, setOpenalgoDialogOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  // Separate from `pending`: re-running the first-run wizard is its own request
+  // and must not disable (or be disabled by) Save settings.
+  const [setupPending, setSetupPending] = useState(false);
   // ── Appearance (lib/domain/appearance.ts) ──
   const [tintIntensity, setTint] = useState(clampIntensity(current.tintIntensity));
   const [panelStyle, setPanelStyle] = useState<PanelStyle>(asPanelStyle(current.panelStyle));
@@ -244,6 +247,35 @@ export function SettingsForm({ current }: { current: Settings }) {
     // The acknowledgement is left on file: they did read that version. Turning
     // it back on shows the disclosure again regardless.
     void save({ openalgoEnabled: false });
+  }
+
+  /**
+   * Run the first-run wizard again (v3.7 WS3).
+   *
+   * The ONLY way back to it: the flag is machine state, so "Back to my
+   * defaults" deliberately does not clear it and a restored backup does not
+   * either. Route handler + fetch + router.refresh(), never a server action —
+   * a server action's automatic refresh would remount this form and drop
+   * whatever else is half-edited on the page (AGENTS.md).
+   */
+  async function rerunSetup() {
+    setSetupPending(true);
+    try {
+      const res = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reset" }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        toast.success(json.message ?? "Setup will run again.");
+        router.refresh();
+      } else toast.error(json.message ?? "Failed.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSetupPending(false);
+    }
   }
 
   /** The only path to enabled=true, and it stamps the version that was read. */
@@ -505,6 +537,22 @@ export function SettingsForm({ current }: { current: Settings }) {
         onOpenChange={setOpenalgoDialogOpen}
         onAccept={acceptOpenalgo}
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>First-run setup</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-xl text-xs text-muted-foreground">
+            The four-step wizard that names this account, points at the three ways to get trades in,
+            and mentions the optional Telegram digest. It opens over the dashboard the next time you
+            open Vyuha, and skipping it again is one click. Nothing in your journal changes either way.
+          </p>
+          <Button type="button" variant="outline" onClick={() => void rerunSetup()} disabled={setupPending} data-testid="rerun-setup">
+            {setupPending ? "Working…" : "Run setup again"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

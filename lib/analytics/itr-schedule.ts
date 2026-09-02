@@ -366,3 +366,156 @@ export function scheduleExportRows(packs: ItrScheduleFy[]) {
     })),
   );
 }
+
+// ── Taxes paid — the advance-tax challan schedule (v3.7, WS4) ────────────────
+//
+// WHY IT LIVES HERE. The return's own "Schedule IT — Details of Advance Tax and
+// Self-Assessment Tax Payments" asks for exactly four columns per challan: BSR
+// code, date of deposit, serial number, amount. That is the same question this
+// module already answers for CG/BP/CFL — "what goes in which BOX?" — and, more
+// importantly, it is governed by the same rule this module exists to enforce:
+// `amount: number | null`, where null EXPORTS BLANK and never 0 (invariant 6).
+// A journal with no challan recorded has not observed a nil payment; it has
+// observed nothing, and Schedule IT is the one schedule where the difference is
+// money — a fabricated 0 invites a s.424 interest computation on a balance the
+// user actually paid. Keeping it beside `scheduleExportRows` keeps ONE
+// blank-vs-zero contract instead of two that can drift.
+//
+// PURE, like the rest of the file: the ledger rows arrive as plain data from
+// `lib/queries/challans.ts` (rupees at runtime, invariant 1 — no conversion
+// here), and every citation resolves through `section(fy, …)` so a 2024-25 pack
+// keeps S.211/S.234B/S.234C while a 2026-27 pack says s.408/s.424/s.425.
+
+/** One transcribed challan, in the units and shape `lib/queries/challans.ts` returns. */
+export interface TaxPaymentInput {
+  fy: string;
+  /** ISO date of deposit. */
+  paidOn: string;
+  /** ₹ paid — RUPEES. */
+  amount: number;
+  bsrCode?: string | null;
+  challanSerial?: string | null;
+  note?: string | null;
+}
+
+/** One Schedule IT row. Every field is nullable because a receipt may omit it. */
+export interface TaxesPaidLine {
+  /** BSR code of the receiving bank branch; null where the receipt omitted it. */
+  bsrCode: string | null;
+  /** Date of deposit; null only on the "nothing recorded" placeholder line. */
+  paidOn: string | null;
+  challanSerial: string | null;
+  /** null ⇒ the journal has no challan to state here. NEVER a fabricated 0. */
+  amount: number | null;
+  note: string;
+}
+
+export interface TaxesPaidFy {
+  fy: string;
+  /** How many challans the journal holds for this FY. 0 ⇒ the placeholder line. */
+  count: number;
+  /** ₹ across the FY, or null when nothing is recorded — not 0 (invariant 6). */
+  total: number | null;
+  lines: TaxesPaidLine[];
+  cautions: string[];
+}
+
+/**
+ * Group the challan ledger into per-FY Schedule IT blocks, oldest FY first.
+ *
+ * @param payments the account's challans (any FY, any order).
+ * @param fys FYs the surrounding pack covers. Each gets a block even with no
+ *   challan, because "this year shows nothing" is the answer that has to be
+ *   READ — an FY silently omitted looks like an FY with no tax due.
+ */
+export function taxesPaidByFy(payments: TaxPaymentInput[], fys: readonly string[] = []): TaxesPaidFy[] {
+  const map = new Map<string, TaxPaymentInput[]>();
+  for (const fy of fys) if (!map.has(fy)) map.set(fy, []);
+  for (const p of payments) {
+    const bucket = map.get(p.fy);
+    if (bucket) bucket.push(p);
+    else map.set(p.fy, [p]);
+  }
+
+  return [...map.entries()]
+    .map(([fy, rows]) => buildTaxesPaidFy(fy, rows))
+    .sort((a, b) => a.fy.localeCompare(b.fy));
+}
+
+function buildTaxesPaidFy(fy: string, rows: TaxPaymentInput[]): TaxesPaidFy {
+  const instalments = section(fy, "advanceTaxInstalments");
+  const shortPay = section(fy, "interestAdvanceTax");
+  const deferment = section(fy, "interestDeferment");
+  const cautions: string[] = [];
+
+  if (rows.length === 0) {
+    // The whole point of the module: blank, not zero. A 0 here would read as
+    // "nil advance tax paid" and is a figure this journal has not observed.
+    cautions.push(
+      `Nothing is stated for FY ${fy} — this journal holds no challan for that year. A BLANK IS NOT A NIL PAYMENT: if you did pay, the amount is missing from this pack, and ${shortPay} interest would be computed on a balance you had already cleared. Check Form 26AS / AIS, or record the challans on the Advance tax planner.`,
+    );
+    return {
+      fy,
+      count: 0,
+      total: null,
+      lines: [
+        {
+          bsrCode: null,
+          paidOn: null,
+          challanSerial: null,
+          amount: null,
+          note: `No advance-tax challan recorded for FY ${fy}.`,
+        },
+      ],
+      cautions,
+    };
+  }
+
+  const sorted = [...rows].sort((a, b) => (a.paidOn === b.paidOn ? 0 : a.paidOn < b.paidOn ? -1 : 1));
+  const lines: TaxesPaidLine[] = sorted.map((r) => ({
+    bsrCode: r.bsrCode?.trim() ? r.bsrCode.trim() : null,
+    paidOn: r.paidOn,
+    challanSerial: r.challanSerial?.trim() ? r.challanSerial.trim() : null,
+    amount: r2(r.amount),
+    note: r.note?.trim() ? r.note.trim() : "",
+  }));
+  const total = r2(lines.reduce((s, l) => s + (l.amount ?? 0), 0));
+
+  cautions.push(
+    `Transcribed from your own receipts — verify each against Form 26AS / AIS before filing; a BSR code or serial mistyped here is mistyped on the return.`,
+  );
+  cautions.push(
+    `${instalments} counts money paid by 31 March as advance tax for FY ${fy}; anything after that date is self-assessment tax and belongs in its own row, not this one.`,
+  );
+  cautions.push(
+    `The DATES matter as much as the amounts: ${deferment} deferment interest is computed instalment by instalment from what stood paid on each due date, so a wrong date changes the interest even when the total is right.`,
+  );
+  const missingRefs = lines.filter((l) => l.bsrCode === null || l.challanSerial === null).length;
+  if (missingRefs > 0) {
+    cautions.push(
+      `${missingRefs} of ${lines.length} challan${lines.length === 1 ? "" : "s"} here ${missingRefs === 1 ? "is" : "are"} missing a BSR code or serial number. Those columns are left BLANK rather than filled with a placeholder — the return needs the real ones from the receipt.`,
+    );
+  }
+
+  return { fy, count: lines.length, total, lines, cautions };
+}
+
+/**
+ * Flatten the Schedule IT blocks for CSV/XLSX.
+ *
+ * A null amount, BSR or serial exports as "" — the same blank-not-zero rule
+ * `scheduleExportRows` applies, and the reason this function is not a caller's
+ * inline `.map`.
+ */
+export function taxesPaidExportRows(packs: TaxesPaidFy[]) {
+  return packs.flatMap((p) =>
+    p.lines.map((l) => ({
+      fy: p.fy,
+      bsrCode: l.bsrCode ?? "",
+      paidOn: l.paidOn ?? "",
+      challanSerial: l.challanSerial ?? "",
+      amount: l.amount ?? "",
+      note: l.note,
+    })),
+  );
+}

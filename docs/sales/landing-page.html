@@ -273,7 +273,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <div class="pill"><span class="dot"></span> v3.4.0 · Windows · Built for Indian retail traders · Works fully offline</div>
+    <div class="pill"><span class="dot"></span> v3.7.0 · Windows · Built for Indian retail traders · Works fully offline</div>
     <h1>Your P&amp;L tells you <em>what</em>.<br/><span class="grad">Vyuha tells you why.</span></h1>
     <p class="lede">
       A trade journal and analytics cockpit that computes your charges to the rupee, models MTF interest
@@ -288,7 +288,7 @@
       <span class="chip">🇮🇳 <b>6 auto-detected brokers</b> · Zerodha · Dhan · Groww · Angel One · Upstox · Paytm Money — <b>+ any CSV</b> via the column mapper · <b>+ 4 broker APIs</b> · <b>OpenAlgo</b> optional for the rest</span>
       <span class="chip">🎁 <b>7-day full trial</b> · no card</span>
       <span class="chip">♾ <b>Journal free forever</b></span>
-      <span class="chip">🆕 <b>New in v3.4.0</b> · five heavy screens now open in about a second · stated row windows</span>
+      <span class="chip">🆕 <b>New in v3.7.0</b> · the Trade Review Desk · a Process Score you can check line by line · advance tax measured against dated challans</span>
     </div>
     <div class="wins" aria-label="Why it wins">
       <div class="win"><div class="n">₹29,999 once</div><div class="d">vs ≈ ₹47,000–95,000 over three years for the global journals in our comparison, at their current prices.</div></div>
@@ -310,6 +310,8 @@
       <div class="card"><span class="ico">🛡️</span><h3>Confidence before conclusions</h3><p>A Data Quality score catches missing basis, marks, stops, MTF, option and IPO details before they distort a report.</p></div>
       <div class="card"><span class="ico">🗓️</span><h3>Plan → trade → review</h3><p>Set the watchlist, playbook, cutoff, max trades and loss budget; then review adherence against what actually happened.</p></div>
       <div class="card"><span class="ico">🏦</span><h3>Every account, kept honest</h3><p>Separate broker or entity books, then switch to an aggregate read view without blending the underlying records.</p></div>
+      <div class="card"><span class="ico">📓</span><h3>Read your trades back</h3><p>A review queue of the closed trades you have not read back yet — windowed, and stating "showing N of M". A Sunday ritual closes the week with what it netted, the widest expectancy gaps by mistake tag, and a note.</p></div>
+      <div class="card"><span class="ico">📊</span><h3>A discipline score you can check</h3><p>Five equal-weight components — planned, risk-cap, daily-stop, rules-followed, reviewed — each printed as "n of m · pct" with its coverage. A week under 10 closed trades does not score, and is excluded from averages rather than counted as zero.</p></div>
       <div class="card"><span class="ico">🎬</span><h3>Scaling quality + replay</h3><p>See whether adds helped or hurt and replay staged fills over your local EOD price history.</p></div>
       <div class="card"><span class="ico">🧩</span><h3>Options-seller evidence</h3><p>Capture entry/exit IV, DTE, hedge status, expiry outcome and adjustment families—not just a free-form note.</p></div>
       <div class="card"><span class="ico">🔐</span><h3>Complete encrypted recovery</h3><p>Back up every table and screenshot, optionally password-encrypted, with a preview before restore.</p></div>
@@ -321,7 +323,7 @@
   <div class="wrap center">
     <div class="kicker">See it</div>
     <h2>Every screen below is the real app.</h2>
-    <p class="sub">Synthetic demo data, actual v3.0.0 build. Click any screenshot to enlarge.</p>
+    <p class="sub">Synthetic demo data, captured from the running app — not mock-ups. Click any screenshot to enlarge.</p>
     <div class="gallery">
       <figure><img src="../screenshots/trades.png" alt="Trades table with Qty, Invested, Entry price and Exit price columns" loading="lazy" /><figcaption><b>Trades — Qty, Invested, Entry, Exit</b>MTF rows show your own contribution % and the broker-funded amount beside it.</figcaption></figure>
       <figure><img src="../screenshots/staged-position.png" alt="Staged position — entry ladder with a stop per tranche" loading="lazy" /><figcaption><b>Staged positions</b>Scale in and out in tranches; a stop on each entry, R anchored to the first.</figcaption></figure>
@@ -413,7 +415,8 @@
         <p class="sub">The recurring annual headache nothing on the retail market handles well.</p>
         <ul class="ticks">
           <li><span class="tick">✓</span><span><b>STCG / LTCG</b> with 31-Jan-2018 grandfathering (per-share FMV) and rate-cutover handling</span></li>
-          <li><span class="tick">✓</span><span><b>Advance tax</b> (234B / 234C instalments) plus a tax-loss harvesting scanner</span></li>
+          <li><span class="tick">✓</span><span><b>Advance tax</b> instalments measured against a <b>dated challan ledger</b> — each instalment judged on what you had actually paid by its own due date, with anything after 31 March named as self-assessment tax; plus a tax-loss harvesting scanner</span></li>
+          <li><span class="tick">✓</span><span><b>Taxes paid (advance tax)</b> on the ITR pack in the return’s own Schedule IT shape — BSR code, date of deposit, serial, amount — blank rather than 0 wherever it cannot derive a value</span></li>
           <li><span class="tick">✓</span><span><b>ITR Pack</b> — speculative vs non-speculative vs capital gains per FY, ICAI Guidance Note turnover, and a 44AB/44AD audit-applicability read</span></li>
           <li><span class="tick">✓</span><span><b>AIS / Form 26AS reconciliation</b> and dividend TDS tracking</span></li>
           <li><span class="tick">✓</span><span>Export <b>CSV / XLSX for your CA</b> — informational, and clearly labelled as such</span></li>
@@ -496,7 +499,7 @@
         <span class="offer">Launch offer · 38% off — save ₹5,001</span>
         <ul>
           <li><span class="tick">✓</span> The full Vyuha desktop app</li>
-          <li><span class="tick">✓</span> Every Pro analytics screen — risk, edge, discipline, options, full tax pack</li>
+          <li><span class="tick">✓</span> Every Pro analytics screen — risk, edge, discipline, the Trade Review Desk, options, full tax pack</li>
           <li><span class="tick">✓</span> The charges engine verified within 0.69% of a real broker report</li>
           <li><span class="tick">✓</span> All broker importers and free updates through the year</li>
           <li><span class="tick">✓</span> Upgrade to lifetime any time before your year ends — what you paid for the year comes off the lifetime price</li>
@@ -579,12 +582,21 @@
         only to your own broker's API; and a daily Telegram digest of your own recorded numbers — the one
         path that uploads anything, and it is enabled only behind a disclosure that says plainly the content
         goes to Telegram's servers.</p></details>
+      <details><summary>Is the installer code-signed?</summary>
+        <p><b>No — and Windows will say so.</b> Vyuha is built by one independent developer and the
+        installer carries no code-signing certificate, so SmartScreen shows <i>"Windows protected your PC"</i>
+        the first time you run it: click <b>More info → Run anyway</b>. That is a reputation warning, not a
+        virus warning, and your antivirus may flag a new unsigned binary for the same reason. There is no
+        macOS build on sale — Windows 10/11 64-bit only. What <i>is</i> signed is the update: releases are
+        signed with Vyuha’s own updater key, and nothing installs on its own — the app shows
+        <b>Update now / Later</b> and waits for you.</p></details>
       <details><summary>What is free, and what am I paying for?</summary>
         <p><b>Your record is free. The intelligence about it is paid.</b> Free forever: recording closed trades,
         all six broker importers, the dashboard and P&amp;L calendar, staged positions, playbooks, chart
         screenshots, the trade calculator, backups and full CSV/JSON export. Payment unlocks the analytics
-        layer — the portfolio risk cockpit, Arjun's Eye and the edge/discipline reports, the options-seller
-        journal, the tax suite (Tax Summary, ITR pack, advance tax, harvesting, AIS reconcile), broker-cost
+        layer (free for your first 7 days, then Pro or lifetime) — the portfolio risk cockpit, Arjun's Eye and
+        the edge/discipline reports, the Trade Review Desk (the review queue, the Sunday ritual and the
+        Process Score), the options-seller journal, the tax suite (Tax Summary, ITR pack, advance tax, harvesting, AIS reconcile), broker-cost
         and cross-broker MTF comparison, PDF reports, and live open-position tracking with stops and targets.</p>
         <p style="margin-top:10px"><b>The part that matters:</b> every trade you have already recorded stays
         readable, editable and exportable without a key, forever. If you never buy, you still own your journal

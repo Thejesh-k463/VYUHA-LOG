@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { TrackerClient } from "@/components/trackers/tracker-client";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap } from "@/lib/queries/mtm";
-import { getSettings } from "@/lib/queries/settings";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
 import { loadRatesMap } from "@/lib/engine/rates-db";
@@ -31,7 +31,10 @@ export default function EquityTrackerPage() {
   // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
   const trades = getTrackerTrades();
   const mtm = getMtmMap();
-  const settings = getSettings();
+  // ACCOUNT-FIRST (v3.7): the selected account's own capital, the settings row
+  // only as the single-account fallback. Reading the global settings column
+  // here showed one account's capital base beside another account's positions.
+  const equityCapital = getBucketCapital().equityCapital;
 
   const rates = loadRatesMap();
   const positions = deriveOpenPositions(trades, mtm, today, getMtfMarginByBroker())
@@ -72,7 +75,7 @@ export default function EquityTrackerPage() {
         {/* 0 = capital not configured; the client renders "—" + a Settings
             nudge. The old ?? 1300000 fabricated every utilisation figure on a
             fresh install (invariant 6). */}
-        <TrackerClient variant="equity" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={settings?.equityCapital ?? 0} />
+        <TrackerClient variant="equity" positions={positions} closed={closed} closedTotal={closedAll.length} bucketCapital={equityCapital} />
       </div>
     </>
   );

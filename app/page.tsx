@@ -5,10 +5,11 @@ import { AutoMtmRunner } from "@/components/system/auto-mtm-runner";
 import { TelegramRunner } from "@/components/system/telegram-runner";
 import { AutoPullRunner } from "@/components/system/auto-pull-runner";
 import { BreachBanner } from "@/components/risk/breach-banner";
+import { ReviewOpenCard } from "@/components/review/review-open-card";
 import { scanBreaches } from "@/lib/jobs/auto-mtm";
 import { getDashboardTrades } from "@/lib/queries/trades";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
-import { getBucketCapital } from "@/lib/queries/capital";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getGoalView, getAggregateGoalProgress } from "@/lib/queries/goals";
 import { goalProgress } from "@/lib/analytics/goal";
 import { dailyPnl } from "@/lib/analytics/metrics";
@@ -25,7 +26,11 @@ export default function DashboardPage() {
   // same values, ~4× less row-mapping work at 25k trades (perf sweep 2026-08-29).
   const dash: DashTrade[] = getDashboardTrades();
 
-  const total = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0);
+  // ACCOUNT-FIRST (v3.7): the "Total ₹XL" tile read the GLOBAL settings row
+  // while the goal badge three lines below already resolved per-account — the
+  // same header could show account A's capital next to account B's goal.
+  const bucketCapital = getBucketCapital();
+  const total = bucketCapital.totalCapital;
 
   // Compact goal badge (v3.6) — renders ONLY when a goal exists. One goal is
   // summarised (total bucket preferred); the full read lives on /reports/
@@ -35,7 +40,7 @@ export default function DashboardPage() {
   let goalBadge: string | null = null;
   if (goal) {
     const today = new Date().toISOString().slice(0, 10);
-    const bc = getBucketCapital();
+    const bc = bucketCapital; // same resolution as the "Total" tile above
     const cap = goal.bucket === "equity" ? bc.equityCapital : goal.bucket === "active" ? bc.activeCapital : bc.totalCapital;
     const rel = goal.bucket === "total" ? dash : dash.filter((t) => t.bucket === goal.bucket);
     const realised = [...dailyPnl(rel).entries()].map(([date, net]) => ({ date, net }));
@@ -77,6 +82,7 @@ export default function DashboardPage() {
         <TelegramRunner />
         <AutoPullRunner />
         <BreachBanner breaches={scanBreaches()} />
+        <ReviewOpenCard />
         <DashboardClient
           workspace={asWorkspace(settings?.workspace)}
           trades={dash}

@@ -144,6 +144,22 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["plan", "review", "watchlist", "cutoff", "discipline", "adherence"],
   },
   {
+    href: "/review",
+    title: "Trade Review Desk",
+    answers: "Which trades have I not read back yet, and how did I actually trade this week?",
+    body: [
+      "The open week's Process Score with the arithmetic beside it: five components, each stating its own numerator, denominator and what it could read — a component with nothing honest to measure shows a dash, not a zero, and drops out of the average.",
+      "A queue of closed trades carrying no review stamp. Each row opens the same journal dialog the Trades screen uses, and saving it stamps the trade; a trade with nothing to add can be stamped directly and reopened later.",
+      "A weekly ritual for the week just gone — what closed, what it netted and cost, the widest expectancy gaps by mistake tag, best and worst by R, why positions were closed, and a free-text note. Completing a week stores the score that was on screen at that moment, next to the score recomputed today.",
+    ],
+    keywords: ["review", "process score", "weekly", "ritual", "queue", "reviewed", "journal", "sunday"],
+    refusals: [
+      "No counterfactual anywhere: mistake tags report the expectancy gap against untagged trades, never a P&L you would have had.",
+      "A week with fewer than ten closed trades states that instead of scoring, and a week-over-week comparison is left blank across a gap rather than measured against a non-adjacent week.",
+      "In-app only — the ritual sends no reminder, by Telegram or anything else.",
+    ],
+  },
+  {
     href: "/arjuns-eye",
     title: "Arjun's Eye",
     answers: "What kind of trader am I, and where does my edge actually come from?",
@@ -236,8 +252,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
     href: "/reports/advance-tax",
     title: "Advance Tax",
     answers: "What are my instalments, and what does missing one cost?",
-    body: ["The 15/45/75/100 schedule prefilled from realised FY P&L, with deferment interest per instalment (s.425 of the Income-tax Act, 2025 — the old §234C). A shortfall can show no interest: s.425(2) waives it entirely where at least 12% is paid by 15 June or 36% by 15 September, and there is no equivalent tolerance for December or March. The s.424 short-payment interest (the old §234B) is stated as a caveat, not computed — it cannot be assessed in a forward planner."],
-    keywords: ["advance tax", "234b", "234c", "instalment", "s.425", "safe harbour"],
+    body: [
+      "The 15/45/75/100 schedule prefilled from realised FY P&L, with deferment interest per instalment (s.425 of the Income-tax Act, 2025 — the old §234C). A shortfall can show no interest: s.425(2) waives it entirely where at least 12% is paid by 15 June or 36% by 15 September, and there is no equivalent tolerance for December or March. The s.424 short-payment interest (the old §234B) is stated as a caveat, not computed — it cannot be assessed in a forward planner.",
+      "A dated challan ledger records what you actually paid — date, amount, and optionally the BSR code and challan serial. Each instalment is measured against what had been paid by its own due date, so a March payment is not credited to a June rung, and the safe harbour is decided by date.",
+    ],
+    keywords: ["advance tax", "234b", "234c", "instalment", "s.425", "safe harbour", "challan", "bsr", "paid"],
+    refusals: [
+      "Anything paid after 31 March is named as self-assessment tax, not advance tax, and is excluded from every rung.",
+      "Challans are your own transcriptions of your own receipts — nothing is fetched from the department, and BSR code and serial stay optional because a real receipt often omits them.",
+    ],
   },
   {
     href: "/reports/harvest",
@@ -284,8 +307,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
     href: "/reports/discipline",
     title: "Discipline",
     answers: "What are my broken rules costing me, in rupees?",
-    body: ["Weekly adherence, cost of mistakes as an expectancy gap (never a fake counterfactual), trading by emotion, entry-time breaches, and the per-rule cost table. The SEBI reality-check card sets your F&O results against the published loss statistics."],
-    keywords: ["mistakes", "rules", "emotion", "sebi", "adherence"],
+    body: [
+      "The weekly Process Score — the same five components the Review Desk shows (planned, risk-cap, daily-stop, rules-followed, reviewed), each with its own numerator, denominator and coverage.",
+      "Cost of mistakes as an expectancy gap (never a fake counterfactual), trading by emotion, entry-time breaches, and the per-rule cost table. The SEBI reality-check card sets your F&O results against the published loss statistics.",
+    ],
+    keywords: ["mistakes", "rules", "emotion", "sebi", "adherence", "process score", "weekly"],
+    refusals: [
+      "A week with fewer than ten closed trades is not scored: it states what was short and is left out of averages rather than counted as a zero, and every average states how many weeks it could score.",
+      "A per-trade cap or daily stop you never configured is not substituted with a default — that component reports nothing to measure against and drops out of the score.",
+    ],
   },
   {
     href: "/reports/tax",

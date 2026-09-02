@@ -4,13 +4,14 @@ import { KpiCard } from "@/components/kpi-card";
 import { EquityCurve } from "@/components/dashboard/charts";
 import { PrintButton } from "@/components/reports/print-button";
 import { getTrades } from "@/lib/queries/trades";
-import { getSettings } from "@/lib/queries/settings";
+import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { dailyPnl, equityCurve } from "@/lib/analytics/metrics";
 import { computePerformance } from "@/lib/analytics/performance";
 import { monthlyBreakdown } from "@/lib/analytics/monthly";
 import { playbookStats, mistakeReport } from "@/lib/analytics/behavior";
 import { disciplineByWeek } from "@/lib/analytics/discipline";
+import { weeklyScoreAverage } from "@/components/reports/weekly-score-average";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { inr } from "@/lib/format";
@@ -32,13 +33,14 @@ const cls = (v: number | null) => (v == null ? "" : v > 0 ? "text-profit" : v < 
 
 export default function MonthlyReportPage() {
   const trades = getTrades();
-  const settings = getSettings();
   // Never fabricate a denominator (AGENTS.md #6). This used to fall back to an
   // invented ₹17,00,000 when no capital was configured — which is every fresh
   // install — so a PRINTED, shareable report stated a total return on fiction.
   // With no capital, %-of-equity figures render "—" and the rupee figures
   // (Net P&L, ₹ drawdown, month detail) stay exact. Same rule as /reports/performance.
-  const capital = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0);
+  // ACCOUNT-FIRST (v3.7): the trades above are account-scoped, so the base is
+  // too — a printed report must not divide one account's P&L by another's capital.
+  const capital = getBucketCapital().totalCapital;
   const capitalKnown = capital > 0;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -60,10 +62,16 @@ export default function MonthlyReportPage() {
   const mistakes = mistakeReport(behaviorTrades);
 
   const risk = db.select().from(riskConfig).all();
-  const cap = risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? 9500;
-  const stop = risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? 25000;
+  // Null, not `?? 9500` / `?? 25000`: a limit the user never set is not a limit,
+  // and a PRINTED report is the worst place to score someone against one. The
+  // components that need those limits refuse instead (invariant 6).
+  const cap = risk.find((r) => r.scope === "global")?.perTradeMaxLoss ?? null;
+  const stop = risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? null;
   const weeks = disciplineByWeek(trades, cap, stop);
-  const disciplineAvg = weeks.length ? Math.round((weeks.reduce((s, w) => s + w.score, 0) / weeks.length) * 10) / 10 : null;
+  // Scoring weeks only, with the coverage stated beside the figure. A week under
+  // the sample floor has no score; averaging it as 0 is a fabricated denominator
+  // dressed as a low grade.
+  const discipline = weeklyScoreAverage(weeks);
 
   const years = [...new Set(p.monthly.map((m) => m.year))].sort();
   const byYM = new Map(p.monthly.map((m) => [`${m.year}-${m.month}`, m.retPct]));
@@ -131,7 +139,7 @@ export default function MonthlyReportPage() {
             <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} sub={!capitalKnown ? "set capital in Settings" : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} />
             <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
             <KpiCard label="Charges paid" valueNum={charges} format="inr0" valueClassName="text-grad-gold" />
-            <KpiCard label="Discipline score" value={disciplineAvg == null ? "—" : `${disciplineAvg}`} sub="weekly average" />
+            <KpiCard label="Discipline score" value={discipline.display} sub={`weekly average · ${discipline.coverage}`} />
           </section>
 
           {/* Equity curve */}

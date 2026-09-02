@@ -35,9 +35,14 @@ const GUARDED_FILES = [
   "app/equity/page.tsx",
   "app/active/page.tsx",
   "components/trackers/tracker-client.tsx",
+  "app/page.tsx",
   // v3.6 goal tracking: every file that feeds a capital denominator into goal
   // maths. Unknown capital must flow through as null/"—", never a literal.
   "lib/queries/capital.ts",
+  // v3.7: the `account ?? settings ?? 0` chain moved HERE out of capital.ts, so
+  // this is now the single file where a fabricated base would poison every
+  // denominator in the app at once.
+  "lib/queries/bucket-capital.ts",
   "lib/queries/goals.ts",
   "lib/analytics/goal.ts",
   "components/settings/goal-card.tsx",
