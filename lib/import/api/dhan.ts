@@ -27,6 +27,7 @@
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
+import { totp } from "@/lib/totp";
 
 /** One row from GET /v2/positions (the fields we consume). */
 export interface DhanPositionRow {
@@ -236,15 +237,159 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
 export interface DhanCredentials {
   /** Dhan client ID (stored in broker_connections.api_key). */
   clientId: string;
-  /** The JWT access token from the Dhan developer console. */
-  accessToken: string;
+  /** A pasted 24h JWT from the Dhan developer console — the fallback mode,
+   *  and the only mode for legacy connections saved before PIN+TOTP existed. */
+  accessToken?: string;
+  /** Unattended-auth extras (one encrypted JSON blob in auth_json, the Angel
+   *  One pattern): when BOTH are present, the day's token is MINTED at pull
+   *  time from PIN + a freshly computed TOTP code. */
+  pin?: string;
+  totpSecret?: string;
 }
 
-async function dhanGet<T>(path: string, creds: DhanCredentials): Promise<T> {
+/**
+ * Is this auth_json blob a COMPLETE Dhan unattended-auth enrollment?
+ *
+ * Complete means pin + totpSecret + a recorded consent (`totpAckVersion`,
+ * stamped by the save route only when the user sent the explicit
+ * `dhanTotpConsent` acknowledgement — components/import/broker-connect.tsx
+ * exports the consent copy and DHAN_TOTP_CONSENT_VERSION). A legacy-shaped
+ * blob with pin + totpSecret but NO ack is treated as NOT enrolled: the mint
+ * path is skipped (pulls fall back to the pasted token) and auto-pull calls it
+ * ineligible — a credential stored without its recorded consent must not keep
+ * working as if the consent existed.
+ */
+export function dhanTotpEnrolled(
+  auth: { pin?: string; totpSecret?: string; totpAckVersion?: number } | null | undefined,
+): boolean {
+  return Boolean(auth?.pin && auth?.totpSecret && Number(auth.totpAckVersion) >= 1);
+}
+
+/** The generateAccessToken URL, built pure so tests can pin its shape.
+ *  The endpoint takes everything as query parameters and no auth headers. */
+export function dhanAuthUrl(clientId: string, pin: string, totpCode: string): string {
+  const q = new URLSearchParams({ dhanClientId: clientId, pin, totp: totpCode });
+  return `https://auth.dhan.co/app/generateAccessToken?${q.toString()}`;
+}
+
+/** Does this JWT's own `exp` claim say it is still alive? Used only to decide
+ *  whether a stored pasted token is worth FALLING BACK on after a failed mint —
+ *  an unreadable token counts as expired (refuse to guess). */
+export function jwtLooksUnexpired(token: string, nowMs: number = Date.now()): boolean {
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split(".")[1] ?? "", "base64url").toString("utf8")) as {
+      exp?: unknown;
+    };
+    const exp = Number(payload?.exp);
+    return Number.isFinite(exp) && exp * 1000 > nowMs;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mint a fresh 24h access token from PIN + TOTP (the code is computed HERE, at
+ * call time, from the enrolled secret — lib/totp.ts, no dependency).
+ *
+ * LIVE-VERIFIED 2026-09-02 on the owner's real account (API-key mode active
+ * at web.dhan.co): mint → preview → cached-token commit all succeeded, 5
+ * trades landed. Two behaviors Dhan's docs never state, found on that run:
+ * auth failures arrive as HTTP 200 with {"message","status":"error"}, and
+ * minting is limited to once per 2 minutes — hence the reuse-first resolver
+ * below. Whether the flow also works with API-key mode OFF remains untested
+ * (irrelevant in practice; the generic-400 hint stays for that case).
+ */
+export async function mintDhanAccessToken(creds: { clientId: string; pin: string; totpSecret: string }): Promise<string> {
+  const code = totp(creds.totpSecret);
+  const res = await fetch(dhanAuthUrl(creds.clientId, creds.pin, code), { method: "POST", cache: "no-store" });
+  const json = (await res.json().catch(() => null)) as
+    | { accessToken?: string; errorMessage?: string; message?: string }
+    | null;
+  if (!res.ok) {
+    const msg = json?.errorMessage ?? json?.message ?? `HTTP ${res.status}`;
+    const hint = /totp|otp/i.test(msg)
+      ? " (TOTP rejected — check the enrolled secret and that this machine's clock is right; a drifted clock produces valid-looking wrong codes.)"
+      : /pin/i.test(msg)
+        ? " (PIN rejected — the Dhan login PIN, not the account password.)"
+        : res.status === 400
+          ? " (Dhan refused the request — if the PIN and TOTP secret are right, check that Trading APIs are enabled for this account at web.dhan.co; whether that toggle is required for token minting is unverified.)"
+          : "";
+    throw new Error(`Dhan generateAccessToken: ${msg}${hint}`);
+  }
+  const token = json?.accessToken;
+  if (!token) {
+    // LIVE-VERIFIED 2026-09-02 on the owner's account: Dhan answers auth
+    // failures as HTTP 200 with {"message": "...", "status": "error"} — an
+    // error-in-200 envelope ("Invalid TOTP", "Token can be generated once
+    // every 2 minutes."). Surface that message with the matching hint; for
+    // anything shapeless, echo the body (it is Dhan's own response and cannot
+    // contain the user's PIN or secret).
+    const msg = json?.errorMessage ?? json?.message;
+    if (msg) {
+      const hint = /once every|minute/i.test(msg)
+        ? " (Dhan mints at most one token per 2 minutes — Vyuha reuses the day's token once minted, so this clears on its own; retry shortly.)"
+        : /totp|otp/i.test(msg)
+          ? " (TOTP rejected — check the enrolled secret and that this machine's clock is right; a drifted clock produces valid-looking wrong codes.)"
+          : /pin/i.test(msg)
+            ? " (PIN rejected — the Dhan login PIN, not the account password.)"
+            : "";
+      throw new Error(`Dhan generateAccessToken: ${msg}${hint}`);
+    }
+    const body = json ? JSON.stringify(json).slice(0, 300) : "(not JSON)";
+    throw new Error(`Dhan generateAccessToken: HTTP ${res.status} but no accessToken in the response — body: ${body}`);
+  }
+  return token;
+}
+
+/**
+ * The access token a pull should use, in order of honesty:
+ *
+ *   1. PIN + TOTP secret present → MINT a fresh 24h token (stateless, per
+ *      pull — at one pull a day, caching the minted JWT in the DB buys
+ *      nothing; if pull frequency ever rises, cache it with its expiryTime
+ *      in broker_connections.access_token instead).
+ *
+ *   ^ That comment aged fast. LIVE-VERIFIED 2026-09-02: Dhan rate-limits
+ *   generateAccessToken to ONCE PER 2 MINUTES ("Token can be generated once
+ *   every 2 minutes.", in an error-in-200 envelope) — and preview → commit is
+ *   always inside that window, so mint-per-call broke commit on the first
+ *   real run. The order is therefore:
+ *
+ *   1. A stored token whose own `exp` says it is alive → USE IT (it is either
+ *      today's minted token or a user-pasted one; both die within 24h and
+ *      jwtLooksUnexpired reads the JWT itself).
+ *   2. PIN + TOTP secret present → mint, and return `minted: true` so the
+ *      caller PERSISTS it into broker_connections.access_token (the route
+ *      owns that write via the vault) — the very next call then takes path 1.
+ *   3. Mint failed → throw with guidance naming both ways out.
+ */
+export async function resolveDhanAccessToken(creds: DhanCredentials): Promise<{ token: string; minted: boolean }> {
+  const canMint = Boolean(creds.pin && creds.totpSecret);
+  // Paste-only mode returns the stored token UNTOUCHED even when unreadable —
+  // Dhan's own 401 (with the 24-hour hint) is the honest judge there, exactly
+  // as before the caching change. Mint mode reuses only a token whose own
+  // `exp` says it is alive.
+  if (creds.accessToken && (jwtLooksUnexpired(creds.accessToken) || !canMint)) {
+    return { token: creds.accessToken, minted: false };
+  }
+  if (!canMint) {
+    throw new Error("Dhan: no access token saved and no PIN + TOTP secret to mint one — reconnect Dhan with either.");
+  }
+  try {
+    const token = await mintDhanAccessToken({ clientId: creds.clientId, pin: creds.pin!, totpSecret: creds.totpSecret! });
+    return { token, minted: true };
+  } catch (e) {
+    throw new Error(
+      `${(e as Error).message} No unexpired stored token to fall back on — fix the PIN/TOTP secret, or paste a fresh 24-hour token from web.dhan.co → DhanHQ Trading APIs.`,
+    );
+  }
+}
+
+async function dhanGet<T>(path: string, accessToken: string): Promise<T> {
   const res = await fetch(`https://api.dhan.co/v2${path}`, {
     headers: {
       "Content-Type": "application/json",
-      "access-token": creds.accessToken,
+      "access-token": accessToken,
     },
     cache: "no-store",
   });
@@ -258,7 +403,7 @@ async function dhanGet<T>(path: string, creds: DhanCredentials): Promise<T> {
     throw new Error(
       `Dhan API: ${msg}${
         res.status === 401 || res.status === 403
-          ? " (access token expired or wrong? Dhan tokens are issued from web.dhan.co → DhanHQ Trading APIs and are valid for 24 hours by default.)"
+          ? " (access token expired or wrong? Pasted Dhan tokens from web.dhan.co → DhanHQ Trading APIs last 24 hours; with PIN + TOTP saved, Vyuha mints a fresh one at every pull instead.)"
           : ""
       }`,
     );
@@ -267,17 +412,27 @@ async function dhanGet<T>(path: string, creds: DhanCredentials): Promise<T> {
   return json as T;
 }
 
-export async function fetchDhanPositions(creds: DhanCredentials): Promise<DhanPositionRow[]> {
-  const data = await dhanGet<DhanPositionRow[] | null>("/positions", creds);
+/**
+ * `onMinted` fires when the call had to mint a fresh token (PIN+TOTP mode) so
+ * the caller can PERSIST it — Dhan mints at most one token per 2 minutes
+ * (live-verified 2026-09-02), so an unpersisted mint breaks the very next
+ * call (preview → commit). The route stores it encrypted via the vault.
+ */
+export async function fetchDhanPositions(creds: DhanCredentials, onMinted?: (token: string) => void): Promise<DhanPositionRow[]> {
+  const { token, minted } = await resolveDhanAccessToken(creds);
+  if (minted) onMinted?.(token);
+  const data = await dhanGet<DhanPositionRow[] | null>("/positions", token);
   return Array.isArray(data) ? data : [];
 }
 
-export async function fetchDhanHoldings(creds: DhanCredentials): Promise<DhanHoldingRow[]> {
-  const data = await dhanGet<DhanHoldingRow[] | null>("/holdings", creds);
+export async function fetchDhanHoldings(creds: DhanCredentials, onMinted?: (token: string) => void): Promise<DhanHoldingRow[]> {
+  const { token, minted } = await resolveDhanAccessToken(creds);
+  if (minted) onMinted?.(token);
+  const data = await dhanGet<DhanHoldingRow[] | null>("/holdings", token);
   return Array.isArray(data) ? data : [];
 }
 
-export function dhanImportSource(creds: DhanCredentials): ApiImportSource {
+export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: string) => void): ApiImportSource {
   return {
     id: "dhan-api",
     label: "Dhan API (today's positions, states MTF outright)",
@@ -285,7 +440,7 @@ export function dhanImportSource(creds: DhanCredentials): ApiImportSource {
     kind: "api",
     async fetchTrades() {
       const today = new Date().toISOString().slice(0, 10);
-      return normalizeDhanPositions(await fetchDhanPositions(creds), today);
+      return normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
     },
   };
 }

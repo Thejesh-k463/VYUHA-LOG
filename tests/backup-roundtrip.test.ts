@@ -254,6 +254,83 @@ describe("v3: the four tables the list had fallen behind on", () => {
   });
 });
 
+describe("capital_goals joins the envelope (v3.6, no version bump — per-key restore semantics)", () => {
+  it("round-trips a goal — including its paise-at-rest money columns, unscaled", () => {
+    t.db.delete(t.schema.capitalGoals).run();
+    t.db.insert(t.schema.capitalGoals).values({
+      accountId: 1, bucket: "equity", kind: "absolute",
+      targetAmount: 2000000.55, baselineCapital: 1500000.25,
+      baselineDate: "2026-09-01", targetDate: "2027-03-31",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    expect(dump.tables.capital_goals).toHaveLength(1);
+
+    t.db.delete(t.schema.capitalGoals).run();
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const row = t.db.select().from(t.schema.capitalGoals).all()[0];
+    // Invariant 1: paise at rest, rupees at runtime — a ×100 through the
+    // backup would read as ₹20,00,00,055 here.
+    expect(row.targetAmount).toBe(2000000.55);
+    expect(row.baselineCapital).toBe(1500000.25);
+    expect(row.bucket).toBe("equity");
+  });
+
+  it("a pre-goals v3 envelope leaves today's goals alone (absent key = preserve)", () => {
+    t.db.delete(t.schema.capitalGoals).run();
+    t.db.insert(t.schema.capitalGoals).values({
+      accountId: 1, bucket: "total", kind: "pct_profit", pctTarget: 15,
+      baselineCapital: 1000000, baselineDate: "2026-09-01",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    delete (dump.tables as Record<string, unknown>).capital_goals; // simulate a pre-3.6 file
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.capitalGoals).all().some((r) => r.bucket === "total")).toBe(true);
+  });
+});
+
+describe("bf_loss_lots joins the envelope (v3.6, no version bump — per-key restore semantics)", () => {
+  it("round-trips a lot — including its paise-at-rest money columns, unscaled", () => {
+    t.db.delete(t.schema.bfLossLots).run();
+    t.db.insert(t.schema.bfLossLots).values({
+      accountId: 1, incurredFy: "2022-23", head: "stcl",
+      amount: 60000.55, originalAmount: 90000.25, note: "AY 2023-24 ITR-3",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    expect(dump.tables.bf_loss_lots).toHaveLength(1);
+
+    t.db.delete(t.schema.bfLossLots).run();
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const row = t.db.select().from(t.schema.bfLossLots).all()[0];
+    // Invariant 1: paise at rest, rupees at runtime — a ×100 through the
+    // backup would read as ₹60,00,055 here.
+    expect(row.amount).toBe(60000.55);
+    expect(row.originalAmount).toBe(90000.25);
+    expect(row.incurredFy).toBe("2022-23");
+    expect(row.head).toBe("stcl");
+  });
+
+  it("a pre-lots v3 envelope leaves today's lots alone (absent key = preserve)", () => {
+    t.db.delete(t.schema.bfLossLots).run();
+    t.db.insert(t.schema.bfLossLots).values({
+      accountId: 1, incurredFy: "2020-21", head: "speculative", amount: 7000,
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    delete (dump.tables as Record<string, unknown>).bf_loss_lots; // simulate a pre-3.6 file
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    expect(t.db.select().from(t.schema.bfLossLots).all().some((r) => r.incurredFy === "2020-21")).toBe(true);
+  });
+});
+
 describe("v3: licence and trial state stay on the machine", () => {
   it("the dump carries no licence key and no trial clock", () => {
     t.db.update(t.schema.settings).set({
@@ -321,6 +398,104 @@ describe("v3: licence and trial state stay on the machine", () => {
     const after = t.db.select().from(t.schema.settings).all()[0];
     expect(after.openalgoEnabled).toBe(false); // property 1: no inherited consent
     expect(after.openalgoAckVersion).toBeNull();
+  });
+
+  it("telegram + auto-pull state (v3.6, migration 0053) neither travels in a dump nor restores from a forged envelope", () => {
+    // This machine's live state: connected, sent today, custom time — exactly
+    // what must stay HERE.
+    t.db.update(t.schema.settings).set({
+      telegramEnabled: false,
+      telegramAckVersion: null,
+      telegramSendTime: "16:00",
+      lastTelegramSentDate: "2026-09-01",
+      telegramTokenEnc: "venc:1:AAAA:BBBB:CCCC",
+      telegramChatId: "987654321",
+      autoPullEnabled: false,
+      lastAutoPullDate: "2026-08-30",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    // The dump REDACTS every one of them: gates to their safe value (off),
+    // the send time to its column default, everything else to null. The bot
+    // token and chat id in particular must never appear anywhere in the file.
+    expect(dumped.telegramEnabled).toBe(false);
+    expect(dumped.telegramAckVersion).toBeNull();
+    expect(dumped.telegramSendTime).toBe("15:35");
+    expect(dumped.lastTelegramSentDate).toBeNull();
+    expect(dumped.telegramTokenEnc).toBeNull();
+    expect(dumped.telegramChatId).toBeNull();
+    expect(dumped.autoPullEnabled).toBe(false);
+    expect(dumped.lastAutoPullDate).toBeNull();
+    expect(JSON.stringify(dump)).not.toContain("venc:1:AAAA");
+    expect(JSON.stringify(dump)).not.toContain("987654321");
+
+    // Now FORGE an envelope claiming everything was on, consented, connected
+    // and freshly stamped — the openalgo forged-envelope, extended.
+    dumped.telegramEnabled = true;
+    dumped.telegramAckVersion = 1;
+    dumped.telegramTokenEnc = "venc:1:XXXX:YYYY:ZZZZ";
+    dumped.telegramChatId = "111";
+    dumped.lastTelegramSentDate = "2020-01-01";
+    dumped.telegramSendTime = "03:00";
+    dumped.autoPullEnabled = true;
+    dumped.lastAutoPullDate = "2020-01-01";
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true); // the NOT NULL machine columns survive the trip
+    const after = t.db.select().from(t.schema.settings).all()[0];
+    // Restore keeps THIS machine's values — never the envelope's. The forged
+    // "on + acked" grants nothing, the forged token and chat id land nowhere,
+    // and the forged stamps cannot replay or suppress a day's run.
+    expect(after.telegramEnabled).toBe(false);
+    expect(after.telegramAckVersion).toBeNull();
+    expect(after.telegramSendTime).toBe("16:00");
+    expect(after.lastTelegramSentDate).toBe("2026-09-01");
+    expect(after.telegramTokenEnc).toBe("venc:1:AAAA:BBBB:CCCC");
+    expect(after.telegramChatId).toBe("987654321");
+    expect(after.autoPullEnabled).toBe(false);
+    expect(after.lastAutoPullDate).toBe("2026-08-30");
+  });
+
+  it("restore into an EMPTY settings table still blanks a forged envelope's machine columns", () => {
+    // A fresh/wiped install has NO settings row pre-restore, so there is no
+    // machine state to re-apply — but the machine-column pass must still run:
+    // guarding it on `machineSettings` being present let a forged envelope's
+    // consent, credentials and stamps land VERBATIM on exactly the installs
+    // with nothing of their own to overwrite them. Red-on-revert: put the
+    // `if (machineSettings)` guard back around the keep-loop in lib/backup.ts
+    // and every assertion below fails.
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    dumped.telegramEnabled = true;
+    dumped.telegramAckVersion = 1;
+    dumped.telegramTokenEnc = "venc:1:FORGED:TOKEN:BYTES";
+    dumped.telegramChatId = "444555666";
+    dumped.telegramSendTime = "03:00";
+    dumped.lastTelegramSentDate = "2020-01-01";
+    dumped.autoPullEnabled = true;
+    dumped.lastAutoPullDate = "2020-01-01";
+    dumped.openalgoEnabled = true;
+    dumped.openalgoAckVersion = "1";
+    dumped.licenseKey = "VYUHA-forged.key";
+
+    t.db.delete(t.schema.settings).run();
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const after = t.db.select().from(t.schema.settings).all()[0];
+    // Every machine column lands at its dump-blank value, never the forgery.
+    expect(after.telegramEnabled).toBe(false);
+    expect(after.telegramAckVersion).toBeNull();
+    expect(after.telegramTokenEnc).toBeNull();
+    expect(after.telegramChatId).toBeNull();
+    expect(after.telegramSendTime).toBe("15:35");
+    expect(after.lastTelegramSentDate).toBeNull();
+    expect(after.autoPullEnabled).toBe(false);
+    expect(after.lastAutoPullDate).toBeNull();
+    expect(after.openalgoEnabled).toBe(false);
+    expect(after.openalgoAckVersion).toBeNull();
+    expect(after.licenseKey).toBeNull();
   });
 });
 

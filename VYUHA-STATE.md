@@ -34,7 +34,41 @@ one flow never before exercised — the IN-APP UPDATE (prompt → download → r
 on another user's machine. No open release actions. The parked v3.4.0 draft is superseded
 (safe to delete whenever). Demo prep: `docs/owner/DEMO_RUNBOOK.md`.
 
-**v3.6 candidate backlog (deferred deliberately this release, in rough priority):**
+**v3.6.0 IS CODE-COMPLETE, AUDITED, AND GATE-GREEN (2026-09-02) — release ritual pending.**
+Built per the owner-approved plan in `docs/V360_BUILD_PLAN.md` (4-bump roadmap: v3.6.0
+Navigate & Connect → v3.7.0 Review & Discipline → v3.8.0 Money correctness → v3.9.0 Live
+Desk; eleven owner decisions in DECISIONS.md 2026-09-02). Shipped in the working tree,
+every stage behind its own full `npm run verify`:
+sidebar regroup (9 groups incl. Import/Tax/Back Office) + fold + drag/checkbox customizer
+with legacy-order migration; Expected-capital goals (migration 0052, ₹/% per bucket, frozen
+baselines, per-account-sum aggregate); Dhan PIN+TOTP connect-once (server-gated consent, in
+auth_json — no migration); Zerodha official session exchange (user_id-bound, no enctoken);
+opt-in auto-pull on launch (unattended brokers only, never forces past a 409); opt-in
+Telegram EOD digest (per-user bot, vault-held token, atomic once-a-day claim, degrade to
+in-app note; migration 0053); b/f-loss editor (migration 0054, overlap+future-FY guarded);
+egress guard test + advice-lint widening; b/f seed param in computeTaxTimeline; claims-copy
+truth pass (PRIVACY/README/landing/help now state four network kinds; CHANGELOG gained the
+missing v3.5.x entry + v3.6.0).
+**Verified 2026-09-02:** `npm run verify` EXIT 0 — **2,896 tests / 188 files** (was
+2,623/172); e2e **54/54** EXIT 0 (2 new specs); perf double-sweep: faster than v3.5.1 on
+every flagged route (worktree-measured — the /lenses breach is v3.5.0-vintage, DECISIONS
+2026-09-02; /lenses windowing = v3.7 backlog). **Adversarial audit DONE: 6 finders, 22
+findings, all fixed same-day with red-on-revert proofs** (worst: b/f-loss double-count
+misstating tax ₹10k in probe; aggregate goal overstatement; missing Dhan consent gate; IST
+31-day window bug) — full record DECISIONS 2026-09-02.
+**REMAINING FOR v3.6.0 (release ritual, not build):** (1) ✅ DISCHARGED 2026-09-02 — the
+owner live-verified Dhan PIN+TOTP end-to-end on his real account (mint → preview →
+cached-token commit, 5 trades, 0 duplicates); two undocumented Dhan behaviors found and
+fixed same-session (error-in-200 envelope; one mint per 2 minutes → reuse-first token
+cache) — DECISIONS 2026-09-02; (2) commit the tree; (3)
+`release` skill start to finish: bump 3.6.0 (lockfile roots BY HAND, Cargo.lock via cargo),
+desktop build + marker grep, sign-verify deep, CI green BEFORE tag, client ZIP refresh,
+claims audit already done, publish + mirror + WDSI per runbook.
+
+*(Superseded planning note: the pre-approval backlog below is retained for history; items
+1–7 are slotted into the roadmap bumps.)*
+
+**v3.6 candidate backlog (as it stood pre-approval, in rough priority):**
 1. `direction` column migration + backfill (the A6 heuristic's full fix; also unlocks
    stop-migration coverage on fully-closed rows, taxpnl short-side handling, and richer
    seller analytics — three surfaces currently exclude-and-say-so).
@@ -1129,17 +1163,24 @@ qualified legal read, which is an exposure rather than an open question.)*
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
 revocations prerelease exists; annual→lifetime — full credit within the year; intraday — not needed.)*
 
-### 8.6 Explicit non-goals — do not propose these
+### 8.6 Growth posture — EVOLVE every day (owner directive 2026-09-01)
 
-**No more brokers, no more report screens, no cloud AI, no backtesting, no new subsystems** —
-**One recorded exception (2026-08-20, owner-approved):** the opt-in OpenAlgo integration added a
-fourth broker-API source, a Settings → Integrations section and migration 0049. It is not a new
-broker (OpenAlgo is a router; trades are stamped with the underlying broker and `BROKERS` was NOT
-extended) and it is off by default. Rationale in DECISIONS.md 2026-08-20. This exception does not
-reopen the list. Otherwise —
-"the codebase rewards consolidation". No paid code signing (free workarounds only). Taglines
-must avoid outcome claims, SEBI-adjacent. Kotak Neo and Sahi stay on the generic column mapper
-by design until a real export pins the layout.
+**The former blanket non-goals list ("no more brokers, no more report screens, no cloud AI,
+no backtesting, no new subsystems") is RESCINDED by the owner on 2026-09-01: the product must
+evolve continuously.** New brokers, new screens, new capabilities and new subsystems MAY be
+proposed and built. What replaces the ban is a gate, not a wall — every expansion still goes
+through: (a) propose what fits the app's structure and what it costs, owner approves BEFORE
+building; (b) the 10 invariants in `AGENTS.md`; (c) a test that reddens on the reverted code;
+(d) `npm run verify` stage gates and the adversarial diff-audit before any release.
+
+Correctness rules that were bundled into the old list SURVIVE on their own merit (they were
+never growth bans): never invent a parser for a format nobody has published — Kotak Neo and
+Sahi stay on the generic column mapper until a VERIFIED real export pins the layout; taglines
+avoid outcome claims (SEBI-adjacent); no paid code signing (a cost decision — free workarounds
+only, revisit separately if the owner chooses). The local-first/privacy promise remains the
+product's differentiator: cloud-touching features (BYO-key LLMs, cloud data sources) need an
+explicit owner decision per feature, opt-in, and honest disclosure copy — not a silent default.
+Reversal recorded in DECISIONS.md 2026-09-01.
 
 ### 8.7 Standing instructions from the owner
 

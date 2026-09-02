@@ -20,6 +20,10 @@
 //   openalgoEnabled    — an integration the user switched on after reading a
 //   openalgoAckVersion   risk disclosure; "back to my defaults" must not
 //                        silently re-enable it or re-assert a consent
+//   telegram* / autoPull* / lastAutoPullDate (v3.6, migration 0053) — the same
+//                        consent rule, plus credentials (bot token / chat id)
+//                        and once-per-day job stamps; all machine state, see
+//                        SETTINGS_MACHINE_COLUMNS in lib/backup-format.ts
 //
 // Rate tables (charge/margin/risk) ARE part of the baseline: the user chose
 // those numbers, and "back to my defaults" should mean the rates they trust.

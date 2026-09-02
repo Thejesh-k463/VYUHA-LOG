@@ -97,6 +97,10 @@ const SettingsSchema = z.object({
   defaultSellOrders: z.coerce.number().int().min(1).max(50),
   colorblindSafe: z.coerce.boolean(),
   autoMtmEnabled: z.coerce.boolean(),
+  // Auto-pull on launch (v3.6). OPTIONAL like the OpenAlgo pair below — an
+  // older form that omits it must not silently switch it off — and a real
+  // z.boolean() for the same string-"false" reason.
+  autoPullEnabled: z.boolean().optional(),
   // ── OpenAlgo integration (v2.99.99) ──
   // Both are OPTIONAL, like the appearance fields above: a body that omits them
   // keeps the stored value. Every settings form that predates this feature
@@ -216,6 +220,7 @@ export async function POST(req: Request) {
       defaultSellOrders: v.defaultSellOrders,
       colorblindSafe: v.colorblindSafe,
       autoMtmEnabled: v.autoMtmEnabled,
+      ...(v.autoPullEnabled !== undefined && { autoPullEnabled: v.autoPullEnabled }),
       ...(v.openalgoEnabled !== undefined && { openalgoEnabled: v.openalgoEnabled }),
       ...(v.openalgoAckVersion !== undefined && { openalgoAckVersion: v.openalgoAckVersion }),
     };

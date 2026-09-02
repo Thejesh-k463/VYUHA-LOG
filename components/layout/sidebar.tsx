@@ -3,13 +3,27 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Search, GripVertical, Filter } from "lucide-react";
-import { NAV_GROUPS, NAV_ITEMS, mergeOrder, moveWithinVisible, type NavItem } from "./nav-config";
+import { PanelLeftClose, PanelLeftOpen, Search, GripVertical, Filter, SlidersHorizontal } from "lucide-react";
+import {
+  NAV_GROUPS,
+  NAV_ITEMS,
+  NAV_DEFAULT_VISIBLE,
+  mergeOrder,
+  mergeShown,
+  partitionByShown,
+  foldDrag,
+  parseNavOrder,
+  type NavItem,
+  type NavOrderState,
+  moveWithinVisible,
+} from "./nav-config";
 import { useListDrag } from "./use-list-drag";
+import { useStoredValue, writeStored } from "./use-stored-value";
 import { WORKSPACE_LABELS, screenVisible, type Workspace } from "@/lib/domain/workspace";
 import { cn } from "@/lib/utils";
 import { AccountSwitcher } from "@/components/system/account-switcher";
 import { Tip } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VyuhaMark } from "@/components/brand/mark";
 
 const COLLAPSE_KEY = "vyuha-sidebar-collapsed";
@@ -124,6 +138,41 @@ const NavRow = React.memo(function NavRow({
   );
 });
 
+/**
+ * Pure fold-state decision for one nav group — extracted so tests can pin the
+ * two edge cases the inline version got wrong (tests/nav-order.test.ts):
+ * a route-FORCED group must not offer "Show less" (clicking it did nothing —
+ * `forced` keeps the group open regardless of the stored flag), and a group
+ * whose fold-visible set is entirely workspace-hidden must render EXPANDED,
+ * not as a bare header with an "N more…" button and zero rows under it.
+ */
+export function groupFoldState({ total, primary, stored, forced, collapsed }: {
+  /** Rows this group renders at all (after workspace filtering). */
+  total: number;
+  /** How many of those rows are fold-visible. */
+  primary: number;
+  /** The user stored this group as expanded. */
+  stored: boolean;
+  /** The CURRENT screen sits below the fold — never hide where the user is. */
+  forced: boolean;
+  /** Icon rail — folding is ignored entirely. */
+  collapsed: boolean;
+}): { expanded: boolean; showMore: boolean; showLess: boolean } {
+  const hidden = total - primary;
+  // Every fold-visible row is workspace-hidden: folding would render a bare
+  // header over nothing, so the group opens instead.
+  const emptyFold = primary === 0 && total > 0;
+  const expanded = collapsed || stored || forced || emptyFold || hidden === 0;
+  return {
+    expanded,
+    // "N more…" only while rows are actually withheld right now.
+    showMore: !collapsed && hidden > 0 && !expanded,
+    // "Show less" only where clicking it would actually fold something —
+    // never while `forced` or `emptyFold` pins the group open.
+    showLess: !collapsed && hidden > 0 && stored && !forced && !emptyFold,
+  };
+}
+
 export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:{id:number;name:string;archived:boolean}[];selectedAccountId:number;workspace?:Workspace}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = React.useState(false);
@@ -141,37 +190,54 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
     });
   }
 
-  // ── User-adjustable nav order ─────────────────────────────────────────────
+  // ── User-adjustable nav order + fold state ────────────────────────────────
   // Saved order is merged with the CURRENT nav at render (mergeOrder), so
   // screens added by updates appear in their default slot instead of being
   // lost — the stored arrays never gate what exists, only how it's sorted.
-  const [navOrder, setNavOrder] = React.useState<{ groups: string[]; items: Record<string, string[]> } | null>(null);
+  // Persistence goes through useStoredValue/writeStored (hydration-safe,
+  // storage is the single source of truth) with the versioned envelope
+  // {v:1, groups, items, shown, expanded}; parseNavOrder MIGRATES the legacy
+  // un-versioned {groups, items} value instead of discarding a saved order.
+  const rawNavOrder = useStoredValue(NAV_ORDER_KEY);
+  const navOrder = React.useMemo(() => parseNavOrder(rawNavOrder), [rawNavOrder]);
 
-  React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem(NAV_ORDER_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { groups: string[]; items: Record<string, string[]> };
-        Promise.resolve().then(() => setNavOrder(parsed));
-      }
-    } catch { /* corrupt order = default order */ }
+  const persist = React.useCallback((next: NavOrderState) => {
+    writeStored(NAV_ORDER_KEY, JSON.stringify(next));
   }, []);
 
-  const saveOrder = (next: { groups: string[]; items: Record<string, string[]> }) => {
-    setNavOrder(next);
-    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
-  };
+  /** The stored envelope with every field defaulted — spread, patch, persist. */
+  const envelope = React.useCallback(
+    (): NavOrderState => ({
+      v: 1,
+      groups: navOrder?.groups ?? [],
+      items: navOrder?.items ?? {},
+      shown: navOrder?.shown ?? {},
+      expanded: navOrder?.expanded ?? {},
+    }),
+    [navOrder],
+  );
 
   // Memoised (with NavRow below) so the nav model keeps its identity across
   // renders that change none of its inputs — a pathname change recomputes only
   // because isCurrent gates workspace-hidden screens.
   const orderedGroups = React.useMemo(() => mergeOrder(navOrder?.groups, [...NAV_GROUPS]), [navOrder]);
 
+  const groupHrefs = React.useCallback(
+    (group: string) => NAV_ITEMS.filter((i) => i.group === group).map((i) => i.href),
+    [],
+  );
+
   /** Every screen in a group, in the user's order — hidden ones included. */
   const fullItems = React.useCallback(
+    (group: string) => mergeOrder(navOrder?.items?.[group], groupHrefs(group)),
+    [navOrder, groupHrefs],
+  );
+
+  /** The hrefs this group keeps on screen while folded. */
+  const shownList = React.useCallback(
     (group: string) =>
-      mergeOrder(navOrder?.items?.[group], NAV_ITEMS.filter((i) => i.group === group).map((i) => i.href)),
-    [navOrder],
+      mergeShown(navOrder?.shown?.[group], NAV_DEFAULT_VISIBLE[group] ?? groupHrefs(group), groupHrefs(group)),
+    [navOrder, groupHrefs],
   );
 
   const isCurrent = React.useCallback(
@@ -181,30 +247,65 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
 
   // Workspace mode hides the other book's screens. The screen you are ON is
   // always kept: arriving via a link or bookmark and finding no menu entry for
-  // where you are reads as a broken app, not a tidy one.
+  // where you are reads as a broken app, not a tidy one. Items render in the
+  // PARTITIONED order (fold-visible first) so the fold line is a real place;
+  // this list is a subsequence of partitionByShown(fullItems, shown), which is
+  // exactly the base foldDrag commits against.
   const orderedItems = React.useCallback(
     (group: string) =>
-      fullItems(group)
+      partitionByShown(fullItems(group), new Set(shownList(group)))
         .map((h) => NAV_ITEMS.find((i) => i.href === h)!)
         .filter(Boolean)
         .filter((i) => screenVisible(i.href, workspace) || isCurrent(i.href)),
-    [fullItems, workspace, isCurrent],
+    [fullItems, shownList, workspace, isCurrent],
   );
 
   // Groups are rendered from this list, so indices, refs and drop lines all
   // count the same rows — a group emptied by workspace mode disappears
   // entirely rather than leaving a gap the drag maths would trip over.
+  // `items` is what actually renders: the fold-visible rows when folded, all
+  // rows when expanded. Four ways a group renders expanded: the user opened
+  // it (stored), the CURRENT screen sits below the fold (never hide where the
+  // user is — the same rule workspace hiding follows above), every fold-visible
+  // row is workspace-hidden (folding would leave a bare header), or nothing is
+  // folded away. The icon rail ignores folding entirely (as before v3.6).
+  // groupFoldState (pure, above) owns the decision, including which fold
+  // toggle — if any — is honest to render.
   const visibleGroups = React.useMemo(
     () =>
       orderedGroups
-        .map((group) => ({ group, items: orderedItems(group) }))
-        .filter((g) => g.items.length > 0),
-    [orderedGroups, orderedItems],
+        .map((group) => {
+          const all = orderedItems(group);
+          const shownSet = new Set(shownList(group));
+          const primary = all.filter((i) => shownSet.has(i.href));
+          const hidden = all.length - primary.length;
+          const stored = navOrder?.expanded?.[group] === true;
+          const forced = all.some((i) => isCurrent(i.href) && !shownSet.has(i.href));
+          const fold = groupFoldState({ total: all.length, primary: primary.length, stored, forced, collapsed });
+          return { group, all, primary, hidden, stored, forced, ...fold, foldAt: primary.length, items: fold.expanded ? all : primary };
+        })
+        .filter((g) => g.all.length > 0),
+    [orderedGroups, orderedItems, shownList, isCurrent, navOrder, collapsed],
   );
 
-  const resetOrder = () => {
-    localStorage.removeItem(NAV_ORDER_KEY);
-    setNavOrder(null);
+  const resetOrder = () => writeStored(NAV_ORDER_KEY, null);
+
+  const toggleGroup = (group: string, open: boolean) =>
+    persist({ ...envelope(), expanded: { ...(navOrder?.expanded ?? {}), [group]: open } });
+
+  // ── Customizer (non-drag path) ────────────────────────────────────────────
+  // Checkbox parity for promote/demote: folding a screen away must never be
+  // pointer-only. One dialog serves every group.
+  const [customizing, setCustomizing] = React.useState<string | null>(null);
+
+  const setItemShown = (group: string, href: string, on: boolean) => {
+    const next = new Set(shownList(group));
+    if (on) next.add(href);
+    else next.delete(href);
+    persist({
+      ...envelope(),
+      shown: { ...(navOrder?.shown ?? {}), [group]: fullItems(group).filter((h) => next.has(h)) },
+    });
   };
 
   // Drag commits by SCOPE: "__groups__" reorders the group list, any other
@@ -212,18 +313,24 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
   // their group by design — the groups are semantic (Risk, Journal…), so
   // dragging Tax Harvest into "Positions" would make the labels lie.
   const GROUPS_SCOPE = "__groups__";
-  // Both branches commit through moveWithinVisible because both lists can be
-  // filtered by workspace mode — the drag counts visible rows, the saved order
-  // must keep every row.
+  // Both branches commit against the RENDERED rows because both lists are
+  // filtered — groups by workspace mode, items by workspace mode AND the fold.
+  // The drag counts rendered rows; the saved order must keep every row, which
+  // is what moveWithinVisible (inside foldDrag for items) guarantees. The item
+  // branch also decides fold membership: a row dropped across the fold line is
+  // promoted or demoted, and the visible set persists in `shown`.
   const { drag, begin } = useListDrag((scope, from, to) => {
     if (scope === GROUPS_SCOPE) {
       const visible = visibleGroups.map((g) => g.group);
-      saveOrder({ groups: moveWithinVisible(orderedGroups, visible, from, to), items: navOrder?.items ?? {} });
+      persist({ ...envelope(), groups: moveWithinVisible(orderedGroups, visible, from, to) });
     } else {
-      const visible = orderedItems(scope).map((i) => i.href);
-      saveOrder({
-        groups: navOrder?.groups ?? orderedGroups,
-        items: { ...(navOrder?.items ?? {}), [scope]: moveWithinVisible(fullItems(scope), visible, from, to) },
+      const g = visibleGroups.find((v) => v.group === scope);
+      const rendered = (g?.items ?? orderedItems(scope)).map((i) => i.href);
+      const { order, shown } = foldDrag(fullItems(scope), rendered, shownList(scope), from, to);
+      persist({
+        ...envelope(),
+        items: { ...(navOrder?.items ?? {}), [scope]: order },
+        shown: { ...(navOrder?.shown ?? {}), [scope]: shown },
       });
     }
   });
@@ -370,7 +477,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
             </button>
           </Tip>
         )}
-        {visibleGroups.map(({ group, items }, gi) => {
+        {visibleGroups.map(({ group, items, hidden, expanded, showMore, showLess, foldAt }, gi) => {
           const groupDragging = drag?.scope === GROUPS_SCOPE && drag.key === group;
           return (
             <div
@@ -402,10 +509,28 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                   {/* Hairline continuing past the label — the group reads as a
                       band rather than a floating word. */}
                   <span aria-hidden className="ml-2 h-px flex-1 bg-border" />
+                  {/* The customizer entry point. Its OWN hit target, after the
+                      hairline — the grip's pointerdown is never contested. */}
+                  <Tip label={`Choose which ${group} screens stay when folded`}>
+                    <button
+                      type="button"
+                      aria-label={`Customize ${group} group`}
+                      onClick={() => setCustomizing(group)}
+                      className="ml-1 rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/hdr:opacity-100"
+                    >
+                      <SlidersHorizontal className="size-3" />
+                    </button>
+                  </Tip>
                 </div>
               )}
               {items.map((item, ii) => (
                 <React.Fragment key={item.href}>
+                  {/* The fold line, made visible: rows above it survive the
+                      fold, rows below sit behind "N more…". Dragging a row
+                      across it promotes/demotes (foldDrag). */}
+                  {!collapsed && expanded && hidden > 0 && foldAt > 0 && ii === foldAt && (
+                    <div aria-hidden className="mx-2 my-1 border-t border-dashed border-border/80" />
+                  )}
                   {dropLine(group, ii)}
                   <NavRow
                     item={item}
@@ -422,6 +547,31 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
                   {ii === items.length - 1 && dropLine(group, items.length)}
                 </React.Fragment>
               ))}
+              {/* Fold toggles — groupFoldState decides which (if either) is
+                  honest. A group pinned open — by the CURRENT screen sitting
+                  below the fold, or by every fold-visible row being
+                  workspace-hidden — shows neither: it cannot fold while
+                  pinned, and "N more…" under an expanded group would lie. */}
+              {showMore && (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group, true)}
+                  aria-label={`Show ${hidden} more ${group} screen${hidden === 1 ? "" : "s"}`}
+                  className="flex w-full items-center rounded-md px-2 py-1 pl-[26px] text-[11px] text-muted-foreground/60 transition-colors hover:bg-card-hover hover:text-foreground"
+                >
+                  {hidden} more…
+                </button>
+              )}
+              {showLess && (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group, false)}
+                  aria-label={`Show fewer ${group} screens`}
+                  className="flex w-full items-center rounded-md px-2 py-1 pl-[26px] text-[11px] text-muted-foreground/60 transition-colors hover:bg-card-hover hover:text-foreground"
+                >
+                  Show less
+                </button>
+              )}
             </div>
           );
         })}
@@ -431,7 +581,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
             <span className="flex items-center gap-1.5">
               <GripVertical className="size-3 opacity-50" /> drag to reorder
             </span>
-            {navOrder && (
+            {rawNavOrder !== null && (
               <button type="button" onClick={resetOrder} className="ml-auto rounded px-1.5 py-1 hover:text-foreground">
                 Reset
               </button>
@@ -458,6 +608,46 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
         {!collapsed && <span>Local · Offline · v3.5</span>}
         <MarketClock />
       </div>
+
+      {/* Per-group customizer — the keyboard/click path to promote/demote.
+          Checkboxes, not drag: folding a screen away must never be
+          pointer-only. Same Dialog chrome as every other dialog. */}
+      <Dialog open={customizing !== null} onOpenChange={(o) => { if (!o) setCustomizing(null); }}>
+        {customizing !== null && (
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Customize “{customizing}”</DialogTitle>
+              <DialogDescription>
+                Ticked screens stay visible when the group is folded; the rest wait behind
+                &ldquo;more…&rdquo;. Drag rows in the sidebar to reorder.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-0.5">
+              {fullItems(customizing).map((href) => {
+                const item = NAV_ITEMS.find((i) => i.href === href);
+                if (!item) return null;
+                const Icon = item.icon;
+                const on = shownList(customizing).includes(href);
+                return (
+                  <label
+                    key={href}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] text-foreground hover:bg-card-hover"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => setItemShown(customizing, href, e.target.checked)}
+                      className="accent-[var(--color-primary)]"
+                    />
+                    <Icon className="size-4 shrink-0 text-muted-foreground" />
+                    {item.label}
+                  </label>
+                );
+              })}
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </aside>
   );
 }

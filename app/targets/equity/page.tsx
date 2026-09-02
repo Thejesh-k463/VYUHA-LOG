@@ -11,6 +11,10 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { mtfRateFor } from "@/lib/engine/charges";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
+import { getGoalView } from "@/lib/queries/goals";
+import { getBucketCapital } from "@/lib/queries/capital";
+import { goalProgress } from "@/lib/analytics/goal";
+import { GoalStrip } from "@/components/targets/goal-strip";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
@@ -83,10 +87,22 @@ export default function TargetEquityPage() {
     breakevenMovePct: value > 0 ? Math.round((interestToDate / value) * 10000) / 100 : 0,
   };
 
+  // Expected-capital goal for THIS bucket (v3.6) — nothing renders without one.
+  // The maths runs on the trades already loaded; capital resolves account-first.
+  const equityGoal = getGoalView().goals.find((g) => g.bucket === "equity") ?? null;
+  const goalProg = equityGoal
+    ? goalProgress(equityGoal, {
+        currentCapital: getBucketCapital().equityCapital > 0 ? getBucketCapital().equityCapital : null,
+        realised: [...dailyPnl(trades.filter((t) => t.bucket === "equity")).entries()].map(([date, net]) => ({ date, net })),
+        today,
+      })
+    : null;
+
   return (
     <>
       <PageHeader title="Target Tracker — Equity" description="Position sizing, max-open monitor, monthly ladder, MTF break-even." />
       <div className="space-y-5 p-6">
+        {equityGoal && goalProg && <GoalStrip goal={equityGoal} progress={goalProg} />}
         <TargetEquityClient
           defaultRisk={globalRisk?.perTradeMaxLoss ?? 9500}
           equityCapital={equityCapital}

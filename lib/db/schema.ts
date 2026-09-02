@@ -275,6 +275,88 @@ export const capitalSnapshots = sqliteTable("capital_snapshots", {
 });
 
 // ---------------------------------------------------------------------------
+// capital_goals — Expected Capital / goal tracking (migration 0052, v3.6).
+// One goal per (account, bucket). The BASELINE is frozen at creation so
+// progress is measured against what the book actually held when the goal was
+// set, not against later capital edits.
+//
+// ── The paise/rupee boundary, stated (invariant 1) ──────────────────────────
+// The legacy capital columns (`accounts.equity_capital`, `settings
+// .equity_capital`/`active_capital`, `capital_snapshots.*`) are REAL rupees —
+// they predate P0.1. THIS table's money columns are INTEGER paise via the
+// `moneyPaise` custom type: paise at rest, rupees at runtime. Do not convert
+// again in application code — that is the 100× bug.
+//
+// Nullable targets are REFUSED at the write path, never defaulted: a goal of
+// ₹0 or +0% is a statement the user did not make (invariant 6 in spirit).
+// `baseline_capital_paise` NULL means capital was UNKNOWN when the goal was
+// created; %-profit goals require a known baseline and are refused without
+// one, and progress on such a goal renders "—", never 0.
+// ---------------------------------------------------------------------------
+export const capitalGoals = sqliteTable(
+  "capital_goals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    bucket: text("bucket").notNull(), // equity | active | total
+    kind: text("kind").notNull(), // absolute | pct_profit
+    /** ₹ capital level to reach (absolute goals). Paise at rest, rupees at runtime. */
+    targetAmount: moneyPaise("target_paise"),
+    /** Profit % on the frozen baseline (pct_profit goals), e.g. 20 = +20%. */
+    pctTarget: real("pct_target"),
+    /** Bucket capital when the goal was created; NULL = unknown then. */
+    baselineCapital: moneyPaise("baseline_capital_paise"),
+    baselineDate: text("baseline_date").notNull(),
+    targetDate: text("target_date"),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("capital_goals_account_bucket_uq").on(t.accountId, t.bucket)],
+);
+
+// ---------------------------------------------------------------------------
+// bf_loss_lots — pre-journal brought-forward losses (migration 0054, v3.6).
+// One row per loss vintage a FILED pre-journal return carried out: the set-off
+// engine cannot see losses whose trades were never imported, so the user
+// transcribes them here and lib/queries/bf-losses.ts seeds them into
+// computeTaxTimeline as CarryForwardLots. Seeded lots enter set-off and
+// expiry math exactly like journal-tracked ones (pruneExpired on entry).
+//
+// `head` is the engine's OWN LossBucket union verbatim — 'stcl' | 'ltcl' |
+// 'speculative' | 'nonSpeculative' (lib/analytics/capital-gains.ts); the
+// typed LOSS_HEADS list in lib/queries/bf-losses.ts breaks compilation if
+// the union moves. `amountPaise` is the still-unabsorbed carry-out figure;
+// `originalAmountPaise` (nullable — the user may only know the remainder) is
+// what the loss was when incurred, for loss-ledger DISPLAY only: the pure
+// ledger's null-over-guess contract is untouched, enrichment happens at the
+// page layer.
+//
+// Money boundary (invariant 1): both money columns are INTEGER paise at rest
+// via `moneyPaise`, rupees at runtime. Converting again is the 100× bug.
+// UNIQUE(account, FY, head): one return per FY, one carry-out per head — a
+// second entry for the same vintage is an edit, never a sibling. No seeding.
+// ---------------------------------------------------------------------------
+export const bfLossLots = sqliteTable(
+  "bf_loss_lots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    /** FY the loss was incurred, "YYYY-YY" (e.g. "2022-23"). */
+    incurredFy: text("incurred_fy").notNull(),
+    /** LossBucket verbatim: stcl | ltcl | speculative | nonSpeculative. */
+    head: text("head").notNull(),
+    /** ₹ still unabsorbed when the journal begins. Paise at rest, rupees at runtime. */
+    amount: moneyPaise("amount_paise").notNull(),
+    /** ₹ the loss was in the FY incurred (ledger display); NULL = user knows only the remainder. */
+    originalAmount: moneyPaise("original_amount_paise"),
+    note: text("note"),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("bf_loss_lots_account_fy_head_uq").on(t.accountId, t.incurredFy, t.head)],
+);
+
+// ---------------------------------------------------------------------------
 // charge_config — editable rate table keyed by broker + segment + exchange.
 // The charges engine reads ONLY from this table; nothing is hard-coded.
 // Rates are stored as fractions of turnover (e.g. 0.1% => 0.001).
@@ -529,6 +611,25 @@ export const settings = sqliteTable("settings", {
   // machine state, not journal data — see SETTINGS_MACHINE_COLUMNS.
   openalgoEnabled: integer("openalgo_enabled", { mode: "boolean" }).notNull().default(false),
   openalgoAckVersion: text("openalgo_ack_version"),
+  // Telegram EOD digest (v3.6, migration 0053) — OFF until the user reads the
+  // disclosure (lib/domain/telegram-disclosure.ts) and accepts it. Same
+  // two-column consent shape as OpenAlgo above (the ack stores WHICH disclosure
+  // version — an integer here); send time is IST "HH:MM"; last_sent_date is the
+  // once-per-day guard. The bot token is a vault ciphertext envelope
+  // (lib/vault.ts) and the chat id plain text — both REDACTED from backups and
+  // baselines with the rest of the machine state (SETTINGS_MACHINE_COLUMNS;
+  // the migration header records why broker_connections was the wrong home).
+  telegramEnabled: integer("telegram_enabled", { mode: "boolean" }).notNull().default(false),
+  telegramAckVersion: integer("telegram_ack_version"),
+  telegramSendTime: text("telegram_send_time").notNull().default("15:35"),
+  lastTelegramSentDate: text("last_telegram_sent_date"),
+  telegramTokenEnc: text("telegram_token_enc"),
+  telegramChatId: text("telegram_chat_id"),
+  // Auto-pull on launch (v3.6, WS3) — opt-in sweep of UNATTENDED broker
+  // connections, once per day, never forcing past a collision. Machine state
+  // for the same restore reasons as auto_mtm's pair.
+  autoPullEnabled: integer("auto_pull_enabled", { mode: "boolean" }).notNull().default(false),
+  lastAutoPullDate: text("last_auto_pull_date"),
   // Monetization v2 — offline full-Pro trial (TRIAL_DAYS), stamped on first run
   // (backfilled to migration time for existing installs). See lib/license.ts.
   trialStartedAt: text("trial_started_at"),

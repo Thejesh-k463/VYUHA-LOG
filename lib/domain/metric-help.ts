@@ -459,6 +459,59 @@ export const METRIC_HELP = {
     whatToDo:
       "Traders historically split the table by shape — adds into profit versus averaging down — because the aggregate has repeatedly hidden one good habit paying for one bad one.",
   },
+  // ── Capital goals (v3.6, decision #4) ─────────────────────────────────────
+  goalProgress: {
+    title: "Goal progress — the frozen-baseline walk",
+    meaning:
+      "How far the bucket has moved from the baseline frozen when the goal was created toward the ₹ level the goal resolves to, driven by realised P&L since that date.",
+    formula:
+      "Standing = frozen baseline + realised net P&L since the baseline date; progress % = (standing − baseline) ÷ (target level − baseline). A %-profit goal's target level is baseline × (1 + target%). Without a frozen baseline, an absolute goal falls back to current capital ÷ target.",
+    healthyRange:
+      "Commonly read against the time elapsed toward any target date rather than against a fixed bar; what counts as on-pace depends on the capital base, the window and the trading style.",
+    caveat:
+      "Capital EDITS after creation are deliberately not progress — a deposit is not P&L, and compounding realised gains cannot double-count because each walk starts at its frozen figure. In the All-accounts view, progress is the SUM of each account's own walk from its own baseline date — never one blended series, which would re-count profit already inside a later-frozen baseline. Undated realised P&L belongs to no day and cannot join the walk.",
+    whatToDo:
+      "Traders historically read this beside the run-rate line below — a gap that looks large in ₹ often resolves into an ordinary number of ordinary weeks, or visibly does not.",
+  },
+  goalGap: {
+    title: "Goal gap — what remains, in ₹",
+    meaning:
+      "The ₹ distance from the bucket's current standing to the goal's resolved target level. Zero or negative means the goal is met.",
+    formula:
+      "Target level − standing, where standing walks the frozen baseline through realised P&L since the baseline date (or falls back to current capital when no baseline was frozen).",
+    healthyRange:
+      "Commonly judged against the trailing run-rate (gap ÷ ₹-per-week ≈ weeks at the current pace) rather than in isolation; it depends on the goal's size and how much history the pace rests on.",
+    caveat:
+      "When capital was unknown at the goal's creation and remains unknown, there is no standing to subtract from — the card shows \"—\" rather than a gap computed on an invented base.",
+    whatToDo:
+      "Traders historically restate a stale goal rather than chase one — deleting and recreating re-freezes the baseline at today's figures.",
+  },
+  goalRunRate: {
+    title: "Run-rate — your realised pace, ₹/week",
+    meaning:
+      "What the bucket actually realised per week over the trailing 30 and 90 days — the pace the goal's gap gets measured against.",
+    formula:
+      "Σ realised net P&L over the trailing window ÷ window days × 7, on dated realised trades only. Both windows are shown so a hot month cannot masquerade as the norm.",
+    healthyRange:
+      "Commonly read as the two windows agreeing — a 30-day figure far above the 90-day one is recency, not a new normal; what either is worth depends on sample size and style.",
+    caveat:
+      "Realised and dated only: open positions and undated trades contribute nothing, and a quiet trailing window shows a true ₹0 — while no realised history at all shows \"—\" because there is no pace to state.",
+    whatToDo:
+      "Traders historically trust the 90-day figure for planning and treat the 30-day one as weather; when the two diverge hard they look for what changed in the book, not in the goal.",
+  },
+  goalRequiredPace: {
+    title: "Required pace — the date's arithmetic",
+    meaning:
+      "The ₹/week the remaining gap works out to between today and the goal's target date. Pure arithmetic — not a forecast, and not advice.",
+    formula:
+      "Gap ÷ calendar days to the target date × 7, stated only while a target date is set, lies ahead, and the gap is open.",
+    healthyRange:
+      "Commonly compared against the trailing run-rate — a required pace far above the realised one is the date talking, not the trader; what is achievable depends entirely on the style and the base.",
+    caveat:
+      "Calendar weeks, not trading weeks, and the figure assumes a straight line to the date — markets do not pay in straight lines. Past the date it disappears rather than compounding into a fantasy number.",
+    whatToDo:
+      "Traders historically move the date, resize the goal, or accept the mismatch and keep the record honest — the number's job is to make that choice visible early.",
+  },
   replayEod: {
     title: "EOD replay — closes, not the path",
     meaning:

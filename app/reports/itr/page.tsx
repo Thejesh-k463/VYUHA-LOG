@@ -10,6 +10,8 @@ import { BROKER_TURNOVER_BASIS, TURNOVER_BASIS, itrPackByFy } from "@/lib/analyt
 import { section } from "@/lib/analytics/statute";
 import { itrScheduleByFy, scheduleExportRows } from "@/lib/analytics/itr-schedule";
 import { aggregateTradesByFy, computeTaxTimeline, type CarryForwardLot } from "@/lib/analytics/capital-gains";
+import { currentFy as deriveCurrentFy } from "@/lib/analytics/tax";
+import { getBfLossRows, toSeedLots } from "@/lib/queries/bf-losses";
 import { inr } from "@/lib/format";
 import { AlertTriangle, Info, FileSpreadsheet } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
@@ -50,16 +52,21 @@ export default function ItrPackPage() {
   // Carry-forward comes from the SAME set-off engine the Tax Summary uses, so
   // Schedule CFL cannot drift from the figures on that page.
   const currentFy = packs[packs.length - 1]?.fy ?? "2026-27";
+  const byFy = aggregateTradesByFy(
+    trades.filter((t) => !t.isOpen).map((t) => ({
+      segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
+      buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
+      fmv31Jan2018: t.fmv31Jan2018,
+    })),
+    fyStartMonth,
+    currentFy,
+  );
+  // Pre-journal b/f losses seed here too — same seed AND same SeedGuard as
+  // the Tax Summary (a lot whose FY the journal covers is excluded on both
+  // surfaces by construction), so Schedule CFL cannot drift from it.
   const timeline = computeTaxTimeline(
-    aggregateTradesByFy(
-      trades.filter((t) => !t.isOpen).map((t) => ({
-        segment: t.segment, buyDate: t.buyDate, sellDate: t.sellDate,
-        buyValue: t.buyValue, sellValue: t.sellValue, netPnl: t.netPnl,
-        fmv31Jan2018: t.fmv31Jan2018,
-      })),
-      fyStartMonth,
-      currentFy,
-    ),
+    byFy,
+    toSeedLots(getBfLossRows(), { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy: deriveCurrentFy(fyStartMonth) }),
   );
   const carryForwardByFy = new Map<string, CarryForwardLot[]>(
     timeline.map((r) => [r.fy, r.newCarryForward]),

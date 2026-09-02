@@ -270,3 +270,89 @@ describe("computeTaxTimeline — chains carry-forward across FYs", () => {
     expect(computeTaxTimeline([])).toEqual([]);
   });
 });
+
+describe("computeTaxTimeline — seeded pre-journal carry-forward lots", () => {
+  const base = { stcg: 0, ltcg: 0, speculative: 0, nonSpeculative: 0, stcgRate: 0.20, ltcgRate: 0.125, ltcgExemption: 125000 };
+  const fy = (label: string, o: Partial<FyGrossGains>): FyGrossGains => ({ ...base, fy: label, ...o });
+
+  it("a seeded STCL offsets the first FY's STCG then LTCG, exactly like an in-timeline loss", () => {
+    const seed: CarryForwardLot[] = [{ bucket: "stcl", fyIncurred: "2023-24", amount: 10000 }];
+    const seeded = computeTaxTimeline([fy("2025-26", { stcg: 4000, ltcg: 8000 })], seed);
+    // s.74 ordering: b/f STCL -> STCG first (4000), remainder -> LTCG (6000)
+    expect(seeded[0].taxableStcg).toBe(0);
+    expect(seeded[0].taxableLtcg).toBe(2000);
+    expect(seeded[0].usedCarryForward).toEqual([
+      { bucket: "stcl", fyIncurred: "2023-24", amount: 4000 },
+      { bucket: "stcl", fyIncurred: "2023-24", amount: 6000 },
+    ]);
+    expect(seeded[0].newCarryForward).toEqual([]);
+    // Equivalence: identical to the same loss incurred inside the timeline.
+    const inTimeline = computeTaxTimeline([fy("2023-24", { stcg: -10000 }), fy("2025-26", { stcg: 4000, ltcg: 8000 })]);
+    expect(seeded[0]).toEqual(inTimeline[1]);
+  });
+
+  it("a seeded lot expired before the first timeline FY is pruned on entry, never applied", () => {
+    // stcl window is 8y: 2016-17 expires after 2024-25, so it must not touch 2025-26.
+    const seed: CarryForwardLot[] = [{ bucket: "stcl", fyIncurred: "2016-17", amount: 10000 }];
+    const [r] = computeTaxTimeline([fy("2025-26", { stcg: 5000 })], seed);
+    expect(r.taxableStcg).toBe(5000);
+    expect(r.usedCarryForward).toEqual([]);
+    expect(r.newCarryForward).toEqual([]); // pruned, not carried onward either
+  });
+
+  it("a seeded speculative lot respects the 4-year window while a capital lot gets 8", () => {
+    const seed: CarryForwardLot[] = [
+      { bucket: "speculative", fyIncurred: "2020-21", amount: 3000 },
+      { bucket: "stcl", fyIncurred: "2020-21", amount: 3000 },
+    ];
+    // 2024-25 is the last usable FY for the speculative vintage — both apply.
+    const [inWindow] = computeTaxTimeline([fy("2024-25", { speculative: 5000, stcg: 5000 })], seed);
+    expect(inWindow.taxableSpeculative).toBe(2000);
+    expect(inWindow.taxableStcg).toBe(2000);
+    // One FY later the speculative vintage is gone; the capital one (8y) survives.
+    const [after] = computeTaxTimeline([fy("2025-26", { speculative: 5000, stcg: 5000 })], seed);
+    expect(after.taxableSpeculative).toBe(5000);
+    expect(after.taxableStcg).toBe(2000);
+    expect(after.usedCarryForward).toEqual([{ bucket: "stcl", fyIncurred: "2020-21", amount: 3000 }]);
+  });
+
+  it("the caller's seed lots are never mutated (computeFySetOff clones on entry)", () => {
+    const seed: CarryForwardLot[] = [{ bucket: "stcl", fyIncurred: "2023-24", amount: 10000 }];
+    computeTaxTimeline([fy("2025-26", { stcg: 15000 })], seed);
+    expect(seed).toEqual([{ bucket: "stcl", fyIncurred: "2023-24", amount: 10000 }]);
+  });
+
+  it("zero-seed default is byte-identical to the one-argument call (regression pin)", () => {
+    const byFy: FyGrossGains[] = [
+      fy("2025-26", { stcg: -10000 }),
+      fy("2026-27", { stcg: 15000 }),
+    ];
+    const oneArg = computeTaxTimeline(byFy);
+    expect(oneArg).toEqual(computeTaxTimeline(byFy, []));
+    // Pin the exact pre-change output of the existing chaining fixture.
+    expect(oneArg).toEqual([
+      {
+        fy: "2025-26",
+        rates: { stcgPct: 0.20, ltcgPct: 0.125, ltcgExemption: 125000 },
+        taxableStcg: 0,
+        taxableLtcg: 0,
+        taxableSpeculative: 0,
+        taxableNonSpeculative: 0,
+        taxDue: 0,
+        newCarryForward: [{ bucket: "stcl", fyIncurred: "2025-26", amount: 10000 }],
+        usedCarryForward: [],
+      },
+      {
+        fy: "2026-27",
+        rates: { stcgPct: 0.20, ltcgPct: 0.125, ltcgExemption: 125000 },
+        taxableStcg: 5000,
+        taxableLtcg: 0,
+        taxableSpeculative: 0,
+        taxableNonSpeculative: 0,
+        taxDue: 1000,
+        newCarryForward: [],
+        usedCarryForward: [{ bucket: "stcl", fyIncurred: "2025-26", amount: 10000 }],
+      },
+    ]);
+  });
+});

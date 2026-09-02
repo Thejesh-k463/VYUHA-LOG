@@ -108,14 +108,51 @@ export interface CapitalPoint {
   active: number | null;
 }
 
+/** Goal reference lines drawn over the capital chart, keyed to their series. */
+export interface CapitalTargets {
+  equity?: number | null;
+  active?: number | null;
+}
+
 /** Capital checkpoints over time (from capital_snapshots) — stepped, per bucket. */
-export function CapitalGrowth({ data }: { data: CapitalPoint[] }) {
+export function CapitalGrowth({ data, targets }: { data: CapitalPoint[]; targets?: CapitalTargets }) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="date" tick={axis} tickLine={false} axisLine={false} minTickGap={40} />
-        <YAxis tick={axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => inrCompact(v)} />
+        <YAxis
+          tick={axis}
+          tickLine={false}
+          axisLine={false}
+          width={52}
+          tickFormatter={(v) => inrCompact(v)}
+          // The domain must reach an above-history target, or the goal line
+          // clips off the top of the chart and quietly disappears.
+          domain={[
+            "auto",
+            (dataMax: number) => Math.max(dataMax, targets?.equity ?? 0, targets?.active ?? 0),
+          ]}
+        />
+        {/* Goal lines wear their SERIES' colour (CSS variables — print-safe via
+            the @media print palette, same rule as every recharts stroke here),
+            dashed so a target reads as an aim, not a reading. */}
+        {targets?.equity != null && targets.equity > 0 && (
+          <ReferenceLine
+            y={targets.equity}
+            stroke="var(--color-primary)"
+            strokeDasharray="6 4"
+            label={{ value: `Equity goal ${inrCompact(targets.equity)}`, position: "insideTopRight", fill: "var(--color-primary)", fontSize: 10 }}
+          />
+        )}
+        {targets?.active != null && targets.active > 0 && (
+          <ReferenceLine
+            y={targets.active}
+            stroke="var(--color-accent)"
+            strokeDasharray="6 4"
+            label={{ value: `F&O goal ${inrCompact(targets.active)}`, position: "insideBottomRight", fill: "var(--color-accent)", fontSize: 10 }}
+          />
+        )}
         <Tooltip content={<ChartTooltip fmt={(v: number) => inr(v, { decimals: 0 })} />} />
         <Area isAnimationActive={false} type="stepAfter" dataKey="equity" name="Equity" connectNulls stroke="var(--color-primary)" strokeWidth={2} fill="var(--color-primary)" fillOpacity={0.08} dot={{ r: 3 }} />
         {/* --color-accent, NOT --color-profit: this series is CAPITAL, and the

@@ -16,6 +16,9 @@ import {
   type LossBucket,
 } from "@/lib/analytics/capital-gains";
 import { buildLossLedger } from "@/lib/analytics/loss-ledger";
+import { getBfLossRows, toSeedLots, excludedSeedLots, displayRows, HEAD_LABELS, LOSS_HEADS } from "@/lib/queries/bf-losses";
+import { isAggregateView } from "@/lib/queries/accounts";
+import { BfLossEditor } from "@/components/reports/bf-loss-editor";
 import { section } from "@/lib/analytics/statute";
 import { summariseByCompanyFy, TDS_THRESHOLD, type DividendEvent } from "@/lib/analytics/dividend-tds";
 import { inr } from "@/lib/format";
@@ -81,12 +84,33 @@ export default function TaxReportPage() {
   // the count (for the disabled state) is computed here.
   const itrCount = countItrRows();
   const byFy = aggregateTradesByFy(cgTrades, fyStartMonth, currentFy);
-  const timeline = computeTaxTimeline(byFy);
+  // Pre-journal brought-forward losses seed the timeline as CarryForwardLots:
+  // pruneExpired drops already-expired vintages on entry, the rest absorb
+  // oldest-first — exactly like journal-tracked losses (WS5). The SeedGuard
+  // drops any lot whose FY the journal itself covers (its loss is already
+  // computed from imported trades — seeding it would double-count) plus any
+  // future-dated lot; the dropped vintages are named in the warning below.
+  const bfRows = getBfLossRows();
+  const seedGuard = { journalledFys: new Set(byFy.map((f) => f.fy)), currentFy };
+  const ignoredBfRows = excludedSeedLots(bfRows, seedGuard);
+  const timeline = computeTaxTimeline(byFy, toSeedLots(bfRows, seedGuard));
 
   // Loss ledger — surviving carry-forward vintages as of the latest FY in the
   // timeline. Pure re-reading of the timeline (lib/analytics/loss-ledger.ts);
   // no figure on this page changes because of it.
   const lossLedger = buildLossLedger(timeline);
+  // Display-only enrichment for SEEDED vintages: the pure ledger honestly
+  // reports originalAmount null when the incurring FY predates the timeline —
+  // that contract is untouched; where the user STORED the original figure on
+  // the lot, the page shows it instead of "—". Never a guess: absent both, the
+  // dash stays.
+  const seededOriginals = new Map(
+    bfRows.filter((r) => r.originalAmount != null).map((r) => [`${r.incurredFy}|${r.head}`, r.originalAmount as number]),
+  );
+  const ledgerRows = lossLedger.map((r) => ({
+    ...r,
+    displayOriginal: r.originalAmount ?? seededOriginals.get(`${r.fyIncurred}|${r.bucket}`) ?? null,
+  }));
   const ledgerAsOfFy = timeline.length > 0 ? timeline[timeline.length - 1].fy : currentFy;
   // Set-off reach per bucket, cited under the Act governing the as-of FY.
   const bucketMeta: Record<LossBucket, { label: string; reach: string }> = {
@@ -306,14 +330,14 @@ export default function TaxReportPage() {
                     <ReportTh align="right">Expires after FY</ReportTh>
                   </ReportThead>
                   <tbody>
-                    {lossLedger.map((r) => (
+                    {ledgerRows.map((r) => (
                       <ReportTr key={`${r.fyIncurred}-${r.bucket}`}>
                         <ReportTd>
                           <span className="font-medium">{bucketMeta[r.bucket].label}</span>
                           <span className="mt-0.5 block text-[0.6875rem] text-muted-foreground">{bucketMeta[r.bucket].reach}</span>
                         </ReportTd>
                         <ReportTd className="font-medium">{r.fyIncurred}</ReportTd>
-                        <ReportTd align="right" muted>{r.originalAmount != null ? inr(r.originalAmount, { decimals: 0 }) : "—"}</ReportTd>
+                        <ReportTd align="right" muted>{r.displayOriginal != null ? inr(r.displayOriginal, { decimals: 0 }) : "—"}</ReportTd>
                         <ReportTd align="right" className="text-profit">{r.absorbed > 0 ? inr(r.absorbed, { decimals: 0 }) : "—"}</ReportTd>
                         <ReportTd align="right" className="font-medium text-loss">{inr(r.remaining, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" muted>{r.expiresAfterFy}</ReportTd>
@@ -323,13 +347,56 @@ export default function TaxReportPage() {
                 </ReportTable>
               )}
               <p className="px-4 py-3 text-[0.6875rem] text-muted-foreground">
-                Vintages come from journal data only — brought-forward losses from returns filed before this journal
-                began are not yet enterable (planned for v3.6). &ldquo;Absorbed here&rdquo; counts only set-off inside
-                this journal&apos;s timeline.
+                Vintages come from journal data plus any brought-forward losses entered in the card below — seeded
+                lots enter the set-off and expiry maths exactly like journal-tracked ones. &ldquo;Absorbed here&rdquo;
+                counts only set-off inside this journal&apos;s timeline.
               </p>
             </CardContent>
           </Card>
         )}
+
+        <Card className="p-0">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Brought-forward losses (pre-journal)</CardTitle>
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                Losses from ITRs filed before you started this journal — one lot per year and head, as your last
+                filed return carried them out. Seeded lots enter the set-off and expiry maths above exactly like
+                journal-tracked ones.
+              </p>
+            </div>
+            {bfRows.length > 0 && (
+              <Badge variant="secondary">{bfRows.length} lot{bfRows.length === 1 ? "" : "s"}</Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {ignoredBfRows.length > 0 && (
+              <p className="mb-3 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-2 text-xs text-warning/90">
+                <Info className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  {ignoredBfRows.map((r) => `${r.incurredFy} (${HEAD_LABELS[r.head as keyof typeof HEAD_LABELS] ?? r.head})`).join(", ")} entered here{" "}
+                  {ignoredBfRows.length === 1 ? "is" : "are"} ignored — {ignoredBfRows.length === 1 ? "that FY is" : "those FYs are"} journalled, so
+                  the set-off above computes {ignoredBfRows.length === 1 ? "its" : "their"} losses from the imported trades instead. Delete the
+                  {ignoredBfRows.length === 1 ? " lot" : " lots"} to clear this notice.
+                </span>
+              </p>
+            )}
+            <BfLossEditor
+              rows={displayRows(bfRows).map((r) => ({
+                id: r.id,
+                incurredFy: r.incurredFy,
+                head: r.head,
+                headLabel: HEAD_LABELS[r.head as keyof typeof HEAD_LABELS] ?? r.head,
+                amount: r.amount,
+                originalAmount: r.originalAmount,
+                note: r.note,
+                expiresAfterFy: r.expiresAfterFy,
+              }))}
+              heads={LOSS_HEADS.map((h) => ({ value: h, label: HEAD_LABELS[h] }))}
+              aggregate={isAggregateView()}
+            />
+          </CardContent>
+        </Card>
 
         {grandfatherRows.length > 0 && (
           <Card className="p-0">

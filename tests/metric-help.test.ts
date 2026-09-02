@@ -76,11 +76,43 @@ describe("every entry keeps the house rules", () => {
     }
   });
 
+  // The prescriptive net. Contractions used to slip through because the old
+  // pattern required a literal space after "you" — "you'd need to", "you've
+  // got to", "you'll want/need/have to" and "you're supposed to" all evaded
+  // /\byou (should|must|need to|have to)\b/. The optional contraction group
+  // plus the extra advice verbs close that hole.
+  const PRESCRIPTIVE =
+    /\byou(?:'d|'ll|'ve|'re)?\s+(?:should|must|(?:need|have|want|got|ought)\s+to|supposed\s+to)\b/i;
+
   it("whatToDo is descriptive, never prescriptive", () => {
     for (const id of METRIC_HELP_IDS) {
       const w = METRIC_HELP[id].whatToDo;
-      expect(w, `${id}.whatToDo`).not.toMatch(/\byou (should|must|need to|have to)\b/i);
+      expect(w, `${id}.whatToDo`).not.toMatch(PRESCRIPTIVE);
     }
+  });
+
+  it("the prescriptive net catches contraction phrasing (red-on-revert)", () => {
+    // These are the exact shapes that evaded the old space-requiring regex.
+    // If someone narrows PRESCRIPTIVE back, this test goes red first.
+    const banned = [
+      "You'd need to cut size here",
+      "you've got to respect the stop",
+      "You'll want to review these",
+      "you'll need to add a stop",
+      "you'll have to size down",
+      "you're supposed to wait for confirmation",
+      "you should stop trading after a loss",
+      "you must add stops",
+    ];
+    for (const s of banned) expect(s, s).toMatch(PRESCRIPTIVE);
+    // Descriptive uses of the same words stay legal.
+    const legal = [
+      "you have 12 losers with a stop recorded",
+      "if you review the tape, the pattern is visible",
+      "your record shows the gap narrowing",
+      "traders who cut size here kept more of the edge",
+    ];
+    for (const s of legal) expect(s, s).not.toMatch(PRESCRIPTIVE);
   });
 
   it("keeps the house voice — no marketing superlatives", () => {

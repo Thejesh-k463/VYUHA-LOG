@@ -145,8 +145,9 @@ HOW I WANT YOU TO WORK (unchanged):
    npm run verify / next build while another agent edits; one verify per wave, run by you.
 2. Label every claim VERIFIED (checked now) or INFERRED; say plainly what you could not verify.
 3. Scope: app/, components/, lib/, e2e/, tests/ (+ scripts/ and docs/ when the task is about
-   them). No adjacent refactors, no new subsystems, no new brokers, no new report screens — with
-   the one recorded exception in VYUHA-STATE §8.6 (the OpenAlgo integration, already built).
+   them). No adjacent refactors. New subsystems, brokers, and screens ARE allowed (owner
+   directive 2026-09-01, "evolve every day" — VYUHA-STATE §8.6) but each one is proposed with
+   its cost and owner-approved BEFORE building; never landed as a side effect of another task.
 4. Respect the 10 invariants in AGENTS.md.
 5. Anything measured or deliberately deviated -> docs/DECISIONS.md via the decision-log skill.
 6. Before saying anything is done: npm run verify, the prove-it skill, and report the numbers you

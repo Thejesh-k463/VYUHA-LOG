@@ -1,5 +1,82 @@
 # Changelog
 
+## v3.6.0 — navigate & connect
+
+- **The sidebar is now grouped around how you work, and yours to change.**
+  Screens live in nine groups — Import, Tax and Back Office are new — each
+  showing its most-used screens with the rest one click behind "N more…". You
+  choose what stays visible per group, by drag or by checkbox, and Reset brings
+  the default back. A saved order from an earlier version is migrated, never
+  discarded, and the screen you are on is never hidden from you.
+- **Expected-capital goals.** A ₹ or % target per capital bucket, with an
+  optional date. Progress, gap and trailing run-rate are computed from your own
+  realised record — never a projection — and a % goal with no capital on file
+  shows "—" and points at Settings rather than inventing a base.
+- **Dhan connects once with PIN + TOTP.** Vyuha can store your client ID, PIN
+  and TOTP secret (encrypted, machine-bound) and mint each day's access token
+  itself — the sign-in call goes only to `auth.dhan.co`, Dhan's own endpoint.
+  Storing these makes Vyuha a second factor for your Dhan account; the consent
+  screen says so before you agree, and the paste-a-token path remains.
+- **Zerodha's official session exchange.** Log in on Zerodha's own page once a
+  day, paste the request token, and Vyuha completes Kite's documented
+  checksum-and-exchange itself.
+- **Auto-pull on launch — opt-in, once a day.** Pulls your saved broker
+  connections at launch so the day's trades are waiting. Off by default, and
+  anything the manual flow would stop and ask about still stops and asks —
+  a collision is never auto-committed.
+- **Telegram end-of-day digest — opt-in, and called what it is.** Your own
+  recorded numbers, sent to a Telegram bot you create yourself. This is the one
+  feature that uploads anything, so it is off by default behind a disclosure
+  that says plainly the content transits Telegram's servers. If Telegram is
+  unreachable, the digest degrades to a quiet note on the dashboard.
+- **Brought-forward losses are enterable.** Losses from years before your
+  journal starts can be recorded per year and head; the tax timeline, ITR pack
+  and loss ledger honour them, including the year each vintage expires.
+- **The privacy claim now has teeth.** A source-scanning test pins every
+  outbound destination in the codebase to a named allowlist with its reason —
+  a stray analytics call cannot ship without a test going red. The claims-audit
+  wave also brought the in-app help, README, privacy page and this changelog in
+  line with what v3.6 actually does on the network.
+
+## v3.5.1 — demo hardening, Vyuha Intelligence, and the audit that caught its own release
+
+*(v3.5.0 was tagged but never published: a 15-agent adversarial audit of its
+diff confirmed 10 new bugs — two of which silently rewrote money — so the draft
+was deleted and v3.5.1, the same features plus all 10 fixes, is the release.)*
+
+- **Zerodha's Console tax P&L imports natively** — with the broker's own
+  charges per trade and entry AND exit timestamps. Reconciled against Zerodha's
+  own summary on two real financial years: realised profit matched exactly on
+  both, charges to the paisa on one and within the file's own ₹187 exits-only
+  gap on the other. F&O contract names (NIFTY2540323750CE) now classify as
+  options with strike, type and expiry read from the symbol.
+- **Vyuha Intelligence** — a deterministic insight engine behind Arjun's Eye
+  and the Lenses popups. Every insight is descriptive (what your record shows,
+  never what to do), refuses to exist below its sample floor, and carries its
+  coverage with the claim ("SL recorded on 12 of 40 losers"). Entirely offline;
+  nothing an LLM could hallucinate, by design.
+- **Arjun's Eye became the five-tab Trade Craft cockpit** — Winners vs losers
+  (win-rate × payoff against the breakeven curve), Stop-losses (every losing
+  exit classified against the stop you recorded), Trailing stops, and Exits
+  (exit clock, holding times, order fragmentation). Each tab states what it
+  needs when your book has not recorded it.
+- **Turnover, both ways.** Zerodha's tax report computes F&O turnover as
+  differences only; current ICAI guidance adds option premium. On a real book
+  the two differed 6.5–8.7× — opposite sides of the audit line. The ITR Pack
+  now shows both, labelled, with an audit read on each.
+- **Tax tools you can steer** — the harvest what-if simulator (nothing
+  pre-selected, nothing ranked), a carry-forward loss ledger with expiry years,
+  s.425(4) relief inputs and a presumptive-scheme toggle on advance tax.
+- **Session-plan watchlists** import from txt, CSV, Excel or PDF (PDF rows
+  always ask first), resolved through your aliases and ISINs — which also fixed
+  an aliased symbol being scored as "traded outside the watchlist".
+- **Every KPI card explains itself** — meaning, formula, how it is commonly
+  read (stated as a heuristic, not a law), and its honest caveats.
+- **No screen computes on money you never told it about.** Nine surfaces used
+  to assume a capital figure on a fresh install; every one now says "— · set
+  your capital in Settings", and a permanent test fails the build if a made-up
+  capital figure ever returns.
+
 ## v3.4.0 — the screens that got slow as your book grew
 
 - **Five heavy screens now open in about a second.** Option Strategies went from

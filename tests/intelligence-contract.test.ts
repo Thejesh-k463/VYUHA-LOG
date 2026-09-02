@@ -9,6 +9,7 @@ import {
 } from "@/lib/intelligence/insight";
 import { COCKPIT_RULES, CONTRACT_FIXTURES as COCKPIT_FIXTURES } from "@/lib/intelligence/rules/cockpit";
 import { GROUP_RULES, CONTRACT_FIXTURES as GROUP_FIXTURES } from "@/lib/intelligence/rules/group";
+import { GOAL_RULES, CONTRACT_FIXTURES as GOAL_FIXTURES } from "@/lib/intelligence/rules/goal";
 
 /**
  * THE INSIGHT CONTRACT — every Vyuha Intelligence rule registry added to
@@ -33,6 +34,7 @@ type AnyRegistry = {
 const REGISTRIES: AnyRegistry[] = [
   { name: "cockpit (Arjun's Eye)", rules: COCKPIT_RULES as unknown as InsightRule<unknown>[], fixtures: COCKPIT_FIXTURES },
   { name: "lens-group rules", rules: GROUP_RULES as unknown as InsightRule<unknown>[], fixtures: GROUP_FIXTURES },
+  { name: "goal rules", rules: GOAL_RULES as unknown as InsightRule<unknown>[], fixtures: GOAL_FIXTURES },
 ];
 
 describe("insight primitives", () => {
@@ -94,8 +96,8 @@ describe("insight primitives", () => {
 });
 
 describe("every registered rule registry honours the contract", () => {
-  it("both shipped registries are registered — an unregistered registry is unprotected", () => {
-    expect(REGISTRIES.map((r) => r.name).sort()).toEqual(["cockpit (Arjun's Eye)", "lens-group rules"]);
+  it("all shipped registries are registered — an unregistered registry is unprotected", () => {
+    expect(REGISTRIES.map((r) => r.name).sort()).toEqual(["cockpit (Arjun's Eye)", "goal rules", "lens-group rules"]);
   });
 
   for (const reg of REGISTRIES) {
@@ -108,6 +110,21 @@ describe("every registered rule registry honours the contract", () => {
 
       it("every rule states a sample floor of at least 10", () => {
         for (const r of reg.rules) expect(r.sampleFloor, r.id).toBeGreaterThanOrEqual(10);
+      });
+
+      it("EVERY rule id fires from the registry's own fixtures — an unfired rule is unprotected", () => {
+        // The prescriptive-language scan below only sees insights that FIRE.
+        // A rule none of the fixtures reaches ships with zero contract
+        // coverage — its copy, floor and evidence are all unchecked. So the
+        // fixtures must collectively fire every registered rule; a new rule
+        // lands with a fixture that fires it, or it does not land.
+        const fired = new Set<string>();
+        for (const fixture of reg.fixtures) {
+          for (const insight of runRules(reg.rules, fixture)) fired.add(insight.id);
+        }
+        for (const r of reg.rules) {
+          expect(fired.has(r.id), `${reg.name}: rule "${r.id}" never fired from any fixture — add one that reaches it`).toBe(true);
+        }
       });
 
       it("no fired insight uses prescriptive language", () => {

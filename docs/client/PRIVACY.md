@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-09-01 · **Applies to:** Vyuha v3.5.1 and later
+**Last updated:** 2026-09-02 · **Applies to:** Vyuha v3.6.0 and later
 
 Vyuha has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —
@@ -26,7 +26,7 @@ it is gone — including from us, because we never had it.
 
 ## The network requests Vyuha makes
 
-Exactly three kinds, and only one of them is automatic:
+Exactly four kinds, and only one of them is automatic:
 
 1. **At launch, once — automatic and not switchable off.** Vyuha asks GitHub
    whether a newer signed release exists, and downloads the licence-revocation
@@ -36,12 +36,22 @@ Exactly three kinds, and only one of them is automatic:
    you are offline it fails silently and the app carries on.
 2. **End-of-day market data — only if you switch it on.** Downloads the free
    NSE/BSE bhavcopy to value open positions. Off by default.
-3. **Broker API pulls — only when you start one.** If you connect a broker
-   (Zerodha, Dhan or Angel One), Vyuha talks to *that broker's* API to fetch
-   your own trades. Your credentials are encrypted at rest, bound to your
-   machine, and sent nowhere except the broker itself. We never see them.
+3. **Broker API pulls — only when you start one, or when you have switched on
+   the once-a-day auto-pull of your saved brokers at launch.** If you connect a
+   broker (Zerodha, Dhan, Angel One or Upstox — or another broker through the
+   OpenAlgo bridge you run on your own machine), Vyuha talks to *that broker's*
+   API to fetch your own trades. Dhan's connect-once PIN+TOTP mode makes one
+   extra sign-in call, and it goes only to Dhan's own endpoint
+   (`auth.dhan.co`) — never anywhere else. Your credentials are encrypted at
+   rest, bound to your machine, and sent nowhere except the broker itself. We
+   never see them.
+4. **The Telegram end-of-day digest — only if you switch it on, and this one
+   is an upload.** It sends a summary of your own recorded numbers to a
+   Telegram bot you create yourself, which means that content transits and is
+   stored on Telegram's servers. It is off by default and can only be enabled
+   behind a disclosure that says exactly that.
 
-That is the complete list. There is no fourth thing.
+That is the complete list. There is no fifth thing.
 
 ## Your credentials and licence key
 
@@ -68,7 +78,11 @@ exposing it — that is why support asks for the Key ID and never the key itself
 - The launch check tells GitHub your IP address, the same as visiting any
   website would. We do not receive it or see it.
 - If you connect a broker, that broker knows what you asked for. Their privacy
-  policy governs that, not ours.
+  policy governs that, not ours. The same goes for Telegram if you enable the
+  digest.
+- Rolling back to an older version after using v3.6 features leaves rows the
+  old version does not manage — capital goals and brought-forward loss entries
+  stay in the database untouched, but the old version cannot show or edit them.
 - Nothing here protects a compromised computer. Encryption at rest defends the
   file, not a machine someone else is already running code on.
 

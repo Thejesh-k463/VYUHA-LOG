@@ -265,6 +265,13 @@ describe("account-scoped table registry", () => {
     // so the query module owns the boundary and the route never touches the
     // table — which is the shape D1's fix deliberately produced.
     capital_snapshots: ["lib/queries/capital.ts", "lib/queries/account-delete.ts"],
+    // Goal reads scope through getSelectedAccountId (aggregate = pure SUM via
+    // aggregateGoals); writes REFUSE the aggregate view like compoundRealised.
+    capital_goals: ["lib/queries/goals.ts", "lib/queries/account-delete.ts"],
+    // B/f loss reads scope through getSelectedAccountId (aggregate reads ALL
+    // accounts' lots — the tax pages blend every account's trades there, so
+    // the seed matches); writes REFUSE the aggregate view like goals.
+    bf_loss_lots: ["lib/queries/bf-losses.ts", "lib/queries/account-delete.ts"],
     broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts", "lib/queries/account-delete.ts"],
     panel_dismissals: ["lib/queries/dismissals.ts", "lib/queries/account-delete.ts"],
   };

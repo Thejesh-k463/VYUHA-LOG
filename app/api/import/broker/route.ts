@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { kiteImportSource, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
-import { dhanImportSource, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
+import { dhanImportSource, dhanTotpEnrolled, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
@@ -38,19 +38,24 @@ export const runtime = "nodejs";
 
 /** Brokers with a working API pull, and what each needs.
  *  `needsToken` brokers use the two classic columns; `extraFields` land as one
- *  vault-encrypted JSON blob in auth_json. */
+ *  vault-encrypted JSON blob in auth_json, packed by the broker's own entry in
+ *  `packAuth` below (per-broker dispatch — this used to be hard-coded to Angel
+ *  One's field trio). A pack may return `tokenOptional: true` when the extras
+ *  it stored replace the pasted token (Dhan PIN+TOTP, Zerodha api_secret). */
 const API_BROKERS: Record<string, { label: string; keyLabel: string; note: string; needsToken: boolean; extraFields?: readonly string[] }> = {
   zerodha: {
     label: "Zerodha (Kite Connect)",
     keyLabel: "API key",
-    note: "Kite access tokens expire daily — re-paste after each login.",
+    note: "Paste the day's access token, or save the API secret once — then each pull day is one browser login + request_token paste and Vyuha does the exchange. Either way the session dies daily around 6 AM IST by regulation.",
     needsToken: true,
+    extraFields: ["apiSecret"],
   },
   dhan: {
     label: "Dhan (DhanHQ v2)",
     keyLabel: "Client ID",
-    note: "Dhan access tokens are issued from web.dhan.co → DhanHQ Trading APIs and are valid for 24 hours by default.",
+    note: "Two modes: paste a token from web.dhan.co → DhanHQ Trading APIs (valid 24 hours), or save your PIN + TOTP secret once and Vyuha mints the day's token itself at pull time — nothing expires on you.",
     needsToken: true,
+    extraFields: ["pin", "totpSecret"],
   },
   angelone: {
     label: "Angel One (SmartAPI)",
@@ -76,10 +81,102 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
 
 const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
 
+/** Mask an account/user id down to its last two characters — enough to
+ *  recognise your own id, not enough to leak someone else's. */
+const maskId = (s: string) => (s.length <= 2 ? "••" : `${"•".repeat(s.length - 2)}${s.slice(-2)}`);
+
+/**
+ * The Dhan PIN+TOTP consent version the save handler stamps into auth_json as
+ * `totpAckVersion`. MUST equal DHAN_TOTP_CONSENT_VERSION exported next to the
+ * consent copy in components/import/broker-connect.tsx — the route cannot
+ * import that "use client" module, so tests/broker-auth-gate.test.ts pins the
+ * two to the same number instead. An auth_json blob without this field is a
+ * legacy enrollment saved before the server-side gate existed and is treated
+ * as NOT enrolled (dhanTotpEnrolled).
+ */
+const DHAN_TOTP_ACK_VERSION = 1;
+
 /** One OpenAlgo instance fronts ONE broker, and a user can run several — so
  *  each is its own connection row, `openalgo:<underlying>` (see the adapter).
  *  Every openalgo:* id shares the single "openalgo" spec. */
 const specOf = (broker: string) => API_BROKERS[isOpenAlgoConnectionId(broker) ? "openalgo" : broker];
+
+type PackedAuth =
+  | { ok: true; authPlain: string | null; tokenOptional?: boolean }
+  | { ok: false; message: string };
+
+const str = (v: unknown) => String(v ?? "").trim();
+
+/**
+ * Per-broker packing of the auth_json extras (OpenAlgo has its own branch in
+ * the save handler because it also rewrites the connection id). Each entry
+ * validates AT SAVE, with a message naming the field — not at tomorrow's pull
+ * as a cryptic broker rejection.
+ */
+const packAuth: Record<string, (body: Record<string, unknown>) => PackedAuth> = {
+  angelone: (body) => {
+    // Angel One's extras: client code + PIN + TOTP SECRET — all three required.
+    const clientCode = str(body.clientCode);
+    const pin = str(body.pin);
+    const totpSecret = str(body.totpSecret);
+    if (!clientCode || !pin || !totpSecret) {
+      return { ok: false, message: "Client code, PIN and TOTP secret are all required." };
+    }
+    // Catch the classic paste error AT SAVE, with a message.
+    if (!looksLikeTotpSecret(totpSecret)) {
+      return {
+        ok: false,
+        message:
+          "That does not look like a TOTP secret. Paste the base32 SECRET shown at SmartAPI 2FA enrollment (behind the QR code) — not the 6-digit code it generates.",
+      };
+    }
+    return { ok: true, authPlain: JSON.stringify({ clientCode, pin, totpSecret }) };
+  },
+  dhan: (body) => {
+    // Dhan's extras are OPTIONAL: PIN + TOTP secret enable unattended minting;
+    // absent both, the pasted 24h token mode remains exactly as it was.
+    const pin = str(body.pin);
+    const totpSecret = str(body.totpSecret);
+    if (!pin && !totpSecret) return { ok: true, authPlain: null };
+    if (!pin || !totpSecret) {
+      return {
+        ok: false,
+        message: "PIN and TOTP secret go together — fill both to enable unattended auth, or neither to stay on pasted tokens.",
+      };
+    }
+    if (!looksLikeTotpSecret(totpSecret)) {
+      return {
+        ok: false,
+        message:
+          "That does not look like a TOTP secret. Paste the base32 SECRET from Dhan's TOTP enrollment (behind the QR code) — not the 6-digit code it generates.",
+      };
+    }
+    // The SERVER-side consent gate (the OpenAlgo/Telegram house rule: a hidden
+    // tab — or here, a client-side checkbox — is never the only defence).
+    // Anyone can POST; storing a permanent second factor without the explicit
+    // acknowledgement in the request is refused outright, and the ack VERSION
+    // is stored alongside the credential so a legacy blob is distinguishable.
+    if (body.dhanTotpConsent !== true) {
+      return {
+        ok: false,
+        message:
+          "Storing a Dhan PIN + TOTP secret makes Vyuha a second factor for your Dhan account, and needs the explicit consent acknowledgement — tick the consent checkbox and save again.",
+      };
+    }
+    return {
+      ok: true,
+      authPlain: JSON.stringify({ pin, totpSecret, totpAckVersion: DHAN_TOTP_ACK_VERSION }),
+      tokenOptional: true,
+    };
+  },
+  zerodha: (body) => {
+    // Zerodha's extra is OPTIONAL: the api_secret enables the official daily
+    // session exchange (request_token paste); absent, raw token paste remains.
+    const apiSecret = str(body.apiSecret);
+    if (!apiSecret) return { ok: true, authPlain: null };
+    return { ok: true, authPlain: JSON.stringify({ apiSecret }), tokenOptional: true };
+  },
+};
 
 /**
  * The SERVER's copy of the OpenAlgo gate (lib/domain/openalgo-disclosure.ts).
@@ -119,11 +216,16 @@ export async function GET() {
       // Decrypt only to mask — the plaintext never leaves this handler. An
       // unreadable secret masks as bullets rather than leaking ciphertext.
       const key = readSecret(r.apiKey);
+      const authPeek = readSecret(r.authJson);
       const out: Record<string, unknown> = {
         broker: r.broker,
         accountId: r.accountId,
         accountName: r.accountName,
         apiKeyMasked: key.ok && key.value ? mask(key.value) : "••••",
+        // Whether an auth_json blob is stored (PIN+TOTP, api_secret, OpenAlgo
+        // config) — a boolean only, so the UI can offer "remove enrollment"
+        // without the contents ever leaving this handler.
+        hasAuth: authPeek.ok && Boolean(authPeek.value),
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
       };
@@ -180,12 +282,54 @@ export async function POST(req: Request) {
       if (!gate.allowed) return NextResponse.json({ ok: false, message: gate.reason }, { status: 403 });
     }
 
-    if (!apiKey || (spec.needsToken && !accessToken)) {
-      return NextResponse.json({ ok: false, message: `${spec.keyLabel}${spec.needsToken ? " and access token are" : " is"} required.` }, { status: 400 });
+    // DELIBERATE removal of the stored auth extras (Dhan PIN+TOTP, Zerodha
+    // api_secret) without retyping the credentials: `clearAuth: true` with no
+    // new key/token nulls auth_json on the existing row and touches nothing
+    // else. Restricted to the two brokers whose extras are optional — for
+    // Angel One and OpenAlgo the blob IS the connection, and clearing it would
+    // just break the row.
+    const clearAuth = body.clearAuth === true;
+    if (clearAuth && !apiKey && !accessToken) {
+      if (broker !== "dhan" && broker !== "zerodha") {
+        return NextResponse.json(
+          { ok: false, message: "Only Dhan (PIN + TOTP) and Zerodha (API secret) enrollments can be removed this way — use Disconnect for the rest." },
+          { status: 400 },
+        );
+      }
+      const existing = db
+        .select({ id: brokerConnections.id })
+        .from(brokerConnections)
+        .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+        .all()[0];
+      if (!existing) {
+        return NextResponse.json({ ok: false, message: "No saved connection to remove the enrollment from." }, { status: 400 });
+      }
+      db.update(brokerConnections)
+        .set({ authJson: null, updatedAt: new Date().toISOString() })
+        .where(eq(brokerConnections.id, existing.id))
+        .run();
+      recordAudit({
+        entity: "settings",
+        action: "update",
+        summary: `Broker connection ${broker}: stored auth extras removed`,
+        before: { broker, hadAuth: true },
+        after: { broker, hadAuth: false },
+      });
+      return NextResponse.json({
+        ok: true,
+        message:
+          broker === "dhan"
+            ? "PIN + TOTP enrollment removed — pulls fall back to pasted 24-hour tokens, and auto-pull no longer includes Dhan."
+            : "API secret removed — pulls need the day's pasted access token again.",
+      });
     }
 
-    // Broker-specific extras, one encrypted blob in auth_json.
+    // Broker-specific extras, one encrypted blob in auth_json — packed by the
+    // broker's own `packAuth` entry (OpenAlgo keeps its branch here because it
+    // also rewrites the connection id). Packed BEFORE the token check: for
+    // Dhan and Zerodha the extras can legitimately replace the pasted token.
     let authPlain: string | null = null;
+    let tokenOptional = false;
     if (isOpenAlgoConnectionId(broker)) {
       // OpenAlgo's extras: WHERE the instance is, and WHICH broker sits behind
       // it. The broker is load-bearing — it selects the charge profile — so it
@@ -213,23 +357,21 @@ export async function POST(req: Request) {
       // instances (one per broker) coexist as separate rows; saving the same
       // underlying again UPDATES that instance via the (account, broker) upsert.
       broker = openAlgoConnectionId(underlyingBroker as Broker);
-    } else if (spec.extraFields) {
-      // Angel One's extras: client code + PIN + TOTP SECRET.
-      const clientCode = String(body.clientCode ?? "").trim();
-      const pin = String(body.pin ?? "").trim();
-      const totpSecret = String(body.totpSecret ?? "").trim();
-      if (!clientCode || !pin || !totpSecret) {
-        return NextResponse.json({ ok: false, message: "Client code, PIN and TOTP secret are all required." }, { status: 400 });
-      }
-      // Catch the classic paste error AT SAVE, with a message — not at
-      // tomorrow's pull as a cryptic broker rejection.
-      if (!looksLikeTotpSecret(totpSecret)) {
-        return NextResponse.json(
-          { ok: false, message: "That does not look like a TOTP secret. Paste the base32 SECRET shown at SmartAPI 2FA enrollment (behind the QR code) — not the 6-digit code it generates." },
-          { status: 400 },
-        );
-      }
-      authPlain = JSON.stringify({ clientCode, pin, totpSecret });
+    } else if (packAuth[broker]) {
+      const packed = packAuth[broker](body as Record<string, unknown>);
+      if (!packed.ok) return NextResponse.json({ ok: false, message: packed.message }, { status: 400 });
+      authPlain = packed.authPlain;
+      tokenOptional = Boolean(packed.tokenOptional && authPlain);
+    }
+
+    if (!apiKey || (spec.needsToken && !tokenOptional && !accessToken)) {
+      const message =
+        broker === "dhan"
+          ? "Client ID plus either a pasted access token or PIN + TOTP secret are required."
+          : broker === "zerodha"
+            ? "API key plus either the day's access token or the API secret are required."
+            : `${spec.keyLabel}${spec.needsToken ? " and access token are" : " is"} required.`;
+      return NextResponse.json({ ok: false, message }, { status: 400 });
     }
 
     // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather
@@ -241,6 +383,20 @@ export async function POST(req: Request) {
       encAuth = authPlain ? encryptSecret(authPlain) : null;
     } catch (e) {
       return NextResponse.json({ ok: false, message: e instanceof Error ? e.message : "The secrets vault is unavailable." }, { status: 500 });
+    }
+    // A re-save that carries NO extras must not silently wipe stored ones: a
+    // token-only "Update connection" used to null auth_json and destroy the
+    // Dhan PIN+TOTP enrollment / Zerodha api_secret the user could no longer
+    // see (the client clears its fields after save). Absent extras now mean
+    // "keep what is stored" — the stored ciphertext is carried over untouched —
+    // and removal is only ever the explicit `clearAuth: true`.
+    if (!authPlain && !clearAuth) {
+      const existing = db
+        .select({ authJson: brokerConnections.authJson })
+        .from(brokerConnections)
+        .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+        .all()[0];
+      if (existing?.authJson) encAuth = existing.authJson;
     }
     db.insert(brokerConnections)
       .values({ accountId, broker, apiKey: encKey, accessToken: encToken, authJson: encAuth })
@@ -306,7 +462,13 @@ export async function POST(req: Request) {
     // which is a lie: there is no token, and none is needed. So the token is
     // only load-bearing for the brokers whose spec says it is.
     const needsToken = specOf(broker)?.needsToken ?? true;
-    if (!keyRead.ok || (needsToken && !tokenRead.ok)) {
+    // Dhan (PIN+TOTP) and Zerodha (api_secret) may hold that same encrypted
+    // empty token when their auth_json extras replace it — so for them, token
+    // readability is only load-bearing when there is NO auth blob to mint or
+    // exchange from.
+    const authBlobRead = readSecret(conn.authJson);
+    const hasAuthBlob = authBlobRead.ok && Boolean(authBlobRead.value);
+    if (!keyRead.ok || (needsToken && !tokenRead.ok && !hasAuthBlob)) {
       const reason = !keyRead.ok ? (keyRead as { reason: string }).reason : (tokenRead as { reason: string }).reason;
       const keyLabel = specOf(broker)?.keyLabel ?? "API key";
       return NextResponse.json(
@@ -359,7 +521,68 @@ export async function POST(req: Request) {
       } else if (broker === "dhan") {
         // apiKey holds the Dhan CLIENT ID; the column is named for Kite, which
         // came first. Renaming it would need a migration for no behavioural gain.
-        const source = dhanImportSource({ clientId: keyRead.value, accessToken: accessTokenPlain });
+        // PIN + TOTP secret (when enrolled) ride in auth_json; the adapter
+        // mints the day's token from them and falls back to the pasted token.
+        let pin: string | undefined;
+        let totpSecret: string | undefined;
+        let legacyUnacked = false;
+        if (hasAuthBlob) {
+          try {
+            const a = JSON.parse((authBlobRead as { value: string }).value) as {
+              pin?: string;
+              totpSecret?: string;
+              totpAckVersion?: number;
+            };
+            // pin + totpSecret feed the mint ONLY when the blob also carries
+            // the recorded consent (totpAckVersion). A legacy-shaped blob —
+            // saved before the server-side consent gate existed — is treated
+            // as NOT enrolled: the pull falls back to the pasted token.
+            if (dhanTotpEnrolled(a)) {
+              pin = a.pin || undefined;
+              totpSecret = a.totpSecret || undefined;
+            } else if (a.pin && a.totpSecret) {
+              legacyUnacked = true;
+            }
+          } catch {
+            /* unreadable blob — the pasted-token fallback below decides */
+          }
+        }
+        if (!(pin && totpSecret) && !accessTokenPlain) {
+          // A legacy or half-saved connection with nothing usable: say which
+          // two ways fix it instead of failing inside the fetch.
+          return NextResponse.json(
+            {
+              ok: false,
+              message: legacyUnacked
+                ? "Dhan PIN + TOTP are saved but without the recorded consent this build requires — re-save the connection (ticking the consent checkbox) to re-enroll, or paste a fresh 24-hour token."
+                : "No Dhan access token saved and no PIN + TOTP secret to mint one — reconnect Dhan with either a fresh 24-hour token or PIN + TOTP.",
+            },
+            { status: 400 },
+          );
+        }
+        const source = dhanImportSource(
+          {
+            clientId: keyRead.value,
+            accessToken: accessTokenPlain || undefined,
+            pin,
+            totpSecret,
+          },
+          // PERSIST a freshly minted token: Dhan mints at most one per 2
+          // minutes (live-verified 2026-09-02), so preview → commit inside
+          // that window MUST reuse the stored token instead of re-minting.
+          // Same vault path as a pasted token; a vault refusal only costs the
+          // cache — the in-flight pull already holds the token in memory.
+          (minted) => {
+            try {
+              db.update(brokerConnections)
+                .set({ accessToken: encryptSecret(minted), updatedAt: new Date().toISOString() })
+                .where(eq(brokerConnections.id, conn.id))
+                .run();
+            } catch {
+              /* cache miss only — tomorrow's first pull mints again */
+            }
+          },
+        );
         parsed = dhanToParsedFile(await source.fetchTrades({}));
       } else if (broker === "upstox") {
         // apiKey holds the year-long read-only Analytics token. normalize is
@@ -367,8 +590,99 @@ export async function POST(req: Request) {
         const today = new Date().toISOString().slice(0, 10);
         parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
       } else {
-        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: accessTokenPlain });
-        parsed = kiteToParsedFile(await source.fetchTrades({}));
+        // Zerodha. With an api_secret saved (auth_json), the daily ritual is
+        // the OFFICIAL session exchange (decision #3, NO enctoken): the user
+        // logs in via their Kite Connect URL, pastes the request_token, and
+        // Vyuha does checksum + /session/token. Honest framing: one browser
+        // click + one paste per day — better than pasting a raw token, not
+        // unattended (SEBI-mandated ~6 AM IST session invalidation).
+        let apiSecret: string | undefined;
+        let storedKiteUserId: string | undefined;
+        if (hasAuthBlob) {
+          try {
+            const a = JSON.parse((authBlobRead as { value: string }).value) as { apiSecret?: string; kiteUserId?: string };
+            apiSecret = a.apiSecret || undefined;
+            storedKiteUserId = a.kiteUserId || undefined;
+          } catch {
+            /* unreadable blob — raw-paste mode below decides */
+          }
+        }
+        let kiteToken = accessTokenPlain;
+        const requestToken = String(body.requestToken ?? "").trim();
+        if (requestToken && apiSecret) {
+          const { accessToken, userId } = await exchangeKiteRequestToken({ apiKey: keyRead.value, apiSecret, requestToken });
+          // WHOSE session did we just mint? The exchange states it (user_id).
+          // A mismatch against the id this connection is bound to means the
+          // user logged into a DIFFERENT Zerodha account — proceeding would
+          // import someone else's tradebook into this journal, so the pull
+          // refuses before the token is cached or a single trade is fetched.
+          if (userId && storedKiteUserId && userId !== storedKiteUserId) {
+            return NextResponse.json(
+              {
+                ok: false,
+                kiteUserMismatch: true,
+                message: `This connection is bound to Zerodha ID ${maskId(storedKiteUserId)}, but today's login was for a different Zerodha ID (${maskId(userId)}). Nothing was pulled — log in with the account this connection belongs to, or disconnect and reconnect for the other account.`,
+              },
+              { status: 409 },
+            );
+          }
+          kiteToken = accessToken;
+          // First successful exchange for a connection with no stored id
+          // (including legacy rows saved before the check existed): stamp the
+          // session's user_id into auth_json so every later exchange can be
+          // compared. A vault refusal only costs the stamp, never the pull.
+          if (userId && !storedKiteUserId) {
+            try {
+              db.update(brokerConnections)
+                .set({
+                  authJson: encryptSecret(JSON.stringify({ apiSecret, kiteUserId: userId })),
+                  updatedAt: new Date().toISOString(),
+                })
+                .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+                .run();
+            } catch {
+              /* stamp miss only */
+            }
+          }
+          // Cache the day's token through the same vault path a save uses, so
+          // later pulls today skip the prompt. A vault refusal only costs the
+          // cache — the in-memory token still serves THIS pull.
+          try {
+            db.update(brokerConnections)
+              .set({ accessToken: encryptSecret(accessToken), updatedAt: new Date().toISOString() })
+              .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+              .run();
+          } catch {
+            /* cache miss only */
+          }
+        }
+        const needsLoginResponse = () =>
+          NextResponse.json(
+            {
+              ok: false,
+              needsRequestToken: true,
+              loginUrl: kiteLoginUrl(keyRead.value),
+              message:
+                "Zerodha needs today's login: Kite sessions are invalidated around 6 AM IST every day by regulation, so this stays one browser click + one paste daily — not unattended. Open your Kite Connect login URL, sign in, and paste the request_token from the redirect.",
+            },
+            { status: 409 },
+          );
+        if (!kiteToken) {
+          if (apiSecret) return needsLoginResponse();
+          return NextResponse.json(
+            { ok: false, message: "No Kite access token saved — paste the day's token, or save the API secret to switch to the request_token flow." },
+            { status: 400 },
+          );
+        }
+        const source = kiteImportSource({ apiKey: keyRead.value, accessToken: kiteToken });
+        try {
+          parsed = kiteToParsedFile(await source.fetchTrades({}));
+        } catch (e) {
+          // A dead session with an api_secret on file is not an error — it is
+          // the daily prompt.
+          if (apiSecret && (e as Error & { kiteStatus?: number }).kiteStatus === 403) return needsLoginResponse();
+          throw e;
+        }
       }
     } catch (e) {
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });

@@ -22,6 +22,11 @@ import { stopMigration } from "@/lib/analytics/stop-migration";
 import { extractStopEdits } from "@/lib/analytics/stop-edit-mining";
 import { runRules } from "@/lib/intelligence/insight";
 import { COCKPIT_RULES } from "@/lib/intelligence/rules/cockpit";
+import { GOAL_RULES, type GoalRuleFact } from "@/lib/intelligence/rules/goal";
+import { goalProgress } from "@/lib/analytics/goal";
+import { getGoalView, getAggregateGoalProgress } from "@/lib/queries/goals";
+import { getBucketCapital } from "@/lib/queries/capital";
+import { dailyPnl } from "@/lib/analytics/metrics";
 import { InsightList } from "@/components/intelligence/insight-list";
 import { TabShell } from "@/components/trade-craft/tab-shell";
 import { StopLossTab } from "@/components/trade-craft/stop-loss-tab";
@@ -110,7 +115,40 @@ export default function ArjunsEyePage() {
   // array `cockpitReport` passes internally, so this surface runs the registry
   // itself over the same edge-measurable population every panel uses.
   const measurable = rows.filter(edgeMeasurable);
-  const insights = runRules(COCKPIT_RULES, { time, holding, sizing, tilt, segments, trades: measurable });
+  const cockpitInsights = runRules(COCKPIT_RULES, { time, holding, sizing, tilt, segments, trades: measurable });
+
+  // Goal rules (v3.6): one small goal read; the pace facts are computed from
+  // the SAME scoped trade projection every panel above uses — the rules only
+  // compare numbers already computed (projection stays lean).
+  const today = new Date().toISOString().slice(0, 10);
+  const capForGoals = getBucketCapital();
+  const goalView = getGoalView();
+  // All-accounts view: per-account walks summed (getAggregateGoalProgress),
+  // never the blended series — see /reports/performance's goal cards.
+  const aggGoalProgress = goalView.aggregate ? getAggregateGoalProgress(today) : null;
+  const goalFacts: GoalRuleFact[] = goalView.goals.map((g) => {
+    const rel = g.bucket === "total" ? trades : trades.filter((t) => t.bucket === g.bucket);
+    const realised = [...dailyPnl(rel).entries()].map(([date, net]) => ({ date, net }));
+    const cap = g.bucket === "equity" ? capForGoals.equityCapital : g.bucket === "active" ? capForGoals.activeCapital : capForGoals.totalCapital;
+    const p =
+      aggGoalProgress != null
+        ? (aggGoalProgress.get(g.bucket) ?? goalProgress(g, { currentCapital: null, realised: [], today }))
+        : goalProgress(g, { currentCapital: cap > 0 ? cap : null, realised, today });
+    return {
+      bucketLabel: g.bucket === "active" ? "Trade F&O" : g.bucket === "equity" ? "Equity" : "Total",
+      measurable: p.measurable,
+      runRate30: p.runRate30,
+      runRate90: p.runRate90,
+      requiredPerWeek: p.requiredPerWeek,
+      gapAmount: p.gapAmount,
+      daysLeft: p.daysLeft,
+    };
+  });
+  const cutoff90 = new Date(new Date(today + "T00:00:00").getTime() - 89 * 86400000).toISOString().slice(0, 10);
+  const realisedDays90 = [...dailyPnl(trades).keys()].filter((d) => d >= cutoff90 && d <= today).length;
+  const goalInsights = runRules(GOAL_RULES, { goals: goalFacts, realisedDays90 });
+
+  const insights = [...cockpitInsights, ...goalInsights];
 
   const closed = trades.filter((t) => !t.isOpen);
 

@@ -7,6 +7,20 @@
 // index membership gone, and the guard test could not see it because it
 // asserted a COUNT of 26 rather than the schema. v3 also redacts licence and
 // trial state out of the settings row on dump (see lib/backup.ts).
+//
+// capital_goals (v3.6) joins the list WITHOUT a version bump, deliberately:
+// since v3, restore semantics are per-key — an envelope that does not carry a
+// table leaves it alone, one that carries it (even empty) is the restored
+// truth. So a pre-goals v3 file restores into v3.6 cleanly (goals untouched),
+// and a v3.6 file restores into v3.6 completely. Bumping to 4 would have
+// bought nothing except older builds refusing new files whole. The one cost —
+// a pre-3.6 build silently ignoring a newer file's goals — is inherent to any
+// added table and is bounded at one row per account per bucket.
+//
+// bf_loss_lots (v3.6) joins on the same per-key rationale, no bump: an
+// envelope without the key leaves today's lots alone, one carrying it is the
+// restored truth; the bounded cost is a pre-3.6 build ignoring a newer file's
+// hand-entered lots (a handful of rows the user can restate from filed ITRs).
 export const BACKUP_VERSION = 3;
 
 // Order is insert-order for restore (parents-ish first); delete runs in reverse.
@@ -17,6 +31,8 @@ export const BACKUP_TABLES = [
   "charge_config",
   "risk_config",
   "capital_snapshots",
+  "capital_goals",
+  "bf_loss_lots",
   "import_batches",
   "trades",
   "classification_overrides",
@@ -63,6 +79,22 @@ export const SETTINGS_MACHINE_COLUMNS = [
   // install starts exactly where a fresh one does: off, disclosure unseen.
   "openalgoEnabled",
   "openalgoAckVersion",
+  // Telegram + auto-pull (v3.6, migration 0053) — the same consent rule as
+  // OpenAlgo, plus two more machine kinds: credentials (the bot token is vault
+  // ciphertext bound to THIS machine — unreadable elsewhere, and a chat id
+  // identifies the user's Telegram account, so neither belongs in a file that
+  // travels) and job bookkeeping (a restored "last sent/pulled" stamp would
+  // suppress today's run or replay an old day's). telegram_send_time is a
+  // machine column too: it only means anything alongside a consent this
+  // restore deliberately does not carry.
+  "telegramEnabled",
+  "telegramAckVersion",
+  "telegramSendTime",
+  "lastTelegramSentDate",
+  "telegramTokenEnc",
+  "telegramChatId",
+  "autoPullEnabled",
+  "lastAutoPullDate",
 ] as const;
 
 /**
@@ -76,6 +108,11 @@ export const SETTINGS_MACHINE_COLUMNS = [
  */
 export const SETTINGS_MACHINE_BLANKS: Readonly<Record<string, unknown>> = {
   openalgoEnabled: false,
+  // v3.6 (migration 0053): three more NOT NULL machine columns. Gates blank to
+  // off; the send time blanks to its column default, not null.
+  telegramEnabled: false,
+  autoPullEnabled: false,
+  telegramSendTime: "15:35",
 };
 
 /** The value a redacted machine column carries in a dump / after a restore. */

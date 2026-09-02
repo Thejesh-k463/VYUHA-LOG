@@ -51,12 +51,15 @@ export const OPENALGO_WHAT_IT_IS: DisclosureItem[] = [
   {
     title: "It speaks to your broker so Vyuha does not have to",
     body:
-      "One OpenAlgo instance is connected to one broker account. Vyuha then asks that instance for your executed trades over a normal web request to your own machine — the same shape as the Zerodha, Dhan and Angel One pulls Vyuha already does directly.",
+      // Broker names below corrected 2026-09-02 (Upstox native landed v2.99.104).
+      // A FACTUAL correction to stale context, not a change to what the user
+      // consents to — so the disclosure version deliberately does NOT bump.
+      "One OpenAlgo instance is connected to one broker account. Vyuha then asks that instance for your executed trades over a normal web request to your own machine — the same shape as the Zerodha, Dhan, Angel One and Upstox pulls Vyuha already does directly.",
   },
   {
     title: "Why it is worth the trouble",
     body:
-      "Vyuha has direct API pulls for Zerodha, Dhan and Angel One only. Through OpenAlgo, Groww, Upstox, Paytm Money and Kotak also get a same-day pull, with no broker-specific code. Sahi has no OpenAlgo plugin and stays on file import.",
+      "Vyuha has direct API pulls for Zerodha, Dhan, Angel One and Upstox only. Through OpenAlgo, Groww, Paytm Money and Kotak also get a same-day pull, with no broker-specific code. Sahi has no OpenAlgo plugin and stays on file import.",
   },
 ];
 

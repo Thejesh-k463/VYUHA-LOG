@@ -104,12 +104,13 @@ describe("the shot list names real sidebar labels", () => {
   it("every **bold** sidebar reference in the shot list exists in nav-config", () => {
     const shots = read("docs/owner/demo-video/02-SHOT-LIST.md");
     // The shot list writes sidebar targets as `*Group* → **Label**` — the
-    // italic group name (Journal, Analytics, Positions, System, Overview) is
-    // what distinguishes a Vyuha nav claim from an OBS menu path like
+    // italic group name (Journal, Analytics, Positions, System, Overview,
+    // and the v3.6 additions Import, Tax and Back Office) is what
+    // distinguishes a Vyuha nav claim from an OBS menu path like
     // `OBS → **File → Remux Recordings**`, which the first version of this
     // regex caught as a false positive.
-    const GROUPS = ["Overview", "Journal", "Positions", "Risk", "Analytics", "System"];
-    const referenced = [...shots.matchAll(/\*(Overview|Journal|Positions|Risk|Analytics|System)\* → \*\*([^*]+)\*\*/g)].map((m) => m[2].trim());
+    const GROUPS = ["Overview", "Journal", "Positions", "Risk", "Import", "Tax", "Analytics", "Back Office", "System"];
+    const referenced = [...shots.matchAll(/\*(Overview|Journal|Positions|Risk|Import|Tax|Analytics|Back Office|System)\* → \*\*([^*]+)\*\*/g)].map((m) => m[2].trim());
     void GROUPS;
     expect(referenced.length).toBeGreaterThan(8);
     const missing = referenced.filter((l) => !labels.has(l));

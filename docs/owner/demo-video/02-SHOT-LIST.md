@@ -15,6 +15,11 @@ a beat of stillness before and after.
 the browser is on `http://localhost:3214` at 1920×1080 in a fresh profile;
 Focus Assist is on; `tests\fixtures\zerodha-tradebook.csv` is on the Desktop.
 
+**Folded groups (v3.6):** each sidebar group shows only its most-used screens
+plus an "N more…" row. Before recording, click the "N more…" row under
+*Analytics* and *Tax* once — the expansion persists for the whole session, so
+every screen named below is one click away and no take shows you hunting.
+
 ---
 
 ## SHOT 1 · THE GAP  ·  ~15 s  ·  pairs with VO-1
@@ -43,7 +48,7 @@ Focus Assist is on; `tests\fixtures\zerodha-tradebook.csv` is on the Desktop.
 
 | Step | Action | Hold |
 |---|---|---|
-| 1 | Sidebar → *Journal* → **Import** | 2 s |
+| 1 | Sidebar → *Import* → **Import** | 2 s |
 | 2 | The dropzone reads **"Drop a broker file"**. Drag `zerodha-tradebook.csv` from the Desktop onto it. Release. **Hands off the mouse.** | — |
 | 3 | Let the preview render fully. Do not scroll yet. | 3 s |
 | 4 | Scroll slowly to the **charge reconciliation panel** — computed vs the broker's stated figures. Hover a row. | 4 s |
@@ -72,7 +77,7 @@ Record these as **four separate takes** (5a–5d). The edit cuts between them ha
 
 | Take | Sidebar path | Hold |
 |---|---|---|
-| 5a | *Journal* → **Arjun's Eye** | 6 s — let the charts draw, then still |
+| 5a | *Analytics* → **Arjun's Eye** | 6 s — let the charts draw, then still |
 | 5b | *Analytics* → **Edge / Setups** | 6 s |
 | 5c | *Analytics* → **Discipline** | 6 s |
 | 5d | *Positions* → **Portfolio Risk** | 6 s |
@@ -85,8 +90,8 @@ Record these as **four separate takes** (5a–5d). The edit cuts between them ha
 
 | Step | Action | Hold |
 |---|---|---|
-| 1 | *Analytics* → **Tax Summary** | 4 s |
-| 2 | *Analytics* → **ITR Pack (India)** | — |
+| 1 | *Tax* → **Tax Summary** | 4 s |
+| 2 | *Tax* → **ITR Pack (India)** | — |
 | 3 | Scroll slowly. If a blank cell is visible (something the app could not derive), let the cursor rest near it. | 4 s |
 
 ---

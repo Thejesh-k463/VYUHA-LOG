@@ -12,6 +12,8 @@ import {
   ledgerEntries,
   tradingSessions,
   capitalSnapshots,
+  capitalGoals,
+  bfLossLots,
   brokerConnections,
   panelDismissals,
 } from "@/lib/db/schema";
@@ -25,10 +27,10 @@ import { forEachIdChunk, collectIdChunks } from "./delete";
  * Two modes, both preceded by a server-computed preview so the confirmation
  * dialog shows the true blast radius:
  *
- *   purge — everything the account owns is removed: rows in all eight
+ *   purge — everything the account owns is removed: rows in all ten
  *     account-scoped tables (trades, import_batches, ipos, ledger_entries,
- *     trading_sessions, capital_snapshots, broker_connections,
- *     panel_dismissals), the per-trade children (trade_legs,
+ *     trading_sessions, capital_snapshots, capital_goals, bf_loss_lots,
+ *     broker_connections, panel_dismissals), the per-trade children (trade_legs,
  *     trade_attachments + their files on disk) and finally the accounts row.
  *     A trash snapshot is written FIRST (no snapshot, no delete — the same
  *     promise lib/queries/delete.ts makes), carrying the account row itself
@@ -78,6 +80,34 @@ import { forEachIdChunk, collectIdChunks } from "./delete";
  * are NOT added to the target: capital is the user's own statement of what
  * each book holds, not something a merge may fabricate; the figures are
  * preserved in the trash snapshot's account row.
+ *
+ * ── What happens to capital GOALS (v3.6, documented choice) ─────────────────
+ *
+ * `capital_goals` rows do NOT merge and do NOT sum. A goal is the user's own
+ * statement about ONE book's expected capital, frozen against that book's
+ * baseline — adding two accounts' targets would fabricate a goal nobody set,
+ * exactly as summing their capital would. On merge (and purge) the source's
+ * goals are DELETED, the preview says so, and — like panel_dismissals — they
+ * are not snapshotted: a goal is one row the user can restate in seconds, and
+ * keeping the trash envelope's shape stable is worth more than carrying it.
+ *
+ * ── What happens to B/F LOSS LOTS (v3.6, documented choice) ─────────────────
+ *
+ * `bf_loss_lots` rows are the OPPOSITE of goals: not aspirations, but
+ * STATEMENTS OF FACT about a demat account's filed ITR history — a loss the
+ * Act lets that book set off for years to come. Merging two journal accounts
+ * merges their books, so the facts follow the trades: on merge the source's
+ * lots MOVE to the target wherever the target has no (incurred_fy, head) row.
+ * Where BOTH accounts recorded the same vintage, the two rows are two
+ * transcriptions of possibly the SAME filed loss — summing them could double-
+ * count one return, and dropping the source could lose a genuinely larger
+ * remainder. The LARGER amount survives (never lose a recorded loss, never
+ * fabricate a sum), the collision is written into the surviving row's note
+ * AND the audit log, and the preview names every colliding vintage so the
+ * user can correct the figure against the actual return. originalAmount on a
+ * collision keeps the larger non-null figure by the same logic. On purge the
+ * lots are deleted and, like goals, NOT snapshotted — a handful of rows the
+ * user restates from filed ITRs in seconds.
  */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -94,6 +124,8 @@ export interface AccountDeleteCounts {
   ledgerEntries: number;
   tradingSessions: number;
   capitalSnapshots: number;
+  capitalGoals: number;
+  bfLossLots: number;
   brokerConnections: number;
   panelDismissals: number;
 }
@@ -191,6 +223,8 @@ function gatherCounts(accountId: number): AccountDeleteCounts {
     ledgerEntries: countRows(ledgerEntries, accountId),
     tradingSessions: countRows(tradingSessions, accountId),
     capitalSnapshots: countRows(capitalSnapshots, accountId),
+    capitalGoals: countRows(capitalGoals, accountId),
+    bfLossLots: countRows(bfLossLots, accountId),
     brokerConnections: countRows(brokerConnections, accountId),
     panelDismissals: countRows(panelDismissals, accountId),
   };
@@ -214,6 +248,17 @@ function sessionCollisionIds(accountId: number, targetId: number): number[] {
         where s.account_id = ${accountId}`,
   ) as { id: number }[];
   return rows.map((r) => r.id);
+}
+
+/** merge: source b/f loss lots whose (incurred_fy, head) the target already holds (UNIQUE account+fy+head). */
+function bfLossCollisions(accountId: number, targetId: number): { sourceId: number; targetId: number; fy: string; head: string }[] {
+  const rows = db.all(
+    sql`select s.id as sourceId, t.id as targetId, s.incurred_fy as fy, s.head as head
+        from ${bfLossLots} s join ${bfLossLots} t
+        on t.account_id = ${targetId} and t.incurred_fy = s.incurred_fy and t.head = s.head
+        where s.account_id = ${accountId}`,
+  ) as { sourceId: number; targetId: number; fy: string; head: string }[];
+  return rows.sort((a, b) => a.fy.localeCompare(b.fy) || a.head.localeCompare(b.head));
 }
 
 /** merge: source connection brokers the target is already connected to (UNIQUE account+broker). */
@@ -260,6 +305,21 @@ export function previewAccountDelete(opts: { accountId: number; mode: AccountDel
     }
     if (counts.capitalSnapshots > 0) {
       warnings.push(`${counts.capitalSnapshots} capital checkpoint${counts.capitalSnapshots === 1 ? " is" : "s are"} this account's own history and will not move — discarded (saved to Deleted items).`);
+    }
+    if (counts.capitalGoals > 0) {
+      warnings.push(`${counts.capitalGoals} capital goal${counts.capitalGoals === 1 ? " is" : "s are"} this account's own statement and will not move or sum — removed (not recoverable; set a new goal on “${r.target.name}” if you want one).`);
+    }
+    if (counts.bfLossLots > 0) {
+      const collisions = bfLossCollisions(opts.accountId, r.target.id);
+      const moving = counts.bfLossLots - collisions.length;
+      if (moving > 0) {
+        warnings.push(`${moving} brought-forward loss lot${moving === 1 ? "" : "s"} will move to “${r.target.name}” — they are statements of the demat account's filed history and follow the trades.`);
+      }
+      if (collisions.length > 0) {
+        warnings.push(
+          `${collisions.length} brought-forward loss vintage${collisions.length === 1 ? " (" : "s ("}${collisions.map((c) => `${c.fy} ${c.head}`).join(", ")}) exist${collisions.length === 1 ? "s" : ""} on both accounts — the LARGER amount will be kept with a note, never the sum (two entries may transcribe the same filed loss). Check the kept figure against the actual return.`,
+        );
+      }
     }
     for (const broker of connectionCollisionBrokers(opts.accountId, r.target.id)) {
       warnings.push(`Target already connected to ${broker} — that connection cannot move and will be removed (credentials are not recoverable).`);
@@ -341,6 +401,12 @@ export function deleteAccount(opts: {
 
   const sessionDropIds = mode === "merge" ? sessionCollisionIds(accountId, r.target!.id) : [];
   const connCollisions = mode === "merge" && connections === "move" ? connectionCollisionBrokers(accountId, r.target!.id) : [];
+  // merge: vintages recorded on BOTH accounts — resolved keep-larger, full rows
+  // gathered up front so the transaction below works from a stable picture.
+  const bfCollisions = mode === "merge" ? bfLossCollisions(accountId, r.target!.id) : [];
+  const bfRowById = new Map(
+    (bfCollisions.length > 0 ? db.select().from(bfLossLots).all() : []).map((row) => [row.id, row]),
+  );
 
   // ── Every account-scoped row about to be DESTROYED goes into the snapshot ─
   // purge: all of them. merge: only what the merge discards — the colliding
@@ -432,6 +498,8 @@ export function deleteAccount(opts: {
         tx.delete(importBatches).where(eq(importBatches.accountId, accountId)).run();
         tx.delete(tradingSessions).where(eq(tradingSessions.accountId, accountId)).run();
         tx.delete(capitalSnapshots).where(eq(capitalSnapshots.accountId, accountId)).run();
+        tx.delete(capitalGoals).where(eq(capitalGoals.accountId, accountId)).run();
+        tx.delete(bfLossLots).where(eq(bfLossLots.accountId, accountId)).run();
         tx.delete(brokerConnections).where(eq(brokerConnections.accountId, accountId)).run();
         tx.delete(panelDismissals).where(eq(panelDismissals.accountId, accountId)).run();
       } else {
@@ -461,7 +529,48 @@ export function deleteAccount(opts: {
         // in the target's history, and a dismissal fingerprint no longer
         // matches once the facts merge. Both discard.
         tx.delete(capitalSnapshots).where(eq(capitalSnapshots.accountId, accountId)).run();
+        // Goals DROP on merge, never sum — the module-header choice: a goal is
+        // one book's own statement, and a summed target is a fabricated one.
+        tx.delete(capitalGoals).where(eq(capitalGoals.accountId, accountId)).run();
         tx.delete(panelDismissals).where(eq(panelDismissals.accountId, accountId)).run();
+
+        // B/f loss lots MOVE — statements of the book's filed history follow
+        // the trades. A vintage the target also holds keeps the LARGER amount
+        // with a note, never the sum (module-header choice: two rows may
+        // transcribe the SAME filed loss).
+        for (const c of bfCollisions) {
+          const src = bfRowById.get(c.sourceId);
+          const tgt = bfRowById.get(c.targetId);
+          if (!src || !tgt) continue; // gathered pre-tx; cannot happen inside it
+          const keptAmount = Math.max(src.amount, tgt.amount);
+          const keptOriginal =
+            src.originalAmount == null
+              ? tgt.originalAmount
+              : tgt.originalAmount == null
+                ? src.originalAmount
+                : Math.max(src.originalAmount, tgt.originalAmount);
+          const mergeNote = `merge ${new Date().toISOString().slice(0, 10)}: “${account.name}” also recorded this vintage (₹${src.amount}) — kept the larger of the two, not the sum; verify against the filed return`;
+          tx.update(bfLossLots)
+            .set({
+              amount: keptAmount,
+              originalAmount: keptOriginal,
+              note: tgt.note ? `${tgt.note} · ${mergeNote}` : mergeNote,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(bfLossLots.id, c.targetId))
+            .run();
+          tx.delete(bfLossLots).where(eq(bfLossLots.id, c.sourceId)).run();
+          recordAudit({
+            entity: "bf_loss",
+            entityId: c.targetId,
+            action: "update",
+            summary: `b/f loss ${c.fy} ${c.head} — both accounts held this vintage; kept the larger ₹${keptAmount} (source ₹${src.amount}, target ₹${tgt.amount}), never the sum`,
+            before: tgt as unknown as Record<string, unknown>,
+            after: { amount: keptAmount, originalAmount: keptOriginal },
+            source,
+          });
+        }
+        tx.update(bfLossLots).set({ accountId: targetId }).where(eq(bfLossLots.accountId, accountId)).run();
 
         if (connections === "move") {
           // UNIQUE(account_id, broker): a broker the target already has keeps
@@ -513,12 +622,17 @@ export function deleteAccount(opts: {
 
   const message =
     mode === "purge"
-      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions and capital history are recoverable from Backup & Restore → Deleted items; broker API credentials and panel dismissals are not.` +
+      ? `Deleted account “${account.name}” — ${counts.trades} trade${counts.trades === 1 ? "" : "s"} and everything it owned. Trades, imports, IPOs, ledger, sessions and capital history are recoverable from Backup & Restore → Deleted items; broker API credentials, capital goals, brought-forward loss lots and panel dismissals are not.` +
         (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : "")
       : `Merged “${account.name}” into “${r.target!.name}” — ${counts.trades - doomedIds.length} trade${counts.trades - doomedIds.length === 1 ? "" : "s"} moved` +
         (doomedIds.length ? `, ${doomedIds.length} duplicate${doomedIds.length === 1 ? "" : "s"} skipped (saved to Deleted items)` : "") +
         (sessionDropIds.length ? `, ${sessionDropIds.length} same-day session${sessionDropIds.length === 1 ? "" : "s"} discarded (saved to Deleted items)` : "") +
         (counts.capitalSnapshots ? `, ${counts.capitalSnapshots} capital checkpoint${counts.capitalSnapshots === 1 ? "" : "s"} discarded (saved to Deleted items)` : "") +
+        (counts.capitalGoals ? `, ${counts.capitalGoals} capital goal${counts.capitalGoals === 1 ? "" : "s"} removed (goals never merge — set a new one on the target)` : "") +
+        (counts.bfLossLots
+          ? `, ${counts.bfLossLots - bfCollisions.length} b/f loss lot${counts.bfLossLots - bfCollisions.length === 1 ? "" : "s"} moved` +
+            (bfCollisions.length ? ` and ${bfCollisions.length} shared vintage${bfCollisions.length === 1 ? "" : "s"} kept at the larger amount (noted on the row — verify against the filed return)` : "")
+          : "") +
         (connections === "move" ? `, ${movedConnections} connection${movedConnections === 1 ? "" : "s"} moved` : "") +
         (connCollisions.length ? `, ${connCollisions.length} connection${connCollisions.length === 1 ? "" : "s"} removed (target already connected — credentials are not recoverable)` : "") +
         (connections === "delete" && counts.brokerConnections ? `, ${counts.brokerConnections} connection${counts.brokerConnections === 1 ? "" : "s"} deleted (credentials are not recoverable)` : "") +

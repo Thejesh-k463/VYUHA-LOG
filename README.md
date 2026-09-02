@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-2623%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-45%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-2896%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-54%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -385,8 +385,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **2,623** | **43** | **0** |
-| tests, 45 end-to-end flows | screens, all offline | bytes of *your data* ever uploaded |
+| **2,896** | **43** | **0** |
+| tests, 54 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -647,7 +647,7 @@ License.
 ## 🔒 Local-first by design
 
 No login. No cloud. No telemetry. No analytics SDKs.
-Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. The desktop app talks to `127.0.0.1` and nothing else, with two download-only exceptions: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off — plus the opt-in bhavcopy fetch, which is off by default. Nothing about you or your trades is ever uploaded, by any path.
+Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. Unprompted, the desktop app talks to `127.0.0.1` and makes exactly one download-only call: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off. Every other network path exists only if you enable it: the EOD bhavcopy fetch (off by default), broker-API pulls that talk only to your own broker (Dhan's PIN+TOTP sign-in goes only to `auth.dhan.co`, and the opt-in launch auto-pull just runs those same pulls once a day), and the opt-in Telegram EOD digest — the one path that uploads anything, and what it uploads is your own recorded numbers, to Telegram's servers, behind an explicit disclosure. Nothing about you or your trades leaves the machine by any path you didn't switch on.
 
 ---
 
@@ -692,8 +692,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       2623 unit + integration tests across 172 files (+ tests/load: 15 load cases, run separately)
-e2e/         45 Playwright flows through the real app, in 17 specs
+tests/       2896 unit + integration tests across 188 files (+ tests/load: 15 load cases, run separately)
+e2e/         54 Playwright flows through the real app, in 19 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -713,7 +713,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **2,623 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **2,896 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 15 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -729,8 +729,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (2,623 tests) |
-| `npm run test:e2e` | Playwright e2e — 45 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (2,896 tests) |
+| `npm run test:e2e` | Playwright e2e — 54 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 15 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -796,7 +796,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 2623 Vitest unit + integration tests (+ tests/load)
+  tests/          # 2896 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

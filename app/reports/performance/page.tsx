@@ -8,6 +8,9 @@ import { getPerformanceTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getExternalCashFlows, getLedgerAggregates } from "@/lib/queries/ledger";
+import { getBucketCapital } from "@/lib/queries/capital";
+import { getGoalView, getAggregateGoalProgress } from "@/lib/queries/goals";
+import { goalProgress, type GoalBucket } from "@/lib/analytics/goal";
 import { dailyPnl, equityCurve, computeKpis } from "@/lib/analytics/metrics";
 import { ShareCard } from "@/components/reports/share-card";
 import type { ShareStats } from "@/lib/analytics/share-card";
@@ -55,7 +58,12 @@ export default function PerformancePage() {
   // install — so every ratio below was silently a return on fiction. With no
   // capital, %-of-equity figures render "—" and the rupee figures (which need
   // no base: ₹ drawdown, day win %, best/worst day ₹) stay exact.
-  const capital = (settings?.equityCapital ?? 0) + (settings?.activeCapital ?? 0);
+  //
+  // ACCOUNT-FIRST (v3.6): this page read the GLOBAL settings capital while the
+  // trades above are scoped to the selected account — a second account's view
+  // computed its returns on the first account's capital. getBucketCapital owns
+  // the `account ?? settings ?? 0` chain (same resolution as getCapitalSummary).
+  const capital = getBucketCapital().totalCapital;
   const capitalKnown = capital > 0;
   const setCapitalNudge = "set capital in Settings";
 
@@ -113,6 +121,30 @@ export default function PerformancePage() {
   // Money-weighted return (XIRR) — derived from the cash ledger (P0.2) + realised/
   // unrealised trading P&L. All in integer paise (P0.1).
   const today = new Date().toISOString().slice(0, 10);
+
+  // ── Expected-capital goals (v3.6) ─────────────────────────────────────────
+  // One small read; the maths runs on the trade projection already loaded.
+  // No goal set → nothing renders (the empty-state rule).
+  const goalView = getGoalView();
+  const bucketLabel = (b: GoalBucket) => (b === "active" ? "Trade F&O" : b === "equity" ? "Equity" : "Total");
+  const bc = getBucketCapital();
+  // All-accounts view: progress is the SUM of each account's own frozen-
+  // baseline walk over its own realised days (getAggregateGoalProgress) —
+  // never a blended series walked from the earliest baseline, which counted
+  // pre-baseline profit twice and let goal-less accounts feed the numerator.
+  const aggProgress = goalView.aggregate ? getAggregateGoalProgress(today) : null;
+  const goalCards = goalView.goals.map((g) => {
+    if (aggProgress) {
+      // No blended fallback in the aggregate view — an absent bucket renders
+      // notMeasurable ("—") rather than an overstated walk.
+      const p = aggProgress.get(g.bucket) ?? goalProgress(g, { currentCapital: null, realised: [], today });
+      return { goal: g, progress: p };
+    }
+    const rel = g.bucket === "total" ? trades : trades.filter((t) => t.bucket === g.bucket);
+    const realised = [...dailyPnl(rel).entries()].map(([date, net]) => ({ date, net }));
+    const cap = g.bucket === "equity" ? bc.equityCapital : g.bucket === "active" ? bc.activeCapital : bc.totalCapital;
+    return { goal: g, progress: goalProgress(g, { currentCapital: cap > 0 ? cap : null, realised, today }) };
+  });
   const goLive = settings?.goLiveDate ?? today;
   // The 60k-row ledger never crosses into JS: the external flows come back as
   // rows (XIRR/TWR need each one), and the internal net + earliest date are
@@ -259,6 +291,83 @@ export default function PerformancePage() {
               <KpiCard label="Positive days" value={`${capitalKnown ? p.positiveDaysPct : upDayPct}%`} sub={`${p.tradingDays} trading days`} detail={metricDetail("positiveDays")} />
               <KpiCard label="Best / worst day" value={capitalKnown ? `${sign(p.bestDayPct)}${p.bestDayPct}% / ${p.worstDayPct}%` : `${inr(bestDayNet, { decimals: 0 })} / ${inr(worstDayNet, { decimals: 0 })}`} sub={capitalKnown ? `avg up ${p.avgWinDayPct}% · dn ${p.avgLossDayPct}%` : `₹ · ${setCapitalNudge} for %`} detail={metricDetail("bestWorstDay", { note: capitalKnown ? undefined : "Without configured capital the % form is withheld; the ₹ extremes shown need no base and are exact." })} />
             </section>
+
+            {/* Expected-capital goals (v3.6). Rendered only when a goal
+                exists; a %-goal without a measurable base shows "—" plus ONE
+                Settings nudge (invariant 6), never a confident 0. */}
+            {goalCards.map(({ goal, progress: gp }) => (
+              <Card key={goal.bucket}>
+                <CardHeader className="flex-row items-center justify-between">
+                  <CardTitle>Expected capital — {bucketLabel(goal.bucket)}</CardTitle>
+                  <Badge variant={gp.status === "achieved" ? "secondary" : gp.status === "pastDue" ? "warning" : "secondary"}>
+                    {goal.kind === "absolute" ? `target ${inr(goal.targetAmount ?? 0, { decimals: 0 })}` : `target +${goal.pctTarget}% profit`}
+                    {goal.targetDate ? ` · by ${goal.targetDate}` : ""}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!gp.measurable ? (
+                    <p className="text-sm text-muted-foreground">
+                      This goal isn&apos;t measurable yet — {gp.reason === "baseline-unknown" || gp.reason === "capital-unknown"
+                        ? <>a %-of-capital walk needs a known base, so the figures show &quot;—&quot; instead of a number computed on an invented one; {setCapitalNudge}</>
+                        : <>it carries no target of its own kind; edit it under Settings → Expected capital goals</>}.
+                    </p>
+                  ) : (
+                    <>
+                      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                        <KpiCard
+                          label="Goal progress"
+                          value={gp.progressPct == null ? "—" : `${gp.progressPct}%`}
+                          valueClassName={gp.status === "achieved" ? "text-profit" : ""}
+                          sub={`${inr(gp.achieved ?? 0, { decimals: 0 })} of ${inr(gp.targetLevel ?? 0, { decimals: 0 })}`}
+                          detail={metricDetail("goalProgress")}
+                        />
+                        <KpiCard
+                          label="Goal gap"
+                          value={gp.gapAmount != null && gp.gapAmount <= 0 ? "met" : inr(gp.gapAmount ?? 0, { decimals: 0 })}
+                          valueClassName={gp.gapAmount != null && gp.gapAmount <= 0 ? "text-profit" : ""}
+                          sub={goal.baselineCapital != null ? `baseline ${inr(goal.baselineCapital, { decimals: 0 })} · ${goal.baselineDate}` : "no frozen baseline"}
+                          detail={metricDetail("goalGap")}
+                        />
+                        <KpiCard
+                          label="Run-rate (30d)"
+                          value={gp.runRate30 == null ? "—" : `${inr(gp.runRate30, { decimals: 0 })}/wk`}
+                          valueClassName={cls(gp.runRate30)}
+                          sub={gp.runRate90 == null ? "no realised history" : `90d ${inr(gp.runRate90, { decimals: 0 })}/wk`}
+                          detail={metricDetail("goalRunRate")}
+                        />
+                        <KpiCard
+                          label="Required pace"
+                          value={gp.requiredPerWeek == null ? "—" : `${inr(gp.requiredPerWeek, { decimals: 0 })}/wk`}
+                          sub={
+                            goal.targetDate == null
+                              ? "no target date set"
+                              : gp.status === "achieved"
+                                ? "goal met"
+                                : gp.daysLeft != null && gp.daysLeft < 0
+                                  ? `target date passed ${-gp.daysLeft}d ago`
+                                  : `${gp.daysLeft}d left`
+                          }
+                          detail={metricDetail("goalRequiredPace")}
+                        />
+                      </section>
+                      {/* The run-rate line, phrased descriptively — arithmetic, not advice. */}
+                      {gp.runRate30 != null && (
+                        <p className="text-[0.6875rem] text-muted-foreground">
+                          Over the trailing 30 days this bucket realised {inr(gp.runRate30, { decimals: 0 })}/week
+                          ({inr(gp.runRate90 ?? 0, { decimals: 0 })}/week over 90)
+                          {gp.requiredPerWeek != null
+                            ? <>; the remaining {inr(gp.gapAmount ?? 0, { decimals: 0 })} works out to {inr(gp.requiredPerWeek, { decimals: 0 })}/week between now and {goal.targetDate}</>
+                            : gp.gapAmount != null && gp.gapAmount > 0
+                              ? <>; at that 30-day pace the remaining {inr(gp.gapAmount, { decimals: 0 })} spans roughly {gp.runRate30 > 0 ? `${Math.ceil(gp.gapAmount / gp.runRate30)} weeks` : "— the pace is flat or negative"}</>
+                              : null}
+                          . Realised, dated trades only.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
 
             <Card>
               <CardHeader className="flex-row items-center justify-between">

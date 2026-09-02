@@ -5,6 +5,7 @@
 // pipeline. normalizeKiteTrades is pure and unit-tested; the fetch wrapper is
 // a thin authenticated GET.
 
+import { createHash } from "node:crypto";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
@@ -125,6 +126,69 @@ export function normalizeKiteTrades(rows: KiteTradeRow[]): NormalizedTrade[] {
 export interface KiteCredentials {
   apiKey: string;
   accessToken: string;
+  /** Kite Connect app secret (auth_json blob, the Angel One pattern). Stored
+   *  so pull day is one browser login + request_token paste — the OFFICIAL
+   *  session exchange (decision #3, 2026-09-02; NO enctoken). Not used by the
+   *  trades fetch itself. */
+  apiSecret?: string;
+}
+
+/**
+ * The Kite Connect session checksum, exactly as documented:
+ * SHA-256 hex of api_key + request_token + api_secret, in that order.
+ * Pure (node:crypto only) so tests pin it against a known vector.
+ */
+export function kiteChecksum(apiKey: string, requestToken: string, apiSecret: string): string {
+  return createHash("sha256").update(`${apiKey}${requestToken}${apiSecret}`).digest("hex");
+}
+
+/** Where the user's daily browser login happens. Shown as a link, never
+ *  auto-opened — the redirect back carries the request_token to paste. */
+export function kiteLoginUrl(apiKey: string): string {
+  return `https://kite.zerodha.com/connect/login?v=3&api_key=${encodeURIComponent(apiKey)}`;
+}
+
+/**
+ * Exchange a request_token for the day's access token — the official Kite
+ * Connect flow (POST /session/token, form-encoded, checksum-signed). This is
+ * one browser click + one paste per trading day, NOT unattended: SEBI-mandated
+ * daily invalidation (~6 AM IST) makes a fully hands-off Zerodha login
+ * impossible without storing the account password, which Vyuha will not do.
+ *
+ * The response's `user_id` is returned alongside the token: it names WHOSE
+ * session was just minted. The route stores it on the first exchange and
+ * refuses a later exchange for a different Zerodha ID — a wrong-account login
+ * would otherwise import another person's tradebook into this journal.
+ */
+export async function exchangeKiteRequestToken(args: {
+  apiKey: string;
+  apiSecret: string;
+  requestToken: string;
+}): Promise<{ accessToken: string; userId: string | null }> {
+  const body = new URLSearchParams({
+    api_key: args.apiKey,
+    request_token: args.requestToken,
+    checksum: kiteChecksum(args.apiKey, args.requestToken, args.apiSecret),
+  });
+  const res = await fetch("https://api.kite.trade/session/token", {
+    method: "POST",
+    headers: { "X-Kite-Version": "3", "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    cache: "no-store",
+  });
+  const json = (await res.json().catch(() => null)) as
+    | { status?: string; data?: { access_token?: string; user_id?: string }; message?: string }
+    | null;
+  if (!res.ok || !json || json.status !== "success" || !json.data?.access_token) {
+    const why = json?.message ?? `HTTP ${res.status}`;
+    throw new Error(
+      `Kite session exchange: ${why} (request_tokens are single-use and expire within minutes of login — log in again at your Kite Connect URL and paste a fresh one; also check the API secret.)`,
+    );
+  }
+  // user_id is documented in the session response; null (never "") when Kite
+  // omits it, so the caller can tell "unstated" from a real id.
+  const userId = String(json.data.user_id ?? "").trim();
+  return { accessToken: json.data.access_token, userId: userId || null };
 }
 
 /** Authenticated GET against the Kite Connect REST API. */
@@ -141,7 +205,13 @@ export async function fetchKiteTrades(creds: KiteCredentials): Promise<KiteTrade
     | null;
   if (!res.ok || !json || json.status !== "success" || !Array.isArray(json.data)) {
     const why = json?.message ?? `HTTP ${res.status}`;
-    throw new Error(`Kite API: ${why}${res.status === 403 ? " (access token expired? Tokens last one trading day.)" : ""}`);
+    const err = new Error(
+      `Kite API: ${why}${res.status === 403 ? " (access token expired? Kite sessions are invalidated daily around 6 AM IST by regulation — log in via your Kite Connect URL and exchange a fresh request_token.)" : ""}`,
+    );
+    // The route reads this to turn a dead session into a request_token prompt
+    // (409) instead of a bare 502 — only when an api_secret is saved.
+    (err as Error & { kiteStatus?: number }).kiteStatus = res.status;
+    throw err;
   }
   return json.data;
 }

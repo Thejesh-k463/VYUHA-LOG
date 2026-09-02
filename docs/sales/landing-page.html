@@ -570,12 +570,15 @@
     <div class="center"><div class="kicker">Questions</div><h2>Straight answers.</h2></div>
     <div style="max-width:800px;margin:44px auto 0">
       <details open><summary>Does my trade data ever leave my computer?</summary>
-        <p>No. There is no account, no server and no telemetry, and nothing about you or your trades is ever
-        uploaded. Everything lives in a single SQLite file on your disk. Vyuha makes exactly two kinds of
-        outbound request, and both are <b>download-only</b>. At launch it asks GitHub whether a newer signed
-        release exists and fetches the licence-revocation list — it sends no account, no identifier and no
-        data, and this one cannot be switched off. Separately, if you turn it on, it downloads the end-of-day
-        bhavcopy for mark-to-market prices; that is off by default.</p></details>
+        <p>Not unless you switch on a feature that sends it — and each one says so before you can. There is
+        no account, no server and no telemetry, and everything lives in a single SQLite file on your disk.
+        The only request Vyuha makes on its own is <b>download-only</b>: at launch it asks GitHub whether a
+        newer signed release exists and fetches the licence-revocation list — it sends no account, no
+        identifier and no data, and this one cannot be switched off. Everything else is off by default and
+        yours to enable: an end-of-day bhavcopy download for mark-to-market prices; broker pulls that talk
+        only to your own broker's API; and a daily Telegram digest of your own recorded numbers — the one
+        path that uploads anything, and it is enabled only behind a disclosure that says plainly the content
+        goes to Telegram's servers.</p></details>
       <details><summary>What is free, and what am I paying for?</summary>
         <p><b>Your record is free. The intelligence about it is paid.</b> Free forever: recording closed trades,
         all six broker importers, the dashboard and P&amp;L calendar, staged positions, playbooks, chart

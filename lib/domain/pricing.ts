@@ -19,9 +19,12 @@
 // ── Staleness, honestly (this is an OFFLINE app) ────────────────────────────
 //
 // A price baked into a build goes stale on the user's disk, and there is no
-// pricing endpoint to refresh it from — the only outbound call this app makes
-// is the launch update/revocation download, which carries releases and revoked
-// key ids and deliberately nothing else. Three mitigations, none of which hide the
+// pricing endpoint to refresh it from — the only UNPROMPTED outbound call this
+// app makes is the launch update/revocation download, which carries releases
+// and revoked key ids and deliberately nothing else (everything else that
+// touches the network — EOD prices, broker pulls and their opt-in launch
+// auto-pull, the Telegram digest — is user-enabled, and none of it carries
+// pricing either). Three mitigations, none of which hide the
 // number: every rendered price carries "as of <date>"; the WhatsApp buy
 // message EMBEDS the quoted price, so the seller sees at first contact what
 // the buyer was shown and can honour or correct it; and past

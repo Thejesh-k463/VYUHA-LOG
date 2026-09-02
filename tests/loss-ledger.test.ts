@@ -106,4 +106,24 @@ describe("buildLossLedger — surviving vintages as of the latest FY", () => {
     expect(ledger.find((r) => r.bucket === "speculative")!.expiresAfterFy).toBe("2027-28");
     expect(ledger.find((r) => r.bucket === "nonSpeculative")!.expiresAfterFy).toBe("2031-32");
   });
+
+  it("a seeded pre-journal vintage flows through with originalAmount null (honest: not derivable)", () => {
+    // The incurring FY is before the journal starts, so it is absent from the
+    // timeline — the ledger reports null rather than inventing an original.
+    // The later carry-forward editor stage relies on exactly this contract.
+    const t = computeTaxTimeline(
+      [fy("2025-26", { stcg: 30000 })],
+      [{ bucket: "stcl", fyIncurred: "2023-24", amount: 100000 }],
+    );
+    expect(buildLossLedger(t)).toEqual([
+      {
+        bucket: "stcl",
+        fyIncurred: "2023-24",
+        originalAmount: null, // 2023-24 is not in the timeline — no guess
+        absorbed: 30000,
+        remaining: 70000,
+        expiresAfterFy: "2031-32",
+      },
+    ]);
+  });
 });

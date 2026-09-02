@@ -45,6 +45,9 @@ interface ConnStatus {
   accountId: number;
   accountName?: string | null;
   apiKeyMasked: string;
+  /** True when an auth_json blob is stored (Dhan PIN+TOTP, Zerodha api_secret,
+   *  OpenAlgo config) — a boolean only; the contents never reach the client. */
+  hasAuth?: boolean;
   lastPullAt: string | null;
   /** OpenAlgo only — saved config echoed back so the form shows what is
    *  actually connected instead of defaults (host/broker are not secrets). */
@@ -70,6 +73,31 @@ interface PullResult {
 
 type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";
 
+/**
+ * The Dhan PIN+TOTP consent, ONE exported const so tests pin it (the
+ * openalgo-disclosure rule: risk copy written twice drifts, and a risk
+ * statement that drifts is worse than none). Shown BEFORE save; the checkbox
+ * that acknowledges it gates the save button.
+ */
+export const DHAN_TOTP_CONSENT =
+  "Storing your Dhan PIN and TOTP secret makes Vyuha a second factor for your Dhan account: anyone with this machine and its vault key could mint access tokens as you. Both are encrypted at rest with a key bound to this machine. The PIN travels only to Dhan's own auth endpoint; the TOTP secret never leaves this machine — only the 6-digit code derived from it does. Vyuha only ever reads trades with them — this code path cannot place orders — but the TOTP secret is a permanent credential, not a daily token: disconnect here (or re-enroll TOTP at Dhan) to revoke it.";
+
+/**
+ * Version of the consent above. The save request carries the checkbox's
+ * acknowledgement as `dhanTotpConsent: true`, and the SERVER (packAuth.dhan in
+ * app/api/import/broker/route.ts) refuses to store PIN+TOTP without it,
+ * stamping this version into auth_json as `totpAckVersion` — a checkbox alone
+ * is never the only defence. Bump when the copy's MEANING changes; the route
+ * keeps its own equal constant (it cannot import this client module) and
+ * tests/broker-auth-gate.test.ts pins the two together.
+ */
+export const DHAN_TOTP_CONSENT_VERSION = 1;
+
+/** The Zerodha daily-login explainer, ONE exported const for the same reason.
+ *  Honest framing: better than pasting a raw token, NOT unattended. */
+export const KITE_DAILY_LOGIN_NOTE =
+  "Zerodha requires a fresh login every trading day — sessions are invalidated around 6 AM IST by regulation, so no setup can make this unattended. With your API secret saved, pull day is one browser click and one paste: open your Kite Connect login URL, sign in, paste the request_token from the redirect, and Vyuha does the official token exchange.";
+
 /** OpenAlgo's supported list, straight from the adapter — never re-typed here. */
 const OPENALGO_OPTIONS = openAlgoBrokerOptions();
 
@@ -92,8 +120,9 @@ const BROKERS: Record<BrokerId, {
     blurb: (
       <>
         Pulls <span className="font-medium">today&apos;s executions</span> from Kite Connect, with fill times, through
-        the normal classify → charges → dedup pipeline (re-pulls are idempotent). Needs a Kite Connect app and the
-        day&apos;s access token — tokens expire every trading day.
+        the normal classify → charges → dedup pipeline (re-pulls are idempotent). Needs a Kite Connect app. Tokens
+        expire every trading day — save your <b>API secret</b> below and the daily ritual becomes one login + one
+        request_token paste instead of hunting down a raw token.
       </>
     ),
   },
@@ -108,7 +137,8 @@ const BROKERS: Record<BrokerId, {
         Pulls <span className="font-medium">today&apos;s positions</span>, and is the only Dhan source that states{" "}
         <b>MTF</b>. No Dhan file can: a P&amp;L export has no product column, and in a transaction report an MTF
         position carries exactly the same STT and stamp duty as delivery while the financing interest sits in the
-        ledger. Get the token from web.dhan.co → DhanHQ Trading APIs; it lasts 24 hours by default.
+        ledger. Two ways in: paste a token from web.dhan.co → DhanHQ Trading APIs (valid 24 hours), or connect once
+        with <b>PIN + TOTP</b> below and Vyuha mints the day&apos;s token at pull time — nothing expires on you.
       </>
     ),
   },
@@ -179,10 +209,28 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const [aggregate, setAggregate] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [accessToken, setAccessToken] = useState("");
-  // Angel One's extras — client code, PIN and the TOTP SECRET.
+  // Angel One's extras — client code, PIN and the TOTP SECRET. The pin/secret
+  // pair is shared with Dhan's optional TOTP mode (one broker's form is
+  // visible at a time, and switchBroker clears them).
   const [clientCode, setClientCode] = useState("");
   const [pin, setPin] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
+  // Dhan's TOTP mode: opt-in toggle + explicit consent (the stored secret
+  // makes Vyuha a second factor — DHAN_TOTP_CONSENT gates the save).
+  const [dhanTotpMode, setDhanTotpMode] = useState(false);
+  const [dhanConsent, setDhanConsent] = useState(false);
+  // Zerodha's extra — the Kite Connect app secret for the official daily
+  // session exchange (request_token paste; decision #3, no enctoken).
+  const [apiSecret, setApiSecret] = useState("");
+  // The request_token a 409'd Zerodha pull is waiting for.
+  const [requestToken, setRequestToken] = useState("");
+  const [requestTokenPrompt, setRequestTokenPrompt] = useState<{
+    brokerId: string;
+    accountId?: number;
+    mode: "preview" | "commit";
+    loginUrl?: string;
+    message?: string;
+  } | null>(null);
   // OpenAlgo's extras — the host it runs on and WHICH broker sits behind it
   // (that id selects the charge profile, so it is asked, never guessed).
   const [host, setHost] = useState(OPENALGO_DEFAULT_HOST);
@@ -334,6 +382,11 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         apiKey,
         accessToken,
         ...(active === "angelone" ? { clientCode, pin, totpSecret } : {}),
+        // The consent acknowledgement travels WITH the credentials — the
+        // server refuses to store PIN+TOTP without it (the checkbox gating
+        // the button below is a courtesy, not the control).
+        ...(active === "dhan" && dhanTotpMode ? { pin, totpSecret, dhanTotpConsent: dhanConsent } : {}),
+        ...(active === "zerodha" && apiSecret ? { apiSecret } : {}),
         ...(active === "openalgo" ? { host, underlyingBroker } : {}),
       },
       "save",
@@ -348,6 +401,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     setClientCode("");
     setPin("");
     setTotpSecret("");
+    setApiSecret("");
+    setDhanConsent(false);
     // host and underlyingBroker are not secrets and are tedious to retype, so
     // they survive a save — only the credentials are cleared.
     await refresh();
@@ -360,6 +415,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     // The connection row's OWN account: a pull belongs to the book the
     // connection was saved in, not to whatever view happens to be selected.
     accountId: number | undefined = conn?.accountId,
+    // A request_token the Zerodha daily-login dialog collected — the server
+    // exchanges it for the day's access token before pulling.
+    withRequestToken?: string,
   ) {
     // A 409 from the server means the pull collides with trades already in the
     // journal (same trades from another source, hashes a paisa apart). Nothing
@@ -367,10 +425,25 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     // "Commit anyway" re-posts with force:true — an explicit human decision,
     // never a default.
     const { res, data } = await post(
-      { action: "pull", broker: brokerId, mode, ...(accountId ? { accountId } : {}), ...(force ? { force: true } : {}) },
+      {
+        action: "pull",
+        broker: brokerId,
+        mode,
+        ...(accountId ? { accountId } : {}),
+        ...(force ? { force: true } : {}),
+        ...(withRequestToken ? { requestToken: withRequestToken } : {}),
+      },
       mode,
     );
     if (!data.ok) {
+      // Zerodha's daily login: the stored session is dead (or absent) and an
+      // API secret is on file — the server asks for today's request_token.
+      if (res?.status === 409 && data.needsRequestToken) {
+        setRequestToken("");
+        setRequestTokenPrompt({ brokerId, accountId, mode, loginUrl: data.loginUrl, message: data.message });
+        setMsg(null);
+        return;
+      }
       if (res?.status === 409 && data.nothingNew) {
         setCollisionPrompt({
           brokerId,
@@ -414,6 +487,23 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     await refresh();
   }
 
+  /** Deliberate removal of the stored extras (Dhan PIN+TOTP / Zerodha
+   *  api_secret). A re-save now PRESERVES a stored auth blob when the fields
+   *  are left empty, so removal is its own explicit request (`clearAuth`) —
+   *  never a side effect of updating a token. */
+  async function clearAuthEnrollment() {
+    const { res, data } = await post(
+      { action: "save", broker: active, ...(saveAccountId > 0 ? { accountId: saveAccountId } : {}), clearAuth: true },
+      "clear-auth",
+    );
+    if (!data.ok) {
+      await fail(res, data, "Could not remove the enrollment.");
+      return;
+    }
+    setMsg({ ok: true, text: data.message ?? "" });
+    await refresh();
+  }
+
   function switchBroker(b: BrokerId) {
     setBroker(b);
     setApiKey("");
@@ -421,6 +511,11 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     setClientCode("");
     setPin("");
     setTotpSecret("");
+    setApiSecret("");
+    setDhanTotpMode(false);
+    setDhanConsent(false);
+    setRequestToken("");
+    setRequestTokenPrompt(null);
     setHost(OPENALGO_DEFAULT_HOST);
     setUnderlyingBroker("");
     setMsg(null);
@@ -589,8 +684,87 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           </div>
           {spec.needsToken && (
             <div className="space-y-1">
-              <Label>Access token (today&apos;s)</Label>
+              <Label>
+                Access token {active === "dhan" && dhanTotpMode ? <>(optional — TOTP mode mints it)</> : <>(today&apos;s)</>}
+                {active === "zerodha" && apiSecret ? <> — or leave empty and use the daily request_token</> : null}
+              </Label>
               <Input value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="paste after login" />
+            </div>
+          )}
+          {active === "zerodha" && (
+            <div className="space-y-1 sm:col-span-2">
+              <Label>API secret (optional — enables the daily request_token flow)</Label>
+              <Input
+                type="password"
+                value={apiSecret}
+                onChange={(e) => setApiSecret(e.target.value)}
+                placeholder="from developers.kite.trade → your app"
+                autoComplete="off"
+              />
+              <p className="text-[0.6875rem] text-muted-foreground">{KITE_DAILY_LOGIN_NOTE}</p>
+              {saveTargetConn?.hasAuth && (
+                <Button type="button" size="sm" variant="ghost" onClick={clearAuthEnrollment} disabled={busy != null}>
+                  {busy === "clear-auth" ? "Removing…" : "Remove API secret"}
+                </Button>
+              )}
+            </div>
+          )}
+          {active === "dhan" && (
+            <div className="space-y-2 sm:col-span-2">
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={dhanTotpMode}
+                  onChange={(e) => {
+                    setDhanTotpMode(e.target.checked);
+                    if (!e.target.checked) {
+                      setPin("");
+                      setTotpSecret("");
+                      setDhanConsent(false);
+                    }
+                  }}
+                />
+                <span className="font-medium">Connect once with PIN + TOTP (recommended)</span>
+                <span className="text-muted-foreground">— Vyuha mints the 24-hour token at every pull</span>
+              </label>
+              {saveTargetConn?.hasAuth && (
+                <Button type="button" size="sm" variant="ghost" onClick={clearAuthEnrollment} disabled={busy != null}>
+                  {busy === "clear-auth" ? "Removing…" : "Remove PIN + TOTP enrollment"}
+                </Button>
+              )}
+              {dhanTotpMode && (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>Dhan PIN</Label>
+                      <Input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="the login PIN" autoComplete="off" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>TOTP secret</Label>
+                      <Input
+                        type="password"
+                        value={totpSecret}
+                        onChange={(e) => setTotpSecret(e.target.value)}
+                        placeholder="the base32 SECRET from enrollment — not the 6-digit code"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                  {/* Consent BEFORE save — the checkbox gates the save button. */}
+                  <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-muted-foreground" data-testid="dhan-totp-consent">
+                    {DHAN_TOTP_CONSENT}
+                  </p>
+                  <label className="flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={dhanConsent}
+                      onChange={(e) => setDhanConsent(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>I understand Vyuha becomes a second factor for my Dhan account, and I accept that.</span>
+                  </label>
+                </>
+              )}
             </div>
           )}
           {active === "openalgo" && (
@@ -659,11 +833,18 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 ? !host.trim() || !underlyingBroker
                 : active === "angelone"
                   ? !clientCode || !pin || !totpSecret
-                  : spec.needsToken
-                    ? !accessToken
-                    // Upstox: the Analytics token in the key field is the
-                    // whole credential — nothing else to demand.
-                    : false)
+                  : active === "dhan"
+                    // TOTP mode: PIN + secret + the explicit consent; the
+                    // pasted token is then optional. Otherwise: token mode.
+                    ? (dhanTotpMode ? !pin || !totpSecret || !dhanConsent : !accessToken)
+                    : active === "zerodha"
+                      // Either the day's token or the API secret must be there.
+                      ? !accessToken && !apiSecret
+                      : spec.needsToken
+                        ? !accessToken
+                        // Upstox: the Analytics token in the key field is the
+                        // whole credential — nothing else to demand.
+                        : false)
             }
           >
             {busy === "save"
@@ -825,6 +1006,72 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                   </Button>
                 </>
               )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Zerodha daily-login dialog: the stored session is dead (or absent)
+            and an API secret is on file, so the server asked (409) for today's
+            request_token. One browser click + one paste — the honest daily
+            cost of Kite's regulated session expiry. */}
+        <Dialog
+          open={requestTokenPrompt != null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRequestTokenPrompt(null);
+              setRequestToken("");
+              setMsg({ ok: true, text: "Pull cancelled — nothing was fetched." });
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Zerodha needs today&apos;s login</DialogTitle>
+              <DialogDescription>
+                {requestTokenPrompt?.message ??
+                  "Kite sessions are invalidated around 6 AM IST every day by regulation. Log in once via your Kite Connect URL and paste the request_token from the redirect — Vyuha does the token exchange."}
+              </DialogDescription>
+            </DialogHeader>
+            {requestTokenPrompt?.loginUrl && (
+              <p className="break-all rounded-md border border-border bg-card-hover/40 px-3 py-2 font-mono text-xs">
+                <a href={requestTokenPrompt.loginUrl} target="_blank" rel="noreferrer" className="underline">
+                  {requestTokenPrompt.loginUrl}
+                </a>
+              </p>
+            )}
+            <div className="space-y-1">
+              <Label>request_token (from the redirect URL after login)</Label>
+              <Input
+                value={requestToken}
+                onChange={(e) => setRequestToken(e.target.value)}
+                placeholder="single-use; expires within minutes"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setRequestTokenPrompt(null);
+                  setRequestToken("");
+                  setMsg({ ok: true, text: "Pull cancelled — nothing was fetched." });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={busy != null || !requestToken.trim()}
+                onClick={() => {
+                  const p = requestTokenPrompt;
+                  const token = requestToken.trim();
+                  setRequestTokenPrompt(null);
+                  setRequestToken("");
+                  if (p) void pull(p.mode, p.brokerId, false, p.accountId, token);
+                }}
+              >
+                Exchange &amp; continue
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

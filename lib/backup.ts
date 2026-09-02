@@ -33,6 +33,8 @@ const TABLE_MAP: Record<BackupTable, any> = {
   charge_config: schema.chargeConfig,
   risk_config: schema.riskConfig,
   capital_snapshots: schema.capitalSnapshots,
+  capital_goals: schema.capitalGoals,
+  bf_loss_lots: schema.bfLossLots,
   import_batches: schema.importBatches,
   trades: schema.trades,
   classification_overrides: schema.classificationOverrides,
@@ -282,12 +284,17 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
 
       // Re-apply the machine's own licence/trial state over whatever the
       // envelope carried — restoring a journal must neither install someone
-      // else's key nor reopen this machine's trial.
-      if (machineSettings) {
+      // else's key nor reopen this machine's trial. This runs even when the
+      // settings table was EMPTY pre-restore (machineSettings undefined):
+      // there is no machine state to keep then, but the envelope's machine
+      // columns must still be blanked exactly as a dump blanks them — a
+      // FORGED envelope's consent/credential/stamp values must never land
+      // verbatim just because the install was fresh.
+      {
         const restored0 = tx.select().from(schema.settings).all()[0] as Record<string, unknown> | undefined;
         if (restored0) {
           const keep: Record<string, unknown> = {};
-          for (const col of SETTINGS_MACHINE_COLUMNS) keep[col] = machineSettings[col] ?? settingsMachineBlank(col);
+          for (const col of SETTINGS_MACHINE_COLUMNS) keep[col] = machineSettings?.[col] ?? settingsMachineBlank(col);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           tx.update(schema.settings).set(keep as any).run();
         }

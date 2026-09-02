@@ -94,7 +94,12 @@ export function coverageText(c: InsightCoverage): string {
  * imperatives and advice verbs. Descriptive contrasts ("historically, …",
  * "your record shows…") pass.
  */
-export const PRESCRIPTIVE_LANGUAGE = /\byou should\b|\bmust\b|\bstop doing\b|\bavoid\b|\bnever trade\b|\balways trade\b|\bwe recommend\b|\bconsider (?:buying|selling|exiting)\b/i;
+// NB the first alternative: "you" takes an optional contraction ('d/'ll/'ve/'re)
+// because "you'd need to", "you've got to", "you'll want/have to" and "you're
+// supposed to" are the same instruction wearing an apostrophe — a literal
+// `\byou should\b` alone let all of them through. "must" stays banned on its
+// own, anywhere.
+export const PRESCRIPTIVE_LANGUAGE = /\byou(?:'d|'ll|'ve|'re)?\s+(?:should|(?:need|have|want|got|ought)\s+to|supposed\s+to)\b|\bmust\b|\bstop doing\b|\bavoid\b|\bnever trade\b|\balways trade\b|\bwe recommend\b|\bconsider (?:buying|selling|exiting)\b/i;
 
 /** Every text field a contract test should scan on an Insight. */
 export function insightTexts(i: Insight): string[] {

@@ -45,6 +45,7 @@ const COUNT_LABELS: [string, string][] = [
   ["ledgerEntries", "Ledger entries"],
   ["tradingSessions", "Sessions"],
   ["capitalSnapshots", "Capital snapshots"],
+  ["capitalGoals", "Capital goals"],
   ["brokerConnections", "Broker APIs"],
   ["panelDismissals", "Dismissals"],
 ];

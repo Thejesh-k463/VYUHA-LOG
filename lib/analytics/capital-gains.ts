@@ -336,11 +336,20 @@ export function computeFySetOff(
   };
 }
 
-/** Chain computeFySetOff across FYs in chronological order, carrying losses forward. */
-export function computeTaxTimeline(byFy: FyGrossGains[]): FySetOffResult[] {
+/**
+ * Chain computeFySetOff across FYs in chronological order, carrying losses forward.
+ *
+ * @param seed pre-journal loss vintages (e.g. losses incurred before the first
+ * journalled FY, entered by hand). They enter the first FY exactly as brought-
+ * forward lots: computeFySetOff prunes expired vintages on entry (8y capital/
+ * non-spec, 4y speculative — a seed whose window closed before the first FY is
+ * never applied) and absorbs the rest oldest-first under the usual set-off
+ * rules. Defaults to [] so existing callers are byte-identical.
+ */
+export function computeTaxTimeline(byFy: FyGrossGains[], seed: CarryForwardLot[] = []): FySetOffResult[] {
   const sorted = [...byFy].sort((a, b) => a.fy.localeCompare(b.fy));
   const results: FySetOffResult[] = [];
-  let carry: CarryForwardLot[] = [];
+  let carry: CarryForwardLot[] = seed;
   for (const fy of sorted) {
     const res = computeFySetOff(fy, carry);
     results.push(res);

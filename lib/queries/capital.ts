@@ -22,10 +22,36 @@ export interface CapitalSummary {
   available: number; // realised not yet compounded
 }
 
-export function getCapitalSummary(): CapitalSummary {
+export interface BucketCapital {
+  equityCapital: number;
+  activeCapital: number;
+  totalCapital: number;
+}
+
+/**
+ * The bucket capitals every denominator should use, resolved ACCOUNT-FIRST:
+ * the selected account's own figure wins, the global settings row is only the
+ * single-account fallback (migration 0044 moved capital onto accounts; the
+ * settings columns remain for installs that never created a second account).
+ *
+ * This is the one copy of the `account ?? settings ?? 0` chain — pages that
+ * read `settings.equityCapital` directly silently show the GLOBAL figure in a
+ * per-account view (the performance-page defect this helper was extracted
+ * for). 0 still means NOT CONFIGURED (invariant 6): callers render "—", never
+ * a return on an invented base.
+ */
+export function getBucketCapital(): BucketCapital {
   const s = getSettings();
+  const account = getSelectedAccount();
+  const equityCapital = account?.equityCapital ?? s?.equityCapital ?? 0;
+  const activeCapital = account?.activeCapital ?? s?.activeCapital ?? 0;
+  return { equityCapital, activeCapital, totalCapital: r2(equityCapital + activeCapital) };
+}
+
+export function getCapitalSummary(): CapitalSummary {
   const closed = getTrades().filter((t)=>!t.isOpen);
   const account = getSelectedAccount();
+  const cap = getBucketCapital();
   const equityRealised = r2(closed.filter((t) => t.bucket === "equity").reduce((a, t) => a + t.netPnl, 0));
   const activeRealised = r2(closed.filter((t) => t.bucket === "active").reduce((a, t) => a + t.netPnl, 0));
   const ipoRealised = r2(getIpoRealisedNet());
@@ -36,9 +62,9 @@ export function getCapitalSummary(): CapitalSummary {
     account?.pnlRolledIn ??
     r2(db.select({ v: accounts.pnlRolledIn }).from(accounts).all().reduce((a, r) => a + r.v, 0));
   return {
-    equityCapital: account?.equityCapital ?? s?.equityCapital ?? 0,
-    activeCapital: account?.activeCapital ?? s?.activeCapital ?? 0,
-    totalCapital: (account?.equityCapital ?? s?.equityCapital ?? 0) + (account?.activeCapital ?? s?.activeCapital ?? 0),
+    equityCapital: cap.equityCapital,
+    activeCapital: cap.activeCapital,
+    totalCapital: cap.totalCapital,
     equityRealised,
     activeRealised,
     ipoRealised,

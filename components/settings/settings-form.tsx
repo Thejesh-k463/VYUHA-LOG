@@ -55,6 +55,9 @@ export function SettingsForm({ current }: { current: Settings }) {
   const [defaultBuyOrders, setBuyOrders] = useState(String(current.defaultBuyOrders));
   const [defaultSellOrders, setSellOrders] = useState(String(current.defaultSellOrders));
   const [autoMtm, setAutoMtm] = useState(current.autoMtmEnabled);
+  // Auto-pull on launch (v3.6, WS3) — plain opt-in, no disclosure: it reuses
+  // credentials the user already saved, pulls once per day, never forces.
+  const [autoPull, setAutoPull] = useState(current.autoPullEnabled);
   // ── OpenAlgo integration (opt-in, disclosure-gated) ──
   // Both halves of the gate are held here so the card can tell "off" apart from
   // "on, but accepted against a disclosure that has since changed".
@@ -192,6 +195,7 @@ export function SettingsForm({ current }: { current: Settings }) {
           goLiveDate, equityCapital, activeCapital, theme, accentSkin: skin, density, workspace, fyStartMonth,
           defaultBuyOrders, defaultSellOrders, colorblindSafe: colorblind,
           autoMtmEnabled: autoMtm,
+          autoPullEnabled: autoPull,
           // `undefined` means "not overridden" — null is a real value here.
           openalgoEnabled: over?.openalgoEnabled ?? openalgoEnabled,
           openalgoAckVersion:
@@ -454,6 +458,16 @@ export function SettingsForm({ current }: { current: Settings }) {
             />
           </div>
 
+          {/* Sits ADJACENT to the OpenAlgo row above and names it — this used
+              to trail the auto-pull toggle, where it read as describing that
+              instead. There are FOUR direct API pulls (Zerodha, Dhan, Angel
+              One, Upstox), not three. */}
+          <p className="text-xs text-muted-foreground">
+            OpenAlgo is off by default, and everything else in Vyuha works without it — every broker
+            still imports by file, and the four direct API pulls (Zerodha, Dhan, Angel One and Upstox)
+            are unaffected.
+          </p>
+
           {openalgoAckStale && (
             <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
               {/* Verbatim from the gate itself (lib/domain/openalgo-disclosure.ts),
@@ -469,10 +483,20 @@ export function SettingsForm({ current }: { current: Settings }) {
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground">
-            Off by default, and everything else in Vyuha works without it — every broker still imports by
-            file, and the three direct API pulls are unaffected.
-          </p>
+          <div className="flex items-center justify-between rounded-md border border-border bg-card-hover/40 px-3 py-2">
+            <div>
+              <div className="text-sm font-medium">Auto-pull saved brokers on launch (once per day)</div>
+              <div className="text-xs text-muted-foreground">
+                On the first open of the day, pulls today&apos;s trades from connections that work
+                unattended — Angel One, Upstox, and Dhan with PIN + TOTP saved. Zerodha and OpenAlgo are
+                never auto-pulled. <span className="text-warning">Anything the manual flow would stop and
+                ask about (duplicates, collisions) is skipped, never force-committed</span> — it waits in
+                Import. Save settings to apply.
+              </div>
+            </div>
+            <Switch checked={autoPull} onCheckedChange={(v) => setAutoPull(Boolean(v))} data-testid="auto-pull-switch" />
+          </div>
+
         </CardContent>
       </Card>
 

@@ -32,5 +32,8 @@ export function TradeReplay({ trades }: { trades: ReplayTrade[] }) {
         </ReportTr>
       ))}</tbody>
     </ReportTable>
-    <p className="text-[0.6875rem] text-muted-foreground">EOD closes cannot show the intraday path between fills. Markers use recorded fill prices; the line uses imported bhavcopy closes.</p></div>;
+    {/* No caveat line here: the scaling page renders metricCaveatLine("replayEod")
+        directly above this component — lib/domain/metric-help.ts is the single
+        source of truth for the EOD-closes caveat (tests/trade-replay-caveat-guard
+        reddens if a hand-written copy returns). */}</div>;
 }

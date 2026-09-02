@@ -15,6 +15,7 @@ const ENTITY_LABEL: Record<string, string> = {
   capital: "Capital",
   ledger: "Ledger",
   restriction: "Restriction",
+  bf_loss: "B/f loss",
 };
 
 function fmt(v: unknown): string {

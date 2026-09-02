@@ -5,6 +5,11 @@ import { getMtmMap } from "@/lib/queries/mtm";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
+import { dailyPnl } from "@/lib/analytics/metrics";
+import { getGoalView } from "@/lib/queries/goals";
+import { getBucketCapital } from "@/lib/queries/capital";
+import { goalProgress } from "@/lib/analytics/goal";
+import { GoalStrip } from "@/components/targets/goal-strip";
 import type { Segment } from "@/lib/domain/constants";
 
 export const dynamic = "force-dynamic";
@@ -58,10 +63,21 @@ export default function TargetActivePage() {
     return { perTradeMaxLoss: c?.perTradeMaxLoss ?? 9500, maxTradesDay: c?.maxTradesDay ?? null, todayCount };
   }
 
+  // Expected-capital goal for THIS bucket (v3.6) — nothing renders without one.
+  const activeGoal = getGoalView().goals.find((g) => g.bucket === "active") ?? null;
+  const goalProg = activeGoal
+    ? goalProgress(activeGoal, {
+        currentCapital: getBucketCapital().activeCapital > 0 ? getBucketCapital().activeCapital : null,
+        realised: [...dailyPnl(trades.filter((t) => t.bucket === "active")).entries()].map(([date, net]) => ({ date, net })),
+        today,
+      })
+    : null;
+
   return (
     <>
       <PageHeader title="Target Tracker — Trade F&O" description="Daily max-loss cockpit, trade counters, per-segment limits, lot sizing." />
       <div className="space-y-5 p-6">
+        {activeGoal && goalProg && <GoalStrip goal={activeGoal} progress={goalProg} />}
         <TargetActiveClient
           daily={daily}
           limits={{

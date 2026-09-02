@@ -15,11 +15,11 @@ import { ensureTrades } from "./helpers";
  *     change; if that directive is ever lost, sorting is exactly what dies.
  *     Proven on the TRADES table (guaranteed rows; same component the
  *     trackers share, now also under virtualization).
- *  2. SIDEBAR ORDER RESTORE — the deferred mount-restore idiom
- *     (Promise.resolve().then(setState)) applying persisted state after
- *     hydration, under compiled components. Seeded via localStorage rather
- *     than drag: the pointer mechanics have their own spec; the compiler
- *     risk is the RESTORE.
+ *  2. SIDEBAR ORDER RESTORE — persisted client state (useStoredValue /
+ *     useSyncExternalStore since v3.6) applied after hydration, under
+ *     compiled components. Seeded via localStorage rather than drag: the
+ *     pointer mechanics have their own spec; the compiler risk is the
+ *     RESTORE.
  *  3. LIVE CHARGE PREVIEW — a debounced fetch-effect chain writing state
  *     while the user types.
  *
@@ -75,27 +75,37 @@ test("a persisted sidebar order is RESTORED after reload under the compiler", as
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  // Default order first. The swap lives inside "Positions" — a group with
-  // FOUR items (Overview holds only Dashboard, where a swap is a no-op).
+  // Default state first. Since v3.6 "Positions" FOLDS to Portfolio Risk
+  // alone — /equity sits behind the "3 more…" row and renders no link at all.
   await page.evaluate(() => localStorage.removeItem("vyuha-nav-order"));
   await page.reload();
   await page.waitForLoadState("networkidle");
 
   const riskPos = () => page.locator('aside nav a[href="/risk"]').boundingBox().then((b) => b!.y);
   const equityPos = () => page.locator('aside nav a[href="/equity"]').boundingBox().then((b) => b!.y);
-  expect(await riskPos()).toBeLessThan(await equityPos()); // default: Risk above Equity
+  await expect(page.locator('aside nav a[href="/risk"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('aside nav a[href="/equity"]')).toHaveCount(0); // folded by default
 
-  // Persist an order that puts /equity FIRST in Positions, then reload. The
-  // compiler-sensitive path is the deferred mount restore that applies it
-  // (Promise.resolve().then(setState) — the sidebar's documented idiom).
+  // Persist the v1 envelope: BOTH items in Positions' `shown` set (the
+  // customizer's persistence) with /equity ordered FIRST, then reload. The
+  // compiler-sensitive path is the client restore that applies it after
+  // hydration (useStoredValue / useSyncExternalStore), so assert with
+  // expect.poll — a single read after networkidle sees the default.
   await page.evaluate(() => {
     localStorage.setItem(
       "vyuha-nav-order",
-      JSON.stringify({ groups: [], items: { Positions: ["/equity", "/risk"] } }),
+      JSON.stringify({
+        v: 1,
+        groups: [],
+        items: { Positions: ["/equity", "/risk"] },
+        shown: { Positions: ["/equity", "/risk"] },
+        expanded: {},
+      }),
     );
   });
   await page.reload();
   await page.waitForLoadState("networkidle");
+  await expect(page.locator('aside nav a[href="/equity"]')).toBeVisible({ timeout: 20_000 });
   await expect
     .poll(async () => (await equityPos()) < (await riskPos()), { timeout: 20_000 })
     .toBe(true);

@@ -16,7 +16,8 @@ export type AuditEntity =
   | "corporate_action"
   | "account"
   | "session"
-  | "rule_pack";
+  | "rule_pack"
+  | "bf_loss";
 
 export interface AuditInput {
   entity: AuditEntity;

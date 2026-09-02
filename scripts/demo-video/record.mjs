@@ -95,9 +95,28 @@ async function _hover(locator, holdMs = 1600) {
   await sleep(holdMs);
 }
 
+/** Every sidebar group name — must track NAV_GROUPS in nav-config.ts. Used to
+ *  pre-expand the folded sidebar (v3.6) so navTo always finds its label. */
+const NAV_GROUPS = ["Overview", "Positions", "Risk", "Journal", "Import", "Tax", "Analytics", "Back Office", "System"];
+
+/** Click every "N more…" fold toggle still on screen (belt-and-braces for a
+ *  group added after the NAV_GROUPS list above went stale). Clicks persist in
+ *  localStorage, so once per context is enough. */
+async function expandAllGroups() {
+  for (let i = 0; i < 12; i++) {
+    const toggle = page.locator("aside").getByRole("button", { name: /\d+ more/ }).first();
+    if (!(await toggle.count())) break;
+    await toggle.click().catch(() => {});
+    await rawSleep(150);
+  }
+}
+
 /** Sidebar navigation by the EXACT label in nav-config.ts. */
 async function navTo(label) {
   const link = page.locator("aside").getByRole("link", { name: label, exact: true });
+  // The sidebar folds each group to its most-used screens; a label behind a
+  // fold has no link at all until the group expands.
+  if (!(await link.count())) await expandAllGroups();
   await click(link, { settle: 400 });
   await hydrated();
   await sleep(900);
@@ -385,6 +404,24 @@ async function main() {
       colorScheme: "dark",
     });
     await context.addInitScript(CURSOR_SCRIPT);
+    // Pre-expand every sidebar group (v3.6 folds each to its most-used
+    // screens) so no scene films a hunt through "N more…" rows. Seeded into
+    // the v1 nav-order envelope before any page script runs; navTo still
+    // falls back to clicking the toggles if a new group is missing here.
+    await context.addInitScript((groups) => {
+      try {
+        const KEY = "vyuha-nav-order";
+        let cur = {};
+        try { cur = JSON.parse(localStorage.getItem(KEY) || "null") || {}; } catch { /* corrupt = fresh */ }
+        localStorage.setItem(KEY, JSON.stringify({
+          v: 1,
+          groups: Array.isArray(cur.groups) ? cur.groups : [],
+          items: cur.items && typeof cur.items === "object" ? cur.items : {},
+          shown: cur.shown && typeof cur.shown === "object" ? cur.shown : {},
+          expanded: Object.fromEntries(groups.map((g) => [g, true])),
+        }));
+      } catch { /* storage unavailable — navTo's toggle fallback covers it */ }
+    }, NAV_GROUPS);
     page = await context.newPage();
     cursorX = W / 2; cursorY = H / 2;
     let ok = true, err = "";

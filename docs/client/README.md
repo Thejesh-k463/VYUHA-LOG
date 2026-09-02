@@ -1,15 +1,19 @@
 # Welcome to Vyuha
 
-A fully local, offline trade journal for Indian retail traders. Your data never
-leaves your computer — there is no account, no cloud, and no telemetry.
+A fully local, offline trade journal for Indian retail traders. There is no
+account, no cloud, and no telemetry — nothing about your trades leaves your
+computer unless you switch on a feature that sends it, and each one says so
+before you can.
 
 ## Built by one person, shaped by the people who use it
 
 There are plenty of trade journals now, and AI has made it easy for anyone to
 build another. Vyuha is different in what it does — and in where it runs.
 
-- **It works offline.** Everything happens on your machine. The app barely
-  touches the internet at all: one check for updates at launch, and nothing else.
+- **It works offline.** Everything happens on your machine. Unprompted, the app
+  touches the internet exactly once: a check for updates at launch. Anything
+  else — the end-of-day price download, broker pulls, the Telegram digest — is
+  off until you switch it on.
 - **It takes behaviour as seriously as P&L.** When you exit, how long you hold,
   whether you moved a stop after entry — the parts of a trade a profit column
   cannot hold.
@@ -27,6 +31,18 @@ If a request is feasible, it gets built. And where a group of traders — or a
 single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
+
+## New in v3.6.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **A sidebar arranged around how you work — and yours to change** | Screens now live in nine groups (Import, Tax and Back Office are new), each showing its most-used screens with the rest one click behind "N more…". Choose which screens stay visible per group — by drag or by checkbox — reorder anything, and Reset brings the default back. The screen you are on is never hidden from you. |
+| **Expected-capital goals** | Set a ₹ or % target per capital bucket, with an optional date. Progress, gap and your trailing run-rate are measured from your own realised record — never a projection — and a % goal with no capital on file shows "—" and points you at Settings rather than inventing a base. |
+| **Dhan connects once, with PIN + TOTP** | Instead of pasting a new access token every day, Dhan can now store your client ID, PIN and TOTP secret (encrypted, on your machine) and mint the day's token itself — the sign-in call goes only to Dhan's own endpoint. Storing these makes Vyuha a second factor for your Dhan account, and the consent screen says so before you agree. The paste-a-token path remains. |
+| **Zerodha's official session exchange** | Log in via Zerodha's own page once a day, paste the request token, and Vyuha completes Kite's documented session exchange itself — no more manufacturing an access token by hand. |
+| **Auto-pull on launch — opt-in** | Once a day, at launch, Vyuha can pull your saved broker connections for you. Off by default; anything the manual flow would stop and ask about still stops and asks, and nothing is ever committed silently. |
+| **Telegram end-of-day digest — opt-in, and honest about what it is** | Your day's own recorded numbers, sent to a Telegram bot you create yourself. This is the one feature that uploads anything, so it sits behind a disclosure that says plainly the content transits Telegram's servers — off by default, with a test-alert button so you know it works before the market close does. |
+| **Brought-forward losses, finally enterable** | Losses from years before your journal starts can now be recorded per year and head, and the tax timeline, ITR pack and loss ledger honour them — including the year each vintage expires. |
 
 ## New in v3.5.1
 
