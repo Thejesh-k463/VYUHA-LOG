@@ -179,6 +179,16 @@ Both live in `docs/owner/CODE_SIGNING.md`:
 1. `npm run winget:manifest`
 2. Submit the installer to Microsoft.
 
+**Standing owner instruction (2026-09-02): hand the owner the WDSI form details
+UNPROMPTED at this step, every release** — file name, the CLIENT ZIP installer's
+SHA-256 (never the GitHub asset's), category ("Incorrectly detected as
+malware/malicious" pre-emptive, detection name "N/A - no detection" unless
+Defender actually flags one — then use the exact detection name, e.g. the
+Bearfoos.B!ml precedent), and the Additional-information paragraph updated to
+the new version. Definition version: from the machine that saw the detection,
+`(Get-MpComputerStatus).AntivirusSignatureVersion`; leave blank for pre-emptive
+submissions.
+
 ---
 
 ## 10. Claims audit — the product must not lie about itself

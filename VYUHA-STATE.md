@@ -79,12 +79,19 @@ workflow 33605490343 success, all 3 platform jobs** → `release:verify v3.6.0 -
 `4FF85F3BBE1DA21D`, "Safe to publish"**. Draft: 9 assets; `releases/latest` still v3.5.1;
 `revocations` re-checked `prerelease:true`, untouched.
 
-**OWNER STEPS REMAINING FOR v3.6.0:** publish the draft → `npm run mirror:push` **from a
-real terminal** (agent sessions run with GIT_TERMINAL_PROMPT=0) → WDSI with the CLIENT
-ZIP's installer, not the GitHub asset → install on a non-build machine (the in-app update
-prompt from a v3.5.1 machine is the interesting flow) → no winget PR while
-microsoft/winget-pkgs #421585 is open. Expect the two-binaries gap (GitHub asset ≠ local
-ZIP build) as on every release — winget takes the GitHub hash, WDSI/buyers take the ZIP's.
+**v3.6.0 IS PUBLISHED, MIRRORED, AND INSTALLED CLEAN ON A NON-BUILD MACHINE
+(owner-confirmed 2026-09-02).** WDSI submitted the same day with the CLIENT ZIP's
+installer (SHA-256 `040D…78FC`). No open release actions except: no winget PR while
+microsoft/winget-pkgs #421585 is open. Standing owner preference (recorded): at every
+release's WDSI step, hand the owner the filled form details (file, hash, category,
+Additional-information text) UNPROMPTED.
+
+**v3.7.0 "Review & Discipline" is next** — scope in `docs/V360_BUILD_PLAN.md` roadmap
+(Trade Review Desk, Pro/lifetime-gated · Discipline 2.0 · first-run onboarding · dated
+challan ledger), plus small carry-overs from v3.6: the /lenses windowing pass (DECISIONS
+2026-09-02 perf entry), the 7 sibling global-capital reads (listed in the goals build
+report; performance page is fixed, the rest still read global settings), and the
+OS-notification fallback for Telegram (deliberately not built in v3.6).
 
 *(Superseded planning note: the pre-approval backlog below is retained for history; items
 1–7 are slotted into the roadmap bumps.)*
