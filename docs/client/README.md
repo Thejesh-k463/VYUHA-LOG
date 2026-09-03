@@ -32,6 +32,27 @@ single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
 
+## New in v3.8.0
+
+| Upgrade | What it gives you |
+|---|---|
+| **Upgrading from v3.7.1 — read this first** | The v3.8.0 installer runs the **old v3.7.1 uninstaller once** before it installs, and that older uninstaller has no backup step. When its "Delete the application data" checkbox appears, **leave it UNTICKED**. From v3.8.0 on, the uninstaller names your journal and licence, copies them to `Documents\Vyuha-backup-<date>` and asks before anything can be deleted. |
+| **Paytm Money imports pair on ISIN** | Paytm switches a security's label from ticker to numeric code mid-window, and pairing on the label split one security into two books — a phantom open buy and a phantom "sale with no purchase". Fills now pair on ISIN regardless of label, and the file's own stamp duty and STT decide whether a same-day round trip was intraday or delivery. On a real 7,544-execution book: 804 → 793 positions and 72 → 38 unpriced sales — the 38 left are IPO allotments, which genuinely have no buy. The line saying an unpriced sale was "already counted in Net P&L" is gone; only its charges ever were. |
+| **The import summary warns about shape** | If 10% or more of the positions in a file are sales with no purchase, or a security appeared under two labels, the summary says so — with the count — before you trust Net P&L. |
+| **Remove a broker's imported rows** | On the Import screen: take every row a broker's imports created into Trash in one confirmed, audit-logged step, restorable as a set. Built so a mis-paired book can be re-imported clean instead of deleted by hand. |
+| **Dhan connects without a fight** | Re-saving an enrolment no longer demands the Client ID again (the stored one is kept on your machine); an expired token is re-minted and retried once; an enrolment that cannot be read is named as such; every connection shows its mode — "PIN + TOTP · mints its own token" or "pasted token · expires …" — with a one-time note when a pasted token expires; and in All-accounts view, "Save connection" names the account it will write to. |
+| **More broker files, and one silent-empty fix** | Dhan's Global Transaction Report was reading the 2026 date format as nothing at all — it imported zero rows while reporting a confident match; fixed, and an empty result on a recognised file now warns. New: Dhan Realised P&L (`.xls`), Dhan P&L (`.xlsx`), Dhan Ledger and Dividend payout on the Cash & Ledger screen, and Angel One's `Trades_History` tradebook with its per-row charges. Zerodha files must now look like Zerodha before they are claimed as such. |
+| **Search — Ctrl+K** | One box over your trades (notes, tags, symbols — mid-word hits included), symbols, playbooks, instruments, sessions, challans, help and screens, with category chips. Screens your plan does not include are shown with a lock and one line on what unlocks them, never hidden; your own trades are never locked. A "previous search" and a "back to where I was" control. |
+| **Links to the Trades screen keep their filters** | A `/trades?…` link now stays in the address bar, so a filtered view can be bookmarked, shared with yourself and returned to with the browser's Back. |
+| **A pre-open session band** | Fills between 09:00 and 09:15 are their own session in Arjun's Eye instead of being filed under the opening drive. The session review states how many trades carry no time rather than guessing. |
+| **Richer symbols, and a sector map that says how sure it is** | The bundled symbol list grows to 5,691 securities (NSE, NSE Emerge, BSE) with company name, board, BSE code and series, so a BSE code or an SME name resolves on its own. A four-level NSE sector taxonomy for 2,229 securities sits behind the risk cockpit's sector concentration with a confidence tier. Sector analytics come in v4.0. |
+| **Every date is IST** | Screens that computed "today" in UTC now agree with your clock. No figure on a real book moved. |
+
+**Not in this release (planned for v3.9):** a parser for Paytm's P&L statement; Dhan DP charges,
+holdings, Upstox and Angel One ledgers, the Angel One P&L statement; a broker-vs-Vyuha
+reconciliation screen; Dhan MTF Report and Contract Note; and a faster Trades screen on very large
+books. Nothing new leaves your machine — the privacy note is unchanged.
+
 ## New in v3.7.1
 
 | Upgrade | What it gives you |

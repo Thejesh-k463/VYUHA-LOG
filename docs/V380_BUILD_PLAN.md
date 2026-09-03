@@ -1,7 +1,7 @@
 # V3.8.0 "Trust the import" + V3.9.0 "Trust the numbers" — BUILD PLAN
 
 **STATUS: OWNER-APPROVED 2026-09-03 (twelve decisions, all taken via pop-up, all recommended options).
-IN BUILD since 2026-09-04 — wave plan in §4.** Decisions and the research behind them are recorded in `docs/DECISIONS.md`
+BUILT 2026-09-04 — in adversarial audit (W6 → fix wave → W6b → W7 release skill still ahead); wave plan in §4.** Decisions and the research behind them are recorded in `docs/DECISIONS.md`
 2026-09-03. Live Desk slides to **v4.0** (owner decision).
 
 Grounded in **eight read-only investigations run 2026-09-03 against the released v3.7.1 tree** —

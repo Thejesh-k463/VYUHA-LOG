@@ -455,6 +455,52 @@ ledger rows of the dividend kind through the same Cash & Ledger door
 Not built (v3.9): DP charges (`.xls`), demat holdings, Upstox/Angel ledgers,
 Angel P&L statement.
 
+## Status (2026-09-04) — v3.8.0, built, in audit
+
+Third batch: the owner's 29 real exports (two Dhan accounts, Paytm, Groww,
+Zerodha, Upstox, Angel One), read in place and never copied into the repo;
+27 redacted, still-populated copies now live in `tests/fixtures/redacted/`
+under the three-row rule (every row kept, names/UCC/PAN replaced with fixed
+tokens, ≥3 real rows per distinct case) and feed `tests/golden-books.test.ts`,
+a release gate from v3.8.0 on: each file must route to its parser, produce an
+EXACT position shape (closed / open / opening sells), tie to the broker's own
+gross or net within tolerance, and conserve charges — then commit into a temp
+DB and reproduce the same numbers. Frozen shapes: Paytm 7,544 → 693/62/38;
+Zerodha tradebook 3,530 → 64/4/11; Zerodha tax P&L FY24-25 632 → 206/0/0,
+FY25-26 59 → 26/0/0; Groww orders 952 → 466/1/16; Dhan P&L (account 1) →
+1011/2/0. A golden row that goes to 0/0/0 is a stop-ship, never a re-pin.
+
+What changed per broker:
+- **Paytm** — `paytm-tradebook.ts` pairs on ISIN (see the tradebook section
+  above), splits mixed scrip-days via `splitMixedRow`, uses buy+sell as the
+  delivery STT base in `corroborate()`, and reports securities seen under two
+  labels. Migration 0059 re-keys stored Paytm `dedupHash` values ISIN-first.
+  The `Realized P&L Detail` sheet of the `.xls` still has NO parser (v3.9).
+- **Dhan** — `dhan-gtr.ts` accepts both `dd Mon yyyy` and `dd-mm-yyyy HH:MM`
+  (the 2026 export parsed to ZERO rows at a 0.98 score until this batch; an
+  empty result on a detected GTR now warns with the unparsed sample). New
+  parsers: Realised P&L `.xls` (`Raise Securities Private Limited` fingerprint,
+  per-segment charge reference), P&L `.xlsx` (`Dhan_P&L` sheet), `dhan-ledger`
+  and `dhan-dividend` as cash sources. Every Dhan detector stands down on the
+  other Dhan headers, and none claims on the word "dhan" in a filename.
+- **Angel One** — `Trades_History` tradebook parser on the `TradesAndCharges`
+  format fingerprint; qty-0 per-order F&O brokerage lines fold into charges
+  (Σ per-trade 157.76 vs stated 157.79 was the ₹0.03 leak the harness found).
+- **Zerodha** — `detectZerodha` needs `Auction` / `Order Execution Time` /
+  "Tradebook for" / a name before awarding the tradebook score; Console P&L
+  and tax P&L `reported.charges` now carry the stated figure (FY24-25 ₹0.02
+  column-vs-total rounding recorded).
+- **Symbols** — `lib/data/isin-symbols.json` is 5,691 ISINs (NSE 2,568 + SME
+  568 + BSE-only 2,555) carrying name, board, BSE code and series; the
+  resolution chain gains a BSE-code lookup keyed on the code; `instruments-
+  file.ts` reads today's SME list (`NAME_OF_COMPANY`, `ST` series).
+- Workbook decode is memoised once per `ParseContext` (the ≤8-decode load
+  bound had broken at 11 when the new detectors landed).
+
+Still not built (v3.9): Paytm P&L parser, Dhan DP charges and holdings,
+Upstox and Angel One ledgers, Angel One P&L statement, Dhan MTF Report and
+Contract Note, short-sell / cross-exchange pairing.
+
 ## Status (2026-08-20)
 
 Second batch: `paytm-tradebook.ts` and `zerodha.ts` tradebook paths pair per

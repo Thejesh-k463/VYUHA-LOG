@@ -844,13 +844,16 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         {needsPick && (
           // The answer, said back beside the question — a save from the
           // All-accounts view names the book it writes to, every time.
-          <p className="text-xs" data-testid="save-target">
+          // A <div>, not a <p>: Badge renders a <div>, and the HTML parser
+          // closes a <p> at its first block child — server HTML ≠ client tree,
+          // React #418 on every visit (tests/import-hydration-guard.test.ts).
+          <div className="text-xs" data-testid="save-target">
             {saveTarget ? (
               <Badge variant="accent">Saving to {saveTarget}</Badge>
             ) : (
               <Badge variant="warning">{PICK_ACCOUNT_FIRST}</Badge>
             )}
-          </p>
+          </div>
         )}
 
         {/* The enrolment is STORED but cannot be read — said loudly, with the

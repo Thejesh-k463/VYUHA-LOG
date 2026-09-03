@@ -1,5 +1,108 @@
 # Changelog
 
+## v3.8.0 — trust the import
+
+*Built 2026-09-04; in adversarial audit — not yet published. v3.7.1 remains the
+release until the audit, the fix-wave audit and the release procedure clear it.*
+
+The theme is the word "trust": every figure a broker file produces should survive
+being checked against the broker's own statement. The release was built against
+the owner's own 29 broker exports, and its harness caught a parser returning an
+empty result with a 0.98 detection score on the first run.
+
+- **Paytm Money pairs on ISIN, and the file's own charges decide the product.**
+  Paytm switches its `Script` column from ticker to numeric code mid-window, and
+  pairing on that cell split 35 securities into two books — a phantom open buy
+  under one label and a phantom "sale with no purchase" under the other. Fills now
+  group on ISIN (label-independent), and a scrip-day whose stamp duty sits between
+  the intraday and delivery rates is split into an intraday pair and a delivery
+  remainder rather than booked as delivery by the calendar. On the owner's
+  7,544-execution book: **804 → 793 positions, opening sells 72 → 38** — the 38
+  that remain are the SME IPO allotments, which genuinely have no buy — with
+  charges conserved to the paisa. The banner claiming an unpriced sale was "already
+  counted in Net P&L" is gone: only its charges ever were. Migration 0059 re-keys
+  the stored Paytm de-duplication hashes on ISIN so a re-import de-duplicates
+  correctly.
+- **The import summary now warns about the shape of what it read.** When opening
+  sells are 10% or more of the positions in a file, or a security appeared under
+  two labels, the summary says so — with the count — before you trust Net P&L.
+- **Remove a broker's imported rows, then re-import clean.** A broker-scoped
+  remove on the Import screen (account-scoped, confirmed, audit-logged) takes
+  every row that broker's imports created into Trash, from where the whole set is
+  restorable under its original ids. Ledger and IPO rows are unlinked, never
+  deleted. It exists so a mis-paired book can be replaced in one step instead of
+  ~50 hand deletions.
+- **Dhan connects the way the form promised.** The Client-ID box no longer blocks
+  re-saving an enrolment (the server keeps the stored key; no plaintext leaves it);
+  a 401 with enrolment present clears the cache, mints once and retries; an
+  enrolment that is stored but unreadable is surfaced as exactly that instead of
+  being swallowed; every connection row carries a **mode pill** ("PIN + TOTP ·
+  mints its own token" vs "pasted token · expires …") with a one-time pop-up when
+  a pasted token expires; and in All-accounts mode "Save connection" names the
+  account it will write to — there is no silent default pick.
+- **Six parser changes, one of them a silent-empty fix.** Dhan's Global
+  Transaction Report now reads the 2026 date grammar (`dd-mm-yyyy HH:MM`) — it
+  had been detecting at 0.98 and importing **zero rows**, and a detected GTR that
+  parses to nothing now warns with the unparsed sample. New: **Dhan Realised P&L**
+  (`.xls`, the per-segment charge reference), **Dhan P&L `.xlsx`**, **Dhan Ledger**
+  and **Dhan Dividend payout** as cash sources on the Cash & Ledger screen, and
+  **Angel One `Trades_History`** (per-row charges; the flat per-order F&O brokerage
+  lines are summed into charges, never into quantity). Zerodha detection now
+  requires a Zerodha fingerprint before it claims a tradebook — it had been
+  claiming Angel One's file at 0.50 on two column names.
+- **A bigger, richer symbol snapshot.** 5,691 ISINs (NSE + NSE Emerge + BSE) now
+  carry name, board, BSE code and series; a BSE code resolves keyed on the code,
+  never the ticker (FOCUS, HSIL and KALYANI are different companies on the two
+  boards); NSE still wins an ISIN collision; the SME list importer reads today's
+  file (`NAME_OF_COMPANY`, `ST` series).
+- **A four-level NSE sector taxonomy — data layer only.** 2,229 ISINs classified
+  macro / sector / industry / basic industry with a confidence tier and
+  provenance; the risk cockpit's sector concentration shows the tier. Sector
+  *analytics* are v4.0 — this release stores the map and says how sure it is.
+- **A pre-open session band (09:00–09:15).** Session edge no longer files a
+  pre-open fill under "opening drive"; the band names the fill time, and a
+  pre-open order filling at 09:15:00 is stated as indistinguishable from a regular
+  fill. The session review now reports how many trades carry no time instead of
+  treating "no time" as "before the cutoff".
+- **Search (Ctrl+K).** One box over trades (a full-text index with mid-word hits
+  across notes, tags and symbols), symbols, playbooks, instruments, sessions,
+  challans, help entries and screens, with category chips. Gated screens are shown
+  with a lock and one line on what unlocks them — never hidden — and your own
+  trade rows are never locked. A previous-search control and a "back to where I
+  was" control, neither of which touches browser history. On a 25,000-trade book
+  a query returns in about 15 ms.
+- **Deep links keep their word.** `/trades?…` links now persist the query string
+  (results are re-enterable, browser Back works) and honour `basis=unknown` and
+  every `view=` the trades select offers — a URL that cannot mirror "Loss — closed"
+  is a URL that lies.
+- **The uninstaller warns and copies first.** Before the "Delete the application
+  data" option can act, the uninstaller names the journal database and the
+  licence key, copies both (plus attachments) to `Documents\Vyuha-backup-<date>`,
+  and asks; Cancel keeps everything in place. **Upgrading from v3.7.1: the
+  installer runs the old, unguarded v3.7.1 uninstaller once — leave "Delete the
+  application data" UNTICKED.** From v3.8.0 on the guard is in place.
+- **Every date is IST.** Forty-one screens that computed "today" in UTC now use
+  one IST helper; the owner's book priced identically before and after.
+- **Guards behind the scenes.** The audit log refuses a before/after record whose
+  keys drift (the class that survived two v3.7 audits); writes refuse the
+  "All accounts" view with a typed error; a golden-book harness over 27 redacted
+  real exports — exact shape counts and broker-stated totals — is a release gate,
+  and the load suite runs as its own required CI job.
+
+**Nothing new leaves your machine.** Egress is unchanged: the exactly four kinds
+`docs/client/PRIVACY.md` lists, and no fifth. Search and the broker remove are
+same-origin calls to the app's own local server.
+
+**Not in v3.8 (planned for v3.9 "Trust the numbers"):** a Paytm P&L (`Realized
+P&L Detail`) parser; Dhan DP charges, demat holdings, Upstox and Angel One
+ledgers, the Angel One P&L statement; the broker-truth reconciliation screen
+("broker ₹X · Vyuha ₹Y · Δ"); Dhan MTF Report and Contract Note parsers;
+`/trades` server pagination (its own before/after proof); short-sell and
+cross-exchange modelling. Sector analytics and the Live Desk are v4.0.
+
+Migrations **0059–0060**.
+
+
 ## v3.7.1 — the release (v3.7.0 was superseded unpublished)
 
 v3.7.0 was cut, tagged and fully verified — and then audited a **second** time,

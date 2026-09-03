@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-4237%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-70%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-4247%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-81%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -416,8 +416,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **4,237** | **43** | **0** |
-| tests, 70 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
+| **4,247** | **43** | **0** |
+| tests, 81 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -487,6 +487,7 @@ forever.** Your own record of your trading is never held hostage.
 - **Three live API pulls.** Zerodha (today's executions with fill times), Dhan (the only Dhan source that states **MTF** outright), and **Angel One** — the one that needs no daily attention, because each pull mints its own login code from your TOTP secret.
 - **Credentials are encrypted at rest**, bound to this machine, redacted from backups, and sent nowhere except the broker. A broken vault refuses to save a credential rather than quietly storing it in the clear.
 - Pasting the 6-digit authenticator **code** where the **secret** belongs is caught at save with an explanation — not discovered the next morning as a cryptic login failure.
+- **Dhan connects the way the form promises (v3.8).** Re-saving an enrolment no longer demands the Client ID again — the stored key stays on the server side and no plaintext leaves it; a 401 with enrolment present re-mints once and retries; an enrolment that is stored but unreadable says exactly that. Every connection row wears a **mode pill** — *PIN + TOTP · mints its own token* vs *pasted token · expires …* — with a one-time note when a pasted token expires, and in All-accounts view "Save connection" names the account it will write to rather than picking one silently.
 
 ### 🪜 Staged positions — build in tranches, scale out in parts
 <img src="docs/screenshots/staged-position.png" alt="Staged position — entry ladder with a stop per tranche, partial exits and per-leg R" width="900" />
@@ -501,7 +502,7 @@ forever.** Your own record of your trading is never held hostage.
 <img src="docs/screenshots/arjuns-eye.png" alt="Arjun's Eye — session edge, segment scorecard, holding behaviour and tilt" width="900" />
 
 - Every other report answers *how did my money do*. This one answers **what kind of trader am I, and where does my edge actually come from**.
-- **When you actually make money** — expectancy by Indian session (opening drive · morning trend · midday chop · afternoon push · closing hour) and by weekday.
+- **When you actually make money** — expectancy by Indian session (pre-open · opening drive · morning trend · midday chop · afternoon push · closing hour) and by weekday. The **pre-open band (09:00–09:15)** names the *fill* time, and says so: a pre-open order filling at 09:15:00 is indistinguishable from a regular fill. The session review states how many trades carry no time rather than filing them before the cutoff.
 - **Do you cut winners and hold losers?** The single most common structural leak in retail trading, invisible in a P&L total.
 - **Does a loss change how you trade?** Expectancy after a win vs after a loss, plus same-day re-entries — revenge trading, measured.
 - **Is your conviction rewarded?** Expectancy by position-size quartile. If your biggest positions are not your best, that is a *sizing* question, not a selection one.
@@ -518,7 +519,15 @@ forever.** Your own record of your trading is never held hostage.
 
 - One dropdown on **Trades** covers both questions: **status** (Open · Closed · Staged) and **outcome** (In gain — open · In loss — open · Profit — closed · Loss — closed).
 - **Every option carries its own live count**, computed after your other filters — so you can see a view is empty before you choose it, and the numbers always add up: open + closed = all.
+- **A `/trades?…` link keeps its word (v3.8).** The query string persists, so a filtered view can be bookmarked and returned to with the browser's Back; `basis=unknown` and every `view=` the select offers are honoured — a URL that cannot mirror "Loss — closed" is a URL that lies.
 - **An open position with no mark price appears in neither "in gain" nor "in loss"** — because it has no unrealised result. Vyuha stores 0 for an unmarked holding, and reading that 0 as breakeven would file it under a result it never had. The count of unmarked positions is stated on screen instead of leaving a silent shortfall.
+
+### 🔍 Search — Ctrl+K, over everything you have written down
+
+- One box over your **trades** (a full-text index with mid-word hits across notes, tags, symbols, setup, mistake and emotion tags, exit triggers), **symbols** (name, ticker or BSE code), playbooks, instruments and aliases, sessions, challans, help entries and screens — with category chips.
+- **Gated screens are shown with a lock and one line on what unlocks them — never hidden.** Your own trade rows are never locked; a user's record of their trades is not held hostage.
+- A **previous-search** control and a **"back to where I was"** control, neither of which touches browser history. Results for trades return ids only, so the Trades screen keeps its own ordering — search can never reorder a page.
+- Every source is account-scoped on its own terms (three tables carry no account column, and a test asserts the scope is carried per source). On a 25,000-trade book a query returns in about 15 ms.
 
 ### 🧾 Reads the product type out of the charges themselves
 
@@ -527,6 +536,7 @@ forever.** Your own record of your trading is never held hostage.
 - **MTF is still never claimed**, and that was verified rather than assumed: `Oth. Charges` totalled **₹0.03** across 92 rows and GST was 18% of (brokerage + txn + SEBI) to within **₹0.01**. No unexplained rupee, nowhere for financing to hide. So Vyuha asks about the *delivery* rows only — intraday and F&O can never be MTF.
 - **Legs pair same-day first, then FIFO across dates, into real positions** — the exchange nets a scrip's same-day buy and sell before anything reaches delivery (verified against Paytm Money's own lot statement, 2026-08-20), and oldest-first for the rest is how the Income Tax Act treats equity delivery, so holding periods agree with the ones that decide STCG vs LTCG. Shares sold that the file never shows being bought become opening sells with the basis left blank. A conservation check asserts not one share or rupee is created or lost.
 - **The broker's own charges are stored as truth.** Vyuha cannot be more accurate about a charge than the charge itself; its computed figures stay alongside as a cross-check.
+- **Paytm Money pairs on ISIN, and the same signature decides the product there too (v3.8).** Paytm switches a security's `Script` label from ticker to numeric code mid-window; pairing on the label split 35 securities into a phantom open buy and a phantom unpriced sale. Fills now group on ISIN, and a scrip-day whose stamp duty sits between the intraday and delivery rates is split rather than booked as delivery by the calendar (of 83 same-day round trips in a real file, 34 were intraday and 49 genuine delivery — the calendar cannot tell them apart; the charges can). On a real 7,544-execution book: **804 → 793 positions, unpriced sales 72 → 38**, charges conserved to the paisa.
 
 ### 🏦 MTF, answered by the broker rather than guessed
 
@@ -548,12 +558,16 @@ forever.** Your own record of your trading is never held hostage.
 - Those trades are **counted in cash but quarantined from every edge statistic** — win rate, expectancy, profit factor, ROM — until you set a cost.
 - **Vyuha recovers that cost from the file's own footer.** The rows omit the purchase, but the broker's gross P&L includes it, so subtracting everything matchable leaves what it must have cost. On a real report: −₹8,268.27 matched against a −₹8,489.60 footer left −₹221.33 for one holding — 37 shares sold for ₹21,904, implying **₹597.98 a share**. Pre-filled for confirmation, never applied silently.
 - IPO P&L is reported **apart from trading edge** — a listing-day pop is not a repeatable skill.
+- **The import summary warns about the shape of what it read (v3.8).** When sales-without-a-purchase are 10% or more of a file's positions, or a security appeared under two labels, it says so with the count before you trust Net P&L — the product-side twin of the release harness. An unpriced sale contributes only its charges to Net P&L, and the screen now says exactly that.
+- **Remove a broker's imported rows, then re-import clean.** One confirmed, audit-logged, account-scoped step on the Import screen takes every row a broker's imports created into Trash, restorable as a set under the original ids; ledger and IPO rows are unlinked, never deleted.
 
 ### 📥 Import that tells you what kind of file you brought
 
 - Two clearly-labelled kinds, because they are **not equivalent**. A **tradebook** states the product and the time; a **P&L statement** states neither.
 - So the P&L path **asks once, before commit** — grouped by symbol, with a guess pre-selected. Changing a product **re-prices immediately**, because charges, MTF interest and ROM all derive from it.
 - Same-day round trips are *inferred* as intraday. **MTF is never inferred** — it is indistinguishable from delivery in a P&L file — so the default is delivery, the safest wrong answer, and guessed rows are labelled *assumed*.
+- **More of each broker's catalogue reads natively (v3.8):** Dhan's **Realised P&L** (`.xls`, the per-segment charge reference), Dhan **P&L `.xlsx`**, Dhan **Ledger** and **Dividend payout** as cash sources on the Cash & Ledger screen, and Angel One's **`Trades_History`** tradebook with per-row charges. A broker-named parser must see the broker's own fingerprint before it claims a file — Zerodha's detector had been claiming Angel One's tradebook on two column names.
+- **A confidently empty import is the worst kind.** Dhan's Global Transaction Report was detecting at 0.98 and importing zero rows once the 2026 export changed its date grammar; a **golden-book harness** over 27 redacted real exports — exact position shapes, the broker's own totals, charges conserved — caught it on its first run and is now a release gate. A recognised file that parses to nothing warns with the unparsed sample.
 
 ### 📐 Return on Margin — what your capital actually earned
 <img src="docs/screenshots/rom-report.png" alt="Return on Margin — capital blocked per segment, ROM per day, capital-efficient trades" width="900" />
@@ -596,6 +610,7 @@ forever.** Your own record of your trading is never held hostage.
 <img src="docs/screenshots/risk.png" alt="Portfolio Risk cockpit — exposure, open risk @ SL, VaR, Greeks, margin and breach alerts" width="900" />
 
 - Live exposure: initial risk, open P&L, **open risk @ SL**, allocation, sector concentration (HHI), one-click trail-to-breakeven.
+- **Sector concentration says how sure it is (v3.8).** A bundled four-level NSE taxonomy (macro · sector · industry · basic industry) classifies 2,229 ISINs with a confidence tier and provenance; the resolution chain is your own instruments → the taxonomy → the bundled index map, and your own tag is never overwritten. Data layer only — sector *analytics* are v4.0.
 - **VaR / CVaR / parametric VaR**, beta-weighted exposure, NIFTY stress scenarios (±3%, ±5%, crash+IV spike).
 - **Option Greeks** (Black-Scholes) with a three-tier IV fallback ending at the real **India VIX**.
 - **Margin estimate** (SPAN approximation) per broker × segment, fully editable rate table.
@@ -642,7 +657,7 @@ forever.** Your own record of your trading is never held hostage.
 - The tokens are computed by a pure engine and injected inline on `<html>` — no first-paint flash, and charts stay literal-colour.
 
 ### 🗃 Operational depth
-IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · command palette (`Ctrl+K`) · collapsible sidebar with live IST market clock · light/dark, nine skins + colorblind-safe mode · toast notifications · animated, skeleton-loaded UI.
+IPO tracker with allotment P&L · capital compounding (double-count-safe) · cash & ledger · corporate actions · symbol aliases · instrument/sector master · surveillance-list warnings · immutable **audit log** · one-file **backup/restore** · **Search + command palette** (`Ctrl+K`) · a bundled symbol snapshot of 5,691 NSE/NSE-Emerge/BSE securities with name, board, BSE code and series (a BSE code resolves keyed on the code, never the ticker) · collapsible sidebar with live IST market clock · light/dark, nine skins + colorblind-safe mode · toast notifications · animated, skeleton-loaded UI.
 
 ---
 
@@ -696,7 +711,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. **Upgrading from v3.7.1 to v3.8.0:** the installer runs the old v3.7.1 uninstaller once, and that one has no backup step — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
@@ -733,8 +748,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       4237 unit + integration tests across 246 files (+ tests/load: 16 load cases, run separately)
-e2e/         70 Playwright flows through the real app, in 26 specs
+tests/       4247 unit + integration tests across 247 files (+ tests/load: 16 load cases, run separately)
+e2e/         81 Playwright flows through the real app, in 26 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -754,7 +769,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **4,237 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **4,247 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -770,9 +785,9 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (4,237 tests) |
-| `npm run test:e2e` | Playwright e2e — 70 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
-| `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` and CI by construction; results append to a gitignored trend file |
+| `npm test` | Vitest unit + integration suite (4,247 tests) |
+| `npm run test:e2e` | Playwright e2e — 81 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
 | **`npm run verify`** | **typecheck + lint + tests + production build — run this before pushing.** The first three pass on code that cannot be bundled; only the build catches a client-boundary violation |
@@ -838,7 +853,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 4237 Vitest unit + integration tests (+ tests/load)
+  tests/          # 4247 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

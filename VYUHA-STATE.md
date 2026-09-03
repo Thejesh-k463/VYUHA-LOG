@@ -26,6 +26,64 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
+## 2. Current state — v3.8.0 "Trust the import" BUILT 2026-09-04, in adversarial audit (v3.7.1 is still the published release)
+
+**Status:** branch `main` at `1e67296` plus an uncommitted Dhan Client-ID hydration fix
+(`components/import/broker-connect.tsx` + `tests/import-hydration-guard.test.ts`). Waves 0–5 are
+done; **W6 (6-finder adversarial audit) → fix wave → W6b (audit of the fix wave) → W7 (release
+skill, client ZIP, WDSI) are still ahead.** Nothing is tagged, bumped or published. The spec is
+`docs/V380_BUILD_PLAN.md`; the measured record is the five `docs/DECISIONS.md` entries dated
+2026-09-04.
+
+**What was built (all verified against the owner's own 29 broker exports, read in place):**
+- **Paytm (WS1):** pairing on ISIN with the file's own charge signature deciding intraday vs
+  delivery (`splitMixedRow`; `corroborate()` uses buy+sell as the delivery STT base). Owner's book:
+  **804 → 793 positions, opening sells 72 → 38** (= the SME IPO allotments), charges conserved to
+  the paisa (Σ 1,249,096.80 vs the file's .81). The "already counted in Net P&L" banner is gone.
+  Import summary warns on opening-sell share ≥ 10% and on relabelled securities. **Migration 0059**
+  re-keys Paytm dedup hashes on ISIN (marker table + TS post-migrate `runDataFixes`, the repo's
+  first data-fix mechanism). **Broker-scoped "Remove a broker's imported rows"** on the import page
+  (trash format v3, restorable under original ids, ledger/IPO rows unlinked never deleted).
+- **Dhan connect (WS3):** Client-ID box no longer blocks a re-save (server keeps the stored key);
+  retry-on-401 with one re-mint (overwrite-on-mint); unreadable enrolment surfaced; mode pill on
+  every connection + one-time expiry pop-up; All-accounts save names its account (no default pick).
+- **Parsers:** Dhan GTR now parses the 2026 `dd-mm-yyyy HH:MM` grammar — **it had been importing
+  ZERO rows at a 0.98 score**; the golden harness caught it on its first run. New: Dhan Realised
+  P&L (`.xls`, segment reference), Dhan P&L `.xlsx`, Dhan Ledger + Dividend as cash sources, Angel
+  One `Trades_History`; `zerodha` needs a Zerodha fingerprint. Decode memoised per `ParseContext`.
+- **Symbols (WS4):** snapshot 5,691 ISINs with name/board/BSE code/series (427 KB raw / 135 KB gz);
+  BSE-code lookup keyed on the code; SME importer fixed; **4-level NSE sector taxonomy for 2,229
+  ISINs** (`lib/data/sector-map.json`, confidence tiers shown on the risk cockpit) — DATA LAYER
+  ONLY, analytics are v4.0. MARC ≠ TECHNOCRAT (the plan had them equal).
+- **Sessions (WS5):** pre-open band 09:00–09:15 (names the fill); session review reports untimed
+  coverage.
+- **Search v1 (WS7):** Ctrl+K over trades (FTS5 trigram, **migration 0060**: view-backed
+  external-content table, BEFORE triggers, ids-only contract), symbols, playbooks, instruments,
+  sessions, challans, help, screens; gated screens locked never hidden; previous-search and
+  back-to-page controls, neither via `router.back()`. 25k book: FTS p95 15 ms. Deep links
+  `/trades?…` persist and honour `basis=unknown` / every `view=`.
+- **Installer (WS6):** `NSIS_HOOK_PREUNINSTALL` names journal + licence, copies to
+  `Documents\Vyuha-backup-<date>`, Cancel = exit 1. **The v3.7.1 → v3.8.0 upgrade still runs the
+  unguarded v3.7.1 uninstaller once — the release note and client README both say "leave the box
+  unticked".** Three doc claims fixed; `tests/uninstall-claims.test.ts` guards them.
+- **WS8:** audit-log key-set guard (one real asymmetry found: `upsertChallan`); `getWriteAccountId`
+  refuses explicit and implied 0; one IST `today` — 11 ruled consumers + 41 UI sites migrated, the
+  owner's book priced identically before/after; one site left for the fix wave
+  (`trades-client.tsx:92`).
+- **Gates:** golden-book harness over 27 redacted real exports (exact shapes; a 0/0/0 row is a
+  stop-ship); dedicated `load` CI job (required green). Egress unchanged — the same four kinds
+  PRIVACY.md lists; Search and remove are same-origin.
+
+**Measured baseline (W0):** verify EXIT 0 at 211 files / 3,434 tests; perf sweep 43 routes × 3,
+median 949 ms, `/trades` 2041/2391 the only breach (pre-existing, out of scope). Post-build test
+counts are NOT yet re-stated anywhere — W5/W7 owns the README figures.
+
+**Not in v3.8 → v3.9 "Trust the numbers":** Paytm P&L parser; DP charges / holdings / Upstox +
+Angel ledgers / Angel P&L statement; reconciliation screen; MTF Report + Contract Note; `/trades`
+pagination; short-sell modelling. **v4.0:** sector analytics + Live Desk (see §8.0).
+
+---
+
 ## 2. Current state — verified 2026-09-03 (v3.7.1 PUBLISHED, mirrored, installed clean on a non-build machine)
 
 **v3.7.1 "Review & Discipline" IS LIVE (owner-confirmed 2026-09-03):** published, `releases/latest`
@@ -112,7 +170,7 @@ failure note. Migrations **0055–0058**.
   no open release actions.**
 - **No winget PR while microsoft/winget-pkgs #421585 is open.**
 
-**NEXT: v3.8.0 "Trust the import" → v3.9.0 "Trust the numbers" — PLAN APPROVED 2026-09-03, NOT YET IN BUILD.**
+**NEXT: v3.8.0 "Trust the import" → v3.9.0 "Trust the numbers" — PLAN APPROVED 2026-09-03, NOT YET IN BUILD.** *(Superseded 2026-09-04 — v3.8.0 is BUILT and in audit; see the block above.)*
 The spec is `docs/V380_BUILD_PLAN.md` (twelve owner decisions taken via pop-up, all recommended
 options; research recorded in `docs/DECISIONS.md` 2026-09-03, eight entries). Live Desk → v4.0.
 Start the next session from `docs/prompts/NEXT_SESSION_V380.md`. Two things it fixes are LIVE on
@@ -1048,6 +1106,7 @@ literal colours, asserted by `tests/skin.test.ts`.
 
 ## 7. Live hazards — check these before a release
 
+✅ **FIXED in v3.8.0 (in audit) — Paytm pairs on ISIN with the charge signature deciding product; owner's book 804 → 793 positions, opening sells 72 → 38 (the SME allotments), migration 0059 re-keys the hashes, and a broker-scoped remove lets the book be re-imported clean.** Original hazard, kept for the record:
 ⚠ **LIVE ON THE OWNER'S BOOK UNTIL v3.8 SHIPS — a Paytm tradebook splits 35 securities in two.**
 Paytm switches its `Script` column from ticker to numeric BSE code mid-window and
 `paytm-tradebook.ts` keys pairing on the raw cell, not ISIN → 17 securities show a phantom open
@@ -1057,6 +1116,7 @@ saying the sale "is already counted in Net P&L" is false. Also 34 same-day round
 as delivery that the file's own charges prove intraday (49 others are genuinely CNC — follow the
 signature, not the calendar). Fix + `dedupHash` migration = v3.8 WS1. DECISIONS 2026-09-03.
 
+✅ **FIXED in v3.8.0 (in audit) — the Client-ID box no longer blocks a re-save (server keeps the stored key), All-accounts save names its account with no default pick, and the uncommitted hydration fix in `broker-connect.tsx` is guarded by `tests/import-hydration-guard.test.ts`.** Original hazard, kept for the record:
 ⚠ **Dhan PIN+TOTP cannot be enrolled from the installed app's form without typing the Client ID.**
 `1112…••••` is a masked placeholder; the field is empty and the save gate is `!apiKey || …`. The
 09-02 live verification ran on the DEV DB, never the desktop one. Workaround: type the full Client
@@ -1064,6 +1124,7 @@ ID in the per-account view (NOT All-accounts — a save there creates a second D
 enrolment = the ghost "Remove PIN + TOTP enrollment" button + a pull succeeding with the token
 empty. Fix = v3.8 WS3.
 
+✅ **FIXED in v3.8.0 (in audit) — `NSIS_HOOK_PREUNINSTALL` names journal + licence and copies them to `Documents\Vyuha-backup-<date>` before any delete; BUT the v3.7.1 → v3.8.0 upgrade runs the old unguarded uninstaller once, so the release note says "leave the box unticked".** Original hazard, kept for the record:
 ⚠ **The NSIS "Delete the application data" checkbox appears mid-upgrade and wiped the owner's DB
 and licence key.** Keys are recoverable in full from `license-ledger.jsonl`
 (`scripts/license-list.mjs <keyId> --full`) — copy back, never re-mint, never revoke. Three docs
@@ -1136,6 +1197,34 @@ why selling stopped.
 Sections 8.1–8.5 were **recovered from the two build-session transcripts** (2026-08-05 → 08-13)
 and exist nowhere else in the repo. Claims marked *(verified)* were re-checked against the code
 on 2026-08-14; the rest are as recorded in conversation.
+
+### 8.0 Next releases — v3.9.0 "Trust the numbers" and the v4.0 reminder (added 2026-09-04)
+
+Deferred OUT of v3.8.0 by the plan (`docs/V380_BUILD_PLAN.md` §2) and the 2026-09-04 rulings:
+
+- **Broker-truth reconciliation screen** — broker ₹X · Vyuha ₹Y · Δ per FY and per scrip with
+  reasons (unpriced sales, product differences, charges the file omits). Needs the **Paytm
+  `Realized P&L Detail` parser** (sheet 2 of the `.xls`; 918 rows on the owner's file) and wires in
+  the Dhan Realised P&L parser v3.8 shipped.
+- **Parsers not built:** Dhan DP charges (`.xls`), demat holdings, Upstox ledger, Angel One ledger
+  and P&L statement; **Dhan MTF Report + Contract Note** (the only Dhan sources with fill times and
+  an F&O instrument type — the owner's one futures trade, FUT WIPRO 28 Apr 2026, surfaces there).
+- **`/trades` server pagination** — its own change with its own before/after proof: total order
+  `(sell_date, created_at, id)`; measure `taxByFy` last-paisa movement, harvest lot status flips and
+  holding-clock top-15 membership on the real and perf books; state the `created_at` batch-tie fact.
+- **Short-sell and cross-exchange modelling** in `pairSymbolLegs` (covered short vs opening sell).
+- **Floating search assistant** (draggable, persists `vyuha-search-panel {v:1,x,y,open}`, stays
+  open across navigation); audit log + ledger join the index; Search v1 hardening from the owner's
+  own use.
+- **v3.8 fix-wave carry-overs:** the one remaining UTC-today site (`trades-client.tsx:92`); the 5
+  size indices absent from `nse-index-map.json` with no recorded reason (owner question at v4.0).
+
+**v4.0 — Live Desk + sector analytics. REMIND THE OWNER when v4.0 planning opens:** ask via pop-up
+for his TRADE-SENTINAL and Chartink Atlas sector/industry/index files (read those projects only,
+never write) for the sector-mapping / deeper-analysis feature, plus the position-sizing calculator
+and the tweaks he said he would share. The v3.8 sector taxonomy is the seed (data layer only —
+attribution needs cohort prices Vyuha does not store, which would reopen the egress question
+PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUHA_KEY_ARCHIVE_DIR`.
 
 ### 8.1 Blocking the sale — the owner's stated top priority
 

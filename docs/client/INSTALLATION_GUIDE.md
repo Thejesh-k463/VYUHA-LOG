@@ -139,6 +139,12 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
+**Upgrading from v3.7.1 to v3.8.0 — one thing to know.** The installer runs the *previous*
+version's uninstaller once before it installs, and the v3.7.1 uninstaller has no backup step of
+its own. When its "Delete the application data" checkbox appears, **leave it UNTICKED** and
+continue. From v3.8.0 onward the uninstaller protects your data as described below. If you want
+a belt-and-braces copy first, export a backup from Backup & Restore inside the app.
+
 **Uninstalling.** The uninstaller offers a "Delete the application data" checkbox — at
 uninstall, and mid-upgrade if you choose to uninstall the old version first. Before it runs,
 Vyuha copies your journal database and licence key (both live in `vyuha.sqlite`) plus your
