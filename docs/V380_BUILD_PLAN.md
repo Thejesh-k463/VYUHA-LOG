@@ -252,7 +252,11 @@ the mode label string. Perf: the enriched snapshot must not move the dashboard; 
   source with either); the futures path finally exercised if the owner's one trade surfaces.
 - **Short-sell and cross-exchange modelling** in `pairSymbolLegs`.
 - **Search v1 hardening** from v3.8 telemetry-free feedback: the owner's own use.
-- Live Desk → **v4.0**.
+- Live Desk → **v4.0**. **KEEP ADAPTABLE (owner, 2026-09-03): v4.0 absorbs a sector-mapping /
+  deeper-analysis feature built from the owner's TRADE-SENTINAL and Chartink Atlas files (read
+  those projects only, never write), plus a position-sizing calculator and tweaks he will share
+  when v4.0 planning opens. REMIND HIM at that point and ask for the files via the pop-up. The v3.8
+  Sentinel sector CSV copy (WS4) is the one-time seed, not that feature.**
 
 ---
 

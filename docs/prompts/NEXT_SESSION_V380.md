@@ -42,6 +42,10 @@ true — no new egress), and the `release` skill start to finish; update the cli
 every release and hand me the WDSI details unprompted. Present features' performance enhanced,
 never disturbed — this all feeds the GLOBAL LAUNCH.
 
+Standing reminder (raise it once, early): v4.0 Live Desk will absorb a sector-mapping feature
+from my TRADE-SENTINAL / Chartink Atlas files plus a position-sizing calculator and tweaks I will
+share — keep the plan adaptable; do not fold it into v3.8.
+
 Ask me decisions in batches through the pop-up, options offered, your recommendation first
 and marked. Model: Opus 5 for the build; nudge me to Fable only if a specific problem defeats
 Opus across two distinct approaches or a money finding is contested.
