@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import * as schema from "./schema";
+import { runDataFixes } from "./data-fixes";
 
 // Resolve <project>/data/vyuha.sqlite and ensure the directory exists.
 const dataDir = path.join(process.cwd(), "data");
@@ -46,6 +47,18 @@ const sqlite =
       /* another connection got there first — the file is already in WAL */
     }
     conn.pragma("foreign_keys = ON");
+    // One-shot row rewrites SQL cannot express (lib/db/data-fixes.ts). Runs
+    // here so the desktop shell — which migrates from a plain .mjs that cannot
+    // import TypeScript — gets them on the connection it actually serves from.
+    // Idempotent, and a silent no-op until migration 0059 has created the
+    // ledger. A failure is logged, not thrown: the marker is written in the
+    // fix's own transaction, so a failed fix simply runs again next open, and
+    // the journal must still open.
+    try {
+      runDataFixes(conn);
+    } catch (e) {
+      console.warn("[vyuha] data fixes skipped:", e instanceof Error ? e.message : e);
+    }
     return conn;
   })();
 

@@ -135,6 +135,32 @@ describe("session review — cutoff", () => {
     const r = reviewSession(plan({ cutoffTime: "14:30" }), [trade({ entryTime: null })]);
     expect(r.afterCutoff).toBe(0);
   });
+
+  it("reports untimed trades as uncovered rather than compliant", () => {
+    const r = reviewSession(plan({ cutoffTime: "14:30" }), [
+      trade({ id: 1, entryTime: "10:00" }),
+      trade({ id: 2, entryTime: "15:00" }),
+      trade({ id: 3, entryTime: null }),
+    ]);
+    expect(r.afterCutoff).toBe(1);
+    expect(r.untimed).toBe(1);
+    expect(r.coverage).toBe("1 of 3 trades have no entry time — cutoff check covers 2.");
+    expect(r.findings).toContain(r.coverage);
+  });
+
+  it("never claims full compliance while a trade is untimed", () => {
+    const r = reviewSession(plan({ cutoffTime: "14:30" }), [trade({ id: 1, entryTime: "10:00" }), trade({ id: 2, entryTime: null })]);
+    expect(r.afterCutoff).toBe(0);
+    expect(r.untimed).toBe(1);
+    expect(r.findings).toEqual(["1 of 2 trades have no entry time — cutoff check covers 1."]);
+    expect(r.findings.join(" ")).not.toMatch(/stayed inside every measurable part/);
+  });
+
+  it("reports no coverage gap when every trade is timed or no cutoff is planned", () => {
+    expect(reviewSession(plan({ cutoffTime: "14:30" }), [trade({ entryTime: "10:00" })]).coverage).toBeNull();
+    expect(reviewSession(plan(), [trade({ entryTime: null })]).untimed).toBe(1);
+    expect(reviewSession(plan(), [trade({ entryTime: null })]).coverage).toBeNull();
+  });
 });
 
 describe("session review — budgets", () => {

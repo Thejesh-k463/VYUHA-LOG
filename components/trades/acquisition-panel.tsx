@@ -22,6 +22,17 @@ export interface PendingBasisTrade {
   suggestedPrice: number | null;
 }
 
+/**
+ * What an unpriced sale does to Net P&L, said plainly. Invariant 6: a sale
+ * with no cost books no gain — its Net P&L is minus its charges and nothing
+ * else. The previous copy claimed the sale itself was "already counted",
+ * which was false (only the charges are) and sent readers to reconcile a
+ * number that could not reconcile. Pinned verbatim in
+ * tests/acquisition-panel-copy.test.ts.
+ */
+export const PENDING_BASIS_NOTE =
+  "Only the charges on these sales are in your Net P&L so far — the proceeds are not, because with no cost there is no gain to book. Set the cost below (the IPO issue price, or what you actually paid) and each sale's gain lands in Net P&L.";
+
 const KINDS: { value: string; label: string; hint: string }[] = [
   { value: "ipo", label: "IPO allotment", hint: "Allotted in a public issue — basis is the issue price you paid" },
   { value: "bonus", label: "Bonus / split", hint: "Credited by a corporate action" },
@@ -149,9 +160,9 @@ export function AcquisitionPanel({ trades }: { trades: PendingBasisTrade[] }) {
           cost for them — very often an <b>IPO allotment</b>, which is credited without ever appearing as a
           buy. {inr(proceeds, { decimals: 0 })} of proceeds is involved.
           <br />
-          The sale and its charges are already counted in your cash and Net P&amp;L. But until you set a
-          cost, these are held <b>out of win rate, expectancy, profit factor and Return on Margin</b> —
-          with no purchase price the arithmetic would read them as 100% winners.
+          {PENDING_BASIS_NOTE} Until then these are held{" "}
+          <b>out of win rate, expectancy, profit factor and Return on Margin</b> — with no purchase price
+          the arithmetic would read them as 100% winners.
         </p>
       </CardHeader>
       <CardContent className="space-y-2">

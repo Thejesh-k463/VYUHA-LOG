@@ -51,6 +51,13 @@ describe("exitClock", () => {
     expect(r.bands.find((b) => b.key === "Closing hour")!.count).toBe(1);
   });
 
+  it("follows cockpit.ts into the pre-open band for a 09:07 exit", () => {
+    const r = exitClock([t({ exitTime: "09:07:30", netPnl: 10 })]);
+    expect(r.offHours).toBe(0);
+    expect(r.bands.map((b) => b.key)).toEqual(["Pre-open"]);
+    expect(r.bands[0].count).toBe(1);
+  });
+
   it("counts trades with no exit time instead of guessing one", () => {
     const r = exitClock([t({ exitTime: "09:20" }), t({ exitTime: null }), t({ exitTime: "" })]);
     expect(r.withTime).toBe(1);

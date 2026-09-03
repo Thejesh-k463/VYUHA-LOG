@@ -83,7 +83,7 @@ export function ExitsTab({
                 Same session bands as the entry-side chart, so the two are directly comparable.
                 {clock.offHours > 0 && (
                   <span className="text-warning">
-                    {" "}{clock.offHours} timed exit{clock.offHours === 1 ? "" : "s"} fall outside 09:15–15:30 and belong to no
+                    {" "}{clock.offHours} timed exit{clock.offHours === 1 ? "" : "s"} fall outside 09:00–15:30 and belong to no
                     session — excluded from the bands, worth checking the import.
                   </span>
                 )}

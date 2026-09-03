@@ -4,6 +4,10 @@ export { dropzoneHint, brokersWithNativeParser } from "./registry-meta";
 import type { ParseContext, ParsedFile } from "./types";
 import { detectDhanCsv, parseDhanCsv } from "./parsers/dhan-csv";
 import { detectDhanGtr, parseDhanGtr } from "./parsers/dhan-gtr";
+import { detectDhanRealisedPnl, parseDhanRealisedPnl } from "./parsers/dhan-realised-pnl";
+import {
+  detectDhanDividend, detectDhanLedgerFile, parseDhanDividendSource, parseDhanLedgerSource,
+} from "./parsers/dhan-ledger";
 import { detectGrowwXlsx, parseGrowwXlsx } from "./parsers/groww-xlsx";
 import { detectGrowwOrders, parseGrowwOrders } from "./parsers/groww-orders";
 import { detectZerodha, parseZerodha } from "./parsers/zerodha";
@@ -46,6 +50,9 @@ export interface DetectedParser {
 const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | ParsedFile> = {
   "dhan-gtr": parseDhanGtr,
   "dhan-csv": parseDhanCsv,
+  "dhan-realised-pnl": parseDhanRealisedPnl,
+  "dhan-ledger": parseDhanLedgerSource,
+  "dhan-dividend": parseDhanDividendSource,
   "groww-xlsx": parseGrowwXlsx,
   "groww-orders": parseGrowwOrders,
   zerodha: parseZerodha,
@@ -68,6 +75,9 @@ if (Object.keys(PARSERS).length !== IMPORT_SOURCES.length) {
 const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "dhan-gtr": detectDhanGtr,
   "dhan-csv": detectDhanCsv,
+  "dhan-realised-pnl": detectDhanRealisedPnl,
+  "dhan-ledger": detectDhanLedgerFile,
+  "dhan-dividend": detectDhanDividend,
   "groww-xlsx": detectGrowwXlsx,
   "groww-orders": detectGrowwOrders,
   zerodha: detectZerodha,

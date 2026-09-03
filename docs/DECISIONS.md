@@ -2264,3 +2264,130 @@ unique tiebreaker column (then SQL filters become safe everywhere).
 **Invalidated if:** the owner re-cuts the slicing.
 
 <!-- First entry goes here. -->
+
+## 2026-09-04 — v3.8 recon corrections and eight owner rulings before the first line of code
+
+**Context:** seven read-only agents verified `docs/V380_BUILD_PLAN.md` §0/§1 claim by claim against
+the v3.7.1 tree before the build. Most held; the ones that did not are listed in the plan's new §4.
+
+**Measured:** the Paytm `dedupHash` migration as specified is near-void — commit already resolves
+codes→tickers via ISIN before hashing (`lib/import/commit.ts:316+`), so an unsplit position's hash
+does not change, and a merged position is a new row no hash can map two phantoms onto. The plan's
+`todayInIst` exists nowhere (the helper is `todayIstIso`, `lib/queries/challans.ts:117`); the UTC
+`todayIso` has 11 consumers, 5 in `commit.ts` pricing. Sentinel's
+`classification-reconciliation-multisource.csv`: 2,305 rows — source 1,481 SCREENER_MAPPING+NSE_TAXONOMY,
+747 BSE_SHAREHOLDING+NSE_TAXONOMY, 1 NIFTY, 76 unmatched. The "three-row rule" was defined nowhere.
+
+**Decision (owner, pop-up, 2026-09-04):** (1) three-row rule = keep every row, replace names/UCC/PAN
+with fixed tokens, ≥3 real rows per distinct case; (2) 0059 re-keys Paytm hashes ISIN-first AND WS1
+ships a broker-scoped "remove this broker's imported rows" (trash snapshot, audit) so the owner's book
+is re-imported clean; (3) the sector seed waits for the owner's own Sentinel sector/industry/index
+files rather than the one CSV; (4) migrate ALL eleven `todayIso` consumers to IST now, gated by a
+before/after charge comparison on the owner's book (my recommendation was IST-copies-only — overruled);
+(5) load suite = dedicated `load` CI job, required green; (6) `getWriteAccountId` refuses explicit and
+implied 0 with a typed error; (7) Dhan Client-ID "hydration" = relaxed gate + server-side key carry-over,
+no plaintext leaves the server; (8) wave plan approved, W0 starts.
+
+**Why not the obvious thing:** a SQL migration cannot SHA-1, so 0059 is a marker table plus a TS
+post-migrate runner — the first "data fix" mechanism in the repo; a broker-scoped remove was scoped
+in because hand-deleting ~52 phantom positions is the error-prone path on a live book.
+
+**Invalidated if:** the owner's re-import after WS1 still shows split securities (then the label rule,
+not the hash, is wrong), or the todayIso comparison moves any charge on the owner's book by more than
+the midnight-UTC window explains.
+
+## 2026-09-04 — Wave 0 baseline, the owner's 29 broker files inventoried, four more rulings
+
+**Context:** v3.8 W0. The owner supplied every broker export he has (29 files, "BROKER FILES FOR
+TESTING", read-only, never copied into the repo) plus Sentinel's sector/industry/index files and his
+weekly watchlist workbook. Three agents read every sheet of every file and ran the repo's own
+`buildContext` + `rankParsers` on each.
+
+**Measured:** `npm run verify` EXIT 0 (211 files / 3,434 tests; BUILD_ID `r2dBohbj59BbphovX5n1x`).
+Perf sweep #1 on the 25k seed: 43 routes × 3 rounds, 129 visits, overall median 949 ms, 0 console
+errors; `/trades` 2041/2391/2391 (median/p95/max) is the only breach (pre-existing, v3.7.1 read
+2054/2173); `/lenses` 984, `/review` 1135. Detection: Paytm tradebook 0.95, Zerodha 1.00 ×4, Groww
+0.95 ×2, Upstox 0.95/0.75, Angel Tax P&L 0.95, PDFs 0.90. **Two misclaims of the AGENTS.md class:**
+`dhan-csv` claims the Dhan Ledger CSV and the dividend CSV at 0.30 on `/dhan/i` in the filename
+alone (`dhan-ledger` is not registered; its own detector scores 0.9 on the real header), and
+`zerodha` claims Angel One's `Trades_History` at 0.50 on `Order ID`+`Trade ID` with no Zerodha
+marker in the file. Uncovered: Dhan Realised P&L `.xls` (segment summary r7 with 13 charge columns ×
+4 segments; per-segment detail blocks; NO dates, NO product; 1,028 merged cells; money as text),
+Dhan P&L `.xlsx` (same table as `dhan-csv`), Dhan DP charges `.xls`, dividend CSV, holdings, Upstox
+ledger, Angel ledger/P&L statement/tradebook, Paytm P&L `.xls` (three stacked tables incl. `Realized
+P&L Detail` 918 rows, realised 21,371,252.64, no charges). The owner has exactly ONE futures trade
+(FUT WIPRO 28 Apr 2026, Dhan account 1); everything else in F&O is options. Dhan account-2 ledger
+opens with a 1970-01-01 OPENING BALANCE row. The Paytm "TIMEPERIOD CHANGE" pair is the SAME window
+(01-Apr→28-Aug-2026) in two report types; the Zerodha pair is FY24-25 (632 exits) + FY25-26 (59
+exits) with one NIFTY option entered 2025-03-28 and exited in April.
+Sector files: `classification-reconciliation-multisource.csv` = 2,305 rows, 4-level NSE taxonomy
+(12 macro / 23 sector / 59 industry / 185 basic, 1:1 `taxonomy_code`), 2,302/2,305 ISINs in our
+5,671 snapshot, 0 symbol disagreements; 59 index CSVs (ISIN, no date, no weight; 8 casing forks in
+`Industry`; the 69 symbols absent from `nse-index-map.json` are all in the 5 size indices the build
+script excludes by design); Screener sheet = flat 190 industries, 634/2,344 cells are BSE codes.
+Watchlist workbook: 25 sheets, 0 formulas, Python-computed; best journal ideas in order: stock-vs-
+own-cohort attribution, cohort-minus-index gap, end-market axis with rank change, location/base
+state, self-published staleness ledger.
+
+**Decision (owner, pop-up):** (9) sector work in v3.8 = DATA LAYER ONLY — bundle the 4-level
+taxonomy keyed by ISIN with confidence + provenance (2,229 classified rows), sector fallback chain
+(user instruments → taxonomy → index map), normalise the casing forks, expose the confidence tier
+where sector concentration is shown; analytics → v4.0 Live Desk. (10) parsers in v3.8 beyond Dhan
+Realised P&L: register `dhan-ledger`, `zerodha` must see a Zerodha fingerprint, Angel One tradebook
+parser, Dhan P&L xlsx via the `dhan-csv` table reader, Dhan dividend CSV into the ledger; DP charges,
+holdings, Upstox/Angel ledgers, Angel P&L statement → v3.9. (11) Dhan golden book: GTR is the book,
+Realised P&L's four segment rows are the reference. (12) FY bucketing: EXIT date owns the FY
+(matches Zerodha's own tax P&L); re-import of both Zerodha files must yield 691 exits.
+
+**Why not the obvious thing:** shipping an attribution screen in v3.8 needs sector cohort prices
+Vyuha does not store and would reopen the egress question PRIVACY.md closes.
+
+**Invalidated if:** the owner's GTR exports (requested) do not cover the Realised P&L windows.
+
+## 2026-09-04 — v3.8 Wave 1/2a: what the build measured that the plan did not know
+
+**Context:** six agents on disjoint file sets (migrations, Paytm parser, Dhan connect server, Dhan/Angel
+parsers, symbol+sector data layer, pre-open band); every change proven red by reverting.
+
+**Measured:**
+- **Paytm, owner's 7,544-row book, after ISIN pairing + signature split:** positions 793 (was 804),
+  closed 693, open 62, opening sells **38** (= the SME allotments; was 72), proceeds ₹2,75,35,637.20,
+  closed net ₹1,61,44,747.01, intraday positions 185, relabelled securities 35, Σ charges 1,249,096.80
+  vs the file's 1,249,096.81 (its own 4-dp component rounding). `inferProduct`'s ±35% tolerance
+  means "mixed" covers only 9–56% delivery — a 60/40 day still reads as plain delivery (left as is).
+  "No ISIN in two positions with the same product on overlapping dates" is NOT an invariant: FIFO
+  ladders overlap 922 times on a healthy book; the split-book symptom is an open lot beside a later
+  opening sell in the same security.
+- **0060 FTS:** `content='trades'` would index pre-existing rows as raw JSON on `'rebuild'` while the
+  triggers deleted the flattened text → stale tokens. The content table is therefore a VIEW
+  (`trades_fts_src`) holding the one flattening; `json_each` is unavailable inside a view at rebuild
+  on SQLite 3.53.2 ("no such table: main.json_each") so the flatten is a `replace()` chain guarded by
+  `json_valid`. Delete/update use BEFORE triggers (the view can only be read while the row exists).
+  Each trigger is one `--> statement-breakpoint` chunk because better-sqlite3 `prepare()` takes one
+  statement and a `BEGIN…END` body is one.
+- **0059 data fix:** `lib/db/index.ts` runs `runDataFixes` on open, and `migrate.ts`/`temp-db.ts`
+  call it again AFTER migrate because on those paths the connection opens before 0059 exists.
+  Zerodha hash pinned `b873f574cddcd800c917a54997f3666b3c4a626f`. Pre-existing duplicate Paytm
+  rows are counted, never merged.
+- **Snapshot:** 5,691 ISINs (NSE 2,568 + SME 568 + BSE-only 2,555; 4,994 BSE codes), tuple rows
+  `[SYMBOL, NAME, BOARD, BSE_CODE, SERIES]` = 427,372 B raw / 134,807 gz (object-per-row 552 KB,
+  parallel maps 745 KB); before 142,470 / 49,853. JSON.parse 1.24 → 2.19 ms. `sector-map.json`
+  162,515 B / 40,124 gz, normalised (185-key label table + `[sym,bse,code,conf,src]` rows; flat
+  would be 544 KB); 2,224 of its 2,229 ISINs are in the snapshot. **Twelve** sector aliases, not
+  eight. **MARC ≠ TECHNOCRAT**: MARC = Marc Technocrats (NSE Emerge, INE0TD401015), TECHNOCRAT =
+  Technocrats Plasma Systems (BSE 544877, INE19QK01022) — the plan's "TECHNOCRAT = MARC" was wrong.
+  Today's SME list has 118 `ST` rows, not 125. The 5 size indices' absence from `nse-index-map.json`
+  has NO recorded reason and no exclusion code — the 08-06 map was built from a 54-file folder.
+- **Dhan:** the Realised P&L file never says "Dhan"; the content marker is the legal name "Raise
+  Securities Private Limited". Its own summary does not tie to the paisa (Gross − Total ≠ Net by
+  3–14 p). The GTR files (both accounts) detect at 0.98. Angel `Trades_History` names no broker
+  anywhere — its fingerprint is the `TradesAndCharges` sheet + `Scrip/Contract` + `IPFT Charges` +
+  `Order ID` + `Trade ID`; `zerodha` now needs `Auction` / `Order Execution Time` / "Tradebook for" /
+  a name before it awards the tradebook score. `totpAckVersion` was already stamped by `packAuth`.
+  Retry-on-401 is realised as overwrite-on-mint (DB via `onMinted`, memory via `creds.accessToken`).
+
+**Decision:** all of the above shipped as measured; the size-index question goes to the owner at the
+v4.0 planning pop-up, not v3.8.
+
+**Invalidated if:** a Paytm export ever carries a product column (then the signature is a cross-check,
+not the source), or SQLite gains `json_each` inside views (then the replace chain can go).

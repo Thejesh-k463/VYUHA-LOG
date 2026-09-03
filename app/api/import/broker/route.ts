@@ -5,7 +5,7 @@ import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
-import { dhanImportSource, dhanTotpEnrolled, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
@@ -106,6 +106,39 @@ type PackedAuth =
   | { ok: false; message: string };
 
 const str = (v: unknown) => String(v ?? "").trim();
+
+/**
+ * The stored auth_json blob, read in ONE place with three honest states.
+ *
+ * "unreadable" covers both a vault that cannot decrypt the row and a blob that
+ * decrypts to something that is not a JSON object. Every reader used to hide
+ * that case behind a bare `catch {}` and fall back to pasted-token mode — so a
+ * user whose PIN+TOTP enrolment had rotted saw pulls quietly start failing on
+ * the 24-hour token, with no hint that the enrolment was the thing broken.
+ * Now GET reports it (`authUnreadable`) and a pull refuses with the same flag.
+ */
+type AuthBlobRead =
+  | { state: "none" }
+  | { state: "ok"; value: Record<string, unknown> }
+  | { state: "unreadable"; reason: string };
+
+function readAuthBlob(stored: string | null | undefined): AuthBlobRead {
+  if (stored == null || stored === "") return { state: "none" };
+  const read = readSecret(stored);
+  if (!read.ok) return { state: "unreadable", reason: read.reason };
+  if (!read.value) return { state: "none" };
+  try {
+    const v = JSON.parse(read.value) as unknown;
+    if (v && typeof v === "object" && !Array.isArray(v)) return { state: "ok", value: v as Record<string, unknown> };
+    return { state: "unreadable", reason: "the stored auth blob is not a JSON object" };
+  } catch {
+    return { state: "unreadable", reason: "the stored auth blob is not valid JSON" };
+  }
+}
+
+/** The typed warning the GET projection carries (`authWarning`) and every
+ *  pull refusal repeats when the stored enrolment cannot be read. */
+const AUTH_UNREADABLE_WARNING = "enrolment stored but unreadable — remove the enrolment and re-enrol";
 
 /**
  * Per-broker packing of the auth_json extras (OpenAlgo has its own branch in
@@ -216,16 +249,40 @@ export async function GET() {
       // Decrypt only to mask — the plaintext never leaves this handler. An
       // unreadable secret masks as bullets rather than leaking ciphertext.
       const key = readSecret(r.apiKey);
-      const authPeek = readSecret(r.authJson);
+      const auth = readAuthBlob(r.authJson);
+      const a = auth.state === "ok" ? auth.value : null;
+      // The stored token is decoded ONLY for its own `exp` claim — the value
+      // itself never leaves this handler. An encrypted empty token (token-less
+      // brokers) does not read back, which is correctly "no token".
+      const tokenPeek = readSecret(r.accessToken);
+      const tokenPlain = tokenPeek.ok ? tokenPeek.value : "";
+      const totpMode =
+        a != null &&
+        (r.broker === "dhan"
+          ? dhanTotpEnrolled(a as { pin?: string; totpSecret?: string; totpAckVersion?: number })
+          : r.broker === "angelone"
+            ? Boolean(a.pin && a.totpSecret)
+            : false);
       const out: Record<string, unknown> = {
         broker: r.broker,
         accountId: r.accountId,
         accountName: r.accountName,
         apiKeyMasked: key.ok && key.value ? mask(key.value) : "••••",
-        // Whether an auth_json blob is stored (PIN+TOTP, api_secret, OpenAlgo
-        // config) — a boolean only, so the UI can offer "remove enrollment"
-        // without the contents ever leaving this handler.
-        hasAuth: authPeek.ok && Boolean(authPeek.value),
+        // Whether a READABLE auth_json blob is stored (PIN+TOTP, api_secret,
+        // OpenAlgo config) — a boolean only, so the UI can offer "remove
+        // enrollment" without the contents ever leaving this handler. A blob
+        // that is stored but cannot be read is reported as exactly that
+        // (hasAuth false + authUnreadable true), never as a working enrolment.
+        hasAuth: auth.state === "ok",
+        authUnreadable: auth.state === "unreadable",
+        authWarning: auth.state === "unreadable" ? AUTH_UNREADABLE_WARNING : null,
+        // CONTRACT for the mode label: "totp" = the enrolment mints its own
+        // token; "token" = a pasted/cached token is stored; "none" = nothing.
+        authMode: totpMode ? "totp" : tokenPlain ? "token" : "none",
+        // The stored token's own `exp` (seconds or milliseconds, normalised),
+        // as ISO — so the UI can say when a pasted token dies; null when there
+        // is no token or it is not a decodable JWT.
+        tokenExpiresAt: tokenPlain ? jwtExpiresAt(tokenPlain) : null,
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
       };
@@ -233,18 +290,11 @@ export async function GET() {
       // they ride encrypted in auth_json but the UI must show them back, or a
       // reloaded page renders the default host over a saved one and an
       // innocent "Update connection" silently repoints the pull at a
-      // different OpenAlgo instance (found live, 2026-08-26).
-      if (isOpenAlgoConnectionId(r.broker)) {
-        const auth = readSecret(r.authJson);
-        if (auth.ok && auth.value) {
-          try {
-            const a = JSON.parse(auth.value) as { host?: string; underlyingBroker?: string };
-            out.openalgoHost = a.host ?? null;
-            out.openalgoUnderlyingBroker = a.underlyingBroker ?? null;
-          } catch {
-            /* unreadable blob — the UI keeps its defaults */
-          }
-        }
+      // different OpenAlgo instance (found live, 2026-08-26). An unreadable
+      // blob is reported through authUnreadable above; the UI keeps defaults.
+      if (isOpenAlgoConnectionId(r.broker) && a) {
+        out.openalgoHost = (a.host as string | undefined) ?? null;
+        out.openalgoUnderlyingBroker = (a.underlyingBroker as string | undefined) ?? null;
       }
       return out;
     }),
@@ -364,7 +414,21 @@ export async function POST(req: Request) {
       tokenOptional = Boolean(packed.tokenOptional && authPlain);
     }
 
-    if (!apiKey || (spec.needsToken && !tokenOptional && !accessToken)) {
+    // The row this save would upsert, if any — read once, used twice below:
+    // to carry over the stored Client ID / API key when the box was left
+    // empty, and to carry over the stored auth extras when none were sent.
+    const existing = db
+      .select({ apiKey: brokerConnections.apiKey, authJson: brokerConnections.authJson })
+      .from(brokerConnections)
+      .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
+      .all()[0];
+
+    // An EMPTY key with a saved row means "keep the stored one" (owner ruling
+    // 2026-09-04): the client clears its key box after every save and GET
+    // returns only a mask, so retyping the Client ID just to refresh a token
+    // was the only way to re-save — and a typo there silently rebound the
+    // connection to another client. A non-empty key still replaces it.
+    if ((!apiKey && !existing) || (spec.needsToken && !tokenOptional && !accessToken)) {
       const message =
         broker === "dhan"
           ? "Client ID plus either a pasted access token or PIN + TOTP secret are required."
@@ -375,10 +439,11 @@ export async function POST(req: Request) {
     }
 
     // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather
-    // than quietly storing a live credential in plaintext.
+    // than quietly storing a live credential in plaintext. A kept key is the
+    // stored CIPHERTEXT carried over byte-for-byte — never decrypted here.
     let encKey: string, encToken: string, encAuth: string | null;
     try {
-      encKey = encryptSecret(apiKey);
+      encKey = apiKey ? encryptSecret(apiKey) : existing!.apiKey;
       encToken = encryptSecret(accessToken || "");
       encAuth = authPlain ? encryptSecret(authPlain) : null;
     } catch (e) {
@@ -390,14 +455,7 @@ export async function POST(req: Request) {
     // see (the client clears its fields after save). Absent extras now mean
     // "keep what is stored" — the stored ciphertext is carried over untouched —
     // and removal is only ever the explicit `clearAuth: true`.
-    if (!authPlain && !clearAuth) {
-      const existing = db
-        .select({ authJson: brokerConnections.authJson })
-        .from(brokerConnections)
-        .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, broker)))
-        .all()[0];
-      if (existing?.authJson) encAuth = existing.authJson;
-    }
+    if (!authPlain && !clearAuth && existing?.authJson) encAuth = existing.authJson;
     db.insert(brokerConnections)
       .values({ accountId, broker, apiKey: encKey, accessToken: encToken, authJson: encAuth })
       .onConflictDoUpdate({
@@ -408,9 +466,9 @@ export async function POST(req: Request) {
     recordAudit({
       entity: "settings",
       action: "update",
-      summary: `Broker connection saved: ${broker} (key ${mask(apiKey)})`,
+      summary: `Broker connection saved: ${broker} (key ${apiKey ? mask(apiKey) : "kept"})`,
       before: null,
-      after: { broker, apiKey: mask(apiKey) }, // never audit the token
+      after: { broker, apiKey: apiKey ? mask(apiKey) : "kept" }, // never audit the token
     });
     return NextResponse.json({ ok: true, message: `Connection saved. ${spec.note}` });
   }
@@ -466,8 +524,8 @@ export async function POST(req: Request) {
     // empty token when their auth_json extras replace it — so for them, token
     // readability is only load-bearing when there is NO auth blob to mint or
     // exchange from.
-    const authBlobRead = readSecret(conn.authJson);
-    const hasAuthBlob = authBlobRead.ok && Boolean(authBlobRead.value);
+    const authBlob = readAuthBlob(conn.authJson);
+    const hasAuthBlob = authBlob.state === "ok";
     if (!keyRead.ok || (needsToken && !tokenRead.ok && !hasAuthBlob)) {
       const reason = !keyRead.ok ? (keyRead as { reason: string }).reason : (tokenRead as { reason: string }).reason;
       const keyLabel = specOf(broker)?.keyLabel ?? "API key";
@@ -485,14 +543,17 @@ export async function POST(req: Request) {
     try {
       if (isOpenAlgoConnectionId(broker)) {
         // host + underlyingBroker live in auth_json as one encrypted blob.
-        const authRead = readSecret(conn.authJson);
-        if (!authRead.ok || !authRead.value) {
+        if (authBlob.state !== "ok") {
           return NextResponse.json(
-            { ok: false, message: "The saved OpenAlgo settings cannot be read — re-enter the API key, host and broker." },
+            {
+              ok: false,
+              authUnreadable: authBlob.state === "unreadable",
+              message: "The saved OpenAlgo settings cannot be read — re-enter the API key, host and broker.",
+            },
             { status: 400 },
           );
         }
-        const auth = JSON.parse(authRead.value) as { host: string; underlyingBroker: Broker };
+        const auth = authBlob.value as { host: string; underlyingBroker: Broker };
         openAlgoBroker = auth.underlyingBroker;
         const creds = { apiKey: keyRead.value, host: auth.host, broker: openAlgoBroker };
         const today = new Date().toISOString().slice(0, 10);
@@ -505,14 +566,17 @@ export async function POST(req: Request) {
         parsed = openAlgoToParsedFile(openAlgoBroker, result);
       } else if (broker === "angelone") {
         // The extras live in auth_json as one encrypted JSON blob.
-        const authRead = readSecret(conn.authJson);
-        if (!authRead.ok || !authRead.value) {
+        if (authBlob.state !== "ok") {
           return NextResponse.json(
-            { ok: false, message: "The saved Angel One credentials cannot be read — re-enter the API key, client code, PIN and TOTP secret." },
+            {
+              ok: false,
+              authUnreadable: authBlob.state === "unreadable",
+              message: "The saved Angel One credentials cannot be read — re-enter the API key, client code, PIN and TOTP secret.",
+            },
             { status: 400 },
           );
         }
-        const auth = JSON.parse(authRead.value) as { clientCode: string; pin: string; totpSecret: string };
+        const auth = authBlob.value as { clientCode: string; pin: string; totpSecret: string };
         const creds = { apiKey: keyRead.value, clientCode: auth.clientCode, pin: auth.pin, totpSecret: auth.totpSecret };
         const { jwtToken } = await angelOneLogin(creds);
         const today = new Date().toISOString().slice(0, 10);
@@ -526,25 +590,32 @@ export async function POST(req: Request) {
         let pin: string | undefined;
         let totpSecret: string | undefined;
         let legacyUnacked = false;
-        if (hasAuthBlob) {
-          try {
-            const a = JSON.parse((authBlobRead as { value: string }).value) as {
-              pin?: string;
-              totpSecret?: string;
-              totpAckVersion?: number;
-            };
-            // pin + totpSecret feed the mint ONLY when the blob also carries
-            // the recorded consent (totpAckVersion). A legacy-shaped blob —
-            // saved before the server-side consent gate existed — is treated
-            // as NOT enrolled: the pull falls back to the pasted token.
-            if (dhanTotpEnrolled(a)) {
-              pin = a.pin || undefined;
-              totpSecret = a.totpSecret || undefined;
-            } else if (a.pin && a.totpSecret) {
-              legacyUnacked = true;
-            }
-          } catch {
-            /* unreadable blob — the pasted-token fallback below decides */
+        // An enrolment that is STORED but cannot be read is refused outright —
+        // never silently downgraded to pasted-token mode (owner ruling
+        // 2026-09-04). The user asked for unattended minting; a pull that
+        // quietly ran on a 24-hour token instead would fail tomorrow with a
+        // hint pointing at the wrong thing.
+        if (authBlob.state === "unreadable") {
+          return NextResponse.json(
+            {
+              ok: false,
+              authUnreadable: true,
+              message: `Dhan PIN + TOTP ${AUTH_UNREADABLE_WARNING} (${authBlob.reason}). Nothing was pulled — the pasted-token fallback is not used for an enrolment that cannot be read; remove the enrolment or re-save with PIN + TOTP.`,
+            },
+            { status: 400 },
+          );
+        }
+        if (authBlob.state === "ok") {
+          const a = authBlob.value as { pin?: string; totpSecret?: string; totpAckVersion?: number };
+          // pin + totpSecret feed the mint ONLY when the blob also carries
+          // the recorded consent (totpAckVersion). A legacy-shaped blob —
+          // saved before the server-side consent gate existed — is treated
+          // as NOT enrolled: the pull falls back to the pasted token.
+          if (dhanTotpEnrolled(a)) {
+            pin = a.pin || undefined;
+            totpSecret = a.totpSecret || undefined;
+          } else if (a.pin && a.totpSecret) {
+            legacyUnacked = true;
           }
         }
         if (!(pin && totpSecret) && !accessTokenPlain) {
@@ -598,14 +669,24 @@ export async function POST(req: Request) {
         // unattended (SEBI-mandated ~6 AM IST session invalidation).
         let apiSecret: string | undefined;
         let storedKiteUserId: string | undefined;
-        if (hasAuthBlob) {
-          try {
-            const a = JSON.parse((authBlobRead as { value: string }).value) as { apiSecret?: string; kiteUserId?: string };
-            apiSecret = a.apiSecret || undefined;
-            storedKiteUserId = a.kiteUserId || undefined;
-          } catch {
-            /* unreadable blob — raw-paste mode below decides */
-          }
+        // Same rule as Dhan: a stored api_secret blob that cannot be read is
+        // refused, not silently downgraded to raw-paste mode — the user-id
+        // binding lives in that blob too, and skipping it would let a session
+        // for the wrong Zerodha account import into this journal.
+        if (authBlob.state === "unreadable") {
+          return NextResponse.json(
+            {
+              ok: false,
+              authUnreadable: true,
+              message: `Zerodha API secret ${AUTH_UNREADABLE_WARNING} (${authBlob.reason}). Nothing was pulled — remove the stored secret or re-save it.`,
+            },
+            { status: 400 },
+          );
+        }
+        if (authBlob.state === "ok") {
+          const a = authBlob.value as { apiSecret?: string; kiteUserId?: string };
+          apiSecret = a.apiSecret || undefined;
+          storedKiteUserId = a.kiteUserId || undefined;
         }
         let kiteToken = accessTokenPlain;
         const requestToken = String(body.requestToken ?? "").trim();

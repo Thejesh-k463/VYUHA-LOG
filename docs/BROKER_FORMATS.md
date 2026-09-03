@@ -45,6 +45,11 @@ format needs an **in-content fingerprint**. Every file examined has one:
 | Groww Stocks Order History | `Unique Client Code` header — Groww-specific phrasing |
 | Upstox trade report / realised P&L | `UPSTOX SECURITIES PRIVATE LIMITED` in A1 (the legal name), header 11 / 22 rows down |
 | Paytm Money Equity P&L (`.xls`) | section titles `Unrealized P/L Summary (As on …)` / `Realized P/L Summary (From …)` — no parser, mapper |
+| Angel One Trades_History | NO name anywhere. Sheet `TradesAndCharges` + header with `Scrip/Contract`, `IPFT Charges`, `Order ID`, `Trade ID` together — a FORMAT fingerprint (2026-09-04) |
+| Dhan P&L (`.xlsx`) | sheet named `Dhan_P&L` + the twelve-column `Scrip Name … Unrealised P&L %` header |
+| Dhan Realised P&L (`.xls`) | segment-summary header `Segment | Buy Value | … | Net P&L` + the legal name `Raise Securities Private Limited` in the footer (the file never says "Dhan") |
+| Dhan Ledger (CSV) | header `Posting Date, Posting reference, Description, Narration, Credit, Debit, Net Balance` — `Posting reference` is Dhan's phrasing |
+| Dhan Dividend payout (CSV) | header `Date, Scrip Name, Dividend Per Share, Quantity, Dividend Paid` under a `Dividend payout report` title |
 
 ---
 
@@ -173,8 +178,34 @@ Trade Number | Trade Time
     that day (the last one), not spread per fill — e.g. four buys whose STT
     reads 0 / 0 / 0 / 1960.08, where 1960.08 = 0.1% of the day's total buy
     value. Sum per scrip-day before inferring product.
-  - `Trade Time` is empty and `Trade Number` is `0` on every row; `Order
-    Number` is a 16-digit id. Dates are `dd-mm-yyyy` strings.
+  - `Trade Time` is empty exactly on the rows whose `Trade Number` is `0`
+    (1,856 of 7,544 in the 2026 export — every one of them), and carries an
+    `HH:MM:SS` clock on the rest (5,688). The 414-row export of 2026-08-20 was
+    ALL trade-number-0 rows, which is why this used to read "empty on every
+    row". `Order Number` is a 16- or 19-digit id. Dates are `dd-mm-yyyy`.
+  - **`Script` switches label mid-window.** The same security appears as a
+    ticker (`HVAX`) in the early months and as a numeric BSE code from July
+    2026 onward — 35 of the 281 ISINs in the 2026 export were seen under
+    BOTH, and the file is numeric-only from July. Pairing by `Script` split
+    such a security into two books: the ticker's buys were left "open" and
+    the code's sells became "opening sells" with no cost basis.
+  - **Pairing is by ISIN** (2026-09-04): fills group on `ISIN` (plus the
+    stated product), `Script` only when a row has no ISIN. The displayed
+    symbol is the first NON-numeric label seen for that ISIN anywhere in the
+    file, else the code (which commit still resolves via ISIN). ISIN +
+    Exchange was measured and rejected: the same security sold on BSE after
+    being bought on NSE would again be two books (101 opening sells vs 38).
+    The parser reports how many securities it saw under two labels; the
+    import screen repeats it as "N securities appeared under two labels —
+    paired by ISIN".
+  - **Same-day round trips are NOT all intraday.** Of 83 in the 2026 export,
+    34 are intraday by the charge signature (stamp duty between the two
+    rates) and 49 are genuine CNC delivery — stamp 0.015% on the buy AND STT
+    0.1% of buy **plus** sell. `corroborate()` therefore uses buy+sell as the
+    delivery STT base for a two-sided row. A scrip-day whose stamp duty sits
+    between the two rates is split by `splitMixedRow` into an intraday pair
+    and a delivery remainder (quantities by the derived fraction, rounded to
+    whole shares; values and charges pro-rata).
   - The word "Paytm" appears nowhere in the file; the `UCC` label and the
     `Script` + `ETT` header are the fingerprint, as before.
 
@@ -261,6 +292,39 @@ so a parser must scan for section titles rather than assume one header:
 - CUSPA Sell-off → `Scrip Name | Date | Charges levied | GST | Total charge`
 - Interest → `Type of Interest | Date | Interest applicable amount | Interest charges`
 
+### Tradebook (`Trades_History_<code>.xlsx`) — per execution, **with per-row charges** (real, 2026-09-04)
+
+One sheet, `TradesAndCharges`. The word "Angel" appears nowhere — not in the
+filename, not in a cell — so this is the one Angel layout claimed on a FORMAT
+fingerprint: the sheet name together with `Scrip/Contract`, `IPFT Charges`,
+`Order ID` and `Trade ID` in the header. Rows 1–31 are a label/value preamble
+(`ClientCode`, `DateOfDownload`, `StartDate`/`EndDate`, a `Charges Summary` —
+`Total Trades`, `Total Charges`, `Total Trade Charges`, `Total Non Trade
+Charges`, then each trade head and each non-trade head); the table titled
+`TradeBook And Charges` starts at row 34:
+
+`Scrip/Contract | Buy/Sell | Buy Price | Sell Price | Quantity | Brokerage | GST | STT | Sebi Tax | Exchange Turnover Charges | Stamp Duty | Other Charges | IPFT Charges | Order Type | Segment | Exchange | Order ID | Trade ID | Date`
+
+What the parser does with it: `Order Type` (Intraday / Delivery) is the
+product; `Segment` is `CAPITAL` or `FUTURES` × `Exchange` NSE/BSE; the price
+sits in `Buy Price` or `Sell Price` by side; `Date` is an Excel date with no
+clock (it renders `8/27/26 0:00` — m/d/yy — so it is read US-order, and no
+fill time is invented). Charges are the broker's stated per-row figures and
+are stored as such. **Rows with quantity 0 and no Trade ID are the flat
+per-order F&O brokerage lines** (₹20 + GST): they are summed into their
+contract's charges and never into its quantity — which is why the real file's
+24 rows are 17 `Total Trades`. F&O contracts come as `OPTSTK ICICIBANK Sep 29
+2026 1550.00 CE (BT)` / `BSXOPT SENSEX …` / `OPTIDX NIFTY …` and are rewritten
+to the classifier's `OPT <SYM> <DD Mon YYYY> <STRIKE> <CE|PE>`. The file's own
+`Total Charges` includes non-trade charges (DP, AMC); `Total Trade Charges` is
+the figure the rows sum to (verified: 157.79 of 252.19).
+
+**The Zerodha misclaim this exposed.** `detectZerodha` awarded its tradebook
+score to any header carrying `Trade ID` + `Order ID`, and claimed this file
+at 0.50 while the Angel parser scored 0. The pair now needs something Zerodha
+actually writes — the `Auction` column, `Order Execution Time`, the "Tradebook
+for Equity from …" preamble, or a name — before it counts.
+
 ---
 
 ## Upstox
@@ -319,6 +383,77 @@ Three traps:
 Sheets `Trade Level` (+ `Scrip Level`). Parsed by `lib/import/parsers/groww-xlsx.ts`.
 
 ---
+
+## Dhan (real exports, 2026-09-04 — two accounts each)
+
+Five files, one broker, and only ONE of them carries dates and a product. Every
+Dhan detector stands down explicitly on the other four headers (a `Scrip
+Name` column and a `Date` column are common to three of them), and none may
+claim a file on the word "dhan" in the filename — that is exactly how the
+ledger and the dividend report were being filed as a P&L until this batch.
+
+### Global Transaction Report (CSV) — per bill, dates + product by signature
+
+`Date | Scrip Name | Exchange | Bill No. | Buy Qty. | Buy Value | Sell Qty. | Sell Value | Brokerage | GST | STT | SEBI Fees | Stamp Duty | Txn. Charges | Oth. Charges | Gross Amount`
+under a `Global transction report` (sic) title. The only Dhan file with dates.
+Product is DERIVED from the charge signature (`dhan-gtr.ts`, `productDerived`).
+
+### P&L (CSV **and** XLSX) — per scrip, no dates, no product
+
+`Scrip Name | Buy Qty. | Avg. Buy Price | Buy Value | Sell Qty. | Avg. Sell Price | Sell Value | Closing Price | Realised P&L | Realised P&L % | Unrealised P&L | Unrealised P&L %`
+after a `PnL report | From … to …` line. The `.xlsx` is the same table on a
+sheet named `Dhan_P&L` (the marker — a workbook without it is not claimed);
+its footer is four label/value ROWS (`Net P&L`, `Brokerage`, `Gross P&L`,
+`Total Charges`) where the CSV writes one eight-cell line, and both land in
+`reported`. F&O rows are `OPT …` / `FUT …` names among the equity rows with no
+tag; the classifier reads the name. Verified: on both accounts the footer
+holds Net = Gross − Total Charges to the paisa.
+
+### Realised P&L Report (`.xls`) — per-segment charges, no dates, no product
+
+Sheet `Realised P&L Report`, hundreds of merged ranges. Row 8 is the
+segment summary — `Segment | Buy Value | Sell Value | Gross P&L | Brokerage |
+Exch. Charges | SEBI Fees | GST | STT | Stamp Duty | Other Charges | Total
+Charges | Net P&L` for `Equity` / `Futures and Options` / `Commodities` /
+`Currency` — the ONLY Dhan file that breaks charges out by head, which makes
+it the reconciliation reference (`reported.<segment>.<head>` plus totals).
+Then one detail block per segment, each introduced by a title (`Equity
+Segment`, `F&O Segment`, …) and its own header `Sr. | Security Name | ISIN |
+Qty. | Avg. Buy Price | Buy Value | Avg. Sell Price | Sell Value | Realised
+P&L | Realised P&L%` — found by TEXT (the equity block ran 19 rows on one
+account, 157 on the other). Money is TEXT with thousands separators and a
+trailing space; `-` means blank; ISIN is `-` on F&O; a `Generated on
+dd-mm-yyyy` cell sits inside the equity data. The file never says "Dhan" —
+the fingerprint is the legal name `Raise Securities Private Limited` in the
+footer. Rows are closed lots (buy qty = sell qty); Currency rows are skipped
+with a warning (no such segment). **Import EITHER the Global Transaction
+Report OR this report for a window — never both.**
+
+### Ledger (CSV) — the cash book
+
+`Posting Date | Posting reference | Description | Narration | Credit | Debit | Net Balance`
+on line 7 under `Ledger Statement,From … to …`. Two traps: the `OPENING
+BALANCE` / `CLOSING BALANCE` rows are pinned at the TOP out of date order, and
+on one account the opening row is dated **01-01-1970** (the epoch); the
+opening figure sits in the CREDIT column with Net Balance at 0, and the footer
+`Opening Balance,<v>,Closing Balance,<v>` restates it. Marker rows are never
+emitted as entries, so the epoch can never become a window's start.
+`Narration` is the readable text ("Money added to your Trading Account");
+`Description` is the terse one ("Funds Deposited") — classification reads
+both. Registered as `dhan-ledger` so the dropzone can name it; it imports on
+the Cash & Ledger screen.
+
+### Dividend payout (CSV)
+
+`Date | Scrip Name | Dividend Per Share | Quantity | Dividend Paid` on line 7
+under `Dividend payout report,From … to …`, dates as `dd-Mon-yy`, then
+`Total Stocks Count,<n>,Total Dividend Earned,<₹>`. A cash file: it becomes
+ledger rows of the dividend kind through the same Cash & Ledger door
+(`parseDhanCashFile`), checked against its own stated total. Registered as
+`dhan-dividend`.
+
+Not built (v3.9): DP charges (`.xls`), demat holdings, Upstox/Angel ledgers,
+Angel P&L statement.
 
 ## Status (2026-08-20)
 

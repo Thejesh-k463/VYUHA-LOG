@@ -66,6 +66,11 @@ export async function openTempDb(label: string, opts: { seed?: boolean } = {}): 
 
   const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
   migrate(dbmod.db, { migrationsFolder: "./drizzle" });
+  // lib/db ran the data fixes when the connection opened, which was BEFORE
+  // the migrations above created their ledger (0059) — so run them now, the
+  // way lib/db/migrate.ts does, and a temp database matches a migrated one.
+  const { runDataFixes } = await import("@/lib/db/data-fixes");
+  runDataFixes(dbmod.sqlite);
 
   if (opts.seed) {
     const { seedDatabase } = await import("@/lib/db/seed-core");

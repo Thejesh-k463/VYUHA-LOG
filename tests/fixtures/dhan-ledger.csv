@@ -1,0 +1,17 @@
+Ledger Statement,From 01-04-2026 to 03-09-2026,,,,,
+Name,TESTUSER,,,,,
+UCC,TEST0001A,,,,,
+Mobile,9000000000,,,,,
+Email ID,test@example.com,,,,,
+,,,,,,
+Posting Date,Posting reference,Description,Narration,Credit,Debit,Net Balance
+01-01-1970,0,OPENING BALANCE,OPENING BALANCE,78735.13,0,0
+03-09-2026,0,CLOSING BALANCE,CLOSING BALANCE,998.31,0,0
+02-04-2026,BR1000000001,Funds Deposited,Money added to your Trading Account,25000,0,103735.13
+07-04-2026,BR1000000002,MTF Charges,MTF interest for the week ending 06-04-2026,0,412.5,103322.63
+09-04-2026,BR1000000003,Trade Settlement,Net obligation for settlement 2026066,0,15420.75,87901.88
+15-04-2026,BR1000000004,Dividend,Dividend credit ALPHATEST,1200,0,89101.88
+,,,,,,
+Opening Balance,78735.13,Closing Balance,998.31,,,
+,,,,,,
+NOTE : This sheet was downloaded at 9/3/2026 11:34 PM,,,,,,

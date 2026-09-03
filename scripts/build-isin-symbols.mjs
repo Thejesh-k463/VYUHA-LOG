@@ -4,7 +4,10 @@
  * under a real ticker.
  *
  *   node scripts/build-isin-symbols.mjs --fetch            # download + build (normal refresh)
- *   node scripts/build-isin-symbols.mjs --src "path/to/lists" [--as-of YYYY-MM-DD]
+ *   node scripts/build-isin-symbols.mjs --src "path/to/lists" [--as-of YYYY-MM-DD] [--out file.json]
+ *
+ * `--out` exists for tests: they build a synthetic folder and assert on the
+ * result without touching the committed snapshot.
  *
  * `--fetch` downloads the three lists into `--src` (default: a temp folder)
  * from the URLs in SOURCES below and then builds. The URLs live HERE rather
@@ -51,6 +54,23 @@
  *    merge described above. Rows are kept only when Status is Active and the
  *    Instrument reads as equity. NSE's lists are equity-only by construction,
  *    so nothing is filtered there.
+ *
+ * ── What each row keeps (v3.8) ────────────────────────────────────────────
+ *
+ * `byIsin[ISIN] = [SYMBOL, NAME, BOARD, BSE_CODE, SERIES]` — a positional
+ * tuple, documented in the file's `fields`. Measured on the same 5,7xx rows,
+ * an object per row (`{s,n,b,bc,sr}`) costs ~150 KB more raw for the same
+ * gzip, and five parallel ISIN-keyed maps repeat every 12-char key five
+ * times; the tuple was the smallest of the three. Column meanings:
+ *
+ *   NAME      the exchange's company name (NSE's when NSE won the ISIN).
+ *   BOARD     "nse" main board · "sme" NSE Emerge · "bse" BSE-only listing.
+ *   BSE_CODE  BSE's numeric SCRIP_CD — kept EVEN WHEN NSE WON the ISIN, so a
+ *             file that states a BSE code resolves to the NSE ticker. It is
+ *             the CODE that is unique on BSE, never the ticker: FOCUS, HSIL
+ *             and KALYANI are different companies on NSE and on BSE.
+ *   SERIES    NSE series (EQ/BE/SM/ST…) or, for a BSE-only row, BSE's GROUP
+ *             (A/B/M/MT/T/X/XT…) — the nearest thing BSE has to a series.
  */
 
 import fs from "node:fs";
@@ -66,6 +86,7 @@ const opt = (name, dflt = null) => {
 const wantFetch = args.includes("--fetch");
 const src = opt("--src", wantFetch ? path.join(root, ".isin-lists") : null);
 const asOf = opt("--as-of", new Date().toISOString().slice(0, 10));
+const outPath = opt("--out", path.join(root, "lib", "data", "isin-symbols.json"));
 
 /**
  * Where the three lists come from. Both hosts serve these to a plain client
@@ -164,6 +185,11 @@ function loadOrder(file) {
   if (f.includes("SCRIP") || f.includes("BSE")) return 3;  // BSE
   return 2;
 }
+/** Which board a file describes, from the same filename rules as loadOrder. */
+function boardOf(file) {
+  const o = loadOrder(file);
+  return o === 0 ? "nse" : o === 1 ? "sme" : o === 3 ? "bse" : "nse";
+}
 
 /**
  * BSE's payload as rows: `scrip_id` is the ticker ("ABB"), `SCRIP_CD` the
@@ -188,9 +214,10 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const byIsin = new Map(); // ISIN → SYMBOL (first writer wins, given the load order)
+const byIsin = new Map(); // ISIN → [SYMBOL, NAME, BOARD, BSE_CODE, SERIES] (first writer wins, given the load order)
+const seenBseCodes = new Map(); // BSE code → ISIN, so a reused code is caught rather than silently re-pointed
 const provenance = [];
-let skippedInactive = 0, skippedNonEquity = 0, skippedNoIsin = 0;
+let skippedInactive = 0, skippedNonEquity = 0, skippedNoIsin = 0, bseCodesAttached = 0;
 
 for (const f of files) {
   const full = path.join(src, f);
@@ -209,6 +236,12 @@ for (const f of files) {
   // Present on BSE's list only; absent on NSE's, where every row is a live equity.
   const iStatus = findCol(header, "Status");
   const iInstrument = findCol(header, "Instrument", "Instrument Type", "Segment");
+  // NSE: "NAME OF COMPANY" (main) / "NAME_OF_COMPANY" (Emerge). BSE: Issuer_Name
+  // is the registered name ("… Limited"), Scrip_Name the display short form.
+  const iName = findCol(header, "NAME OF COMPANY", "NAME_OF_COMPANY", "Issuer_Name", "Scrip_Name", "Security Name");
+  const iSeries = findCol(header, "SERIES", "GROUP");
+  const iBseCode = findCol(header, "SCRIP_CD", "Security Code", "Scrip Code");
+  const board = boardOf(f);
 
   let added = 0, seen = 0;
   for (const r of rows.slice(1)) {
@@ -223,11 +256,27 @@ for (const f of files) {
       // BSE segment/instrument values: Equity / Debt / MF / Preference Shares…
       if (ins && !/EQUIT/.test(ins)) { skippedNonEquity++; continue; }
     }
-    if (byIsin.has(isin)) continue; // rule 1: first writer wins, NSE files first
-    byIsin.set(isin, symbol);
+    const name = iName >= 0 ? String(r[iName] ?? "").trim() : "";
+    const series = iSeries >= 0 ? String(r[iSeries] ?? "").trim().toUpperCase() : "";
+    const bseCode = iBseCode >= 0 ? String(r[iBseCode] ?? "").trim() : "";
+    if (bseCode && !/^\d{5,7}$/.test(bseCode)) { skippedNoIsin++; continue; }
+    if (bseCode) {
+      const prior = seenBseCodes.get(bseCode);
+      if (prior && prior !== isin) throw new Error(`BSE code ${bseCode} appears under two ISINs (${prior}, ${isin}) — refusing to build`);
+      seenBseCodes.set(bseCode, isin);
+    }
+    const existing = byIsin.get(isin);
+    if (existing) {
+      // rule 1: first writer wins, NSE files first. The BSE CODE is still
+      // attached, because a BSE-coded file must resolve to the NSE ticker.
+      if (bseCode && !existing[3]) { existing[3] = bseCode; bseCodesAttached++; }
+      if (!existing[1] && name) existing[1] = name;
+      continue;
+    }
+    byIsin.set(isin, [symbol, name, board, bseCode, series]);
     added++;
   }
-  provenance.push({ file: path.basename(f), rows: seen, added });
+  provenance.push({ file: path.basename(f), board, rows: seen, added, dated: fs.statSync(full).mtime.toISOString().slice(0, 10) });
   console.log(`  ${path.basename(f)}: ${seen} usable rows → ${added} new ISINs`);
 }
 
@@ -241,13 +290,17 @@ const out = {
   source: "Exchange listed-security lists (NSE EQUITY_L / SME_EQUITY_L, BSE ListOfScrips)",
   files: provenance,
   count: byIsin.size,
+  bseCodes: seenBseCodes.size,
+  /** Positions in each byIsin tuple. Readers key on this, not on memory. */
+  fields: ["symbol", "name", "board", "bseCode", "series"],
   // Sorted so a refresh produces a minimal, reviewable diff.
   byIsin: Object.fromEntries([...byIsin.entries()].sort(([a], [b]) => a.localeCompare(b))),
 };
 
-const dest = path.join(root, "lib", "data", "isin-symbols.json");
+const dest = path.resolve(outPath);
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, JSON.stringify(out, null, 0) + "\n");
 console.log(`✓ ${dest}`);
 console.log(`  ${byIsin.size} ISINs from ${provenance.length} file(s) · as of ${asOf}`);
-console.log(`  skipped: ${skippedInactive} inactive, ${skippedNonEquity} non-equity, ${skippedNoIsin} without a usable ISIN/ticker`);
+console.log(`  ${seenBseCodes.size} BSE codes (${bseCodesAttached} attached to an ISIN NSE had already won)`);
+console.log(`  skipped: ${skippedInactive} inactive, ${skippedNonEquity} non-equity, ${skippedNoIsin} without a usable ISIN/ticker/code`);

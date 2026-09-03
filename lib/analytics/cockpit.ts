@@ -105,6 +105,12 @@ function bucket(key: string, label: string, rows: CockpitTrade[]): Bucket {
  * because they divide the clock evenly.
  */
 export const SESSIONS: { key: string; label: string; from: string; to: string; note: string }[] = [
+  // The band names the FILL time. NSE's pre-open call auction (and an IPO
+  // listing's discovery call) prints fills stamped 09:00–09:14; a pre-open
+  // order that fills at 09:15:00 exactly is indistinguishable from a regular
+  // opening fill and lands in "open". Before this band existed those stamps
+  // fell into `offHours` and read as a misread import.
+  { key: "preopen", label: "Pre-open", from: "09:00", to: "09:15", note: "call-auction and listing fills; a 09:15:00 fill reads as a regular open" },
   { key: "open", label: "Opening drive", from: "09:15", to: "09:45", note: "overnight gaps resolving" },
   { key: "morning", label: "Morning trend", from: "09:45", to: "11:30", note: "the cleanest trending window" },
   { key: "midday", label: "Midday chop", from: "11:30", to: "14:00", note: "lowest volume, widest noise" },
@@ -112,7 +118,7 @@ export const SESSIONS: { key: string; label: string; from: string; to: string; n
   { key: "close", label: "Closing hour", from: "15:00", to: "15:30", note: "squaring off, MIS auto-exits" },
 ];
 
-/** Which session an HH:MM falls in. Null for anything outside market hours. */
+/** Which session an HH:MM falls in. Null for anything outside 09:00–15:30. */
 export function sessionOf(time: string | null): string | null {
   if (!time) return null;
   for (const s of SESSIONS) {
@@ -138,8 +144,8 @@ export interface TimeEdge {
   /** Closed trades missing an entry time, i.e. imported from a P&L file. */
   withoutTime: number;
   /**
-   * Timed trades whose entry falls OUTSIDE 09:15–15:30 and so belong to no
-   * session. Reported rather than dropped: `bySession` must reconcile against
+   * Timed trades whose entry falls OUTSIDE the SESSIONS span (first band's
+   * `from` to last band's `to`) and so belong to no session. Reported rather than dropped: `bySession` must reconcile against
    * `withTime`, and a pile of off-hours stamps means the broker column was
    * misread, which is exactly the failure worth surfacing.
    */

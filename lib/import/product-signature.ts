@@ -110,7 +110,12 @@ export function corroborate(sig: ChargeSignature, verdict: InferredProduct): boo
   const { buyValue, sellValue, stt } = sig;
   if (stt <= 0) return false;
   if (verdict === "delivery") {
-    const base = buyValue > 0 ? buyValue : sellValue;
+    // Delivery STT is levied on BOTH legs, so a row (or scrip-day) that holds
+    // a buy AND a sell carries STT on their SUM. Using the buy alone read a
+    // same-day delivery round trip as "STT does not corroborate" — 49 of the
+    // 83 same-day round trips in a real Paytm book (2026-09-04) are genuine
+    // CNC delivery with STT = 0.1% of buy+sell, and every one of them failed.
+    const base = buyValue + sellValue;
     return base >= MIN_VALUE_FOR_SIGNAL && near(stt / base, STT_DELIVERY);
   }
   if (verdict === "intraday") {

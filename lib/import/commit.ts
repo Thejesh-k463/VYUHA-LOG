@@ -19,7 +19,7 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, ParsedFile } from "./types";
-import type { ImportShape } from "@/lib/domain/import-shape";
+import { relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
 import { getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
@@ -396,6 +396,7 @@ export function previewParsedFile(
       positions: rows.length,
       open: openCount,
       openingSells,
+      relabelled: relabelledFromWarnings(parsed.warnings),
     },
     summary: {
       total: rows.length,
@@ -657,6 +658,7 @@ export function commitParsedFile(
         positions: parsed.trades.length,
         open: openCount,
         openingSells,
+        relabelled: relabelledFromWarnings(parsed.warnings),
       },
     };
   });

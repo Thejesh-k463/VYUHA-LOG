@@ -323,6 +323,27 @@ describe("jwtLooksUnexpired", () => {
     expect(jwtLooksUnexpired("not-a-jwt", now)).toBe(false);
     expect(jwtLooksUnexpired("", now)).toBe(false);
   });
+
+  // An `exp` above 1e11 cannot be seconds (that is the year 5138) — it is an
+  // issuer stating milliseconds. The old `exp * 1000` read a millisecond exp
+  // that was already in the PAST as alive for ~50,000 years, so a dead token
+  // was reused forever and the mint path never ran.
+  it("reads a MILLISECOND exp correctly in both directions (red-on-revert: the past one read as alive)", () => {
+    const now = Date.now();
+    expect(jwtLooksUnexpired(fakeJwt((Math.floor(now / 1000) + 3600) * 1000), now)).toBe(true);
+    expect(jwtLooksUnexpired(fakeJwt((Math.floor(now / 1000) - 60) * 1000), now)).toBe(false);
+  });
+});
+
+describe("jwtExpiresAt — the exp claim as ISO, for the mode label", () => {
+  it("normalises seconds and milliseconds to the same instant, and refuses to guess otherwise", () => {
+    const expSec = 1_788_600_000; // 2026-09-04T08:00:00Z
+    const iso = new Date(expSec * 1000).toISOString();
+    expect(dhan.jwtExpiresAt(fakeJwt(expSec))).toBe(iso);
+    expect(dhan.jwtExpiresAt(fakeJwt(expSec * 1000))).toBe(iso);
+    expect(dhan.jwtExpiresAt("not-a-jwt")).toBeNull();
+    expect(dhan.jwtExpiresAt(["e30", Buffer.from("{}").toString("base64url"), "x"].join("."))).toBeNull();
+  });
 });
 
 describe("mintDhanAccessToken", () => {
@@ -497,6 +518,86 @@ describe("fetchDhanPositions in TOTP mode — mint feeds the positions call (red
   });
 });
 
+describe("retry-on-401 — a REVOKED but unexpired-looking token mints once and retries once (owner ruling 2026-09-04)", () => {
+  const stored = () => fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+
+  /** fetch that answers api.dhan.co per call from `apiStatuses` and mints "fresh-jwt" at auth.dhan.co. */
+  function stub(apiStatuses: number[]) {
+    const calls: Array<{ host: string; token?: string }> = [];
+    let n = 0;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      const token = (init?.headers as Record<string, string> | undefined)?.["access-token"];
+      calls.push({ host: u.host, token });
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { accessToken: "fresh-jwt" });
+      const status = apiStatuses[n++] ?? 200;
+      return status === 200 ? jsonResponse(200, [] as DhanPositionRow[]) : jsonResponse(status, { errorMessage: "Invalid token" });
+    });
+    return calls;
+  }
+
+  it("401 then 200: the reused token is dropped, one mint, the retry carries the fresh token, onMinted persists it", async () => {
+    const calls = stub([401, 200]);
+    const minted: string[] = [];
+    const creds = { clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() };
+    const rows = await fetchDhanPositions(creds, (t) => minted.push(t));
+    expect(rows).toEqual([]);
+    // Red-on-revert: the old dhanGet threw on the first 401 — one api call, no mint.
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
+    expect(calls[2]!.token).toBe("fresh-jwt");
+    expect(minted).toEqual(["fresh-jwt"]);
+    // The in-process cache is updated too, so a second call this pull reuses the fresh token.
+    expect(creds.accessToken).toBe("fresh-jwt");
+  });
+
+  it("the first request really did carry the stored (revoked) token", async () => {
+    const calls = stub([401, 200]);
+    const token = stored();
+    await fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: token });
+    expect(calls[0]!.token).toBe(token);
+  });
+
+  it("401 twice: exactly one mint, then the existing hint surfaces — never a loop", async () => {
+    const calls = stub([401, 401]);
+    await expect(fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() })).rejects.toThrow(
+      /Dhan API: Invalid token.*access token expired or wrong/i,
+    );
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
+  });
+
+  it("403 is treated like 401", async () => {
+    const calls = stub([403, 200]);
+    await fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() });
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
+  });
+
+  it("paste-only mode NEVER mints: a 401 surfaces the hint with no auth.dhan.co call", async () => {
+    const calls = stub([401, 200]);
+    await expect(fetchDhanPositions({ clientId: CLIENT, accessToken: stored() })).rejects.toThrow(/access token expired or wrong/i);
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co"]);
+  });
+
+  it("a 401 on a token minted in THIS call is not retried (the mint itself is the retry)", async () => {
+    const calls = stub([401, 200]);
+    await expect(fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET })).rejects.toThrow(/access token expired or wrong/i);
+    expect(calls.map((c) => c.host)).toEqual(["auth.dhan.co", "api.dhan.co"]);
+  });
+
+  it("when the re-mint itself fails, the message names BOTH the rejection and the mint failure", async () => {
+    let n = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { message: "Invalid TOTP", status: "error" });
+      n++;
+      return jsonResponse(401, { errorMessage: "Invalid token" });
+    });
+    await expect(fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() })).rejects.toThrow(
+      /Invalid token.*Re-minting after that rejection also failed.*Invalid TOTP/i,
+    );
+    expect(n).toBe(1);
+  });
+});
+
 describe("read-only by surface", () => {
   it("the module exports no order, funds or modification capability", () => {
     // The whole security argument for storing a PERMANENT second factor is
@@ -510,6 +611,7 @@ describe("read-only by surface", () => {
       "exchangeOf",
       "fetchDhanHoldings",
       "fetchDhanPositions",
+      "jwtExpiresAt",
       "jwtLooksUnexpired",
       "markOf",
       "mintDhanAccessToken",

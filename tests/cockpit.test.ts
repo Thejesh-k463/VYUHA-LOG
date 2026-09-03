@@ -44,6 +44,15 @@ describe("sessionOf", () => {
     expect(sessionOf(null)).toBeNull();
   });
 
+  it("names pre-open fills 09:00–09:14 rather than calling them off-hours", () => {
+    // NSE's call auction and IPO listing discovery print fills before 09:15.
+    // The band names the FILL time: a 09:15:00 fill is a regular open fill.
+    expect(sessionOf("09:00")).toBe("preopen");
+    expect(sessionOf("09:07")).toBe("preopen");
+    expect(sessionOf("09:15")).toBe("open");
+    expect(sessionOf("08:59")).toBeNull();
+  });
+
   it("puts the boundary minute in the LATER session, not both", () => {
     expect(sessionOf("09:45")).toBe("morning");
     expect(sessionOf("11:30")).toBe("midday");
@@ -294,6 +303,14 @@ describe("cockpit reconciliation invariants", () => {
   it("does not show a weekday bucket that has no trades", () => {
     const te = timeEdge(many(4, { buyDate: "2026-06-01", sellDate: "2026-06-01" }));
     expect(te.byWeekday.map((b) => b.label)).toEqual(["Monday"]);
+  });
+
+  it("buckets a 09:07 entry under pre-open with offHours at zero", () => {
+    const te = timeEdge([t({ entryTime: "09:07", netPnl: 50 })]);
+    expect(te.withTime).toBe(1);
+    expect(te.offHours).toBe(0);
+    expect(te.bySession.map((b) => b.key)).toEqual(["preopen"]);
+    expect(te.bySession[0].trades).toBe(1);
   });
 
   it("reports off-hours stamps rather than forcing them into a session", () => {

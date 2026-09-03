@@ -44,9 +44,14 @@ describe("validateBackup", () => {
       .filter((v) => is(v, SQLiteTable))
       .map((tbl) => getTableName(tbl as SQLiteTable));
 
-    // Tables deliberately NOT in a backup. Currently none — every table
-    // travels. An entry here needs a written reason, not just a name.
-    const EXCLUDED: string[] = [];
+    // Tables deliberately NOT in a backup. An entry here needs a written
+    // reason, not just a name.
+    //   data_fixes — machine-side marker ledger (v3.8, migration 0059): which
+    //   post-migrate data fixes THIS database has already applied. A backup
+    //   restored into another database must not carry the donor's markers,
+    //   or a fix the target still needs would be skipped; restore re-runs the
+    //   fixes instead (lib/backup.ts).
+    const EXCLUDED: string[] = ["data_fixes"];
 
     const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();
     expect([...BACKUP_TABLES].sort()).toEqual(expected);

@@ -93,12 +93,36 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // = one big sector bet). Positions with no mapped sector roll into "Unclassified".
 // ---------------------------------------------------------------------------
 
+/**
+ * Where a position's sector came from, strongest first. Mirrors
+ * `SectorTier` in lib/analytics/instruments.ts (kept as a literal here so
+ * this module stays free of the bundled JSON — it is imported by a client
+ * component). "unknown" = the caller stated a sector but not its tier, which
+ * is every caller from before v3.8.
+ */
+export type SectorTier = "user" | "high" | "medium_high" | "medium" | "index";
+export type SectorTierOrUnknown = SectorTier | "unknown";
+/** Strongest → weakest. */
+export const SECTOR_TIER_ORDER: readonly SectorTierOrUnknown[] = ["user", "high", "medium_high", "medium", "index", "unknown"];
+const tierRank = (t: SectorTierOrUnknown) => SECTOR_TIER_ORDER.indexOf(t);
+
 export interface SectorSlice {
   sector: string;
   invested: number;
   allocPct: number; // invested / capital
   sharePct: number; // invested / total invested
   positions: number;
+  /** The WEAKEST tier among this bucket's positions — what the bucket's label rests on. Null for "Unclassified". */
+  minTier: SectorTierOrUnknown | null;
+}
+
+export interface SectorConfidence {
+  /** % of total invested whose sector came from each tier. Sums to classifiedPct. */
+  tierPct: Record<SectorTierOrUnknown, number>;
+  /** % of total invested whose sector rests on a `medium`-confidence taxonomy row. */
+  mediumPct: number;
+  /** The weakest tier any classified capital rests on; null with nothing classified. */
+  weakestTier: SectorTierOrUnknown | null;
 }
 
 export interface SectorConcentration {
@@ -109,25 +133,30 @@ export interface SectorConcentration {
   topAllocPct: number; // largest sector as % of capital
   hhi: number; // Herfindahl index over sector shares (0..1); higher = more concentrated
   classifiedPct: number; // % of invested that carries a known sector
+  /** How much of the classified capital rests on which source tier (v3.8). Adds to the picture; changes no other number. */
+  confidence: SectorConfidence;
 }
 
 export function sectorConcentration(
-  positions: { invested: number; sector?: string | null }[],
+  positions: { invested: number; sector?: string | null; sectorTier?: SectorTier | null }[],
   capital: number,
 ): SectorConcentration {
   const cap = capital > 0 ? capital : 1;
-  const bySector = new Map<string, { invested: number; positions: number }>();
+  const bySector = new Map<string, { invested: number; positions: number; minTier: SectorTierOrUnknown | null }>();
+  const byTier = new Map<SectorTierOrUnknown, number>();
   let totalInvested = 0;
   let classified = 0;
   for (const p of positions) {
     const inv = p.invested > 0 ? p.invested : 0;
     if (inv <= 0) continue;
     const sector = (p.sector ?? "").trim() || "Unclassified";
-    if (sector !== "Unclassified") classified += inv;
+    const tier: SectorTierOrUnknown | null = sector === "Unclassified" ? null : (p.sectorTier ?? "unknown");
+    if (tier) { classified += inv; byTier.set(tier, (byTier.get(tier) ?? 0) + inv); }
     totalInvested += inv;
-    const cur = bySector.get(sector) ?? { invested: 0, positions: 0 };
+    const cur = bySector.get(sector) ?? { invested: 0, positions: 0, minTier: null };
     cur.invested += inv;
     cur.positions += 1;
+    if (tier && (cur.minTier == null || tierRank(tier) > tierRank(cur.minTier))) cur.minTier = tier;
     bySector.set(sector, cur);
   }
 
@@ -138,8 +167,18 @@ export function sectorConcentration(
       allocPct: r2((v.invested / cap) * 100),
       sharePct: totalInvested > 0 ? r2((v.invested / totalInvested) * 100) : 0,
       positions: v.positions,
+      minTier: v.minTier,
     }))
     .sort((a, b) => b.invested - a.invested);
+
+  const pct = (amt: number) => (totalInvested > 0 ? r2((amt / totalInvested) * 100) : 0);
+  const tierPct = Object.fromEntries(SECTOR_TIER_ORDER.map((t) => [t, pct(byTier.get(t) ?? 0)])) as Record<SectorTierOrUnknown, number>;
+  const present = SECTOR_TIER_ORDER.filter((t) => (byTier.get(t) ?? 0) > 0);
+  const confidence: SectorConfidence = {
+    tierPct,
+    mediumPct: tierPct.medium,
+    weakestTier: present.length ? present[present.length - 1] : null,
+  };
 
   // HHI over sector shares of total invested (sum of squared fractions).
   const hhi = totalInvested > 0
@@ -154,6 +193,7 @@ export function sectorConcentration(
     topAllocPct: slices[0]?.allocPct ?? 0,
     hhi,
     classifiedPct: totalInvested > 0 ? r2((classified / totalInvested) * 100) : 0,
+    confidence,
   };
 }
 

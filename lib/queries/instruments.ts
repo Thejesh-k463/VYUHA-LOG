@@ -2,7 +2,15 @@ import "server-only";
 import { db } from "@/lib/db";
 import { instruments, instrumentIndices } from "@/lib/db/schema";
 import { asc, inArray } from "drizzle-orm";
-import { buildSectorMap } from "@/lib/analytics/instruments";
+import {
+  buildSectorMap,
+  buildSectorResolution,
+  taxonomyEntries,
+  type SectorResolution,
+  type SectorSources,
+} from "@/lib/analytics/instruments";
+import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
+import nseIndexMap from "@/lib/data/nse-index-map.json";
 import { INDEX_UNDERLYINGS } from "@/lib/domain/constants";
 
 export interface InstrumentDisplay {
@@ -45,9 +53,38 @@ export function getIndexLotSizes(): Record<string, { lotSize: number; asOf: stri
   return out;
 }
 
-/** symbol (upper) → sector, for instruments that carry a sector. */
+/**
+ * The bundled sources behind the sector chain. Reference data, not account
+ * data — a sector is a fact about the market, not about one book.
+ *
+ *   user instruments.sector → taxonomy by ISIN (sector-map.json) → index map
+ *
+ * The taxonomy's ISINs are re-keyed to the ticker every other surface uses
+ * through the listing snapshot (NSE wins a dual listing); an untagged user
+ * row reaches the taxonomy through its own ISIN or the snapshot's.
+ */
+function sectorSources(): SectorSources {
+  return {
+    taxonomy: taxonomyEntries(),
+    index: (nseIndexMap as { symbols?: SectorSources["index"] }).symbols ?? {},
+    symbolByIsin: bundledSymbolByIsin,
+    isinBySymbol: bundledIsinBySymbol,
+  };
+}
+
+/**
+ * symbol (upper) → sector, for every symbol the chain can classify: the
+ * user's tagged instruments, every ISIN in the bundled taxonomy, and every
+ * index constituent. Labels are canonical (aliases applied), so the legacy
+ * "AUTOMOBILE" and the modern "Automobile and Auto Components" are one bucket.
+ */
 export function getSectorMap(): Map<string, string> {
-  return buildSectorMap(getInstruments());
+  return buildSectorMap(getInstruments(), sectorSources());
+}
+
+/** Same chain, with WHERE each sector came from and how confident the source was. */
+export function getSectorResolution(): Map<string, SectorResolution> {
+  return buildSectorResolution(getInstruments(), sectorSources());
 }
 
 /** Coverage summary for the manager status line. */

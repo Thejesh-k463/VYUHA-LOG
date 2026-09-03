@@ -6,7 +6,8 @@
  *
  * - the daily CM bhavcopy (UDiFF `BhavCopy_NSE_CM_*.csv` or the old
  *   `cmDDMMMYYYYbhav.csv`)   → SYMBOL, ISIN         (name in UDiFF only)
- * - the securities list (`EQUITY_L.csv`)  → SYMBOL, NAME, ISIN
+ * - the securities lists (`EQUITY_L.csv`, and NSE Emerge's `SME_EQUITY_L.csv`,
+ *   which spells the same columns with underscores)  → SYMBOL, NAME, ISIN
  * - the F&O market-lots file (`fo_mktlots.csv`) → SYMBOL, LOT SIZE
  * - an index-constituent list (`ind_*_list.csv` from niftyindices.com)
  *                             → SYMBOL, NAME, ISIN, SECTOR (official Industry)
@@ -150,18 +151,30 @@ export function parseInstrumentsFile(text: string): InstrumentsFileResult {
     };
   }
 
-  // ── Securities list (EQUITY_L.csv): SYMBOL, NAME OF COMPANY, ISIN NUMBER ─
-  if (headers.includes("SYMBOL") && headers.includes("NAME OF COMPANY")) {
+  // ── Securities list (EQUITY_L.csv / SME_EQUITY_L.csv) ─────────────────────
+  // NSE ships the two with DIFFERENT header spellings: the main board pads
+  // with spaces ("NAME OF COMPANY", " ISIN NUMBER"), Emerge uses underscores
+  // ("NAME_OF_COMPANY", "ISIN_NUMBER"). Until 2026-09-04 only the first was
+  // matched, so every SME list parsed as "unrecognised".
+  const nameKey = headers.find((h) => h === "NAME OF COMPANY" || h === "NAME_OF_COMPANY") ?? null;
+  if (headers.includes("SYMBOL") && nameKey) {
     const isinKey = headers.find((h) => h.includes("ISIN")) ?? null;
     const seriesKey = headers.find((h) => h === "SERIES") ?? null;
+    // ALLOW-list of cash-equity series. EQ/BE/BZ are the main board (normal,
+    // trade-for-trade, surveillance); SM and ST are NSE Emerge's equivalents
+    // (SM = SME normal, ST = SME trade-for-trade). ST was missing until
+    // 2026-09-04, which silently dropped 118 of the 568 Emerge names (2026-09-04 list) — a
+    // series absent from this list is not "filtered", it is LOST, so add
+    // a new equity series here rather than widening the regex elsewhere.
+    const EQUITY_SERIES = ["EQ", "BE", "BZ", "SM", "ST", ""];
     const out: InstrumentFileRow[] = [];
     for (const r of rows) {
       const symbol = up(r["SYMBOL"]);
       if (!symbol) continue;
-      if (seriesKey && !["EQ", "BE", "BZ", "SM", ""].includes(up(r[seriesKey]))) continue;
+      if (seriesKey && !EQUITY_SERIES.includes(up(r[seriesKey]))) continue;
       out.push({
         symbol,
-        name: clean(r["NAME OF COMPANY"]) || null,
+        name: clean(r[nameKey]) || null,
         isin: isinKey ? asIsin(r[isinKey]) : null,
         lotSize: null,
         sector: null,

@@ -89,11 +89,12 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
   {
     id: "dhan",
     title: "Dhan",
-    summary: "Transaction report and P&L by file; today's positions — and MTF, stated — over the API or OpenAlgo.",
+    summary: "Transaction report, P&L and the Realised P&L report by file; ledger and dividends to Cash & Ledger; today's positions — and MTF, stated — over the API or OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("dhan-gtr", "dhan-csv"),
+    formats: sources("dhan-gtr", "dhan-csv", "dhan-realised-pnl", "dhan-ledger", "dhan-dividend"),
     steps: [
-      "As of Aug 2026: web.dhan.co → Statements & Reports — the Global Transaction Report and the P&L report both download as CSV. Dhan ledger files import separately on the Cash & Ledger screen, including the broker's weekly MTF interest postings.",
+      "As of Aug 2026: web.dhan.co → Statements & Reports — the Global Transaction Report downloads as CSV; the P&L report as CSV or XLSX (both read the same); the Realised P&L report as XLS. Dhan ledger and dividend payout files are recognised on the dropzone by name but import on the Cash & Ledger screen, where the ledger's weekly MTF interest postings are reconciled before anything is written and dividends land as dividend entries.",
+      "Import EITHER the Global Transaction Report OR the Realised P&L report for a date window — never both. They describe the same trades: the transaction report has dates and a product read from each bill's charge signature; the Realised P&L has neither, but states every charge head per segment (brokerage, exchange, SEBI, GST, STT, stamp duty) — the figures to reconcile against.",
     ],
     api: [
       "Pulls today's positions with your Client ID and an access token from web.dhan.co → DhanHQ Trading APIs; the token lasts 24 hours by default.",

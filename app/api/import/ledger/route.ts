@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { ledgerEntries, trades } from "@/lib/db/schema";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
-import { parseDhanLedger, reconcileMtfInterest } from "@/lib/import/parsers/dhan-ledger";
+import { parseDhanCashFile, reconcileMtfInterest } from "@/lib/import/parsers/dhan-ledger";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
@@ -88,7 +88,9 @@ export async function POST(req: Request) {
   }
 
   const text = Buffer.from(await file.arrayBuffer()).toString("utf-8");
-  const parsed = parseDhanLedger(text);
+  // The dividend payout report shares this door (2026-09-04): it is cash that
+  // reached the account, so it lands as dividend entries in the same table.
+  const parsed = parseDhanCashFile(text);
 
   if (parsed.rows.length === 0) {
     return NextResponse.json({ ok: false, message: parsed.warnings.join(" ") }, { status: 422 });
@@ -140,7 +142,7 @@ export async function POST(req: Request) {
           type: r.kind,
           amountPaise: Math.round(r.amount * 100),
           note: r.narration.slice(0, 240),
-          source: "dhan-ledger",
+          source: parsed.source ?? "dhan-ledger",
         })
         .run();
     }

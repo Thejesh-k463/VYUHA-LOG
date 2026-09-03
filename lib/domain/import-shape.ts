@@ -39,10 +39,56 @@ export interface ImportShape {
   open: number;
   /** Sells whose matching buy is not in the file. Cost basis unknown. */
   openingSells: number;
+  /**
+   * Securities the parser saw under TWO labels (a ticker, then a numeric BSE
+   * code — Paytm switched mid-window, 2026-07) and paired into one book by
+   * ISIN. Optional: only a parser that pairs by ISIN can know it, and it
+   * travels here from `ParsedFile.warnings` (see `relabelledFromWarnings`).
+   */
+  relabelled?: number;
 }
 
 const n = (v: number) => v.toLocaleString("en-IN");
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
+
+/**
+ * Share of positions that are opening sells above which Net P&L is not to be
+ * trusted without a look. An opening sell books ONLY its charges (invariant
+ * 6: no cost, no gain), so a file where one position in ten has no purchase
+ * is a file whose Net P&L is systematically understated. 10% — an SME-IPO
+ * book lands at 38 of ~800 (4.7%) and is NOT flagged; the 414-row export
+ * that first exposed the problem had 24 of 142 (17%) and is.
+ */
+export const OPENING_SELL_REVIEW_SHARE = 0.1;
+
+/** The caution appended when opening sells are a material share of the book. Null otherwise. */
+export function openingSellReviewNote(openingSells: number, positions: number): string | null {
+  if (openingSells <= 0 || positions <= 0) return null;
+  if (openingSells / positions < OPENING_SELL_REVIEW_SHARE) return null;
+  return `${n(openingSells)} ${plural(openingSells, "sale", "sales")} without a purchase — review before trusting Net P&L`;
+}
+
+/**
+ * The relabel count travels from parser to screen as a warning STRING —
+ * `ParsedFile` has no typed slot for it and the parsers must not grow one per
+ * fact. So the sentence is minted here and read back here: one regex, one
+ * writer, one reader. Null / 0 when nothing was relabelled.
+ */
+export function relabelledNote(count: number): string | null {
+  if (count <= 0) return null;
+  return `${n(count)} ${plural(count, "security", "securities")} appeared under two labels — paired by ISIN`;
+}
+
+const RELABELLED_RE = /^([\d,]+) securit(?:y|ies) appeared under two labels — paired by ISIN/;
+
+/** Read the count `relabelledNote` wrote into a parser's warnings. 0 when absent. */
+export function relabelledFromWarnings(warnings: readonly string[]): number {
+  for (const w of warnings) {
+    const m = RELABELLED_RE.exec(w);
+    if (m) return Number(m[1].replace(/,/g, ""));
+  }
+  return 0;
+}
 
 /**
  * The headline sentence: `414 executions → 142 positions (3 open, 24 opening
@@ -64,7 +110,14 @@ export function importShapeSentence(s: ImportShape): string {
   if (s.openingSells > 0) {
     parts.push(`${n(s.openingSells)} opening ${plural(s.openingSells, "sell", "sells")} without buy history`);
   }
-  return parts.length > 0 ? `${head} (${parts.join(", ")})` : head;
+  const base = parts.length > 0 ? `${head} (${parts.join(", ")})` : head;
+
+  // Cautions follow as sentences of their own, so the arithmetic stays the
+  // arithmetic and the warning reads as a warning. Absent when there is none:
+  // a caution that is always there stops being read.
+  const cautions = [openingSellReviewNote(s.openingSells, s.positions), relabelledNote(s.relabelled ?? 0)]
+    .filter((c): c is string => c != null);
+  return cautions.length > 0 ? `${base}. ${cautions.join(". ")}.` : base;
 }
 
 /**

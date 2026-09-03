@@ -1,6 +1,8 @@
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
+import { isDhanDividendText, isDhanGtrText, isDhanLedgerText } from "./dhan-ledger";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -8,19 +10,84 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(x) ? x : 0;
 };
 
-/** Confidence this is a Dhan P&L CSV. */
+const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z&%]/g, "");
+
+/** The scrip table header — identical in the CSV and the XLSX (verified on
+ *  two real `.xlsx` exports, 2026-09-04): `Scrip Name | Buy Qty. | Avg. Buy
+ *  Price | Buy Value | Sell Qty. | Avg. Sell Price | Sell Value | Closing
+ *  Price | Realised P&L | Realised P&L % | Unrealised P&L | Unrealised P&L %`. */
+function isPnlHeaderRow(r: string[]): boolean {
+  const c = r.map(norm);
+  return c[0] === "scripname" && c.includes("buyqty") && c.includes("realisedp&l");
+}
+
+/** The Realised P&L report's segment-summary header. Its detail blocks never
+ *  start with `Scrip Name`, but the stand-down is explicit anyway: two Dhan
+ *  workbooks that both say "Realised P&L" must not be told apart by luck. */
+function isRealisedSummaryRow(r: string[]): boolean {
+  const c = r.map(norm);
+  return c[0] === "segment" && c.includes("grossp&l") && c.includes("netp&l") && c.includes("totalcharges");
+}
+
+const FOOTER_LABELS: Record<string, keyof NonNullable<ParsedFile["reported"]>> = {
+  "net p&l": "netPnl",
+  brokerage: "brokerage",
+  "gross p&l": "grossPnl",
+  "total charges": "totalCharges",
+};
+
+/** The workbook's P&L sheet, or null. The sheet NAME is the Dhan marker —
+ *  `Dhan_P&L` on both real exports — so a P&L table with the same twelve
+ *  columns in a workbook that names no broker is not claimed. */
+function dhanSheet(ctx: ParseContext): string[][] | null {
+  if (!ctx.buffer || !/\.xlsx?$/i.test(ctx.filename)) return null;
+  let wb: XLSX.WorkBook;
+  try {
+    wb = XLSX.read(ctx.buffer, { type: "buffer" });
+  } catch {
+    return null;
+  }
+  const name = wb.SheetNames.find((n) => /dhan/i.test(n));
+  if (!name) return null;
+  const ws = wb.Sheets[name];
+  if (!ws) return null;
+  return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map((r) =>
+    r.map((c) => String(c ?? "")),
+  );
+}
+
+/** Confidence this is a Dhan P&L export — the CSV, or its `.xlsx` twin. */
 export function detectDhanCsv(ctx: ParseContext): number {
   const text = ctx.text ?? "";
-  if (!text) return 0;
-  // A Global Transaction Report is also a Dhan CSV with the same footer, but a
-  // different and much richer body. Stand down explicitly rather than relying
-  // on the other parser simply scoring higher.
-  if (/Date\s*,\s*Scrip Name\s*,\s*Exchange\s*,\s*Bill No\./i.test(text)) return 0;
-  let score = 0;
-  if (/dhan/i.test(ctx.filename)) score += 0.3;
-  if (/^PnL report/i.test(text.trimStart())) score += 0.4;
-  if (/Scrip Name,.*Realised P&L/i.test(text)) score += 0.4;
-  if (/Net P&L,.*Brokerage,.*Gross P&L,.*Total Charges/i.test(text)) score += 0.2;
+  if (text) {
+    // A Global Transaction Report is also a Dhan CSV with the same footer, but a
+    // different and much richer body. Stand down explicitly rather than relying
+    // on the other parser simply scoring higher. The ledger and the dividend
+    // payout report are Dhan CSVs too, with a `Scrip Name` column of their own —
+    // and until 2026-09-04 this detector claimed both at 0.30 on the word
+    // "dhan" in the FILENAME. They have their own sources now; zero here.
+    if (isDhanGtrText(text) || isDhanLedgerText(text) || isDhanDividendText(text)) return 0;
+    let score = 0;
+    if (/dhan/i.test(ctx.filename)) score += 0.3;
+    if (/^PnL report/i.test(text.trimStart())) score += 0.4;
+    if (/Scrip Name,.*Realised P&L/i.test(text)) score += 0.4;
+    if (/Net P&L,.*Brokerage,.*Gross P&L,.*Total Charges/i.test(text)) score += 0.2;
+    return Math.min(1, score);
+  }
+
+  // XLSX variant (verified 2026-09-04): sheet `Dhan_P&L`, `PnL report | From …`
+  // in B2, the identical header on row 6, then the footer as four label/value
+  // ROWS (`Net P&L`, `Brokerage`, `Gross P&L`, `Total Charges`) instead of the
+  // CSV's single eight-cell line. The fingerprint is the sheet name — content,
+  // not filename.
+  const rows = dhanSheet(ctx);
+  if (!rows) return 0;
+  if (rows.some(isRealisedSummaryRow)) return 0;
+  const hdr = rows.findIndex(isPnlHeaderRow);
+  if (hdr < 0) return 0;
+  let score = 0.9;
+  if (rows.slice(0, hdr).some((r) => r.some((c) => /^PnL report/i.test(c.trim())))) score += 0.05;
+  if (rows.some((r) => /^net p&l$/i.test((r[0] ?? "").trim()))) score += 0.05;
   return Math.min(1, score);
 }
 
@@ -29,21 +96,27 @@ export function detectDhanCsv(ctx: ParseContext): number {
  * footer `Net P&L,.,Brokerage,.,Gross P&L,.,Total Charges,.`.
  * Row P&L is GROSS. No per-trade dates, no segment tag, no per-scrip charges.
  * Rows with Sell Qty = 0 are open positions (use Closing Price for MTM).
+ *
+ * The `.xlsx` export is the same table on sheet `Dhan_P&L`; only the footer's
+ * shape differs, so both are read by the same loop. F&O rows are named
+ * `OPT …` / `FUT …` among the equity rows with no tag of their own — the
+ * classifier reads the name, exactly as it does for the CSV.
  */
 export function parseDhanCsv(ctx: ParseContext): ParsedFile {
   const text = ctx.text ?? "";
-  const { data } = Papa.parse<string[]>(text, { skipEmptyLines: false });
-  const rows = data;
+  const rows: string[][] = text
+    ? (Papa.parse<string[]>(text, { skipEmptyLines: false }).data ?? [])
+    : dhanSheet(ctx) ?? [];
   const warnings: string[] = [];
 
-  const hdr = rows.findIndex((r) => r[0] === "Scrip Name");
+  const hdr = rows.findIndex((r) => (r[0] ?? "").trim() === "Scrip Name");
   if (hdr < 0) {
     return {
       sourceId: "dhan-csv",
       broker: "dhan",
       format: "pnl",
       trades: [],
-      warnings: ["Could not find the 'Scrip Name' header row — is this a Dhan P&L CSV?"],
+      warnings: ["Could not find the 'Scrip Name' header row — is this a Dhan P&L export?"],
     };
   }
 
@@ -53,13 +126,15 @@ export function parseDhanCsv(ctx: ParseContext): ParsedFile {
   for (let i = hdr + 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[0]) continue;
-    if (r[0].startsWith("Net P&L")) {
-      reported = {
-        netPnl: toNum(r[1]),
-        brokerage: toNum(r[3]),
-        grossPnl: toNum(r[5]),
-        totalCharges: toNum(r[7]),
-      };
+    const label = r[0].trim().toLowerCase();
+    if (label in FOOTER_LABELS) {
+      // CSV: one row of label/value pairs. XLSX: one pair per row. Reading the
+      // row AS pairs serves both without knowing which it is.
+      reported ??= {};
+      for (let k = 0; k + 1 < r.length; k += 2) {
+        const key = FOOTER_LABELS[r[k].trim().toLowerCase()];
+        if (key) reported[key] = toNum(r[k + 1]);
+      }
       continue;
     }
     if (r[0].startsWith("NOTE")) continue;
@@ -67,7 +142,7 @@ export function parseDhanCsv(ctx: ParseContext): ParsedFile {
 
     trades.push({
       broker: "dhan",
-      tradingsymbol: r[0],
+      tradingsymbol: r[0].trim(),
       isin: null,
       buyQty: toNum(r[1]),
       avgBuyPrice: toNum(r[2]),

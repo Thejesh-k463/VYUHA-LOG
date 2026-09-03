@@ -1,7 +1,7 @@
 # V3.8.0 "Trust the import" + V3.9.0 "Trust the numbers" — BUILD PLAN
 
 **STATUS: OWNER-APPROVED 2026-09-03 (twelve decisions, all taken via pop-up, all recommended options).
-NOT YET IN BUILD.** Decisions and the research behind them are recorded in `docs/DECISIONS.md`
+IN BUILD since 2026-09-04 — wave plan in §4.** Decisions and the research behind them are recorded in `docs/DECISIONS.md`
 2026-09-03. Live Desk slides to **v4.0** (owner decision).
 
 Grounded in **eight read-only investigations run 2026-09-03 against the released v3.7.1 tree** —
@@ -269,3 +269,65 @@ the mode label string. Perf: the enriched snapshot must not move the dashboard; 
 - Paytm (equity), Groww (equity + P&L), Zerodha (equity + F&O), Upstox + Angel One (limited).
 - Test the macOS DMG when a Mac is available (first-ever data point on darwin activation).
 - Set `VYUHA_KEY_ARCHIVE_DIR`.
+
+---
+
+## 4. Wave plan — VERIFIED against the v3.7.1 tree and OWNER-APPROVED 2026-09-04
+
+Seven read-only recon agents checked every §0/§1 claim on 2026-09-03/04. Corrections that changed
+the shape (full record in `docs/DECISIONS.md` 2026-09-04):
+
+- **WS1.** `dedupHash` hashes broker|tradingsymbol|qty|price|value|dates and commit already resolves
+  codes→tickers via ISIN before hashing, so unsplit positions keep their hash; a merged position is a
+  NEW row by construction — no migration can absorb the two phantom rows. **0059 re-keys Paytm hashes
+  ISIN-first** (label-independent), and WS1 adds a **broker-scoped "Remove this broker's imported
+  rows"** (account-scoped, trash snapshot, audit-logged, confirmation) so the owner's book is
+  re-imported clean. `dhan-gtr.ts:247` only writes a NOTE for mixed days; Paytm needs a real split of
+  the scrip-day accumulator (`paytm-tradebook.ts:323-344`) via `splitMixedRow`
+  (`product-signature.ts:146`). `corroborate()` (`:109-121`) is never called by Paytm today. The copy
+  is at `acquisition-panel.tsx:152`. No quarantine route exists — the warning links to `/trades`.
+- **WS3.** The broker GET masks `api_key` and never returns it (`route.ts:216-249`). Hydration =
+  relax the gate when a saved row exists + carry the stored key server-side on re-save (owner ruling).
+  Retry-on-401 belongs in `dhanGet` (`dhan.ts:392-413`) / `resolveDhanAccessToken` (`:366-390`).
+  `dhan-ledger` lives at `lib/import/parsers/dhan-ledger.ts`; registering any source needs
+  `PARSERS`+`DETECTORS` (`detect.ts:47-80`), a help card (`import-help-content.test.ts:48-54` joins
+  both ways) and a mutual stand-down with `dhan-csv` (`dhan-csv.ts:18`). `totpAckVersion` must be
+  written or enrolment silently degrades (`route.ts:540-544`).
+- **WS8.** The helper is `todayIstIso` (`lib/queries/challans.ts:117`); `todayInIst` exists nowhere.
+  Four inline IST copies (`app/review/page.tsx:86`, `lib/queries/session-plan.ts:57`,
+  `components/behavior/session-planner.tsx:26`, `components/review/review-open-card.tsx:34`) plus
+  `rates.ts:94`'s UTC `todayIso` with **11 consumers, 5 inside `commit.ts` pricing** — the owner
+  ruled **migrate all eleven**, gated by a before/after charge comparison on the owner's book.
+  `getWriteAccountId` refuses explicit AND implied 0 (typed error); `tests/account-isolation.test.ts:203`
+  inverts; five workaround callers (`dismissals.ts:49`, `review.ts:205`, `challans.ts:227`,
+  `ipos/route.ts:162`, `settings/route.ts:28`) are simplified. `recordAudit` has 73 call sites,
+  3 legitimately `before: null`. No OWNERS file or registry-debt list exists — dropped.
+- **WS6.** Only `docs/client/README.md:443` claims "uninstall"; `README.md:699,791-792` say
+  "reinstalls"; the deck says nothing. Claims audit and bundle-marker check are prose steps in the
+  release skill (no script). `licenseKey` is blanked at `lib/backup-format.ts:83`. The sidecar sets
+  `VYUHA_DB_PATH` (`desktop-server.mjs:154`) so `attachments/` sits beside the DB — copy target holds.
+- **WS7.** FTS5 + trigram confirmed (SQLite 3.53.2). `router.back()` IS used (`back-button.tsx:47`,
+  `nav-history-tracker.tsx:52,60`) — both search backs must not double-fire. `perf-sweep.mjs` has no
+  exclusion list and writes no file; `/trades` is swept and breaches (~2.0 s) — "out of scope" =
+  compared, not fixed. `mistake_tags` is JSON text — flatten with `json_each` in the FTS trigger.
+  Palette = 43 nav + 4 actions, 27 hand keywords; `HELP_ENTRIES` has 43 `keywords` arrays.
+  Tables without `account_id`: playbooks, instruments, symbol_aliases (challans, sessions HAVE it).
+- **WS4.** Snapshot is a static import, eager, loaded by `commit.ts` and `app/api/sessions/route.ts`
+  only — never the dashboard. Count 5,671. `instruments-file.ts:161` is an ALLOW-list
+  (`EQ/BE/BZ/SM/""`). Egress allow-list = `tests/egress-guard.test.ts:36` (`scripts/` unscanned).
+  PRIVACY ships in THREE client packages. **Sector seed waits for the owner's own Sentinel files
+  (ruling 2026-09-04) — see the sector/industry/indices plan when it lands.**
+- **WS5.** `SESSIONS` at `cockpit.ts:107-113`; `tests/cockpit.test.ts:41-44` pins `sessionOf("08:00")
+  === null` (keep); literal "09:15–15:30" at `app/arjuns-eye/page.tsx:334`; no fixture has a
+  09:00–09:14 stamp.
+- **WS2.** Private reconciliation runs on the owner's box today (all three private files exist) and
+  pins exact counts — redacted copies need re-derived assertions. **Three-row rule (owner ruling):
+  keep every row; replace names/UCC/PAN with fixed tokens; every distinct case keeps ≥3 real rows.**
+  Load suite → **dedicated `load` CI job**, required green, listed in the release skill.
+
+**Waves.** W0 baseline (verify EXIT echoed; perf sweep #1 on seeded prod build) → W1 ONE migration
+agent (0059 `data_fixes` marker + TS post-migrate Paytm hash re-key; 0060 FTS5 external-content +
+triggers + indexes symbol/isin/tradingsymbol) → W2 pure/server in parallel (WS1 parser + remove,
+WS3 server + parsers, WS4, WS5+WS8, WS7 server, WS2 harness) → W3 UI → W4 perf sweep #2 + load +
+e2e → W5 docs/claims/README counts → W6 6-finder audit → fix wave → W6b audit of the fix wave →
+W7 release skill + client ZIP + WDSI. Every fix: test proven red by reverting. One verify per wave.

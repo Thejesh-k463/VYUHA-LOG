@@ -9,6 +9,11 @@ import { detectGrowwOrders } from "@/lib/import/parsers/groww-orders";
 import { detectAngelOne, detectUpstox } from "@/lib/import/parsers/angelone-upstox";
 import { detectAngelOneTaxPnl } from "@/lib/import/parsers/angelone-taxpnl";
 import { detectPaytmTradebook } from "@/lib/import/parsers/paytm-tradebook";
+import { detectDhanCsv } from "@/lib/import/parsers/dhan-csv";
+import { detectDhanGtr } from "@/lib/import/parsers/dhan-gtr";
+import { detectDhanRealisedPnl } from "@/lib/import/parsers/dhan-realised-pnl";
+import { detectDhanDividend, detectDhanLedgerFile } from "@/lib/import/parsers/dhan-ledger";
+import { ownerContext, ownerFile, ownerFiles } from "./helpers/owner-broker-files";
 
 /**
  * THE MISROUTE MATRIX — every real export routes to its own parser, and every
@@ -144,6 +149,12 @@ describe("no detector claims another BROKER's file", () => {
     { name: "detectAngelOneTaxPnl", broker: "angelone", fn: detectAngelOneTaxPnl },
     { name: "detectUpstox", broker: "upstox", fn: detectUpstox },
     { name: "detectPaytmTradebook", broker: "paytm", fn: detectPaytmTradebook },
+    // 2026-09-04: the five Dhan detectors join the refusal matrix.
+    { name: "detectDhanGtr", broker: "dhan", fn: detectDhanGtr },
+    { name: "detectDhanCsv", broker: "dhan", fn: detectDhanCsv },
+    { name: "detectDhanRealisedPnl", broker: "dhan", fn: detectDhanRealisedPnl },
+    { name: "detectDhanLedgerFile", broker: "dhan", fn: detectDhanLedgerFile },
+    { name: "detectDhanDividend", broker: "dhan", fn: detectDhanDividend },
   ];
 
   for (const d of DETECTORS) {
@@ -229,4 +240,58 @@ describe("the incident files, replayed", () => {
     const score = detectZerodha(buildContext("statement.xlsx", buf)); // name withheld
     expect(score).toBeGreaterThanOrEqual(0.4); // "- Z" charge heads carry it alone
   });
+});
+
+/**
+ * 2026-09-04 batch: the owner's REAL Dhan exports (ledger ×2, dividend
+ * payout, P&L .xlsx ×2, Realised P&L .xls ×2) and Angel One's Trades_History,
+ * read IN PLACE from the owner's folder — never copied into the repo. Each
+ * routes to its own source under a neutral filename, and every broker-named
+ * detector scores 0 on the files that are not its broker's. Skipped, not
+ * failed, anywhere the folder is absent.
+ */
+const OWNER: { file: string; broker: string; expect: string }[] = [
+  ...ownerFiles(/^Dhan_Ledger_.*\.csv$/).map((file) => ({ file, broker: "dhan", expect: "dhan-ledger" })),
+  ...ownerFiles(/^Dhan_Dividend_.*\.csv$/).map((file) => ({ file, broker: "dhan", expect: "dhan-dividend" })),
+  ...ownerFiles(/^Dhan_P&L_.*\.xlsx$/).map((file) => ({ file, broker: "dhan", expect: "dhan-csv" })),
+  ...ownerFiles(/^realized_pnl-report.*\.xls$/).map((file) => ({ file, broker: "dhan", expect: "dhan-realised-pnl" })),
+  ...(ownerFile(/^Trades_History_.*\.xlsx$/) ? [{ file: ownerFile(/^Trades_History_.*\.xlsx$/)!, broker: "angelone", expect: "angelone" }] : []),
+];
+const haveOwner = OWNER.length >= 8;
+
+describe.skipIf(!haveOwner)("the owner's real Dhan and Angel One exports route to their own source", () => {
+  for (const o of OWNER) {
+    it(`${path.basename(o.file).slice(0, 22)}… → ${o.expect}`, () => {
+      const { filename, bytes } = ownerContext(o.file);
+      const ranked = rankParsers(buildContext(filename, bytes));
+      expect(ranked[0].sourceId).toBe(o.expect);
+      expect(ranked[0].confidence).toBeGreaterThanOrEqual(0.9);
+    });
+  }
+});
+
+describe.skipIf(!haveOwner)("no detector claims another broker's REAL file (owner's folder)", () => {
+  const DETECTORS: { name: string; broker: string; fn: (ctx: ReturnType<typeof buildContext>) => number }[] = [
+    { name: "detectZerodha", broker: "zerodha", fn: detectZerodha },
+    { name: "detectGrowwXlsx", broker: "groww", fn: detectGrowwXlsx },
+    { name: "detectGrowwOrders", broker: "groww", fn: detectGrowwOrders },
+    { name: "detectAngelOne", broker: "angelone", fn: detectAngelOne },
+    { name: "detectAngelOneTaxPnl", broker: "angelone", fn: detectAngelOneTaxPnl },
+    { name: "detectUpstox", broker: "upstox", fn: detectUpstox },
+    { name: "detectPaytmTradebook", broker: "paytm", fn: detectPaytmTradebook },
+    { name: "detectDhanGtr", broker: "dhan", fn: detectDhanGtr },
+    { name: "detectDhanCsv", broker: "dhan", fn: detectDhanCsv },
+    { name: "detectDhanRealisedPnl", broker: "dhan", fn: detectDhanRealisedPnl },
+    { name: "detectDhanLedgerFile", broker: "dhan", fn: detectDhanLedgerFile },
+    { name: "detectDhanDividend", broker: "dhan", fn: detectDhanDividend },
+  ];
+  for (const d of DETECTORS) {
+    for (const o of OWNER) {
+      if (o.broker === d.broker) continue;
+      it(`${d.name} scores 0 on ${path.basename(o.file).slice(0, 22)}…`, () => {
+        const { filename, bytes } = ownerContext(o.file);
+        expect(d.fn(buildContext(filename, bytes))).toBe(0);
+      });
+    }
+  }
 });

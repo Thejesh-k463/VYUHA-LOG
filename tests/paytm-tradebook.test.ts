@@ -145,12 +145,14 @@ describe("opening sell", () => {
 describe("charge apportionment", () => {
   // Two identical closed positions in different scrips, so each takes exactly
   // half of the file's charges and the arithmetic is checkable by hand.
-  const legPair = (script: string) => [
-    row({ Script: script, STT: 20, "Stamp Duty": 3 }),
-    row({ Date: "04-08-2026", Script: script, Type: "Sell", Quantity: 100, Price: 210,
+  // Two scrips means two ISINs: pairing is by ISIN (2026-09-04), so two codes
+  // sharing the fixture's default ISIN would be ONE security, not two.
+  const legPair = (script: string, isin: string) => [
+    row({ Script: script, ISIN: isin, STT: 20, "Stamp Duty": 3 }),
+    row({ Date: "04-08-2026", Script: script, ISIN: isin, Type: "Sell", Quantity: 100, Price: 210,
       Brokerage: 20, ETT: 6.3, GST: 4.73, STT: 21, SEBI: 0.02, "Stamp Duty": 0 }),
   ];
-  const p = parsePaytmTradebook(ctx(wb([...legPair("216463"), ...legPair("544866")])));
+  const p = parsePaytmTradebook(ctx(wb([...legPair("216463", "INE000000001"), ...legPair("544866", "INE000000002")])));
 
   // Stated by the file, summed by hand from the rows above.
   const FILE = { brokerage: 80, exchangeTxn: 24.6, gst: 18.82, sttCtt: 82, sebi: 0.08, stampDuty: 6 };

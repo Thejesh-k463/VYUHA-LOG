@@ -26,7 +26,14 @@ export interface ImportSourceMeta {
 
 export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   { sourceId: "dhan-gtr", label: "Dhan Global Transaction Report (CSV)", broker: "dhan", tab: "transactions", hint: "Dhan transaction report" },
-  { sourceId: "dhan-csv", label: "Dhan P&L (CSV)", broker: "dhan", tab: "pnl", hint: "Dhan CSV" },
+  { sourceId: "dhan-csv", label: "Dhan P&L (CSV/XLSX)", broker: "dhan", tab: "pnl", hint: "Dhan P&L CSV/XLSX" },
+  { sourceId: "dhan-realised-pnl", label: "Dhan Realised P&L Report (XLS) — per-segment charges", broker: "dhan", tab: "pnl", hint: "Dhan Realised P&L report" },
+  // The two Dhan CASH files are registered so the dropzone can NAME them
+  // rather than misfile them (before 2026-09-04 `dhan-csv` claimed both on the
+  // filename alone). Like the PDF entry, their parse produces no trades — the
+  // copy says so, and points at the screen that reads them.
+  { sourceId: "dhan-ledger", label: "Dhan Ledger (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan ledger (→ Cash & Ledger)" },
+  { sourceId: "dhan-dividend", label: "Dhan Dividend payout (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan dividend report (→ Cash & Ledger)" },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", broker: "groww", tab: "pnl", hint: "Groww XLSX" },
   { sourceId: "groww-orders", label: "Groww Stocks Order History (XLSX)", broker: "groww", tab: "transactions", hint: "Groww order history" },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", broker: "zerodha", tab: "both", hint: "Zerodha tradebook / Console" },

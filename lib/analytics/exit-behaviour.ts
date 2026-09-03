@@ -93,7 +93,7 @@ export interface ExitClockReport {
   /** Closed trades whose exit time the file never carried — excluded, not guessed. */
   withoutTime: number;
   /**
-   * Timed exits that fall OUTSIDE 09:15–15:30 and so belong to no session.
+   * Timed exits that fall OUTSIDE the SESSIONS span and so belong to no session.
    * Reported rather than dropped, exactly as cockpit.ts does for entries, so
    * the bands reconcile against the total.
    */

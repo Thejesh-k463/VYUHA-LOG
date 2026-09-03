@@ -155,8 +155,26 @@ export function detectZerodha(ctx: ParseContext): number {
     return filenameNamed ? 0.3 : 0;
   }
 
+  // Zerodha's own preamble on Console tradebook exports — `Client ID` in A1,
+  // then "Tradebook for Equity from <date> to <date>" (verified on the real
+  // export, 2026-09-04). Same shape rule as the content name above: a short
+  // preamble row, never a data cell.
+  const consolePreamble = matrices.some((rows) =>
+    rows.slice(0, 12).some((row) => {
+      const nonEmpty = row.filter((c) => c.trim() !== "");
+      return nonEmpty.length <= 2 && nonEmpty.some((c) => /^tradebook for\b/i.test(c.trim()));
+    }),
+  );
+  // `Trade ID` + `Order ID` is NOT Zerodha's alone: Angel One's
+  // Trades_History export carries both (found 2026-09-04, when this detector
+  // claimed that file at 0.50). The pair now needs something Zerodha writes —
+  // the `Auction` column, its `Order Execution Time` clock, the "Tradebook
+  // for …" preamble, or a name — before it counts as a fingerprint.
   const tradebookFp =
-    cells.includes("auction") || (cells.includes("tradeid") && cells.includes("orderid"));
+    cells.includes("auction") ||
+    (cells.includes("tradeid") &&
+      cells.includes("orderid") &&
+      (cells.includes("orderexecutiontime") || named || consolePreamble));
   // The tradewise table SHAPE never claims on its own — entry/exit/turnover
   // columns are conceivable from another broker — it needs the workbook to
   // have named Zerodha or shown the "- Z" heads first (the house rule: a

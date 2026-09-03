@@ -14,7 +14,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { extractTime } from "../time-parse";
-import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
 
@@ -26,32 +26,72 @@ const toNum = (v: unknown): number => {
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s_.\-()]/g, "");
 
-function toMatrix(ctx: ParseContext): string[][] {
+/** First sheet as a matrix, plus its name — the name is part of one
+ *  fingerprint (Angel One's `TradesAndCharges`). */
+function toBook(ctx: ParseContext): { rows: string[][]; sheet: string | null } {
   if (ctx.text != null) {
-    return (Papa.parse<string[]>(ctx.text, { skipEmptyLines: true }).data ?? []).map((r) =>
-      r.map((c) => String(c ?? "")),
-    );
+    return {
+      rows: (Papa.parse<string[]>(ctx.text, { skipEmptyLines: true }).data ?? []).map((r) =>
+        r.map((c) => String(c ?? "")),
+      ),
+      sheet: null,
+    };
   }
   if (ctx.buffer) {
     const wb = XLSX.read(ctx.buffer, { type: "buffer" });
-    const ws = wb.Sheets[wb.SheetNames[0]!];
-    return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(
-      (r) => r.map((c) => String(c ?? "")),
-    );
+    const name = wb.SheetNames[0]!;
+    const ws = wb.Sheets[name];
+    return {
+      rows: (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(
+        (r) => r.map((c) => String(c ?? "")),
+      ),
+      sheet: name,
+    };
   }
-  return [];
+  return { rows: [], sheet: null };
+}
+
+function toMatrix(ctx: ParseContext): string[][] {
+  return toBook(ctx).rows;
 }
 
 /** Header row = the first row carrying a symbol-ish column (reports often have
- *  several banner/summary rows above it). */
+ *  several banner/summary rows above it — Angel One's Trades_History puts a
+ *  30-row charges summary above its table, so the scan goes to 60). */
 function findHeader(rows: string[][]): number {
-  const wanted = ["symbol", "tradingsymbol", "scrip", "scripname", "instrument", "stockname", "company"];
-  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+  const wanted = ["symbol", "tradingsymbol", "scrip", "scripname", "scrip/contract", "instrument", "stockname", "company"];
+  for (let i = 0; i < Math.min(rows.length, 60); i++) {
     const cells = rows[i].map(norm);
     if (wanted.some((w) => cells.includes(w))) return i;
   }
   return -1;
 }
+
+/**
+ * Angel One's `Trades_History_<code>.xlsx` (verified on a real export,
+ * 2026-09-04): one sheet `TradesAndCharges`; `ClientCode` / `DateOfDownload`
+ * / a `Charges Summary` block of label-value rows above the table; the table
+ * titled `TradeBook And Charges` with header
+ *   `Scrip/Contract | Buy/Sell | Buy Price | Sell Price | Quantity | Brokerage
+ *    | GST | STT | Sebi Tax | Exchange Turnover Charges | Stamp Duty | Other
+ *    Charges | IPFT Charges | Order Type | Segment | Exchange | Order ID |
+ *    Trade ID | Date`
+ * The file never writes "Angel" anywhere — not in the filename, not in a
+ * cell. The fingerprint is the FORMAT: that sheet name with `Scrip/Contract`,
+ * `IPFT Charges`, `Order ID` and `Trade ID` together, which no other examined
+ * broker's export carries (Zerodha has the ID pair but neither of the others).
+ */
+function isTradesHistoryHeader(cells: string[]): boolean {
+  return (
+    cells.includes("scrip/contract") &&
+    cells.includes("ipftcharges") &&
+    cells.includes("orderid") &&
+    cells.includes("tradeid") &&
+    cells.includes("buy/sell")
+  );
+}
+const isTradesHistory = (sheet: string | null, cells: string[]) =>
+  norm(sheet ?? "") === "tradesandcharges" && isTradesHistoryHeader(cells);
 
 function colFinder(header: string[]) {
   const idx = header.map(norm);
@@ -110,7 +150,7 @@ function productHint(raw: string): ProductHint {
  */
 function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
   const namedInFile = nameRe.test(ctx.filename);
-  const rows = toMatrix(ctx);
+  const { rows, sheet } = toBook(ctx);
   const h = findHeader(rows);
   if (h < 0) return namedInFile ? 0.3 : 0;
 
@@ -134,15 +174,18 @@ function detectFor(broker: Broker, nameRe: RegExp, ctx: ParseContext): number {
   // treatment: its scoring is unchanged and no evidence asked for it.
   const bannerFingerprint =
     broker === "upstox" && rows.slice(0, Math.min(13, h)).some((r) => namesBroker(r.map(norm)));
-  const fingerprint = headerFingerprint || bannerFingerprint;
+  // Angel One's Trades_History names nobody at all; its FORMAT is the
+  // fingerprint (see isTradesHistoryHeader).
+  const tradesHistoryFingerprint = broker === "angelone" && isTradesHistory(sheet, cells);
+  const fingerprint = headerFingerprint || bannerFingerprint || tradesHistoryFingerprint;
 
   // No name, no claim.
   if (!namedInFile && !fingerprint) return 0;
 
-  let score = namedInFile || bannerFingerprint ? 0.4 : 0;
+  let score = namedInFile || bannerFingerprint || tradesHistoryFingerprint ? 0.4 : 0;
   if (fingerprint) score += 0.1;
   if (cells.includes("clientcode") || cells.includes("clientid")) score += 0.05;
-  const hasSymbol = cells.some((c) => ["symbol", "tradingsymbol", "scrip", "scripname", "instrument"].includes(c));
+  const hasSymbol = cells.some((c) => ["symbol", "tradingsymbol", "scrip", "scripname", "scrip/contract", "instrument"].includes(c));
   if (hasSymbol) score += 0.2;
   // Side column (tradebook) or an aggregated buy/sell pair (P&L report).
   if (cells.some((c) => ["buysell", "tradetype", "transactiontype", "side", "ordertype"].includes(c))) score += 0.25;
@@ -179,12 +222,19 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   const find = colFinder(header);
   const dataRows = rows.slice(h + 1).filter((r) => r.some((c) => c.trim() !== ""));
 
-  const cSymbol = find("tradingsymbol", "symbol", "scrip name", "scrip", "instrument", "stock name", "company");
+  const headerCells = header.map(norm);
+  const tradesHistory = broker === "angelone" && isTradesHistoryHeader(headerCells);
+  const cSymbol = find("tradingsymbol", "symbol", "scrip name", "scrip", "scrip/contract", "instrument", "stock name", "company");
   const cIsin = find("isin");
   const cSide = find("buy/sell", "trade type", "transaction type", "side", "order type", "type");
   const cQty = find("quantity", "qty", "traded quantity", "filled quantity");
   const cPrice = find("price", "trade price", "average price", "avg price", "executed price");
-  const cProduct = find("product", "product type", "producttype");
+  // Trades_History states the product as `Order Type` (Intraday / Delivery).
+  // Only when it is not ALSO the side column — in a file where "Order Type"
+  // means BUY/SELL it would split every symbol into two groups.
+  const cProductPlain = find("product", "product type", "producttype");
+  const cOrderType = tradesHistory ? find("order type") : -1;
+  const cProduct = cProductPlain >= 0 ? cProductPlain : cOrderType >= 0 && cOrderType !== cSide ? cOrderType : -1;
   const cExch = find("exchange", "exch", "segment");
   const cDate = find("trade date", "order execution time", "date", "trade time", "executed on");
   // Upstox's trade report splits the clock off into its own column ("Trade
@@ -208,11 +258,33 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
       buyDate: string | null; sellDate: string | null;
       buyQty: number; buyVal: number; sellQty: number; sellVal: number;
       executions: Execution[]; notes: string[];
+      charges: Partial<ChargeBreakdown> | null;
     };
+    // Trades_History: a price per SIDE, a charge per row, dates as Excel
+    // serials rendered m/d/yy, and no clock at all.
+    const cBuyPrice = tradesHistory ? find("buy price") : -1;
+    const cSellPrice = tradesHistory ? find("sell price") : -1;
+    const chargeCols: [keyof ChargeBreakdown, number][] = tradesHistory
+      ? (
+          [
+            ["brokerage", find("brokerage")], ["gst", find("gst")], ["sttCtt", find("stt")],
+            ["sebi", find("sebi tax", "sebi")], ["exchangeTxn", find("exchange turnover charges", "exchange turnover")],
+            ["stampDuty", find("stamp duty")], ["ipft", find("ipft charges", "ipft")],
+          ] as [keyof ChargeBreakdown, number][]
+        ).filter((c) => c[1] >= 0)
+      : [];
+    const cOther = tradesHistory ? find("other charges") : -1;
+    let sourceRows = 0;
+    let chargeOnlyRows = 0;
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
-      const symbol = (r[cSymbol] ?? "").trim();
-      if (!symbol) continue;
+      const rawSymbol = (r[cSymbol] ?? "").trim();
+      if (!rawSymbol) continue;
+      // The trailing "NOTE: Data Accurate Till …" line has a symbol cell and a
+      // date where the side should be — a row without a Buy/Sell is not a row.
+      if (tradesHistory && !/^(b|s)/.test(norm(r[cSide]))) continue;
+      sourceRows++;
+      const symbol = tradesHistory ? canonicalAngelContract(rawSymbol) : rawSymbol;
       const product = cProduct >= 0 ? r[cProduct] : "";
       const key = `${symbol}|${product}`;
       const acc = groups.get(key) ?? {
@@ -224,12 +296,41 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         sellDate: null,
         buyQty: 0, buyVal: 0, sellQty: 0, sellVal: 0,
         executions: [], notes: [],
+        charges: null,
       };
+      if (tradesHistory && symbol !== rawSymbol) {
+        const note = `Angel One contract "${rawSymbol}" read as ${symbol}`;
+        if (!acc.notes.includes(note)) acc.notes.push(note);
+      }
       const qty = toNum(r[cQty]);
-      const price = toNum(r[cPrice]);
-      const date = cDate >= 0 ? (r[cDate] || null) : null;
-      const time = extractTime(cTime >= 0 ? r[cTime] : null) ?? extractTime(date);
       const side = norm(r[cSide]);
+      const price = tradesHistory
+        ? toNum(r[side.startsWith("b") ? cBuyPrice : cSellPrice])
+        : toNum(r[cPrice]);
+      const rawDate = cDate >= 0 ? (r[cDate] || null) : null;
+      const date = tradesHistory ? usDateToIso(rawDate) : rawDate;
+      const time = tradesHistory ? null : (extractTime(cTime >= 0 ? r[cTime] : null) ?? extractTime(date));
+      if (tradesHistory) {
+        // Charges are stated PER ROW, including rows with quantity 0 — the
+        // flat per-order F&O brokerage lines (₹20 + GST, no Trade ID). Those
+        // are money that left the account for this contract, so they are
+        // summed into the position's charges and never into its quantity.
+        const c: Partial<ChargeBreakdown> = { ...(acc.charges ?? {}) };
+        let rowTotal = 0;
+        for (const [k, col] of chargeCols) {
+          const v = toNum(r[col]);
+          c[k] = Math.round(((c[k] ?? 0) + v) * 100) / 100;
+          rowTotal += v;
+        }
+        if (cOther >= 0) rowTotal += toNum(r[cOther]);
+        c.total = Math.round(((c.total ?? 0) + rowTotal) * 100) / 100;
+        acc.charges = c;
+        if (qty <= 0) {
+          chargeOnlyRows++;
+          groups.set(key, acc);
+          continue;
+        }
+      }
       if (cInstrType >= 0 && !isEquityInstrument(r[cInstrType] ?? "")) {
         const note =
           `Upstox F&O row: instrument type ${(r[cInstrType] ?? "").trim() || "—"}, ` +
@@ -284,10 +385,23 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         sourceFile: ctx.filename,
         executions: a.executions,
         importNotes: a.notes.length ? a.notes : null,
+        ...(a.charges ? { reportedCharges: a.charges } : {}),
       });
     }
     warnings.push(`${label} tradebook aggregated per tradingsymbol+product; verify F&O classification and re-tag MTF rows once (overrides persist).`);
-    return { sourceId: broker, broker, format: "tradebook", trades, warnings };
+    if (!tradesHistory) return { sourceId: broker, broker, format: "tradebook", trades, warnings };
+
+    // ── Trades_History extras: the file's own charges summary ──────────────
+    const reported = readChargesSummary(rows.slice(0, h));
+    warnings.push(
+      `Angel One Trades_History: ${sourceRows} rows read, ${chargeOnlyRows} of them per-order charge lines (quantity 0) folded into their contract's charges. Charges are the broker's stated figures per row; product comes from Order Type; there are no fill times.`,
+    );
+    if (reported.statedTotalCharges != null && reported.nonTradeCharges != null) {
+      warnings.push(
+        `The file's Total Charges ₹${reported.statedTotalCharges} includes ₹${reported.nonTradeCharges} of non-trade charges (DP, AMC, interest, pledge) that belong to the ledger, not to these trades.`,
+      );
+    }
+    return { sourceId: broker, broker, format: "tradebook", trades, warnings, sourceRows, reported };
   }
 
   // ---- Aggregated P&L / holdings report ----
@@ -364,6 +478,72 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
   }
   warnings.push(`${label} P&L report is aggregated per scrip; segment/MTF may need re-tagging (overrides persist across re-imports).`);
   return { sourceId: broker, broker, format: "pnl-report", trades, warnings };
+}
+
+/**
+ * `OPTSTK ICICIBANK Sep 29 2026 1550.00 CE (BT)` → `OPT ICICIBANK 29 Sep 2026
+ * 1550 CE` — the canonical name the classifier reads (the grammar the Angel
+ * SmartAPI puller and the tax P&L parser already build). Index options on BSE
+ * come as `BSXOPT SENSEX …`; futures as `FUT…`. Anything that does not match
+ * is returned untouched, so a plain equity name is never rewritten.
+ */
+export function canonicalAngelContract(raw: string): string {
+  const m = raw.trim().match(
+    /^([A-Z]*(?:OPT|FUT)[A-Z]*)\s+([A-Z0-9&-]+)\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})(?:\s+([\d.]+)\s+(CE|PE))?/i,
+  );
+  if (!m) return raw.trim();
+  const kind = /FUT/i.test(m[1]) ? "FUT" : "OPT";
+  const mon = m[3][0].toUpperCase() + m[3].slice(1, 3).toLowerCase();
+  const date = `${m[4].padStart(2, "0")} ${mon} ${m[5]}`;
+  if (kind === "FUT" || !m[6] || !m[7]) return `FUT ${m[2].toUpperCase()} ${date}`;
+  const strike = Number(m[6]);
+  return `OPT ${m[2].toUpperCase()} ${date} ${Number.isFinite(strike) ? String(strike) : m[6]} ${m[7].toUpperCase()}`;
+}
+
+/** SheetJS renders a date cell as `8/27/26 0:00` (m/d/yy) when read with
+ *  raw:false — US order, because that is Excel's default short date. ISO
+ *  dates pass through; anything else is left for the committer to refuse. */
+export function usDateToIso(raw: string | null): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?!\d)/);
+  if (!m) return s;
+  const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${yyyy}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+const SUMMARY_KEYS: Record<string, string> = {
+  totaltrades: "totalTrades",
+  totalcharges: "statedTotalCharges",
+  totaltradecharges: "totalCharges",
+  totalnontradecharges: "nonTradeCharges",
+  brokerage: "brokerage",
+  gst: "gst",
+  sebitax: "sebi",
+  stt: "stt",
+  exchangeturnovercharges: "exchangeTxn",
+  stampduty: "stamp",
+  othercharges: "otherCharges",
+  ipftcharges: "ipft",
+  dpcharges: "dpCharges",
+  interestcharges: "interestCharges",
+  monthlyaccountmaintenancecharges: "amc",
+  pledgecharges: "pledgeCharges",
+};
+
+/** The `Charges Summary` label/value rows above the table. `Total Charges`
+ *  is the file's grand total INCLUDING non-trade charges, so it is stored as
+ *  `statedTotalCharges`; `totalCharges` is the trade-charges figure the
+ *  reconciliation compares against the rows. */
+function readChargesSummary(preamble: string[][]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of preamble) {
+    const key = SUMMARY_KEYS[norm(r[0] ?? "")];
+    if (!key || r[1] === undefined || r[1] === "") continue;
+    out[key] = toNum(r[1]);
+  }
+  return out;
 }
 
 export const detectAngelOne = (ctx: ParseContext) => detectFor("angelone", /angel|angelone|angelbroking/i, ctx);

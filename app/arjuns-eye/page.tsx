@@ -331,7 +331,7 @@ export default function ArjunsEyePage() {
                 {time.offHours > 0 && (
                   <p className="mt-2 text-xs text-warning">
                     {num(time.offHours)} timed trade{time.offHours === 1 ? "" : "s"} fall outside
-                    09:15–15:30 and belong to no session, so they are excluded from the bars
+                    {SESSIONS[0].from}–{SESSIONS[SESSIONS.length - 1].to} and belong to no session, so they are excluded from the bars
                     above rather than forced into one. Worth checking the import — a broker
                     time column read wrongly looks exactly like this.
                   </p>

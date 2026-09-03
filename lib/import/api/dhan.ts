@@ -272,19 +272,41 @@ export function dhanAuthUrl(clientId: string, pin: string, totpCode: string): st
   return `https://auth.dhan.co/app/generateAccessToken?${q.toString()}`;
 }
 
-/** Does this JWT's own `exp` claim say it is still alive? Used only to decide
- *  whether a stored pasted token is worth FALLING BACK on after a failed mint —
- *  an unreadable token counts as expired (refuse to guess). */
-export function jwtLooksUnexpired(token: string, nowMs: number = Date.now()): boolean {
+/**
+ * The `exp` claim of a JWT as epoch MILLISECONDS, or null when the token is
+ * not a decodable JWT or carries no finite exp (refuse to guess).
+ *
+ * RFC 7519 says `exp` is seconds, but a millisecond `exp` is a common issuer
+ * slip and the old `exp * 1000` comparison read one as alive for ~50,000
+ * years — a revoked token then looked reusable forever. Any `exp` above 1e11
+ * (seconds would put that in the year 5138) is treated as milliseconds.
+ */
+function jwtExpMs(token: string): number | null {
   try {
     const payload = JSON.parse(Buffer.from(String(token).split(".")[1] ?? "", "base64url").toString("utf8")) as {
       exp?: unknown;
     };
     const exp = Number(payload?.exp);
-    return Number.isFinite(exp) && exp * 1000 > nowMs;
+    if (!Number.isFinite(exp)) return null;
+    return exp > 1e11 ? exp : exp * 1000;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** The JWT's own expiry as an ISO timestamp, for display ("pasted token ·
+ *  expires …"); null when unreadable. Never returns any other claim. */
+export function jwtExpiresAt(token: string): string | null {
+  const ms = jwtExpMs(token);
+  return ms == null ? null : new Date(ms).toISOString();
+}
+
+/** Does this JWT's own `exp` claim say it is still alive? Used only to decide
+ *  whether a stored pasted token is worth FALLING BACK on after a failed mint —
+ *  an unreadable token counts as expired (refuse to guess). */
+export function jwtLooksUnexpired(token: string, nowMs: number = Date.now()): boolean {
+  const ms = jwtExpMs(token);
+  return ms != null && ms > nowMs;
 }
 
 /**
@@ -385,7 +407,22 @@ export async function resolveDhanAccessToken(creds: DhanCredentials): Promise<{ 
   }
 }
 
-async function dhanGet<T>(path: string, accessToken: string): Promise<T> {
+/** The 401/403 hint, shared by the first refusal and the post-retry one. */
+function dhanApiError(status: number, json: unknown): Error {
+  const msg =
+    (json as { errorMessage?: string; message?: string } | null)?.errorMessage ??
+    (json as { message?: string } | null)?.message ??
+    `HTTP ${status}`;
+  return new Error(
+    `Dhan API: ${msg}${
+      status === 401 || status === 403
+        ? " (access token expired or wrong? Pasted Dhan tokens from web.dhan.co → DhanHQ Trading APIs last 24 hours; with PIN + TOTP saved, Vyuha mints a fresh one at every pull instead.)"
+        : ""
+    }`,
+  );
+}
+
+async function dhanGetRaw(path: string, accessToken: string): Promise<{ res: Response; json: unknown }> {
   const res = await fetch(`https://api.dhan.co/v2${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -393,42 +430,62 @@ async function dhanGet<T>(path: string, accessToken: string): Promise<T> {
     },
     cache: "no-store",
   });
-
   const json = (await res.json().catch(() => null)) as unknown;
-  if (!res.ok) {
-    const msg =
-      (json as { errorMessage?: string; message?: string } | null)?.errorMessage ??
-      (json as { message?: string } | null)?.message ??
-      `HTTP ${res.status}`;
-    throw new Error(
-      `Dhan API: ${msg}${
-        res.status === 401 || res.status === 403
-          ? " (access token expired or wrong? Pasted Dhan tokens from web.dhan.co → DhanHQ Trading APIs last 24 hours; with PIN + TOTP saved, Vyuha mints a fresh one at every pull instead.)"
-          : ""
-      }`,
-    );
-  }
-  // Dhan returns a bare array on success for these endpoints.
-  return json as T;
+  return { res, json };
 }
 
 /**
- * `onMinted` fires when the call had to mint a fresh token (PIN+TOTP mode) so
- * the caller can PERSIST it — Dhan mints at most one token per 2 minutes
+ * One authenticated GET, with the token resolved reuse-first (see
+ * resolveDhanAccessToken) and ONE retry on 401/403:
+ *
+ * A stored token can be REVOKED while its own `exp` still says alive (the user
+ * regenerated it at web.dhan.co, or Dhan invalidated the session). Reuse-first
+ * then sends a dead token and, before this retry existed, the whole pull
+ * failed with the 24-hour hint even though PIN + TOTP could have minted a live
+ * one. So: when the request used a REUSED token and the enrolment is present,
+ * drop that token, mint once, persist the mint (`onMinted`), and retry once.
+ * A 401 on the freshly minted token, or on the retry, surfaces the hint as
+ * before. Paste-only mode never mints — Dhan's own 401 stays the judge there.
+ */
+async function dhanGet<T>(path: string, creds: DhanCredentials, onMinted?: (token: string) => void): Promise<T> {
+  const { token, minted } = await resolveDhanAccessToken(creds);
+  if (minted) {
+    creds.accessToken = token; // the in-process cache — the next call reuses instead of re-minting
+    onMinted?.(token);
+  }
+  let r = await dhanGetRaw(path, token);
+  const rejected = r.res.status === 401 || r.res.status === 403;
+  const canMint = Boolean(creds.pin && creds.totpSecret);
+  if (!r.res.ok && rejected && !minted && canMint) {
+    let fresh: string;
+    try {
+      fresh = await mintDhanAccessToken({ clientId: creds.clientId, pin: creds.pin!, totpSecret: creds.totpSecret! });
+    } catch (e) {
+      throw new Error(`${dhanApiError(r.res.status, r.json).message} Re-minting after that rejection also failed: ${(e as Error).message}`);
+    }
+    creds.accessToken = fresh;
+    onMinted?.(fresh);
+    r = await dhanGetRaw(path, fresh);
+  }
+  if (!r.res.ok) throw dhanApiError(r.res.status, r.json);
+  // Dhan returns a bare array on success for these endpoints.
+  return r.json as T;
+}
+
+/**
+ * `onMinted` fires when the call had to mint a fresh token (PIN+TOTP mode —
+ * including the one-shot re-mint after a 401 on a reused token) so the caller
+ * can PERSIST it — Dhan mints at most one token per 2 minutes
  * (live-verified 2026-09-02), so an unpersisted mint breaks the very next
  * call (preview → commit). The route stores it encrypted via the vault.
  */
 export async function fetchDhanPositions(creds: DhanCredentials, onMinted?: (token: string) => void): Promise<DhanPositionRow[]> {
-  const { token, minted } = await resolveDhanAccessToken(creds);
-  if (minted) onMinted?.(token);
-  const data = await dhanGet<DhanPositionRow[] | null>("/positions", token);
+  const data = await dhanGet<DhanPositionRow[] | null>("/positions", creds, onMinted);
   return Array.isArray(data) ? data : [];
 }
 
 export async function fetchDhanHoldings(creds: DhanCredentials, onMinted?: (token: string) => void): Promise<DhanHoldingRow[]> {
-  const { token, minted } = await resolveDhanAccessToken(creds);
-  if (minted) onMinted?.(token);
-  const data = await dhanGet<DhanHoldingRow[] | null>("/holdings", token);
+  const data = await dhanGet<DhanHoldingRow[] | null>("/holdings", creds, onMinted);
   return Array.isArray(data) ? data : [];
 }
 

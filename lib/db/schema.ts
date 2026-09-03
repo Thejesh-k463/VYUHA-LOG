@@ -210,6 +210,15 @@ export const trades = sqliteTable(
     // DESC, created_at DESC — as one composite, so the hottest query in the
     // app (25 force-dynamic pages) is an index scan instead of a filesort.
     index("trades_account_sell_created_idx").on(t.accountId, sql`${t.sellDate} DESC`, sql`${t.createdAt} DESC`),
+    // Search v1 lookups (migration 0060). The same migration also creates the
+    // FTS5 index `trades_fts` (external content, trigram tokenizer), its
+    // content view `trades_fts_src` and the four triggers that keep it in
+    // step with this table — none of which drizzle can express, so they have
+    // NO mirror here. Query it with raw SQL: `SELECT rowid FROM trades_fts
+    // WHERE trades_fts MATCH ?`. Migration 0060 documents the trigger design.
+    index("trades_symbol_idx").on(t.symbol),
+    index("trades_isin_idx").on(t.isin),
+    index("trades_tradingsymbol_idx").on(t.tradingsymbol),
   ],
 );
 
@@ -455,6 +464,17 @@ export const advanceTaxChallans = sqliteTable(
   },
   (t) => [index("advance_tax_challans_account_fy_idx").on(t.accountId, t.fy)],
 );
+
+// ---------------------------------------------------------------------------
+// data_fixes — ledger of one-shot row rewrites that SQL cannot express
+// (migration 0059). One row per fix name; lib/db/data-fixes.ts runs a fix
+// only while its row is absent and writes the row in the same transaction.
+// Machine state, not journal state: deliberately NOT in BACKUP_TABLES.
+// ---------------------------------------------------------------------------
+export const dataFixes = sqliteTable("data_fixes", {
+  name: text("name").primaryKey(),
+  appliedAt: text("applied_at").notNull(),
+});
 
 // ---------------------------------------------------------------------------
 // charge_config — editable rate table keyed by broker + segment + exchange.
