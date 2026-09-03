@@ -22,9 +22,11 @@ with a lock never hidden, both backs, load test + stress spec); WS8 all three ba
 items (`recordAudit` key-set guard, `getWriteAccountId` refuses 0, one `todayInIst`).
 
 Two of these are LIVE on my own book today (VYUHA-STATE §7): the Paytm split and the Dhan
-Client-ID box. Owner inputs are listed in the plan's §3 — ask me for the Dhan exports (both
-accounts) before WS2/WS3 need them; I will supply Paytm, Groww, Zerodha, Upstox, Angel One
-files too.
+Client-ID box. Owner inputs are listed in the plan's §3. **At the START of the session, before
+exploration, hand me the complete file list from §3 (which report, which format, which date
+range, both Dhan accounts, redaction rule) so I can gather everything in parallel with your
+recon; then ask again, precisely, at the wave that needs each file.** I will supply Dhan ×2,
+Paytm, Groww, Zerodha, Upstox and Angel One exports.
 
 Same gates as v3.5–v3.7, non-negotiable: explore first with delegated read-only agents (keep
 main context lean; probes ONLY as `tests/zzprobe-*.test.ts`, deleted before an agent reports,
