@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -120,7 +121,7 @@ export default function PerformancePage() {
 
   // Money-weighted return (XIRR) — derived from the cash ledger (P0.2) + realised/
   // unrealised trading P&L. All in integer paise (P0.1).
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
 
   // ── Expected-capital goals (v3.6) ─────────────────────────────────────────
   // One small read; the maths runs on the trade projection already loaded.

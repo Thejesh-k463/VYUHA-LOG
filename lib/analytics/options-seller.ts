@@ -1,4 +1,5 @@
 import { inr } from "@/lib/format";
+import { serializeTradesQuery } from "@/lib/domain/trades-query";
 
 /** `segment` and `tradingsymbol` are optional so the existing fixtures keep
  *  compiling; when present they make the drill-down rows deep-link precisely
@@ -57,7 +58,9 @@ const money = (n: number) => inr(n, { decimals: 0 });
 const tone = (n: number): "profit" | "loss" | "neutral" => (n > 0 ? "profit" : n < 0 ? "loss" : "neutral");
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const contractName = (t: SellerTrade) => t.tradingsymbol ?? t.symbol;
-const tradesHref = (symbol: string, segment?: string) => `/trades?symbol=${encodeURIComponent(symbol)}${segment ? `&segment=${encodeURIComponent(segment)}` : ""}`;
+// Through the shared serializer so the page's parser is guaranteed to honour
+// every key (tests/trades-query.test.ts pins it — no dead links).
+const tradesHref = (symbol: string, segment?: string) => `/trades${serializeTradesQuery({ symbol, segment: segment ?? "" })}`;
 const contractHref = (t: SellerTrade) => tradesHref(contractName(t), t.segment);
 
 export function sellerKpiDetails(trades: SellerTrade[], report: OptionsSellerReport): SellerKpiDetails {
@@ -114,7 +117,7 @@ export function sellerKpiDetails(trades: SellerTrade[], report: OptionsSellerRep
     summary: sellers.length ? `${money(report.netPnl)} across ${plural(sellers.length, "seller contract")}, after charges.` : noneNote,
     rows: netRows,
     note: "Realised is what closed contracts booked; open contracts contribute their current mark and will move.",
-    footerHref: "/trades?realised=1",
+    footerHref: `/trades${serializeTradesQuery({ realised: true })}`,
     footerLabel: "Show realised trades",
   };
 

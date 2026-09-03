@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { useActionState, useEffect, useState } from "react";
 import { closeTradeAction, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,7 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
   const entryPrice = isShort ? trade.avgSellPrice : trade.avgBuyPrice;
 
   const [exitPrice, setExitPrice] = useState("");
-  const [exitDate, setExitDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exitDate, setExitDate] = useState(todayIstIso());
   const [preview, setPreview] = useState<PreviewResp | null>(null);
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ function heldDays(buyDate: string | null, sellDate: string | null, today: string
 }
 
 export default function BrokerComparePage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   const trades = getTrades();
   const ratesMap = loadRatesMap();
   const mtfMarginByBroker = getMtfMarginByBroker();

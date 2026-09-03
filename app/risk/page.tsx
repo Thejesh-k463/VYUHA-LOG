@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { getMtmMap, getSpotMap } from "@/lib/queries/mtm";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
-import { getSectorMap } from "@/lib/queries/instruments";
+import { getSectorResolution } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { loadRatesMap } from "@/lib/engine/rates-db";
@@ -100,9 +100,10 @@ export default function RiskPage() {
   // gauged one account's exposure against another's capital.
   const { equityCapital, activeCapital } = getBucketCapital();
   const anyCapitalMissing = equityCapital <= 0 || activeCapital <= 0;
-  const sectorMap = getSectorMap();
+  // Sector WITH its tier (v3.8): the cockpit says what each label rests on.
+  const sectorMap = getSectorResolution();
   const aliasMap = getAliasMap();
-  const sectorFor = (symbol: string): string | null => {
+  const sectorFor = (symbol: string) => {
     const up = symbol.toUpperCase();
     return sectorMap.get(up) ?? sectorMap.get(resolveTicker(up, aliasMap)) ?? null;
   };
@@ -152,7 +153,8 @@ export default function RiskPage() {
         target: t.targetPlanned,
         daysHeld: daysBetween(side === "long" ? t.buyDate : t.sellDate, today),
         dte: t.expiry ? daysBetween(today, t.expiry) : null,
-        sector: sectorFor(t.symbol),
+        sector: sectorFor(t.symbol)?.sector ?? null,
+        sectorTier: sectorFor(t.symbol)?.tier ?? null,
         side,
         impliedVol: t.impliedVol,
         spot: t.instrumentType === "option" ? spot.get(t.symbol.toUpperCase()) ?? null : null,

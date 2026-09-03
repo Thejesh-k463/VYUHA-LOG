@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { DashboardClient, type DashTrade } from "@/components/dashboard/dashboard-client";
@@ -39,7 +40,7 @@ export default function DashboardPage() {
   const goal = goalView.goals.find((g) => g.bucket === "total") ?? goalView.goals[0];
   let goalBadge: string | null = null;
   if (goal) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIstIso();
     const bc = bucketCapital; // same resolution as the "Total" tile above
     const cap = goal.bucket === "equity" ? bc.equityCapital : goal.bucket === "active" ? bc.activeCapital : bc.totalCapital;
     const rel = goal.bucket === "total" ? dash : dash.filter((t) => t.bucket === goal.bucket);

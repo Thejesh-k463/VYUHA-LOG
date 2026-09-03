@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     .run();
 
   if (mtmPrice != null) {
-    const asOf = new Date().toISOString().slice(0, 10);
+    const asOf = todayIstIso();
     db.insert(mtmPrices)
       .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: mtmPrice, asOfDate: asOf })
       .run();

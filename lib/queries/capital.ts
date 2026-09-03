@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import { db } from "@/lib/db";
 import { accounts, capitalSnapshots } from "@/lib/db/schema";
@@ -74,7 +75,7 @@ export function getCapitalHistory(): CapitalHistoryPoint[] {
   // Append today's live capitals so the chart always ends at the current state.
   const s = getSettings();
   if (s) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIstIso();
     const last = byDate.get(today) ?? { date: today, equity: null, active: null };
     const account=getSelectedAccount(); last.equity = account?.equityCapital ?? s.equityCapital;
     last.active = account?.activeCapital ?? s.activeCapital;
@@ -164,7 +165,7 @@ export function compoundRealised(bucket: Bucket): CompoundResult {
     .values({
       accountId,
       bucket,
-      asOfDate: new Date().toISOString().slice(0, 10),
+      asOfDate: todayIstIso(),
       openingCapital: bucket === "equity" ? newEquity : newActive,
       deployed: 0,
       available: bucket === "equity" ? newEquity : newActive,

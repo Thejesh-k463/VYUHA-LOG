@@ -1,10 +1,13 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   computeExposure,
   sectorConcentration,
+  sectorConfidenceSentence,
+  sectorTierMarker,
   type ExposureInput,
   type ExposurePosition,
   type RiskLevel,
@@ -361,7 +364,14 @@ function SectorPanel({ s, capitalKnown }: { s: SectorConcentration; capitalKnown
       <div className="space-y-2 px-5 pb-5">
         {s.slices.map((slice, i) => (
           <div key={slice.sector} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 text-xs">
-            <span className={`truncate ${slice.sector === "Unclassified" ? "text-muted-foreground" : ""}`}>{slice.sector}</span>
+            <span className={`truncate ${slice.sector === "Unclassified" ? "text-muted-foreground" : ""}`}>
+              {slice.sector}
+              {sectorTierMarker(slice.minTier) && (
+                <span className="ml-1 text-[0.625rem] text-muted-foreground" title={`Weakest source in this bucket: ${sectorTierMarker(slice.minTier)}`}>
+                  ({sectorTierMarker(slice.minTier)})
+                </span>
+              )}
+            </span>
             <div className="h-2 overflow-hidden rounded-full bg-card-hover">
               <div className={`h-full rounded-full ${palette[i % palette.length]}`} style={{ width: `${Math.min(100, slice.sharePct)}%` }} />
             </div>
@@ -370,8 +380,9 @@ function SectorPanel({ s, capitalKnown }: { s: SectorConcentration; capitalKnown
             </span>
           </div>
         ))}
+        <p className="pt-1 text-[0.6875rem] text-muted-foreground">{sectorConfidenceSentence(s)}</p>
         {s.classifiedPct < 100 && (
-          <p className="pt-1 text-[0.6875rem] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             {(100 - s.classifiedPct).toFixed(0)}% of invested capital is unclassified — add sectors on{" "}
             <span className="text-foreground">Instruments</span> for a complete picture.
           </p>
@@ -613,7 +624,7 @@ function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => vo
 
 function CloseDialog({ p, onClosed }: { p: ExposurePosition; onClosed: () => void }) {
   const [exitPrice, setExitPrice] = React.useState(String(p.mtm));
-  const [exitDate, setExitDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [exitDate, setExitDate] = React.useState(todayIstIso());
   const [pending, setPending] = React.useState(false);
 
   const exit = Number(exitPrice) || 0;

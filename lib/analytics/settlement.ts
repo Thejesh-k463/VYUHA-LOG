@@ -13,6 +13,7 @@
 // Rates: the equity-delivery STT comes from `charge_config` (never hard-coded);
 // the option-exercise STT is a dated statutory default the caller may override.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { INDEX_UNDERLYINGS } from "@/lib/domain/constants";
 
 const INDEX_SET = new Set<string>(INDEX_UNDERLYINGS);
@@ -159,7 +160,7 @@ function optionAction(side: "long" | "short", optionType: string | null) {
 export function computeSettlement(
   inputs: SettlementInput[],
   rates: SettlementRates = DEFAULT_SETTLEMENT_RATES,
-  today: string = new Date().toISOString().slice(0, 10),
+  today: string = todayIstIso(),
   windowDays = 7,
 ): SettlementSummary {
   const obligations: SettlementObligation[] = [];

@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { WriteAccountPicker, type WriteAccountOption } from "@/components/system/write-account-picker";
 import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalgo-disclosure";
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
+import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components/import/broker-connect-gate";
+import { writeStored } from "@/components/layout/use-stored-value";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +50,16 @@ interface ConnStatus {
   /** True when an auth_json blob is stored (Dhan PIN+TOTP, Zerodha api_secret,
    *  OpenAlgo config) — a boolean only; the contents never reach the client. */
   hasAuth?: boolean;
+  /** A blob IS stored but cannot be read (vault mismatch, not JSON) — the
+   *  enrolment is broken, not absent; `authWarning` carries the server's
+   *  sentence for it. */
+  authUnreadable?: boolean;
+  authWarning?: string | null;
+  /** HOW the row authenticates (server contract): "totp" mints its own
+   *  token, "token" holds a pasted/cached one, "none" holds neither. */
+  authMode?: "totp" | "token" | "none";
+  /** The stored token's own `exp`, ISO — null when absent or not a JWT. */
+  tokenExpiresAt?: string | null;
   lastPullAt: string | null;
   /** OpenAlgo only — saved config echoed back so the form shows what is
    *  actually connected instead of defaults (host/broker are not secrets). */
@@ -98,8 +110,119 @@ export const DHAN_TOTP_CONSENT_VERSION = 1;
 export const KITE_DAILY_LOGIN_NOTE =
   "Zerodha requires a fresh login every trading day — sessions are invalidated around 6 AM IST by regulation, so no setup can make this unattended. With your API secret saved, pull day is one browser click and one paste: open your Kite Connect login URL, sign in, paste the request_token from the redirect, and Vyuha does the official token exchange.";
 
+/**
+ * The key box's placeholder when a row is ALREADY saved for the save target.
+ * It used to show the masked stored key (`10••••09`) over a ten-digit
+ * sample Client ID — both read as "the box is filled", and the owner
+ * re-typed nothing, saw a disabled button, and concluded the save was broken
+ * (2026-09-04). A placeholder is now always a sentence, never a value shape.
+ */
+export const KEY_KEPT_PLACEHOLDER = "saved — leave blank to keep";
+
+/** All-accounts: the picker's empty state, and the button that waits on it. */
+export const PICK_ACCOUNT_PLACEHOLDER = "Pick an account…";
+export const PICK_ACCOUNT_FIRST = "Pick an account first";
+
+/**
+ * The one-time "your pasted token has expired" pop-up. Shown ONCE per
+ * (broker, tokenExpiresAt) — the pair is the identity of a specific dead
+ * token, so a freshly pasted one gets its own turn and a dismissed one never
+ * nags again. The seen set lives in localStorage under this key (versioned
+ * envelope `{v:1, seen:[…]}`); every access is guarded, and without storage
+ * the pop-up simply shows on every load, which is the safe failure.
+ */
+export const TOKEN_EXPIRY_SEEN_KEY = "vyuha-token-expiry-seen";
+export const TOKEN_EXPIRED_TITLE = "A pasted broker token has expired";
+export function tokenExpiredMessage(brokerLabel: string, expiredAt: string): string {
+  return `The pasted access token for ${brokerLabel} expired at ${expiredAt}. Pulls will fail until you paste a fresh one — or connect once with PIN + TOTP where the broker offers it, and Vyuha mints its own.`;
+}
+
+/** The re-enrol call to action shown under the server's `authWarning`. */
+export const AUTH_REENROL_CTA = "Remove the stored enrolment, then enrol again — pulls cannot use it as it is.";
+
 /** OpenAlgo's supported list, straight from the adapter — never re-typed here. */
 const OPENALGO_OPTIONS = openAlgoBrokerOptions();
+
+/** A pasted token whose `exp` is behind us — the pop-up's trigger. */
+function tokenExpired(c: ConnStatus, now = Date.now()): boolean {
+  if (c.authMode !== "token" || !c.tokenExpiresAt) return false;
+  const t = Date.parse(c.tokenExpiresAt);
+  return Number.isFinite(t) && t < now;
+}
+
+/** ISO → the user's own locale and zone; the server sends UTC ISO. */
+function formatTs(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : iso;
+}
+
+/**
+ * The mode label for one row. `connectionModeLabel` is the pure rule; the
+ * three shapes it cannot tell apart from "not connected" are named here,
+ * because for them the server's `authMode: "none"` means "no ACCESS token"
+ * while the credential lives in the key column and the row pulls fine.
+ */
+function modeLabelOf(c: ConnStatus): string {
+  if (c.authMode === "none" || c.authMode == null) {
+    if (c.broker === "upstox") return "Analytics token · lasts about a year";
+    if (isOpenAlgoConnectionId(c.broker)) return "API key · does not expire";
+    if (c.broker === "zerodha" && c.hasAuth) return "API secret · daily request_token login";
+  }
+  return connectionModeLabel(
+    { authMode: c.authMode ?? "none", tokenExpiresAt: c.tokenExpiresAt ?? null },
+    formatTs,
+  );
+}
+
+/** The mode label as a highlighted pill — the colour is the state at a glance. */
+function ModeBadge({ conn }: { conn: ConnStatus }) {
+  const variant = conn.authUnreadable
+    ? "loss"
+    : tokenExpired(conn)
+      ? "loss"
+      : conn.authMode === "totp"
+        ? "profit"
+        : conn.authMode === "token"
+          ? "warning"
+          : "secondary";
+  return (
+    <Badge variant={variant} className="ml-1.5" data-testid="connection-mode">
+      {tokenExpired(conn) ? "EXPIRED · " : ""}
+      {modeLabelOf(conn)}
+    </Badge>
+  );
+}
+
+/** The seen set behind TOKEN_EXPIRY_SEEN_KEY, read defensively. */
+function readExpirySeen(): Set<string> {
+  try {
+    const raw = localStorage.getItem(TOKEN_EXPIRY_SEEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as { v?: number; seen?: unknown };
+    if (parsed?.v !== 1 || !Array.isArray(parsed.seen)) return new Set();
+    return new Set(parsed.seen.filter((s): s is string => typeof s === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+const expiryKeyOf = (c: ConnStatus) => `${c.broker}@${c.tokenExpiresAt}`;
+
+/** The expired-token rows this browser has NOT yet been told about. */
+function unseenExpired(conns: ConnStatus[]): ConnStatus[] {
+  const seen = readExpirySeen();
+  return conns.filter((c) => tokenExpired(c) && !seen.has(expiryKeyOf(c)));
+}
+
+function markExpirySeen(conns: ConnStatus[]): void {
+  try {
+    const seen = readExpirySeen();
+    for (const c of conns) seen.add(expiryKeyOf(c));
+    writeStored(TOKEN_EXPIRY_SEEN_KEY, JSON.stringify({ v: 1, seen: [...seen] }));
+  } catch {
+    /* no storage: the pop-up returns next load, which is the safe failure */
+  }
+}
 
 const BROKERS: Record<BrokerId, {
   label: string;
@@ -130,7 +253,8 @@ const BROKERS: Record<BrokerId, {
     label: "Dhan",
     tab: "Dhan (DhanHQ v2)",
     keyLabel: "Client ID",
-    keyPlaceholder: "1000000009",
+    // The field label, on purpose: a digit string here read as a filled box.
+    keyPlaceholder: "Client ID",
     needsToken: true,
     blurb: (
       <>
@@ -198,13 +322,32 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   // A6 — same question as the file importer above: in the All-accounts view a
   // SAVED connection needs an account to live in. Pulls never ask — they run
   // against the connection row's own account.
-  const [savePick, setSavePick] = useState<number>(writeAccounts[0]?.id ?? 0);
+  //
+  // With two or more accounts to choose from there is NO default: the picker
+  // used to sit on the first account, and a save with it left there wrote a
+  // second Dhan row into the wrong book on the owner's desktop (2026-09-04).
+  // Now the save waits for an explicit pick, and names the account it will
+  // write to. With one account the aggregate IS that account — no question.
+  const needsPick = writeAccounts.length >= 2;
+  const [savePick, setSavePick] = useState<number>(needsPick ? 0 : writeAccounts[0]?.id ?? 0);
   // Derived, not synced: the sidebar account switcher router.refresh()es this
   // page, which swaps the writeAccounts prop WITHOUT remounting — a picked id
   // that left the list must fall back at render time, never via an effect.
   const saveAccountId = writeAccounts.some((a) => a.id === savePick)
     ? savePick
-    : writeAccounts[0]?.id ?? 0;
+    : needsPick
+      ? 0
+      : writeAccounts[0]?.id ?? 0;
+  /** The picker's list, with an explicit empty row while a pick is pending —
+   *  the row's id 0 is the aggregate, which can never receive a write. */
+  const pickerAccounts: WriteAccountOption[] = needsPick
+    ? [{ id: 0, name: PICK_ACCOUNT_PLACEHOLDER }, ...writeAccounts]
+    : writeAccounts;
+  /** "Saving to <name>", or null when nothing is picked (or there is nothing
+   *  to pick from — a specific account is selected, and the route resolves
+   *  it; the UI says nothing rather than guess). */
+  const saveTarget = saveTargetLabel(pickerAccounts, savePick, 0);
+  const pickMissing = needsPick && saveAccountId === 0;
   /** True when the server listed every account's connections (All-accounts). */
   const [aggregate, setAggregate] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -217,7 +360,12 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const [totpSecret, setTotpSecret] = useState("");
   // Dhan's TOTP mode: opt-in toggle + explicit consent (the stored secret
   // makes Vyuha a second factor — DHAN_TOTP_CONSENT gates the save).
-  const [dhanTotpMode, setDhanTotpMode] = useState(false);
+  //
+  // The toggle's value is DERIVED until the user touches it: null means
+  // "follow the saved row" (an enrolled Dhan connection opens in TOTP mode,
+  // so the form describes what is actually stored), a boolean is the user's
+  // own pick. No effect syncs it — switchBroker sets it back to null.
+  const [dhanTotpPick, setDhanTotpPick] = useState<boolean | null>(null);
   const [dhanConsent, setDhanConsent] = useState(false);
   // Zerodha's extra — the Kite Connect app secret for the official daily
   // session exchange (request_token paste; decision #3, no enctoken).
@@ -253,6 +401,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     message?: string;
     duplicates?: { symbol: string; segment: string; buyQty: number; sellQty: number; grossPnl: number }[];
   } | null>(null);
+  /** Expired pasted tokens this browser has not been told about yet — set
+   *  from the fetch callbacks (never an effect), shown once, then marked. */
+  const [expiryPrompt, setExpiryPrompt] = useState<ConnStatus[] | null>(null);
 
   // Derived, not synced: if the gate closes while the OpenAlgo tab is selected,
   // fall back to Zerodha at render time. (AGENTS.md — never reset state in an
@@ -268,7 +419,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const conn = brokerConns[0] ?? null;
   /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
   const saveTargetConn =
-    saveAccountId > 0 ? brokerConns.find((c) => c.accountId === saveAccountId) ?? null : conn;
+    saveAccountId > 0
+      ? brokerConns.find((c) => c.accountId === saveAccountId) ?? null
+      : pickMissing
+        ? null // no target yet — nothing to "keep", nothing to update
+        : conn;
+  /** Dhan's TOTP toggle: the user's pick, else whatever the saved row does. */
+  const dhanTotpMode = dhanTotpPick ?? saveTargetConn?.authMode === "totp";
   /** Every saved OpenAlgo instance (`openalgo:<broker>` rows) — a user with
    *  accounts at several brokers runs one instance per broker, each on its own
    *  port, and each pulls independently. */
@@ -314,6 +471,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         setAggregate(Boolean(data.aggregate));
         setOpenalgoAvailable(Boolean(data.openalgo?.available));
         adoptSavedOpenAlgo(data.connections ?? []);
+        const dead = unseenExpired(data.connections ?? []);
+        if (dead.length > 0) setExpiryPrompt(dead);
       }
     } catch {
       /* stays disconnected */
@@ -331,6 +490,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         setAggregate(Boolean(d.aggregate));
         setOpenalgoAvailable(Boolean(d.openalgo?.available));
         adoptSavedOpenAlgo(d.connections ?? []);
+        const dead = unseenExpired(d.connections ?? []);
+        if (dead.length > 0) setExpiryPrompt(dead);
       })
       .catch(() => {});
     return () => {
@@ -512,7 +673,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     setPin("");
     setTotpSecret("");
     setApiSecret("");
-    setDhanTotpMode(false);
+    setDhanTotpPick(null);
     setDhanConsent(false);
     setRequestToken("");
     setRequestTokenPrompt(null);
@@ -530,10 +691,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           {openalgoAvailable && <> + OpenAlgo</>}
         </CardTitle>
         {brokerConns.length === 1 && conn && (
-          <Badge variant="secondary">
-            key {conn.apiKeyMasked}
-            {aggregate && conn.accountName ? ` · ${conn.accountName}` : ""}
-          </Badge>
+          <span className="flex items-center">
+            <Badge variant="secondary">
+              key {conn.apiKeyMasked}
+              {aggregate && conn.accountName ? ` · ${conn.accountName}` : ""}
+            </Badge>
+            <ModeBadge conn={conn} />
+          </span>
         )}
         {brokerConns.length > 1 && (
           <Badge variant="secondary">{brokerConns.length} accounts connected</Badge>
@@ -612,6 +776,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                       <Badge variant="secondary" className="ml-1.5 text-[10px]">{c.accountName ?? `account ${c.accountId}`}</Badge>
                     )}
                     <span className="text-muted-foreground"> — {c.openalgoHost ?? "host unknown"} · key {c.apiKeyMasked}</span>
+                    <ModeBadge conn={c} />
                     {c.lastPullAt && (
                       <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
                     )}
@@ -643,6 +808,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 <div className="text-xs">
                   <span className="font-medium">{c.accountName ?? `Account ${c.accountId}`}</span>
                   <span className="text-muted-foreground"> — key {c.apiKeyMasked}</span>
+                  <ModeBadge conn={c} />
+                  {c.authUnreadable && (
+                    <span className="text-loss"> · {c.authWarning ?? "enrolment stored but unreadable — re-enrol"}</span>
+                  )}
                   {c.lastPullAt && (
                     <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
                   )}
@@ -667,11 +836,41 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
             view, which book does a SAVED connection belong to? Renders only
             when the question is real (aggregate view, 2+ accounts). */}
         <WriteAccountPicker
-          accounts={writeAccounts}
+          accounts={pickerAccounts}
           value={saveAccountId}
           onChange={setSavePick}
           label="Save connection to account"
         />
+        {needsPick && (
+          // The answer, said back beside the question — a save from the
+          // All-accounts view names the book it writes to, every time.
+          <p className="text-xs" data-testid="save-target">
+            {saveTarget ? (
+              <Badge variant="accent">Saving to {saveTarget}</Badge>
+            ) : (
+              <Badge variant="warning">{PICK_ACCOUNT_FIRST}</Badge>
+            )}
+          </p>
+        )}
+
+        {/* The enrolment is STORED but cannot be read — said loudly, with the
+            way out, for every broker. Pulls refuse with the same sentence, so
+            this is where the user learns why before the first failed pull. */}
+        {saveTargetConn?.authUnreadable && (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-loss/40 bg-loss/5 px-3 py-2 text-xs"
+            data-testid="auth-unreadable"
+          >
+            <span>
+              <TriangleAlert className="mr-1.5 inline size-4 text-loss" />
+              <span className="font-medium text-loss">{saveTargetConn.authWarning ?? "enrolment stored but unreadable — re-enrol"}</span>
+              <span className="text-muted-foreground"> {AUTH_REENROL_CTA}</span>
+            </span>
+            <Button type="button" size="sm" variant="secondary" onClick={clearAuthEnrollment} disabled={busy != null}>
+              {busy === "clear-auth" ? "Removing…" : "Remove enrolment & re-enrol"}
+            </Button>
+          </div>
+        )}
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="space-y-1">
@@ -679,8 +878,15 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
             <Input
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={saveTargetConn ? saveTargetConn.apiKeyMasked : spec.keyPlaceholder}
+              // A sentence, never a value shape: the masked key here looked
+              // like a filled box (see KEY_KEPT_PLACEHOLDER).
+              placeholder={saveTargetConn ? KEY_KEPT_PLACEHOLDER : spec.keyPlaceholder}
             />
+            {saveTargetConn && (
+              <p className="text-[0.6875rem] text-muted-foreground">
+                stored key {saveTargetConn.apiKeyMasked} stays unless you type a new one — it never leaves this machine.
+              </p>
+            )}
           </div>
           {spec.needsToken && (
             <div className="space-y-1">
@@ -703,8 +909,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               />
               <p className="text-[0.6875rem] text-muted-foreground">{KITE_DAILY_LOGIN_NOTE}</p>
               {saveTargetConn?.hasAuth && (
-                <Button type="button" size="sm" variant="ghost" onClick={clearAuthEnrollment} disabled={busy != null}>
-                  {busy === "clear-auth" ? "Removing…" : "Remove API secret"}
+                <Button type="button" size="sm" variant="secondary" onClick={clearAuthEnrollment} disabled={busy != null}>
+                  {busy === "clear-auth" ? "Removing…" : "Remove API secret (back to pasted tokens)"}
                 </Button>
               )}
             </div>
@@ -716,7 +922,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                   type="checkbox"
                   checked={dhanTotpMode}
                   onChange={(e) => {
-                    setDhanTotpMode(e.target.checked);
+                    setDhanTotpPick(e.target.checked);
                     if (!e.target.checked) {
                       setPin("");
                       setTotpSecret("");
@@ -728,8 +934,15 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 <span className="text-muted-foreground">— Vyuha mints the 24-hour token at every pull</span>
               </label>
               {saveTargetConn?.hasAuth && (
-                <Button type="button" size="sm" variant="ghost" onClick={clearAuthEnrollment} disabled={busy != null}>
-                  {busy === "clear-auth" ? "Removing…" : "Remove PIN + TOTP enrollment"}
+                // A visible secondary button, labelled from the MODE the row
+                // is in — the ghost it replaced was invisible until hovered.
+                // (The unreadable case has its own block above the form.)
+                <Button type="button" size="sm" variant="secondary" onClick={clearAuthEnrollment} disabled={busy != null}>
+                  {busy === "clear-auth"
+                    ? "Removing…"
+                    : saveTargetConn.authMode === "totp"
+                      ? "Remove PIN + TOTP enrolment (Vyuha stops minting tokens)"
+                      : "Remove stored enrolment"}
                 </Button>
               )}
               {dhanTotpMode && (
@@ -827,28 +1040,34 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         <div className="flex flex-wrap items-center gap-2">
           <Button
             onClick={save}
+            // The rule lives in broker-connect-gate.ts (pure, tabled in
+            // tests/broker-connect-gate.test.ts): an empty key box blocks only
+            // when there is NO saved row to keep the stored key from. A save
+            // from the All-accounts view also waits for an explicit account.
             disabled={
-              busy != null || !apiKey ||
-              (active === "openalgo"
-                ? !host.trim() || !underlyingBroker
-                : active === "angelone"
-                  ? !clientCode || !pin || !totpSecret
-                  : active === "dhan"
-                    // TOTP mode: PIN + secret + the explicit consent; the
-                    // pasted token is then optional. Otherwise: token mode.
-                    ? (dhanTotpMode ? !pin || !totpSecret || !dhanConsent : !accessToken)
-                    : active === "zerodha"
-                      // Either the day's token or the API secret must be there.
-                      ? !accessToken && !apiSecret
-                      : spec.needsToken
-                        ? !accessToken
-                        // Upstox: the Analytics token in the key field is the
-                        // whole credential — nothing else to demand.
-                        : false)
+              pickMissing ||
+              saveDisabled({
+                busy: busy != null,
+                active,
+                apiKey,
+                hasSavedRow: saveTargetConn != null,
+                token: accessToken,
+                totpMode: dhanTotpMode,
+                consent: dhanConsent,
+                pin,
+                totpSecret,
+                clientCode,
+                apiSecret,
+                host,
+                underlyingBroker,
+                needsToken: spec.needsToken,
+              })
             }
           >
             {busy === "save"
               ? "Saving…"
+              : pickMissing
+                ? PICK_ACCOUNT_FIRST
               : active === "openalgo"
                 ? openAlgoConns.some(
                     (c) =>
@@ -861,6 +1080,9 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                   ? "Update connection"
                   : "Save connection"}
           </Button>
+          {needsPick && saveTarget && (
+            <span className="text-[0.6875rem] text-muted-foreground">Saving to {saveTarget}</span>
+          )}
           {/* With several accounts connected, the per-account rows above carry
               the pull buttons — a single set here could only act on one of
               them and would misread as acting on all. */}
@@ -1071,6 +1293,48 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 }}
               >
                 Exchange &amp; continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* One-time expired-token pop-up: a pasted token's own `exp` is behind
+            us. Shown once per (broker, tokenExpiresAt) — closing it marks the
+            pair seen; a new paste is a new pair and gets its own turn. */}
+        <Dialog
+          open={expiryPrompt != null}
+          onOpenChange={(open) => {
+            if (!open && expiryPrompt) {
+              markExpirySeen(expiryPrompt);
+              setExpiryPrompt(null);
+            }
+          }}
+        >
+          <DialogContent data-testid="token-expired-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <TriangleAlert className="size-4 text-loss" />
+                {TOKEN_EXPIRED_TITLE}
+              </DialogTitle>
+              <DialogDescription>
+                {(expiryPrompt ?? []).map((c) => (
+                  <span key={`${c.accountId}:${c.broker}`} className="block">
+                    {tokenExpiredMessage(
+                      `${BROKERS[c.broker as BrokerId]?.label ?? c.broker}${aggregate && c.accountName ? ` (${c.accountName})` : ""}`,
+                      formatTs(c.tokenExpiresAt ?? ""),
+                    )}
+                  </span>
+                ))}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  if (expiryPrompt) markExpirySeen(expiryPrompt);
+                  setExpiryPrompt(null);
+                }}
+              >
+                Got it
               </Button>
             </DialogFooter>
           </DialogContent>

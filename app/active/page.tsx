@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { TrackerClient } from "@/components/trackers/tracker-client";
 import { getTrackerTrades } from "@/lib/queries/trades";
@@ -8,7 +9,7 @@ import { deriveOpenPositions } from "@/lib/analytics/positions";
 export const dynamic = "force-dynamic";
 
 export default function ActiveTrackerPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   // Column-trimmed book (same rows, same order as getTrades — see the
   // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
   const trades = getTrackerTrades();

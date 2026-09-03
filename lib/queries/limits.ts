@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
@@ -63,7 +64,7 @@ function bucketCapital(bucket: string): number {
  * @param symbol  canonical symbol of the prospective order
  * @param today   ISO date (defaults to now)
  */
-export function getPortfolioState(bucket: string, symbol: string, today = new Date().toISOString().slice(0, 10)): PortfolioState {
+export function getPortfolioState(bucket: string, symbol: string, today = todayIstIso()): PortfolioState {
   const all = getTrades();
   const inBucket = bucket ? all.filter((t) => t.bucket === bucket) : all;
   const sym = symbol.trim().toUpperCase();

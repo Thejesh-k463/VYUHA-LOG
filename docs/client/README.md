@@ -440,8 +440,12 @@ Everything lives in one SQLite file on your machine:
 **Back it up** from Backup & Restore inside the app. The backup includes the complete
 database plus screenshot attachments; set a password when the file will leave your machine.
 You can still copy the SQLite file for a quick local snapshot.
-Uninstalling does not delete it, and a new version migrates it in place after
-taking its own pre-migration backup.
+The uninstaller offers a "Delete the application data" checkbox — at uninstall, and
+mid-upgrade if you choose to uninstall the old version first. Before it runs, Vyuha
+copies your journal database and licence key (both live in `vyuha.sqlite`) plus your
+attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm; Cancel keeps
+everything in place. Leave the box unticked to keep the data where it is; a new version
+migrates it in place after taking its own pre-migration backup.
 
 ---
 

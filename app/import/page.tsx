@@ -4,7 +4,7 @@ import { BrokerConnect } from "@/components/import/broker-connect";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getImportBatches, getImportBatchShapes } from "@/lib/queries/trades";
-import { getAccounts, isAggregateView } from "@/lib/queries/accounts";
+import { getAccounts, getSelectedAccountId, isAggregateView } from "@/lib/queries/accounts";
 import { ImportBatchesTable } from "@/components/import/import-batches-table";
 import { tradesInBatch, previewImportBatchDelete } from "@/lib/queries/delete";
 
@@ -15,6 +15,10 @@ export default function ImportPage() {
   const shapes = getImportBatchShapes();
   // A6 — only the aggregate view leaves the destination account unanswered.
   const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
+  // The remove-broker panel names the account it removes from. 0 (All
+  // accounts) resolves to null: a view, never a write target (invariant 9).
+  const selectedId = getSelectedAccountId();
+  const selectedAccount = selectedId > 0 ? (getAccounts().find((a) => a.id === selectedId) ?? null) : null;
 
   return (
     <>
@@ -23,7 +27,7 @@ export default function ImportPage() {
         description="Auto-detect broker & format, preview, then commit. Re-imports are de-duplicated."
       />
       <div className="space-y-6 p-6">
-        <ImportClient writeAccounts={writeAccounts} />
+        <ImportClient writeAccounts={writeAccounts} selectedAccount={selectedAccount ? { id: selectedAccount.id, name: selectedAccount.name } : null} />
 
         <BrokerConnect writeAccounts={writeAccounts} />
 

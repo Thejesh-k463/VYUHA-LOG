@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { TargetEquityClient, type MtfSummary } from "@/components/targets/target-equity-client";
 import { getTrades } from "@/lib/queries/trades";
@@ -19,7 +20,7 @@ import type { Broker, Exchange } from "@/lib/domain/constants";
 export const dynamic = "force-dynamic";
 
 export default function TargetEquityPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   const trades = getTrades();
   const mtm = getMtmMap();
   const risk = db.select().from(riskConfig).all();

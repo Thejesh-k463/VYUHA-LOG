@@ -74,8 +74,72 @@
   !insertmacro VYUHA_KILL_SIDECAR
 !macroend
 
+; ── Guarding the journal and licence at uninstall (2026-09-04) ────────────
+;
+; Tauri's uninstaller draws a "Delete the application data" checkbox on its
+; confirm page (un.ConfirmShow in the generated installer.nsi) and, when it is
+; ticked, runs `RmDir /r "$APPDATA\${BUNDLEID}"`. That folder holds
+; vyuha.sqlite — the whole journal AND the licence key (settings.license_key).
+; The checkbox names neither, and it also appears mid-upgrade: the installer's
+; reinstall page runs the OLD uninstaller interactively (PageLeaveReinstall,
+; `ExecWait '$R1 _?=$4'`, no /S). The owner's own database and lifetime key
+; were wiped exactly that way. The in-app backup would not have saved the key
+; either — the envelope blanks licenseKey (lib/backup-format.ts).
+;
+; So before anything is removed this hook (1) stops the sidecar, (2) says in
+; plain words what lives in the folder and that a copy is being made — Cancel
+; ends the uninstall with nothing touched — and (3) copies the raw database
+; files (*.sqlite plus any -wal/-shm/-journal sibling) and attachments\ to
+; $DOCUMENTS\Vyuha-backup-<yyyy-mm-dd>\ (the user's Documents folder). The
+; copy is made even when the checkbox is left unticked: it is cheap, and the
+; alternative is trusting that a label which never says "journal" was read.
+;
+; Skipped in update mode: tauri-plugin-updater runs the installer with /UPDATE,
+; which never invokes the uninstaller interactively, and the template's own
+; RmDir is guarded by `$UpdateMode <> 1` — nothing can delete data there, so a
+; copy on every background update would only pile folders into Documents.
+; A silent uninstall (/S) takes the MessageBox's /SD default of OK and copies.
+; Cancel exits with error level 1, which the upgrade path reads as "user
+; cancelled the uninstaller" and returns to its reinstall page (a script Abort
+; would exit 2 and show "unable to uninstall", which is the wrong story).
+;
+; What a hook may use, verified against the installer.nsi template embedded in
+; @tauri-apps/cli 2.11.3 (NSIS 3.11): the hooks file is !included AFTER
+; MUI2.nsh (which pulls LogicLib), FileFunc.nsh, WordFunc.nsh, StrFunc.nsh and
+; utils.nsh, so ${GetTime}, ${If}/${FileExists}, $DOCUMENTS and the template's
+; own SetContext macro all resolve. FileFunc's ${GetTime} is an
+; artificial-function call in NSIS 3, so it works inside the un. section
+; without a separate `!insertmacro un.GetTime` (the template itself uses
+; ${GetOptions} in un.onInit the same way). $DeleteAppDataCheckboxState is
+; filled by un.ConfirmLeave, which runs before Section Uninstall, so the hook
+; can read it; ${BUNDLEID} and $UpdateMode are defined after the !include but
+; before the macro is inserted, which is when they are resolved.
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro VYUHA_KILL_SIDECAR
+  ${If} $UpdateMode <> 1
+    ; Per-user $APPDATA / $DOCUMENTS whatever the install mode; restored below.
+    SetShellVarContext current
+    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\*.*"
+      ; $0 = dd, $1 = mm, $2 = yyyy (zero-padded by FileFunc).
+      ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
+      StrCpy $7 "$DOCUMENTS\Vyuha-backup-$2-$1-$0"
+      StrCpy $8 "They stay in place unless you ticked 'Delete the application data'."
+      ${If} $DeleteAppDataCheckboxState = 1
+        StrCpy $8 "You ticked 'Delete the application data', so that folder will be ERASED once the copy is made."
+      ${EndIf}
+      ; OK jumps past the two cancel instructions (SetErrorLevel + Quit).
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "Your journal database and your licence key live in:$\r$\n$APPDATA\${BUNDLEID}$\r$\n$\r$\n$8$\r$\n$\r$\nBefore anything is removed, Vyuha will copy the journal database (vyuha.sqlite) and your attachments to:$\r$\n$7$\r$\n$\r$\nOK continues the uninstall. Cancel keeps everything exactly as it is." /SD IDOK IDOK +3
+      SetErrorLevel 1
+      Quit
+      CreateDirectory "$7"
+      CopyFiles /SILENT "$APPDATA\${BUNDLEID}\*.sqlite*" "$7"
+      ${If} ${FileExists} "$APPDATA\${BUNDLEID}\attachments\*.*"
+        CreateDirectory "$7\attachments"
+        CopyFiles /SILENT "$APPDATA\${BUNDLEID}\attachments\*.*" "$7\attachments"
+      ${EndIf}
+    ${EndIf}
+    !insertmacro SetContext
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL

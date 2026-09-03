@@ -20,6 +20,8 @@
 // EVERYTHING HERE IS INFORMATIONAL. Exchange circulars and your broker's own
 // RMS are the source of truth; dates move for holidays. The UI repeats this.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
+
 export interface RadarPosition {
   id: number;
   symbol: string;
@@ -89,7 +91,7 @@ function underlyingOf(symbol: string): string {
   return symbol.toUpperCase().replace(/^(OPT|FUT)\s+/, "").split(/[\s\d]/)[0] ?? "";
 }
 
-export function sebiRadar(positions: RadarPosition[], today = new Date().toISOString().slice(0, 10), rules: RadarRules = DEFAULT_RADAR_RULES): RadarReport {
+export function sebiRadar(positions: RadarPosition[], today = todayIstIso(), rules: RadarRules = DEFAULT_RADAR_RULES): RadarReport {
   const items: RadarItem[] = [];
   const derivatives = positions.filter((p) => DERIVATIVE_SEGMENTS.has(p.segment) && p.qty > 0);
 

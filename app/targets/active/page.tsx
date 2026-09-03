@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { TargetActiveClient, type DailySummary, type SegLimit } from "@/components/targets/target-active-client";
 import { getTrades } from "@/lib/queries/trades";
@@ -18,7 +19,7 @@ const OPTION_SEGS = ["index_option", "stock_option"];
 const COMMODITY_SEGS = ["commodity_option", "commodity_future"];
 
 export default function TargetActivePage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   const trades = getTrades();
   const mtm = getMtmMap();
   const risk = db.select().from(riskConfig).all();

@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
     if (!LEDGER_TYPES.includes(type)) {
       return NextResponse.json({ ok: false, message: "Unknown entry type" }, { status: 400 });
     }
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : new Date().toISOString().slice(0, 10);
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : todayIstIso();
     const bucket = body.bucket === "equity" || body.bucket === "active" ? body.bucket : "";
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount === 0) {

@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,7 @@ export default function ArjunsEyePage() {
   // Goal rules (v3.6): one small goal read; the pace facts are computed from
   // the SAME scoped trade projection every panel above uses — the rules only
   // compare numbers already computed (projection stays lean).
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   const capForGoals = getBucketCapital();
   const goalView = getGoalView();
   // All-accounts view: per-account walks summed (getAggregateGoalProgress),

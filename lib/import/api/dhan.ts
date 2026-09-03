@@ -24,6 +24,7 @@
  * authenticated GET.
  */
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
@@ -496,7 +497,7 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
     broker: "dhan",
     kind: "api",
     async fetchTrades() {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIstIso();
       return normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
     },
   };

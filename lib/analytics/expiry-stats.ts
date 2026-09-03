@@ -6,6 +6,8 @@
 // whose exit date falls on one of those dates are "expiry-day" trades. Open positions
 // drive the upcoming-expiry list.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
+
 const FNO_SEGMENTS = new Set([
   "stock_option",
   "index_option",
@@ -75,7 +77,7 @@ function bucket(label: string, trades: ExpiryTradeInput[]): ExpiryBucket {
 
 export function computeExpiryStats(
   trades: ExpiryTradeInput[],
-  today: string = new Date().toISOString().slice(0, 10),
+  today: string = todayIstIso(),
 ): ExpiryStats {
   const fno = trades.filter((t) => isFno(t.segment));
   const expirySet = new Set(fno.map((t) => t.expiry).filter((e): e is string => !!e));

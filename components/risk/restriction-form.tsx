@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ GNFC, ban`;
 export function RestrictionForm({ count }: { count: number }) {
   const router = useRouter();
   const [text, setText] = useState("");
-  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10));
+  const [asOf, setAsOf] = useState(todayIstIso());
   const [source, setSource] = useState("NSE");
   const [pending, setPending] = useState<"" | "load" | "clear" | "file">("");
 

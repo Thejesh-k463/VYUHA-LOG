@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { useActionState, useEffect } from "react";
 import { saveMtmPrices, type MtmState } from "@/app/equity/actions";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ export function MtmForm() {
     if (state.ok) toast.success(state.message);
     else toast.error(state.message);
   }, [state]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   return (
     <form action={action} className="space-y-2">
       <div className="flex items-center gap-2">

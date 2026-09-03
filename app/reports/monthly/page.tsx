@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { VyuhaMark } from "@/components/brand/mark";
 import { KpiCard } from "@/components/kpi-card";
@@ -42,7 +43,7 @@ export default function MonthlyReportPage() {
   // too — a printed report must not divide one account's P&L by another's capital.
   const capital = getBucketCapital().totalCapital;
   const capitalKnown = capital > 0;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
 
   const daily = [...dailyPnl(trades).entries()].map(([date, net]) => ({ date, net }));
   const p = computePerformance(daily, capital, RISK_FREE);

@@ -13,7 +13,31 @@ import { dropzoneHint } from "@/lib/import/registry-meta"; // client-safe leaf �
 import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
-import { importShapeSentence, openingSellNote, type ImportShape } from "@/lib/domain/import-shape";
+import Link from "next/link";
+import { importShapeSentence, openingSellNote, openingSellReviewNote, relabelledNote, type ImportShape } from "@/lib/domain/import-shape";
+import { RemoveBrokerPanel } from "./remove-broker-panel";
+
+/** Where the opening-sell caution sends the reader: the trades whose cost basis is unknown. */
+export const OPENING_SELL_REVIEW_HREF = "/trades?basis=unknown";
+
+/**
+ * The headline sentence and its cautions, apart.
+ *
+ * `importShapeSentence` composes `${headline}. ${cautions.join(". ")}.` (one
+ * writer, lib/domain/import-shape.ts) so the string is right everywhere it is
+ * shown as text. The commit result shows the cautions as lines of their own —
+ * the opening-sell one carries a link — so they are peeled back off here by
+ * the same rule, and the whole sentence stands in if that rule ever changes.
+ */
+export function splitShapeSentence(shape: ImportShape): { headline: string; review: string | null; relabelled: string | null } {
+  const full = importShapeSentence(shape);
+  const review = openingSellReviewNote(shape.openingSells, shape.positions);
+  const relabelled = relabelledNote(shape.relabelled ?? 0);
+  const cautions = [review, relabelled].filter((c): c is string => c != null);
+  const suffix = `. ${cautions.join(". ")}.`;
+  const headline = cautions.length > 0 && full.endsWith(suffix) ? full.slice(0, full.length - suffix.length) : full;
+  return { headline, review, relabelled };
+}
 
 interface PreviewRow {
   tradingsymbol: string; symbol: string; segment: Segment; bucket: string; exchange: string;
@@ -82,13 +106,28 @@ async function readJson<T>(res: Response): Promise<T & { error?: string }> {
   }
 }
 
-export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAccountOption[] }) {
+export function ImportClient({
+  writeAccounts = [],
+  selectedAccount = null,
+}: {
+  writeAccounts?: WriteAccountOption[];
+  /**
+   * The account the sidebar selector resolves to — null on All accounts. The
+   * remove panel needs a NAMED account even when no picker renders (a
+   * single-account book never shows one), and the server must not guess it.
+   */
+  selectedAccount?: WriteAccountOption | null;
+}) {
   const router = useRouter();
   // A6 — which book do these trades belong to? Only asked in the aggregate
   // view with 2+ accounts; dedup is per (account, broker), so this must be
   // decided BEFORE the preview, not at commit.
   const [accountId, setAccountId] = useState<number>(writeAccounts[0]?.id ?? 0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  /** The picker's choice when one is shown, else the selector's account; null = All accounts. */
+  const removeTarget: WriteAccountOption | null =
+    accountId > 0 ? (writeAccounts.find((a) => a.id === accountId) ?? { id: accountId, name: `Account ${accountId}` }) : selectedAccount;
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
@@ -280,10 +319,13 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
 
       {/* Dropzone */}
       <div
+        ref={dropRef}
+        tabIndex={-1}
+        data-testid="import-dropzone"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); onPick(e.dataTransfer.files?.[0] ?? null); }}
         onClick={() => inputRef.current?.click()}
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/40 py-10 text-center transition-colors hover:bg-card-hover/50"
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/40 py-10 text-center transition-colors hover:bg-card-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Upload className="size-6 text-muted-foreground" />
         <div className="text-sm">
@@ -311,6 +353,24 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
           <Loader2 className="size-4 animate-spin" /> Working…
         </div>
       )}
+
+      {/* Broker-scoped remove + re-import. Below the dropzone, collapsed: it
+          is the exception path, and the file box stays the first thing seen. */}
+      <RemoveBrokerPanel
+        account={removeTarget}
+        // The rows just went to Trash, so any preview's duplicate count and any
+        // "Imported N" line describe a journal that no longer exists. The
+        // dropped file itself is kept: it is the one to import again.
+        onRemoved={() => { setPreview(null); setCommitted(null); router.refresh(); }}
+        onReimport={() => {
+          dropRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          dropRef.current?.focus();
+          router.refresh();
+          // A file still on the box is re-read against the emptied account —
+          // the dedup counts it showed before the remove are stale.
+          if (file) void doPreview(file, mapping);
+        }}
+      />
 
       {p?.crossSource?.message && (
         <div className={`flex items-start gap-2 rounded-lg border p-4 text-xs ${p.crossSource.risky ? "border-loss/50 bg-loss/10" : "border-warning/40 bg-warning/10"}`}>
@@ -347,11 +407,31 @@ export function ImportClient({ writeAccounts = [] }: { writeAccounts?: WriteAcco
               </span>
               {/* The file's own arithmetic, so a tradebook's execution count is
                   never replaced by a smaller number with no explanation. */}
-              {committed.shape && (
-                <p data-testid="commit-shape" className="text-xs text-muted-foreground">
-                  {importShapeSentence(committed.shape)}
-                </p>
-              )}
+              {committed.shape && (() => {
+                const bits = splitShapeSentence(committed.shape);
+                return (
+                  <div data-testid="commit-shape" className="space-y-1 text-xs text-muted-foreground">
+                    <p>{bits.headline}</p>
+                    {/* The two cautions stand as lines of their own, so the
+                        arithmetic stays the arithmetic and each warning can be
+                        acted on: the opening-sell one points at the very rows. */}
+                    {bits.review && (
+                      <p data-testid="shape-opening-sell-review" className="flex items-start gap-1.5 text-warning">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                        <span>
+                          {bits.review}.{" "}
+                          <Link href={OPENING_SELL_REVIEW_HREF} className="underline underline-offset-2 hover:text-foreground">
+                            Review those trades →
+                          </Link>
+                        </span>
+                      </p>
+                    )}
+                    {bits.relabelled && (
+                      <p data-testid="shape-relabelled">{bits.relabelled}.</p>
+                    )}
+                  </div>
+                );
+              })()}
               {committed.shape && openingSellNote(committed.shape.openingSells) && (
                 <p className="text-xs text-muted-foreground">
                   {openingSellNote(committed.shape.openingSells)}

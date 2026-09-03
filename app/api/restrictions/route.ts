@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     // silently substituted.
     const fallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(body.asOfDate)
       ? (body.asOfDate as string)
-      : new Date().toISOString().slice(0, 10);
+      : todayIstIso();
     const asOf = parsed.asOf ?? fallbackDate;
     const rows = parsed.rows.map((r) => ({ ...r, asOfDate: asOf, source: "NSE" }));
     const { deleted } = replaceRestrictionCategories(parsed.categories, rows);
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     const text = typeof body.text === "string" ? body.text : "";
     const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test(body.asOfDate)
       ? body.asOfDate
-      : new Date().toISOString().slice(0, 10);
+      : todayIstIso();
     const source = typeof body.source === "string" && body.source.trim() ? body.source.trim() : "manual";
     const rows = parseRestrictedList(text, asOfDate, source);
     if (rows.length === 0) {

@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -624,7 +625,7 @@ export function deleteAccount(opts: {
               : tgt.originalAmount == null
                 ? src.originalAmount
                 : Math.max(src.originalAmount, tgt.originalAmount);
-          const mergeNote = `merge ${new Date().toISOString().slice(0, 10)}: “${account.name}” also recorded this vintage (₹${src.amount}) — kept the larger of the two, not the sum; verify against the filed return`;
+          const mergeNote = `merge ${todayIstIso()}: “${account.name}” also recorded this vintage (₹${src.amount}) — kept the larger of the two, not the sum; verify against the filed return`;
           // ONE binding per written value, used by BOTH the UPDATE and the
           // audit snapshot below (the lib/queries/review.ts rule). Computing
           // the note twice, or snapshotting a different key set, is the class-1
@@ -682,7 +683,7 @@ export function deleteAccount(opts: {
           // values on the no-source-note path, which is exactly what that path
           // leaves in the column — so the snapshot describes the row that
           // exists rather than a second derivation of it.
-          const header = `merged from “${account.name}” (${new Date().toISOString().slice(0, 10)}):`;
+          const header = `merged from “${account.name}” (${todayIstIso()}):`;
           const tgtNote = (tgt.note ?? "").trim();
           const keptNote = srcNote
             ? tgtNote

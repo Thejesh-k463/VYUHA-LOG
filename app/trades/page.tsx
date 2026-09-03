@@ -117,6 +117,10 @@ export default function TradesPage() {
 
         <TradesClient
           trades={trades.map(toSlimTrade)}
+          // `?basis=unknown` filters to exactly the rows the AcquisitionPanel
+          // above lists — same `hasKnownBasis` verdict, ids only, so the slim
+          // wire shape does not widen by two columns per row.
+          unknownBasisIds={pending.map((t) => t.id)}
           playbooks={getPlaybooks().map((p) => ({ id: p.id, name: p.name, archived: p.archived, rules: p.rules }))}
           mtfMarginByBroker={getMtfMarginByBroker()}
           writeAccounts={writeAccounts}

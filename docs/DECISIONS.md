@@ -2438,3 +2438,48 @@ shapes; a pin moves only with a written reason). Dedicated `load` CI job (ubuntu
 
 **Invalidated if:** a broker changes a date grammar again — the GTR empty-result warning is the
 tripwire; a golden row that goes to 0/0/0 is a stop-ship, never a re-pin.
+
+## 2026-09-04 — v3.8 Wave 3 (UI): what the six surfaces settled
+
+**Context:** broker-connect wiring, import-page remove flow + shape cautions, deep-link contract,
+search palette, installer guard + doc claims, UTC-today sweep + sector tier. Six agents, disjoint
+files, four Playwright specs serialised on port 3100 by the coord hook.
+
+**Measured / settled:**
+- **NSIS template facts** (extracted verbatim from `@tauri-apps/cli` 2.11.3, NSIS 3.11): the hooks
+  file is included AFTER MUI2/FileFunc/utils, so `${GetTime}`, `${If}`, `$DOCUMENTS`, `SetContext`
+  work inside `NSIS_HOOK_PREUNINSTALL`; `$DeleteAppDataCheckboxState` and `$UpdateMode` are set
+  before `Section Uninstall`; the reinstall page runs the OLD uninstaller interactively with
+  `ExecWait` and treats exit code 1 as "user cancelled" (returns to the page) but exit 2 as "unable
+  to uninstall" — hence Cancel = `SetErrorLevel 1` + `Quit`, never `Abort`. `NSIS_HOOK_PREINSTALL`
+  runs AFTER the old uninstaller has already executed, so a copy there protects nothing — not
+  implemented. **The v3.7.1 → v3.8.0 upgrade still runs the unguarded v3.7.1 uninstaller once;
+  the release note must say "leave the box unticked".** Nothing in the suite executes NSIS — the
+  install-off-build-machine step must exercise the uninstaller by hand.
+- **UTC-today**: the frozen inventory was 42 sites in 39 files (not 44); 41 migrated, allow-list
+  EMPTY (every site was a user-facing day); the one left is `components/trades/trades-client.tsx:92`
+  (fix wave).
+- **Deep links**: `view` accepts every value the trades select offers (8), not only open/closed/all,
+  because a URL that cannot mirror "Loss — closed" is a URL that lies. `SlimTrade` carries no
+  acquisition fields, so `basis=unknown` filters by an ids-only prop from the AcquisitionPanel's
+  own population. `broker`/`bucket` are not in the contract.
+- **Palette**: keyword coverage 27/43 → 43/43 by deriving from `HELP_ENTRIES` (drift guard in
+  `tests/help-content.test.ts`); help-content is loaded on first open, results component via
+  `next/dynamic`, exactly one `fetch(` in the file (pinned). Both backs never call `router.back()`
+  (pinned). 100-cycle Ctrl+K loop in e2e, no console errors.
+- **Broker-connect**: Wave 2's `connectionModeLabel` reads three live shapes as "not connected"
+  (Upstox analytics token, OpenAlgo API key, Zerodha api-secret-only) — the component wraps it
+  (`modeLabelOf`) rather than widening the gate; in All-accounts mode there is NO default pick
+  (the second-Dhan-row bug's root), the picker offers an explicit "Pick an account…" row.
+- **Egress guard**: two new same-origin fetches tripped the static-host rule — the remove panel now
+  uses a literal `/api/import/remove-broker` prefix; the palette's `fetch(searchUrl(...))` is
+  allow-listed with its reason (the literal `/api/search` prefix is pinned by the palette test).
+  PRIVACY's "exactly four kinds" is unchanged — both are same-origin.
+- **E2E under concurrent agents**: a spec's first run failed when sibling agents saved files inside
+  its 25 s window (Fast Refresh full reload wipes client state); re-run alone it passed. Run e2e
+  serially, never beside editors.
+
+**Decision:** ship as above; release note carries the one-time "leave the box unticked" line.
+
+**Invalidated if:** Tauri changes the reinstall page's exit-code handling (re-extract
+`installer.nsi` and re-verify), or `SlimTrade` gains acquisition fields (drop the ids prop).

@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +27,7 @@ const daysHeld = (a: string | null, b: string) =>
   a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0;
 
 export default function HarvestPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   // The book projected to the 13 harvest columns (of 74) — same rows, same
   // order, and the filters below are unchanged, so every figure and every
   // rendered row order is identical; only never-read columns stopped being

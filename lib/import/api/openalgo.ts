@@ -36,6 +36,7 @@
 // → dedup → commit pipeline computes statutory charges as it does for every
 // other source, and brokerage stays excluded from the accuracy claim.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { COMMODITY_UNDERLYINGS, INDEX_UNDERLYINGS, BSE_INDEX_UNDERLYINGS } from "@/lib/domain/constants";
@@ -526,7 +527,7 @@ export function openAlgoImportSource(creds: OpenAlgoCredentials): ApiImportSourc
     broker: creds.broker,
     kind: "api",
     async fetchTrades(opts: { from?: string; to?: string } = {}) {
-      const date = opts.to ?? opts.from ?? new Date().toISOString().slice(0, 10);
+      const date = opts.to ?? opts.from ?? todayIstIso();
       return normalizeOpenAlgoTrades(await fetchOpenAlgoTradebook(creds), creds.broker, date).trades;
     },
   };

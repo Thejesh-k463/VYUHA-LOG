@@ -31,6 +31,7 @@
  * the journal forward; history still arrives by file (the Tax P&L importer).
  */
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
@@ -334,7 +335,7 @@ export function angelOneImportSource(creds: AngelOneCredentials): ApiImportSourc
     kind: "api",
     async fetchTrades() {
       const { jwtToken } = await angelOneLogin(creds);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIstIso();
       return normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today).trades;
     },
   };

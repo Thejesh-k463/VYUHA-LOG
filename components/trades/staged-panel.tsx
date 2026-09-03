@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import * as React from "react";
 import { useActionState } from "react";
 import {
@@ -20,7 +21,7 @@ import { Layers, Plus, Minus, Trash2, TriangleAlert, Info, ShieldAlert, Target }
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
 import type { StagedView } from "@/lib/queries/staged";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayIstIso();
 
 function pnlClass(n: number) {
   return n > 0 ? "text-profit" : n < 0 ? "text-loss" : "";

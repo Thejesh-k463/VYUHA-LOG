@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
@@ -16,7 +17,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * position from T+1 (buy date) to `today`, updating charges_total and net_pnl.
  * Idempotent — safe to run on every app open (it recomputes, not increments).
  */
-export function accrueMtfInterest(today = new Date().toISOString().slice(0, 10)): {
+export function accrueMtfInterest(today = todayIstIso()): {
   updated: number;
   totalAccrued: number;
 } {

@@ -23,6 +23,8 @@ export interface ExposureInput {
   daysHeld: number | null;
   dte: number | null;
   sector?: string | null; // from the instruments master (P1.3)
+  /** Where `sector` came from (v3.8) — see SectorTier below. Absent = tier unknown. */
+  sectorTier?: SectorTier | null;
   side?: "long" | "short"; // default "long"
   /**
    * Per-tranche stops for a STAGED (scaled) position. When present, open risk
@@ -195,6 +197,61 @@ export function sectorConcentration(
     classifiedPct: totalInvested > 0 ? r2((classified / totalInvested) * 100) : 0,
     confidence,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Sector confidence, in words (v3.8). One line beside the concentration
+// figures saying what the sector labels REST ON. Every number is a tierPct
+// straight out of sectorConcentration; nothing here is estimated, and when
+// nothing is classified the line says so instead of printing 0% three times.
+//
+// The taxonomy's tiers map to sources like this (sector-map.json provenance
+// legend): `high` = BSE shareholding filings (official); `medium_high` and
+// `medium` = Screener-bridged. The index map's `industry` is a constituent
+// list's label, and `unknown` is a caller that stated a sector but no tier.
+// ---------------------------------------------------------------------------
+
+/** The sentence's fixed opening — pinned by tests/sector-tier-ui.test.ts. */
+export const SECTOR_CONFIDENCE_PREFIX = "Sector labels:";
+
+/** Whole percent; "<1%" rather than a rounded-away 0% for a real sliver. */
+const wholePct = (n: number): string => (n > 0 && n < 0.5 ? "<1%" : `${Math.round(n)}%`);
+
+/**
+ * "Sector labels: N% from official filings, M% from the bundled taxonomy
+ * (m% medium confidence), K% unclassified" — plus a clause each for the
+ * user's own tags, the index map and unstated tiers when they carry capital.
+ */
+export function sectorConfidenceSentence(
+  s: Pick<SectorConcentration, "totalInvested" | "classifiedPct" | "confidence">,
+): string {
+  if (s.totalInvested <= 0) return `${SECTOR_CONFIDENCE_PREFIX} no open capital to classify.`;
+  if (s.classifiedPct <= 0) return `${SECTOR_CONFIDENCE_PREFIX} none — 100% of invested capital is unclassified.`;
+  const t = s.confidence.tierPct;
+  const parts: string[] = [];
+  if (t.user > 0) parts.push(`${wholePct(t.user)} your own tags`);
+  parts.push(`${wholePct(t.high)} from official filings`);
+  parts.push(`${wholePct(t.medium_high + t.medium)} from the bundled taxonomy (${wholePct(t.medium)} medium confidence)`);
+  if (t.index > 0) parts.push(`${wholePct(t.index)} from the NSE index map`);
+  if (t.unknown > 0) parts.push(`${wholePct(t.unknown)} of unstated source`);
+  parts.push(`${wholePct(Math.max(0, 100 - s.classifiedPct))} unclassified`);
+  return `${SECTOR_CONFIDENCE_PREFIX} ${parts.join(", ")}.`;
+}
+
+/**
+ * A short marker for a sector bucket whose label rests on something weaker
+ * than the best tiers (the user's own tag, or an official filing). Null when
+ * no marker is warranted — including the "Unclassified" bucket, which has no
+ * label to qualify.
+ */
+export function sectorTierMarker(minTier: SectorTierOrUnknown | null): string | null {
+  switch (minTier) {
+    case "medium_high": return "medium-high confidence";
+    case "medium": return "medium confidence";
+    case "index": return "index-list label";
+    case "unknown": return "source unstated";
+    default: return null;
+  }
 }
 
 export function computeExposure(inputs: ExposureInput[], capital: number): ExposureSummary {

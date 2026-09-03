@@ -139,6 +139,12 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
+**Uninstalling.** The uninstaller offers a "Delete the application data" checkbox — at
+uninstall, and mid-upgrade if you choose to uninstall the old version first. Before it runs,
+Vyuha copies your journal database and licence key (both live in `vyuha.sqlite`) plus your
+attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm; Cancel keeps everything
+in place. Leave the box unticked to keep the data where it is.
+
 ## 9. Troubleshooting
 
 | Symptom | Fix |

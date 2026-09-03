@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ExportButtons } from "@/components/ui/export-button";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { serializeTradesQuery } from "@/lib/domain/trades-query";
 import { EquityCurve, SegmentBars } from "./charts";
 import { CalendarHeatmap } from "./calendar-heatmap";
 import {
@@ -37,6 +39,7 @@ export function DashboardClient({
   monthlyStretch: number;
   workspace?: Workspace;
 }) {
+  const router = useRouter();
   const [broker, setBroker] = React.useState("");
   // Workspace mode seeds the bucket filter, it does not enforce it: this is
   // the same control the user can set to "All buckets", and it reads back the
@@ -233,12 +236,12 @@ export function DashboardClient({
               {
                 label: "Best day", value: inr(dayStats.best, { decimals: 0 }), tone: "profit",
                 hint: dayStats.bestDate ?? undefined,
-                href: dayStats.bestDate ? `/trades?from=${dayStats.bestDate}&to=${dayStats.bestDate}&realised=1` : undefined,
+                href: dayStats.bestDate ? `/trades${serializeTradesQuery({ from: dayStats.bestDate, to: dayStats.bestDate, realised: true })}` : undefined,
               },
               {
                 label: "Worst day", value: inr(dayStats.worst, { decimals: 0 }), tone: "loss",
                 hint: dayStats.worstDate ?? undefined,
-                href: dayStats.worstDate ? `/trades?from=${dayStats.worstDate}&to=${dayStats.worstDate}&realised=1` : undefined,
+                href: dayStats.worstDate ? `/trades${serializeTradesQuery({ from: dayStats.worstDate, to: dayStats.worstDate, realised: true })}` : undefined,
               },
               { label: "Closed / open", value: `${k.closedCount} / ${k.openCount}` },
             ],
@@ -368,10 +371,14 @@ export function DashboardClient({
           {/* Drill-down reuses the Trades deep link the KPI cards already use:
               from=to=<day> plus realised=1, so the rows shown are EXACTLY the
               population dailyPnl summed for that cell (closed trades only —
-              an open position's charges would otherwise not reconcile). */}
+              an open position's charges would otherwise not reconcile).
+              router.push, not window.location.href: a full-document
+              navigation inside the Tauri shell reboots the whole app, and it
+              also broke Back — nav-history tracks pathnames per client
+              navigation, so the reload left it with nothing to return to. */}
           <CalendarHeatmap
             daily={daily}
-            onPickDay={(d) => { window.location.href = `/trades?from=${d}&to=${d}&realised=1`; }}
+            onPickDay={(d) => router.push(`/trades${serializeTradesQuery({ from: d, to: d, realised: true })}`)}
           />
           {undatedClosed > 0 && (
             <p className="mt-2 text-[0.6875rem] text-muted-foreground">

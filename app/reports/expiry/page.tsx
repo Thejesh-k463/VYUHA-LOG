@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,7 @@ function BucketCard({ b, highlight }: { b: ExpiryBucket; highlight?: boolean }) 
 }
 
 export default function ExpiryPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   const trades = getTrades();
   const s = computeExpiryStats(
     trades.map((t) => ({ segment: t.segment, expiry: t.expiry, sellDate: t.sellDate, isOpen: t.isOpen, netPnl: t.netPnl })),

@@ -31,6 +31,7 @@ import {
   type Segment,
 } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
+import { parseTradesQuery, serializeTradesQuery, type TradesQuery } from "@/lib/domain/trades-query";
 // SlimTrade, aliased: every `Trade` annotation below narrows to the wire
 // projection (lib/domain/slim-trade.ts) without touching a single identifier.
 // A column/filter/dialog reading a dropped field is now a COMPILE error.
@@ -64,9 +65,12 @@ const COL_ORDER_KEY = "vyuha-trades-column-order";
  *  declares the width the sticky maths reads, and the flexible-width allowance
  *  belongs to Instrument. Neither can be dragged. */
 const PINNED_COLUMNS = 2;
+/** Stable default so the derived Set below is not rebuilt every render. */
+const NO_IDS: readonly number[] = [];
 
 export function TradesClient({
   trades,
+  unknownBasisIds = NO_IDS,
   playbooks = [],
   mtfMarginByBroker = {},
   writeAccounts = [],
@@ -75,6 +79,10 @@ export function TradesClient({
   pro = true,
 }: {
   trades: Trade[];
+  /** Ids of sales with no cost basis on record — the AcquisitionPanel's
+   *  population, decided server-side by `hasKnownBasis`. `?basis=unknown`
+   *  (Data Quality Center, import summary) filters the table to exactly these. */
+  unknownBasisIds?: readonly number[];
   playbooks?: PlaybookOption[];
   /** eq_mtf own-margin % per broker (real leverage varies — Dhan/Groww ~25%,
    * Zerodha ~20%) — components look up the currently-selected/trade's broker. */
@@ -116,32 +124,56 @@ export function TradesClient({
   /** Set by a realised-P&L drill-down: restrict to closed trades so the rows
    *  reconcile exactly with the figure that was clicked. */
   const [realised, setRealised] = React.useState(false);
+  /** Set by the Data Quality Center's "Unknown acquisition cost" link:
+   *  restrict to the sales the AcquisitionPanel above is asking about. */
+  const [basisUnknown, setBasisUnknown] = React.useState(false);
+  const unknownBasisSet = React.useMemo(() => new Set(unknownBasisIds), [unknownBasisIds]);
 
-  // Deep links. Two kinds:
-  //   ?add=manual|open              — command palette, opens a dialog
-  //   ?symbol=&from=&to=&segment=   — KPI drill-downs, pre-filters the table
-  // The query string is cleaned afterwards so a refresh does not re-apply it
-  // and the URL stays shareable rather than sticky.
+  // Deep links — the contract lives in lib/domain/trades-query.ts. Two kinds:
+  //   ?add=manual|open                          — opens a dialog (one-shot)
+  //   ?symbol=&from=&to=&realised=&segment=&basis=&view=  — pre-filters the table
+  //
+  // The query is KEPT, not wiped. The old mount effect replaced the URL with
+  // the bare pathname whenever any key was present, which made a filtered
+  // view impossible to reload or re-enter and sent Back from /trades to the
+  // page BEFORE the one the user came from. Now the URL mirrors the filters:
+  // `syncUrl` rewrites it on every filter change (replaceState — no history
+  // entry, so Back still returns to the previous page), and only the one-shot
+  // `add` is stripped after its dialog opens.
+  //
+  // State is seeded in a microtask rather than synchronously — the repo's
+  // sanctioned one-shot restore (AGENTS.md) — so the
+  // react-hooks/set-state-in-effect rule is not silenced. Reading the URL on
+  // render is not an option: the server has no `window`, and the input value
+  // would mismatch on hydration.
   React.useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const add = q.get("add");
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (add === "manual") setAddOpen(true);
-    else if (add === "open") setAddOpenTrade(true);
-
-    const sym = q.get("symbol");
-    if (sym) setSearch(sym);
-    const f = q.get("from");
-    if (f) setFrom(f);
-    const t = q.get("to");
-    if (t) setTo(t);
-    if (q.get("realised") === "1") setRealised(true);
-    const seg = q.get("segment");
-    if (seg) setSegment(seg);
-    /* eslint-enable react-hooks/set-state-in-effect */
-
-    if ([...q.keys()].length > 0) window.history.replaceState(null, "", window.location.pathname);
+    const q = parseTradesQuery(window.location.search);
+    void Promise.resolve().then(() => {
+      if (q.add === "manual") setAddOpen(true);
+      else if (q.add === "open") setAddOpenTrade(true);
+      if (q.symbol) setSearch(q.symbol);
+      if (q.from) setFrom(q.from);
+      if (q.to) setTo(q.to);
+      if (q.realised) setRealised(true);
+      if (q.segment) setSegment(q.segment);
+      if (q.basis === "unknown") setBasisUnknown(true);
+      if (q.view) setView(q.view);
+    });
+    // Strip ONLY `add`: a reload must not re-open the dialog, but must keep
+    // whatever filters rode along with it.
+    if (q.add) window.history.replaceState(null, "", window.location.pathname + serializeTradesQuery({ ...q, add: null }));
   }, []);
+
+  /** The current filters as the URL contract sees them. */
+  const currentQuery = React.useCallback((): TradesQuery => ({
+    add: null, symbol: search, from, to, realised, segment, basis: basisUnknown ? "unknown" : null, view,
+  }), [search, from, to, realised, segment, basisUnknown, view]);
+
+  /** Mirror a filter change into the URL. replaceState, never push: a filter
+   *  tweak is not a place the user navigated to, so Back must not revisit it. */
+  const syncUrl = React.useCallback((patch: Partial<TradesQuery>) => {
+    window.history.replaceState(null, "", window.location.pathname + serializeTradesQuery({ ...currentQuery(), ...patch }));
+  }, [currentQuery]);
 
   const data = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -150,6 +182,7 @@ export function TradesClient({
       if (segment && t.segment !== segment) return false;
       if (bucket && t.bucket !== bucket) return false;
       if (!matchesView(t, view)) return false;
+      if (basisUnknown && !unknownBasisSet.has(t.id)) return false;
       // Date window matches the trade's EFFECTIVE date: the exit for a closed
       // trade, the entry for one still open.
       //
@@ -176,7 +209,7 @@ export function TradesClient({
       if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [trades, search, broker, segment, bucket, from, to, realised, view]);
+  }, [trades, search, broker, segment, bucket, from, to, realised, view, basisUnknown, unknownBasisSet]);
 
   // A selection that outlives its filter would let "delete selected" remove
   // rows the user can no longer see. Visible-set changes reset it.
@@ -222,9 +255,11 @@ export function TradesClient({
       segment && (SEGMENT_LABELS[segment as Segment] ?? segment),
       search.trim() && `“${search.trim()}”`,
       from && to ? `${from} → ${to}` : from ? `from ${from}` : to ? `to ${to}` : "",
+      realised && "realised only",
+      basisUnknown && "unknown basis",
     ].filter(Boolean);
     return bits.join(" · ");
-  }, [view, broker, segment, search, from, to]);
+  }, [view, broker, segment, search, from, to, realised, basisUnknown]);
 
   /**
    * Counts for the dropdown, computed AFTER the other filters but BEFORE the
@@ -237,6 +272,7 @@ export function TradesClient({
       if (broker && t.broker !== broker) return false;
       if (segment && t.segment !== segment) return false;
       if (bucket && t.bucket !== bucket) return false;
+      if (basisUnknown && !unknownBasisSet.has(t.id)) return false;
       if (realised && t.isOpen) return false;
       if (from || to) {
         const d = t.isOpen ? t.buyDate : t.sellDate;
@@ -248,7 +284,7 @@ export function TradesClient({
       return true;
     });
     return countViews(base);
-  }, [trades, search, broker, segment, bucket, from, to, realised]);
+  }, [trades, search, broker, segment, bucket, from, to, realised, basisUnknown, unknownBasisSet]);
 
   // ── User-ordered columns ────────────────────────────────────────────────
   //
@@ -492,12 +528,12 @@ export function TradesClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="Search symbol / setup…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 w-56" />
+        <Input placeholder="Search symbol / setup…" value={search} onChange={(e) => { setSearch(e.target.value); syncUrl({ symbol: e.target.value }); }} className="h-8 w-56" />
         <Select value={broker} onChange={(e) => setBroker(e.target.value)} className="h-8 w-32">
           <option value="">All brokers</option>
           {BROKERS.map((b) => <option key={b} value={b}>{BROKER_LABELS[b]}</option>)}
         </Select>
-        <Select value={segment} onChange={(e) => setSegment(e.target.value)} className="h-8 w-44">
+        <Select value={segment} onChange={(e) => { setSegment(e.target.value); syncUrl({ segment: e.target.value }); }} className="h-8 w-44">
           <option value="">All segments</option>
           {SEGMENTS.map((s) => <option key={s} value={s}>{SEGMENT_LABELS[s]}</option>)}
         </Select>
@@ -509,7 +545,7 @@ export function TradesClient({
             would return, so an empty result is visible before it is chosen. */}
         <Select
           value={view}
-          onChange={(e) => setView(e.target.value as TradeView)}
+          onChange={(e) => { const v = e.target.value as TradeView; setView(v); syncUrl({ view: v }); }}
           className="h-8 w-56"
           title="Filter by status (open / closed / staged) or by result"
         >
@@ -529,6 +565,39 @@ export function TradesClient({
             ))}
           </optgroup>
         </Select>
+        {/* Filters that arrive ONLY by deep link have no control of their own,
+            and since the URL now keeps them across a reload, each needs a
+            visible way out — an invisible filter reads as missing trades. */}
+        {(from || to) && (
+          <button
+            type="button"
+            title="Clear the date window"
+            onClick={() => { setFrom(""); setTo(""); syncUrl({ from: "", to: "" }); }}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-card-hover px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {from && to && from === to ? from : `${from || "…"} → ${to || "…"}`} ×
+          </button>
+        )}
+        {realised && (
+          <button
+            type="button"
+            title="Realised P&L drill-down — closed trades only. Click to clear."
+            onClick={() => { setRealised(false); syncUrl({ realised: false }); }}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-card-hover px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Realised only ×
+          </button>
+        )}
+        {basisUnknown && (
+          <button
+            type="button"
+            title="Sales with no cost basis on record — the ones the panel above asks about. Click to clear."
+            onClick={() => { setBasisUnknown(false); syncUrl({ basis: null }); }}
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-2 text-xs text-warning"
+          >
+            Unknown basis only ×
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{data.length} of {trades.length}</span>
           {/* An invisible affordance is not a feature: the grip only appears on

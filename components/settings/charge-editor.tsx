@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +40,7 @@ function periodLabel(r: ChargeConfigRow): string {
 
 /** A window that has already closed — editing it re-prices the PAST. */
 function isHistorical(r: ChargeConfigRow): boolean {
-  return r.effectiveTo != null && r.effectiveTo <= new Date().toISOString().slice(0, 10);
+  return r.effectiveTo != null && r.effectiveTo <= todayIstIso();
 }
 
 export function ChargeEditor({ rows }: { rows: ChargeConfigRow[] }) {

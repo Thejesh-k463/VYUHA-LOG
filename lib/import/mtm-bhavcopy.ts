@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import { db } from "@/lib/db";
 import { trades as tradesTable, mtmPrices, priceHistory } from "@/lib/db/schema";
@@ -34,7 +35,7 @@ export function applyBhavcopyMtm(text: string): BhavcopyMtmResult {
   const open = db.select().from(tradesTable).where(eq(tradesTable.isOpen, true)).all();
   const equitySyms = [...new Set(open.filter((t) => t.instrumentType === "equity").map((t) => t.symbol.toUpperCase()))];
   const derivativesSkipped = new Set(open.filter((t) => t.instrumentType !== "equity").map((t) => t.symbol.toUpperCase())).size;
-  const asOf = bc.date ?? new Date().toISOString().slice(0, 10);
+  const asOf = bc.date ?? todayIstIso();
   const aliasMap = getAliasMap();
 
   // Persist the full EOD snapshot to price_history (P1.3) — builds the OHLC series

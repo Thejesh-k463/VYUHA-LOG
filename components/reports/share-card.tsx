@@ -4,6 +4,7 @@
 // the PNG is drawn on a <canvas> and downloaded directly. No upload, no network,
 // no third-party image service. The watermark is not user-editable.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -107,7 +108,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `vyuha-stats-${new Date().toISOString().slice(0, 10)}.png`;
+      a.download = `vyuha-stats-${todayIstIso()}.png`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Stat card saved — check your downloads.");

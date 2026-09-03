@@ -1,5 +1,6 @@
 import * as React from "react";
 import { BackButton } from "./back-button";
+import { PaletteSearchButton } from "@/components/system/command-palette";
 
 export function PageHeader({
   title,
@@ -26,7 +27,13 @@ export function PageHeader({
           )}
         </div>
       </div>
-      {actions && <div className="flex items-center gap-2 print:hidden">{actions}</div>}
+      {/* Search v1 (v3.8): the palette's search box, one click from every
+          main tab. A client island like BackButton — the header stays a
+          server component; the button only dispatches the palette's event. */}
+      <div className="flex items-center gap-2 print:hidden">
+        {actions}
+        <PaletteSearchButton />
+      </div>
     </div>
   );
 }

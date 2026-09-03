@@ -17,6 +17,7 @@
 import { verify as edVerify, createHash } from "node:crypto";
 import { machineMatches } from "@/lib/machine-id";
 import { buyMessageFor, skuById, type PricingSkuId } from "@/lib/domain/pricing";
+import { serializeTradesQuery } from "@/lib/domain/trades-query";
 
 export type LicenseSku = "toolkit" | "app" | "indicators";
 export type LicenseEnforcement = "banner" | "block";
@@ -255,7 +256,7 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // itself must NOT be wrapped in <ProGate> (that would gate the core journal);
   // it must check `getEntitlement()` and gate just the capability. The tests
   // enforce both directions.
-  { href: "/trades?add=open", label: "Open-trade tracking — live positions with SL/TSL/target and risk", partial: true },
+  { href: `/trades${serializeTradesQuery({ add: "open" })}`, label: "Open-trade tracking — live positions with SL/TSL/target and risk", partial: true },
   { href: "/lenses", label: "Lenses — per-group win rate, profit factor, expectancy and avg R (grouping, counts and cleanup stay free)", partial: true },
   // Deep analytics
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },

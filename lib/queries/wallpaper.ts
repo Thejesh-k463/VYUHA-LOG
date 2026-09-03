@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
@@ -52,7 +53,7 @@ export function setWallpaperStoredName(storedName: string | null): void {
     db.update(settings).set({ wallpaperStoredName: storedName, updatedAt: now }).where(eq(settings.id, existing.id)).run();
   } else {
     db.insert(settings)
-      .values({ goLiveDate: new Date().toISOString().slice(0, 10), equityCapital: 0, activeCapital: 0, wallpaperStoredName: storedName })
+      .values({ goLiveDate: todayIstIso(), equityCapital: 0, activeCapital: 0, wallpaperStoredName: storedName })
       .run();
   }
 }

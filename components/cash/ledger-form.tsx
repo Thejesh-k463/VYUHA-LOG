@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ const SIGNED: LedgerType[] = ["realised_pnl", "adjustment"];
 
 export function LedgerForm() {
   const router = useRouter();
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayIstIso());
   const [bucket, setBucket] = useState("equity");
   const [type, setType] = useState<LedgerType>("deposit");
   const [amount, setAmount] = useState("");

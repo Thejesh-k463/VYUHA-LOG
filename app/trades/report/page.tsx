@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { PrintButton } from "@/components/reports/print-button";
 import { ProGate } from "@/components/system/pro-gate";
 import { VyuhaMark } from "@/components/brand/mark";
@@ -41,7 +42,7 @@ export default async function SelectedTradesReport({
   const wins = closed.filter((t) => t.netPnl > 0).length;
 
   const pnlCls = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "");
-  const dt = new Date().toISOString().slice(0, 10);
+  const dt = todayIstIso();
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6 print:max-w-none print:p-2">

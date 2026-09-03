@@ -1,5 +1,6 @@
 "use client";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { useActionState, useEffect, useState } from "react";
 import { createManualTrade, type ActionState } from "@/app/trades/actions";
 import { Input } from "@/components/ui/input";
@@ -254,7 +255,7 @@ export function ManualTradeForm({
     kind === "equity" &&
     (productHint === "mtf" || segment === "eq_mtf" || preview?.classification.segment === "eq_mtf");
   const blocked = open && limit?.status === "block";
-  const dte = kind === "fno" && expiry ? daysBetween(new Date().toISOString().slice(0, 10), expiry) : null;
+  const dte = kind === "fno" && expiry ? daysBetween(todayIstIso(), expiry) : null;
   const fnoQty = (Number(lots) || 0) * (Number(lotSize) || 0);
 
   // MTF: "own capital used" (what YOU actually put in) is the primary input —

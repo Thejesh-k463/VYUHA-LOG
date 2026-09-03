@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HELP_ENTRIES, searchHelp } from "@/lib/domain/help-content";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
@@ -39,6 +41,28 @@ describe("help covers the app, exactly", () => {
       const text = [e.answers, ...e.body].join(" ").toLowerCase();
       expect(text, e.href).not.toMatch(/world[- ]class|revolutionary|best[- ]in[- ]class|amazing/);
     }
+  });
+});
+
+/**
+ * Keyword drift guard (v3.8 Wave 3). The command palette used to carry its
+ * own hand-written keyword map, which duplicated this registry and drifted
+ * from it (27 entries against 43, several stale). Palette keywords are now
+ * DERIVED from HELP_ENTRIES by href — so every sidebar destination needs a
+ * help entry with at least one keyword, and the palette may not grow a
+ * second map.
+ */
+describe("palette keywords derive from the help registry", () => {
+  it("every NAV_ITEMS href has a help entry with at least one keyword", () => {
+    const byHref = new Map(HELP_ENTRIES.map((e) => [e.href, e]));
+    const bare = NAV_ITEMS.filter((n) => !(byHref.get(n.href)?.keywords.length ?? 0)).map((n) => n.href);
+    expect(bare, `screens with no help keywords: ${bare.join(", ")}`).toEqual([]);
+  });
+
+  it("the palette module carries no KEYWORDS literal and reads HELP_ENTRIES", () => {
+    const src = fs.readFileSync(path.join(process.cwd(), "components/system/command-palette.tsx"), "utf8");
+    expect(src).not.toMatch(/\bKEYWORDS\b/);
+    expect(src).toContain("HELP_ENTRIES");
   });
 });
 

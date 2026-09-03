@@ -1,5 +1,6 @@
 "use server";
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { mtmPrices, trades } from "@/lib/db/schema";
@@ -26,7 +27,7 @@ const numOrNull = (v: unknown): number | null => {
  */
 export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promise<MtmState> {
   const text = String(formData.get("prices") ?? "");
-  const asOf = String(formData.get("asOf") || new Date().toISOString().slice(0, 10));
+  const asOf = String(formData.get("asOf") || todayIstIso());
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   // Index open trades by upper-cased symbol for SL/TSL/target matching.

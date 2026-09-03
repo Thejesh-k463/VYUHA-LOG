@@ -32,6 +32,7 @@
 // than guess an exchange calendar — same for futures; both get their fix the
 // day a real payload carries one.
 
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { request as httpsRequest } from "node:https";
 import type { NormalizedTrade, ProductHint, Execution } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
@@ -278,7 +279,7 @@ export function upstoxImportSource(creds: UpstoxCredentials): ApiImportSource {
     broker: "upstox",
     kind: "api",
     async fetchTrades() {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIstIso();
       return normalizeUpstoxTrades(await fetchUpstoxTrades(creds), today).trades;
     },
   };

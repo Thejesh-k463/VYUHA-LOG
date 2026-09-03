@@ -95,6 +95,48 @@ describe("source guard — one today", () => {
       "app/reports/advance-tax/page.tsx",
       "components/behavior/session-planner.tsx",
       "components/review/review-open-card.tsx",
+      // Wave 3 sweep (owner ruling: every "today" is India's). Page dates,
+      // form defaults, job as-ofs, broker-API "today" windows, the default
+      // `today` parameter of the pure helpers, the merge-note and go-live
+      // dates — all of them name the user's day, none of them a machine stamp.
+      "app/active/page.tsx",
+      "app/api/ledger/route.ts",
+      "app/api/mtf-margin/route.ts",
+      "app/api/positions/risk/route.ts",
+      "app/api/restrictions/route.ts",
+      "app/arjuns-eye/page.tsx",
+      "app/equity/actions.ts",
+      "app/page.tsx",
+      "app/reports/broker-compare/page.tsx",
+      "app/reports/expiry/page.tsx",
+      "app/reports/harvest/page.tsx",
+      "app/reports/monthly/page.tsx",
+      "app/reports/performance/page.tsx",
+      "app/targets/active/page.tsx",
+      "app/targets/equity/page.tsx",
+      "app/trades/report/page.tsx",
+      "components/cash/ledger-form.tsx",
+      "components/reports/share-card.tsx",
+      "components/risk/restriction-form.tsx",
+      "components/risk/risk-cockpit-client.tsx",
+      "components/settings/charge-editor.tsx",
+      "components/trackers/mtm-form.tsx",
+      "components/trades/close-trade-dialog.tsx",
+      "components/trades/manual-trade-form.tsx",
+      "components/trades/staged-panel.tsx",
+      "lib/analytics/expiry-stats.ts",
+      "lib/analytics/settlement.ts",
+      "lib/import/api/angelone.ts",
+      "lib/import/api/dhan.ts",
+      "lib/import/api/openalgo.ts",
+      "lib/import/api/upstox.ts",
+      "lib/import/mtm-bhavcopy.ts",
+      "lib/jobs/mtf-accrual.ts",
+      "lib/queries/account-delete.ts",
+      "lib/queries/capital.ts",
+      "lib/queries/limits.ts",
+      "lib/queries/wallpaper.ts",
+      "lib/risk/sebi-radar.ts",
     ];
     const hits = rg("new Date\\(\\)\\s*\\.toISOString\\(\\)\\.(slice|substring)\\(\\s*0,\\s*10\\s*\\)");
     const inMigrated = hits.filter((l) => MIGRATED.includes(l.split(":")[0]));
@@ -102,56 +144,26 @@ describe("source guard — one today", () => {
   });
 
   it("the remaining UTC-today sites are a FROZEN inventory — it can shrink, never grow", () => {
-    // NOT an allow-list of non-"today" uses: every one of these is a UTC
-    // "today" (a page date, a form default, a job's as-of). They sit in files
-    // outside the v3.8 cross-cutting set and are display/entry dates, not
-    // charge pricing — left for a follow-up wave, pinned here so the count
-    // cannot rise and a migrated file cannot regress. Delete a row when you
-    // migrate the file; adding one means writing a new UTC today, which is
-    // the bug this file exists to prevent. Callers of pure helpers that take
-    // `today` as a parameter (expiry-stats, settlement, limits, sebi-radar,
-    // mtf-accrual) should pass todayIstIso() rather than lean on the default.
+    // NOT an allow-list of non-"today" uses: every row is a UTC "today" that
+    // is still waiting for its owner. The Wave 3 sweep (2026-09-04) migrated
+    // 38 of the 39 files it found (41 of 42 sites) — every one was a page
+    // date, a form default, a job as-of or a broker-API window, i.e. the
+    // user's day; NOT ONE was a machine timestamp, so ALLOWED_UTC_STAMPS
+    // below is empty. What remains is owned by another Wave 3 agent and goes
+    // to the fix wave. Delete the row when you migrate the file; adding one
+    // means writing a new UTC today, which is the bug this file exists to
+    // prevent.
     const FROZEN: Record<string, number> = {
-      "app/active/page.tsx": 1,
-      "app/api/ledger/route.ts": 1,
-      "app/api/mtf-margin/route.ts": 1,
-      "app/api/positions/risk/route.ts": 1,
-      "app/api/restrictions/route.ts": 2,
-      "app/arjuns-eye/page.tsx": 1,
-      "app/equity/actions.ts": 1,
-      "app/page.tsx": 1,
-      "app/reports/broker-compare/page.tsx": 1,
-      "app/reports/expiry/page.tsx": 1,
-      "app/reports/harvest/page.tsx": 1,
-      "app/reports/monthly/page.tsx": 1,
-      "app/reports/performance/page.tsx": 1,
-      "app/targets/active/page.tsx": 1,
-      "app/targets/equity/page.tsx": 1,
-      "app/trades/report/page.tsx": 1,
-      "components/cash/ledger-form.tsx": 1,
-      "components/reports/share-card.tsx": 1,
-      "components/risk/restriction-form.tsx": 1,
-      "components/risk/risk-cockpit-client.tsx": 1,
-      "components/settings/charge-editor.tsx": 1,
-      "components/trackers/mtm-form.tsx": 1,
-      "components/trades/close-trade-dialog.tsx": 1,
-      "components/trades/manual-trade-form.tsx": 1,
-      "components/trades/staged-panel.tsx": 1,
+      // Wave 3: components/trades/trades-client.tsx is owned by the Trades
+      // agent this wave — its `today` memo (line ~92) is a page date and
+      // migrates to todayIstIso() in the fix wave.
       "components/trades/trades-client.tsx": 1,
-      "lib/analytics/expiry-stats.ts": 1,
-      "lib/analytics/settlement.ts": 1,
-      "lib/import/api/angelone.ts": 1,
-      "lib/import/api/dhan.ts": 1,
-      "lib/import/api/openalgo.ts": 1,
-      "lib/import/api/upstox.ts": 1,
-      "lib/import/mtm-bhavcopy.ts": 1,
-      "lib/jobs/mtf-accrual.ts": 1,
-      "lib/queries/account-delete.ts": 2,
-      "lib/queries/capital.ts": 2,
-      "lib/queries/limits.ts": 1,
-      "lib/queries/wallpaper.ts": 1,
-      "lib/risk/sebi-radar.ts": 1,
     };
+    // Sites that LOOK like a UTC today but are a genuine machine stamp
+    // (a log line, an updatedAt) and may keep UTC — each with its reason.
+    // Empty after the sweep: no such site exists among the 42 it found.
+    const ALLOWED_UTC_STAMPS: Record<string, { count: number; reason: string }> = {};
+    expect(Object.keys(ALLOWED_UTC_STAMPS)).toEqual([]);
     const hits = rg("new Date\\(\\)\\s*\\.toISOString\\(\\)\\.(slice|substring)\\(\\s*0,\\s*10\\s*\\)");
     const actual: Record<string, number> = {};
     for (const l of hits) {

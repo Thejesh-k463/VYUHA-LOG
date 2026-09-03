@@ -1,3 +1,4 @@
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { broker?: string; text?: string; asOf?: string } | null;
   const broker = String(body?.broker ?? "").toLowerCase();
   const text = String(body?.text ?? "");
-  const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(body?.asOf ?? "")) ? String(body?.asOf) : new Date().toISOString().slice(0, 10);
+  const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(body?.asOf ?? "")) ? String(body?.asOf) : todayIstIso();
   if (!(BROKERS as readonly string[]).includes(broker) || !text.trim()) {
     return NextResponse.json({ ok: false, message: "Pick a broker and a file." }, { status: 400 });
   }
