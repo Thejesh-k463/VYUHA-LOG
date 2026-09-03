@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything below was verified against the repo on 2026-08-27 (the live broker-API test session), not recalled.
+Everything in §2 was verified against the repo and the live release on 2026-09-03, not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -26,7 +26,106 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — verified 2026-09-01 (v3.5.1 PUBLISHED, mirrored, installed clean, IN-APP UPDATE VERIFIED end-to-end)
+## 2. Current state — verified 2026-09-03 (v3.7.1 PUBLISHED, mirrored, installed clean on a non-build machine)
+
+**v3.7.1 "Review & Discipline" IS LIVE (owner-confirmed 2026-09-03):** published, `releases/latest`
+moved to v3.7.1, mirror pushed, and installed clean on a non-build machine and working.
+`revocations` re-checked and still `prerelease=true`, untouched.
+
+**⚠ v3.7.0 WAS CUT, TAGGED, FULLY DEEP-VERIFIED — AND SUPERSEDED UNPUBLISHED.** Its draft was
+deleted without ever being published; **the `v3.7.0` tag remains for history** (both tags are on
+the remote). Same handling as v3.5.0 → v3.5.1, and for the same reason: an audit run *after* the
+gates were green found what the gates could not. Do not resurrect it.
+
+**THE THING WORTH LEARNING FROM THIS RELEASE — a fix wave needs its own audit.**
+The v3.7.0 diff was audited (6 finders, 27 findings, all fixed with red-on-revert proofs) and every
+gate was green: verify EXIT 0, e2e 70/70, CI 5/5, three signatures deep-verified over published
+bytes. **But the fix wave itself — 27 findings' worth of new code across five agents and three
+follow-up passes — had never been adversarially reviewed.** A second audit over *the fixes* (106
+agents, 33 candidates, a 3-skeptic refutation panel per finding, 40 refuted) found two things worth
+stopping a release for. Full record: `docs/DECISIONS.md` 2026-09-02/03.
+
+1. **The first-run wizard could NULL a capital base the user had already set.** Step-1's boxes were
+   state seeded once at mount, so "Run setup again" re-opened over EMPTY boxes and Continue read
+   empty as *"cleared on purpose"* — probe: ₹5,00,000 equity and ₹2,00,000 F&O wiped, with a
+   success toast. `app/layout.tsx` states the guarantee it broke in as many words. **The only
+   v3.7-introduced path in either audit that destroyed user data.**
+2. **Class 1 (`recordAudit` before/after key-set asymmetry) survived the FIRST audit's own fixes, on
+   irreversible paths.** After an account merge the log claimed the user's weekly-review prose,
+   completion and score were all cleared — when the note had been APPENDED to and neither other
+   column moved; the b/f-loss merge said the same of a tax carry-forward record; and clearing the
+   STT box really re-priced a segment while the log said nothing about STT. Fixing four instances
+   had not closed the class.
+
+**Verified 2026-09-03 (numbers observed, not recalled):**
+- `npm run verify` **EXIT 0 — 211 test files / 3,434 tests** (was 2,899/188 at the v3.6.0 cut).
+- **e2e 70/70 EXIT 0** (was 54), 22 specs.
+- **CI 5/5 green BEFORE the tag.** The Windows job — *"what the release job needs"* — **refused an
+  earlier head and was right to**: `tests/lenses-members-route.test.ts` re-read the whole book, the
+  batches and the grouping on every call (~45 times), which blew vitest's 5 s default on the slower
+  runner while ubuntu and macOS passed. De-duplicated to 1.86 s, and the fix re-proved red-on-revert
+  so the caching could not turn the test into a comparison of the route against itself.
+- Release workflow 3/3 platforms; `release:verify v3.7.1 --deep` → **all 3 signatures
+  cryptographically verified over the PUBLISHED bytes under `4FF85F3BBE1DA21D`, "Safe to publish"**.
+- Desktop build EXIT 0; BUILD_ID `nxyxCgKcmwiK3N2jsWAHF`; all v3.7 markers present in **server AND
+  client** chunks.
+- Client ZIP `Vyuha_3.7.1_Client_Package.zip` — 12 entries, installer SHA-256
+  **`9C2501248A157D7203005F177481A4416347AAC14159770BDC38E8236576ED0A`** (CHECKSUMS.txt).
+- Bump printed **3 files — correct for a PATCH**; the sidebar footer carries MAJOR.MINOR only and
+  stays `v3.7`. package-lock roots hand-edited **2/2**, re-parses, 770 entries, `npm ls esbuild`
+  resolves. (At 3.6.0 that string appeared THREE times — the third was tailwind-merge's own version.
+  Check before any global replace.)
+
+**Perf — double sweep, seeded 25,000-trade perf DB, production build, 129 visits, 1500 ms budget:**
+
+| Route | v3.7 baseline | v3.7.1 final | Verdict |
+|---|---|---|---|
+| `/lenses` | 1718 / 1557 | **917 / 917** | fixed — roughly halved |
+| `/review` (new) | — | 1101 / 1069 | under budget |
+| `/trades` | 2204 / 1949 | 2054 / 2173 | **the one remaining breach — deliberately out of scope** |
+
+**⚠ WHY `/trades` IS STILL OVER BUDGET, AND WHY THAT IS THE RIGHT CALL.** It is already
+virtualised, so the only lever left is server pagination → `LIMIT/OFFSET` → **a total order on
+trades**. Appending `id` is safe and discharges both open clauses, **but it is NOT output-neutral**:
+`taxByFy` per-FY sums move in the last paisa (REAL rupee doubles — the ledger's integer-paise
+guarantee does NOT transfer), a harvest lot's `offsets`/`partial`/`carry` status can flip, and the
+holding clock's top-15 can change membership. Also `created_at` is SECOND-resolution and the
+importer never sets it, so **a whole import batch shares one timestamp** — real tie groups are
+batches, not pairs. **It is its own change with its own before/after proof, and it belongs at the
+front of v3.8 "Money correctness". The owner asked about folding it into v3.7.1 on 2026-09-03 and
+the answer was no, for these reasons.**
+
+**What v3.7.1 ships** (full copy in `CHANGELOG.md`): Trade Review Desk at `/review`
+(Pro/lifetime after the 7-day trial) — per-trade review queue, Sunday weekly ritual, transparent
+five-component Process Score; Discipline 2.0 (the same score replaces the 3-part weekly one; weeks
+under 10 closed trades REFUSE instead of scoring 0 — this moves numbers on upgrade, and the
+₹9,500/₹25,000 substitutions are gone from the score and the Target Tracker); first-run onboarding;
+dated advance-tax challan ledger (each instalment measured paid-as-of its own due date, s.408(3)
+31-March cut, Schedule IT export blank-never-0); capital resolves per account on **eight** more
+surfaces (the backlog said seven — the dashboard tile was the missed one, and compounding made this
+wrong on SINGLE-account books too); `/lenses` ~2× faster with no figure moved; durable Telegram
+failure note. Migrations **0055–0058**.
+
+**OPEN — owner actions:**
+- **WDSI (SmartScreen) submission for v3.7.1 has NOT been confirmed done.** Details, per the
+  standing preference to hand them over unprompted: file `Vyuha_3.7.1_x64-setup.exe` **from the
+  CLIENT ZIP, never the GitHub asset**; SHA-256
+  `9C2501248A157D7203005F177481A4416347AAC14159770BDC38E8236576ED0A`; category "Incorrectly detected
+  as malware/malicious" (pre-emptive); detection name `N/A - no detection` unless Defender flags one;
+  definition version blank for a pre-emptive submission.
+- **No winget PR while microsoft/winget-pkgs #421585 is open.**
+
+**NEXT: v3.8 "Money correctness."** The roadmap slot is `docs/V360_BUILD_PLAN.md`; the v3.7 audits
+banked **ten candidates with their evidence** in `docs/DECISIONS.md` 2026-09-02 ("v3.8 candidates
+banked by the v3.7 audit"). Highest-value three: a `recordAudit` key-set assertion (the class cost
+two audits and eight instances), tightening `getWriteAccountId()` (it falls back to the LOWEST
+account id — seven pre-existing callers reached it, all now guarded at the call site, none at the
+resolver), and one `todayInIst()` (three UTC-vs-local defects in one release; four hand-rolled
+copies remain). `/trades` pagination joins them as the money-correctness headline.
+
+---
+
+## 2a. Superseded — the v3.5.1 / v3.6.0 era (accurate history; v3.7.1 is the release)
 
 **v3.5.1 is LIVE (owner-confirmed 2026-09-01):** draft published (`releases/latest` moved
 off v3.3.0), mirror pushed, installed and working on a non-build machine, and — closing the
