@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { advanceTaxChallans } from "@/lib/db/schema";
 import type { AdvanceTaxInput } from "@/lib/analytics/advance-tax";
 import { getSelectedAccountId, getWriteAccountId } from "./accounts";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { isValidFy } from "./bf-losses";
 import { recordAudit } from "@/lib/audit";
 
@@ -18,11 +19,11 @@ import { recordAudit } from "@/lib/audit";
  * Scoping (invariants 8/9): reads go through getSelectedAccountId() — the
  * aggregate view (id 0) reads EVERY account's challans, because the tax pages
  * already blend every account's trades in that view — and REFUSES writes
- * outright. `getWriteAccountId()` resolves the concrete id for the write, but
- * only AFTER the aggregate has been refused: its own fallback picks the first
- * account when the selection is 0, and silently attributing a bank payment to
- * whichever account sorts first is exactly the invariant-9 bug ("0 is a view,
- * not a place").
+ * outright, as a typed `forbidden` result (route → 403). `getWriteAccountId()`
+ * then resolves the concrete id; since v3.8 it THROWS on a 0 selection rather
+ * than picking the first account (silently attributing a bank payment to
+ * whichever account sorts first was exactly the invariant-9 bug, "0 is a view,
+ * not a place"), so the pre-check and the helper can no longer disagree.
  *
  * Refusals over defaults (invariant 6): a malformed FY, an unreal date, a date
  * outside the FY it claims, a future date, or a non-positive amount are all
@@ -97,26 +98,12 @@ export function advanceTaxFyWindow(fy: string): { start: string; end: string } {
 }
 
 /**
- * Today in INDIA, whatever clock the machine keeps.
- *
- * Not UTC: that calls a payment made at 03:00 IST "future" and refuses a real
- * receipt for five and a half hours. Not the process's local parts either — a
- * desktop in IST gets the right answer from those, but the same build on a
- * UTC-configured box silently reintroduces exactly the bug they were written to
- * avoid. This is an Indian tax ledger, so the day is India's; the same
- * expression dates the review desk (`app/review/page.tsx`) and the session plan.
- *
- * THE NAME CARRIES THE TIMEZONE ON PURPOSE. `lib/engine/rates.ts` exports a
- * `todayIso()` of its own on a UTC clock, and the two are a day apart for the
- * 5½ hours after IST midnight. A plain `todayIso` here would leave two
- * identically-named exports that differ in what they mean, which a future
- * reader resolves by whichever one autocomplete offers first — and every
- * advance-tax surface must agree with the day `upsertChallan` validates a
- * challan against, or the planner contradicts the ledger again.
+ * Today in INDIA. Defined in lib/domain/trading-day.ts (pure) since v3.8 and
+ * re-exported here because every advance-tax surface — the planner page, the
+ * editor's max date, `upsertChallan`'s future-date refusal — imports it from
+ * this module, and they must all agree on the day.
  */
-export function todayIstIso(d = new Date()): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-}
+export { todayIstIso };
 
 /**
  * The selected account's challans, oldest payment first (id breaks a same-day
@@ -224,8 +211,8 @@ export interface ChallanUpsertInput {
 
 /** Record a new challan, or edit one of the selected account's existing rows. */
 export function upsertChallan(input: ChallanUpsertInput): ChallanWriteResult {
-  // Invariant 9 FIRST: getWriteAccountId() would otherwise fall back to the
-  // lowest-id account and file someone's payment against the wrong book.
+  // Invariant 9 as a typed result FIRST (the route maps `forbidden` to 403);
+  // getWriteAccountId() below would throw on the same 0 selection (v3.8).
   if (getSelectedAccountId() === 0) {
     return {
       ok: false,
@@ -288,13 +275,20 @@ export function upsertChallan(input: ChallanUpsertInput): ChallanWriteResult {
       .get();
     if (!existing) return { ok: false, message: "That challan no longer exists on this account — nothing was changed." };
     db.update(advanceTaxChallans).set(values).where(eq(advanceTaxChallans.id, existing.id)).run();
+    // Single-binding convention (lib/audit.ts): BOTH snapshots are projections
+    // of the row read before the write, over the columns this write touches.
+    // `before: existing` against `after: values` carried id/accountId/createdAt
+    // on one side only, which the audit screen rendered as three columns
+    // cleared — the v3.8 key-set guard reddened it (tests/challans.test.ts).
+    const touched = Object.keys(values) as (keyof typeof values)[];
+    const project = (row: Record<string, unknown>) => Object.fromEntries(touched.map((k) => [k, row[k] ?? null]));
     recordAudit({
       entity: "advance_tax_challan",
       entityId: existing.id,
       action: "update",
       summary: `advance-tax challan updated — FY ${input.fy}, ₹${input.amount} paid ${input.paidOn}`,
-      before: existing as unknown as Record<string, unknown>,
-      after: values,
+      before: project(existing as unknown as Record<string, unknown>),
+      after: project({ ...existing, ...values }),
       source: "ui",
     });
     return { ok: true, message: `Updated the ₹${input.amount} challan dated ${input.paidOn}.` };

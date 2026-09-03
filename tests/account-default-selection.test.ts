@@ -43,8 +43,9 @@ describe("default account selection", () => {
     t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
     expect(accounts.getSelectedAccountId()).toBe(0);
     expect(accounts.isAggregateView()).toBe(true);
-    // Writes still need somewhere to go until the user picks.
-    expect(accounts.getWriteAccountId()).toBe(1);
+    // Writes have NOWHERE to go until the user picks — refused, never guessed
+    // (v3.8; this used to assert 1, the lowest-id fallback).
+    expect(() => accounts.getWriteAccountId()).toThrow(accounts.AccountRequiredError);
     expect(accounts.getWriteAccountId(2)).toBe(2);
   });
 

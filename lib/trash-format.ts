@@ -33,7 +33,19 @@
 // and `merge` fields below. The bump is additive — v1 snapshots carry none of
 // them and restore exactly as before, because validation accepts any version
 // <= TRASH_VERSION and every reader treats the fields as optional.
-export const TRASH_VERSION = 2;
+//
+// v3 (2026-09-04, broker-scoped remove): adds the OPTIONAL `kind`, `broker` and
+// `ipoRefs` fields. Additive in the same way — a v3 broker-remove snapshot is
+// shaped exactly like an ordinary trade-delete snapshot (trades + legs +
+// attachments + ledgerRefs, no `account`), so the ONE restore path restores it
+// under the original ids; `kind`/`broker` only label the list. `ipoRefs` is
+// the IPO counterpart of `ledgerRefs`: `ipos.tradeId` is unlinked on delete
+// and re-pointed on restore where it is still null.
+export const TRASH_VERSION = 3;
+
+/** What produced the snapshot. Absent (v1/v2) means an ordinary trade delete
+ *  or, when `account` is present, an account deletion. */
+export type TrashKind = "broker-remove";
 
 export interface TrashEnvelope {
   vyuhaTrash: true;
@@ -60,6 +72,23 @@ export interface TrashEnvelope {
    * Optional: snapshots written before 2026-08-12 do not carry it.
    */
   ledgerRefs?: { ledgerId: number; tradeId: number }[];
+  /**
+   * v3: IPO records whose `tradeId` pointed at a deleted trade. Like ledger
+   * entries, the IPO row itself is KEPT (it is the user's own record of an
+   * application) and only the link is nulled; restore re-points it where the
+   * trade came back and the link is still null. Optional — v1/v2 snapshots
+   * and ordinary trade deletes carry none, and lose nothing they did not
+   * already lose.
+   */
+  ipoRefs?: { ipoId: number; tradeId: number }[];
+  /**
+   * v3: discriminator for the Deleted-items list. `"broker-remove"` marks a
+   * snapshot written by `removeBrokerRows` (every trade of one broker in one
+   * account, removed so the file can be re-imported clean). Absent otherwise.
+   */
+  kind?: TrashKind;
+  /** v3, broker-remove only: the broker whose rows the snapshot holds. */
+  broker?: string;
   /**
    * v2, account deletion only: the `accounts` row that was deleted ALONG WITH
    * these trades — id, name, broker, capital fields, pnlRolledIn and flags,
@@ -122,6 +151,9 @@ export interface TrashSummary {
   latest: string | null;
   /** Bytes on disk, snapshot JSON plus stashed files. */
   sizeBytes: number;
+  /** v3: present only on a broker-remove snapshot. */
+  kind?: TrashKind;
+  broker?: string;
 }
 
 /**
@@ -186,5 +218,8 @@ export function summariseTrash(e: TrashEnvelope, sizeBytes: number): TrashSummar
     earliest: dates[0] ?? null,
     latest: dates[dates.length - 1] ?? null,
     sizeBytes,
+    // Spread only when set, so a v1/v2 summary keeps its exact shape.
+    ...(e.kind ? { kind: e.kind } : {}),
+    ...(e.broker ? { broker: e.broker } : {}),
   };
 }

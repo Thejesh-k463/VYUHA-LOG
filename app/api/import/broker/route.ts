@@ -21,7 +21,8 @@ import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
-import { getWriteAccountId } from "@/lib/queries/accounts";
+import { AccountRequiredError, getWriteAccountId } from "@/lib/queries/accounts";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { listBrokerConnections } from "@/lib/queries/broker-connections";
 import { encryptSecret, readSecret, sweepPlaintextSecrets } from "@/lib/vault";
 
@@ -306,12 +307,21 @@ export async function POST(req: Request) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, message: "Bad request" }, { status: 400 });
   }
-  // Writes need a real account — 0 is a view, not a place (invariant 9), and
-  // the old `selected||1` collapse landed All-accounts writes on a hard-coded
-  // account 1 that may not even exist. The client sends the connection row's
-  // own accountId for pulls/disconnects and the picker's choice for saves;
-  // getWriteAccountId validates any explicit id against the accounts table.
-  const accountId = getWriteAccountId(typeof body.accountId === "number" ? body.accountId : null);
+  // Writes need a real account — 0 is a view, not a place (invariant 9). The
+  // client sends the connection row's own accountId for pulls/disconnects and
+  // the picker's choice (`savePick`) for saves; getWriteAccountId validates an
+  // explicit id against the accounts table and THROWS — no lowest-id fallback
+  // since v3.8 — when the body names 0 or nothing while All accounts is the
+  // selection. That is a 400 with a stable code, not a guess.
+  let accountId: number;
+  try {
+    accountId = getWriteAccountId(typeof body.accountId === "number" ? body.accountId : null);
+  } catch (e) {
+    if (e instanceof AccountRequiredError) {
+      return NextResponse.json({ ok: false, code: e.code, message: e.message }, { status: 400 });
+    }
+    throw e;
+  }
 
   if (body.action === "save") {
     let broker = String(body.broker ?? "");
@@ -556,7 +566,7 @@ export async function POST(req: Request) {
         const auth = authBlob.value as { host: string; underlyingBroker: Broker };
         openAlgoBroker = auth.underlyingBroker;
         const creds = { apiKey: keyRead.value, host: auth.host, broker: openAlgoBroker };
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayIstIso();
         // normalize is called DIRECTLY rather than through fetchTrades: the
         // `repaired` / `refused` counts are what become the user-facing
         // warnings, and fetchTrades returns only the trades. The quantity
@@ -579,7 +589,7 @@ export async function POST(req: Request) {
         const auth = authBlob.value as { clientCode: string; pin: string; totpSecret: string };
         const creds = { apiKey: keyRead.value, clientCode: auth.clientCode, pin: auth.pin, totpSecret: auth.totpSecret };
         const { jwtToken } = await angelOneLogin(creds);
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayIstIso();
         const { trades, refused } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
         parsed = angelToParsedFile(trades, refused);
       } else if (broker === "dhan") {
@@ -658,7 +668,7 @@ export async function POST(req: Request) {
       } else if (broker === "upstox") {
         // apiKey holds the year-long read-only Analytics token. normalize is
         // called directly so the unparseable-symbol notes reach the screen.
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayIstIso();
         parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
       } else {
         // Zerodha. With an api_secret saved (auth_json), the daily ritual is
@@ -769,7 +779,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIstIso();
     // "kite" is kept for Zerodha so source_file naming stays continuous with
     // every existing import; Angel One used to fall into the kite name too,
     // which mislabelled its commits — it now files under its own name.

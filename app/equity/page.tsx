@@ -6,7 +6,8 @@ import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { accrueMtfInterest } from "@/lib/jobs/mtf-accrual";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { findRates, todayIso } from "@/lib/engine/rates";
+import { findRates } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { computeTradeCalc } from "@/lib/analytics/trade-calc";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import type { Broker, Exchange } from "@/lib/domain/constants";
@@ -14,7 +15,7 @@ import type { Broker, Exchange } from "@/lib/domain/constants";
 export const dynamic = "force-dynamic";
 
 export default function EquityTrackerPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   /**
    * Guarded: `accrueMtfInterest` resolves charge rates, and `findRates` now
    * throws when no epoch covers the date. A missing rate row must not blank the
@@ -45,7 +46,7 @@ export default function EquityTrackerPage() {
       // interest accrued so far — needs charge_config rates, which the pure
       // positions.ts module deliberately doesn't touch.
       try {
-        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, todayIso());
+        const r = findRates(rates, p.broker as Broker, "eq_mtf", p.exchange as Exchange, todayIstIso());
         const calc = computeTradeCalc(
           {
             segment: "eq_mtf",

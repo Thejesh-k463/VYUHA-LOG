@@ -5,6 +5,7 @@ import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -30,7 +31,7 @@ function toMatrices(ctx: ParseContext): string[][][] {
     ];
   }
   if (ctx.buffer) {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    const wb = workbookOf(ctx);
     return wb.SheetNames.map((name) =>
       (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name]!, { header: 1, raw: false, defval: "" }) as unknown[][]).map(
         (r) => r.map((c) => String(c ?? "")),
@@ -418,6 +419,12 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
 
   if (rowCount === 0 && unreadable.length === 0) return null;
 
+  // The file's own charge figures, summed unrounded across every row, per
+  // head and in total — what the groups' rounded heads must add back to.
+  const fileHeads = { brokerage: 0, exchangeTxn: 0, ipft: 0, sebi: 0, gst: 0, stampDuty: 0, sttCtt: 0 };
+  for (const g of groups.values()) for (const k of Object.keys(fileHeads) as (keyof typeof fileHeads)[]) fileHeads[k] += g.charges[k];
+  const fileTotal = r2(Object.values(fileHeads).reduce((a, b) => a + b, 0));
+
   const trades: NormalizedTrade[] = [];
   for (const g of groups.values()) {
     // Round each head FIRST and total the rounded heads: the stored heads must
@@ -464,6 +471,30 @@ function parseTradewiseSheet(rows: string[][], ctx: ParseContext): ParsedFile | 
       reportedCharges: { ...heads, total },
       importNotes: g.section ? [`Tax P&L section: ${g.section}`] : null,
     });
+  }
+
+  // Conserve Σ positions to the file's charge columns. The cells carry four
+  // decimals (356 of them on the real FY25-26 export) and each group rounds
+  // its heads to the paisa, so 26 groups × 7 heads drifted ₹0.09 above the
+  // columns' own sum (3,269.50 vs 3,269.41; FY24-25: ₹0.02 under). The
+  // residual is handed to the last position's largest head — its heads still
+  // sum to its total, every other position is untouched — and said on that
+  // trade. (Reconciling head by head was tried and rejected: it can push a
+  // zero head to −₹0.01, a figure no contract note ever shows.)
+  const lastTrade = trades[trades.length - 1];
+  if (lastTrade?.reportedCharges) {
+    const b = lastTrade.reportedCharges;
+    const HEADS = Object.keys(fileHeads) as (keyof typeof fileHeads)[];
+    const residual = r2(fileTotal - r2(trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0)));
+    if (residual !== 0) {
+      const biggest = HEADS.reduce((best, k) => ((b[k] ?? 0) > (b[best] ?? 0) ? k : best));
+      b[biggest] = r2((b[biggest] ?? 0) + residual);
+      b.total = r2(HEADS.reduce((s, k) => s + (b[k] ?? 0), 0));
+      lastTrade.importNotes = [
+        ...(lastTrade.importNotes ?? []),
+        `Carries ₹${residual.toFixed(2)} of per-position rounding so the book's charges equal the report's charge columns (₹${fileTotal.toLocaleString("en-IN")}) to the paisa.`,
+      ];
+    }
   }
 
   const warnings: string[] = [
@@ -758,6 +789,17 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
     });
   }
   warnings.push("Zerodha Console P&L is aggregated; segment/MTF may need re-tagging.");
+  // The Summary block above the table states the report's own totals —
+  // `Charges 3269.4101`, `Realized P&L`, and a per-head table. Carried in
+  // `reported` so the import screen can set the engine's estimate beside the
+  // broker's figure; the rows themselves state no charges, so per-trade
+  // figures stay the engine's (and the screen says so).
+  const reported = readConsoleSummary(rows.slice(0, h));
+  if (reported.charges != null) {
+    warnings.push(
+      `The report states ₹${reported.charges.toLocaleString("en-IN", { maximumFractionDigits: 2 })} of charges in total but none per row — per-trade charges are the engine's estimate from your rate table; the broker's total is carried beside it for comparison.`,
+    );
+  }
   // The Console P&L states no exit dates at all (and often no dates, full
   // stop). Rows land with "—" in every date column, which reads as a failed
   // import unless the import screen says so up front — inventing a date to
@@ -768,5 +810,38 @@ export function parseZerodha(ctx: ParseContext): ParsedFile {
       `${undated} row${undated === 1 ? "" : "s"} carry no dates because this report states none — they will show "—" for dates and sit outside FY, holding-period and time-of-day analytics rather than being guessed. The tradebook or tax P&L export carries real dates if you need them.`,
     );
   }
-  return { sourceId: "zerodha", broker: "zerodha", format: "console", trades, warnings };
+  return { sourceId: "zerodha", broker: "zerodha", format: "console", trades, warnings, ...(Object.keys(reported).length ? { reported } : {}) };
+}
+
+/** Console P&L preamble: `Summary` label/value pairs and the `Account Head |
+ *  Amount` charge table. Labels carry a ` - Z` suffix on the real export
+ *  (`Brokerage - Z`); the three GST heads fold into one, as the tradewise
+ *  parser does. Only rows whose second cell is a number are taken — the
+ *  section titles (`Charges` alone on a row) are skipped. */
+const CONSOLE_SUMMARY: [RegExp, string][] = [
+  [/^charges$/, "charges"],
+  [/^realized\s*p&l|^realised\s*p&l/, "realisedPnl"],
+  [/^unrealized\s*p&l|^unrealised\s*p&l/, "unrealisedPnl"],
+  [/^other\s*credit/, "otherCreditDebit"],
+  [/^brokerage/, "brokerage"],
+  [/^exchange\s*transaction/, "exchangeTxn"],
+  [/^clearing/, "clearing"],
+  [/gst/, "gst"],
+  [/^securities\s*transaction\s*tax|^stt\b/, "sttCtt"],
+  [/^sebi/, "sebi"],
+  [/^stamp\s*duty/, "stampDuty"],
+  [/^ipft/, "ipft"],
+];
+function readConsoleSummary(preamble: string[][]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of preamble) {
+    const label = (r[0] ?? "").trim().toLowerCase().replace(/\s*-\s*z$/, "").trim();
+    const raw = (r[1] ?? "").trim().replace(/,/g, "");
+    if (!label || raw === "" || !Number.isFinite(Number(raw))) continue;
+    const hit = CONSOLE_SUMMARY.find(([re]) => re.test(label));
+    if (!hit) continue;
+    const v = Number(raw);
+    out[hit[1]] = hit[1] === "gst" ? Math.round(((out.gst ?? 0) + v) * 10000) / 10000 : v;
+  }
+  return out;
 }

@@ -4,7 +4,8 @@ import { ipos } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { computeIpo, ipoSellCharges, summariseIpos, type IpoComputed, type IpoSellCharger, type IpoSummary } from "@/lib/analytics/ipo";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, todayIso } from "@/lib/engine/rates";
+import { findRates } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import { getSelectedAccountId } from "./accounts";
@@ -33,7 +34,7 @@ export function chargerFor(
   if (!broker) return ipoSellCharges;
   let rates;
   try {
-    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange, exitDate ?? todayIso());
+    rates = findRates(ratesMap, broker as Broker, "eq_delivery", (exchange === "BSE" ? "BSE" : "NSE") as Exchange, exitDate ?? todayIstIso());
   } catch {
     return ipoSellCharges;
   }

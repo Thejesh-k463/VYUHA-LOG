@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { buildContext, detectParser, rankParsers } from "@/lib/import/detect";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
+import { AccountRequiredError } from "@/lib/queries/accounts";
 import { guardReadable, unreadableError } from "@/lib/import/parse-guard";
 import { classifyFileKind, capabilityOf } from "@/lib/import/file-kind";
 import type { ProductHint } from "@/lib/engine/types";
@@ -119,12 +120,26 @@ export async function POST(req: Request) {
         warnings: parsed.warnings,
       });
     } catch (e) {
+      // No account to land on (All accounts selected, no accountId in the
+      // form): a 400 with a stable code, not a 500 the client reads as a
+      // crash. getWriteAccountId throws this since v3.8 — no lowest-id fallback.
+      if (e instanceof AccountRequiredError) {
+        return NextResponse.json({ error: e.message, code: e.code }, { status: 400 });
+      }
       return NextResponse.json({ error: `Commit failed: ${(e as Error).message}` }, { status: 500 });
     }
   }
 
   // preview
-  const preview = previewParsedFile(parsed, productOverrides, accountId, file.name);
+  let preview;
+  try {
+    preview = previewParsedFile(parsed, productOverrides, accountId, file.name);
+  } catch (e) {
+    if (e instanceof AccountRequiredError) {
+      return NextResponse.json({ error: e.message, code: e.code }, { status: 400 });
+    }
+    throw e;
+  }
   const kind = classifyFileKind(parsed.format);
   return NextResponse.json({
     mode: "preview",

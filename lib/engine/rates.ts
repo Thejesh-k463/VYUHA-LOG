@@ -90,11 +90,6 @@ function isoDate(s: string | null | undefined): string | null {
   return null;
 }
 
-/** Today as `YYYY-MM-DD`, the fallback when a row carries no usable date. */
-export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function key(broker: string, plan: string, segment: string, exchange: string) {
   return `${broker}|${plan}|${segment}|${exchange}`;
 }

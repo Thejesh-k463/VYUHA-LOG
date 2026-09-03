@@ -616,3 +616,51 @@ describe("connection pragmas", () => {
     expect(String(t.sqlite.pragma("journal_mode", { simple: true })).toLowerCase()).toBe("wal");
   });
 });
+
+/**
+ * v3.8 — a restore RE-RUNS the data fixes (owner ruling 2026-09-04).
+ *
+ * `data_fixes` is deliberately not in the envelope (tests/backup-format): the
+ * markers say what THIS database applied, and the donor's rows may pre-date a
+ * fix — a v3.7 backup keys its Paytm rows on the label. Restore therefore
+ * forgets every marker and runs the fixes on the restored rows, inside the
+ * restore transaction (lib/backup.ts → lib/db/data-fixes.ts).
+ */
+describe("restore re-runs the data fixes on the restored rows", () => {
+  it("a Paytm row hashed on its label comes back ISIN-keyed, and the marker is present again", async () => {
+    const { dedupHash, PAYTM_BROKER } = await import("@/lib/import/dedup");
+    const { PAYTM_DEDUP_FIX } = await import("@/lib/db/data-fixes");
+    const marker = () => t.sqlite.prepare("SELECT name FROM data_fixes WHERE name = ?").get(PAYTM_DEDUP_FIX);
+
+    clearTrades();
+    const key = {
+      broker: PAYTM_BROKER, tradingsymbol: "SYNALPHA", isin: "INE0SYN01001",
+      buyQty: 7, avgBuyPrice: 209.51, buyValue: 1466.57, sellQty: 0, avgSellPrice: 0, sellValue: 0,
+      buyDate: "2026-08-03", sellDate: null,
+    };
+    // The hash every release before 0059 stored: keyed on the LABEL (the
+    // module's own rule for a Paytm row without an ISIN reproduces it).
+    const labelHash = dedupHash({ ...key, isin: null });
+    const isinHash = dedupHash(key);
+    expect(labelHash).not.toBe(isinHash);
+
+    t.db.insert(t.schema.trades).values(tradeRow({ ...key, symbol: "SYNALPHA", dedupHash: labelHash })).run();
+    // The envelope as a v3.7 install would have written it — no data_fixes,
+    // and the row still on the label hash.
+    const dump = backup.dumpDatabase(false);
+    expect(dump.tables.data_fixes).toBeUndefined();
+    expect((dump.tables.trades as { dedupHash: string }[]).map((r) => r.dedupHash)).toEqual([labelHash]);
+
+    // The receiving database has already applied the fix (its marker exists) —
+    // exactly the case a marker carried over, or left in place, would skip.
+    expect(marker()).toBeTruthy();
+    t.db.delete(t.schema.trades).run();
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+    const rows = t.db.select().from(t.schema.trades).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dedupHash).toBe(isinHash);
+    expect(marker()).toBeTruthy();
+  });
+});

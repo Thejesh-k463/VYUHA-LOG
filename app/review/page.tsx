@@ -15,6 +15,7 @@ import { getPlaybooks } from "@/lib/queries/playbooks";
 import { getSelectedAccount, getSelectedAccountId, isAggregateView } from "@/lib/queries/accounts";
 import { getReviewQueue, getWeeklyReview, listWeeklyReviews, weekEndOf } from "@/lib/queries/review";
 import { getSessionPlanPage } from "@/lib/queries/session-plan";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { processScore, processScoreByWeek, type ProcessScore } from "@/lib/analytics/process-score";
 import { isoWeekLabel, isoWeekStart } from "@/lib/analytics/week";
 import { mistakeReport } from "@/lib/analytics/behavior";
@@ -83,7 +84,7 @@ export default function ReviewPage() {
     dailyStop: risk.find((r) => r.scope === "bucket" && r.key === "active")?.dailyLossStop ?? null,
   };
 
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = todayIstIso();
   const thisMonday = isoWeekStart(today);
   const ritualMonday = previousWeekStart(thisMonday);
 

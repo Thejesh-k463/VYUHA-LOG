@@ -36,13 +36,12 @@ export interface DismissalWriteResult {
 /**
  * The account a dismissal write lands on, or null in the aggregate view.
  *
- * getWriteAccountId() validates an explicit id against the accounts table, but
- * its no-selection fallback is "the lowest account id" — the silent guess
- * invariant 9 forbids. Every dismissal added from the All-accounts view was
- * therefore filed against account #1 (probed: POST /api/dismissals → 200,
- * panel_dismissals.account_id = 1). Reads in the aggregate view are unscoped,
- * so it LOOKS right there — and then account #1 alone quietly stops being
- * warned about its own unmarked holdings. Refuse before asking the resolver.
+ * Kept as a pre-check rather than a call into the helper alone: the aggregate
+ * refusal here is a typed RESULT (`forbidden` → the route's 403), not an
+ * exception. Since v3.8 getWriteAccountId() throws AccountRequiredError on
+ * the same condition (its lowest-id fallback — which once filed every
+ * All-accounts dismissal against account #1 — is gone), so this check is
+ * belt-and-braces, never the only thing standing between a 0 and a write.
  */
 function dismissalWriteAccountId(): number | null {
   if (getSelectedAccountId() === 0) return null;

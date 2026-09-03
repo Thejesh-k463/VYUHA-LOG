@@ -9,7 +9,8 @@
 import { computeCharges } from "@/lib/engine/charges";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Exchange, Segment } from "@/lib/domain/constants";
-import { findRates, pricingDate, todayIso, type RatesMap } from "@/lib/engine/rates";
+import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 export interface CompareTrade {
   segment: string;
@@ -116,10 +117,10 @@ export function compareBrokers(
     if (seen.size === 0) pairs.push({ broker, plan: "default" });
   }
 
-  // Hoisted: `todayIso()` is a wall-clock read and this runs pairs × trades —
+  // Hoisted: `todayIstIso()` is a wall-clock read and this runs pairs × trades —
   // 400,000 calls at the load suite's heavy tier, where it measured ~44% of the
   // whole comparison's compute. The fallback date is loop-invariant.
-  const today = todayIso();
+  const today = todayIstIso();
   const inForce = (e: ChargeRates) =>
     (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo);
 

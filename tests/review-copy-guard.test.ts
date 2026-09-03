@@ -245,10 +245,14 @@ describe("the dashboard card and the desk agree about which week it is", () => {
     // The third UTC-vs-local defect of this release. `toISOString()` on the
     // card and Asia/Kolkata on the desk disagree every Monday between 00:00
     // and 05:30 IST.
-    const ist = /toLocaleDateString\("en-CA", \{ timeZone: "Asia\/Kolkata" \}\)/;
-    expect(page).toMatch(ist);
-    expect(card).toMatch(ist);
+    // v3.8 (WS8): both now read the ONE IST helper — the inline expression
+    // this guard used to look for lives in lib/domain/trading-day.ts alone
+    // (tests/today-clock.test.ts pins that there is exactly one definition).
+    const ist = 'todayIstIso } from "@/lib/domain/trading-day"';
+    expect(page).toContain(ist);
+    expect(card).toContain(ist);
     expect(card, "the card is back on UTC").not.toMatch(/toISOString\(\)\.slice\(0, 10\)/);
+    expect(page, "the desk is back on UTC").not.toMatch(/toISOString\(\)\.slice\(0, 10\)/);
   });
 
   it("and the two zones really do name different weeks at that hour", () => {

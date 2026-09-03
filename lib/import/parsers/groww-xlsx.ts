@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -22,7 +23,7 @@ export function detectGrowwXlsx(ctx: ParseContext): number {
   const named = /groww|stocks_pnl/i.test(ctx.filename);
   let sheets: string[];
   try {
-    sheets = XLSX.read(ctx.buffer, { type: "buffer", bookSheets: true }).SheetNames;
+    sheets = workbookOf(ctx, { bookSheets: true }).SheetNames;
   } catch {
     return 0;
   }
@@ -45,7 +46,7 @@ export function parseGrowwXlsx(ctx: ParseContext): ParsedFile {
   if (!ctx.buffer) {
     return { sourceId: "groww-xlsx", broker: "groww", format: "xlsx", trades: [], warnings: ["No file buffer."] };
   }
-  const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+  const wb = workbookOf(ctx);
   const ws = wb.Sheets["Trade Level"];
   if (!ws) {
     return {

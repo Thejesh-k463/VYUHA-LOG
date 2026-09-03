@@ -31,6 +31,7 @@ import * as XLSX from "xlsx";
 import type { Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 import { pairLegs, summarisePairing, type Leg } from "../pair-legs";
 import { extractTime } from "../time-parse";
 
@@ -44,7 +45,7 @@ const toNum = (v: unknown): number => {
 function toMatrix(ctx: ParseContext): string[][] {
   if (!ctx.buffer) return [];
   try {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    const wb = workbookOf(ctx);
     const ws = wb.Sheets[wb.SheetNames[0]!];
     if (!ws) return [];
     return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(

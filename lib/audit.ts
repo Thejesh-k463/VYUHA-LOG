@@ -41,11 +41,80 @@ export interface AuditInput {
     | "leg_edit"
     | "leg_delete"
     | "leg_stop_all"
-    | "staged_enable";
+    | "staged_enable"
+    // v3.8: a broker-scoped remove from the import screen (lib/trash.ts
+    // `removeBroker`). Admitted here so the literal is type-checked instead of
+    // cast; the column stays free text, the row is written verbatim.
+    | "import.remove-broker";
   summary?: string | null;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
   source?: string;
+}
+
+/**
+ * Thrown (dev/test only) when `before` and `after` describe different column
+ * sets — see `assertSymmetricSnapshots`.
+ */
+export class AuditShapeError extends Error {
+  readonly entity: AuditEntity;
+  readonly action: string;
+  readonly onlyBefore: string[];
+  readonly onlyAfter: string[];
+  constructor(e: AuditInput, onlyBefore: string[], onlyAfter: string[]) {
+    super(
+      `recordAudit(${e.entity}/${e.action}): before/after key sets differ — ` +
+        `only in before: [${onlyBefore.join(", ")}] only in after: [${onlyAfter.join(", ")}]. ` +
+        "Project both snapshots from ONE key list (the row read before the write).",
+    );
+    this.name = "AuditShapeError";
+    this.entity = e.entity;
+    this.action = e.action;
+    this.onlyBefore = onlyBefore;
+    this.onlyAfter = onlyAfter;
+  }
+}
+
+/** Keys on one side only, or null when the two objects describe the same columns. */
+function keySetAsymmetry(before: Record<string, unknown>, after: Record<string, unknown>): { onlyBefore: string[]; onlyAfter: string[] } | null {
+  const b = new Set(Object.keys(before));
+  const a = new Set(Object.keys(after));
+  const onlyBefore = [...b].filter((k) => !a.has(k)).sort();
+  const onlyAfter = [...a].filter((k) => !b.has(k)).sort();
+  return onlyBefore.length === 0 && onlyAfter.length === 0 ? null : { onlyBefore, onlyAfter };
+}
+
+/**
+ * THE SINGLE-BINDING CONVENTION (v3.8). `lib/analytics/audit-diff.ts` diffs the
+ * UNION of the two key sets and reads a missing key as `null`, so a key present
+ * on one side only renders as a change that never happened ("note: … → —"),
+ * and a written column absent from both renders as nothing at all. v3.7 found
+ * this class ("before/after key-set asymmetry") had survived four separate
+ * fixes, because each fix hand-assembled one side.
+ *
+ * The rule that makes it structurally impossible: ONE variable holds the row
+ * read before the write, and BOTH snapshots are projections of that row's key
+ * list — `before = pick(row, KEYS)`, `after = pick({ ...row, ...patch }, KEYS)`
+ * (or the row re-read after the write, projected to the same KEYS). Never
+ * build `after` from the request body, and never pass the patch object itself
+ * as `after` against a full-row `before`.
+ *
+ * `before: null` (a create) and `after: null` (a delete) stay legal: an absent
+ * side is the honest "there was no row" / "the row is gone", not an asymmetry.
+ * When both sides are objects their key sets must be equal, order-free.
+ *
+ * Outside production this THROWS a typed `AuditShapeError` naming the action
+ * and the odd keys, so a test that exercises the write fails on the shape. In
+ * production the entry is still recorded (a mutation must never lose its
+ * trail over a logging defect) and the asymmetry is warned to the console.
+ */
+function assertSymmetricSnapshots(e: AuditInput): void {
+  if (!e.before || !e.after) return;
+  const asym = keySetAsymmetry(e.before, e.after);
+  if (!asym) return;
+  const err = new AuditShapeError(e, asym.onlyBefore, asym.onlyAfter);
+  if (process.env.NODE_ENV !== "production") throw err;
+  console.warn(err.message);
 }
 
 export function recordAudit(e: AuditInput): void {
@@ -67,6 +136,9 @@ export function recordAudit(e: AuditInput): void {
  */
 export function recordAuditMany(entries: AuditInput[]): void {
   if (entries.length === 0) return;
+  // Shape check BEFORE the best-effort try: a throw here is deliberate and
+  // must reach the caller (dev/test), unlike an INSERT failure.
+  for (const e of entries) assertSymmetricSnapshots(e);
   const values = entries.map((e) => ({
     entity: e.entity,
     entityId: e.entityId ?? null,

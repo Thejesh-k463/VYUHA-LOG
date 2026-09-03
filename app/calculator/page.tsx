@@ -2,7 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { TradeCalculator } from "@/components/calculator/trade-calculator";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { todayIso } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { getMarginRates, getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getIndexLotSizes } from "@/lib/queries/instruments";
 
@@ -14,7 +14,7 @@ export default function CalculatorPage() {
   // whole rate history across the boundary would make the client component
   // responsible for epoch resolution, which is exactly the logic that belongs in
   // one place (lib/engine/rates.ts).
-  const today = todayIso();
+  const today = todayIstIso();
   const rates = Object.fromEntries(
     [...loadRatesMap()].flatMap(([k, epochs]) => {
       const live = epochs.find(

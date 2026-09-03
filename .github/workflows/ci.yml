@@ -176,3 +176,27 @@ jobs:
           file desktop-dist/node/node | tee /dev/stderr | grep -q "arm64"
           desktop-dist/node/node --version
           echo "✓ macOS desktop bundle is complete and runnable"
+
+  # The load and stress suite (tests/load/*.load.ts) is excluded from `npm test`
+  # BY CONSTRUCTION (vitest.load.config.ts) so a five-minute seed can never creep
+  # into the unit suite — which also meant nothing ran it. Since 2026-09-04 it is
+  # its own required gate: the release skill (§6) lists it beside the jobs above.
+  # Budget: one local run took 113 s wall (16 files, single-file, forks pool);
+  # ×2 = 4 min for the step, plus checkout + npm ci on a cold runner.
+  load:
+    name: Load and stress suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0   # PINNED — see the note in release.yml
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Load suite
+        run: npm run test:load

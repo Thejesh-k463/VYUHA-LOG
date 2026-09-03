@@ -143,6 +143,19 @@ describe("POST: a single-account view is untouched by the guard", () => {
     expect(forSwing[0].thesis).toBe("trend day");
   });
 
+  it("an explicit accountId of 0 is a 400 with the stable ACCOUNT_REQUIRED code, and writes nothing", async () => {
+    // v3.8 (owner ruling 2026-09-04): 0 named out loud is not the aggregate
+    // refusal (403) and not a zod shape error — it is a missing account.
+    selectAccount(SWING);
+    const before = rows().length;
+    const res = await post(plan({ accountId: 0, sessionDate: "2026-09-03" }));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.code).toBe("ACCOUNT_REQUIRED");
+    expect(rows()).toHaveLength(before);
+  });
+
   it("a malformed body still 400s, not 403", async () => {
     selectAccount(ALL);
     expect((await post({ sessionDate: "not-a-date" })).status).toBe(400);

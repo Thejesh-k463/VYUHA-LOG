@@ -25,8 +25,9 @@ const intOrNull = (v: unknown): number | null => {
  * Move one bucket's opening-capital checkpoint for ONE account.
  *
  * The account id is a PARAMETER, deliberately: this used to call
- * `getWriteAccountId()` itself, whose no-selection fallback is "the lowest
- * account id". Saving Settings from the All-accounts view therefore rewrote
+ * `getWriteAccountId()` itself, whose no-selection fallback WAS "the lowest
+ * account id" (removed in v3.8 — it now throws). Saving Settings from the
+ * All-accounts view therefore rewrote
  * account #1's capital_snapshots rows — equity 13,00,000 → 7,77,777 in the
  * probe — and still answered "Settings saved." `lib/queries/capital.ts` reads
  * snapshots account-scoped, so account #1 then showed an opening capital that

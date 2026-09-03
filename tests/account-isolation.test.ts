@@ -179,14 +179,31 @@ describe("account isolation — reads", () => {
 });
 
 describe("account selection", () => {
-  it("getWriteAccountId never returns the synthetic aggregate id", () => {
-    // Writes must land in a real account; 0 is a view, not a place.
+  it("getWriteAccountId REFUSES the implied aggregate — no lowest-id guess, no hard-coded 1", () => {
+    // Writes must land in a real account; 0 is a view, not a place. Until v3.8
+    // this asserted `toBeGreaterThan(0)` — satisfied by the lowest-id fallback
+    // that filed All-accounts writes on account #1 (owner ruling 2026-09-04).
     selectAccount(ALL);
     expect(queries.accounts.getSelectedAccountId()).toBe(ALL);
-    expect(queries.accounts.getWriteAccountId()).toBeGreaterThan(0);
+    expect(() => queries.accounts.getWriteAccountId()).toThrow(queries.accounts.AccountRequiredError);
+    expect(() => queries.accounts.getWriteAccountId(null)).toThrow(/choose the account/i);
+    // A bogus explicit id has nothing to fall back on in the aggregate view either.
+    expect(() => queries.accounts.getWriteAccountId(999)).toThrow(queries.accounts.AccountRequiredError);
 
     selectAccount(SWING);
     expect(queries.accounts.getWriteAccountId()).toBe(SWING);
+  });
+
+  it("an explicit 0 is refused even when a real account is selected", () => {
+    selectAccount(SWING);
+    let caught: unknown;
+    try {
+      queries.accounts.getWriteAccountId(0);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(queries.accounts.AccountRequiredError);
+    expect((caught as { code: string }).code).toBe("ACCOUNT_REQUIRED");
   });
 
   it("honours the account the user picked in the aggregate view", () => {
@@ -200,7 +217,9 @@ describe("account selection", () => {
     selectAccount(PRIMARY);
     expect(queries.accounts.getWriteAccountId(999)).toBe(PRIMARY);
     expect(queries.accounts.getWriteAccountId(-1)).toBe(PRIMARY);
-    expect(queries.accounts.getWriteAccountId(0)).toBe(PRIMARY);
+    // 0 is not "not a real account" — it is the aggregate named out loud, and
+    // it is refused rather than resolved (inverted in v3.8; it read PRIMARY).
+    expect(() => queries.accounts.getWriteAccountId(0)).toThrow(queries.accounts.AccountRequiredError);
     expect(queries.accounts.getWriteAccountId(1.5)).toBe(PRIMARY);
   });
 

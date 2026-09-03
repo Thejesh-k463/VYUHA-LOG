@@ -141,3 +141,19 @@ export function runDataFixes(sqlite: Database.Database): DataFixResult[] {
   }
   return results;
 }
+
+/**
+ * After a RESTORE: forget every marker and run the fixes again.
+ *
+ * A backup never carries `data_fixes` (tests/backup-format.test.ts excludes
+ * it): the markers describe what THIS database has applied, not what the
+ * donor had, and the rows just re-inserted may pre-date a fix — a v3.7 file
+ * still keys its Paytm rows on the label. Called inside the restore
+ * transaction (lib/backup.ts) so a failing fix rolls the whole restore back
+ * rather than leaving markers that lie. No-op before migration 0059.
+ */
+export function rerunDataFixesAfterRestore(sqlite: Database.Database): DataFixResult[] {
+  if (!hasTable(sqlite, "data_fixes")) return [];
+  sqlite.prepare("DELETE FROM data_fixes").run();
+  return runDataFixes(sqlite);
+}

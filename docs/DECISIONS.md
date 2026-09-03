@@ -2391,3 +2391,50 @@ v4.0 planning pop-up, not v3.8.
 
 **Invalidated if:** a Paytm export ever carries a product column (then the signature is a cross-check,
 not the source), or SQLite gains `json_each` inside views (then the replace chain can go).
+
+## 2026-09-04 — v3.8 Wave 2b: the golden book found the Dhan book empty; the money gates held
+
+**Context:** four agents — cross-cutting WS8 (audit key-set guard, account-0 refusal, one IST today,
+restore re-runs data fixes), Search v1 server, broker-scoped remove, golden-book harness with the
+owner's 29+2 exports redacted through a script that refuses any output whose detection or parse
+differs from the original.
+
+**Measured:**
+- **Dhan GTR (the BOOK by owner ruling) parsed both real 2026 exports to ZERO rows** while detecting
+  at 0.98: `parseGtrDate` expected `dd Mon yyyy`, the 2026 export writes `dd-mm-yyyy HH:MM`. A
+  "confidently empty" import — the class the plan's shape harness exists to catch, and it caught it
+  on the first run. Fixed in the same wave (dates accepted in both grammars; an empty result on a
+  detected GTR now warns with the unparsed sample).
+- Charge leaks the harness pinned: Angel `Trades_History` Σ per-trade 157.76 vs stated 157.79
+  (₹0.03 in six qty-0 per-order lines); Zerodha Console `reported.charges` null vs stated 3,269.4101;
+  Zerodha tax P&L Σ 3,269.50 vs columns 3,269.41 (FY24-25 ₹0.02). Fixed in the same wave.
+- `b7-import-parse-count` load bound (≤ 8 XLSX decodes per import) broke at 11 once the new
+  detectors landed — decode is now memoised once per `ParseContext`.
+- **Money gate for the IST migration:** owner's 7,544-execution book → 793 positions, 793/793 rows
+  price identically under UTC-today and IST-today; `charge_config` effective dates are only
+  `1970-01-01` and `2026-04-01`; `today` reaches pricing only as the fallback for undated rows.
+  Beyond the eleven ruled consumers, **44 UTC-today sites in 39 UI files remain**, frozen by a test
+  (can shrink, cannot grow) — Wave 3 work, not done.
+- `recordAudit` key-set guard reddened exactly ONE real asymmetry across 44 suites: `upsertChallan`
+  (`before: existing` full row vs `after: values`). `getWriteAccountId` refusal: four aggregate-write
+  suites stayed green; `commit.ts` split into `loadRatesContext()` (mutations of rows that already
+  have an account) and `loadContext()` (creators).
+- Search v1 on the 25k book: FTS p95 15.11 ms / query (max 20.67), in-memory fan-out p95 3.37 ms,
+  `growthRatio` 5k→20k = 3.57. Result href for a trade uses only `symbol|from|to`.
+- Broker remove: trash format v3 (additive `kind: "broker-remove"`, `broker`, `ipoRefs`); restore
+  reuses the trade-delete path under original ids; ledger and IPO rows unlinked, never deleted;
+  FTS needs no statement (0060's BEFORE DELETE trigger).
+- Golden shapes frozen (sourceRows → closed/open/openingSells): Paytm 7,544 → 693/62/38; Zerodha
+  tradebook 3,530 → 64/4/11; Zerodha tax P&L FY24-25 632 → 206/0/0, FY25-26 59 → 26/0/0; Groww
+  orders 952 → 466/1/16; Dhan P&L a1 → 1011/2/0. Dhan Realised P&L gross ties to its four segment
+  rows to ₹0.05; Dhan's two own files disagree by ₹0.93/₹177.99 and its segment rows do not foot
+  by ₹0.14. "691 exits" holds as Σ sourceRows; the parser books 232 positions (per symbol + entry
+  day + exit day) — a design fact, not a defect. Redacted fixtures: 27 files, ~4.5 MB, `.xls` kept
+  as BIFF8 (one >255-char footer string truncated by the writer, not a parser cell).
+
+**Decision:** the harness is a release gate from v3.8 on (`tests/golden-books.test.ts`, exact
+shapes; a pin moves only with a written reason). Dedicated `load` CI job (ubuntu, 10 min budget,
+113 s local).
+
+**Invalidated if:** a broker changes a date grammar again — the GTR empty-result warning is the
+tripwire; a golden row that goes to 0/0/0 is a stop-ship, never a re-pin.

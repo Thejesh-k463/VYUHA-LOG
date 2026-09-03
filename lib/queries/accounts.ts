@@ -33,16 +33,43 @@ export const getSelectedAccountId = cache((): number => {
 export function isAggregateView(): boolean { return getSelectedAccountId() === 0; }
 
 /**
+ * Thrown when a write has no account to land on: an explicit 0, or no
+ * argument while the selection is the "All accounts" aggregate. `code` is the
+ * stable wire value a route maps to HTTP 400.
+ */
+export class AccountRequiredError extends Error {
+  readonly code = "ACCOUNT_REQUIRED" as const;
+  constructor(detail: string) {
+    super(`Choose the account this write belongs to — ${detail}. The All-accounts view (0) is a view, never a write target.`);
+    this.name = "AccountRequiredError";
+  }
+}
+
+/**
  * Where a mutation lands. Writes need a real account — 0 is a view, not a
- * place. Callers that can ask the user (the add-trade form, the importer) pass
- * an explicit id; this fallback is for the ones that cannot.
+ * place (invariant 9).
+ *
+ * Resolution, in order: an explicit id that names a real account (archived
+ * included — a past session on a closed book stays editable) wins; otherwise
+ * the selected account, when one is selected. There is NO further fallback.
+ * The previous last resort — the lowest live account id, then a hard-coded 1
+ * — filed writes made from the All-accounts view against whichever account
+ * sorted first, and five callers grew a pre-check to route around it (owner
+ * ruling 2026-09-04: refuse explicit AND implied 0).
+ *
+ * @throws AccountRequiredError for an explicit 0, and for no usable explicit
+ *   id while the selection is 0/unset. Routes catch it and answer 400 with
+ *   `code: "ACCOUNT_REQUIRED"` (or the house 403 aggregate refusal).
  */
 export function getWriteAccountId(explicit?: number | null): number {
+  if (explicit === 0) throw new AccountRequiredError("0 was passed explicitly");
   if (explicit != null && Number.isInteger(explicit) && explicit > 0) {
     if (db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, explicit)).get()) return explicit;
   }
   const id = getSelectedAccountId();
   if (id > 0) return id;
-  return db.select({ id: accounts.id }).from(accounts).orderBy(asc(accounts.id)).limit(1).get()?.id ?? 1;
+  throw new AccountRequiredError(
+    explicit == null ? "no account is selected" : `account ${explicit} does not exist and no account is selected`,
+  );
 }
 export function getSelectedAccount() { const id=getSelectedAccountId(); return id > 0 ? db.select().from(accounts).where(eq(accounts.id,id)).get() ?? null : null; }

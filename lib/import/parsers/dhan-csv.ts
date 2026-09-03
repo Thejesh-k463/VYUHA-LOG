@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 import { isDhanDividendText, isDhanGtrText, isDhanLedgerText } from "./dhan-ledger";
 
 const toNum = (v: unknown): number => {
@@ -43,7 +44,7 @@ function dhanSheet(ctx: ParseContext): string[][] | null {
   if (!ctx.buffer || !/\.xlsx?$/i.test(ctx.filename)) return null;
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    wb = workbookOf(ctx);
   } catch {
     return null;
   }

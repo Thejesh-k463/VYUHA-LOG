@@ -143,6 +143,12 @@ stored little-endian.
 
 - Node is pinned to **22.17.0**. Do not float it.
 - Windows is tested **BEFORE** tagging, not after.
+- Every job in `.github/workflows/ci.yml` must be green on the commit you tag:
+  `check` (lint, typecheck, unit tests, build), `windows-gate`, `e2e` (ubuntu
+  + macOS), `desktop-bundle-macos`, and — since 2026-09-04 — **`load`**
+  (`npm run test:load`, the stress suite that `npm test` cannot pick up by
+  construction). A red `load` job is a real regression in an import, delete,
+  backup or pairing hot path, not noise; do not tag around it.
 - CI refuses to bless an incomplete release. If it refuses, it is right — do not
   hand-publish around it.
 

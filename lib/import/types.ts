@@ -2,6 +2,7 @@ import type { Broker } from "@/lib/domain/constants";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ColumnMapping } from "./generic-map";
 import type { ImportShape } from "@/lib/domain/import-shape";
+import * as XLSX from "xlsx";
 
 /** Result of parsing one broker file into normalized rows + reported totals. */
 export interface ParsedFile {
@@ -49,6 +50,45 @@ export interface ParseContext {
     mapping: ColumnMapping;
     defaultProduct?: ProductHint;
   };
+  /**
+   * Memo for `workbookOf(ctx)` — the decoded workbook(s) for `buffer`, keyed
+   * by read shape. Attached lazily on first use, never read directly: go
+   * through `workbookOf`, which invalidates it if `buffer` is reassigned.
+   */
+  workbooks?: { buffer: Buffer; full?: XLSX.WorkBook; sheetsOnly?: XLSX.WorkBook };
+}
+
+/**
+ * Decode the context's bytes as a workbook ONCE per context, however many
+ * detectors and parsers ask.
+ *
+ * Every fingerprinting detector opens the workbook itself (AGENTS.md: a
+ * broker-named parser must SEE the broker's name), and the route ranks twice
+ * before parsing once. Before this memo that was one full XLSX decode per
+ * xlsx-reading detector plus one for the parse — 11 decodes of a 1.4 MB
+ * tradebook per upload (tests/load/b7-import-parse-count.load.ts). The memo
+ * lives on the context object so a fresh request — a fresh context — can never
+ * be served another file's workbook, and it re-decodes if `buffer` is
+ * reassigned, the same identity rule `rankParsers`' cache uses.
+ *
+ * Two read shapes exist in the parsers: the full decode, and
+ * `bookSheets: true` (sheet NAMES only, no cells — groww-xlsx's detector). A
+ * full workbook answers a sheet-list ask for free, so the cheap read is only
+ * ever performed when nothing has decoded the cells yet. Every caller keeps
+ * its own options; nothing about what a parser SEES changes.
+ *
+ * Throws exactly what `XLSX.read` throws (no buffer, junk bytes, an encrypted
+ * workbook) — callers keep their own try/catch and their own fallbacks.
+ */
+export function workbookOf(ctx: ParseContext, opts: { bookSheets?: boolean } = {}): XLSX.WorkBook {
+  if (!ctx.buffer) throw new Error("workbookOf: the context carries no bytes");
+  if (!ctx.workbooks || ctx.workbooks.buffer !== ctx.buffer) ctx.workbooks = { buffer: ctx.buffer };
+  const memo = ctx.workbooks;
+  if (opts.bookSheets) {
+    if (memo.full) return memo.full;
+    return (memo.sheetsOnly ??= XLSX.read(ctx.buffer, { type: "buffer", bookSheets: true }));
+  }
+  return (memo.full ??= XLSX.read(ctx.buffer, { type: "buffer" }));
 }
 
 /**

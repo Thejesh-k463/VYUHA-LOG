@@ -4,6 +4,7 @@ import path from "node:path";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db, sqlite, schema } from "@/lib/db";
+import { rerunDataFixesAfterRestore } from "@/lib/db/data-fixes";
 import { attachmentsDir } from "@/lib/db";
 import {
   BACKUP_VERSION,
@@ -301,6 +302,12 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
           tx.update(schema.settings).set(keep as any).run();
         }
       }
+      // The rows above are the DONOR's, keyed however its release keyed them;
+      // this database's data-fix markers say nothing about them. Forget the
+      // markers and re-run the fixes on the restored rows, inside this same
+      // transaction (`sqlite` is the connection `db` wraps, so the raw
+      // statements join it; the fix's own transaction() becomes a savepoint).
+      rerunDataFixesAfterRestore(sqlite);
       return { ok: true, message: `Restored ${restored} rows across ${BACKUP_TABLES.length} tables.`, restored };
     });
   } catch (e) {

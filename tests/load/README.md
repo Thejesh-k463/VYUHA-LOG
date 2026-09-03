@@ -15,6 +15,18 @@ pass/fail line.
 construction** — no skip flag to rot, no way for a five-minute seed to creep
 into a unit suite that has to stay measured in seconds.
 
+## CI: the `load` job
+
+Since 2026-09-04 the suite runs in CI as its own job, `load` in
+`.github/workflows/ci.yml` (ubuntu-latest, Node 22.17.0 pinned like `check`,
+`npm ci`, `npm run test:load`, `timeout-minutes: 10` — sized from one local
+run of 113 s wall, doubled, plus install). It is a **required** gate: the
+release skill (§6) lists it beside `check`, `windows-gate`, `e2e` and
+`desktop-bundle-macos`, and a tag is not cut while it is red. The separation
+from `npm test` is unchanged — the job simply runs the other config — so a
+failure here means a hot path regressed against a pinned budget or ratio,
+never that the unit suite got slower.
+
 ## What to assert on, in order of preference
 
 1. **`countStatements()`** — how many SQL statements a call prepares. An N+1

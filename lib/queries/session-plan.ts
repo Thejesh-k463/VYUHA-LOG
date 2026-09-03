@@ -7,6 +7,7 @@ import { computeSymbolStats, type SymbolStats } from "@/lib/analytics/symbol-sta
 import { getSelectedAccountId } from "./accounts";
 import { getAliasMap } from "./aliases";
 import { getInstruments } from "./instruments";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
  * Everything the /sessions page renders, resolved through the alias map so a
@@ -54,7 +55,7 @@ export function getSessionPlanPage() {
   const tq = db.select(SESSION_TRADE_COLS).from(trades);
   const book = (accountId > 0 ? tq.where(eq(trades.accountId, accountId)) : tq).all();
 
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = todayIstIso();
   // Stats are keyed on the CANONICAL ticker so a planned symbol finds history
   // recorded under any of its broker names.
   const stats = computeSymbolStats(

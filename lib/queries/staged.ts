@@ -5,7 +5,8 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { trades as tradesTable, tradeLegs } from "@/lib/db/schema";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, todayIso, type RatesMap } from "@/lib/engine/rates";
+import { findRates, type RatesMap } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeRates } from "@/lib/engine/types";
 import type { Broker, Segment, Exchange } from "@/lib/domain/constants";
@@ -151,7 +152,7 @@ export function priceLegs(
   },
   ratesMap: RatesMap,
 ): PricedLeg[] {
-  const rates = findRates(ratesMap, ctx.broker, ctx.segment, ctx.exchange, ctx.asOf ?? todayIso());
+  const rates = findRates(ratesMap, ctx.broker, ctx.segment, ctx.exchange, ctx.asOf ?? todayIstIso());
   const shapes = legChargeShapes(legs, ctx.direction);
   const ordered = sortLegs(legs);
 
@@ -160,7 +161,7 @@ export function priceLegs(
   const mtfFundedByLeg = new Map<number, number>();
   if (ctx.segment === "eq_mtf") {
     const pos = summarise(legs, ctx.direction);
-    const asOf = ctx.asOf ?? new Date().toISOString().slice(0, 10);
+    const asOf = ctx.asOf ?? todayIstIso();
     const consumedOn = new Map<number, string>();
     for (const fill of pos.fills) {
       for (const c of fill.consumed) {
@@ -653,7 +654,7 @@ export function convertToStaged(tradeId: number): LegMutationResult {
 
   const dir: Direction = directionOf(t);
   const isShort = dir === "short";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
 
   const entryQty = isShort ? t.sellQty : t.buyQty;
   const exitQty = isShort ? t.buyQty : t.sellQty;

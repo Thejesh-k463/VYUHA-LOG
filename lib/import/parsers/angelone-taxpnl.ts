@@ -37,6 +37,7 @@
 import * as XLSX from "xlsx";
 import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[\s_.&+/()-]/g, "");
 
@@ -87,7 +88,7 @@ export function detectAngelOneTaxPnl(ctx: ParseContext): number {
   if (!ctx.buffer) return 0;
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    wb = workbookOf(ctx);
   } catch {
     return 0;
   }
@@ -176,7 +177,7 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
   const warnings: string[] = [];
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(ctx.buffer!, { type: "buffer" });
+    wb = workbookOf(ctx);
   } catch {
     return { sourceId: "angelone-taxpnl", broker: "angelone", format: "pnl", trades: [], warnings: ["Could not read this file as a workbook."] };
   }

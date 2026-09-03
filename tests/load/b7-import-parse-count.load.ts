@@ -10,9 +10,11 @@ import { report, time } from "./helpers/measure";
  * and then `detectParser(ctx)` (which calls `rankParsers` AGAIN), then
  * `chosen.parse(ctx)`. Every detector that needs an in-content fingerprint —
  * the AGENTS.md rule says a broker-named parser must SEE the broker's name —
- * opens the workbook itself with `XLSX.read(ctx.buffer)`, and so does the
- * parser. Nothing shares the parsed workbook. For a 1.4 MB Zerodha tradebook
- * that is a full XLSX decode per detector per rank pass.
+ * opens the workbook, and so does the parser. Until 2026-09-04 each opened
+ * it ITSELF with `XLSX.read(ctx.buffer)` — 11 full decodes of a 1.4 MB
+ * Zerodha tradebook per upload once the v3.8 detectors landed. Every reader
+ * now goes through `workbookOf(ctx)` (lib/import/types.ts), a memo on the
+ * context object, so one upload decodes once.
  *
  * Instrument: calls to `XLSX.read` (spied on the module every parser imports)
  * for the exact call sequence the route makes. `bookSheets: true` reads are
@@ -71,21 +73,23 @@ describe("B7 · workbook decodes per upload", () => {
     }
     for (const l of rows) console.log("    " + l);
 
-    // Detection must run ONCE per upload even though the route asks twice
-    // (rankParsers for candidates, detectParser for the winner). Beyond that,
-    // each fingerprinting detector opens the file itself — one decode per
-    // xlsx-reading detector (7) plus one for the parse is the shape the
-    // parsers impose, and is bounded here so a new parser cannot add a full
-    // decode without this number moving.
+    // One upload, ONE decode: detection is memoised per context (the route
+    // asks twice) and every detector and parser reads the workbook through
+    // `workbookOf(ctx)`. The bound is 2, not 1, only so a parser that
+    // legitimately needs a second read shape (a `bookSheets` probe before
+    // the cells have been decoded) has room; a new parser that calls
+    // `XLSX.read` directly moves this number and fails here. Measured
+    // 2026-09-04: 1 full decode for every fixture (was 11).
     expect(
       worst,
-      `${worst} full XLSX decodes for one upload — rankParsers runs twice per request and every detector re-parses the file.`,
-    ).toBeLessThanOrEqual(8);
+      `${worst} full XLSX decodes for one upload — a parser or detector is decoding the workbook itself instead of through workbookOf(ctx).`,
+    ).toBeLessThanOrEqual(2);
   });
 
-  it.fails("KNOWN: decodes the workbook at most twice per upload (once to detect, once to parse) — needs lib/import/parsers/* to share a parsed workbook", async () => {
+  it("decodes the 1.4 MB tradebook ONCE for detect + parse — the parsed workbook is shared", async () => {
     const r = await uploadShaped("zerodha-tradebook.xlsx");
-    expect(r.total.full).toBeLessThanOrEqual(2);
+    expect(r.afterDetect.full).toBe(1);
+    expect(r.total.full).toBe(1);
   });
 
   it("the ranking is identical whether it is computed once or twice", async () => {

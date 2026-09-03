@@ -98,10 +98,10 @@ describe("write resolution — the POST path's account (invariant 9)", () => {
   it("All-accounts never writes to a synthetic or hard-coded account", () => {
     selectAccount(ALL);
     // The route resolves `getWriteAccountId(body.accountId)`; with no explicit
-    // id the fallback is the first REAL account — a validated row, not `||1`.
-    const resolved = accountsQ.getWriteAccountId();
-    expect(resolved).toBeGreaterThan(0);
-    expect(t.db.select().from(t.schema.accounts).all().some((a) => a.id === resolved)).toBe(true);
+    // id in the aggregate view there is NO fallback (v3.8) — the helper throws
+    // and the route answers 400 `code: "ACCOUNT_REQUIRED"`.
+    expect(() => accountsQ.getWriteAccountId()).toThrow(accountsQ.AccountRequiredError);
+    expect(() => accountsQ.getWriteAccountId(0)).toThrow(accountsQ.AccountRequiredError);
   });
 
   it("an explicit account (the connection row's own, or the picker's) wins", () => {

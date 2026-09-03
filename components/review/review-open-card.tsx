@@ -4,6 +4,7 @@ import { getEntitlement } from "@/lib/queries/license";
 import { getReviewQueue, getReviewStats, getWeeklyReview } from "@/lib/queries/review";
 import { isoWeekLabel, isoWeekStart } from "@/lib/analytics/week";
 import { previousWeekStart } from "./week-gap";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 /**
  * The dashboard's pointer at the Trade Review Desk — a SERVER component with no
@@ -31,7 +32,7 @@ export function ReviewOpenCard() {
   // IST, the same zone app/review/page.tsx buckets in. Reading UTC here put the
   // card a whole week behind the desk it links to every Monday between 00:00
   // and 05:30 IST — and let it call a completed week open.
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = todayIstIso();
   // The ritual's week is the one that most recently ENDED — the desk reviews a
   // finished week, never the one still running.
   const ritualWeek = previousWeekStart(isoWeekStart(today));

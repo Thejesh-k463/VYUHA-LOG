@@ -36,6 +36,27 @@ import type { Exchange } from "@/lib/domain/constants";
 import { inferProduct, corroborate, splitMixedRow, productReason } from "../product-signature";
 import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
 import { deriveBasisFromFooter } from "@/lib/analytics/acquisition";
+import { parseInstrumentName } from "@/lib/engine/classify";
+import { COMMODITY_UNDERLYINGS } from "@/lib/domain/constants";
+
+const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
+
+/**
+ * A commodity derivative the report places on a venue other than MCX (the
+ * real 2026 report has one: `OPT CRUDEOIL 09 Jun 2026 8000 PE` on NSE — NSE
+ * does list crude options). Vyuha's rate table prices commodity segments at
+ * MCX only, and the Dhan Realised P&L parser already files the whole
+ * commodity segment there; carrying "NSE" through made the WHOLE import
+ * throw at commit (`No charge_config for dhan / default / commodity_option /
+ * NSE`). The stated venue is kept on the trade as a note, the classifier is
+ * handed no hint so the position lands where it can be priced, and the
+ * charges stay the broker's own per-row figures — nothing is re-estimated.
+ */
+function commodityOffMcx(symbol: string, exchange: string | null): boolean {
+  if (!exchange || exchange === "MCX") return false;
+  const parsed = parseInstrumentName(symbol);
+  return parsed.kind !== "equity" && COMMODITY_SET.has(parsed.symbol);
+}
 
 const HEADER_RE = /Date\s*,\s*Scrip Name\s*,\s*Exchange\s*,\s*Bill No\./i;
 
@@ -75,21 +96,34 @@ const MONTHS: Record<string, string> = {
 };
 
 /**
- * `01 Jul 2026 00:00:00` → `2026-07-01`.
+ * `01 Jul 2026 00:00:00` → `2026-07-01`; so do `01-07-2026 00:00` and
+ * `01/07/2026`.
  *
- * The clock portion is deliberately discarded: it is 00:00:00 on every row of
+ * Dhan has written this column two ways: the 2026-07 exports spelt the month
+ * (`dd Mon yyyy HH:MM:SS`), the 2026-09 exports write it numerically
+ * (`dd-mm-yyyy HH:MM`). Reading only the first grammar made every row of a
+ * real 1,436-line report invisible — the parser returned zero trades under a
+ * 0.98 detection (golden-book harness, 2026-09-04). Both grammars are
+ * accepted, and the numeric one is read day-FIRST because that is what the
+ * report's own title line (`From 01-04-2026 to 04-09-2026`) uses; a month
+ * token above 12 is refused rather than swapped, so a US-ordered file can
+ * never be silently read backwards.
+ *
+ * The clock portion is deliberately discarded: it is 00:00 on every row of
  * every report, i.e. a settlement stamp rather than a fill time. Keeping it
  * would push the entire book into a fabricated pre-open session.
  */
 export function parseGtrDate(raw: string): string | null {
-  const m = String(raw).trim().match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})/);
-  if (!m) return null;
-  const mm = MONTHS[m[2].toLowerCase().slice(0, 3)];
-  if (!mm) return null;
-  const dd = m[1].padStart(2, "0");
+  const s = String(raw).trim();
+  const spelt = s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:\s|$)/);
+  const numeric = spelt ? null : s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s|$)/);
+  if (!spelt && !numeric) return null;
+  const mm = spelt ? MONTHS[spelt[2].toLowerCase().slice(0, 3)] : numeric![2].padStart(2, "0");
+  if (!mm || Number(mm) < 1 || Number(mm) > 12) return null;
+  const dd = (spelt ?? numeric)![1].padStart(2, "0");
   const d = Number(dd);
   if (d < 1 || d > 31) return null;
-  return `${m[3]}-${mm}-${dd}`;
+  return `${(spelt ?? numeric)![3]}-${mm}-${dd}`;
 }
 
 export interface GtrRow {
@@ -113,6 +147,13 @@ export interface GtrRow {
 export interface GtrParsed {
   rows: GtrRow[];
   reported: Record<string, number>;
+  /**
+   * Data-shaped lines under the header (a scrip name in column 2) whose date
+   * cell no grammar could read — counted and sampled so an empty result can
+   * name what it refused instead of reporting "no rows" as if the file were
+   * empty. Blank spacer lines and the footer are not counted.
+   */
+  unparsedDates: { count: number; sample: string | null };
 }
 
 /** Split the file into data rows and the footer totals. Pure string work. */
@@ -121,6 +162,7 @@ export function readGtr(text: string): GtrParsed {
   const headerIdx = lines.findIndex((l) => HEADER_RE.test(l));
   const rows: GtrRow[] = [];
   const reported: Record<string, number> = {};
+  const unparsedDates: GtrParsed["unparsedDates"] = { count: 0, sample: null };
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -143,7 +185,12 @@ export function readGtr(text: string): GtrParsed {
 
     const c = splitCsvLine(line);
     const date = parseGtrDate(c[0] ?? "");
-    if (!date || !c[1]) continue;
+    if (!c[1]) continue;
+    if (!date) {
+      unparsedDates.count++;
+      unparsedDates.sample ??= c[0] ?? "";
+      continue;
+    }
 
     rows.push({
       date,
@@ -157,7 +204,7 @@ export function readGtr(text: string): GtrParsed {
     });
   }
 
-  return { rows, reported };
+  return { rows, reported, unparsedDates };
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -230,13 +277,31 @@ function breakdownFor(rows: GtrRow[], fraction: number): Partial<ChargeBreakdown
 const toHint = (p: PairedPosition["product"]): ProductHint =>
   p === "intraday" ? "intraday" : "delivery";
 
+/** Record an off-MCX commodity contract for the file-level warning; returns the flag unchanged. */
+function venueOffMcx(flag: boolean, p: PairedPosition, sink: string[]): boolean {
+  if (flag) sink.push(`${p.symbol} (${p.exchange})`);
+  return flag;
+}
+
 export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   const text = ctx.text ?? ctx.buffer?.toString("utf-8") ?? "";
-  const { rows, reported } = readGtr(text);
+  const { rows, reported, unparsedDates } = readGtr(text);
   const warnings: string[] = [];
 
   if (rows.length === 0) {
-    return { sourceId: "dhan-gtr", broker: "dhan", format: "transactions", trades: [], warnings: ["No transaction rows found."] };
+    // A detected GTR that yields nothing is a parser gap until proven
+    // otherwise, so the warning names the date cell it could not read — the
+    // one fact that turns "no rows" into a bug report someone can act on.
+    const why =
+      unparsedDates.count > 0
+        ? `No transaction rows could be read: ${unparsedDates.count} line${unparsedDates.count === 1 ? "" : "s"} under the header carr${unparsedDates.count === 1 ? "ies" : "y"} a date Vyuha does not recognise (first sample: "${unparsedDates.sample}"). Supported forms are dd Mon yyyy, dd-mm-yyyy and dd/mm/yyyy — please report this file so the grammar can be extended.`
+        : "No transaction rows found under the header — the report window may be empty.";
+    return { sourceId: "dhan-gtr", broker: "dhan", format: "transactions", trades: [], warnings: [why] };
+  }
+  if (unparsedDates.count > 0) {
+    warnings.push(
+      `${unparsedDates.count} line${unparsedDates.count === 1 ? "" : "s"} skipped: date not recognised (first sample: "${unparsedDates.sample}").`,
+    );
   }
 
   // ── Mixed rows: one bill holding both an intraday and a delivery portion.
@@ -276,6 +341,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   // Charge components, apportioned to each position by its share of the book.
   const totalCharges = rows.reduce((s, r) => s + rowCharges(r), 0);
 
+  const offMcx: string[] = [];
   const trades: NormalizedTrade[] = paired.map((p) => {
     const charges = p.charges;
     const fraction = totalCharges > 0 ? charges / totalCharges : 0;
@@ -284,6 +350,12 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     const notes: string[] = [...p.notes];
     if (p.product === "mixed") {
       notes.push("Bill mixed intraday and delivery; product derived from stamp duty.");
+    }
+    const venueOverridden = commodityOffMcx(p.symbol, p.exchange);
+    if (venueOffMcx(venueOverridden, p, offMcx)) {
+      notes.push(
+        `Report states exchange ${p.exchange}; classified at MCX because Vyuha prices commodity contracts there only. Charges are the broker's own figures for this row, not re-estimated.`,
+      );
     }
 
     return {
@@ -302,7 +374,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
       buyDate: p.buyDate,
       sellDate: p.sellDate,
       productHint: toHint(p.product),
-      exchangeHint: (p.exchange as Exchange | null) ?? null,
+      exchangeHint: venueOverridden ? null : ((p.exchange as Exchange | null) ?? null),
       sourceFile: ctx.filename,
       // Settlement stamps, not fill times — see the header note.
       entryTime: null,
@@ -316,6 +388,32 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
       importNotes: notes.length ? notes : null,
     };
   });
+
+  // ── Conserve the book's charges to the footer's Total Charges ────────────
+  // Two paise-level gaps sit between Σ per-position charges and the footer:
+  // apportioning a bill's charges across its legs rounds each share to the
+  // paisa (measured +₹0.07 / −₹0.07 over the two real 2026 reports), and the
+  // footer itself is stated to four decimals while the rows carry two (its
+  // rounded value differs from Σ rows by ₹0.02 / −₹0.05). Neither is money;
+  // both would make the journal disagree with the broker's own total by a
+  // few paise, so the residual is handed to the last position and said so —
+  // the way the Paytm parser's residual slice works.
+  const statedTotal = reported.totalCharges != null ? r2(reported.totalCharges) : r2(totalCharges);
+  const given = r2(trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0));
+  const residual = r2(statedTotal - given);
+  const last = trades[trades.length - 1];
+  if (residual !== 0 && last?.reportedCharges) {
+    const b = last.reportedCharges;
+    type Head = "brokerage" | "gst" | "sttCtt" | "exchangeTxn" | "stampDuty" | "sebi";
+    const head = (["brokerage", "gst", "sttCtt", "exchangeTxn", "stampDuty", "sebi"] as Head[])
+      .reduce((best, k) => ((b[k] ?? 0) > (b[best] ?? 0) ? k : best));
+    b[head] = r2((b[head] ?? 0) + residual);
+    b.total = r2((b.total ?? 0) + residual);
+    last.importNotes = [
+      ...(last.importNotes ?? []),
+      `Carries ₹${residual.toFixed(2)} of rounding so the book's charges equal the report's Total Charges (₹${statedTotal.toLocaleString("en-IN")}) to the paisa: per-bill charges are apportioned to the paisa, and the footer is stated to four decimals.`,
+    ];
+  }
 
   // ── Warnings that actually tell the user something ──────────────────────
   warnings.push(
@@ -348,6 +446,11 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   if (mixedNotes.length > 0) {
     warnings.push(
       `${mixedNotes.length} bill${mixedNotes.length === 1 ? "" : "s"} mixed intraday and delivery in one row; the split was derived from stamp duty: ${mixedNotes.slice(0, 3).join(" ")}`,
+    );
+  }
+  if (offMcx.length > 0) {
+    warnings.push(
+      `${offMcx.length} commodity contract${offMcx.length === 1 ? "" : "s"} the report places on NSE ${offMcx.length === 1 ? "is" : "are"} classified at MCX (Vyuha prices commodity contracts there only; the broker's own charges are kept): ${offMcx.slice(0, 3).join("; ")}.`,
     );
   }
   warnings.push(

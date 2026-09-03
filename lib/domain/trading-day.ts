@@ -10,6 +10,26 @@ export function toIst(now: Date): Date {
   return new Date(now.getTime() + IST_OFFSET_MIN * 60_000);
 }
 
+/**
+ * Today in INDIA as `YYYY-MM-DD`, whatever clock the machine keeps.
+ *
+ * Not UTC: that calls a payment made at 03:00 IST "future" and refuses a real
+ * receipt for five and a half hours, and it dates every charge computed after
+ * 18:30 UTC to yesterday. Not the process's local parts either — a desktop in
+ * IST gets the right answer from those, but the same build on a UTC-configured
+ * box silently reintroduces the bug they were written to avoid. This is an
+ * Indian trading journal, so the day is India's.
+ *
+ * THE NAME CARRIES THE TIMEZONE ON PURPOSE, and this is the ONLY "today" the
+ * app defines (v3.8 — `lib/engine/rates.ts` used to export a UTC `todayIso()`
+ * beside it; the two were a day apart for the 5½ hours after IST midnight and
+ * charge pricing read the wrong one). `tests/today-clock.test.ts` fails on a
+ * second definition.
+ */
+export function todayIstIso(d = new Date()): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
 const isWeekend = (d: Date) => d.getUTCDay() === 0 || d.getUTCDay() === 6;
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

@@ -17,7 +17,7 @@ import {
   weeklyReviews,
 } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, type AuditInput } from "@/lib/audit";
 import {
   TRASH_VERSION,
   trashSnapshotId,
@@ -25,8 +25,15 @@ import {
   validateTrashEnvelope,
   summariseTrash,
   type TrashEnvelope,
+  type TrashKind,
   type TrashSummary,
 } from "./trash-format";
+import {
+  ImportSourceError,
+  assertAccountExists,
+  assertAccountId,
+  assertBroker,
+} from "@/lib/queries/import-sources";
 
 /**
  * Deleted-trade snapshots — the recovery path for a delete.
@@ -78,6 +85,11 @@ export interface SnapshotInput {
   accountRows?: TrashEnvelope["accountRows"];
   /** merge only: how the source's pnlRolledIn marker moved — see trash-format.ts. */
   merge?: TrashEnvelope["merge"];
+  /** v3: IPO records about to be UNLINKED (not deleted) — see trash-format.ts. */
+  ipoRefs?: { ipoId: number; tradeId: number }[];
+  /** v3: what produced the snapshot; absent for ordinary deletes. */
+  kind?: TrashKind;
+  broker?: string;
   reason: string;
   accountId: number;
 }
@@ -115,6 +127,9 @@ export function writeTrashSnapshot(input: SnapshotInput): string {
     account: input.account,
     accountRows: input.accountRows,
     merge: input.merge,
+    ipoRefs: input.ipoRefs,
+    kind: input.kind,
+    broker: input.broker,
   };
 
   fs.mkdirSync(dir, { recursive: true });
@@ -405,6 +420,14 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
           .where(and(eq(ledgerEntries.id, ref.ledgerId), isNull(ledgerEntries.refTradeId)))
           .run();
       }
+      // v3: the IPO links, under the same three conditions.
+      for (const ref of env.ipoRefs ?? []) {
+        if (!landed.has(ref.tradeId)) continue;
+        tx.update(ipos)
+          .set({ tradeId: ref.tradeId })
+          .where(and(eq(ipos.id, ref.ipoId), isNull(ipos.tradeId)))
+          .run();
+      }
 
       // The account-scoped rows the delete destroyed (v2): imports, sessions,
       // capital checkpoints, IPOs and the account's own ledger entries come
@@ -522,4 +545,167 @@ export function purgeTrashSnapshot(id: string): { ok: boolean; message: string }
   } catch (e) {
     return { ok: false, message: `Could not remove the snapshot — ${e instanceof Error ? e.message : "unknown error"}.` };
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Broker-scoped remove (v3.8 W2a)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Largest id list handed to one `inArray(...)` — the same ceiling
+ * `lib/queries/delete.ts` documents (SQLITE_MAX_VARIABLE_NUMBER, 999 on the
+ * most conservative build). Duplicated rather than imported because delete.ts
+ * imports THIS module; a cycle there is avoidable and this is one number.
+ */
+const REMOVE_ID_CHUNK = 900;
+
+function chunkedRead<T>(ids: number[], run: (chunk: number[]) => T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += REMOVE_ID_CHUNK) out.push(...run(ids.slice(i, i + REMOVE_ID_CHUNK)));
+  return out;
+}
+
+function chunkedWrite(ids: number[], run: (chunk: number[]) => void): void {
+  for (let i = 0; i < ids.length; i += REMOVE_ID_CHUNK) run(ids.slice(i, i + REMOVE_ID_CHUNK));
+}
+
+/** The audit action for a broker-scoped remove. Typed through `AuditInput`
+ *  so the literal is checked the day `lib/audit.ts` admits it to the union;
+ *  until then the column is free text and the row is written verbatim. */
+export const REMOVE_BROKER_AUDIT_ACTION = "import.remove-broker" as unknown as AuditInput["action"];
+
+export interface RemoveBrokerInput {
+  accountId: unknown;
+  broker: unknown;
+  /** Recorded as the audit `source`; defaults to "ui". */
+  actor?: string;
+}
+
+export interface RemoveBrokerResult {
+  accountId: number;
+  broker: string;
+  removed: { trades: number; closed: number; open: number; legs: number; attachments: number };
+  /** Links nulled, rows kept — restore re-points them. */
+  unlinked: { ledgerEntries: number; ipos: number };
+  snapshotId: string;
+  /** Attachment files that could not be moved into the snapshot. The rows are gone regardless. */
+  orphanedFiles: string[];
+  message: string;
+}
+
+/**
+ * Remove EVERY trade one broker put into one account, recoverably.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ *
+ * A parser fix can change what a file means: the W2a Paytm fix pairs
+ * executions on ISIN, merging 35 securities the old parser had split into
+ * phantom positions. No hash migration can absorb that — the old rows are
+ * not mis-keyed, they are WRONG — so the honest path is: remove the broker's
+ * rows, re-import the file clean. This is that remove. It is scoped by
+ * (account, broker), never by anything the caller re-derives, so what the
+ * import page counted (`countTradesByBroker`) is what goes.
+ *
+ * ── Shape ───────────────────────────────────────────────────────────────────
+ *
+ * Snapshot FIRST (no snapshot, no delete), then ONE transaction: legs and
+ * attachment rows deleted, ledger entries and IPOs UNLINKED (never deleted —
+ * they record money that moved and applications the user made), the trades
+ * deleted, and ONE audit row whose before/after carry the same keys. Files
+ * move into the snapshot only after the commit. The snapshot is an ordinary
+ * trade-delete envelope with `kind: "broker-remove"`, so
+ * `restoreTrashSnapshot` brings the rows back under their ORIGINAL ids and
+ * refuses (per row) anything a re-import has already put back.
+ *
+ * `trades_fts` needs no statement here: the BEFORE DELETE trigger from
+ * migration 0060 removes the tokens as each row goes.
+ *
+ * Throws `ImportSourceError` (with `.code` and `.status`) for 0/missing
+ * account, unknown broker, a vanished account, or a broker with no rows — all
+ * BEFORE anything is written. `getWriteAccountId` is deliberately never
+ * called: its fallback would resolve an ambiguous 0 to some account.
+ */
+export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
+  const accountId = assertAccountExists(assertAccountId(input.accountId));
+  const broker = assertBroker(input.broker);
+  const source = input.actor ?? "ui";
+
+  const rows = db.select().from(trades).where(and(eq(trades.accountId, accountId), eq(trades.broker, broker))).all();
+  if (rows.length === 0) {
+    throw new ImportSourceError("NO_ROWS", `No ${broker} trades in account ${accountId}. Nothing was changed.`);
+  }
+  const ids = rows.map((r) => r.id);
+  const open = rows.filter((r) => r.isOpen).length;
+  const closed = rows.length - open;
+
+  const legRows = chunkedRead(ids, (chunk) => db.select().from(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).all());
+  const attachRows = chunkedRead(ids, (chunk) => db.select().from(tradeAttachments).where(inArray(tradeAttachments.tradeId, chunk)).all());
+  const ledgerRefRows = chunkedRead(ids, (chunk) =>
+    db.select({ ledgerId: ledgerEntries.id, tradeId: ledgerEntries.refTradeId }).from(ledgerEntries).where(inArray(ledgerEntries.refTradeId, chunk)).all(),
+  ) as { ledgerId: number; tradeId: number }[];
+  const ipoRefRows = chunkedRead(ids, (chunk) =>
+    db.select({ ipoId: ipos.id, tradeId: ipos.tradeId }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
+  ) as { ipoId: number; tradeId: number }[];
+
+  const reason = `${broker} rows removed from account ${accountId} for a clean re-import`;
+  const snapshotId = writeTrashSnapshot({
+    trades: rows as unknown as Record<string, unknown>[],
+    legs: legRows as unknown as Record<string, unknown>[],
+    attachments: attachRows as unknown as Record<string, unknown>[],
+    ledgerRefs: ledgerRefRows,
+    ipoRefs: ipoRefRows,
+    kind: "broker-remove",
+    broker,
+    reason,
+    accountId,
+  });
+
+  const counts = { accountId, broker, trades: rows.length, closed, open };
+  try {
+    db.transaction((tx) => {
+      chunkedWrite(ids, (chunk) => tx.delete(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).run());
+      chunkedWrite(ids, (chunk) => tx.delete(tradeAttachments).where(inArray(tradeAttachments.tradeId, chunk)).run());
+      chunkedWrite(ids, (chunk) => tx.update(ipos).set({ tradeId: null }).where(inArray(ipos.tradeId, chunk)).run());
+      chunkedWrite(ids, (chunk) => tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, chunk)).run());
+      chunkedWrite(ids, (chunk) => tx.delete(trades).where(inArray(trades.id, chunk)).run());
+      // ONE row, symmetric keys: `before` and `after` describe the same five
+      // facts, so the audit diff shows exactly the counts that changed and no
+      // phantom column. The per-trade before-images live in the snapshot.
+      recordAudit({
+        entity: "account",
+        entityId: accountId,
+        action: REMOVE_BROKER_AUDIT_ACTION,
+        summary: `${reason} — ${rows.length} trade${rows.length === 1 ? "" : "s"} (${closed} closed, ${open} open), snapshot ${snapshotId}`,
+        before: counts,
+        after: { ...counts, trades: 0, closed: 0, open: 0 },
+        source,
+      });
+    });
+  } catch (e) {
+    // Nothing was deleted, so the recovery it promised is for rows that are
+    // still live — leave no orphan snapshot behind to confuse the list.
+    try {
+      fs.rmSync(snapshotDir(snapshotId), { recursive: true, force: true });
+    } catch {
+      /* the snapshot is harmless if it stays: every row in it is still in the journal */
+    }
+    throw e;
+  }
+
+  const { failed } = stashAttachmentFiles(snapshotId, attachRows.map((a) => a.storedName));
+
+  return {
+    accountId,
+    broker,
+    removed: { trades: rows.length, closed, open, legs: legRows.length, attachments: attachRows.length },
+    unlinked: { ledgerEntries: ledgerRefRows.length, ipos: ipoRefRows.length },
+    snapshotId,
+    orphanedFiles: failed,
+    message:
+      `Removed ${rows.length} ${broker} trade${rows.length === 1 ? "" : "s"} (${closed} closed, ${open} open)` +
+      (legRows.length ? `, ${legRows.length} leg${legRows.length === 1 ? "" : "s"}` : "") +
+      (attachRows.length ? `, ${attachRows.length} attachment${attachRows.length === 1 ? "" : "s"}` : "") +
+      ` from account ${accountId}. Recoverable from Backup & Restore → Deleted items.` +
+      (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : ""),
+  };
 }

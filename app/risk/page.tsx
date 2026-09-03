@@ -12,7 +12,7 @@ import { getSectorMap } from "@/lib/queries/instruments";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { resolveTicker } from "@/lib/analytics/aliases";
 import { loadRatesMap } from "@/lib/engine/rates-db";
-import { todayIso } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { getStagedViews } from "@/lib/queries/staged";
 import type { ExposureInput } from "@/lib/analytics/exposure";
 import {
@@ -65,7 +65,7 @@ const DERIVATIVE_SEGMENTS = new Set([
  *  Statutory rates are identical across brokers, so any row with the segment
  *  answers; the pure default is only the no-config fallback. */
 function sttFromConfig(segment: string, fallback: number): number {
-  const today = todayIso();
+  const today = todayIstIso();
   for (const epochs of loadRatesMap().values()) {
     // Epochs are newest-first; take the one in force today.
     const r = epochs.find((e) => (e.effectiveFrom ?? "1970-01-01") <= today && (e.effectiveTo == null || today < e.effectiveTo));
@@ -83,7 +83,7 @@ function daysBetween(a: string | null, b: string): number | null {
 }
 
 export default function RiskPage() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIstIso();
   // Column-trimmed book (same rows, same order as getTrades — see the
   // projection notes in lib/queries/trades.ts, perf sweep 2026-08-29).
   const trades = getTrackerTrades();

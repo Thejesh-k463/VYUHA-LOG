@@ -36,6 +36,7 @@ import * as XLSX from "xlsx";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z&%]/g, "");
 
@@ -77,7 +78,7 @@ function sheets(ctx: ParseContext): { name: string; rows: string[][] }[] {
   if (!ctx.buffer || !/\.xlsx?$/i.test(ctx.filename)) return [];
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    wb = workbookOf(ctx);
   } catch {
     return [];
   }

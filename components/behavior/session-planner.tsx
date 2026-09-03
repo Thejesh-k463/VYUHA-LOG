@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 interface Candidate {
   symbol: string;
@@ -23,7 +24,7 @@ interface PendingImport {
 
 export function SessionPlanner({ playbooks }: { playbooks: { id: number; name: string }[] }) {
   const router = useRouter();
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = todayIstIso();
   const [busy, setBusy] = useState(false);
   const [symbolsText, setSymbolsText] = useState("");
   const [uploading, setUploading] = useState(false);

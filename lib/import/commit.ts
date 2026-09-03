@@ -13,7 +13,8 @@ import {
 import { eq, and, ne, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates, pricingDate, todayIso, type RatesMap } from "@/lib/engine/rates";
+import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
@@ -98,7 +99,7 @@ function buildRow(
   const buyOrderCount = t.buyQty > 0 ? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? defaults.sellOrders : 0;
 
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIso()));
+  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIstIso()));
   const computed = computeCharges(
     {
       segment: cls.segment,
@@ -148,25 +149,34 @@ function buildRow(
   return { classification: cls, charges, netPnl, isOpen, dedup, buyOrderCount, sellOrderCount, riskAmount, rMultiple, realisedPct };
 }
 
-/**
- * @param explicitAccountId the account the USER chose for this write. Only the
- *   "All accounts" view can produce that question, and only when more than one
- *   account exists — see getWriteAccountId. Ignored when it is not a real
- *   account id, so a stale or hand-crafted value can never redirect a write.
- */
-function loadContext(explicitAccountId?: number | null) {
+/** Rates and defaults only — for mutations of a row that already has an account. */
+function loadRatesContext() {
   const rates = loadRatesMap();
   const s = db.select().from(settingsTable).limit(1).all()[0];
   const globalRisk = db.select().from(riskConfig).where(eq(riskConfig.scope, "global")).all()[0];
   return {
     rates,
-    accountId: getWriteAccountId(explicitAccountId),
     defaults: {
       buyOrders: s?.defaultBuyOrders ?? 1,
       sellOrders: s?.defaultSellOrders ?? 1,
       perTradeRisk: globalRisk?.perTradeMaxLoss ?? 9500,
     },
   };
+}
+
+/**
+ * Context for a write that CREATES rows, so it needs an account to land on.
+ *
+ * @param explicitAccountId the account the USER chose for this write. Only the
+ *   "All accounts" view can produce that question, and only when more than one
+ *   account exists — see getWriteAccountId. A value naming no real account is
+ *   ignored in favour of the selection, so a stale or hand-crafted id can never
+ *   redirect a write; 0, or nothing while All accounts is selected, THROWS
+ *   `AccountRequiredError` (v3.8 — the lowest-id fallback is gone). Routes map
+ *   it to 400 `code: "ACCOUNT_REQUIRED"`.
+ */
+function loadContext(explicitAccountId?: number | null) {
+  return { ...loadRatesContext(), accountId: getWriteAccountId(explicitAccountId) };
 }
 
 function loadOverrides(broker: string): Map<string, Override> {
@@ -722,7 +732,7 @@ export function commitManualTrade(
 
   const buyOrderCount = t.buyQty > 0 ? fields.buyOrders ?? defaults.buyOrders : 0;
   const sellOrderCount = t.sellQty > 0 ? fields.sellOrders ?? defaults.sellOrders : 0;
-  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIso()));
+  const r = findRates(rates, t.broker, cls.segment, cls.exchange, pricingDate(t, todayIstIso()));
 
   // Net non-zero, not just buyQty>sellQty — a pure sell-to-open (short option/future)
   // row has buyQty=0 and must still be OPEN, not silently marked closed.
@@ -843,7 +853,7 @@ export function commitManualTrade(
         symbol: cls.symbol.toUpperCase(),
         tradingsymbol: t.tradingsymbol,
         price: fields.currentPrice,
-        asOfDate: new Date().toISOString().slice(0, 10),
+        asOfDate: todayIstIso(),
       })
       .run();
   }
@@ -870,7 +880,7 @@ export function closePosition(
   const isShort = t.sellQty > t.buyQty;
   const qty = Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty);
   const exitValue = Math.round(exitPrice * qty * 100) / 100;
-  const exitDateIso = normalizeDate(exitDate) ?? new Date().toISOString().slice(0, 10);
+  const exitDateIso = normalizeDate(exitDate) ?? todayIstIso();
 
   const buyQty = isShort ? qty : t.buyQty;
   const avgBuyPrice = isShort ? exitPrice : t.avgBuyPrice;
@@ -884,11 +894,11 @@ export function closePosition(
   const sellDate = isShort ? t.sellDate : exitDateIso;
   const sellOrderCount = isShort ? t.sellOrderCount : t.sellOrderCount || 1;
 
-  const { rates } = loadContext();
+  const { rates } = loadRatesContext();
   // The COMPUTED dates, not the stale row: `t.sellDate` is null for an open long,
   // so pricing off `t` would charge the exit at the ENTRY date's epoch — the exact
   // inverse of pricingDate's own rule that the sell side dominates the bill.
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIso()));
+  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIstIso()));
 
   // MTF interest over the holding period (buy → exit), if this is an MTF position.
   // MTF is equity-only (never a short-open segment), so buyDate is always the entry.
@@ -1012,7 +1022,7 @@ export function updateManualTrade(
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return { ok: false, message: "Trade not found" };
 
-  const { rates, defaults } = loadContext();
+  const { rates, defaults } = loadRatesContext();
 
   const buyQty = fields.buyQty ?? t.buyQty;
   const avgBuyPrice = fields.avgBuyPrice ?? t.avgBuyPrice;
@@ -1024,7 +1034,7 @@ export function updateManualTrade(
   // Resolved AFTER the edited dates are known. Moving a trade's sell date across
   // an epoch boundary must re-price it at the epoch it now falls in, otherwise
   // the stored charges disagree with what importing the same trade would produce.
-  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIso()));
+  const r = findRates(rates, t.broker as Broker, t.segment as Segment, t.exchange as Exchange, pricingDate({ buyDate, sellDate }, todayIstIso()));
 
   if (buyQty <= 0 && sellQty <= 0) return { ok: false, message: "At least one side (buy or sell) needs a positive quantity." };
 
@@ -1114,7 +1124,7 @@ export function updateManualTrade(
 
   if (fields.currentPrice != null && fields.currentPrice > 0) {
     db.insert(mtmPrices)
-      .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: fields.currentPrice, asOfDate: new Date().toISOString().slice(0, 10) })
+      .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: fields.currentPrice, asOfDate: todayIstIso() })
       .run();
   }
 
@@ -1167,8 +1177,8 @@ export function applyOverride(
   }
 
   // recompute charges for the trade under the new segment/exchange
-  const { rates } = loadContext();
-  const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIso()));
+  const { rates } = loadRatesContext();
+  const r = findRates(rates, t.broker as Broker, segment, exchange, pricingDate(t, todayIstIso()));
   // MTF accrual follows the segment (same rules as updateManualTrade): a flip
   // TO eq_mtf estimates the funded principal (persisted amount first, else the
   // margin-config estimate) and, for a closed trade, the held days; a flip

@@ -17,6 +17,7 @@ import { extractTime } from "../time-parse";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Exchange } from "@/lib/domain/constants";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 
 const toNum = (v: unknown): number => {
   if (v == null) return 0;
@@ -38,7 +39,7 @@ function toBook(ctx: ParseContext): { rows: string[][]; sheet: string | null } {
     };
   }
   if (ctx.buffer) {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    const wb = workbookOf(ctx);
     const name = wb.SheetNames[0]!;
     const ws = wb.Sheets[name];
     return {
@@ -393,6 +394,38 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
 
     // ── Trades_History extras: the file's own charges summary ──────────────
     const reported = readChargesSummary(rows.slice(0, h));
+
+    // Conserve to the file's own Total Trade Charges. The per-row figures are
+    // Angel's rounded-to-the-paisa statements, and its summary is computed
+    // from the unrounded ones: on the real 24-row export the rows sum to
+    // 157.76 against a stated 157.79 (GST 22.84 vs 22.85, SEBI 0.00 vs 0.02).
+    // The fold above loses nothing — the gap is the broker's own rounding —
+    // but a journal that disagrees with the contract note's total by ₹0.03
+    // is what the user sees, so the residual goes to the last contract, per
+    // head where the summary states the head, and is said on that trade.
+    const lastTrade = trades[trades.length - 1];
+    if (reported.totalCharges != null && lastTrade?.reportedCharges) {
+      const b = lastTrade.reportedCharges;
+      const headKeys: [keyof ChargeBreakdown, string][] = [
+        ["brokerage", "brokerage"], ["gst", "gst"], ["sttCtt", "stt"], ["sebi", "sebi"],
+        ["exchangeTxn", "exchangeTxn"], ["stampDuty", "stamp"], ["ipft", "ipft"],
+      ];
+      for (const [k, rk] of headKeys) {
+        if (reported[rk] == null) continue;
+        const got = trades.reduce((s, t) => s + (t.reportedCharges?.[k] ?? 0), 0);
+        const d = Math.round((reported[rk] - got) * 100) / 100;
+        if (d !== 0) b[k] = Math.round(((b[k] ?? 0) + d) * 100) / 100;
+      }
+      const given = trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
+      const residual = Math.round((reported.totalCharges - given) * 100) / 100;
+      if (residual !== 0) {
+        b.total = Math.round(((b.total ?? 0) + residual) * 100) / 100;
+        lastTrade.importNotes = [
+          ...(lastTrade.importNotes ?? []),
+          `Carries ₹${residual.toFixed(2)} of the file's own rounding so the book's charges equal its Total Trade Charges (₹${reported.totalCharges}) to the paisa — the per-row figures are rounded, the summary is not.`,
+        ];
+      }
+    }
     warnings.push(
       `Angel One Trades_History: ${sourceRows} rows read, ${chargeOnlyRows} of them per-order charge lines (quantity 0) folded into their contract's charges. Charges are the broker's stated figures per row; product comes from Order Type; there are no fill times.`,
     );

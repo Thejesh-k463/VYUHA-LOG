@@ -60,6 +60,24 @@ describe("a delete leaves a snapshot behind", () => {
     expect(res.message).toMatch(/Deleted items/i);
   });
 
+  it("v3 format: an ordinary delete carries no broker-remove labels, and older envelopes still validate", async () => {
+    const fmt = await import("@/lib/trash-format");
+    expect(fmt.TRASH_VERSION).toBe(3);
+    const id = seedTrade({ symbol: "PLAIN", tradingsymbol: "PLAIN" });
+    const res = del.deleteTradesByIds([id], "plain delete");
+    const env = JSON.parse(fs.readFileSync(path.join(trashDir, res.snapshotId!, "snapshot.json"), "utf8"));
+    expect(env.v).toBe(3);
+    expect("kind" in env).toBe(false);
+    expect("broker" in env).toBe(false);
+    const summary = trash.listTrashSnapshots().find((s) => s.id === res.snapshotId)!;
+    expect("kind" in summary).toBe(false);
+    // Additive bump: a v2 (and v1) envelope is still readable.
+    for (const v of [1, 2]) {
+      expect(fmt.validateTrashEnvelope({ ...env, v }).ok).toBe(true);
+    }
+    expect(fmt.validateTrashEnvelope({ ...env, v: 4 }).ok).toBe(false);
+  });
+
   it("lists the snapshot with an honest summary", () => {
     const id = seedTrade({ symbol: "LISTED", tradingsymbol: "LISTED", netPnl: -1234 });
     const res = del.deleteTradesByIds([id], "test listing");

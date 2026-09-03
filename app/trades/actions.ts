@@ -14,6 +14,7 @@ import { resolveRules, getPortfolioState } from "@/lib/queries/limits";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import { ipoSeedFromTrade } from "@/lib/analytics/ipo-link";
 import { recordAudit } from "@/lib/audit";
+import { AccountRequiredError } from "@/lib/queries/accounts";
 import {
   addLeg,
   updateLeg,
@@ -22,7 +23,15 @@ import {
   convertToStaged,
 } from "@/lib/queries/staged";
 
-export type ActionState = { ok: boolean; message: string; tradeId?: number | null };
+export type ActionState = {
+  ok: boolean;
+  message: string;
+  tradeId?: number | null;
+  /** Stable refusal code — `ACCOUNT_REQUIRED` when the write has no account
+   *  to land on (All accounts selected, no accountId in the form). The
+   *  server-action analogue of the routes' 400 `{code}`. */
+  code?: "ACCOUNT_REQUIRED";
+};
 
 const num = (v: FormDataEntryValue | null) => {
   const x = Number(String(v ?? "").replace(/,/g, "").trim());
@@ -169,6 +178,7 @@ export async function createManualTrade(
     revalidatePath("/");
     return { ok: true, message: isOpenTrade ? "Open trade added — see Portfolio Risk." : "Trade added.", tradeId: res.id };
   } catch (e) {
+    if (e instanceof AccountRequiredError) return { ok: false, code: e.code, message: e.message };
     return { ok: false, message: (e as Error).message };
   }
 }

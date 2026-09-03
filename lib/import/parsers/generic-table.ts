@@ -15,6 +15,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 import { applyMapping, suggestMapping } from "../generic-map";
 
 /** Rows of the first sheet / the CSV, as strings. */
@@ -25,7 +26,7 @@ function toMatrix(ctx: ParseContext): string[][] {
     );
   }
   if (ctx.buffer) {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    const wb = workbookOf(ctx);
     const ws = wb.Sheets[wb.SheetNames[0]!];
     if (!ws) return [];
     return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(

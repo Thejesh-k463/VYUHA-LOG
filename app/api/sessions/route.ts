@@ -5,42 +5,47 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tradingSessions } from "@/lib/db/schema";
 import { recordAudit } from "@/lib/audit";
-import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
+import { AccountRequiredError, getWriteAccountId } from "@/lib/queries/accounts";
 import { getAliasMap } from "@/lib/queries/aliases";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import { canonicaliseWatchlist, ISIN_RE } from "@/lib/import/watchlist";
 
 export const runtime = "nodejs";
-const input = z.object({ id: z.number().int().positive().optional(), accountId: z.number().int().positive().optional(), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), market: z.string().min(1).default("NSE"), plannedSymbols: z.array(z.string()).default([]), plannedPlaybookIds: z.array(z.number().int().positive()).default([]), maxTrades: z.number().int().positive().nullable().optional(), maxLoss: z.number().positive().nullable().optional(), cutoffTime: z.string().nullable().optional(), thesis: z.string().nullable().optional(), status: z.enum(["planned", "reviewed"]).default("planned"), reviewNotes: z.string().nullable().optional() });
+const input = z.object({ id: z.number().int().positive().optional(), accountId: z.number().int().nonnegative().optional(), sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), market: z.string().min(1).default("NSE"), plannedSymbols: z.array(z.string()).default([]), plannedPlaybookIds: z.array(z.number().int().positive()).default([]), maxTrades: z.number().int().positive().nullable().optional(), maxLoss: z.number().positive().nullable().optional(), cutoffTime: z.string().nullable().optional(), thesis: z.string().nullable().optional(), status: z.enum(["planned", "reviewed"]).default("planned"), reviewNotes: z.string().nullable().optional() });
 
 export async function POST(req: Request) {
   const parsed = input.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Invalid session plan." }, { status: 400 });
   // The write account is RESOLVED, never trusted: an explicit id is validated
-  // against the accounts table and anything else falls back to the selected
+  // against the accounts table and anything else falls back to the SELECTED
   // account (invariant 9). The old shape took the client's number verbatim,
   // so a stale tab could write — and via the update below, MOVE — a session
   // into an account that was never on screen (defect D7, 2026-08-12).
-  const requested = parsed.data.accountId ?? null;
-  const accountId = getWriteAccountId(requested);
-  // …but "falls back to the selected account" has no answer in the All-accounts
-  // view: getWriteAccountId's last resort is the LOWEST account id. The PATCH
-  // below was fixed for exactly this in v3.5.0 and says so in its own comment;
-  // this POST is its untested twin, and components/behavior/session-planner.tsx
-  // sends no accountId at all — so planning a session from the All-accounts
-  // view filed the plan against account #1 and toasted "Plan saved."
   //
-  // Accept ONLY an explicit id that survived validation. That is one condition,
-  // not two: it refuses a body with no id AND a body whose id named no real
-  // account (which the resolver silently downgrades to the same lowest-id
-  // guess). A single-account view is untouched — the resolver has a real
-  // selection there, so this never fires.
-  if (getSelectedAccountId() === 0 && accountId !== requested) {
+  // An explicit 0 is the aggregate named out loud: 400 with a stable code.
+  const requested = parsed.data.accountId ?? null;
+  if (requested === 0) {
+    return NextResponse.json(
+      { ok: false, code: "ACCOUNT_REQUIRED", message: "Choose the account this session plan belongs to — 0 is the All-accounts view, never a write target." },
+      { status: 400 },
+    );
+  }
+  // No id, or an id naming no real account, while All accounts is selected:
+  // the resolver THROWS (v3.8 — its lowest-id fallback is gone, the one that
+  // filed the planner's id-less body against account #1 behind "Plan saved").
+  // Same one condition as before, now enforced by the helper rather than by a
+  // comparison around it. A single-account view never trips it.
+  let accountId: number;
+  try {
+    accountId = getWriteAccountId(requested);
+  } catch (e) {
+    if (!(e instanceof AccountRequiredError)) throw e;
     return NextResponse.json(
       {
         ok: false,
         forbidden: true,
+        code: e.code,
         message: "A session plan belongs to one account's book — pick an account in the sidebar first. The All-accounts view only reads.",
       },
       { status: 403 },
@@ -95,16 +100,19 @@ export async function PATCH(req: Request) {
   // Resolving getWriteAccountId(null) here instead fell back to the SELECTED
   // account — in the All-accounts view that is the lowest-id account, which
   // 404'd "Mark reviewed" for every other account's sessions (v3.5.0).
-  const accountId = getWriteAccountId(v.accountId);
-  // …and the id must SURVIVE that validation. getWriteAccountId falls back to
-  // the lowest account id when the explicit one names no real account, so a
-  // client sending accountId 999 was silently retargeted at account #1 — and
-  // when account #1 happened to own the row with that session id, the review
-  // LANDED (found by probe, v3.7 audit: PATCH {id: <account #1 row>,
-  // accountId: 999} → 200, row reviewed). The pre-existing test only covered
-  // the case where the fallback account did NOT own the row, which 404s on the
-  // scoping below and hid this. Naming an account that does not exist is "no
-  // such session in this account", never a write somewhere else.
+  // …and the id must SURVIVE that validation. An explicit id that names no
+  // real account resolves to the SELECTED account (or throws in the aggregate
+  // view — v3.8 removed the lowest-id last resort that once retargeted
+  // `accountId: 999` at account #1 and, when #1 owned that session id, landed
+  // the review: v3.7 audit probe, PATCH → 200). Naming an account that does
+  // not exist is "no such session in this account", never a write elsewhere.
+  let accountId: number;
+  try {
+    accountId = getWriteAccountId(v.accountId);
+  } catch (e) {
+    if (!(e instanceof AccountRequiredError)) throw e;
+    return NextResponse.json({ ok: false, message: "No such session in this account." }, { status: 404 });
+  }
   if (accountId !== v.accountId) {
     return NextResponse.json({ ok: false, message: "No such session in this account." }, { status: 404 });
   }

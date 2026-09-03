@@ -72,6 +72,7 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Exchange } from "@/lib/domain/constants";
 import { relabelledNote } from "@/lib/domain/import-shape";
 import type { ParseContext, ParsedFile } from "../types";
+import { workbookOf } from "../types";
 import { extractTime } from "../time-parse";
 import { corroborate, inferProduct, productReason, splitMixedRow } from "../product-signature";
 import { pairLegs, summarisePairing, type Leg, type PairedPosition } from "../pair-legs";
@@ -93,7 +94,7 @@ function toMatrix(ctx: ParseContext): string[][] {
   }
   if (!ctx.buffer) return [];
   try {
-    const wb = XLSX.read(ctx.buffer, { type: "buffer" });
+    const wb = workbookOf(ctx);
     const ws = wb.Sheets[wb.SheetNames[0]!];
     if (!ws) return [];
     return (XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][]).map(

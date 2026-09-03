@@ -160,15 +160,14 @@ export async function POST(req: Request) {
 
   // Invariant 9: 0 is a view, not a place. Defect D9 (2026-08-12) swapped
   // `getSelectedAccountId() || 1` for getWriteAccountId() and the comment here
-  // claimed the misfiling was gone — it was not. getWriteAccountId's OWN
-  // no-selection fallback is `orderBy(asc(accounts.id)).limit(1)`, i.e. the
-  // lowest account id, which reproduces `|| 1` exactly on the install shape
-  // that matters. Probed on a two-account temp DB with selected_account_id = 0:
-  // POST /api/ipos → 200, ipos.account_id = 1. The resolver cannot be asked
-  // this question, so the aggregate view is refused BEFORE it is called —
-  // the house shape (lib/queries/challans.ts, /api/bf-losses): 403 for the
-  // aggregate-view write ban, 400 for everything else. An account picker on
-  // /ipos (as /import and /trades do) would be friendlier; that is UI work.
+  // claimed the misfiling was gone — it was not: until v3.8 the resolver's own
+  // no-selection fallback was the lowest account id, which reproduced `|| 1`
+  // exactly (probed: two-account temp DB, selected_account_id = 0, POST
+  // /api/ipos → 200, ipos.account_id = 1). The resolver now THROWS on that
+  // question; the aggregate view is still refused BEFORE it is asked so the
+  // answer keeps the house shape (lib/queries/challans.ts, /api/bf-losses):
+  // 403 for the aggregate-view write ban, 400 for everything else. An account
+  // picker on /ipos (as /import and /trades have) would be friendlier; UI work.
   //
   // The EDIT branch above needs no such guard: it locates the row first and
   // only lets the aggregate view touch rows it can already see, which is the

@@ -195,10 +195,10 @@ export interface ReviewWriteResult {
 /**
  * The account a review write lands on, or null in the aggregate view.
  *
- * getWriteAccountId() validates an id against the accounts table, but its
- * no-selection fallback is "the lowest account id" — which is precisely the
- * silent guess invariant 9 forbids here, so the aggregate view is refused
- * BEFORE the resolver is asked.
+ * A pre-check rather than a call into the helper alone because the aggregate
+ * refusal is a typed RESULT (`forbidden` → 403), not an exception. Since v3.8
+ * getWriteAccountId() throws AccountRequiredError on the same condition (its
+ * lowest-id fallback is gone), so the two agree by construction.
  */
 function reviewWriteAccountId(): number | null {
   if (getSelectedAccountId() === 0) return null;

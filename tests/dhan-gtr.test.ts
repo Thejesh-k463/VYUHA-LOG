@@ -43,6 +43,53 @@ describe("date parsing", () => {
     expect(parseGtrDate("Net P&L")).toBeNull();
     expect(parseGtrDate("32 Xyz 2026")).toBeNull();
   });
+
+  // The 2026-09 exports write the date numerically — `01-04-2026 00:00` —
+  // and the parser read zero rows out of a real 1,436-line report (golden
+  // harness, 2026-09-04). Day first, as the report's own title line is.
+  it("reads the numeric dd-mm-yyyy and dd/mm/yyyy grammars the 2026 exports use, day first", () => {
+    expect(parseGtrDate("01-04-2026 00:00")).toBe("2026-04-01");
+    expect(parseGtrDate("13-04-2026 00:00")).toBe("2026-04-13");
+    expect(parseGtrDate("22/05/2026")).toBe("2026-05-22");
+    expect(parseGtrDate("9-7-2026 00:00")).toBe("2026-07-09");
+  });
+
+  it("refuses a numeric month above 12 rather than swapping to US order", () => {
+    expect(parseGtrDate("04-13-2026 00:00")).toBeNull();
+    expect(parseGtrDate("00-04-2026")).toBeNull();
+    expect(parseGtrDate("2026-04-01")).toBeNull();
+  });
+});
+
+describe("an empty result names what it could not read", () => {
+  const gtr = (dateCell: string) =>
+    [
+      "Global transction report,From 01-04-2026 to 04-09-2026",
+      "Date,Scrip Name,Exchange,Bill No.,Buy Qty.,Buy Value,Sell Qty.,Sell Value,Brokerage,GST,STT,SEBI Fees,Stamp Duty,Txn. Charges,Oth. Charges,Gross Amount",
+      `${dateCell},Some Scrip,NSE,1,1,100,0,0,0,0,0,0,0,0,0,-100`,
+      "Net P&L,-100,Brokerage,0,Gross P&L,-100,Total Charges,0",
+    ].join("\n");
+
+  it("counts and samples the unreadable date cells", () => {
+    const { rows, unparsedDates } = readGtr(gtr("2026.04.01"));
+    expect(rows).toHaveLength(0);
+    expect(unparsedDates).toEqual({ count: 1, sample: "2026.04.01" });
+  });
+
+  it("warns with the sample instead of a silent zero", () => {
+    const out = parseDhanGtr({ filename: "gtr.csv", text: gtr("2026.04.01") });
+    expect(out.trades).toHaveLength(0);
+    // THE assertion: the warning carries the date cell that was refused.
+    expect(out.warnings.join(" ")).toMatch(/"2026\.04\.01"/);
+    expect(out.warnings.join(" ")).toMatch(/dd-mm-yyyy/);
+  });
+
+  it("reads the same file when the date is numeric, so the 2026 export is a book", () => {
+    const out = parseDhanGtr({ filename: "gtr.csv", text: gtr("01-04-2026 00:00") });
+    expect(out.trades).toHaveLength(1);
+    expect(out.trades[0].buyDate).toBe("2026-04-01");
+    expect(out.warnings.join(" ")).not.toMatch(/could not be read/);
+  });
 });
 
 describe("reading the file", () => {
@@ -94,9 +141,19 @@ describe("parseDhanGtr — against the broker's own totals", () => {
   const { reported } = readGtr(text);
   const r2 = (n: number) => Math.round(n * 100) / 100;
 
-  it("reproduces the broker's total charges to within a rupee", () => {
-    const charges = parsed.trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
-    expect(Math.abs(charges - reported.totalCharges)).toBeLessThan(1);
+  it("reproduces the broker's total charges to the PAISA — the residual rides on the last position, and says so", () => {
+    const charges = r2(parsed.trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0));
+    expect(charges).toBe(r2(reported.totalCharges));
+    // Apportioning a bill across its legs rounds each share; the paise that
+    // drop out are handed to the last position rather than lost. The note is
+    // the only way a user could tell that position's figure is not Dhan's.
+    const last = parsed.trades[parsed.trades.length - 1];
+    const carried = parsed.trades.filter((t) => t.importNotes?.some((n) => /Carries ₹-?\d+\.\d\d of rounding/.test(n)));
+    expect(carried.length).toBeLessThanOrEqual(1);
+    if (carried.length === 1) expect(carried[0]).toBe(last);
+    // …and that position's heads still add up to its total.
+    const b = last.reportedCharges!;
+    expect(r2((b.brokerage ?? 0) + (b.gst ?? 0) + (b.sttCtt ?? 0) + (b.sebi ?? 0) + (b.stampDuty ?? 0) + (b.exchangeTxn ?? 0))).toBe(b.total);
   });
 
   it("stores the BROKER'S charges, not computed ones", () => {
