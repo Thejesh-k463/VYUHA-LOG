@@ -107,21 +107,17 @@ wrong on SINGLE-account books too); `/lenses` ~2× faster with no figure moved; 
 failure note. Migrations **0055–0058**.
 
 **OPEN — owner actions:**
-- **WDSI (SmartScreen) submission for v3.7.1 has NOT been confirmed done.** Details, per the
-  standing preference to hand them over unprompted: file `Vyuha_3.7.1_x64-setup.exe` **from the
-  CLIENT ZIP, never the GitHub asset**; SHA-256
-  `9C2501248A157D7203005F177481A4416347AAC14159770BDC38E8236576ED0A`; category "Incorrectly detected
-  as malware/malicious" (pre-emptive); detection name `N/A - no detection` unless Defender flags one;
-  definition version blank for a pre-emptive submission.
+- ✅ **WDSI (SmartScreen) submitted for v3.7.1 (owner-confirmed 2026-09-03)** with the CLIENT ZIP's
+  installer, SHA-256 `9C2501248A157D7203005F177481A4416347AAC14159770BDC38E8236576ED0A`. **v3.7.1 has
+  no open release actions.**
 - **No winget PR while microsoft/winget-pkgs #421585 is open.**
 
-**NEXT: v3.8 "Money correctness."** The roadmap slot is `docs/V360_BUILD_PLAN.md`; the v3.7 audits
-banked **ten candidates with their evidence** in `docs/DECISIONS.md` 2026-09-02 ("v3.8 candidates
-banked by the v3.7 audit"). Highest-value three: a `recordAudit` key-set assertion (the class cost
-two audits and eight instances), tightening `getWriteAccountId()` (it falls back to the LOWEST
-account id — seven pre-existing callers reached it, all now guarded at the call site, none at the
-resolver), and one `todayInIst()` (three UTC-vs-local defects in one release; four hand-rolled
-copies remain). `/trades` pagination joins them as the money-correctness headline.
+**NEXT: v3.8.0 "Trust the import" → v3.9.0 "Trust the numbers" — PLAN APPROVED 2026-09-03, NOT YET IN BUILD.**
+The spec is `docs/V380_BUILD_PLAN.md` (twelve owner decisions taken via pop-up, all recommended
+options; research recorded in `docs/DECISIONS.md` 2026-09-03, eight entries). Live Desk → v4.0.
+Start the next session from `docs/prompts/NEXT_SESSION_V380.md`. Two things it fixes are LIVE on
+the owner's own book today — see §7. Owner inputs owed (Dhan ×2 exports etc.) are listed in the
+plan's §3.
 
 ---
 
@@ -534,7 +530,7 @@ analysis-only lens and it is the lowest-value item in the plan — held for a la
 than rushed into this one.
 
 **NOT DONE / NOT VERIFIABLE HERE:** the installer has not been run on a non-build machine for
-THIS version; the Zerodha F&O compact grammar is still unparsed and still has no real sample;
+THIS version; the Zerodha F&O compact grammar IS parsed since v3.5 (`classify.ts`, pinned by `tests/zerodha-taxpnl.test.ts`) — an earlier line here said otherwise and was stale;
 first-run onboarding (§8.4) remains genuinely unbuilt — the 2026-08-30 "onboarding completed"
 was a BUYER onboarding, recorded separately and deliberately kept apart from the feature.
 
@@ -922,6 +918,8 @@ cost win in this repo.
 | Signing, notarization, SmartScreen | `docs/owner/CODE_SIGNING.md` + `AGENTS.md` § Desktop build |
 | What a buyer receives | `docs/client/` |
 | How do I open a new session here? | `docs/SESSION_PROMPT.md` — short + full copy-paste openers |
+| What is v3.8/v3.9 building and why | **`docs/V380_BUILD_PLAN.md`** — the approved spec; §0 is verified facts, §3 the owner inputs owed |
+| The opener for the v3.8 build session | `docs/prompts/NEXT_SESSION_V380.md` |
 
 Two **project-scoped skills** exist in `.claude/skills/` and override the global ones for
 this repo: `decision-log` (append a measured fact) and `prove-it` (verification before
@@ -1049,6 +1047,27 @@ literal colours, asserted by `tests/skin.test.ts`.
 ---
 
 ## 7. Live hazards — check these before a release
+
+⚠ **LIVE ON THE OWNER'S BOOK UNTIL v3.8 SHIPS — a Paytm tradebook splits 35 securities in two.**
+Paytm switches its `Script` column from ticker to numeric BSE code mid-window and
+`paytm-tradebook.ts` keys pairing on the raw cell, not ISIN → 17 securities show a phantom open
+buy AND a phantom "sale with no purchase" (72 unpriced sales on screen; 38 are genuine SME IPO
+allotments). Net P&L is NOT inflated (an unpriced sale carries −charges only) but the banner
+saying the sale "is already counted in Net P&L" is false. Also 34 same-day round trips are booked
+as delivery that the file's own charges prove intraday (49 others are genuinely CNC — follow the
+signature, not the calendar). Fix + `dedupHash` migration = v3.8 WS1. DECISIONS 2026-09-03.
+
+⚠ **Dhan PIN+TOTP cannot be enrolled from the installed app's form without typing the Client ID.**
+`1112…••••` is a masked placeholder; the field is empty and the save gate is `!apiKey || …`. The
+09-02 live verification ran on the DEV DB, never the desktop one. Workaround: type the full Client
+ID in the per-account view (NOT All-accounts — a save there creates a second Dhan row). Proof of
+enrolment = the ghost "Remove PIN + TOTP enrollment" button + a pull succeeding with the token
+empty. Fix = v3.8 WS3.
+
+⚠ **The NSIS "Delete the application data" checkbox appears mid-upgrade and wiped the owner's DB
+and licence key.** Keys are recoverable in full from `license-ledger.jsonl`
+(`scripts/license-list.mjs <keyId> --full`) — copy back, never re-mint, never revoke. Three docs
+claim uninstall never deletes data (false if ticked). Fix = v3.8 WS6. Set `VYUHA_KEY_ARCHIVE_DIR`.
 
 ✅ **The stale `updater-private.key` was DELETED on 2026-08-14.** The repo root now holds no
 signing key, and `.secrets/vyuha-updater.key` (348 bytes) is the only one left on disk.
