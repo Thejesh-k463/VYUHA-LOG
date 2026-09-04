@@ -2659,3 +2659,33 @@ floor. After the change: 2.30–3.80× (many), 2.92–4.07× (one), 3.54–4.23�
 `load` job is investigated for the floor first, then for the engine — never re-pinned to pass.
 
 **Invalidated if:** the many-symbols baseline drops under 25 ms again on a faster runner (raise n).
+
+## 2026-09-04 — v3.8.0 "Trust the import" cut and tagged: the evidence
+
+**Context:** release skill §11 — evidence, not adjectives. Tag `v3.8.0` on `74e8d49`.
+
+**Measured (gates on the tagged tree):** `npm run verify` EXIT 0 — 254 files / 4,515 tests
+(v3.7.1: 211 / 3,434; +43 files, +1,081 tests; 35 owner-file cases skip on CI by design); e2e 81
+flows in 26 specs (full run green after the fix wave; 8/8 on the three specs the second pass
+touched); load 16 files / 40 cases; CI on `74e8d49` 6/6 green (check, windows-gate, e2e ubuntu,
+e2e macOS, desktop-bundle-macOS, `load`). Desktop build EXIT 0, `desktop-dist/.next/BUILD_ID`
+`W6Zd8e7hhVreBcrgjqg6s` written 2026-09-04 11:44 IST; bundle carries the markers `preopen`,
+`Realised P&L`, `Unlocks with Pro`, `mints its own token`, `Remove and re-import`, `trades_fts`;
+the generated `installer.nsi` carries `NSIS_HOOK_PREUNINSTALL` + `Vyuha-backup`. Local
+`Vyuha_3.8.0_x64-setup.exe` 35,293,990 bytes, SHA-256
+`47A2B542B1FEF69BD449B95C5618CD5EF8506E17774BAF0A73BAF56937DF4865` (the CLIENT-ZIP copy);
+signature key id `4FF85F3BBE1DA21D` = `tauri.conf.json` pubkey. Client ZIP
+`release-packages/Vyuha_3.8.0_Client_Package.zip` 36,046,763 bytes. Lockfile roots hand-edited
+(2 lines), Cargo.lock via `cargo update -p vyuha --offline` (1 line). Double perf sweep: no route
+moved; `/trades` 2041 → 1968 ms, still the only breach. Three audit passes: 6 finders over the
+diff (12 must-fix), 3 over the fix wave (10 findings), 1 over the second pass (4 should-fix) —
+every fix proven red by revert.
+
+**Still owed at tag time:** `npm run release:verify v3.8.0 -- --deep` over the published draft;
+install on a non-build machine (owner); publish the draft (owner — `gh release` is denied to the
+agent); WDSI submission (owner, details handed over); revocation list untouched (prerelease).
+
+**Decision:** tagged. Not "released" until the deep verify passes and the owner publishes.
+
+**Invalidated if:** the deep verify fails (then delete the draft and re-run the workflow — never
+re-upload by hand).
