@@ -1285,6 +1285,21 @@ and the tweaks he said he would share. The v3.8 sector taxonomy is the seed (dat
 attribution needs cohort prices Vyuha does not store, which would reopen the egress question
 PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUHA_KEY_ARCHIVE_DIR`.
 
+### 8.0a v3.9.1 candidates found by the web-platform research (2026-09-05, verified in 07-CROSS-CHECK)
+
+- **Copy:** the brochure/landing "100% LOCAL & OFFLINE" and the hero lede "never sends a single trade
+  off your machine" become a half-truth the day a hosted surface exists → "Vyuha Desktop: 100% local
+  & offline", lede moved into the desktop column. Do it in the next desktop release regardless.
+- **Import hardening (not a desktop exposure today — a single trusted user; a live remote DoS on any
+  server):** `app/api/import/route.ts` has no file-size limit and `maxDuration` appears nowhere;
+  `lib/import/parse-guard.ts:44-52` calls `XLSX.read` on the full untrusted buffer as its
+  *readability* check; `xlsx` resolves to 0.18.5 from npm across 15 `lib/` files (39 total) — the
+  copy SheetJS no longer publishes (CVE-2023-30533 fixed only on cdn.sheetjs.com). Decide: SheetJS
+  CDN build vs `exceljs`; add size limit, magic-byte check, `maxDuration`.
+- **Licence activation** (`app/api/license/route.ts:24`) passes no machine id — binding is enforced
+  at read time only. Fine locally; a fact any hosted entitlement design must know.
+- Pack: `T:/Thejesh/CLAUDE-CODE/VYUHA-WEB-PLATFORM-RESEARCH/00-INDEX.md`.
+
 ### 8.1 Blocking the sale — the owner's stated top priority
 
 The owner's chosen priority at the last session's close was **"make it sellable first"**, over
