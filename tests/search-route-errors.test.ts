@@ -36,8 +36,8 @@ afterEach(() => {
 
 describe("a QUERY-shaped throw is the user's 400", () => {
   it.each([
-    ["unterminated string", "SQLITE_ERROR: unterminated string"],
-    ["fts5 syntax", 'fts5: syntax error near """'],
+    ["unterminated string", "unterminated string"],
+    ["fts5 syntax", 'fts5: syntax error near ""'],
     ["malformed MATCH", "malformed MATCH expression for table trades_fts"],
   ])("%s → 400 with the palette's message, and nothing logged as an error", async (_name, message) => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -56,6 +56,12 @@ describe("an INFRASTRUCTURE throw is not the user's fault", () => {
     ["a locked database", "SQLITE_BUSY: database is locked"],
     ["a missing table", "no such table: trades_fts"],
     ["an entitlement failure", "getEntitlement failed: settings row missing"],
+    // FIX PASS 3: both of these MENTION the query-fault words without being
+    // the query's fault. Unanchored, `fts5|syntax error` matched them and the
+    // user was told their search was bad while FTS5 was simply not compiled
+    // in, or OUR OWN SQL was malformed.
+    ["FTS5 not compiled in", "no such module: fts5"],
+    ["a syntax error in our own SQL", 'near "selec": syntax error'],
   ])("%s propagates (500) and is logged", async (_name, message) => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const err = new Error(message);

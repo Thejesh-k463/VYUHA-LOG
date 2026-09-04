@@ -61,19 +61,23 @@ export function parseTextMoney(v: unknown): number {
   const drcr = s.match(/^(?:(dr|cr)\.?)?(.*?)(?:(dr|cr)\.?)?$/i);
   const lead = (drcr?.[1] ?? "").toLowerCase();
   const trail = (drcr?.[3] ?? "").toLowerCase();
-  // A Dr/Cr tag is the ONLY sign such a cell carries. Two signs in one cell —
-  // both tags (`Dr 12 Cr`), or a tag beside a leading `-` / parentheses
-  // (`-1,234.00 Dr`, `(1,234.00) Cr`) — multiplied together and flipped the
-  // figure: -1234 read as +1234. No export states a figure that way, so the
-  // cell is unreadable and takes the same 0 an unreadable cell always took,
-  // rather than a confident wrong sign.
+  // A Dr/Cr tag and an explicit sign that DISAGREE are two contradictory
+  // signs in one cell — both tags (`Dr 12 Cr`), or `-1,234.00 Cr` /
+  // `(1,234.00) Cr`. Multiplied together they flipped the figure (-1234 read
+  // as +1234), and no export states a figure that way, so the cell is
+  // unreadable and takes the same 0 an unreadable cell always took.
+  // A sign that AGREES with its tag (`+1,234.00 Cr`, `-1,234.00 Dr`) is
+  // merely redundant, not contradictory: returning 0 there LOST REAL MONEY
+  // silently. The tag supplies the sign once; the explicit one is stripped
+  // so it cannot be applied twice.
   if (lead && trail) return 0;
   const tag = lead || trail;
   if (tag) {
     const body = drcr![2];
-    if (/^[-+]/.test(body) || /^\(.*\)$/.test(body)) return 0;
     sign = tag === "dr" ? -1 : 1;
-    s = body;
+    const explicit = /^\+/.test(body) ? 1 : /^-/.test(body) || /^\(.*\)$/.test(body) ? -1 : 0;
+    if (explicit !== 0 && explicit !== sign) return 0;
+    s = body.replace(/^[-+]/, "").replace(/^\((.*)\)$/, "$1");
   }
   if (!s || s === "-") return 0;
   const neg = /^\(.*\)$/.test(s);

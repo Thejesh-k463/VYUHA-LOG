@@ -22,8 +22,16 @@ export const dynamic = "force-dynamic";
  * The throws that are the QUERY's fault (SQLite's own wording for a MATCH
  * expression it cannot parse). Anything else is the INSTALL's fault and must
  * not be reported to the user as a bad search.
+ *
+ * ANCHORED, because these words appear inside install failures too: unanchored,
+ * `no such module: fts5` (FTS5 not compiled in) and `near "selec": syntax
+ * error` (a broken query in our OWN SQL) both answered 400 "could not be
+ * searched" — the very blame-the-user bug this constant exists to prevent.
+ * better-sqlite3 surfaces sqlite3_errmsg verbatim, and the query-fault texts
+ * START with the wording: `unterminated string`, `fts5: syntax error near
+ * "…"`, `malformed MATCH expression for table …`.
  */
-const QUERY_FAULT = /fts5|unterminated|syntax error|malformed MATCH/i;
+const QUERY_FAULT = /^(fts5: syntax error|unterminated string|malformed MATCH)/i;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);

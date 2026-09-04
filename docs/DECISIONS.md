@@ -2617,3 +2617,45 @@ ship only the rows whose provenance is an NSE constituent list and derive the re
 **Invalidated if:** NSIS `${FileExists}` stops matching an empty directory for `\*.*` (then the
 original gate was never a trap), or the sidecar stops creating `vyuha.sqlite` on first launch
 (then a healthy install would also be skipped by the guard).
+
+## 2026-09-04 — v3.8 CI lessons: `describe.skipIf` still runs its callback; ripgrep is not on the runners
+
+**Context:** CI on `15d3c4b` (the first fix wave) went red in four jobs while every local gate was
+green. **Measured:** (1) `tests/today-clock.test.ts` shelled out to `rg` — absent on ubuntu/windows
+runners → the guard failed with ENOENT, not a UTC finding; replaced by an in-process, comment-aware
+scanner (`910aa60`). (2) `tests/paytm-isin-pairing.test.ts` failed to LOAD (0 tests): the
+`describe.skipIf(!BOOK)` callback executes at collection time even when skipped, and its first
+line read the owner-only 7,544-row book → ENOENT on the runner. Guard: `if (!BOOK) return;` as the
+callback's first statement. (3) The e2e remove-broker spec assumed re-import restores the
+pre-removal count; the shared e2e DB carries dated Dhan rows from another spec now that the GTR
+parser works — assert against the re-import's own "Imported N" figure. (4) An undetectable case,
+by construction: a day-first Angel/Dhan numeric-date file whose days are ALL ≤ 12 imports with
+every date swapped; only a day > 12 or a month > 12 cell can reveal the grammar — the parsers refuse
+when evidence conflicts and say so, and cannot do better. (5) Redacting a fixture in the tree does
+not scrub git history; `tests/fixtures/dhan-pnl.csv`'s originals remain in commits ≤ `15d3c4b` of
+the PRIVATE repo.
+
+**Decision:** every owner-only fixture read lives inside a `skipIf` callback that bails first; no
+test shells out to a binary the runners do not ship (`rg`, `pdftotext`); e2e specs never assume
+the shared DB is empty of their broker.
+
+**Invalidated if:** vitest changes `skipIf` to skip the callback itself.
+
+## 2026-09-04 — the `load` CI job's first red was the 25 ms floor, not the pairing engine
+
+**Context:** `load` became a required CI job in v3.8. Its first run on `910aa60` failed
+`c8-pairing-depth` "many symbols" (bar 6 on a 4× growth) while `lib/import/pair-legs.ts` had not
+changed since v3.7.1. **Measured:** locally the same tree read 3.08 / 3.51 / 3.82×; at n = 24,000
+the baseline finished in 24.0 ms — ON `growthRatio`'s 25 ms floor — so the ratio was timer noise on
+fast and slow machines alike (the floor guard itself fired once locally). Doubling the many-symbols
+size to 48,000 clears the floor; a best-of-three wrapper takes the minimum ratio (noise only ever
+inflates a growth ratio). Doubling the ONE-symbol cases to 192k–240k legs overflowed the call stack
+at `pair-legs.ts:302` (`out.push(...pairSymbolLegs(arr))`) — a spread over one symbol's whole
+position list; unreachable for any real book (the perf seed is 25k trades across many symbols) but
+a v3.9 cleanup (`for…of push`). Those cases stay at 24k/30k, where their baselines already clear the
+floor. After the change: 2.30–3.80× (many), 2.92–4.07× (one), 3.54–4.23× (opening-sell heavy).
+
+**Decision:** load thresholds are measured against the floor before they become CI gates; a red
+`load` job is investigated for the floor first, then for the engine — never re-pinned to pass.
+
+**Invalidated if:** the many-symbols baseline drops under 25 ms again on a faster runner (raise n).

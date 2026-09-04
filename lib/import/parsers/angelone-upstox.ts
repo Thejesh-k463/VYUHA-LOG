@@ -284,8 +284,11 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     // swapped — `05/08/26` (5 Aug) stored as 2026-05-08. Mixed verdicts mean
     // the file's order is unknown, and half a book read backwards is worse than
     // no book, so the file is refused whole. Same ruling `readGtr` makes for
-    // Dhan; only a first token above 12 is evidence of the ambiguity (a day
-    // token above 31 is one corrupt cell, and takes the ordinary skip path).
+    // Dhan; evidence of the ambiguity is a cell READABLE DAY-FIRST AND ONLY
+    // day-first — first token above 12, second token 12 or under. A cell no
+    // order can read (`13/13/26`, both tokens above 12) says nothing about
+    // the file's order and takes the ordinary skip path, as does a day token
+    // above 31.
     if (tradesHistory && cDate >= 0) {
       let accepted = 0;
       let ambiguous = 0;
@@ -297,7 +300,7 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?!\d)/);
         if (!m) continue;
         if (usDateToIso(raw)) accepted++;
-        else if (Number(m[1]) > 12) {
+        else if (Number(m[1]) > 12 && Number(m[2]) <= 12) {
           ambiguous++;
           sample ??= raw;
         }

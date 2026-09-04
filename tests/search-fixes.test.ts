@@ -122,7 +122,9 @@ describe("control characters never reach FTS5", () => {
     // Red-on-revert: the blanket `} catch {` turned a locked DB and a missing
     // trades_fts into "that query could not be searched" — a broken install
     // reported as user error, and invisible to the 5xx console-error gate.
-    expect(src).toMatch(/const QUERY_FAULT = \/fts5\|unterminated\|syntax error\|malformed MATCH\/i;/);
+    // ANCHORED since fix pass 3: unanchored, `no such module: fts5` and
+    // `near "selec": syntax error` were 400s too.
+    expect(src).toMatch(/const QUERY_FAULT = \/\^\(fts5: syntax error\|unterminated string\|malformed MATCH\)\/i;/);
     expect(src).toMatch(/if \(QUERY_FAULT\.test\(\(e as Error\)\?\.message \?\? ""\)\)[\s\S]*status: 400/);
     expect(src, "an infrastructure failure must not be swallowed").toMatch(/console\.error\("\[api\/search\][\s\S]*throw e;/);
     expect(src, "a blanket catch is the bug").not.toMatch(/\} catch \{/);

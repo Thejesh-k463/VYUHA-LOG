@@ -184,6 +184,10 @@ function realBook(): string | null {
 const BOOK = realBook();
 
 describe.skipIf(!BOOK)("the real 7,544-execution book reconciles", () => {
+  // skipIf marks the tests skipped but STILL RUNS this callback at collection
+  // time — on CI (no owner book) the parse below threw ENOENT and the whole
+  // file failed to load (v3.8 CI run on 15d3c4b). Bail before touching disk.
+  if (!BOOK) return;
   const p = parsePaytmTradebook({ filename: "export.xlsx", buffer: fs.readFileSync(BOOK ?? "") });
   const t = p.trades;
   const closed = t.filter((x) => x.buyQty > 0 && x.sellQty > 0);

@@ -49,8 +49,15 @@ describe("the clock", () => {
 /**
  * Blank out `//` and `/* *\/` comments, leaving strings (and their contents)
  * alone and keeping every newline so line numbers survive. A `//` inside a
- * string or template literal is not a comment; a regex literal containing an
- * unescaped `//` is the one shape this does not model, and none exists here.
+ * string or template literal is not a comment, and neither is the `\/\/` of a
+ * REGEX LITERAL's escaped slashes: `/^https?:\/\//i` (real — it lives at
+ * lib/domain/openalgo-disclosure.ts:182 and lib/import/api/openalgo.ts:457,
+ * so the old claim that "none exists here" was wrong) opened a comment and
+ * blanked the rest of its line, hiding any code after it from the scan. A `/`
+ * whose previous character is a backslash therefore never opens a comment.
+ * Full regex-literal lexing is still not modelled: an escaped BACKSLASH right
+ * before a real comment (`"\\" + // x`) is over-protected, which leaves a
+ * comment in the scanned text rather than hiding code from it.
  */
 export function stripComments(src: string): string {
   let out = "";
@@ -78,7 +85,7 @@ export function stripComments(src: string): string {
       }
       continue;
     }
-    if (c === "/" && d === "/") {
+    if (c === "/" && d === "/" && src[i - 1] !== "\\") {
       while (i < n && src[i] !== "\n") i++;
       continue;
     }
@@ -137,6 +144,16 @@ describe("the scanner", () => {
     expect(out).toContain('"https://x/y"');
     expect(out).toContain("`${1}//`");
     expect(out).not.toContain("// c");
+  });
+
+  it("a regex literal's escaped slashes do not open a comment (fix pass 3)", () => {
+    // `/^https?:\/\//i` is real source (lib/domain/openalgo-disclosure.ts:182,
+    // lib/import/api/openalgo.ts:457). The `\/\/` opened a `//` comment and
+    // blanked the rest of the line, so anything after it went unscanned.
+    const planted = String.raw`const u = /^https?:\/\//i; const d = new Date().toISOString().slice(0, 10);`;
+    const out = stripComments(planted);
+    expect(UTC_TODAY.test(out)).toBe(true);
+    expect(out).toBe(planted);
   });
 
   it("names every spelling of the UTC date of now", () => {

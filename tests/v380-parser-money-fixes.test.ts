@@ -435,8 +435,11 @@ describe("FIX PASS 2 · SHOULD-FIX 2 — a day out of range is a skipped line, n
 // ── FIX PASS 2 · SHOULD-FIX 3 — two signs in one money cell is unreadable ────
 
 describe("FIX PASS 2 · SHOULD-FIX 3 — parseTextMoney never multiplies two signs together", () => {
-  it("refuses a Dr/Cr tag beside an explicit sign, instead of flipping it", () => {
-    expect(parseTextMoney("-1,234.00 Dr")).toBe(0);
+  // FIX PASS 3 narrowed this: only a CONTRADICTING sign is unreadable. An
+  // agreeing one (`-1,234.00 Dr`) is redundant, and returning 0 for it lost
+  // real money silently — see the FIX PASS 3 · SHOULD-FIX 2 block below.
+  it("refuses a Dr/Cr tag beside a CONTRADICTING sign, instead of flipping it", () => {
+    expect(parseTextMoney("-1,234.00 Cr")).toBe(0);
     expect(parseTextMoney("(1,234.00) Cr")).toBe(0);
     expect(parseTextMoney("Dr 12 Cr")).toBe(0);
   });
@@ -446,5 +449,85 @@ describe("FIX PASS 2 · SHOULD-FIX 3 — parseTextMoney never multiplies two sig
     expect(parseTextMoney("Cr 1,234.00")).toBe(1234);
     expect(parseTextMoney("−1,234.00")).toBe(-1234);
     expect(parseTextMoney("(1,234.00)")).toBe(-1234);
+  });
+});
+
+// ── FIX PASS 3 · SHOULD-FIX 1 — a cell NO order can read is not evidence ────
+
+/**
+ * `13-13-2026` / `13/13/26` are readable neither day-first nor month-first, so
+ * they say nothing about the file's order — yet both parsers counted them as
+ * "the file is written the other way round" and refused the whole book.
+ * Ambiguity evidence is now only a cell readable in exactly ONE order.
+ */
+describe("FIX PASS 3 · SHOULD-FIX 1 — a cell unreadable either way is a skipped line, not an ambiguous file", () => {
+  const BOTH_TOKENS_OUT_OF_RANGE = gtr(
+    [
+      "01-07-2026 00:00,ZENSAR,NSE,B1,10,10000.00,0,0.00,100.00,18.00,10.00,0.10,0.15,0.62,0.00,-10128.87",
+      "02-07-2026 00:00,ZENSAR,NSE,B2,0,0.00,10,11000.00,100.00,18.00,11.00,0.11,0.00,0.68,0.00,10870.21",
+      "13-13-2026 00:00,NO SUCH DATE,NSE,B5,1,1000.00,0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,-1000.00",
+      "45-13-2026 00:00,NOR THIS ONE,NSE,B6,1,1000.00,0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,-1000.00",
+    ],
+    "Net P&L,741.34,Brokerage,200.00,Gross P&L,1000.00,Total Charges,258.66",
+  );
+
+  it("Dhan: reads the clean dd-mm rows and skips only the unreadable cells", () => {
+    const read = readGtr(BOTH_TOKENS_OUT_OF_RANGE);
+    expect(read.ambiguousDates).toBe(false);
+    expect(read.rows.map((r) => r.date)).toEqual(["2026-07-01", "2026-07-02"]);
+    expect(read.unparsedDates.count).toBe(2);
+  });
+
+  it("Dhan: the file imports minus those lines, claiming nothing about ordering", () => {
+    const out = parseDhanGtr(ctxOf(BOTH_TOKENS_OUT_OF_RANGE));
+    expect(out.trades.map((t) => t.tradingsymbol)).toEqual(["ZENSAR"]);
+    expect(out.warnings.join(" ")).not.toMatch(/Nothing was imported/);
+    expect(out.warnings.join(" ")).not.toMatch(/month-first/);
+  });
+
+  it("Angel One: `13/13/26` beside clean m/d rows is one dropped row, not a refused file", () => {
+    const out = parseAngelOne(angelCtx(angelBook(
+      [
+        angelRow("ALPHA TEST LTD", "Buy", "242.80", "7", "0.51", "0.10", "0", "0.05", "01/07/26 0:00"),
+        angelRow("ALPHA TEST LTD", "Sell", "243.34", "7", "0.51", "0.10", "0.43", "0.05", "01/07/26 0:00"),
+        angelRow("BETA TEST BANK", "Sell", "22.71", "1", "0.07", "0.01", "0", "0", "13/13/26 0:00"),
+      ],
+      { total: "1.91", brokerage: "1.16", gst: "0.22", stt: "0.43", sebi: "0", exch: "0.10" },
+    )));
+    expect(out.trades.map((t) => t.tradingsymbol)).toEqual(["ALPHA TEST LTD"]);
+    expect(out.warnings.join(" ")).not.toMatch(/dates are ambiguous/);
+    expect(out.warnings.join(" ")).not.toMatch(/Nothing was imported/);
+    // The ordinary skip warning is what it gets, and it claims no ordering.
+    expect(out.warnings.join(" ")).toMatch(/skipped: the date cell names no real calendar day \(first sample: "13\/13\/26/);
+  });
+
+  it("a cell readable in exactly ONE order still refuses the file", () => {
+    // Regression fence for MUST-FIX 2: the narrowed rule must not disarm it.
+    expect(readGtr(gtr(
+      [
+        "01-07-2026 00:00,ZENSAR,NSE,B1,10,10000.00,0,0.00,100.00,18.00,10.00,0.10,0.15,0.62,0.00,-10128.87",
+        "07-13-2026 00:00,ZENSAR,NSE,B2,0,0.00,10,11000.00,100.00,18.00,11.00,0.11,0.00,0.68,0.00,10870.21",
+      ],
+      "Net P&L,741.34,Brokerage,200.00,Gross P&L,1000.00,Total Charges,258.66",
+    )).ambiguousDates).toBe(true);
+  });
+});
+
+// ── FIX PASS 3 · SHOULD-FIX 2 — an AGREEING sign and tag is not a conflict ──
+
+describe("FIX PASS 3 · SHOULD-FIX 2 — parseTextMoney honours a sign that agrees with its tag", () => {
+  it("reads a redundant sign instead of losing the money to 0", () => {
+    expect(parseTextMoney("+1,234.00 Cr")).toBe(1234);
+    expect(parseTextMoney("\u22121,234.00 Dr")).toBe(-1234);
+    expect(parseTextMoney("-1,234.00 Dr")).toBe(-1234);
+    expect(parseTextMoney("Cr +1,234.00")).toBe(1234);
+    expect(parseTextMoney("(1,234.00) Dr")).toBe(-1234);
+  });
+
+  it("still refuses a sign that DISAGREES with its tag", () => {
+    expect(parseTextMoney("+1,234.00 Dr")).toBe(0);
+    expect(parseTextMoney("-1,234.00 Cr")).toBe(0);
+    expect(parseTextMoney("(1,234.00) Cr")).toBe(0);
+    expect(parseTextMoney("Dr 12 Cr")).toBe(0);
   });
 });
