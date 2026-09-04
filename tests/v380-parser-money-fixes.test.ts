@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import { parseDhanGtr, readGtr } from "@/lib/import/parsers/dhan-gtr";
 import { parsePaytmTradebook } from "@/lib/import/parsers/paytm-tradebook";
-import { usDateToIso } from "@/lib/import/parsers/angelone-upstox";
+import { parseAngelOne, usDateToIso } from "@/lib/import/parsers/angelone-upstox";
 import { parseTextMoney } from "@/lib/import/parsers/dhan-realised-pnl";
 import { findRates, seedRatesMap } from "@/lib/engine/rates";
 import { computeCharges } from "@/lib/engine/charges";
@@ -287,5 +287,164 @@ describe("NOTE 6 · parseTextMoney reads the notations the exports actually use"
   it("reads the Unicode minus Excel writes", () => {
     expect(parseTextMoney("−1,234.00")).toBe(-1234);
     expect(parseTextMoney("‒1234")).toBe(-1234);
+  });
+});
+
+// ── FIX PASS 2 ───────────────────────────────────────────────────────────────
+//
+// The three defects the second audit found — the two GTR rulings replayed on
+// Angel One's Trades_History, and one corrupt Dhan cell refusing a clean file.
+
+const ANGEL_HEADER = [
+  "Scrip/Contract", "Buy/Sell", "Buy Price", "Sell Price", "Quantity", "Brokerage", "GST", "STT",
+  "Sebi Tax", "Exchange Turnover Charges", "Stamp Duty", "Other Charges", "IPFT Charges",
+  "Order Type", "Segment", "Exchange", "Order ID", "Trade ID", "Date",
+];
+
+/** Angel One's Trades_History layout: a charges summary, then the table. */
+function angelBook(rows: string[][], summary: { total: string; brokerage: string; gst: string; stt: string; sebi: string; exch: string }): Buffer {
+  const aoa: string[][] = [
+    ["ClientCode", "TEST0001"],
+    ["DateOfDownload", "2026-09-04"],
+    [],
+    ["Charges Summary"],
+    ["Total Trades", "2"],
+    ["Total Charges", summary.total],
+    ["Total Trade Charges", summary.total],
+    ["Total Non Trade Charges", "0"],
+    [],
+    ["Trade Charges"],
+    ["Brokerage", summary.brokerage],
+    ["GST", summary.gst],
+    ["SEBI Tax", summary.sebi],
+    ["STT", summary.stt],
+    ["Exchange Turnover Charges", summary.exch],
+    ["Stamp Duty", "0"],
+    ["Other Charges", "0"],
+    ["IPFT Charges", "0"],
+    [],
+    ["TradeBook And Charges"],
+    ANGEL_HEADER,
+    ...rows,
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "TradesAndCharges");
+  return Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer);
+}
+
+const angelRow = (scrip: string, side: "Buy" | "Sell", price: string, qty: string, brokerage: string, gst: string, stt: string, exch: string, date: string): string[] => [
+  scrip, side, side === "Buy" ? price : "", side === "Sell" ? price : "", qty,
+  brokerage, gst, stt, "0", exch, "0", "0", "0", "Delivery", "CAPITAL", "NSE", "1", "2", date,
+];
+
+const angelCtx = (buf: Buffer) => ({ filename: "Trades_History_TEST0001.xlsx", buffer: buf });
+
+describe("FIX PASS 2 · MUST-FIX 1 — Angel One day-first exports are refused whole, not half-read", () => {
+  // `27/08/26` names no month; `05/08/26` reads cleanly as 5 August under the
+  // m/d/yy grammar and is really 5 August under d/m/yy — one of the two is a
+  // lie and the file does not say which.
+  const out = parseAngelOne(angelCtx(angelBook(
+    [
+      angelRow("ALPHA TEST LTD", "Buy", "242.80", "7", "0.51", "0.10", "0", "0.05", "27/08/26 0:00"),
+      angelRow("ALPHA TEST LTD", "Sell", "243.34", "7", "0.51", "0.10", "0.43", "0.05", "27/08/26 0:00"),
+      angelRow("BETA TEST BANK", "Sell", "22.71", "1", "0.07", "0.01", "0", "0", "05/08/26 0:00"),
+    ],
+    { total: "1.83", brokerage: "1.09", gst: "0.21", stt: "0.43", sebi: "0", exch: "0.10" },
+  )));
+
+  it("imports nothing rather than reading the readable half backwards", () => {
+    expect(out.trades).toHaveLength(0);
+  });
+
+  it("says exactly one thing, and names the ambiguity and its sample", () => {
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0]).toMatch(/dates are ambiguous/);
+    expect(out.warnings[0]).toMatch(/27\/08\/26/);
+    expect(out.warnings[0]).toMatch(/day-first/);
+  });
+});
+
+describe("FIX PASS 2 · MUST-FIX 1 — a dropped Angel One row's charges are never folded as 'rounding'", () => {
+  // `8/32/26` names no day, so BETA is dropped — but the summary still counts
+  // its ₹100.00 brokerage and ₹0.12 GST. Folding that onto ALPHA would put
+  // one contract's money on another and call the ₹100.12 rounding.
+  const out = parseAngelOne(angelCtx(angelBook(
+    [
+      angelRow("ALPHA TEST LTD", "Buy", "242.80", "7", "0.51", "0.10", "0", "0.05", "8/27/26 0:00"),
+      angelRow("ALPHA TEST LTD", "Sell", "243.34", "7", "0.51", "0.10", "0.43", "0.05", "8/27/26 0:00"),
+      angelRow("BETA TEST BANK", "Sell", "22.71", "1", "100.00", "0.12", "0", "0", "8/32/26 0:00"),
+    ],
+    { total: "101.87", brokerage: "101.02", gst: "0.32", stt: "0.43", sebi: "0", exch: "0.10" },
+  )));
+  const alpha = out.trades.find((t) => t.tradingsymbol === "ALPHA TEST LTD");
+
+  it("reads the dated contract and drops the undated row", () => {
+    expect(out.trades).toHaveLength(1);
+    expect(alpha).toBeDefined();
+  });
+
+  it("leaves ALPHA's charges exactly as the file states them", () => {
+    expect(alpha!.reportedCharges).toMatchObject({ brokerage: 1.02, gst: 0.2, sttCtt: 0.43, exchangeTxn: 0.1, total: 1.75 });
+    expect(alpha!.importNotes?.some((n) => /rounding/i.test(n)) ?? false).toBe(false);
+  });
+
+  it("warns that the gap was NOT folded, naming the amount and the cap", () => {
+    const w = out.warnings.find((x) => /NOT folded/.test(x));
+    expect(w).toBeDefined();
+    expect(w!).toMatch(/100\.12/);
+    expect(w!).toMatch(/₹0\.05/);
+    expect(w!).toMatch(/skipped for an unreadable date/);
+  });
+});
+
+// ── FIX PASS 2 · SHOULD-FIX 2 — one corrupt cell is not a month-first file ──
+
+const DAY_FIRST_NUMERIC_BOOK = gtr(
+  [
+    "01-07-2026 00:00,ZENSAR,NSE,B1,10,10000.00,0,0.00,100.00,18.00,10.00,0.10,0.15,0.62,0.00,-10128.87",
+    "02-07-2026 00:00,ZENSAR,NSE,B2,0,0.00,10,11000.00,100.00,18.00,11.00,0.11,0.00,0.68,0.00,10870.21",
+    "03-07-2026 00:00,PARAS DEFENCE,NSE,B3,5,5000.00,0,0.00,50.00,9.00,5.00,0.05,0.08,0.31,0.00,-5064.44",
+    "04-07-2026 00:00,PARAS DEFENCE,NSE,B4,0,0.00,5,5300.00,50.00,9.00,5.30,0.05,0.00,0.33,0.00,5235.32",
+    "32-01-2026 00:00,CORRUPT CELL,NSE,B5,1,1000.00,0,0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00,-1000.00",
+  ],
+  "Net P&L,912.22,Brokerage,300.00,Gross P&L,1300.00,Total Charges,387.78",
+);
+
+describe("FIX PASS 2 · SHOULD-FIX 2 — a day out of range is a skipped line, not an ambiguous file", () => {
+  const read = readGtr(DAY_FIRST_NUMERIC_BOOK);
+  const out = parseDhanGtr(ctxOf(DAY_FIRST_NUMERIC_BOOK));
+
+  it("only a month token above 12 is evidence of month-first ordering", () => {
+    expect(read.ambiguousDates).toBe(false);
+    expect(read.rows).toHaveLength(4);
+    expect(read.rows[0].date).toBe("2026-07-01");
+  });
+
+  it("imports the file minus the corrupt line", () => {
+    expect(out.trades).toHaveLength(2);
+    expect(out.trades.map((t) => t.tradingsymbol).sort()).toEqual(["PARAS DEFENCE", "ZENSAR"]);
+  });
+
+  it("names the skipped line and claims nothing about month-first ordering", () => {
+    expect(out.warnings.some((w) => /1 line skipped: date not recognised \(first sample: "32-01-2026/.test(w))).toBe(true);
+    expect(out.warnings.join(" ")).not.toMatch(/month-first/);
+    expect(out.warnings.join(" ")).not.toMatch(/Nothing was imported/);
+  });
+});
+
+// ── FIX PASS 2 · SHOULD-FIX 3 — two signs in one money cell is unreadable ────
+
+describe("FIX PASS 2 · SHOULD-FIX 3 — parseTextMoney never multiplies two signs together", () => {
+  it("refuses a Dr/Cr tag beside an explicit sign, instead of flipping it", () => {
+    expect(parseTextMoney("-1,234.00 Dr")).toBe(0);
+    expect(parseTextMoney("(1,234.00) Cr")).toBe(0);
+    expect(parseTextMoney("Dr 12 Cr")).toBe(0);
+  });
+
+  it("still reads every notation the real exports do carry", () => {
+    expect(parseTextMoney("1,234.00 Dr")).toBe(-1234);
+    expect(parseTextMoney("Cr 1,234.00")).toBe(1234);
+    expect(parseTextMoney("−1,234.00")).toBe(-1234);
+    expect(parseTextMoney("(1,234.00)")).toBe(-1234);
   });
 });

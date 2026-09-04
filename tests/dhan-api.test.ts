@@ -616,6 +616,53 @@ describe("retry-on-401 — a REVOKED but unexpired-looking token mints once and 
     expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
   });
 
+  // DH-902 is NOT an authentication code. Dhan's annexure calls it "Invalid
+  // Access": the account is not subscribed to the Data APIs, or has no access
+  // to the Trading APIs. Minting cannot fix a permissions verdict — it just
+  // spends the one mint allowed per 2 minutes and then blames a good token.
+  it("a 403 naming DH-902 (Invalid_Access) does NOT mint — it is a PERMISSIONS refusal", async () => {
+    const calls: Array<{ host: string }> = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      calls.push({ host: u.host });
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { accessToken: "fresh-jwt" });
+      return jsonResponse(403, {
+        errorCode: "DH-902",
+        errorType: "Invalid_Access",
+        errorMessage: "Client not subscribed to Data APIs",
+      });
+    });
+    let err: Error | undefined;
+    try {
+      await fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err).toBeDefined();
+    // Red-on-revert: `/^DH-?90[12]$/` made this ["api.dhan.co", "auth.dhan.co",
+    // "api.dhan.co"] — the burnt mint this whole rule exists to prevent.
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co"]);
+    // …and it must read as a permissions problem, never as token advice.
+    expect(err!.message).toMatch(/forbidden without naming an authentication failure/i);
+    expect(err!.message).toMatch(/enabled for the data\/segment being pulled/i);
+    expect(err!.message, "DH-902 must not blame the token").not.toMatch(/access token expired or wrong/i);
+  });
+
+  it("an errorType of Invalid_Access alone (no code) is still not an auth failure", async () => {
+    const calls: Array<{ host: string }> = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      calls.push({ host: u.host });
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { accessToken: "fresh-jwt" });
+      return jsonResponse(403, { errorType: "Invalid_Access", errorMessage: "No access to Trading APIs" });
+    });
+    await expect(fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() })).rejects.toThrow(
+      /forbidden without naming an authentication failure/i,
+    );
+    // Red-on-revert: `invalid[_ -]?(authentication|access)` matched this too.
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co"]);
+  });
+
   it("paste-only mode NEVER mints: a 401 surfaces the hint with no auth.dhan.co call", async () => {
     const calls = stub([401, 200]);
     await expect(fetchDhanPositions({ clientId: CLIENT, accessToken: stored() })).rejects.toThrow(/access token expired or wrong/i);

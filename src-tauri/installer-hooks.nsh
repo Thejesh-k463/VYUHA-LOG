@@ -94,6 +94,9 @@
 ; $DOCUMENTS\Vyuha-backup-<yyyy-mm-dd>\ (the user's Documents folder). The
 ; copy is made even when the checkbox is left unticked: it is cheap, and the
 ; alternative is trusting that a label which never says "journal" was read.
+; It is made ONLY when vyuha.sqlite exists — a folder with no journal has
+; nothing to protect, and gating on the folder itself once made the copy
+; "fail" on every run and blocked the uninstall outright (see the gate below).
 ;
 ; CopyFiles /SILENT reports failure ONLY through the NSIS error flag — a full
 ; disk, a OneDrive files-on-demand placeholder that cannot be hydrated, and a
@@ -129,7 +132,13 @@
   ${If} $UpdateMode <> 1
     ; Per-user $APPDATA / $DOCUMENTS whatever the install mode; restored below.
     SetShellVarContext current
-    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\*.*"
+    ; Gate on the JOURNAL, not the folder: `\*.*` is true for an EMPTY folder
+    ; (a crashed first launch, a stray log), and with nothing to copy the
+    ; CopyFiles below sets the error flag and the arrival check fails, so the
+    ; STOP box fired on every attempt — interactive or /S — and the app could
+    ; never be uninstalled (second audit, 2026-09-04). No vyuha.sqlite means
+    ; there is nothing to protect: skip the copy AND the guard, silently.
+    ${If} ${FileExists} "$APPDATA\${BUNDLEID}\vyuha.sqlite"
       ; $0 = dd, $1 = mm, $2 = yyyy (zero-padded by FileFunc).
       ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
       StrCpy $7 "$DOCUMENTS\Vyuha-backup-$2-$1-$0"
@@ -155,7 +164,9 @@
       ; The sidecar's own pre-migration snapshots (scripts/desktop-server.mjs
       ; keeps the newest ten in backups\pre-migrate-<stamp>.sqlite). The
       ; install guide points buyers at them, so they travel with the journal.
-      ${If} ${FileExists} "$APPDATA\${BUNDLEID}\backups\*.*"
+      ; Same trap as above: an empty backups\ satisfies `\*.*` and would make
+      ; the .sqlite copy fail, so the gate names the files actually copied.
+      ${If} ${FileExists} "$APPDATA\${BUNDLEID}\backups\*.sqlite"
         CreateDirectory "$7\backups"
         ClearErrors
         CopyFiles /SILENT "$APPDATA\${BUNDLEID}\backups\*.sqlite" "$7\backups"

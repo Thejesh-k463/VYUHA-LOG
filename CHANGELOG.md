@@ -77,10 +77,16 @@ empty result with a 0.98 detection score on the first run.
   is a URL that lies.
 - **The uninstaller warns and copies first.** Before the "Delete the application
   data" option can act, the uninstaller names the journal database and the
-  licence key, copies both (plus attachments) to `Documents\Vyuha-backup-<date>`,
-  and asks; Cancel keeps everything in place. **Upgrading from v3.7.1: the
-  installer runs the old, unguarded v3.7.1 uninstaller once — leave "Delete the
-  application data" UNTICKED.** From v3.8.0 on the guard is in place.
+  licence key, copies both (they live in `vyuha.sqlite`), the sidecar's
+  pre-migration `backups\` snapshots and your attachments to
+  `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps everything in place,
+  and if that copy cannot be made — a full disk, a OneDrive files-on-demand
+  placeholder — the uninstall stops with nothing removed. Ticking the box erases
+  the data folder only once that copy exists. A data folder with no journal in
+  it (a crashed first launch) has nothing to protect, so it is skipped rather
+  than blocking the uninstall. **Upgrading from v3.7.1: the installer runs the
+  old, unguarded v3.7.1 uninstaller once — leave "Delete the application data"
+  UNTICKED.** From v3.8.0 on the guard is in place.
 - **Every date is IST.** Forty-one screens that computed "today" in UTC now use
   one IST helper; the owner's book priced identically before and after.
 - **Guards behind the scenes.** The audit log flags a before/after record whose

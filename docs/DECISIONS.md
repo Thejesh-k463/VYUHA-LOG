@@ -2566,3 +2566,54 @@ file-scoped doc pin: both make the happy path look like a guarantee.
 **Invalidated if:** Tauri's template stops guarding its `RmDir` with `$UpdateMode <> 1`, the
 hooks file stops being `!include`d after LogicLib (`${Errors}` and `${IfNot}` would not
 resolve), or the sidecar moves its pre-migration snapshots out of `backups\`.
+
+## 2026-09-04 — v3.8 second audit (over the fix wave): what it found, and the sector-map ruling
+
+**Context.** The v3.8.0 fix wave (commit 15d3c4b, 12 must-fixes + 20 should-fixes) was itself
+audited before release. A fix wave is where a hollow pin is most likely to land: each agent
+writes the fix AND the test in one sitting, so the test tends to describe the fix rather than
+the decision. This second pass ("6b") found the following, all fixed in FIX PASS 2:
+
+- **The Angel One parser replayed the GTR defects** the first wave had fixed in the GTR parser
+  alone — same defect class, second file.
+- **The GTR ambiguity counter** did not count what it claimed to.
+- **A Dr/Cr sign conflict** in ledger rows was resolved silently instead of refused.
+- **DH-902 is a permissions error, not an authentication one** — the Dhan mapping sent the user
+  to re-enter a token that was fine.
+- **The control-character strip glued tokens**: dropping the character instead of replacing it
+  fused two cells.
+- **The search route answered 500 where 400 is the contract** for a malformed query.
+- **A mask shorter than 6 characters** did not mask.
+- **The uninstall guard blocked uninstall on a journal-less folder**: the outer gate
+  `${FileExists} "$APPDATA\${BUNDLEID}\*.*"` is TRUE for an empty folder, so with no
+  `vyuha.sqlite` (a crashed first launch, a stray log) the `CopyFiles *.sqlite*` matched nothing,
+  set the error flag, the arrival check failed, and `MB_ICONSTOP` + exit 1 fired on every attempt,
+  `/S` included — the app could never be uninstalled. Now gated on `vyuha.sqlite` itself (nothing
+  to protect → skip silently) and the `backups\` copy on `backups\*.sqlite`.
+- **Three hollow claim/installer pins**: (1) `tests/installer-hooks.test.ts` pinned the SHAPE of
+  the failure guard — deleting `${If} $9 != ""` (always stop) or inverting it to `== ""` passed
+  15/15; it now parses the LogicLib nesting and asserts which condition each instruction sits
+  under. (2) `tests/uninstall-claims.test.ts` caught one grammar of "uninstalling never deletes";
+  five paraphrases and "erases nothing that matters" walked past it; the rule is now a list of
+  grammars applied per sentence, exempt only when the sentence carries its condition. (3)
+  `tests/today-clock.test.ts` grepped raw source, so a UTC today in a comment reddened it while
+  `.toJSON().slice(0,10)` and `.split("T")[0]` evaded it; comments are stripped first and every
+  spelling is named.
+- **PII in `tests/fixtures/dhan-pnl.csv`** since the initial commit — a fixture that was never
+  redacted.
+
+**Decision (test discipline).** A pin on a decision must fail when the decision is inverted, not
+only when the line is deleted. The mutation set for a guard is: delete the condition, invert it,
+drop the assignment that feeds it, and re-plant the trap it replaced. Each of those was run
+against the new installer test and each reddened it with a named assertion.
+
+**OWNER RULING (pop-up, 2026-09-04) — sector map.** `lib/data/sector-map.json` ships ALL 2,229
+rows, each with provenance. The labels are NSE's own taxonomy (industry/sector names as NSE
+publishes them); Screener was used ONLY as the identity bridge (name/ISIN → symbol) and
+contributes no label of its own. The owner accepts the licence question this leaves open and
+ships the full map. **Revisit if a redistribution basis is ever required** — the fallback is to
+ship only the rows whose provenance is an NSE constituent list and derive the rest at first run.
+
+**Invalidated if:** NSIS `${FileExists}` stops matching an empty directory for `\*.*` (then the
+original gate was never a trap), or the sidecar stops creating `vyuha.sqlite` on first launch
+(then a healthy install would also be skipped by the guard).

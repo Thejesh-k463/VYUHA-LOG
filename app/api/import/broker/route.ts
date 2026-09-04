@@ -84,12 +84,13 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
  * Mask a credential for the audit log: reveal a PROPORTION of it, never a
  * fixed four characters. The old fixed prefix showed 4 of an 8-character
  * Angel One API key — half the secret — while showing the same 4 of a 20
- * character one. A short credential (< 6) gets no prefix at all, only the
- * last-two "is this mine?" tail that maskId uses.
+ * character one. A short credential (< 6) is written as bullets ALONE: the
+ * last-two "is this mine?" tail that maskId uses is 40% of a 5-character
+ * secret and 67% of a 3-character one, which is a leak, not a hint. maskId
+ * keeps that tail because an account id is not a secret.
  */
 const mask = (s: string) => {
-  if (s.length <= 2) return "••••";
-  if (s.length < 6) return `${"•".repeat(4)}${s.slice(-2)}`;
+  if (s.length < 6) return "••••";
   return `${s.slice(0, Math.min(4, Math.floor(s.length / 3)))}…${"•".repeat(4)}`;
 };
 

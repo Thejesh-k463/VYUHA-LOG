@@ -354,6 +354,20 @@ describe("item 9 — masking a credential for the audit log", () => {
     expect(lastAuditSummary()).not.toContain("ABCDE");
   });
 
+  it("a credential too short to mask proportionally reveals NOTHING", async () => {
+    // The last-two tail is 40% of a 5-character secret and 67% of a
+    // 3-character one — a leak dressed as a hint. Below 6 characters the mask
+    // is bullets alone. Red-on-revert: the `••••` + slice(-2) rule wrote
+    // "••••cd" for "abcd" and "••••de" for "abcde".
+    for (const key of ["abc", "abcd", "abcde"]) {
+      expect((await post({ action: "save", broker: "dhan", apiKey: key, accessToken: "tok-1" })).status).toBe(200);
+      const s = lastAuditSummary();
+      expect(s, key).toContain("••••");
+      expect(s, key).not.toContain(key.slice(-2));
+      expect(s, key).not.toContain("…");
+    }
+  });
+
   it("a kept key is still audited as 'kept', never as a mask of something", async () => {
     await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-1" });
     await post({ action: "save", broker: "dhan", apiKey: "", accessToken: "tok-2" });

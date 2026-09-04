@@ -279,6 +279,41 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     let chargeOnlyRows = 0;
     /** Date cells no calendar could hold (month above 12) — dropped, not guessed. */
     const undatedRows: string[] = [];
+    // A month-first (m/d/yy) file never refuses a numeric date; a DAY-first one
+    // refuses every row whose first token is above 12 and reads the rest
+    // swapped — `05/08/26` (5 Aug) stored as 2026-05-08. Mixed verdicts mean
+    // the file's order is unknown, and half a book read backwards is worse than
+    // no book, so the file is refused whole. Same ruling `readGtr` makes for
+    // Dhan; only a first token above 12 is evidence of the ambiguity (a day
+    // token above 31 is one corrupt cell, and takes the ordinary skip path).
+    if (tradesHistory && cDate >= 0) {
+      let accepted = 0;
+      let ambiguous = 0;
+      let sample: string | null = null;
+      for (const r of dataRows) {
+        if (!(r[cSymbol] ?? "").trim()) continue;
+        if (!/^(b|s)/.test(norm(r[cSide] ?? ""))) continue;
+        const raw = String(r[cDate] ?? "").trim();
+        const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?!\d)/);
+        if (!m) continue;
+        if (usDateToIso(raw)) accepted++;
+        else if (Number(m[1]) > 12) {
+          ambiguous++;
+          sample ??= raw;
+        }
+      }
+      if (accepted > 0 && ambiguous > 0) {
+        return {
+          sourceId: broker,
+          broker,
+          format: "tradebook",
+          trades: [],
+          warnings: [
+            `Nothing was imported: this export's dates are ambiguous. ${ambiguous} row${ambiguous === 1 ? "" : "s"} carr${ambiguous === 1 ? "ies" : "y"} a date whose first token is above 12 (first sample: "${sample}") while other rows read cleanly as m/d/yy, so the file is written day-first and every date Vyuha could read would be read backwards. Vyuha will not import half a book in the wrong order — please report this file so the grammar can be extended.`,
+          ],
+        };
+      }
+    }
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
       const rawSymbol = (r[cSymbol] ?? "").trim();
@@ -419,20 +454,41 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         ["brokerage", "brokerage"], ["gst", "gst"], ["sttCtt", "stt"], ["sebi", "sebi"],
         ["exchangeTxn", "exchangeTxn"], ["stampDuty", "stamp"], ["ipft", "ipft"],
       ];
+      // The fold is CAPPED at the rounding it exists to absorb — one paisa per
+      // contract, floor ₹0.05. Above the cap the gap is not rounding: a row the
+      // parser DROPPED (an unreadable date) leaves its whole charge bill inside
+      // the summary, and folding it moves another contract's money onto
+      // whichever position happens to be last while calling it rounding
+      // (₹100.12 of BETA's brokerage landed on ALPHA — audit finding 1). Then
+      // Vyuha says so and every position keeps the file's own figures.
+      const foldCap = Math.max(0.05, trades.length * 0.01);
+      const deltas: [keyof ChargeBreakdown, number][] = [];
       for (const [k, rk] of headKeys) {
         if (reported[rk] == null) continue;
         const got = trades.reduce((s, t) => s + (t.reportedCharges?.[k] ?? 0), 0);
-        const d = Math.round((reported[rk] - got) * 100) / 100;
-        if (d !== 0) b[k] = Math.round(((b[k] ?? 0) + d) * 100) / 100;
+        deltas.push([k, Math.round((reported[rk] - got) * 100) / 100]);
       }
       const given = trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
       const residual = Math.round((reported.totalCharges - given) * 100) / 100;
-      if (residual !== 0) {
-        b.total = Math.round(((b.total ?? 0) + residual) * 100) / 100;
-        lastTrade.importNotes = [
-          ...(lastTrade.importNotes ?? []),
-          `Carries ₹${residual.toFixed(2)} of the file's own rounding so the book's charges equal its Total Trade Charges (₹${reported.totalCharges}) to the paisa — the per-row figures are rounded, the summary is not.`,
-        ];
+      if (Math.abs(residual) > foldCap || deltas.some(([, d]) => Math.abs(d) > foldCap)) {
+        warnings.push(
+          `The file's Total Trade Charges (₹${reported.totalCharges}) differ from the positions' own charges (₹${(Math.round(given * 100) / 100).toFixed(2)}) by ₹${Math.abs(residual).toFixed(2)} — more than the ₹${foldCap.toFixed(2)} this file's rounding can explain${
+            undatedRows.length > 0
+              ? `, and ${undatedRows.length} row${undatedRows.length === 1 ? " was" : "s were"} skipped for an unreadable date`
+              : ""
+          }, so it was NOT folded into any position. Every position keeps the charges the file states for it.`,
+        );
+      } else {
+        for (const [k, d] of deltas) {
+          if (d !== 0) b[k] = Math.round(((b[k] ?? 0) + d) * 100) / 100;
+        }
+        if (residual !== 0) {
+          b.total = Math.round(((b.total ?? 0) + residual) * 100) / 100;
+          lastTrade.importNotes = [
+            ...(lastTrade.importNotes ?? []),
+            `Carries ₹${residual.toFixed(2)} of the file's own rounding so the book's charges equal its Total Trade Charges (₹${reported.totalCharges}) to the paisa — the per-row figures are rounded, the summary is not.`,
+          ];
+        }
       }
     }
     warnings.push(

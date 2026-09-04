@@ -516,7 +516,9 @@ GOLDEN.forEach((row, i) => {
       expect(stats.gross).toBe(r2(preview.summary.grossPnl));
       expect(stats.charges).toBe(r2(preview.summary.chargesTotal));
       expect(stats.gross).toBe(sum(parsed.trades.map((x) => x.grossPnl)));
-    });
+    // The 7,544-row Paytm book commits ~800 positions into a temp DB; the 5 s
+    // default timed out once under load (v3.8 gate). Heavy by design, not slow.
+    }, 120_000);
 
     if (row.segments) {
       it("6 · Dhan segments: gross ties to the broker's segment row; engine charges/net pinned beside the broker's", () => {

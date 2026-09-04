@@ -59,10 +59,21 @@ export function parseTextMoney(v: unknown): number {
   // Dr/Cr may be written either side of the figure, with or without a stop.
   let sign = 1;
   const drcr = s.match(/^(?:(dr|cr)\.?)?(.*?)(?:(dr|cr)\.?)?$/i);
-  const tag = (drcr?.[1] ?? drcr?.[3] ?? "").toLowerCase();
+  const lead = (drcr?.[1] ?? "").toLowerCase();
+  const trail = (drcr?.[3] ?? "").toLowerCase();
+  // A Dr/Cr tag is the ONLY sign such a cell carries. Two signs in one cell —
+  // both tags (`Dr 12 Cr`), or a tag beside a leading `-` / parentheses
+  // (`-1,234.00 Dr`, `(1,234.00) Cr`) — multiplied together and flipped the
+  // figure: -1234 read as +1234. No export states a figure that way, so the
+  // cell is unreadable and takes the same 0 an unreadable cell always took,
+  // rather than a confident wrong sign.
+  if (lead && trail) return 0;
+  const tag = lead || trail;
   if (tag) {
+    const body = drcr![2];
+    if (/^[-+]/.test(body) || /^\(.*\)$/.test(body)) return 0;
     sign = tag === "dr" ? -1 : 1;
-    s = drcr![2];
+    s = body;
   }
   if (!s || s === "-") return 0;
   const neg = /^\(.*\)$/.test(s);

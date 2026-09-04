@@ -206,9 +206,16 @@ export function readGtr(text: string): GtrParsed {
     const cell = c[0] ?? "";
     const date = parseGtrDate(cell);
     if (!c[1]) continue;
-    if (NUMERIC_DATE_RE.test(cell)) {
+    // Only a MONTH token above 12 is evidence that the file is month-first.
+    // `parseGtrDate` also refuses a day above 31 (`32-01-2026`), and counting
+    // that as ambiguity refused a whole clean dd-mm file over one corrupt
+    // cell — with a warning that claimed the file was month-first. A corrupt
+    // cell takes the ordinary skip path; its charges are covered by the
+    // fold cap below.
+    const nm = NUMERIC_DATE_RE.exec(cell);
+    if (nm) {
       if (date) numericAccepted++;
-      else numericRefused++;
+      else if (Number(nm[2]) > 12) numericRefused++;
     }
     if (!date) {
       unparsedDates.count++;

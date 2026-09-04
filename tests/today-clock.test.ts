@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { execFileSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { todayIstIso as viaChallans } from "@/lib/queries/challans";
 
@@ -12,7 +13,14 @@ import { todayIstIso as viaChallans } from "@/lib/queries/challans";
  * epoch effective on the UTC one. The pure helper now lives beside `toIst()`
  * in lib/domain/trading-day.ts; challans re-exports it; the four inline IST
  * copies and the eleven `todayIso` consumers import it. This file pins the
- * clock fact and greps the tree so a second definition cannot come back.
+ * clock fact and scans the tree so a second definition cannot come back.
+ *
+ * The scan is COMMENT-AWARE (second audit, 2026-09-04): the first version
+ * grepped raw source, so a UTC today quoted in a docblock reddened the
+ * inventory while `new Date().toJSON().slice(0, 10)` and
+ * `new Date().toISOString().split("T")[0]` — the same day, spelled
+ * differently — walked past it. Comments are stripped before the scan and
+ * the pattern names every spelling of "the UTC date of now".
  */
 
 /** The instant the two clocks disagree about: 20:00 UTC = 01:30 IST next day. */
@@ -38,38 +46,128 @@ describe("the clock", () => {
   });
 });
 
-/** ripgrep over the three source trees; returns `file:line:text` rows. */
-function rg(pattern: string): string[] {
-  try {
-    const out = execFileSync(
-      "rg",
-      ["-n", "--no-heading", "-e", pattern, "lib", "app", "components", "--glob", "*.ts", "--glob", "*.tsx"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    );
-    return out.split(/\r?\n/).filter(Boolean).map((l) => l.replace(/\\/g, "/"));
-  } catch (e) {
-    // rg exits 1 on "no matches" — that is an empty result, not an error.
-    const code = (e as { status?: number }).status;
-    if (code === 1) return [];
-    throw e;
+/**
+ * Blank out `//` and `/* *\/` comments, leaving strings (and their contents)
+ * alone and keeping every newline so line numbers survive. A `//` inside a
+ * string or template literal is not a comment; a regex literal containing an
+ * unescaped `//` is the one shape this does not model, and none exists here.
+ */
+export function stripComments(src: string): string {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (c === '"' || c === "'" || c === "`") {
+      out += c;
+      i++;
+      while (i < n && src[i] !== c) {
+        if (src[i] === "\\") {
+          out += src[i] + (src[i + 1] ?? "");
+          i += 2;
+          continue;
+        }
+        if (c !== "`" && src[i] === "\n") break; // unterminated plain string: stop at the line
+        out += src[i];
+        i++;
+      }
+      if (i < n) {
+        out += src[i];
+        i++;
+      }
+      continue;
+    }
+    if (c === "/" && d === "/") {
+      while (i < n && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && d === "*") {
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) {
+        if (src[i] === "\n") out += "\n";
+        i++;
+      }
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
   }
+  return out;
 }
+
+/** Every "the UTC date of now" spelling: toISOString/toJSON, then slice/substring/substr(0, 10) or split("T")[0]. */
+export const UTC_TODAY =
+  /new Date\(\)\s*\.(toISOString|toJSON)\(\)\s*\.(?:(slice|substring|substr)\(\s*0,\s*10\s*\)|split\(\s*["']T["']\s*\)\s*\[\s*0\s*\])/;
+/** The same tail without the `new Date()` root, for the temp-variable check. */
+const UTC_DATE_TAIL =
+  /\.(toISOString|toJSON)\(\)\s*\.(?:(slice|substring|substr)\(\s*0,\s*10\s*\)|split\(\s*["']T["']\s*\)\s*\[\s*0\s*\])/;
+
+const root = process.cwd();
+const TREES = ["lib", "app", "components"];
+
+/** Every .ts/.tsx under the three source trees, comment-stripped, as `file:line:text` rows matching `re`. */
+function scan(re: RegExp): string[] {
+  const rows: string[] = [];
+  for (const tree of TREES) {
+    for (const rel of readdirSync(path.join(root, tree), { recursive: true }) as string[]) {
+      if (!/\.tsx?$/.test(rel)) continue;
+      const file = `${tree}/${rel}`.replace(/\\/g, "/");
+      const src = stripComments(readFileSync(path.join(root, file), "utf8"));
+      src.split(/\r?\n/).forEach((line, i) => {
+        if (re.test(line)) rows.push(`${file}:${i + 1}:${line}`);
+      });
+    }
+  }
+  return rows;
+}
+
+describe("the scanner", () => {
+  it("does not fire on a UTC today inside a comment, and does fire on one in code", () => {
+    const comment = "// const d = new Date().toISOString().slice(0, 10);\n/* new Date().toISOString().slice(0, 10) */\n";
+    expect(UTC_TODAY.test(stripComments(comment))).toBe(false);
+    expect(UTC_TODAY.test(stripComments(`${comment}const d = new Date().toISOString().slice(0, 10);`))).toBe(true);
+  });
+
+  it("keeps line numbers and leaves strings alone", () => {
+    const src = 'const u = "https://x/y"; // c\n/* a\nb */ const v = `${1}//`;\nconst w = 1;';
+    const out = stripComments(src);
+    expect(out.split("\n").length).toBe(src.split("\n").length);
+    expect(out).toContain('"https://x/y"');
+    expect(out).toContain("`${1}//`");
+    expect(out).not.toContain("// c");
+  });
+
+  it("names every spelling of the UTC date of now", () => {
+    for (const spelling of [
+      "new Date().toISOString().slice(0, 10)",
+      "new Date().toISOString().substring(0,10)",
+      "new Date().toJSON().slice(0, 10)",
+      'new Date().toISOString().split("T")[0]',
+      "new Date().toJSON().split('T')[0]",
+    ]) {
+      expect(UTC_TODAY.test(spelling), spelling).toBe(true);
+    }
+    // Formatting a COMPUTED date is not "today".
+    expect(UTC_TODAY.test("ist.toISOString().slice(0, 10)")).toBe(false);
+  });
+});
 
 describe("source guard — one today", () => {
   it("todayIstIso is DEFINED exactly once, in lib/domain/trading-day.ts", () => {
-    const defs = rg("function todayIstIso\\b");
+    const defs = scan(/function todayIstIso\b/);
     expect(defs.map((l) => l.split(":")[0])).toEqual(["lib/domain/trading-day.ts"]);
   });
 
   it("no todayIso (UTC) definition or reference survives", () => {
-    // Word-bounded so todayIstIso does not match; the trading-day docblock
-    // names the retired export in backticks — the one permitted mention.
-    const hits = rg("\\btodayIso\\b").filter((l) => !l.startsWith("lib/domain/trading-day.ts:"));
-    expect(hits).toEqual([]);
+    // Word-bounded so todayIstIso does not match. Comments are stripped, so
+    // the trading-day docblock's mention of the retired export cannot count.
+    expect(scan(/\btodayIso\b/)).toEqual([]);
   });
 
   it("no inline IST copy: toLocaleDateString(en-CA, Asia/Kolkata) lives only in the helper", () => {
-    const hits = rg("toLocaleDateString\\(\\s*\"en-CA\"").filter((l) => !l.startsWith("lib/domain/trading-day.ts:"));
+    const hits = scan(/toLocaleDateString\(\s*"en-CA"/).filter((l) => !l.startsWith("lib/domain/trading-day.ts:"));
     expect(hits).toEqual([]);
   });
 
@@ -140,7 +238,7 @@ describe("source guard — one today", () => {
       // Fix wave: the last Wave 3 holdout.
       "components/trades/trades-client.tsx",
     ];
-    const hits = rg("new Date\\(\\)\\s*\\.toISOString\\(\\)\\.(slice|substring)\\(\\s*0,\\s*10\\s*\\)");
+    const hits = scan(UTC_TODAY);
     const inMigrated = hits.filter((l) => MIGRATED.includes(l.split(":")[0]));
     expect(inMigrated).toEqual([]);
   });
@@ -167,7 +265,7 @@ describe("source guard — one today", () => {
     // Empty after the sweep: no such site exists among the 42 it found.
     const ALLOWED_UTC_STAMPS: Record<string, { count: number; reason: string }> = {};
     expect(Object.keys(ALLOWED_UTC_STAMPS)).toEqual([]);
-    const hits = rg("new Date\\(\\)\\s*\\.toISOString\\(\\)\\.(slice|substring)\\(\\s*0,\\s*10\\s*\\)");
+    const hits = scan(UTC_TODAY);
     const actual: Record<string, number> = {};
     for (const l of hits) {
       const f = l.split(":")[0];
@@ -187,8 +285,8 @@ describe("source guard — one today", () => {
     // not "today" and are allowed. This pins that the only `new Date()`-rooted
     // ones are the inventory above — i.e. nothing hides behind a temp variable
     // named for the clock.
-    const hits = rg("const (today|now|asOf) = new Date\\(\\);");
-    const suspicious = hits.filter((l) => /toISOString\(\)\.(slice|substring)\(\s*0,\s*10\s*\)/.test(l));
+    const hits = scan(/const (today|now|asOf) = new Date\(\);/);
+    const suspicious = hits.filter((l) => UTC_DATE_TAIL.test(l));
     expect(suspicious).toEqual([]);
   });
 });

@@ -21,7 +21,13 @@ async function importDhan(page: Page): Promise<void> {
   await expect(commit).toBeVisible();
   if (await commit.isEnabled()) {
     await commit.click();
-    await expect(page.getByText(/Imported\s+\d+\s+trade/i)).toBeVisible({ timeout: 25_000 });
+    const imported = page.getByText(/Imported\s+\d+\s+trade/i);
+  await expect(imported).toBeVisible({ timeout: 25_000 });
+  // The shared e2e DB may have held Dhan rows from OTHER files (an earlier spec
+  // imports a dated GTR), so the pre-removal count is not what THIS file puts
+  // back. The contract is: the panel shows exactly what the re-import committed.
+  const reimported = Number((await imported.innerText()).match(/Imported\s+(\d[\d,]*)/i)![1].replace(/,/g, ""));
+  expect(reimported).toBeGreaterThan(0);
   }
 }
 
@@ -77,12 +83,18 @@ test("remove Dhan's rows, see them gone from /trades, re-import them", async ({ 
   const commit = page.getByRole("button", { name: /Commit\s+\d+\s+new trade/i });
   await expect(commit).toBeEnabled({ timeout: 25_000 });
   await commit.click();
-  await expect(page.getByText(/Imported\s+\d+\s+trade/i)).toBeVisible({ timeout: 25_000 });
+  const imported = page.getByText(/Imported\s+\d+\s+trade/i);
+  await expect(imported).toBeVisible({ timeout: 25_000 });
+  // The shared e2e DB may have held Dhan rows from OTHER files (an earlier spec
+  // imports a dated GTR), so the pre-removal count is not what THIS file puts
+  // back. The contract is: the panel shows exactly what the re-import committed.
+  const reimported = Number((await imported.innerText()).match(/Imported\s+(\d[\d,]*)/i)![1].replace(/,/g, ""));
+  expect(reimported).toBeGreaterThan(0);
 
   await openPanel(page);
   const again = page.getByTestId("remove-broker-row-dhan");
   await expect(again).toBeVisible({ timeout: 20_000 });
   await expect
     .poll(async () => Number((await again.innerText()).match(/(\d[\d,]*)\s+trades?/)?.[1].replace(/,/g, "") ?? 0))
-    .toBe(before);
+    .toBe(reimported);
 });

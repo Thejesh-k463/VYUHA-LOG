@@ -429,9 +429,16 @@ export async function resolveDhanAccessToken(creds: DhanCredentials): Promise<{ 
  * problem (a segment or data API the account is not subscribed to) with 403
  * too, and treating that as "token expired" burned the one mint allowed per 2
  * minutes on a token that was never the problem — and then told the user to
- * check a token that was fine. So a 403 counts only when the body states one
- * of Dhan's own authentication error codes (DH-901 Invalid_Authentication,
- * DH-902 Invalid_Access) or the matching errorType.
+ * check a token that was fine. So a 403 counts only when the body states
+ * Dhan's own AUTHENTICATION error code (DH-901 Invalid_Authentication) or the
+ * matching errorType.
+ *
+ * DH-902 IS NOT ONE OF THEM. Dhan's annexure calls it "Invalid Access": the
+ * account is not subscribed to the Data APIs, or has no access to the Trading
+ * APIs. That is a permissions verdict wearing an auth-shaped code, and minting
+ * a fresh token cannot fix it — it just spends the one mint allowed per 2
+ * minutes and then blames a token that was never the problem, which is the
+ * exact bug the bare-403 rule above was written to stop.
  */
 function namesAuthFailure(status: number, json: unknown): boolean {
   if (status === 401) return true;
@@ -439,7 +446,7 @@ function namesAuthFailure(status: number, json: unknown): boolean {
   const o = json as { errorCode?: unknown; internalErrorCode?: unknown; errorType?: unknown } | null;
   const code = String(o?.errorCode ?? o?.internalErrorCode ?? "").toUpperCase();
   const type = String(o?.errorType ?? "").toLowerCase();
-  return /^DH-?90[12]$/.test(code) || /invalid[_ -]?(authentication|access)\b/.test(type);
+  return /^DH-?901$/.test(code) || /invalid[_ -]?authentication\b/.test(type);
 }
 
 /** The auth hint, shared by the first refusal and the post-retry one. It is
@@ -476,7 +483,7 @@ async function dhanGetRaw(path: string, accessToken: string): Promise<{ res: Res
 /**
  * One authenticated GET, with the token resolved reuse-first (see
  * resolveDhanAccessToken) and ONE retry on a refusal that NAMES an
- * authentication failure (401, or a 403 carrying DH-901/DH-902 — see
+ * authentication failure (401, or a 403 carrying DH-901 — see
  * namesAuthFailure; a bare permissions 403 must not spend the mint):
  *
  * A stored token can be REVOKED while its own `exp` still says alive (the user

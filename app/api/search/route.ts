@@ -18,6 +18,13 @@ export const dynamic = "force-dynamic";
  * 400 when `q` is blank, or when `cat` names no known source (a typo in a
  * chip must not silently widen the search to everything).
  */
+/**
+ * The throws that are the QUERY's fault (SQLite's own wording for a MATCH
+ * expression it cannot parse). Anything else is the INSTALL's fault and must
+ * not be reported to the user as a bad search.
+ */
+const QUERY_FAULT = /fts5|unterminated|syntax error|malformed MATCH/i;
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -29,17 +36,26 @@ export async function GET(req: Request) {
   }
 
   const accountId = getSelectedAccountId();
-  // A search box is a place users PASTE into, so the fan-out is treated as
-  // fallible input handling, not as trusted code: any throw (a malformed FTS5
-  // expression, a locked DB, a reader that meets a row it cannot shape) is
-  // the QUERY's failure, and the palette renders "Search failed — try again."
-  // off a 400. It used to be an unhandled 500 — a NUL in the query reached
-  // FTS5 as `unterminated string` and the whole route crashed.
   let results, tookMs;
   try {
     ({ results, tookMs } = searchAll(q, { accountId, categories: categories ?? undefined }));
-  } catch {
-    return NextResponse.json({ ok: false, message: "That query could not be searched." }, { status: 400 });
+  } catch (e) {
+    // A search box is a place users PASTE into, so a throw that the QUERY
+    // caused is fallible input handling: 400, and the palette renders
+    // "Search failed — try again." It used to be an unhandled 500 — a NUL in
+    // the query reached FTS5 as `unterminated string` and the route crashed.
+    //
+    // But ONLY a throw the query caused. Blanket-catching turned a locked
+    // database, a missing `trades_fts` table and an entitlement failure into
+    // the same "that query could not be searched" — blaming the user for a
+    // broken install, and hiding the breakage from the perf sweep's
+    // console-error gate, which only watches 5xx. So the query-shaped errors
+    // are named, and everything else is logged and rethrown as a 500.
+    if (QUERY_FAULT.test((e as Error)?.message ?? "")) {
+      return NextResponse.json({ ok: false, message: "That query could not be searched." }, { status: 400 });
+    }
+    console.error("[api/search] search failed:", e);
+    throw e;
   }
   return NextResponse.json(
     { ok: true, q, categories: categories ?? SOURCE_KEYS, cap: RESULT_CAP, results, tookMs },

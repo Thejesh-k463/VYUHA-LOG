@@ -19,17 +19,28 @@ export const TRIGRAM_MIN = 3;
 /**
  * Lower-cased, whitespace-split, de-duplicated, in query order.
  *
- * CONTROL CHARACTERS ARE STRIPPED FIRST. A NUL (or any C0 byte) pasted into
- * the box reached FTS5 inside a quoted term and SQLite answered
- * `unterminated string`, which surfaced as an unhandled 500 from
+ * CONTROL CHARACTERS BECOME SPACES — they are never DELETED. A NUL (or any C0
+ * byte) pasted into the box reached FTS5 inside a quoted term and SQLite
+ * answered `unterminated string`, which surfaced as an unhandled 500 from
  * /api/search — the quote-doubling in `ftsMatch` cannot escape a NUL because
- * SQLite's own string reader stops there. Stripping at the token boundary
+ * SQLite's own string reader stops there. Neutralising at the token boundary
  * keeps every downstream consumer (FTS and the in-memory ranker) fed the same
  * text, so a control byte narrows nothing and throws nothing.
+ *
+ * A SPACE, not the empty string, because deleting JOINED words the user never
+ * joined: TAB, CR and LF are C0 bytes too, so a query pasted out of two
+ * spreadsheet cells (`abc<TAB>def`) collapsed into the single nonsense token
+ * `abcdef`, which matches nothing at all. So TAB, CR and LF fall through to
+ * the whitespace split untouched, and every OTHER control byte is replaced by
+ * a space — which means it SPLITS too: a NUL between two words yields two
+ * tokens, not one.
  */
 export function tokenise(q: string): string[] {
   const out: string[] = [];
-  for (const raw of String(q ?? "").toLowerCase().replace(/[\u0000-\u001f\u007f]/g, "").split(/\s+/)) {
+  for (const raw of String(q ?? "")
+    .toLowerCase()
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ")
+    .split(/\s+/)) {
     const t = raw.trim();
     if (t && !out.includes(t)) out.push(t);
   }

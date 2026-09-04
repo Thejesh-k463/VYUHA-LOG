@@ -95,24 +95,37 @@ describe("the palette is remounted and re-keyed on the selected account (source)
 // ───────────────────────────────────────────────────────────────────────────
 
 describe("control characters never reach FTS5", () => {
-  it("tokenise strips C0 bytes instead of passing them into a quoted term", () => {
-    expect(tokenise("hello\u0000world")).toEqual(["helloworld"]);
-    expect(tokenise('"\u0000"a')).toEqual(['""a']);
+  // A control byte is replaced by a SPACE, never deleted. Deleting it welded
+  // two words the user never welded: TAB, CR and LF are C0 bytes too, so a
+  // query pasted from two spreadsheet cells became one nonsense token that
+  // matched nothing. The rule is stated here so nobody "tidies" it back.
+  it("tokenise neutralises C0 bytes as SPACES — it never joins two words", () => {
+    // Red-on-revert: the `.replace(…, "")` strip returned ["helloworld"].
+    expect(tokenise("hello\u0000world")).toEqual(["hello", "world"]);
+    // The pasted-tab case that motivated the fix: two cells, two tokens.
+    expect(tokenise("abc\tdef")).toEqual(["abc", "def"]);
+    expect(tokenise("abc\r\ndef")).toEqual(["abc", "def"]);
+    expect(tokenise('"\u0000"a')).toEqual(['"', '"a']);
     expect(tokenise("tcs\u0007 \u001bbreak")).toEqual(["tcs", "break"]);
     expect(tokenise("\u0000")).toEqual([]);
     for (const t of ftsTokens("hello\u0000world")) expect(t).not.toMatch(/[\u0000-\u001f\u007f]/);
   });
 
   it("the MATCH expression it builds carries no control byte", () => {
-    const m = ftsMatch("hello\u0000world");
-    expect(m).toBe('"helloworld"');
-    expect(ftsMatch('"\u0000"abc')).toBe('"""""abc"'); // quotes doubled, NUL gone
+    expect(ftsMatch("hello\u0000world")).toBe('"hello" AND "world"');
+    expect(ftsMatch('"\u0000"abc')).toBe('"""abc"'); // the lone quote is sub-trigram and drops; the survivor's quote is doubled
     expect(ftsMatch("\u0000")).toBeNull();
   });
 
-  it("the route treats a throw from the fan-out as a 400, not an unhandled 500", () => {
+  it("the route 400s a QUERY fault and rethrows anything else", () => {
     const src = read("app/api/search/route.ts");
-    expect(src).toMatch(/try \{[\s\S]*searchAll\(q, \{ accountId, categories: categories \?\? undefined \}\)[\s\S]*\} catch \{[\s\S]*status: 400/);
+    // Red-on-revert: the blanket `} catch {` turned a locked DB and a missing
+    // trades_fts into "that query could not be searched" — a broken install
+    // reported as user error, and invisible to the 5xx console-error gate.
+    expect(src).toMatch(/const QUERY_FAULT = \/fts5\|unterminated\|syntax error\|malformed MATCH\/i;/);
+    expect(src).toMatch(/if \(QUERY_FAULT\.test\(\(e as Error\)\?\.message \?\? ""\)\)[\s\S]*status: 400/);
+    expect(src, "an infrastructure failure must not be swallowed").toMatch(/console\.error\("\[api\/search\][\s\S]*throw e;/);
+    expect(src, "a blanket catch is the bug").not.toMatch(/\} catch \{/);
   });
 });
 
