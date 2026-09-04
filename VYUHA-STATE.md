@@ -26,17 +26,18 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.9.0 "Trust the numbers" RELEASE IN PROGRESS (2026-09-05; audited 6 → fix → 3 → fix → 1; bumped; desktop build signed; CI running on `e5ea549`)
+## 2. Current state — v3.9.0 "Trust the numbers" TAGGED + DEEP-VERIFIED (2026-09-05; draft release awaiting the owner's publish + non-build-machine install)
 
 **Status:** branch `main` at `e5ea549` (the release bump). Waves W0–W4 done and pushed: W1 engine
 `fb0e215`, W2 pagination `b929577`, W3 UI `c04e1ad`, audit-1 fix wave `4d9e9bd`, audit-2 fix pass
 `2dc0071`, final-finder fix `fcddb22`. Version strings are **3.9.0** (package.json, lock roots by
 hand, Cargo.toml, Cargo.lock via `cargo update -p vyuha --offline`, tauri.conf.json, sidebar).
 Desktop build: `desktop-dist/.next/BUILD_ID` 2026-09-05 00:53, v3.9 markers in the bundle, both
-artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **Ahead at the time
-of writing:** CI 6/6 incl. `load` on `e5ea549` → tag `v3.9.0` → `release:verify --deep` → client
-ZIP → WDSI details → owner install on a non-build machine. If this section still says "in
-progress", check `gh run list` and `git tag` before assuming anything happened.
+artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **Done:** CI 6/6 incl. `load` on `e5ea549`; tag `v3.9.0`; release run 3/3; `release:verify --deep`
+3/3 over the published bytes (key id `4FF85F3BBE1DA21D`); client ZIP built, installer SHA-256
+`094949764548D46010AB9E51BEB08F9F164758F21E1A3EF1C2FD38F2327443E8`; WDSI details handed over.
+**Owner actions left:** publish the draft (`gh release edit v3.9.0 --draft=false` or the web UI),
+install the client-ZIP installer on a non-build machine, submit WDSI. Then mark this PUBLISHED.
 
 **What v3.9.0 ships (every line verified by a finder against the code):**
 - **Broker Truth** (`/reports/reconcile`, Pro, nav group Import): broker ₹X · Vyuha ₹Y · Δ per FY,

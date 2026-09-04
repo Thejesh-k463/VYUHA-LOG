@@ -3029,3 +3029,22 @@ repo-wide grep, a queued verify, the e2e harness) and the other session's Playwr
 **Rule:** a sweep is a regression signal only beside a same-session control sweep of the reference
 commit, and only with this session's own background jobs finished. The v3.9.0 perf record is HEAD
 947 / 932 ms, `/trades` 998 / 950 (was 1,968 at v3.8.0).
+
+## 2026-09-05 — v3.9.0 "Trust the numbers" cut, tagged, deep-verified: the evidence
+
+- Release commit `e5ea549`; CI run 33911278690 **6/6 green** (check, windows-gate, e2e ubuntu,
+  e2e macOS, desktop-bundle-macos, load) BEFORE the tag. Tag `v3.9.0` → release run 33911990805,
+  3/3 jobs; draft release with latest.json, Windows setup.exe + .sig, both macOS dmg/app.tar.gz + .sig.
+- `npm run release:verify v3.9.0 -- --deep` → **3/3 signatures verify over the published bytes**,
+  every key id `4FF85F3BBE1DA21D` = the pubkey shipped in the app. Local artefacts: same key id.
+- Verify 276 files / 5,208 tests (was 254 / 4,515 at v3.8.0 — up, nothing deleted); load 16/16;
+  e2e 84 flows / 28 specs; perf 947 / 932 ms overall idle, `/trades` 998 / 950.
+- Desktop build BUILD_ID 2026-09-05 00:53 (v3.8.0's was 2026-09-04 11:44); `vyuha-search-panel`
+  and `Broker Truth` markers found in the bundle.
+- Client ZIP `release-packages/Vyuha_3.9.0_Client_Package.zip` (36.1 MB), installer SHA-256
+  `094949764548D46010AB9E51BEB08F9F164758F21E1A3EF1C2FD38F2327443E8` (the local build — the GitHub
+  asset is CI's own binary, a different hash by construction; WDSI takes the client-ZIP hash).
+- Not done by this session, by design: publishing the draft (owner action, as v3.8.0), the install
+  on a non-build machine (owner), the revocation-list prerelease (nothing revoked this release).
+- Lockfile: root version fields edited by hand, `git diff --numstat package-lock.json` = 2/2;
+  `npm ls esbuild` clean.
