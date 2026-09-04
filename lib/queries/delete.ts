@@ -291,7 +291,18 @@ export function deleteImportBatch(batchId: number, cascade: boolean, source = "u
         accountId: batch.accountId,
       });
       db.delete(brokerReference).where(eq(brokerReference.importBatchId, batchId)).run();
-      res = { ...res, snapshotId };
+      // Say what went. "No trades were linked to that import" is TRUE and
+      // misleading on its own: nothing was linked, but `refRows.length`
+      // broker-stated figures were just destroyed and snapshotted, and the
+      // user is entitled to the same sentence `removeBrokerRows` gives them
+      // (lib/trash.ts). Found 2026-09-04, second audit.
+      res = {
+        ...res,
+        snapshotId,
+        message:
+          `${refRows.length} broker-stated figure${refRows.length === 1 ? "" : "s"} removed — ` +
+          "recoverable from Backup & Restore → Deleted items.",
+      };
     }
   }
 
@@ -310,7 +321,7 @@ export function deleteImportBatch(batchId: number, cascade: boolean, source = "u
     ok: true,
     batchRemoved: true,
     message: cascade
-      ? `${res.message || "No trades were linked to that import."} The import record was removed.`
+      ? `${res.message || "No trades or broker-stated figures were linked to that import."} The import record was removed.`
       : "The import record was removed. Its trades were kept.",
   };
 }

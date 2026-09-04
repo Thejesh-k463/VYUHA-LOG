@@ -51,6 +51,22 @@
 // account brought the book back without the figures the broker stated about
 // it, and removing a broker's rows left that broker's stated totals to be
 // reconciled against an empty book.
+//
+// -- What a MERGE envelope restores, and what it does NOT (documented
+//    2026-09-04, second audit; the behaviour itself is unchanged) -----------
+//
+// An account MERGE snapshots only the rows the merge DISCARDED -- the colliding
+// sessions, the source's capital checkpoints, and the reference rows the target
+// already states (lib/queries/account-delete.ts). Everything else MOVED to the
+// target and is still in the journal, under the target's account_id.
+//
+// So restoring a merge envelope is ASYMMETRIC by construction: it recreates the
+// source account and puts the DISCARDED duplicates back into it, while the
+// moved rows stay where the merge put them, in the target. A restore therefore
+// undoes the DISCARD, not the merge. Walking every moved row back is not
+// something a snapshot can promise -- the target has been edited since -- so
+// this is written down rather than left to be discovered.
+
 export const TRASH_VERSION = 4;
 
 /** What produced the snapshot. Absent (v1/v2) means an ordinary trade delete
@@ -67,7 +83,13 @@ export interface TrashEnvelope {
   reason: string;
   /** The account selected when the delete ran. 0 means the aggregate view. */
   accountId: number;
-  counts: { trades: number; legs: number; attachments: number };
+  /**
+   * v4: `referenceRows` joined the counts (2026-09-04) so a figures-only
+   * snapshot does not report itself as holding nothing. Optional on read:
+   * v1-v3 envelopes, and v4 envelopes written before that fix, carry three
+   * keys and are read as 0 figures — which is what they held.
+   */
+  counts: { trades: number; legs: number; attachments: number; referenceRows?: number };
   /** Raw rows, exactly as `db.select()` returned them. */
   trades: Record<string, unknown>[];
   legs: Record<string, unknown>[];
@@ -180,6 +202,14 @@ export interface TrashSummary {
   latest: string | null;
   /** Bytes on disk, snapshot JSON plus stashed files. */
   sizeBytes: number;
+  /**
+   * v4: broker-stated figures destroyed by the delete. A snapshot can hold
+   * these and NOTHING else (a realised-P&L statement that produced figures
+   * and no book trades), so every surface that says what a snapshot holds
+   * must name them — the list row, the restore title, the purge dialog and
+   * the recoverable badge. 0 on v1-v3 envelopes, which held none.
+   */
+  referenceRows: number;
   /** v3: present only on a broker-remove snapshot. */
   kind?: TrashKind;
   broker?: string;
@@ -241,6 +271,7 @@ export function summariseTrash(e: TrashEnvelope, sizeBytes: number): TrashSummar
     trades: e.trades.length,
     legs: e.legs.length,
     attachments: e.attachments.length,
+    referenceRows: (e.referenceRows ?? []).length,
     symbols: symbols.slice(0, 6),
     symbolCount: symbols.length,
     netPnl: Math.round(netPnl * 100) / 100,

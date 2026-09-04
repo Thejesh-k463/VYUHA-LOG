@@ -23,8 +23,9 @@ import { describe, expect, it } from "vitest";
  * `useSyncExternalStore` (components/layout/use-stored-value.ts): the server
  * snapshot renders the default and the live value lands after hydration.
  *
- * vitest runs in node with no DOM, so this pins the SOURCE of the four
- * components the page is built from. Behaviour under a real browser is the
+ * vitest runs in node with no DOM, so this pins the SOURCE of every file in
+ * FILES below (nine of them: the /import surface, the root-layout search
+ * panel and its primitives, and the Broker-truth screen). Behaviour under a real browser is the
  * perf sweep (scripts/perf-sweep.mjs), which fails on any console error.
  */
 
@@ -39,7 +40,23 @@ import { describe, expect, it } from "vitest";
  * position. The Broker-truth screen is here because it is the newest
  * server-rendered surface and cheap to keep honest.
  *
- * All five are clean today; they are listed so that stays true.
+ * WHAT THE GUARD ACTUALLY CHECKS, per file in the list below:
+ *
+ *   1. no block element (or a UI primitive that renders one) inside a <p> —
+ *      the parser-level cause of the #418 the sweep caught; and
+ *   2. no `toLocaleString`/`Date.now`/`localStorage`/`sessionStorage`/
+ *      `typeof window` evaluated in the body of an UPPER-CAMEL declaration,
+ *      i.e. on the SSR path of a component.
+ *
+ * Check 2 is scoped to components BY DESIGN, so `components/system/
+ * use-panel-drag.ts` and `components/ui/popover.tsx` — whose top-level
+ * declarations are hooks and primitives, not UpperCamel components — are in
+ * practice covered by check 1 only. They are listed anyway, and that is the
+ * reason: a `<p>` that grows a `<Badge>` in either of them would throw away
+ * the server markup of every route in the app, and this is what catches it.
+ *
+ * All NINE files are clean under both checks today; they are listed so that
+ * stays true.
  */
 const FILES = [
   "components/import/broker-connect.tsx",
@@ -111,7 +128,7 @@ const RENDER_HAZARDS = /\b(toLocaleString|toLocaleDateString|toLocaleTimeString|
 const IDIOM = /useStoredValue\(|useSyncExternalStore\(/;
 
 /** The hazard sweep itself, over ALREADY-BLANKED source — so it can run
- *  against a planted string as well as against the four real files. */
+ *  against a planted string as well as against the real files. */
 function hazardOffenders(rel: string, src: string): string[] {
   const offenders: string[] = [];
   for (const m of src.matchAll(RENDER_HAZARDS)) {

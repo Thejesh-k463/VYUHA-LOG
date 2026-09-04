@@ -110,7 +110,7 @@ function sheetRows(ws: XLSX.WorkSheet): string[][] {
   return out.slice(0, last + 1);
 }
 
-function dpSheet(ctx: ParseContext): { name: string; rows: string[][]; ws: XLSX.WorkSheet } | null {
+function dpSheet(ctx: ParseContext): { name: string; names: string[]; rows: string[][]; ws: XLSX.WorkSheet } | null {
   if (ctx.text != null) return null; // a CSV is never this file
   if (!ctx.buffer || !/\.xlsx?$/i.test(ctx.filename)) return null;
   let wb: XLSX.WorkBook;
@@ -122,7 +122,7 @@ function dpSheet(ctx: ParseContext): { name: string; rows: string[][]; ws: XLSX.
   for (const name of wb.SheetNames) {
     if (!SHEET_NAME.test(name.trim())) continue;
     const ws = wb.Sheets[name]!;
-    return { name, rows: sheetRows(ws), ws };
+    return { name, names: wb.SheetNames, rows: sheetRows(ws), ws };
   }
   return null;
 }
@@ -130,9 +130,32 @@ function dpSheet(ctx: ParseContext): { name: string; rows: string[][]; ws: XLSX.
 /**
  * Every broker Vyuha has a named parser for, minus this one. A format-only
  * fingerprint cannot tell a rival's identically-shaped file apart, so the
- * one thing it CAN read — whose name is on the document — becomes a veto.
+ * one thing it CAN read — whose name is on the DOCUMENT — becomes a veto.
  */
 const RIVALS = /(?<![a-z0-9])(zerodha|groww|upstox|paytm|angel[\s_-]?one|angel[\s_-]?broking)(?![a-z0-9])/i;
+
+/**
+ * ── THE VETO REGION (exact, 2026-09-04) ──────────────────────────────────
+ *
+ * The veto reads ONLY where a DOCUMENT states who issued it:
+ *   1. the FILENAME;
+ *   2. every SHEET NAME in the workbook;
+ *   3. the TITLE / BANNER region — the rows ABOVE the header row on the
+ *      `DP Charges` sheet (rows 0 … headerRow-1), which is where the real
+ *      export prints its title cell and the account identity labels.
+ *
+ * It NEVER reads the data grid: no row at or below the header row is
+ * scanned. That is not a shortcut, it is the point. PAYTM (One 97) and
+ * ANGELONE are LISTED COMPANIES the owner can hold, so `ANGEL ONE LIMITED`
+ * as a Security Name, or `PAYTM` as a scrip, is the owner's own holding —
+ * not a rival's letterhead. Scanning every cell made the owner's own file
+ * score 0 and fall to the hand-mapper (found 2026-09-04, second audit).
+ */
+function vetoedByRival(filename: string, sheetNames: string[], banner: string[][]): boolean {
+  if (RIVALS.test(filename)) return true;
+  if (sheetNames.some((n) => RIVALS.test(n))) return true;
+  return banner.some((r) => r.some((c) => RIVALS.test(c)));
+}
 
 /**
  * Detection. Sheet name + title cell + the exact header = the format, worth
@@ -144,9 +167,12 @@ const RIVALS = /(?<![a-z0-9])(zerodha|groww|upstox|paytm|angel[\s_-]?one|angel[\
  * charges sheet with the same eight headers would be imported as Dhan and
  * priced at Dhan's rates — the exact 2026-08-12 defect AGENTS.md records for
  * `detectZerodha`. The filename cannot VOUCH for a broker here (that is why
- * the format is the fingerprint), but it can VETO one: a file whose name, or
- * whose sheet names or cells, name a DIFFERENT known broker is not claimed at
- * all. It falls to the generic column mapper, which asks.
+ * the format is the fingerprint), but it can VETO one: a file whose NAME, or
+ * whose SHEET NAMES, or whose TITLE/BANNER rows (everything ABOVE the header
+ * row) name a DIFFERENT known broker is not claimed at all. It falls to the
+ * generic column mapper, which asks. The DATA GRID below the header is never
+ * scanned — see `vetoedByRival` for why a security called `ANGEL ONE LIMITED`
+ * is a holding, not a letterhead.
  */
 export function detectDhanDpCharges(ctx: ParseContext): number {
   const sheet = dpSheet(ctx);
@@ -155,9 +181,7 @@ export function detectDhanDpCharges(ctx: ParseContext): number {
   if (!found) return 0;
   const titled = sheet.rows.slice(0, found.at).some((r) => r.some((c) => TITLE.test(c)));
   if (!titled) return 0;
-  if (RIVALS.test(ctx.filename)) return 0;
-  if (RIVALS.test(sheet.name)) return 0;
-  if (sheet.rows.some((r) => r.some((c) => RIVALS.test(c)))) return 0;
+  if (vetoedByRival(ctx.filename, sheet.names, sheet.rows.slice(0, found.at))) return 0;
   return Math.min(1, 0.9 + (/dhan/i.test(ctx.filename) ? 0.1 : 0));
 }
 

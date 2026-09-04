@@ -154,6 +154,31 @@ describe("the Dhan DP charges report at the Cash & Ledger door", () => {
     expect(refs.every((r) => r.accountId === 1 && r.broker === "dhan" && r.scope === "charge")).toBe(true);
   });
 
+  /**
+   * A RE-UPLOAD OF AN UNCHANGED FILE CHANGED NOTHING, so nothing is logged.
+   *
+   * `persistReference` counts rows OFFERED, not rows altered - its upsert
+   * rewrites an identical row and still returns 1. The route logged a fresh
+   * "N broker-stated figures" audit entry on every re-upload of the same file,
+   * and an audit trail that records changes which did not happen is worse than
+   * one that records nothing.
+   */
+  it("re-uploading the SAME file writes no second reference audit entry", async () => {
+    const auditsBefore = (t.sqlite.prepare("SELECT count(*) AS n FROM audit_log WHERE entity = 'broker_reference'").get() as { n: number }).n;
+    const refsBefore = (t.sqlite.prepare("SELECT count(*) AS n FROM broker_reference").get() as { n: number }).n;
+
+    const json = await (await route.POST(post("dp-charges.xls", dp(), "commit"))).json();
+
+    expect(json.referenceStored, "the file still states the same figures").toBe(refsBefore);
+    expect(json.referenceChanged, "and not one of them is different").toBe(0);
+    expect(json.referenceNote).toMatch(/^figures unchanged/);
+    expect((t.sqlite.prepare("SELECT count(*) AS n FROM broker_reference").get() as { n: number }).n).toBe(refsBefore);
+    expect(
+      (t.sqlite.prepare("SELECT count(*) AS n FROM audit_log WHERE entity = 'broker_reference'").get() as { n: number }).n,
+      "nothing changed, so the audit trail has nothing to say",
+    ).toBe(auditsBefore);
+  });
+
   it("names the ACTUAL source in the audit line, not 'Dhan ledger' for everything", async () => {
     const audit = t.sqlite.prepare("SELECT entity, summary FROM audit_log ORDER BY id").all() as { entity: string; summary: string }[];
     expect(audit.some((a) => /^dhan-dp-charges imported: 173 entries/.test(a.summary))).toBe(true);

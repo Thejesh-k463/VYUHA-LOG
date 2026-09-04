@@ -115,6 +115,94 @@ describe("covered intraday short — sold first, bought back the same day", () =
     expect(open.buyDate).toBe("2026-08-01");
   });
 
+  /**
+   * THE THREE LINES THAT DECIDE THIS NOTE, each with a test that goes red when
+   * it alone is reverted. Until now the covered-short fix had none: reverting
+   * the seed, the date sort or the same-day guard left the whole suite green,
+   * so three deliberate decisions were protected by nothing.
+   */
+
+  /**
+   * (a) THE SEED — `shortCoverQtys(legsIn, openingQty)`.
+   *
+   * The file opens with a sale of shares it never shows being bought. Walked
+   * from zero, that sale looks naked and the same-day buy behind it looks like
+   * the cover; walked from the pre-file lot the pairing pass is itself holding,
+   * it is an ordinary delivery sale. Revert `openingQty` to 0 and this day
+   * wrongly gains the short note — and with it `unknown -> intraday`, which
+   * understates STT on a file that states no product.
+   */
+  it("is not a short when the shares came from a lot the FILE never shows being bought", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "SEEDCO", side: "sell", date: "2026-07-10", qty: 100, value: 21000 }),
+      leg({ symbol: "SEEDCO", side: "buy", date: "2026-07-10", qty: 100, value: 20500 }),
+      leg({ symbol: "SEEDCO", side: "sell", date: "2026-07-20", qty: 100, value: 21500 }),
+    ]);
+    const closed = out.find((p) => p.kind === "closed")!;
+    expect(closed.buyDate).toBe("2026-07-10");
+    expect(closed.notes, "the 10th's sale was delivered from the pre-file lot").toEqual([]);
+    // The product must stay unknown: `unknown -> intraday` is reached ONLY
+    // through the short note, and this was not a short.
+    expect(closed.product).toBe("unknown");
+    // The pre-file lot is what the LATER sale consumed, and it has no basis.
+    const opening = out.find((p) => p.kind === "opening-sell")!;
+    expect(opening.sellDate).toBe("2026-07-20");
+    expect(opening.basisUnknown).toBe(true);
+  });
+
+  /**
+   * (b) THE DATE SORT — `[...legsIn].sort((a, b) => a.date.localeCompare(b.date))`.
+   *
+   * Several brokers export newest-first. Walked in raw file order the holding
+   * bought on the 1st has not "happened" yet when the sale on the 5th is read,
+   * so the sale looks naked and the same-day part-buy looks like its cover.
+   * Revert the sort and this position wrongly gains the short note.
+   */
+  it("reads a NEWEST-FIRST export as the dates say, not as the file happens to be ordered", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "REVCO", side: "sell", date: "2026-01-05", qty: 100, value: 21000 }),
+      leg({ symbol: "REVCO", side: "buy", date: "2026-01-05", qty: 100, value: 20800 }),
+      leg({ symbol: "REVCO", side: "buy", date: "2026-01-01", qty: 100, value: 20000 }),
+    ]);
+    const closed = out.find((p) => p.kind === "closed")!;
+    expect(closed.sellQty).toBe(100);
+    // Same-day netting pairs the sale with the 5th's own buy, so BOTH dates
+    // are the 5th and the overnight guard cannot mask a misread walk — the
+    // date sort is the only thing standing between this row and the note.
+    expect(closed.buyDate).toBe("2026-01-05");
+    expect(closed.notes, "100 shares were held since the 1st; nothing was sold short").toEqual([]);
+    expect(closed.product).toBe("unknown");
+    const open = out.find((p) => p.kind === "open")!;
+    expect(open.buyQty).toBe(100);
+    expect(open.buyDate).toBe("2026-01-01");
+  });
+
+  /**
+   * (c) THE HARD GUARD — `buyDate === leg.date` in `pairSymbolLegs`.
+   *
+   * Cash equity cannot be carried short overnight, so a position whose entry
+   * and exit fall on different days is not one, whatever the cover arithmetic
+   * upstream concluded. Here 40 of the 100 sold really were covered by that
+   * day's own buy — but FIFO gives the POSITION an entry date of the 1st, and
+   * a multi-day position may never carry the note. Revert the guard and it does.
+   */
+  it("never puts the note on a position that spans days, however the cover arithmetic reads", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "SPANCO", side: "buy", date: "2026-01-01", qty: 60, value: 12000 }),
+      leg({ symbol: "SPANCO", side: "sell", date: "2026-01-05", qty: 100, value: 21000 }),
+      leg({ symbol: "SPANCO", side: "buy", date: "2026-01-05", qty: 40, value: 8200 }),
+    ]);
+    expect(out).toHaveLength(1);
+    const closed = out[0];
+    expect(closed.kind).toBe("closed");
+    expect(closed.buyQty).toBe(100);
+    // Entry on the 1st, exit on the 5th — two days, so not an intraday short.
+    expect(closed.buyDate).toBe("2026-01-01");
+    expect(closed.sellDate).toBe("2026-01-05");
+    expect(closed.notes).toEqual([]);
+    expect(closed.product).toBe("unknown");
+  });
+
   it("conserves quantity and value to the paisa across a book containing shorts", () => {
     const legs: Leg[] = [
       leg({ symbol: "S1", side: "sell", date: "2026-07-06", qty: 100, value: 21000, charges: 12 }),

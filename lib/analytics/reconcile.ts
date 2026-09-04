@@ -33,6 +33,54 @@ export interface ReconLine {
   checkedNote?: string | null;
 }
 
+/**
+ * A charge figure the broker states, structurally mirrored from
+ * `lib/queries/reference.ts#ReconcileChargeLine`.
+ *
+ * `vyuha`/`delta`/`matched` are NULLABLE and the nullability is the whole
+ * point: some of a broker's charges (a CUSPA sell-off fee, delayed-payment
+ * interest) have no column in the book at all. Rendering those against a zero
+ * would print the whole of the broker's fee as a delta the journal disputes.
+ * Null means "nothing to compare", and the screen prints exactly that.
+ */
+export interface ReconChargeLine {
+  kind: "dp" | "note" | "ledger";
+  key: string;
+  label: string;
+  broker: string | null;
+  sourceId: string;
+  fy: string | null;
+  stated: Record<string, number>;
+  vyuha: Record<string, number> | null;
+  delta: Record<string, number> | null;
+  matched: boolean | null;
+  note: string;
+}
+
+/** The figure a charge line is compared on, per kind. Never derived on screen. */
+export const CHARGE_FIELD: Record<ReconChargeLine["kind"], string> = {
+  dp: "charges",
+  note: "total",
+  ledger: "amount",
+};
+
+/**
+ * The status word for a charge line. `matched === null` is "Not compared" —
+ * the honest reading of a fee the book has no column for, and never a match.
+ *
+ * WHICH SIDE IS HIGHER IS READ OFF THE SIGN, exactly as `lineStatus` does it.
+ * Reading only `matched` printed "Broker higher" on every disagreement,
+ * including a contract note that states LESS than the book — beside a delta
+ * column showing that same row's negative number.
+ */
+export function chargeStatus(line: Pick<ReconChargeLine, "kind" | "delta" | "matched">): ReconStatus {
+  if (line.matched == null) return "not_compared";
+  if (line.matched) return "matched";
+  const d = line.delta?.[CHARGE_FIELD[line.kind]];
+  if (d == null || d === 0) return "matched";
+  return d > 0 ? "broker_higher" : "vyuha_higher";
+}
+
 export interface ReconHolding {
   key: string;
   label: string;
@@ -205,8 +253,12 @@ export const RECONCILE_FEEDS: { sourceId: string; label: string }[] = RECONCILE_
   label: sourceLabel(id),
 }));
 
-/** Reason codes, in the order they are worth reading. */
-export const REASON_ORDER = ["unpriced_sales", "charges_omitted", "open_lots", "product_difference"] as const;
+/**
+ * Reason codes, in the order they are worth reading. `ambiguous_symbol` leads:
+ * it is the one reason that says the Vyuha side is ABSENT rather than
+ * different, so it has to be read before any figure on the row is.
+ */
+export const REASON_ORDER = ["ambiguous_symbol", "unpriced_sales", "charges_omitted", "open_lots", "product_difference"] as const;
 
 export function sortReasons<T extends { code: string }>(reasons: T[]): T[] {
   const rank = (c: string) => {

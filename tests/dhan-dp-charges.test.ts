@@ -266,7 +266,7 @@ describe("the rival-broker veto", () => {
     expect(detectDhanDpCharges({ filename: "export.xls", buffer })).toBeCloseTo(0.9, 10);
   });
 
-  it("refuses a file whose CONTENT names another broker", () => {
+  it("refuses a file whose TITLE ROW names another broker", () => {
     const wb = XLSX.read(buffer, { type: "buffer" });
     const ws = wb.Sheets["DP Charges"]!;
     const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][];
@@ -275,5 +275,28 @@ describe("the rival-broker veto", () => {
     XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(rows.slice(0, 40)), "DP Charges");
     const bytes = XLSX.write(wb2, { type: "buffer", bookType: "xlsx" }) as Buffer;
     expect(detectDhanDpCharges({ filename: "export.xlsx", buffer: bytes })).toBe(0);
+  });
+
+  /**
+   * The veto region is the FILENAME, the SHEET NAMES and the TITLE/BANNER
+   * rows ABOVE the header row — never the data grid. PAYTM (One 97) and
+   * ANGELONE are listed companies: a Security Name is a HOLDING, not a
+   * letterhead. Scanning every cell scored the owner's own file 0.
+   */
+  it("still claims the owner's own file when a SECURITY is named after a rival", () => {
+    const wb = XLSX.read(buffer, { type: "buffer" });
+    const rows = (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets["DP Charges"]!, {
+      header: 1, raw: false, defval: "",
+    }) as unknown[][]).slice(0, 200);
+    const renamed: string[] = [];
+    for (const name of ["ANGEL ONE LIMITED", "PAYTM", "ZERODHA", "GROWW", "UPSTOX"]) {
+      const row = rows.find((r) => /^\d+$/.test(String(r[0] ?? "").trim()) && !renamed.includes(String(r[3])));
+      if (row) { row[3] = name; renamed.push(name); }
+    }
+    expect(renamed).toHaveLength(5);
+    const out = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(rows), "DP Charges");
+    const bytes2 = XLSX.write(out, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    expect(detectDhanDpCharges({ filename: "export.xlsx", buffer: bytes2 })).toBeGreaterThanOrEqual(0.9);
   });
 });

@@ -316,7 +316,7 @@ describe("the owner's real notes against the owner's real book", () => {
     }
     expect(booked).toBeGreaterThan(100);
 
-    let fills = 0, days = 0, applied = 0, unmatched = 0;
+    let fills = 0, days = 0, applied = 0, alreadyHad = 0, unmatched = 0;
     for (const p of [...notes, ...(futNote ? [futNote] : [])]) {
       const parsed = await parseDhanContractNote(buildContext("note.pdf", fs.readFileSync(p)));
       if (!parsed.enrich?.length) continue;
@@ -325,7 +325,11 @@ describe("the owner's real notes against the owner's real book", () => {
       const line = (res.warnings ?? []).find((w) => /aggregated into/.test(w)) ?? "";
       const m = /aggregated into (\d+) contract-days?: applied (\d+), already had times (\d+), unmatched (\d+)/.exec(line);
       expect(m, "the commit reports applied / already-had / unmatched separately").not.toBeNull();
-      days += Number(m![1]); applied += Number(m![2]); unmatched += Number(m![4]);
+      days += Number(m![1]); applied += Number(m![2]); alreadyHad += Number(m![3]); unmatched += Number(m![4]);
+      // Per NOTE, not just in aggregate: one contract-day has exactly one
+      // outcome, so the three counters partition the days they are printed
+      // beside. A `<=` here let a split day be counted three times as applied.
+      expect(Number(m![2]) + Number(m![3]) + Number(m![4]), "applied + alreadyHad + unmatched === contract-days").toBe(Number(m![1]));
     }
 
     // Fills really do outnumber contract-days by an order of magnitude — the
@@ -335,8 +339,10 @@ describe("the owner's real notes against the owner's real book", () => {
     // 45 of 46 on the two notes this machine has. A floor, not an equality:
     // another machine may hold a different set of notes.
     expect(applied / days).toBeGreaterThan(0.9);
-    // The residue is the honest part. Every miss is reported with a reason.
-    expect(unmatched).toBeLessThanOrEqual(days - applied);
+    // The residue is the honest part. Every miss is reported with a reason,
+    // and the three outcomes PARTITION the contract-days — a day is applied,
+    // or it already had the facts, or it matched nothing. Never two of those.
+    expect(applied + alreadyHad + unmatched).toBe(days);
   }, 300_000);
 
   it("gives the WIPRO futures round trip its real fill times and its instrument type", async () => {

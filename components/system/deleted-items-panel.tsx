@@ -12,6 +12,16 @@
  *     rather than showing a clean tick over an incomplete restore;
  *   - purging is the point of no return, and is the only place in the app that
  *     says so without qualification.
+ *
+ * A snapshot can hold BROKER-STATED FIGURES and no trades at all (a realised-
+ * P&L statement imported as reference). Every count here therefore reads
+ * `referenceRows` too: a figures-only row used to read "0 trades", offer
+ * "Put these trades back", and warn that "0 trades and 0 attachments" would
+ * stop being recoverable — while the purge destroyed the only copy of those
+ * figures. Fixed 2026-09-04, second audit.
+ *
+ * A MERGE envelope restores the duplicates the merge DISCARDED; the rows that
+ * MOVED to the target stay there. See the v4 block in lib/trash-format.ts.
  */
 
 import * as React from "react";
@@ -25,6 +35,15 @@ import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/compon
 import { inr, fmtDate, signedClass } from "@/lib/format";
 import type { TrashSummary } from "@/lib/trash-format";
 import { Undo2, Trash2, TriangleAlert } from "lucide-react";
+
+/** What this snapshot holds, in the user's words — never "0 trades" alone. */
+function holdsLabel(s: TrashSummary): string {
+  const parts: string[] = [];
+  if (s.trades > 0) parts.push(`${s.trades} trade${s.trades === 1 ? "" : "s"}`);
+  if (s.referenceRows > 0) parts.push(`${s.referenceRows} broker-stated figure${s.referenceRows === 1 ? "" : "s"}`);
+  if (s.attachments > 0) parts.push(`${s.attachments} attachment${s.attachments === 1 ? "" : "s"}`);
+  return parts.join(" and ") || "nothing";
+}
 
 function kb(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -90,15 +109,22 @@ export function DeletedItemsPanel({ snapshots }: { snapshots: TrashSummary[] }) 
                   {s.symbols.join(", ")}
                   {s.symbolCount > s.symbols.length && ` +${s.symbolCount - s.symbols.length} more`}
                   {s.earliest && s.latest && ` · ${s.earliest} → ${s.latest}`}
+                  {s.referenceRows > 0 && ` · ${s.referenceRows} broker-stated figure${s.referenceRows === 1 ? "" : "s"}`}
                   {s.attachments > 0 && ` · ${s.attachments} attachment${s.attachments === 1 ? "" : "s"}`}
                 </span>
               </ReportTd>
-              <ReportTd align="right">{s.trades}</ReportTd>
+              {/* A figures-only snapshot has no trades; saying "0" reads as
+                  "holds nothing", so it names what it does hold instead. */}
+              <ReportTd align="right">
+                {s.trades > 0 || s.referenceRows === 0
+                  ? s.trades
+                  : `${s.referenceRows} broker-stated figure${s.referenceRows === 1 ? "" : "s"}`}
+              </ReportTd>
               <ReportTd align="right" className={signedClass(s.netPnl)}>{inr(s.netPnl, { decimals: 0 })}</ReportTd>
               <ReportTd align="right" muted>{kb(s.sizeBytes)}</ReportTd>
               <ReportTd className="text-right">
                 <div className="flex items-center justify-end gap-1">
-                  <Button size="sm" variant="ghost" disabled={busy === s.id} onClick={() => call("restore", s.id)} title="Put these trades back">
+                  <Button size="sm" variant="ghost" disabled={busy === s.id} onClick={() => call("restore", s.id)} title={`Put ${holdsLabel(s)} back`}>
                     <Undo2 className="size-3.5" /> {busy === s.id ? "Working…" : "Restore"}
                   </Button>
                   <Button size="sm" variant="ghost" disabled={busy === s.id} onClick={() => setPurging(s)} title="Delete this snapshot for good">
@@ -126,8 +152,7 @@ export function DeletedItemsPanel({ snapshots }: { snapshots: TrashSummary[] }) 
             <DialogDescription>{purging?.reason}</DialogDescription>
           </DialogHeader>
           <p className="text-xs">
-            {purging?.trades} trade{purging?.trades === 1 ? "" : "s"} and {purging?.attachments ?? 0} attachment
-            {purging?.attachments === 1 ? "" : "s"} will stop being recoverable. This is the only copy — after this, only a
+            {purging ? holdsLabel(purging) : "nothing"} will stop being recoverable. This is the only copy — after this, only a
             backup file taken before the delete can bring them back.
           </p>
           <DialogFooter>
@@ -149,6 +174,8 @@ export function DeletedItemsPanel({ snapshots }: { snapshots: TrashSummary[] }) 
 
 /** Count for the section header — kept next to the panel that renders it. */
 export function DeletedItemsBadge({ snapshots }: { snapshots: TrashSummary[] }) {
-  const trades = snapshots.reduce((s, x) => s + x.trades, 0);
-  return <Badge variant="secondary">{trades} recoverable</Badge>;
+  // Rows, not trades: a figures-only snapshot is recoverable work too, and
+  // excluding it made the badge read 0 while the panel listed a snapshot.
+  const rows = snapshots.reduce((s, x) => s + x.trades + x.referenceRows, 0);
+  return <Badge variant="secondary">{rows} recoverable</Badge>;
 }

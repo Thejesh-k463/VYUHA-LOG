@@ -28,6 +28,9 @@ import {
   lineStatus,
   sortByAbsDelta,
   sortReasons,
+  CHARGE_FIELD,
+  chargeStatus,
+  type ReconChargeLine,
   type ReconHolding,
   type ReconLine,
   type SourceSummary,
@@ -36,7 +39,13 @@ import {
 export interface ReconcileBook {
   accountId: number;
   accountName: string;
-  recon: { fy: ReconLine[]; segment: ReconLine[]; scrip: ReconLine[]; holdings: ReconHolding[] };
+  recon: {
+    fy: ReconLine[];
+    segment: ReconLine[];
+    scrip: ReconLine[];
+    holdings: ReconHolding[];
+    charges: ReconChargeLine[];
+  };
   sources: SourceSummary[];
 }
 
@@ -159,6 +168,82 @@ function SourcesPanel({ sources }: { sources: SourceSummary[] }) {
             ))}
           </tbody>
         </ReportTable>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * "Charges the broker states" — the read side of `scope: "charge"`.
+ *
+ * Three parsers have been writing charge figures since v3.9 and, until this
+ * table, NOTHING read them: help, the source registry and the CHANGELOG all
+ * said DP charges feed Broker Truth while the rows sat in the database
+ * unreferenced. This is the table that makes those sentences true.
+ *
+ * A line whose `vyuha` is null prints "no counterpart" in BOTH the Vyuha and
+ * the delta cell. It is not a zero and not a gap — the book has no column for
+ * that fee, and subtracting from nothing is how a fabricated delta gets on a
+ * screen (invariant 6).
+ */
+function ChargesTable({ charges }: { charges: ReconChargeLine[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Charges the broker states</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <ReportTable minWidth={880}>
+          <ReportThead>
+            <ReportTh>Charge</ReportTh>
+            <ReportTh align="right">Broker</ReportTh>
+            <ReportTh align="right">Vyuha</ReportTh>
+            <ReportTh align="right">&Delta;</ReportTh>
+            <ReportTh>Status</ReportTh>
+            <ReportTh>Why</ReportTh>
+          </ReportThead>
+          <tbody data-testid="reconcile-charges">
+            {charges.map((c) => {
+              const field = CHARGE_FIELD[c.kind];
+              const s = chargeStatus(c);
+              return (
+                <ReportTr key={`${c.kind}-${c.key}`} data-charge-key={c.key}>
+                  <ReportTd>
+                    <span className="font-medium">{c.label}</span>
+                    {c.broker && (
+                      <span className="ml-1.5 text-[0.6875rem] uppercase text-muted-foreground">{c.broker}</span>
+                    )}
+                  </ReportTd>
+                  <ReportTd align="right">
+                    {c.stated[field] == null ? "—" : inr(c.stated[field])}
+                  </ReportTd>
+                  <ReportTd align="right">
+                    {c.vyuha == null ? (
+                      <span className="text-muted-foreground">no counterpart</span>
+                    ) : (
+                      inr(c.vyuha[field])
+                    )}
+                  </ReportTd>
+                  <ReportTd align="right" data-charge-delta>
+                    {c.delta == null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      inr(c.delta[field])
+                    )}
+                  </ReportTd>
+                  <ReportTd><span className={STATUS_CLASS[s]}>{STATUS_LABEL[s]}</span></ReportTd>
+                  <ReportTd className="max-w-[30rem] whitespace-normal text-muted-foreground">{c.note}</ReportTd>
+                </ReportTr>
+              );
+            })}
+          </tbody>
+        </ReportTable>
+        <p className="text-[0.6875rem] text-muted-foreground">
+          A DP fee is levied on a delivery SALE, so it is compared per financial year against your book&apos;s own
+          DP charges on trades sold in that year. A contract note states one day&apos;s charges; a position that
+          spans days carries both legs&apos; charges, and the line says so rather than calling the arithmetic a
+          disagreement.
+        </p>
       </CardContent>
     </Card>
   );
@@ -287,6 +372,8 @@ function Book({ book, showName }: { book: ReconcileBook; showName: boolean }) {
           </CardContent>
         </Card>
       )}
+
+      {recon.charges.length > 0 && <ChargesTable charges={recon.charges} />}
 
       {recon.holdings.length > 0 && <HoldingsTable holdings={recon.holdings} />}
     </div>

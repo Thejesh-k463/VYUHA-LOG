@@ -53,7 +53,7 @@ export interface ReferenceFilter {
 
 /** Why the broker's figure and Vyuha's differ — each one a fact, not a guess. */
 export interface ReconcileReason {
-  code: "unpriced_sales" | "charges_omitted" | "product_difference" | "open_lots";
+  code: "unpriced_sales" | "charges_omitted" | "product_difference" | "open_lots" | "ambiguous_symbol";
   detail: string;
   /** Rows/lots the reason counts, when it counts something. */
   count?: number;
@@ -125,6 +125,14 @@ export interface Reconciliation {
   segment: ReconcileLine[];
   scrip: ReconcileLine[];
   holdings: ReconcileHolding[];
+  /**
+   * The charge figures three parsers have been WRITING since v3.9 and nothing
+   * read: Dhan's DP charges report, a Dhan contract note's own charge lines,
+   * and Angel One's ledger charge tables. Help, the source registry and the
+   * CHANGELOG all said DP charges feed Broker Truth; this is the table that
+   * makes that sentence true.
+   */
+  charges: ReconcileChargeLine[];
 }
 
 /** A trade as this module needs it — the projection `reconcile` reads. */
@@ -143,6 +151,52 @@ export interface ReconcileTrade {
   chargesTotal: number;
   isOpen: boolean;
   acquisition: string | null;
+  /**
+   * The charge columns the "Charges the broker states" table compares against.
+   * They are OPTIONAL on the type so the pure function stays callable from the
+   * FY/scrip/segment tests without restating a whole charge breakdown; absent
+   * reads as zero, which is what a projection that does not select them means.
+   */
+  buyDate?: string | null;
+  brokerage?: number;
+  sttCtt?: number;
+  exchangeTxn?: number;
+  sebi?: number;
+  stampDuty?: number;
+  ipft?: number;
+  gst?: number;
+  dpCharges?: number;
+  pledgeCharges?: number;
+}
+
+/**
+ * One line of "Charges the broker states" — a broker's own charge figure
+ * beside the book's, or beside nothing when the book has no counterpart.
+ *
+ * `vyuha` is NULL, not zero, when Vyuha holds no comparable column. A zero
+ * would make the whole of the broker's figure a delta and read as a
+ * disagreement; there is no disagreement, there is nothing to compare
+ * (invariant 6 — never fabricate a denominator, and never a Δ).
+ */
+export interface ReconcileChargeLine {
+  /** dp = DP charges per FY; note = one contract note's stated charges; ledger = a ledger charge table. */
+  kind: "dp" | "note" | "ledger";
+  key: string;
+  label: string;
+  broker: string | null;
+  sourceId: string;
+  /** The FY this line belongs to, derived from the file's own `asOf`. */
+  fy: string | null;
+  /** The broker's figures, verbatim. */
+  stated: Record<string, number>;
+  /** Vyuha's counterpart, or null when the book states no such charge. */
+  vyuha: Record<string, number> | null;
+  /** stated − vyuha, per shared figure. Null exactly when `vyuha` is. */
+  delta: Record<string, number> | null;
+  /** Agreement under the AIS tolerance on `total`. Null when nothing compares. */
+  matched: boolean | null;
+  /** What the row is, or why it has no counterpart. Never an invented cause. */
+  note: string;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -284,10 +338,30 @@ export function reconcileFrom(
   const unpricedByFamily = new Map<string, { count: number; sellValue: number }>();
   const segmentsByScrip = new Map<string, Set<string>>();
   const labelByScrip = new Map<string, string>();
+  /**
+   * ISINs seen under each SYMBOL key. Two ISINs under one ticker means the
+   * book holds two securities that answer to the same string — `scripKeysOf`
+   * indexes both under it, so a symbol-keyed reference row (Angel One's P&L
+   * statement states `isin: null` on every scrip line) read the SUM of two
+   * securities as its Vyuha side and manufactured the other one's P&L as a
+   * delta. A sum of two securities is not this scrip's figure at any price.
+   */
+  const isinsBySymbol = new Map<string, Set<string>>();
+  /** DP and pledge charges the BOOK holds, per FY of the sale that incurred them. */
+  const dpByFy = new Map<string, number>();
+  const pledgeByFy = new Map<string, number>();
+  /** Every trade touching a date, for the per-note charge comparison. */
+  const tradesByDate = new Map<string, ReconcileTrade[]>();
 
   for (const t of trades) {
     const keys = scripKeysOf(t);
+    const ownIsin = (t.isin ?? "").trim().toUpperCase();
     for (const key of keys) {
+      if (ownIsin && key !== ownIsin) {
+        const set = isinsBySymbol.get(key) ?? new Set<string>();
+        set.add(ownIsin);
+        isinsBySymbol.set(key, set);
+      }
       if (!labelByScrip.has(key)) labelByScrip.set(key, t.symbol ?? t.tradingsymbol ?? key);
       const segs = segmentsByScrip.get(key) ?? new Set<string>();
       segs.add(t.segment);
@@ -296,6 +370,20 @@ export function reconcileFrom(
     const family = familyOf(t.segment);
     if (!family) unclassified.set(t.segment, (unclassified.get(t.segment) ?? 0) + 1);
     const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
+
+    // A DP fee is levied on a DELIVERY SALE, so the sale's year owns it. An
+    // open position has not incurred one, and `fyOf(null)` would file it under
+    // the current year on the strength of nothing.
+    if (t.sellDate) {
+      dpByFy.set(fy, r2((dpByFy.get(fy) ?? 0) + (t.dpCharges ?? 0)));
+      pledgeByFy.set(fy, r2((pledgeByFy.get(fy) ?? 0) + (t.pledgeCharges ?? 0)));
+    }
+    for (const d of new Set([t.buyDate ?? null, t.sellDate])) {
+      if (!d) continue;
+      const arr = tradesByDate.get(d) ?? [];
+      arr.push(t);
+      tradesByDate.set(d, arr);
+    }
 
     // An unpriced sale is a SALE WITH NO PURCHASE, and whether the position is
     // closed or still open changes nothing about that. It used to be counted
@@ -408,6 +496,28 @@ export function reconcileFrom(
     unpricedMap: Map<string, { count: number; sellValue: number }>,
   ): ReconcileLine[] =>
     [...buckets].map(([key, b]) => {
+      // A symbol-keyed row whose ticker covers more than one security in the
+      // book is NOT COMPARABLE. It gets the broker's side, no Vyuha side and
+      // no delta — the honest answer, and the only one that is not a sum of
+      // two companies wearing this row's name.
+      const shared = scope === "scrip" ? isinsBySymbol.get(key) : undefined;
+      if (shared && shared.size >= 2) {
+        return {
+          scope, key, label: b.label, isin: b.isin,
+          fy: b.fys.size === 1 ? [...b.fys][0] : null,
+          broker: b.brokers.size === 1 ? [...b.brokers][0] : null,
+          stated: b.stated,
+          vyuha: {},
+          delta: {},
+          matched: false,
+          reasons: [{
+            code: "ambiguous_symbol" as const,
+            count: shared.size,
+            detail: `ambiguous symbol: ${shared.size} securities in your book share this ticker (${[...shared].sort().join(", ")}). This row states no ISIN, so there is no way to tell which one it is about — Vyuha states no figure rather than the sum of ${shared.size}.`,
+          }],
+          checkedNote: null,
+        };
+      }
       const v = vyuhaMap.get(key) ?? emptyFigures();
       const vyuha: Record<string, number> = {
         qty: r2(v.qty), buyValue: r2(v.buyValue), sellValue: r2(v.sellValue),
@@ -581,7 +691,163 @@ export function reconcileFrom(
     segment: segmentLines,
     scrip: lines("scrip", scripBuckets, vyuhaByScrip, unpricedByScrip),
     holdings,
+    charges: chargeLines(
+      refs.filter((r) => r.scope === "charge"),
+      { dpByFy, pledgeByFy, tradesByDate, fyStartMonth, fallbackFy },
+    ),
   };
+}
+
+/** A contract note's charge key -> the book's own column for the same money. */
+const NOTE_CHARGE_COLUMNS: Record<string, keyof ReconcileTrade> = {
+  brokerage: "brokerage",
+  stt: "sttCtt",
+  exchangeTxn: "exchangeTxn",
+  sebi: "sebi",
+  stamp: "stampDuty",
+  ipft: "ipft",
+  gst: "gst",
+};
+
+interface ChargeContext {
+  dpByFy: Map<string, number>;
+  pledgeByFy: Map<string, number>;
+  tradesByDate: Map<string, ReconcileTrade[]>;
+  fyStartMonth: number;
+  fallbackFy: string;
+}
+
+/**
+ * "Charges the broker states" - the read side of `scope: "charge"`.
+ *
+ * Three sources state charges, and they state DIFFERENT THINGS, so each gets
+ * its own comparison and none is forced into another's shape:
+ *
+ *   - Dhan's DP charges report: a fee per ISIN per day. Compared per FY
+ *     against the book's own `dp_charges` on trades SOLD in that year, because
+ *     a delivery sale is the event a DP fee is levied on.
+ *   - A Dhan contract note: brokerage/STT/GST and the rest, for one trading
+ *     day. Compared per NOTE DATE against the book's charges on trades of that
+ *     day. A position's charges are the WHOLE position's, so a multi-day
+ *     position carries its buy-day and sell-day charges together; the line
+ *     says so rather than reporting that arithmetic as a disagreement.
+ *   - Angel One's ledger tables: dp, pledge, cuspa, interest. Only dp and
+ *     pledge have a column in the book. CUSPA sell-off and delayed-payment
+ *     interest have none, and are shown STATED with no delta at all - an
+ *     invented zero on the Vyuha side would report the whole of the broker's
+ *     fee as a gap the book disagrees with, which it does not (invariant 6).
+ */
+function chargeLines(refs: ReferenceRowRecord[], ctx: ChargeContext): ReconcileChargeLine[] {
+  const out: ReconcileChargeLine[] = [];
+  const fyOfDate = (d: string | null) => (d ? fyOf(d, ctx.fyStartMonth, ctx.fallbackFy) : null);
+
+  interface Group { stated: Record<string, number>; brokers: Set<string>; sourceIds: Set<string>; fy: string | null }
+  const group = (m: Map<string, Group>, key: string, r: ReferenceRowRecord, fy: string | null, figures: Record<string, number>) => {
+    const g = m.get(key) ?? { stated: {}, brokers: new Set<string>(), sourceIds: new Set<string>(), fy };
+    for (const [f, v] of Object.entries(figures)) g.stated[f] = r2((g.stated[f] ?? 0) + v);
+    g.brokers.add(r.broker);
+    g.sourceIds.add(r.sourceId);
+    m.set(key, g);
+  };
+
+  const dp = new Map<string, Group>();
+  const notes = new Map<string, Group>();
+  const ledger = new Map<string, Group>();
+
+  for (const r of refs) {
+    if (r.sourceId === "dhan-dp-charges") {
+      // The FY comes from the file's OWN `asOf`, never from today: a report of
+      // last year's fees belongs to last year.
+      const fy = fyOfDate(r.asOf);
+      group(dp, fy ?? "undated", r, fy, { charges: r.figures.charges ?? 0, qty: r.figures.qty ?? 0 });
+    } else if (r.sourceId === "dhan-contract-note") {
+      const date = r.asOf ?? "undated";
+      group(notes, date, r, fyOfDate(r.asOf), { [r.key]: r.figures.amount ?? 0 });
+    } else {
+      const fy = r.fy ?? fyOfDate(r.asOf);
+      group(ledger, `${r.sourceId}|${r.key}|${fy ?? ""}`, r, fy, { amount: r.figures.amount ?? 0 });
+    }
+  }
+
+  const one = (set: Set<string>) => (set.size === 1 ? [...set][0] : null);
+
+  for (const [key, g] of [...dp].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const stated = { charges: r2(g.stated.charges ?? 0), qty: r2(g.stated.qty ?? 0) };
+    const vyuha = g.fy ? { charges: r2(ctx.dpByFy.get(g.fy) ?? 0) } : null;
+    out.push({
+      kind: "dp", key, label: g.fy ? `DP charges - FY ${g.fy}` : "DP charges - undated",
+      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "dhan-dp-charges", fy: g.fy,
+      stated,
+      vyuha,
+      delta: vyuha ? { charges: r2(stated.charges - vyuha.charges) } : null,
+      matched: vyuha ? withinTolerance(stated.charges, vyuha.charges) : null,
+      note: g.fy
+        ? "The broker's DP fee per sale, against your book's own dp_charges on trades sold in this year."
+        : "The file states no date, so no year owns these fees and nothing in your book is comparable to them.",
+    });
+  }
+
+  for (const [date, g] of [...notes].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const stated: Record<string, number> = {};
+    for (const [k, v] of Object.entries(g.stated)) stated[k] = r2(v);
+    stated.total = r2(Object.values(g.stated).reduce((a, v) => a + v, 0));
+    const dayTrades = ctx.tradesByDate.get(date) ?? [];
+    const vyuha: Record<string, number> = {};
+    let total = 0;
+    for (const k of Object.keys(stated)) {
+      if (k === "total") continue;
+      const col = NOTE_CHARGE_COLUMNS[k];
+      if (!col) continue;
+      const sum = r2(dayTrades.reduce((a, t) => a + ((t[col] as number | undefined) ?? 0), 0));
+      vyuha[k] = sum;
+      total += sum;
+    }
+    vyuha.total = r2(total);
+    const spanning = dayTrades.filter((t) => t.buyDate && t.sellDate && t.buyDate !== t.sellDate).length;
+    out.push({
+      kind: "note", key: date, label: `Contract note - ${date}`,
+      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "dhan-contract-note", fy: g.fy,
+      stated,
+      vyuha,
+      delta: deltaOf(stated, vyuha),
+      matched: withinTolerance(stated.total, vyuha.total),
+      note: spanning > 0
+        ? `The note states ONE day's charges; ${spanning} of the ${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} touching this date also carries its other leg's charges, which this day's note does not state.`
+        : `${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} in your book touch${dayTrades.length === 1 ? "es" : ""} this date.`,
+    });
+  }
+
+  const LEDGER_LABELS: Record<string, string> = {
+    dp: "DP charges", pledge: "Pledge / unpledge charges",
+    cuspa: "CUSPA sell-off charges", interest: "Interest charges",
+  };
+  for (const [key, g] of [...ledger].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const type = key.split("|")[1] ?? key;
+    const stated = { amount: r2(g.stated.amount ?? 0) };
+    let vyuha: Record<string, number> | null = null;
+    let note: string;
+    if (type === "dp" && g.fy) {
+      vyuha = { amount: r2(ctx.dpByFy.get(g.fy) ?? 0) };
+      note = "Against your book's own dp_charges on trades sold in this year.";
+    } else if (type === "pledge" && g.fy) {
+      vyuha = { amount: r2(ctx.pledgeByFy.get(g.fy) ?? 0) };
+      note = "Against your book's own pledge_charges on trades sold in this year.";
+    } else {
+      note = `Stated by the broker - no Vyuha counterpart: your book has no column for ${LEDGER_LABELS[type] ?? type}, so there is nothing to subtract and no delta to state.`;
+    }
+    out.push({
+      kind: "ledger", key,
+      label: `${LEDGER_LABELS[type] ?? type}${g.fy ? ` - FY ${g.fy}` : ""}`,
+      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "angelone-ledger", fy: g.fy,
+      stated,
+      vyuha,
+      delta: vyuha ? { amount: r2(stated.amount - vyuha.amount) } : null,
+      matched: vyuha ? withinTolerance(stated.amount, vyuha.amount) : null,
+      note,
+    });
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -661,6 +927,16 @@ export function reconcile(accountId?: number): Reconciliation {
     chargesTotal: tradesTable.chargesTotal,
     isOpen: tradesTable.isOpen,
     acquisition: tradesTable.acquisition,
+    buyDate: tradesTable.buyDate,
+    brokerage: tradesTable.brokerage,
+    sttCtt: tradesTable.sttCtt,
+    exchangeTxn: tradesTable.exchangeTxn,
+    sebi: tradesTable.sebi,
+    stampDuty: tradesTable.stampDuty,
+    ipft: tradesTable.ipft,
+    gst: tradesTable.gst,
+    dpCharges: tradesTable.dpCharges,
+    pledgeCharges: tradesTable.pledgeCharges,
   }).from(tradesTable);
   const rows = (where.length ? q.where(and(...where)) : q).all() as ReconcileTrade[];
   return reconcileFrom(refs, rows, getSettings()?.fyStartMonth ?? 4);

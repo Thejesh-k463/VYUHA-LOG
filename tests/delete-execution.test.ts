@@ -276,6 +276,40 @@ describe("import batches", () => {
     expect(t.db.select().from(t.schema.brokerReference).all().map((r) => r.key)).toEqual(["2024-25"]);
   });
 
+  /**
+   * A figures-only delete used to report "No trades were linked to that
+   * import. The import record was removed." while destroying (and
+   * snapshotting) a broker-stated figure, and the snapshot then described
+   * itself as holding nothing — "0 trades" in the list, "0 trades and 0
+   * attachments" in the purge dialog that destroys the only copy, and no
+   * count at all in the "N recoverable" badge. Second audit, 2026-09-04.
+   */
+  it("SAYS the figures went, and the snapshot counts them", async () => {
+    reset();
+    t.db.delete(t.schema.brokerReference).run();
+    const b = makeBatch("dhan-statement-2.csv");
+    for (const key of ["2023-24", "2024-25"]) {
+      t.db.insert(t.schema.brokerReference).values({
+        accountId: 1, broker: "dhan", sourceId: "dhan-realised-pnl", scope: "fy", key,
+        figuresJson: JSON.stringify({ netPnl: 7 }), importBatchId: b,
+      }).run();
+    }
+
+    const res = del.deleteImportBatch(b, true);
+    expect(res.ok).toBe(true);
+    expect(res.message).toMatch(/2 broker-stated figures removed/);
+    // The same promise `removeBrokerRows` makes — the rows ARE recoverable.
+    expect(res.message).toMatch(/recoverable from Backup & Restore/i);
+    expect(res.message).not.toMatch(/No trades were linked/);
+
+    const { summariseTrash } = await import("@/lib/trash-format");
+    const env = JSON.parse(fs.readFileSync(path.join(trashDir, res.snapshotId!, "snapshot.json"), "utf8"));
+    expect(env.counts).toMatchObject({ trades: 0, referenceRows: 2 });
+    const summary = summariseTrash(env, 100);
+    expect(summary.trades).toBe(0);
+    expect(summary.referenceRows).toBe(2);
+  });
+
   it("KEEPS them without a cascade — the trades stay, so the figures stated about them stay", () => {
     reset();
     t.db.delete(t.schema.brokerReference).run();

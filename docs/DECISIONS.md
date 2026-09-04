@@ -2969,3 +2969,36 @@ concurrently. The fix wave changed no server route (`git diff c04e1ad -- app lib
 cursor 400 and the reference purge/trash paths only). Ruling: the W3 idle pair stands as the v3.9
 perf record; the sweep is re-run on an idle machine at W5 BEFORE the tag, and a breach there is a
 stop-ship. Other-session processes are never killed from this session.
+
+## 2026-09-04 — v3.9 second audit (3 finders over the fix wave c04e1ad..4d9e9bd)
+
+- **CRITICAL: a stated ISIN never disqualified an enrichment match.** `identityMatches` treated the
+  ISIN as accept-only; when the note's ISIN and the book's ISIN differed it fell through to the
+  ≥4-char name-prefix rule, which put the Tata Motors DVR's fill time on the ordinary share
+  (`TATAMOTORSDVR` ⊃ `TATAMOTORS`; `HDFC` ⊂ `HDFCBANK`), and `free.find(qty)` took the first by id.
+  Fix pass: differing ISINs refuse first; names match by equality, prefix only when exactly one
+  candidate; >1 candidate after qty is reported "ambiguous", never guessed.
+- The enrichment counts did not sum (per-hit increments in the prefix split; a dropped tail called
+  `miss()` without `unmatched++`, so its warning never fired). Invariant now pinned:
+  applied + alreadyHad + unmatched === contract-days.
+- `scripKeysOf` summed two ISINs under a shared ticker for symbol-keyed Angel rows (a −200 delta
+  manufactured from 100 vs 300). Ambiguous tickers now refuse with a reason.
+- `scope: "charge"` rows were written by three parsers and READ BY NOTHING while three shipped
+  strings said DP charges feed Broker Truth. Fix pass adds the charges table (stated DP charges per
+  FY vs Σ `trades.dp_charges`; contract-note charges per note date; Angel ledger charge types shown
+  as stated, no fabricated Δ).
+- **The RIVALS veto scanned every cell**, so a Dhan DP-charges sheet holding ANGELONE or PAYTM as a
+  SECURITY scored 0 — a real holding would have cost the owner his own import. Veto now reads the
+  filename, sheet names and the banner region above the header only.
+- The covered-short fix (seed lot, date sort, buyDate guard) had NO red test: all three reverts
+  stayed green. Three pins added. Four other red-first claims re-proven red by the finder
+  (acceptsPage, backup envelope, bookName, RIVALS veto).
+- Figures-only trash snapshots reported "0 trades" everywhere (counts, restore title, purge
+  dialog, recoverable badge) and a reference-only batch delete said "No trades were linked" while
+  destroying the only copy — both now name the figures. Merge restore asymmetry (discarded duplicates
+  only) documented in the v4 envelope comment.
+- Clean: pairing on every probe (older lot, newest-first, two shorts, partial cover, seeded lot),
+  DP-charges door under the write account in one transaction with a 403 on the aggregate view,
+  idempotent re-import, v3 envelopes restore, cursors never persisted, `/api/trades/page` 400 JSON
+  on garbage, clamped limits, no hydration warnings on 3011, `trimSheetRanges` loses no cell on any
+  owner or fixture workbook, both owner DP files conserve (173 / 2,492.50; 94 / 1,325.00).

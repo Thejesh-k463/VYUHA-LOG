@@ -57,7 +57,7 @@ beforeAll(async () => {
 
 afterAll(() => t?.cleanup());
 
-const SANCTIONED = ["unpriced_sales", "charges_omitted", "open_lots", "product_difference"];
+const SANCTIONED = ["ambiguous_symbol", "unpriced_sales", "charges_omitted", "open_lots", "product_difference"];
 
 describe("a Dhan Realised P&L reconciles on its segment rows — the only rows it states", () => {
   it("states the segments and nothing else, so the segment table is the whole screen", () => {

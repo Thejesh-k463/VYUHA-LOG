@@ -172,7 +172,7 @@ describe("the rival-broker veto", () => {
     expect(detectAngelOnePnlStatement(buildContext("export.xlsx", bytes()))).toBeCloseTo(0.9, 10);
   });
 
-  it("refuses a file whose CONTENT names another broker", () => {
+  it("refuses a file whose BANNER names another broker", () => {
     const wb = XLSX.read(bytes(), { type: "buffer" });
     const out = XLSX.utils.book_new();
     for (const n of wb.SheetNames) {
@@ -182,5 +182,24 @@ describe("the rival-broker veto", () => {
     }
     const buf = XLSX.write(out, { type: "buffer", bookType: "xlsx" }) as Buffer;
     expect(detectAngelOnePnlStatement(buildContext("export.xlsx", buf))).toBe(0);
+  });
+
+  /**
+   * The veto region is the FILENAME, the SHEET NAMES and the rows ABOVE each
+   * verified header row — never a table row. PAYTM (One 97) is a listed
+   * company, so a scrip called PAYTM is a HOLDING, not a letterhead.
+   */
+  it("still claims the owner's own statement when a SCRIP is named after a rival", () => {
+    const wb = XLSX.read(bytes(), { type: "buffer" });
+    const out = XLSX.utils.book_new();
+    for (const n of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: false, defval: "" }) as unknown[][];
+      const h = rows.findIndex((r) => r.some((c) => String(c ?? "").trim().toLowerCase() === "scrip symbol"));
+      const names = n === "Equity P&L" ? ["PAYTM", "ZERODHA"] : ["UPSTOX", "DHAN"];
+      names.forEach((name, k) => { if (rows[h + 1 + k]) rows[h + 1 + k]![0] = name; });
+      XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(rows), n);
+    }
+    const buf = XLSX.write(out, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    expect(detectAngelOnePnlStatement(buildContext("export.xlsx", buf))).toBeGreaterThanOrEqual(0.9);
   });
 });

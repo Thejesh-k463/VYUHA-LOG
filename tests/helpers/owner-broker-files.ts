@@ -63,5 +63,17 @@ export const OWNER_DHAN_CONTRACT_NOTE = /_Contract_Note_.*\.pdf$/i;
  * it is gone.
  */
 export const OWNER_FUT_CONTRACT_NOTE_PATTERN = /_Contract_Note_.*-FUT\.pdf$/i;
-export const ownerFutContractNote = (): string | null =>
-  ownerFile(OWNER_FUT_CONTRACT_NOTE_PATTERN, ownerDirs());
+export function ownerFutContractNote(): string | null {
+  const found = ownerFiles(OWNER_FUT_CONTRACT_NOTE_PATTERN, ownerDirs());
+  // TWO files matching this pattern are two different notes, and `[0]` would
+  // pick one by sort order — silently deciding which client document the
+  // futures assertions are pinned to. The assertions name exact fill times, so
+  // a silent swap reads as a code regression on a machine that merely has a
+  // second download. Say what happened instead.
+  if (found.length > 1) {
+    throw new Error(
+      `${found.length} files match the futures contract-note pattern across ${ownerDirs().join(" and ")}. This test pins exact fill times to ONE note and will not pick between them by sort order — leave exactly one in place.`,
+    );
+  }
+  return found[0] ?? null;
+}

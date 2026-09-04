@@ -684,8 +684,15 @@ interface EnrichOutcome {
   alreadyHad: number;
   /** Groups that matched no trade at all. */
   unmatched: number;
-  /** Aggregated (identity, date, side) groups the rows collapsed into. */
+  /** Aggregated (identity, date, side) groups the rows collapsed into.
+   *  INVARIANT: applied + alreadyHad + unmatched === groups, always. */
   groups: number;
+  /**
+   * Contract-days that DID place at least one position and still had fills
+   * left over. The day is counted once above (it wrote something); this says
+   * some of its fills enriched nothing, which no counter above can say.
+   */
+  tails: number;
   /** Why the unmatched ones missed, most common first. */
   reasons: { reason: string; count: number }[];
   /** Facts only the matching knew — e.g. that a prefix split was used. */
@@ -736,21 +743,40 @@ type EnrichCandidate = {
   instrumentType: string | null;
 };
 
-/** Does this book row describe the same security the enrichment names? */
-function identityMatches(c: EnrichCandidate, g: EnrichGroup): boolean {
-  if (g.isin && c.isin && c.isin.trim().toUpperCase() === g.isin) return true;
+/**
+ * How a book row was recognised as the security the enrichment names, or null
+ * when it was not recognised at all.
+ *
+ * A STATED ISIN IS DECISIVE IN BOTH DIRECTIONS. It used to be decisive only
+ * when it agreed: `Tata Motors / INE155A01022` in the book and `INE155A01029`
+ * (the DVR, a different security) on the note fell through to the name rule,
+ * where `TATAMOTORS` is a prefix of `TATAMOTORSDVR`, and the note's fill times
+ * were written onto the wrong instrument. Two ISINs that disagree are two
+ * securities; nothing a name says can outvote that.
+ *
+ * The name rules are ranked, and the RANK is the point (see `identityRank`):
+ * an exact normalised name is evidence, a prefix is a guess that is only
+ * allowed to stand when it is the ONLY guess on the day and nothing matched
+ * exactly. `HDFC` is a prefix of `HDFCBANK`, and `TATAMOTORS` of
+ * `TATAMOTORSDVR`, so a prefix that competes with anything is not a match.
+ */
+function identityMatch(c: EnrichCandidate, g: EnrichGroup): "isin" | "equal" | "prefix" | null {
+  const ci = c.isin ? c.isin.trim().toUpperCase() : null;
+  // Both sides state one: they agree and it is the same security, or they
+  // disagree and it is not — either way the name is never consulted.
+  if (g.isin && ci) return ci === g.isin ? "isin" : null;
   const book = [normIdent(c.symbol), normIdent(c.tradingsymbol)].filter((x) => x.length > 0);
+  for (const n of g.names) for (const b of book) if (n === b) return "equal";
   for (const n of g.names) {
     for (const b of book) {
-      if (n === b) return true;
       // `Granules` (book) inside `Granules India Limited` (registry), and the
       // other way round. Four characters minimum, because a three-letter
-      // prefix is a coincidence waiting to happen — and every match still has
-      // to agree on account, broker, date, side and quantity.
-      if (b.length >= 4 && n.length >= 4 && (n.startsWith(b) || b.startsWith(n))) return true;
+      // prefix is a coincidence waiting to happen — and the caller still has
+      // to find it UNCONTESTED before it counts.
+      if (b.length >= 4 && n.length >= 4 && (n.startsWith(b) || b.startsWith(n))) return "prefix";
     }
   }
-  return false;
+  return null;
 }
 
 function applyEnrichments(
@@ -821,7 +847,7 @@ function applyEnrichments(
   // sell leg of the same position are two different columns, but two different
   // contract-days must never both write the same one.
   const claimed = new Set<string>();
-  let applied = 0, alreadyHad = 0, unmatched = 0, prefixSplits = 0;
+  let applied = 0, alreadyHad = 0, unmatched = 0, prefixSplits = 0, tails = 0;
 
   const write = (c: EnrichCandidate, g: EnrichGroup, first: string | null, last: string | null): boolean => {
     const patch: Record<string, unknown> = {};
@@ -849,8 +875,20 @@ function applyEnrichments(
     const onDay = candidates.filter((c) => (isBuy ? c.buyDate : c.sellDate) === g.date && qtyOf(c) > 0);
     if (onDay.length === 0) { unmatched++; miss("no trade of this broker in this account on that date"); continue; }
 
-    const byName = onDay.filter((c) => identityMatches(c, g));
-    if (byName.length === 0) { unmatched++; miss("no trade on that date carries this security's name or ISIN"); continue; }
+    // Ranked, not merely filtered: an exact identity always beats a prefix
+    // guess, and a prefix guess that competes with another prefix guess is no
+    // evidence at all. `HDFC` vs `HDFCBANK` on the same day used to resolve by
+    // whichever row had the lower id.
+    const strong = onDay.filter((c) => { const m = identityMatch(c, g); return m === "isin" || m === "equal"; });
+    const weak = strong.length > 0 ? [] : onDay.filter((c) => identityMatch(c, g) === "prefix");
+    let byName: EnrichCandidate[];
+    if (strong.length > 0) byName = strong;
+    else if (weak.length === 1) byName = weak;
+    else if (weak.length > 1) {
+      unmatched++;
+      miss(`ambiguous: ${weak.length} candidates share this security's name by prefix and none by an exact name or ISIN`);
+      continue;
+    } else { unmatched++; miss("no trade on that date carries this security's name or ISIN"); continue; }
 
     const free = byName.filter((c) => !claimed.has(`${c.id}|${g.side}`));
     if (free.length === 0) { unmatched++; miss("every matching trade was already claimed by an earlier line of this note"); continue; }
@@ -859,8 +897,17 @@ function applyEnrichments(
     const first = times[0] ?? null;
     const last = times[times.length - 1] ?? null;
 
-    const exact = free.find((c) => qtyOf(c) === g.qty);
-    if (exact) {
+    // Quantity is the last discriminator there is. Two trades of the same
+    // security, side, day AND quantity are indistinguishable on everything the
+    // note states, so picking one is picking by row id — refuse and say so.
+    const exacts = free.filter((c) => qtyOf(c) === g.qty);
+    if (exacts.length > 1) {
+      unmatched++;
+      miss(`ambiguous: ${exacts.length} candidates match this security, date, side and quantity`);
+      continue;
+    }
+    if (exacts.length === 1) {
+      const exact = exacts[0];
       claimed.add(`${exact.id}|${g.side}`);
       if (write(exact, g, first, last)) applied++; else alreadyHad++;
       continue;
@@ -871,21 +918,35 @@ function applyEnrichments(
     // position's quantity ARE that position — the note states no position id,
     // so this is an inference, and it says so.
     const sorted = [...g.fills].sort((a, b) => String(a.time ?? "").localeCompare(String(b.time ?? "")));
-    let cum = 0, from: string | null = null, to: string | null = null, hits = 0;
+    let cum = 0, from: string | null = null, to: string | null = null, hits = 0, wrote = false, ambiguous = 0;
     for (const f of sorted) {
       cum += f.qty;
       if (!from) from = f.time ?? null;
       if (f.time) to = f.time;
-      const hit = free.find((c) => !claimed.has(`${c.id}|${g.side}`) && qtyOf(c) === cum);
+      const candidates = free.filter((c) => !claimed.has(`${c.id}|${g.side}`) && qtyOf(c) === cum);
+      if (candidates.length > 1) { ambiguous = candidates.length; break; }
+      const hit = candidates[0];
       if (!hit) continue;
       claimed.add(`${hit.id}|${g.side}`);
-      if (write(hit, g, from, to)) applied++; else alreadyHad++;
+      if (write(hit, g, from, to)) wrote = true;
       hits++;
       cum = 0; from = null; to = null;
     }
-    if (hits > 0) {
+    // ONE contract-day, ONE outcome. The counts used to be incremented per HIT
+    // inside the split, so a day that filled three positions was reported as
+    // three days applied out of one — and `applied + alreadyHad + unmatched`
+    // could exceed the number of contract-days the same sentence stated.
+    if (ambiguous > 0 && hits === 0) {
+      unmatched++;
+      miss(`ambiguous: ${ambiguous} candidates match this security, date, side and quantity`);
+    } else if (hits > 0) {
+      if (wrote) applied++; else alreadyHad++;
       prefixSplits++;
-      if (cum > 0) miss("part of a day's fills for one contract summed to no position");
+      // A tail that summed to no position is fills that enriched NOTHING. It
+      // used to call miss() without touching any counter, so the reason lived
+      // in a list the warning only prints when `unmatched > 0` — on a file
+      // where every day matched, the loss was recorded nowhere at all.
+      if (cum > 0 || ambiguous > 0) tails++;
     } else {
       unmatched++;
       miss(`the day's fills sum to a quantity no trade holds`);
@@ -902,6 +963,7 @@ function applyEnrichments(
     applied,
     alreadyHad,
     unmatched,
+    tails,
     groups: groups.size,
     reasons: [...reasons].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     notes,
@@ -1134,6 +1196,11 @@ export function commitParsedFile(
         `${enrichTotal} contract-note fill${enrichTotal === 1 ? "" : "s"} aggregated into ${outcome.groups} contract-day${outcome.groups === 1 ? "" : "s"}: applied ${outcome.applied}, already had times ${outcome.alreadyHad}, unmatched ${outcome.unmatched}.`,
       );
       for (const n of outcome.notes) commitWarnings.push(n);
+      if (outcome.tails > 0) {
+        commitWarnings.push(
+          `${outcome.tails} of those contract-day${outcome.tails === 1 ? "" : "s"} placed some positions and still had fills left over: part of a day's fills for one contract summed to no position this account holds, so those fills enriched nothing. The day is counted once above, under its own outcome.`,
+        );
+      }
       if (outcome.unmatched > 0) {
         const why = outcome.reasons.slice(0, 3).map((r) => `${r.count}× ${r.reason}`).join("; ");
         commitWarnings.push(

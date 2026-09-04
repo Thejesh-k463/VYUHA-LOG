@@ -275,7 +275,12 @@ describe("what the enrichment is matched ON", () => {
       { symbol: "IDEA", date: "2026-08-07", side: "buy", qty: 70, time: "11:40:00" },
     ], "cn-prefix.pdf");
 
-    expect(r.enrichApplied).toBe(2);
+    // ONE contract-day, ONE outcome. It used to count one per HIT, so this
+    // single day reported "applied 2" beside "aggregated into 1 contract-day".
+    expect(r.enrichApplied).toBe(1);
+    expect(r.warnings).toEqual(expect.arrayContaining([
+      "3 contract-note fills aggregated into 1 contract-day: applied 1, already had times 0, unmatched 0.",
+    ]));
     expect(r.warnings!.some((w) => /CUMULATIVE PREFIX/.test(w)), "an inference says it is one").toBe(true);
     expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, first)).get()!.entryTime).toBe("09:20:00");
     expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, second)).get()!.entryTime).toBe("11:40:00");
@@ -297,6 +302,136 @@ describe("what the enrichment is matched ON", () => {
     // `ONGC|`), not by insertion order — the same file always resolves the
     // same way, which is the property that matters.
     expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, only)).get()!.entryTime).toBe("12:00:00");
+  });
+
+  /**
+   * A STATED ISIN DISQUALIFIES. Two ISINs that disagree are two securities,
+   * and no name rule may outvote that.
+   *
+   * `Tata Motors / INE155A01022` in the book and `INE155A01029` (the DVR — a
+   * different, separately-listed security) on the note used to fall through to
+   * the name rule, where `TATAMOTORS` is a four-character-plus prefix of
+   * `TATAMOTORSDVR`. The note's fill times were then written onto the wrong
+   * instrument, silently and permanently.
+   */
+  it("refuses a match when both sides state an ISIN and the ISINs disagree", () => {
+    const id = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "Tata Motors", tradingsymbol: "TATAMOTORS",
+      isin: "INE155A01022", buyDate: "2026-08-15", buyQty: 50, sellDate: "2026-08-16", sellQty: 50,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    const r = note([
+      { symbol: "TATAMOTORSDVR", isin: "INE155A01029", date: "2026-08-15", side: "buy", qty: 50, time: "10:10:10" },
+    ], "cn-dvr.pdf");
+
+    expect(r.enrichApplied).toBe(0);
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.entryTime).toBeNull();
+    expect(r.warnings!.some((w) => /carries this security's name or ISIN/.test(w))).toBe(true);
+  });
+
+  /**
+   * A PREFIX IS A GUESS, and a guess that competes is no evidence at all.
+   * `HDFC` is a four-character prefix of both `HDFCBANK` and `HDFCLIFE`.
+   */
+  it("refuses a prefix match when more than one candidate answers to the prefix", () => {
+    const bank = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "HDFCBANK", tradingsymbol: "HDFCBANK",
+      buyDate: "2026-08-17", buyQty: 20, sellDate: "2026-08-18", sellQty: 20,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const life = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "HDFCLIFE", tradingsymbol: "HDFCLIFE",
+      buyDate: "2026-08-17", buyQty: 20, sellDate: "2026-08-19", sellQty: 20,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    const r = note([{ symbol: "HDFC", date: "2026-08-17", side: "buy", qty: 20, time: "11:11:11" }], "cn-hdfc.pdf");
+
+    expect(r.enrichApplied).toBe(0);
+    expect(r.warnings!.some((w) => /ambiguous: 2 candidates share this security's name by prefix/.test(w))).toBe(true);
+    for (const id of [bank, life]) {
+      expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.entryTime).toBeNull();
+    }
+  });
+
+  /** An exact normalised name beats a prefix, whatever the row ids say. */
+  it("prefers the candidate that matches EXACTLY over one that matches by prefix", () => {
+    // Inserted FIRST on purpose: `free.find()` took the lowest id, so the
+    // prefix candidate used to win simply for being written first.
+    const bank = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "HDFCBANK", tradingsymbol: "HDFCBANK",
+      buyDate: "2026-08-20", buyQty: 30, sellDate: "2026-08-21", sellQty: 30,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const hdfc = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "HDFC", tradingsymbol: "HDFC",
+      buyDate: "2026-08-20", buyQty: 30, sellDate: "2026-08-22", sellQty: 30,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    const r = note([{ symbol: "HDFC", date: "2026-08-20", side: "buy", qty: 30, time: "12:12:12" }], "cn-hdfc2.pdf");
+
+    expect(r.enrichApplied).toBe(1);
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, hdfc)).get()!.entryTime).toBe("12:12:12");
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, bank)).get()!.entryTime).toBeNull();
+  });
+
+  /**
+   * Quantity is the last discriminator the note states. Two positions that
+   * agree on security, date, side AND quantity are indistinguishable on
+   * everything the document knows — `free.find()` picked the lower id.
+   */
+  it("refuses when two candidates agree on security, date, side and quantity", () => {
+    const a = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "Adani Ports", tradingsymbol: "ADANIPORTS",
+      isin: "INE742F01042", buyDate: "2026-08-24", buyQty: 40, sellDate: "2026-08-25", sellQty: 40,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const b = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "Adani Ports", tradingsymbol: "ADANIPORTS",
+      isin: "INE742F01042", buyDate: "2026-08-24", buyQty: 40, sellDate: "2026-08-26", sellQty: 40,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    const r = note([
+      { symbol: "ADANIPORTS", isin: "INE742F01042", date: "2026-08-24", side: "buy", qty: 40, time: "13:13:13" },
+    ], "cn-adani.pdf");
+
+    expect(r.enrichApplied).toBe(0);
+    expect(r.warnings!.some((w) => /ambiguous: 2 candidates match this security, date, side and quantity/.test(w))).toBe(true);
+    for (const id of [a, b]) {
+      expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.entryTime).toBeNull();
+    }
+  });
+
+  /**
+   * THE COUNTING INVARIANT: applied + alreadyHad + unmatched === contract-days,
+   * always. A day that split across positions used to add one to `applied` per
+   * HIT, so the sentence contradicted itself in its own second half.
+   */
+  it("partitions every contract-day into exactly one of the three outcomes", () => {
+    t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "COUNTCO", tradingsymbol: "COUNTCO",
+      buyDate: "2026-08-27", buyQty: 15, sellDate: "2026-08-28", sellQty: 15,
+    })).run();
+    t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "COUNTCO", tradingsymbol: "COUNTCO",
+      buyDate: "2026-08-27", buyQty: 25, sellDate: "2026-08-29", sellQty: 25,
+    })).run();
+
+    const r = note([
+      // Day one: splits across the two positions, and leaves a tail of 7.
+      { symbol: "COUNTCO", date: "2026-08-27", side: "buy", qty: 15, time: "09:15:00" },
+      { symbol: "COUNTCO", date: "2026-08-27", side: "buy", qty: 25, time: "09:45:00" },
+      { symbol: "COUNTCO", date: "2026-08-27", side: "buy", qty: 7, time: "10:45:00" },
+      // Day two: matches nothing at all.
+      { symbol: "NOSUCHCO", date: "2026-08-27", side: "buy", qty: 9, time: "10:00:00" },
+    ], "cn-count.pdf");
+
+    const line = r.warnings!.find((w) => /aggregated into/.test(w))!;
+    const m = /aggregated into (\d+) contract-days?: applied (\d+), already had times (\d+), unmatched (\d+)/.exec(line)!;
+    expect(m).not.toBeNull();
+    expect(Number(m[2]) + Number(m[3]) + Number(m[4])).toBe(Number(m[1]));
+    expect([Number(m[1]), Number(m[2]), Number(m[4])]).toEqual([2, 1, 1]);
+    // The leftover fills are reported. They used to call miss() without
+    // touching a counter, so the reason lived in a list the warning only
+    // prints when `unmatched > 0` — on a file where every day matched, the
+    // dropped fills were recorded nowhere at all.
+    expect(r.warnings!.some((w) => /still had fills left over/.test(w))).toBe(true);
   });
 });
 
@@ -339,6 +474,40 @@ describe("reconcileFrom — the reasons are computed facts, never explanations",
     isin: "INE600Y01019", symbol: "DYCL", tradingsymbol: "DYCL", segment: "eq_delivery",
     sellDate: "2026-07-20", buyQty: 300, sellQty: 300, buyValue: 124830.87, sellValue: 125686.47,
     grossPnl: 855.6, netPnl: 800, chargesTotal: 55.6, isOpen: false, acquisition: null, ...over,
+  });
+
+  /**
+   * A TICKER IS NOT AN IDENTITY. `scripKeysOf` indexes the book under its
+   * ISIN *and* its symbol so that a symbol-keyed reference row (Angel One's
+   * P&L statement states `isin: null` on every scrip line) can join at all —
+   * but when two securities in the book answer to one ticker, that symbol key
+   * held the SUM of both, and the symbol-keyed row read the other company's
+   * P&L as its own delta.
+   */
+  it("states no Vyuha figure for a symbol-keyed row whose ticker covers two securities", () => {
+    const rec = reconcileFrom(
+      [ref({ scope: "scrip", key: "TWINCO", isin: null, symbol: "TWINCO", figures: { grossPnl: 100 } })],
+      [
+        trade({ isin: "INE111A01011", symbol: "TWINCO", tradingsymbol: "TWINCO", grossPnl: 100 }),
+        trade({ isin: "INE222B01022", symbol: "TWINCO", tradingsymbol: "TWINCO", grossPnl: 200 }),
+      ],
+    );
+    const line = rec.scrip.find((l) => l.key === "TWINCO")!;
+    // NOT 300. The sum of two companies is not this row's figure at any price.
+    expect(line.vyuha.grossPnl).toBeUndefined();
+    expect(line.delta).toEqual({});
+    expect(line.matched).toBe(false);
+    expect(line.reasons.map((r) => r.code)).toEqual(["ambiguous_symbol"]);
+    expect(line.reasons[0].detail).toMatch(/^ambiguous symbol: 2 securities in your book share this ticker/);
+  });
+
+  it("still joins a symbol-keyed row when the ticker names exactly one security", () => {
+    const rec = reconcileFrom(
+      [ref({ scope: "scrip", key: "DYCL", isin: null, symbol: "DYCL", figures: { grossPnl: 855.6 } })],
+      [trade({})],
+    );
+    expect(rec.scrip[0].vyuha.grossPnl).toBe(855.6);
+    expect(rec.scrip[0].matched).toBe(true);
   });
 
   it("matches within the AIS tolerance and reports the delta either way", () => {

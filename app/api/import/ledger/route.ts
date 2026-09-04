@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { ledgerEntries, trades } from "@/lib/db/schema";
+import { brokerReference, ledgerEntries, trades } from "@/lib/db/schema";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { parseDhanCashFile, reconcileMtfInterest } from "@/lib/import/parsers/dhan-ledger";
@@ -15,6 +15,38 @@ import type { ReferenceRow } from "@/lib/import/types";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
+
+/**
+ * Every stored reference row for one (account, broker, source), as comparable
+ * strings. Used either side of `persistReference` to tell a re-upload of an
+ * unchanged file from a file that actually states something new.
+ */
+function referenceFingerprint(
+  tx: { select: typeof db.select },
+  accountId: number,
+  broker: string,
+  sourceId: string,
+): string[] {
+  return tx
+    .select({
+      scope: brokerReference.scope,
+      key: brokerReference.key,
+      isin: brokerReference.isin,
+      symbol: brokerReference.symbol,
+      fy: brokerReference.fy,
+      asOf: brokerReference.asOf,
+      figuresJson: brokerReference.figuresJson,
+      note: brokerReference.note,
+    })
+    .from(brokerReference)
+    .where(and(
+      eq(brokerReference.accountId, accountId),
+      eq(brokerReference.broker, broker),
+      eq(brokerReference.sourceId, sourceId),
+    ))
+    .all()
+    .map((r) => JSON.stringify(r));
+}
 
 /**
  * Ledger import — the only place MTF interest can be read rather than guessed.
@@ -223,6 +255,16 @@ export async function POST(req: Request) {
 
   const source = parsed.source ?? "dhan-ledger";
   let referenceStored = 0;
+  /**
+   * Whether the upsert actually CHANGED any stored figure.
+   *
+   * `persistReference` counts rows OFFERED, not rows altered — its upsert
+   * re-writes an identical row and still returns 1. Re-uploading the same
+   * unchanged DP-charges file therefore wrote a fresh "2 broker-stated figures
+   * imported" audit entry every time, and an audit trail that records changes
+   * that did not happen is worse than one that records nothing.
+   */
+  let referenceChanged = 0;
   const writeAccountId = db.transaction((tx) => {
     const accountId = getWriteAccountId();
     for (const r of fresh) {
@@ -244,14 +286,23 @@ export async function POST(req: Request) {
     // same transaction as the entries they describe — under the WRITE account,
     // never the selection, and never account #1 by fallback.
     if (parsed.reference?.length) {
+      const broker = parsed.broker ?? "dhan";
+      const sourceId = parsed.sourceId ?? source;
+      // Read the rows this file is about to overwrite, BEFORE and AFTER, and
+      // compare the stored values themselves. `changes()` cannot be used: an
+      // `ON CONFLICT ... DO UPDATE` that writes byte-identical values still
+      // reports one changed row.
+      const before = referenceFingerprint(tx, accountId, broker, sourceId);
       referenceStored = persistReference(
         tx as unknown as Parameters<typeof persistReference>[0],
         parsed.reference,
         accountId,
-        parsed.broker ?? "dhan",
-        parsed.sourceId ?? source,
+        broker,
+        sourceId,
         null,
       );
+      const after = referenceFingerprint(tx, accountId, broker, sourceId);
+      referenceChanged = after.filter((row) => !before.includes(row)).length;
     }
     return accountId;
   });
@@ -264,17 +315,19 @@ export async function POST(req: Request) {
     action: "create",
     summary: `${source} imported: ${fresh.length} entries (${from} → ${to}), MTF interest ₹${mtf.actual}`,
     before: null,
-    after: { source, from, to, added: fresh.length, mtfInterest: mtf.actual, referenceStored },
+    after: { source, from, to, added: fresh.length, mtfInterest: mtf.actual, referenceStored, referenceChanged },
   });
   // ONE audit entry per reference import, not one per figure — the house shape
-  // from commitParsedFile.
-  if (referenceStored > 0) {
+  // from commitParsedFile — and NONE at all when the figures are the ones
+  // already stored. A re-upload of an unchanged file changed nothing, so there
+  // is nothing for the audit trail to record.
+  if (referenceChanged > 0) {
     recordAudit({
       entity: "broker_reference",
       action: "create",
-      summary: `${referenceStored} broker-stated figure${referenceStored === 1 ? "" : "s"} from ${file.name}`,
+      summary: `${referenceChanged} broker-stated figure${referenceChanged === 1 ? "" : "s"} from ${file.name}`,
       before: null,
-      after: { accountId: writeAccountId, broker: parsed.broker ?? "dhan", sourceId: parsed.sourceId ?? source, figures: referenceStored },
+      after: { accountId: writeAccountId, broker: parsed.broker ?? "dhan", sourceId: parsed.sourceId ?? source, figures: referenceChanged },
     });
   }
 
@@ -289,6 +342,11 @@ export async function POST(req: Request) {
     to,
     source,
     referenceStored,
+    referenceChanged,
+    referenceNote:
+      referenceStored > 0 && referenceChanged === 0
+        ? `figures unchanged — the ${referenceStored} figure${referenceStored === 1 ? "" : "s"} this file states were already stored, so nothing changed and nothing was logged.`
+        : null,
     mtf,
     warnings: parsed.warnings,
   });

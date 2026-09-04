@@ -65,9 +65,30 @@ const FNO_SHEET = /^f&o p&l$/i;
 /**
  * Every broker Vyuha has a named parser for, minus this one. A format-only
  * fingerprint cannot tell a rival's identically-shaped file apart, so the one
- * thing it CAN read — whose name is on the document — becomes a veto.
+ * thing it CAN read — whose name is on the DOCUMENT — becomes a veto.
  */
 const RIVALS = /(?<![a-z0-9])(zerodha|groww|upstox|paytm|dhan)(?![a-z0-9])/i;
+
+/**
+ * -- THE VETO REGION (exact, 2026-09-04) ----------------------------------
+ *
+ * The veto reads ONLY where a DOCUMENT states who issued it:
+ *   1. the FILENAME;
+ *   2. every SHEET NAME in the workbook;
+ *   3. the TITLE / BANNER region of each verified sheet -- the rows ABOVE
+ *      that sheet's header row (`Equity P&L`: the Client Basic Information
+ *      labels and the `Equity P&L Summary` block; `F&O P&L`: the same).
+ *
+ * It NEVER reads a table row: nothing at or below a header row is scanned.
+ * PAYTM (One 97) is a LISTED COMPANY, so `PAYTM` in the Scrip Symbol column
+ * is the owner's own holding, not a rival's letterhead. Scanning every cell
+ * scored the owner's own statement 0 (found 2026-09-04, second audit).
+ */
+function vetoedByRival(filename: string, sheetNames: string[], banners: string[][][]): boolean {
+  if (RIVALS.test(filename)) return true;
+  if (sheetNames.some((n) => RIVALS.test(n))) return true;
+  return banners.some((rows) => rows.some((r) => r.some((c) => RIVALS.test(c))));
+}
 
 /** The columns that must be present for a table to be the verified one. */
 const EQUITY_MUST = ["scripsymbol", "companyname", "quantity", "buyvalue", "sellvalue", "grosspnl", "stt", "ipftcharges"];
@@ -97,16 +118,25 @@ export function detectAngelOnePnlStatement(ctx: ParseContext): number {
   const equity = sheets.find((s) => EQUITY_SHEET.test(s.name));
   const fno = sheets.find((s) => FNO_SHEET.test(s.name));
   if (!equity || !fno) return 0;                       // both sheet names, or no claim
-  if (headerRowIn(equity.rows, EQUITY_MUST) < 0) return 0;
-  if (headerRowIn(fno.rows, FNO_MUST) < 0) return 0;
+  const equityHeader = headerRowIn(equity.rows, EQUITY_MUST);
+  const fnoHeader = headerRowIn(fno.rows, FNO_MUST);
+  if (equityHeader < 0) return 0;
+  if (fnoHeader < 0) return 0;
   // The veto (2026-09-04). This claim rests on FORMAT alone, so a rival's
   // identically-shaped P&L statement would be imported as Angel One and
   // priced at Angel One's rates. The filename cannot vouch for a broker here,
-  // but it can rule one out: a file that names a DIFFERENT known broker — in
-  // its name, in a sheet name or in any cell — is not claimed at all, and
-  // falls to the generic column mapper, which asks.
-  if (RIVALS.test(ctx.filename)) return 0;
-  if (sheets.some((s) => RIVALS.test(s.name) || s.rows.some((r) => r.some((c) => RIVALS.test(c))))) return 0;
+  // but it can rule one out: a file that names a DIFFERENT known broker in
+  // its NAME, in a SHEET NAME, or in the TITLE/BANNER rows above a header row
+  // is not claimed at all, and falls to the generic column mapper, which
+  // asks. The tables themselves are never scanned -- see `vetoedByRival`.
+  if (
+    vetoedByRival(ctx.filename, sheets.map((s) => s.name), [
+      equity.rows.slice(0, equityHeader),
+      fno.rows.slice(0, fnoHeader),
+    ])
+  ) {
+    return 0;
+  }
   const named = /angel/i.test(ctx.filename) || /profitloss[_ -]?statement/i.test(ctx.filename);
   return Math.min(1, 0.9 + (named ? 0.1 : 0));
 }

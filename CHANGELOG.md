@@ -47,7 +47,10 @@ question: does the book agree with what the broker itself says?*
   broker anywhere, in any cell, sheet name or filename, so their *format* is
   the fingerprint (an exact sheet-and-header conjunction, worth 0.9; the
   broker's name in the filename adds 0.1). Both are written up as deliberate
-  exceptions in `docs/BROKER_FORMATS.md`, not as a precedent.
+  exceptions in `docs/BROKER_FORMATS.md`, not as a precedent. A rival broker
+  named in the filename, in a sheet name or in the title/banner rows above the
+  header vetoes both claims outright; the data grid is never read for a name,
+  because PAYTM and ANGELONE are listed companies you can hold.
 - **A contract note never creates a trade.** It adds the **fill times** and the
   **instrument type** to trades your book already holds, matched on symbol,
   date, side and quantity. The Global Transaction Report is the book; a note

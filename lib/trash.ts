@@ -119,7 +119,18 @@ export function writeTrashSnapshot(input: SnapshotInput): string {
     deletedAt,
     reason: input.reason,
     accountId: input.accountId,
-    counts: { trades: input.trades.length, legs: input.legs.length, attachments: input.attachments.length },
+    // `referenceRows` is COUNTED, not just carried: a figures-only snapshot
+    // (a realised-P&L statement that produced broker-stated figures and no
+    // book trades) otherwise reported itself as holding nothing — "0 trades"
+    // in the list, "0 trades and 0 attachments" in the purge dialog that
+    // destroys the only copy of those figures, and excluded from the
+    // "N recoverable" badge. Found 2026-09-04, second audit.
+    counts: {
+      trades: input.trades.length,
+      legs: input.legs.length,
+      attachments: input.attachments.length,
+      referenceRows: (input.referenceRows ?? []).length,
+    },
     trades: input.trades,
     legs: input.legs,
     attachments: input.attachments,

@@ -584,11 +584,28 @@ the name rule and is recorded as such.
 
 **The veto (2026-09-04).** Because the claim rests on format alone, a rival
 broker shipping the same eight headers would be imported as Dhan and priced at
-Dhan's rates. So the filename and the cells, which cannot VOUCH for a broker
-here, are allowed to VETO one: if the filename, a sheet name or any cell names
-a DIFFERENT known broker (zerodha / groww / upstox / paytm / angel one), the
-score is 0 and the file falls to the generic column mapper, which asks. The
-same veto guards the Angel One P&L statement, the other format-only claim.
+Dhan's rates. So the document's own letterhead, which cannot VOUCH for a broker
+here, is allowed to VETO one: if a DIFFERENT known broker (zerodha / groww /
+upstox / paytm / angel one) is named there, the score is 0 and the file falls
+to the generic column mapper, which asks. The same veto guards the Angel One
+P&L statement, the other format-only claim.
+
+**The veto region — exactly three places, and no more (corrected 2026-09-04).**
+
+1. the FILENAME;
+2. every SHEET NAME in the workbook;
+3. the TITLE / BANNER region — the rows **above** the header row (Dhan DP
+   charges: above `Sr. | Date | ISIN | …`; Angel One P&L: above the 18-column
+   and 16-column header rows on `Equity P&L` and `F&O P&L`).
+
+The **data grid is never scanned**: no row at or below a header row takes part
+in the veto. Scanning every cell was the first implementation and it was wrong
+— PAYTM (One 97 Communications) and ANGELONE are LISTED COMPANIES the owner can
+hold, so a Security Name of `ANGEL ONE LIMITED` or a Scrip Symbol of `PAYTM` is
+the owner's own holding, not a rival's letterhead. It scored the owner's own
+export 0 and dropped it into the hand-mapper. Both parsers pin this in tests:
+the owner's file with a security named after each rival still scores ≥ 0.9, and
+a rival's name in the title row still scores 0.
 
 **Emits:** ledger rows (kind `charge`, amount negative — money out) for the
 Cash & Ledger screen, AND `reference` rows of scope `charge` keyed by
