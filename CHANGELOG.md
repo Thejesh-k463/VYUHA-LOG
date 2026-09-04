@@ -30,9 +30,14 @@ question: does the book agree with what the broker itself says?*
   the screen says which was used, because a symbol join can be wrong. In the
   "All accounts" view it renders one book per account rather than one summed
   book — two brokers' statements added together is a figure no statement
-  states. Five files feed it: **Dhan Realised P&L**, **Paytm Money Realized
-  P&L**, **Angel One P&L Statement**, **Dhan Demat Holding summary** and **Dhan
-  DP Charges**.
+  states. **Seven files feed it**: **Dhan Realised P&L**, **Paytm Money Realized
+  P&L**, **Angel One P&L Statement**, **Dhan Demat Holding summary**, **Dhan DP
+  Charges**, a **Dhan contract note** and an **Angel One account statement** —
+  the last three state CHARGES, and "Charges the broker states" is the table
+  that reads them. A charge line is ONE broker's statement against ONE broker's
+  trades: two brokers' fees are never added together, and a broker whose book
+  holds nothing for that year or that day is shown as *Not compared* rather
+  than against a zero.
 - **Seven new file formats read natively — none of which imports a trade.**
   Paytm Money Realized P&L, Dhan DP Charges, Dhan Demat Holding summary, Dhan
   contract note (PDF), Upstox ledger, Angel One account statement and Angel One

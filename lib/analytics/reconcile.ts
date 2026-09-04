@@ -236,9 +236,12 @@ export function summariseSources(rows: ReferenceRowLike[]): SourceSummary[] {
 }
 
 /**
- * The statements that put figures on this screen, named from the import
- * registry so the empty state cannot advertise a file the app cannot read
- * (the drift `dropzoneHint()` exists to prevent).
+ * The statements that state the broker's OWN P&L, holdings and DP figures.
+ *
+ * This list is also the book-vs-reference gate in `lib/import/commit.ts`, so
+ * it names only sources whose rows are a reference statement rather than a
+ * book of trades. It is NOT the whole feed list any more - see
+ * `RECONCILE_CHARGE_SOURCE_IDS` and `RECONCILE_FEEDS` below.
  */
 export const RECONCILE_SOURCE_IDS = [
   "dhan-realised-pnl",
@@ -248,10 +251,31 @@ export const RECONCILE_SOURCE_IDS = [
   "dhan-dp-charges",
 ] as const;
 
-export const RECONCILE_FEEDS: { sourceId: string; label: string }[] = RECONCILE_SOURCE_IDS.map((id) => ({
-  sourceId: id,
-  label: sourceLabel(id),
-}));
+/**
+ * The statements that put CHARGE figures on this screen and nothing else.
+ *
+ * They were always parsed into `scope: "charge"` rows; "Charges the broker
+ * states" is what reads them, so the screen now has seven feeds, not five.
+ * They are kept apart from the list above because that one doubles as an
+ * import-time gate on what counts as a book of trades, and these two files
+ * import no trades to gate.
+ */
+export const RECONCILE_CHARGE_SOURCE_IDS = [
+  "dhan-contract-note",
+  "angelone-ledger",
+] as const;
+
+/**
+ * EVERY file that puts a figure on Broker Truth, named from the import
+ * registry so the empty state cannot advertise a file the app cannot read
+ * (the drift `dropzoneHint()` exists to prevent). The empty state, the help
+ * text and the docs all count this ONE list.
+ */
+export const RECONCILE_FEEDS: { sourceId: string; label: string }[] =
+  [...RECONCILE_SOURCE_IDS, ...RECONCILE_CHARGE_SOURCE_IDS].map((id) => ({
+    sourceId: id,
+    label: sourceLabel(id),
+  }));
 
 /**
  * Reason codes, in the order they are worth reading. `ambiguous_symbol` leads:

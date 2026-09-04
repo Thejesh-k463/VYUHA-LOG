@@ -40,8 +40,28 @@ const SOLD = {
   ],
 };
 
+/**
+ * Angel One's own sales, because Angel One's ledger is compared against ANGEL
+ * ONE's book and no one else's. Keyed on the financial year alone, this
+ * broker's ledger read the whole book's DP fees - Dhan's included - as its
+ * counterpart, which is a delta neither statement states.
+ */
+const ANGEL_SOLD = [
+  { symbol: "TATAPOWER", sellDate: "2026-06-15", buyDate: "2026-06-01", dpCharges: 20, pledgeCharges: 5 },
+  { symbol: "SAIL", sellDate: "2026-09-02", buyDate: "2026-08-25", dpCharges: 10, pledgeCharges: 0 },
+];
+
 function seed() {
   const { db, schema } = t;
+  for (const s of ANGEL_SOLD) {
+    db.insert(schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "angelone", symbol: s.symbol, tradingsymbol: s.symbol,
+      segment: "eq_delivery", buyDate: s.buyDate, sellDate: s.sellDate,
+      buyQty: 100, sellQty: 100, buyValue: 10000, sellValue: 11000,
+      grossPnl: 1000, netPnl: 900, chargesTotal: 100, isOpen: false,
+      dpCharges: s.dpCharges, pledgeCharges: s.pledgeCharges,
+    })).run();
+  }
   for (const list of [SOLD.fy2627, SOLD.fy2526]) {
     for (const s of list) {
       db.insert(schema.trades).values(tradeRow({
@@ -96,7 +116,7 @@ describe("Charges the broker states — the read side of scope: \"charge\"", () 
   it("compares a DP fee per FINANCIAL YEAR against the book's own dp_charges on trades sold that year", () => {
     const dp = charges().filter((c) => c.kind === "dp");
     // Two years, each from its OWN file dates — never from today.
-    expect(dp.map((c) => c.key)).toEqual(["2025-26", "2026-27"]);
+    expect(dp.map((c) => c.key)).toEqual(["dhan|2025-26", "dhan|2026-27"]);
 
     const [prev, cur] = dp;
     // FY 2026-27 — the file: ₹13.50 + ₹15.50. The book: ₹13.50 + ₹13.50 on the
@@ -115,9 +135,53 @@ describe("Charges the broker states — the read side of scope: \"charge\"", () 
     expect(prev.matched).toBe(false);
   });
 
+  /**
+   * THE DEFECT THIS PINS: the book's charge side was bucketed by financial year
+   * with NO broker in the key, so every broker's line was compared against the
+   * WHOLE BOOK's fees — and two brokers' DP reports for one year collapsed into
+   * ONE line whose stated figure was their SUM, which is a figure neither file
+   * states.
+   */
+  it("gives each broker's DP report its own line, against that broker's own trades", () => {
+    t.db.insert(t.schema.brokerReference).values({
+      accountId: ACCOUNT, broker: "angelone", sourceId: "dhan-dp-charges", scope: "charge",
+      key: "INE245A01021", isin: null, symbol: null, fy: null, asOf: "2026-06-15",
+      figuresJson: JSON.stringify({ qty: 100, charges: 30 }), note: null, importBatchId: null,
+    }).run();
+
+    const fy = charges().filter((c) => c.kind === "dp" && c.fy === "2026-27");
+    // TWO lines for the one year — never one line carrying their sum.
+    expect(fy.length).toBe(2);
+    const byBroker = Object.fromEntries(fy.map((c) => [c.broker, c]));
+    expect(byBroker.dhan.stated.charges).toBe(29);
+    expect(byBroker.dhan.vyuha!.charges).toBe(27);
+    expect(byBroker.angelone.stated.charges).toBe(30);
+    // Angel One's own ₹20 + ₹10, and none of Dhan's ₹27.
+    expect(byBroker.angelone.vyuha!.charges).toBe(30);
+    expect(byBroker.angelone.delta!.charges).toBe(0);
+    expect(chargeStatus(byBroker.angelone)).toBe("matched");
+    // ₹59 is what the two files sum to, and no file states it.
+    expect(fy.some((c) => c.stated.charges === 59)).toBe(false);
+  });
+
+  it("compares nothing when the book holds no trades for that broker in that year", () => {
+    t.db.insert(t.schema.brokerReference).values({
+      accountId: ACCOUNT, broker: "paytm", sourceId: "dhan-dp-charges", scope: "charge",
+      key: "INE669E01016", isin: null, symbol: null, fy: null, asOf: "2026-07-22",
+      figuresJson: JSON.stringify({ qty: 10, charges: 9 }), note: null, importBatchId: null,
+    }).run();
+    const line = charges().find((c) => c.kind === "dp" && c.broker === "paytm")!;
+    expect(line.stated.charges).toBe(9);
+    expect(line.vyuha).toBeNull();
+    expect(line.delta).toBeNull();
+    expect(line.matched).toBeNull();
+    expect(chargeStatus(line)).toBe("not_compared");
+    expect(line.note).toMatch(/^Your book holds no trades sold at paytm in FY 2026-27/);
+  });
+
   it("compares a contract note's stated charges against the book's charges for that DAY", () => {
     const note = charges().find((c) => c.kind === "note")!;
-    expect(note.key).toBe("2026-08-11");
+    expect(note.key).toBe("dhan|2026-08-11");
     expect(note.stated).toEqual({ brokerage: 40, stt: 30, gst: 7.8, total: 77.8 });
     // The IDEA position is intraday — bought and sold on 2026-08-11 — so the
     // day's book charges are exactly that one position's.
@@ -136,21 +200,47 @@ describe("Charges the broker states — the read side of scope: \"charge\"", () 
       key: "brokerage", isin: null, symbol: null, fy: null, asOf: "2026-07-20",
       figuresJson: JSON.stringify({ amount: 10 }), note: null, importBatchId: null,
     }).run();
-    const line = charges().find((c) => c.kind === "note" && c.key === "2026-07-20")!;
+    const line = charges().find((c) => c.kind === "note" && c.key === "dhan|2026-07-20")!;
     expect(line.stated).toEqual({ brokerage: 10, total: 10 });
     expect(line.vyuha).toEqual({ brokerage: 20, total: 20 });
     expect(line.delta).toEqual({ brokerage: -10, total: -10 });
     expect(line.note).toMatch(/^The note states ONE day's charges; 1 of the 1 position/);
   });
 
+  /**
+   * A note for a day the book holds nothing on is NOT a disagreement. Compared
+   * against an invented zero it printed "Broker higher" for the whole of the
+   * note, beside its own note reading "0 positions touch this date" - a
+   * verdict and the fact that nothing was compared, in the same row
+   * (invariant 6). The undated DP line has always said "not compared"; this
+   * says it too.
+   */
+  it("compares nothing when no position in the book touches the note's date", () => {
+    t.db.insert(t.schema.brokerReference).values({
+      accountId: ACCOUNT, broker: "dhan", sourceId: "dhan-contract-note", scope: "charge",
+      key: "brokerage", isin: null, symbol: null, fy: null, asOf: "2026-05-04",
+      figuresJson: JSON.stringify({ amount: 55 }), note: null, importBatchId: null,
+    }).run();
+    const line = charges().find((c) => c.kind === "note" && c.key === "dhan|2026-05-04")!;
+    expect(line.stated.total).toBe(55);
+    expect(line.vyuha).toBeNull();
+    expect(line.delta).toBeNull();
+    expect(line.matched).toBeNull();
+    expect(chargeStatus(line)).toBe("not_compared");
+    expect(line.note).toMatch(/^No position in your book at dhan touches this date/);
+  });
+
   it("gives a ledger charge with no column in the book NO Vyuha side and NO delta", () => {
     const ledger = charges().filter((c) => c.kind === "ledger");
-    const byType = Object.fromEntries(ledger.map((c) => [c.key.split("|")[1], c]));
+    const byType = Object.fromEntries(ledger.map((c) => [c.key.split("|")[2], c]));
 
     // dp and pledge DO have a column, and are compared.
+    // Angel One states ₹30 and Angel One's OWN sales carry ₹20 + ₹10. Keyed on
+    // the financial year alone this line read ₹57 — Dhan's ₹27 added in — and
+    // reported a ₹27 gap on a book that agrees to the paisa.
     expect(byType.dp.stated.amount).toBe(30);
-    expect(byType.dp.vyuha!.amount).toBe(27);
-    expect(byType.dp.delta!.amount).toBe(3);
+    expect(byType.dp.vyuha!.amount).toBe(30);
+    expect(byType.dp.delta!.amount).toBe(0);
     expect(byType.pledge.stated.amount).toBe(5);
     expect(byType.pledge.vyuha!.amount).toBe(5);
     expect(byType.pledge.matched).toBe(true);
@@ -177,7 +267,7 @@ describe("Charges the broker states — the read side of scope: \"charge\"", () 
    * is compared on.
    */
   it("says which side is higher, and never the broker when the broker states less", () => {
-    const high = charges().find((c) => c.kind === "dp" && c.key === "2025-26")!;
+    const high = charges().find((c) => c.kind === "dp" && c.key === "dhan|2025-26")!;
     expect(high.delta!.charges).toBeGreaterThan(0);
     expect(chargeStatus(high)).toBe("broker_higher");
 
@@ -188,21 +278,21 @@ describe("Charges the broker states — the read side of scope: \"charge\"", () 
       key: "brokerage", isin: null, symbol: null, fy: null, asOf: "2026-07-02",
       figuresJson: JSON.stringify({ amount: 1 }), note: null, importBatchId: null,
     }).run();
-    const low = charges().find((c) => c.kind === "note" && c.key === "2026-07-02")!;
+    const low = charges().find((c) => c.kind === "note" && c.key === "dhan|2026-07-02")!;
     expect(low.stated.total).toBe(1);
     expect(low.vyuha!.total).toBe(20);
     expect(low.delta!.total).toBe(-19);
     expect(low.matched).toBe(false);
     expect(chargeStatus(low), "the broker stated LESS than the book").toBe("vyuha_higher");
 
-    const none = charges().find((c) => c.key.endsWith("|cuspa|2026-27"))!;
+    const none = charges().find((c) => c.key === "angelone|angelone-ledger|cuspa|2026-27")!;
     expect(chargeStatus(none)).toBe("not_compared");
-    expect(chargeStatus(charges().find((c) => c.kind === "note" && c.key === "2026-08-11")!)).toBe("matched");
+    expect(chargeStatus(charges().find((c) => c.kind === "note" && c.key === "dhan|2026-08-11")!)).toBe("matched");
   });
 
   it("names the broker and the source of every charge line, and invents neither", () => {
     for (const c of charges()) {
-      expect(c.broker).toMatch(/^(dhan|angelone)$/);
+      expect(c.broker).toMatch(/^(dhan|angelone|paytm)$/);
       expect(["dhan-dp-charges", "dhan-contract-note", "angelone-ledger"]).toContain(c.sourceId);
       expect(c.note.length).toBeGreaterThan(0);
     }

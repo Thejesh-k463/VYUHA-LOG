@@ -3002,3 +3002,15 @@ stop-ship. Other-session processes are never killed from this session.
   idempotent re-import, v3 envelopes restore, cursors never persisted, `/api/trades/page` 400 JSON
   on garbage, clamped limits, no hydration warnings on 3011, `trimSheetRanges` loses no cell on any
   owner or fixture workbook, both owner DP files conserve (173 / 2,492.50; 94 / 1,325.00).
+
+**Final finder (over the second fix pass, 2dc0071): DO-NOT-SHIP on one finding, fixed before the
+tag.** The new charges table built its Vyuha-side maps (`dpByFy`, `pledgeByFy`, `tradesByDate`) with
+no broker key and handed the whole book's totals to every broker's line: ₹60 Dhan + ₹40 Angel DP
+charges stated, the book holding exactly those, printed Δ −40 and Δ −60 — two fabricated deltas on
+a book that agrees to the paisa, in the table added to prove agreement. Two brokers' DP files for
+one FY also collapsed into one summed line with `broker: null`. Fix: every charge map and line is
+keyed by broker; a broker with no trades in that FY/date reads "Not compared", never ₹0. Also: the
+feed list is seven files now that three sources emit `charge` rows (the docs said five); a
+contract-note line on a date with no trades is "Not compared", not "Broker higher" against ₹0.
+Checked clean by the same finder: enrichment identity both ways, units (paise → rupees on read),
+FY assignment by levy date, veto region documented, empty states, versions still 3.8.0.

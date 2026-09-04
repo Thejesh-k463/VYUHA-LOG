@@ -137,6 +137,15 @@ export interface Reconciliation {
 
 /** A trade as this module needs it — the projection `reconcile` reads. */
 export interface ReconcileTrade {
+  /**
+   * WHOSE trade this is. A charge line is one broker's statement, so its Vyuha
+   * side is that broker's trades and no one else's: keyed on FY alone, two
+   * brokers' DP fees were added together and handed to BOTH brokers' lines,
+   * which manufactured a delta on a book that agreed to the paisa. Optional on
+   * the type only so the FY/scrip/segment tests need not restate it; absent
+   * reads as one unnamed broker, which is what a book with one broker is.
+   */
+  broker?: string | null;
   isin: string | null;
   symbol: string | null;
   tradingsymbol: string | null;
@@ -200,6 +209,14 @@ export interface ReconcileChargeLine {
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The broker half of every charge key. Trimmed and lower-cased because the
+ * reference row and the trade row are written by two different importers over
+ * the same word, and a charge line that failed to join on casing alone would
+ * report the broker's whole fee as a delta.
+ */
+const brokerKey = (broker: string | null | undefined) => (broker ?? "").trim().toLowerCase();
 
 /**
  * The FY a closed trade belongs to — `lib/analytics/tax.ts`'s rule, restated
@@ -347,11 +364,26 @@ export function reconcileFrom(
    * delta. A sum of two securities is not this scrip's figure at any price.
    */
   const isinsBySymbol = new Map<string, Set<string>>();
-  /** DP and pledge charges the BOOK holds, per FY of the sale that incurred them. */
+  /**
+   * DP and pledge charges the BOOK holds, per BROKER and per FY of the sale
+   * that incurred them, and every trade touching a date per BROKER.
+   *
+   * THE BROKER IS PART OF EVERY KEY. A charge line is one broker's statement;
+   * comparing it against every broker's charges reported the other brokers'
+   * fees as a delta this one's statement disputes — on a two-broker book that
+   * agreed to the paisa, ₹60 of Dhan DP fees and ₹40 of Angel One's each read
+   * against ₹100, printing Δ −40 and Δ −60. Both figures were fabrications.
+   */
   const dpByFy = new Map<string, number>();
   const pledgeByFy = new Map<string, number>();
-  /** Every trade touching a date, for the per-note charge comparison. */
   const tradesByDate = new Map<string, ReconcileTrade[]>();
+  /**
+   * `broker|fy` pairs the book actually holds a SALE for. It is what tells an
+   * empty comparison ("this broker sold nothing that year") apart from a real
+   * zero, so the line can say "not compared" instead of claiming the broker's
+   * whole fee as a gap (invariant 6).
+   */
+  const soldByBrokerFy = new Set<string>();
 
   for (const t of trades) {
     const keys = scripKeysOf(t);
@@ -374,15 +406,19 @@ export function reconcileFrom(
     // A DP fee is levied on a DELIVERY SALE, so the sale's year owns it. An
     // open position has not incurred one, and `fyOf(null)` would file it under
     // the current year on the strength of nothing.
+    const bk = brokerKey(t.broker);
     if (t.sellDate) {
-      dpByFy.set(fy, r2((dpByFy.get(fy) ?? 0) + (t.dpCharges ?? 0)));
-      pledgeByFy.set(fy, r2((pledgeByFy.get(fy) ?? 0) + (t.pledgeCharges ?? 0)));
+      const fyKey = `${bk}|${fy}`;
+      soldByBrokerFy.add(fyKey);
+      dpByFy.set(fyKey, r2((dpByFy.get(fyKey) ?? 0) + (t.dpCharges ?? 0)));
+      pledgeByFy.set(fyKey, r2((pledgeByFy.get(fyKey) ?? 0) + (t.pledgeCharges ?? 0)));
     }
     for (const d of new Set([t.buyDate ?? null, t.sellDate])) {
       if (!d) continue;
-      const arr = tradesByDate.get(d) ?? [];
+      const dateKey = `${bk}|${d}`;
+      const arr = tradesByDate.get(dateKey) ?? [];
       arr.push(t);
-      tradesByDate.set(d, arr);
+      tradesByDate.set(dateKey, arr);
     }
 
     // An unpriced sale is a SALE WITH NO PURCHASE, and whether the position is
@@ -693,7 +729,7 @@ export function reconcileFrom(
     holdings,
     charges: chargeLines(
       refs.filter((r) => r.scope === "charge"),
-      { dpByFy, pledgeByFy, tradesByDate, fyStartMonth, fallbackFy },
+      { dpByFy, pledgeByFy, tradesByDate, soldByBrokerFy, fyStartMonth, fallbackFy },
     ),
   };
 }
@@ -710,9 +746,12 @@ const NOTE_CHARGE_COLUMNS: Record<string, keyof ReconcileTrade> = {
 };
 
 interface ChargeContext {
+  /** Keyed `broker|fy` — never `fy` alone. See `soldByBrokerFy`'s comment. */
   dpByFy: Map<string, number>;
   pledgeByFy: Map<string, number>;
+  /** Keyed `broker|date`. */
   tradesByDate: Map<string, ReconcileTrade[]>;
+  soldByBrokerFy: Set<string>;
   fyStartMonth: number;
   fallbackFy: string;
 }
@@ -736,6 +775,13 @@ interface ChargeContext {
  *     interest have none, and are shown STATED with no delta at all - an
  *     invented zero on the Vyuha side would report the whole of the broker's
  *     fee as a gap the book disagrees with, which it does not (invariant 6).
+ *
+ * EVERY GROUP IS KEYED ON THE BROKER FIRST. A line is one broker's statement:
+ * its stated side is that broker's file and its Vyuha side is that broker's
+ * trades. Two brokers' figures are never added together - a sum of two
+ * statements is a figure neither statement states - and a broker whose book
+ * holds nothing for the year or the day gets NO Vyuha side at all rather than
+ * a zero another broker's fees would then appear to disagree with.
  */
 function chargeLines(refs: ReferenceRowRecord[], ctx: ChargeContext): ReconcileChargeLine[] {
   const out: ReconcileChargeLine[] = [];
@@ -755,65 +801,85 @@ function chargeLines(refs: ReferenceRowRecord[], ctx: ChargeContext): ReconcileC
   const ledger = new Map<string, Group>();
 
   for (const r of refs) {
+    const bk = brokerKey(r.broker);
     if (r.sourceId === "dhan-dp-charges") {
       // The FY comes from the file's OWN `asOf`, never from today: a report of
       // last year's fees belongs to last year.
       const fy = fyOfDate(r.asOf);
-      group(dp, fy ?? "undated", r, fy, { charges: r.figures.charges ?? 0, qty: r.figures.qty ?? 0 });
+      group(dp, `${bk}|${fy ?? "undated"}`, r, fy, { charges: r.figures.charges ?? 0, qty: r.figures.qty ?? 0 });
     } else if (r.sourceId === "dhan-contract-note") {
       const date = r.asOf ?? "undated";
-      group(notes, date, r, fyOfDate(r.asOf), { [r.key]: r.figures.amount ?? 0 });
+      group(notes, `${bk}|${date}`, r, fyOfDate(r.asOf), { [r.key]: r.figures.amount ?? 0 });
     } else {
       const fy = r.fy ?? fyOfDate(r.asOf);
-      group(ledger, `${r.sourceId}|${r.key}|${fy ?? ""}`, r, fy, { amount: r.figures.amount ?? 0 });
+      group(ledger, `${bk}|${r.sourceId}|${r.key}|${fy ?? ""}`, r, fy, { amount: r.figures.amount ?? 0 });
     }
   }
 
   const one = (set: Set<string>) => (set.size === 1 ? [...set][0] : null);
 
   for (const [key, g] of [...dp].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const broker = one(g.brokers);
     const stated = { charges: r2(g.stated.charges ?? 0), qty: r2(g.stated.qty ?? 0) };
-    const vyuha = g.fy ? { charges: r2(ctx.dpByFy.get(g.fy) ?? 0) } : null;
+    const sold = g.fy ? ctx.soldByBrokerFy.has(`${brokerKey(broker)}|${g.fy}`) : false;
+    const vyuha = sold ? { charges: r2(ctx.dpByFy.get(`${brokerKey(broker)}|${g.fy}`) ?? 0) } : null;
     out.push({
       kind: "dp", key, label: g.fy ? `DP charges - FY ${g.fy}` : "DP charges - undated",
-      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "dhan-dp-charges", fy: g.fy,
+      broker, sourceId: one(g.sourceIds) ?? "dhan-dp-charges", fy: g.fy,
       stated,
       vyuha,
       delta: vyuha ? { charges: r2(stated.charges - vyuha.charges) } : null,
       matched: vyuha ? withinTolerance(stated.charges, vyuha.charges) : null,
-      note: g.fy
-        ? "The broker's DP fee per sale, against your book's own dp_charges on trades sold in this year."
-        : "The file states no date, so no year owns these fees and nothing in your book is comparable to them.",
+      note: !g.fy
+        ? "The file states no date, so no year owns these fees and nothing in your book is comparable to them."
+        : sold
+          ? `The broker's DP fee per sale, against your book's own dp_charges on trades sold in this year at ${broker ?? "this broker"}.`
+          : `Your book holds no trades sold at ${broker ?? "this broker"} in FY ${g.fy}, so there is nothing to compare these fees against - another broker's charges are not this statement's counterpart.`,
     });
   }
 
-  for (const [date, g] of [...notes].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [key, g] of [...notes].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const broker = one(g.brokers);
+    const date = key.slice(key.indexOf("|") + 1);
     const stated: Record<string, number> = {};
     for (const [k, v] of Object.entries(g.stated)) stated[k] = r2(v);
     stated.total = r2(Object.values(g.stated).reduce((a, v) => a + v, 0));
-    const dayTrades = ctx.tradesByDate.get(date) ?? [];
-    const vyuha: Record<string, number> = {};
-    let total = 0;
-    for (const k of Object.keys(stated)) {
-      if (k === "total") continue;
-      const col = NOTE_CHARGE_COLUMNS[k];
-      if (!col) continue;
-      const sum = r2(dayTrades.reduce((a, t) => a + ((t[col] as number | undefined) ?? 0), 0));
-      vyuha[k] = sum;
-      total += sum;
+    const dayTrades = ctx.tradesByDate.get(`${brokerKey(broker)}|${date}`) ?? [];
+    /**
+     * NO position of this broker's on this date means there is nothing to
+     * compare, not a comparison against zero. Against a zero the whole of the
+     * note printed as "Broker higher" beside a note reading "0 positions touch
+     * this date" - a disagreement stated in the same breath as the fact that
+     * nothing was compared (invariant 6).
+     */
+    let vyuha: Record<string, number> | null = null;
+    if (dayTrades.length > 0) {
+      const v: Record<string, number> = {};
+      let total = 0;
+      for (const k of Object.keys(stated)) {
+        if (k === "total") continue;
+        const col = NOTE_CHARGE_COLUMNS[k];
+        if (!col) continue;
+        const sum = r2(dayTrades.reduce((a, t) => a + ((t[col] as number | undefined) ?? 0), 0));
+        v[k] = sum;
+        total += sum;
+      }
+      v.total = r2(total);
+      vyuha = v;
     }
-    vyuha.total = r2(total);
     const spanning = dayTrades.filter((t) => t.buyDate && t.sellDate && t.buyDate !== t.sellDate).length;
     out.push({
-      kind: "note", key: date, label: `Contract note - ${date}`,
-      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "dhan-contract-note", fy: g.fy,
+      kind: "note", key, label: `Contract note - ${date}`,
+      broker, sourceId: one(g.sourceIds) ?? "dhan-contract-note", fy: g.fy,
       stated,
       vyuha,
-      delta: deltaOf(stated, vyuha),
-      matched: withinTolerance(stated.total, vyuha.total),
-      note: spanning > 0
-        ? `The note states ONE day's charges; ${spanning} of the ${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} touching this date also carries its other leg's charges, which this day's note does not state.`
-        : `${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} in your book touch${dayTrades.length === 1 ? "es" : ""} this date.`,
+      delta: vyuha ? deltaOf(stated, vyuha) : null,
+      matched: vyuha ? withinTolerance(stated.total, vyuha.total) : null,
+      note: !vyuha
+        ? `No position in your book at ${broker ?? "this broker"} touches this date, so there is nothing to compare this note's charges against.`
+        : spanning > 0
+          ? `The note states ONE day's charges; ${spanning} of the ${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} touching this date also carries its other leg's charges, which this day's note does not state.`
+          : `${dayTrades.length} position${dayTrades.length === 1 ? "" : "s"} in your book touch${dayTrades.length === 1 ? "es" : ""} this date.`,
     });
   }
 
@@ -822,23 +888,28 @@ function chargeLines(refs: ReferenceRowRecord[], ctx: ChargeContext): ReconcileC
     cuspa: "CUSPA sell-off charges", interest: "Interest charges",
   };
   for (const [key, g] of [...ledger].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const type = key.split("|")[1] ?? key;
+    const parts = key.split("|");
+    const type = parts[2] ?? key;
+    const broker = one(g.brokers);
+    const sold = g.fy ? ctx.soldByBrokerFy.has(`${brokerKey(broker)}|${g.fy}`) : false;
     const stated = { amount: r2(g.stated.amount ?? 0) };
     let vyuha: Record<string, number> | null = null;
     let note: string;
-    if (type === "dp" && g.fy) {
-      vyuha = { amount: r2(ctx.dpByFy.get(g.fy) ?? 0) };
-      note = "Against your book's own dp_charges on trades sold in this year.";
+    if ((type === "dp" || type === "pledge") && g.fy && !sold) {
+      note = `Your book holds no trades sold at ${broker ?? "this broker"} in FY ${g.fy}, so there is nothing to compare this charge against - another broker's charges are not this statement's counterpart.`;
+    } else if (type === "dp" && g.fy) {
+      vyuha = { amount: r2(ctx.dpByFy.get(`${brokerKey(broker)}|${g.fy}`) ?? 0) };
+      note = `Against your book's own dp_charges on trades sold at ${broker ?? "this broker"} in this year.`;
     } else if (type === "pledge" && g.fy) {
-      vyuha = { amount: r2(ctx.pledgeByFy.get(g.fy) ?? 0) };
-      note = "Against your book's own pledge_charges on trades sold in this year.";
+      vyuha = { amount: r2(ctx.pledgeByFy.get(`${brokerKey(broker)}|${g.fy}`) ?? 0) };
+      note = `Against your book's own pledge_charges on trades sold at ${broker ?? "this broker"} in this year.`;
     } else {
       note = `Stated by the broker - no Vyuha counterpart: your book has no column for ${LEDGER_LABELS[type] ?? type}, so there is nothing to subtract and no delta to state.`;
     }
     out.push({
       kind: "ledger", key,
       label: `${LEDGER_LABELS[type] ?? type}${g.fy ? ` - FY ${g.fy}` : ""}`,
-      broker: one(g.brokers), sourceId: one(g.sourceIds) ?? "angelone-ledger", fy: g.fy,
+      broker, sourceId: one(g.sourceIds) ?? "angelone-ledger", fy: g.fy,
       stated,
       vyuha,
       delta: vyuha ? { amount: r2(stated.amount - vyuha.amount) } : null,
@@ -913,6 +984,8 @@ export function reconcile(accountId?: number): Reconciliation {
     ...(brokers.length ? [inArray(tradesTable.broker, brokers)] : []),
   ];
   const q = db.select({
+    // Selected because a charge line's Vyuha side is ONE broker's trades.
+    broker: tradesTable.broker,
     isin: tradesTable.isin,
     symbol: tradesTable.symbol,
     tradingsymbol: tradesTable.tradingsymbol,
