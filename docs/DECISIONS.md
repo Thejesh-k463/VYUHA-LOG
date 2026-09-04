@@ -3048,3 +3048,10 @@ commit, and only with this session's own background jobs finished. The v3.9.0 pe
   on a non-build machine (owner), the revocation-list prerelease (nothing revoked this release).
 - Lockfile: root version fields edited by hand, `git diff --numstat package-lock.json` = 2/2;
   `npm ls esbuild` clean.
+
+## 2026-09-05 — v3.9.0 PUBLISHED (owner-confirmed)
+
+Draft published, installer from the client ZIP installed and working on a non-build machine, WDSI
+submitted. Owner directive the same day: before v4.0, research and build a website + web app so
+users choose local or web; v4.0's plan is rebuilt after the owner supplies investor-requested
+features. Research pack: `T:/Thejesh/CLAUDE-CODE/VYUHA-WEB-PLATFORM-RESEARCH/`.

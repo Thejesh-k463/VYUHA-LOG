@@ -26,7 +26,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.9.0 "Trust the numbers" TAGGED + DEEP-VERIFIED (2026-09-05; draft release awaiting the owner's publish + non-build-machine install)
+## 2. Current state — v3.9.0 "Trust the numbers" PUBLISHED 2026-09-05 (tag `e5ea549`; CI 6/6; release 3/3; deep verify 3/3; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-05)
 
 **Status:** branch `main` at `e5ea549` (the release bump). Waves W0–W4 done and pushed: W1 engine
 `fb0e215`, W2 pagination `b929577`, W3 UI `c04e1ad`, audit-1 fix wave `4d9e9bd`, audit-2 fix pass
@@ -36,8 +36,13 @@ Desktop build: `desktop-dist/.next/BUILD_ID` 2026-09-05 00:53, v3.9 markers in t
 artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **Done:** CI 6/6 incl. `load` on `e5ea549`; tag `v3.9.0`; release run 3/3; `release:verify --deep`
 3/3 over the published bytes (key id `4FF85F3BBE1DA21D`); client ZIP built, installer SHA-256
 `094949764548D46010AB9E51BEB08F9F164758F21E1A3EF1C2FD38F2327443E8`; WDSI details handed over.
-**Owner actions left:** publish the draft (`gh release edit v3.9.0 --draft=false` or the web UI),
-install the client-ZIP installer on a non-build machine, submit WDSI. Then mark this PUBLISHED.
+**Owner confirmed 2026-09-05:** draft published, installed and working on a non-build machine, WDSI
+submitted. No open release actions.
+
+**Next (owner directive 2026-09-05):** BEFORE v4.0, a website + web application for Vyuha so users
+can choose local desktop OR the web version — research pack at
+`T:/Thejesh/CLAUDE-CODE/VYUHA-WEB-PLATFORM-RESEARCH/`. v4.0's plan will be REBUILT once the owner
+hands over the investor-requested features (not yet provided); split into parts if needed.
 
 **What v3.9.0 ships (every line verified by a finder against the code):**
 - **Broker Truth** (`/reports/reconcile`, Pro, nav group Import): broker ₹X · Vyuha ₹Y · Δ per FY,
