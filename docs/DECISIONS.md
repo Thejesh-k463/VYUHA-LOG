@@ -6,6 +6,89 @@ Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
 default, and things intentionally NOT done.
 
+## 2026-09-04 — v3.9 W2: `/trades` server pagination, and the order that was never total
+
+**Context:** `/trades` was the one route over the 1,500 ms median budget — 1,968 ms on the
+25k perf book at v3.8 (DECISIONS 2026-09-04), where the whole account-scoped book crossed the
+RSC flight stream in the wire shape and was then filtered in the browser. Paging it needs a
+keyset, and a keyset needs a TOTAL order.
+
+**`(sell_date, created_at)` was not one, and had not been since the first import.**
+`created_at` is `datetime('now')` — SECOND resolution — and `lib/import/commit.ts` never sets
+it, so **every row committed in one import batch carries the same `created_at`**. Measured:
+
+| book | rows | tie blocks | rows inside a tie | largest block |
+|---|---|---|---|---|
+| owner's live journal (copy) | 905 | 174 | **842 (93%)** | 36 |
+| `data/perf.sqlite` (seeded) | 25,001 | 550 | 1,125 (4.5%) | 3 |
+
+The perf book barely ties because `scripts/seed-perf-db.mjs:246` writes near-unique ISO
+timestamps — so **only the real book shows what this actually was**, and the seed would never
+have caught it. Inside a block SQLite may return any order, and demonstrably returned
+DIFFERENT orders for different plans: the /trades first page of the owner's Primary account
+came back ascending by id (814, 816, 817…) while the all-accounts view over the same rows came
+back descending (822, 821, 820…). **So the order within an import batch was unspecified until
+v3.9, and is now `id DESC` = insertion order, newest first.**
+
+**Every projection in `lib/queries/trades.ts` now ends on `desc(trades.id)`** (AUTOINCREMENT,
+therefore unique). Red first, `tests/trades-total-order.test.ts`: three rows inserted in one
+transaction with one `sell_date` and one `created_at` —
+`AssertionError: expected [ 1, 2, 3 ] to deeply equal [ 3, 2, 1 ]`.
+Migration **0063** extends the hot-path index to `(account_id, sell_date DESC, created_at DESC,
+id DESC)`. It **KEEPS the 0043 name** `trades_account_sell_created_idx`, because DECISIONS
+2026-08-29 cites that name as the proof the hot path is an index scan; renaming it would have
+made that record unverifiable. Measured on perf.sqlite, the third key is free: same plan
+(`SEARCH trades USING INDEX trades_account_sell_created_idx`), 21.0 ms → 20.3 ms median.
+
+**Before/after, on BOTH books** (`scripts/order-invariants.mjs`, per account: `taxByFy` to the
+paisa, every harvest lot's id+status+qty, the holding-clock report and its first 15 symbols,
+the /trades first-page ids):
+
+- **taxByFy IDENTICAL** on every account of both books. **harvest realised STCG/LTCG
+  IDENTICAL. The holdingClock report IDENTICAL.**
+- What moved, and only this: the ORDER of the harvest lot list (same multiset — every lot's
+  id, LT/ST status and quantity unchanged), the order of the clock's first-15 symbol list
+  (same multiset), and the /trades first page. Owner Primary: 418 of 500 in-page positions
+  moved and 12 ids differ in the SET — **every in-page move is a swap of tie-mates, and every
+  id in the set difference is inside the single tie block that straddles row 500.** Machine-
+  checked; nothing outside a tie block moved anywhere.
+
+**Pagination.** `lib/queries/trades-page.ts` returns 500 rows per keyset page on
+`(sell_date, created_at, id)`, plus `total` and `viewCounts` as SQL aggregates **over the whole
+filtered set, never the page** — a count that quietly means "of what we fetched" is a
+fabricated denominator (invariant 6). Every client filter is transcribed to SQL, `matchesView`
+included; the pure predicate now lives ONCE in `lib/domain/trades-filter.ts` and the client
+re-runs it over the page it receives, so a future drift NARROWS the table rather than showing
+a row the filter excludes. `tests/trades-page-parity.test.ts` demands the two agree id-for-id
+over 30 filter shapes; proven to bite by dropping the `isMarked` guard from the `open-gain`
+arm — `AssertionError: expected [ 12, 9, 8, 7, 6, 4 ] to deeply equal [ 12, 9, 4 ]`. The
+"Delete by…" scope keeps its WHOLE-book candidate list and a whole-filtered-set `viewIds`;
+both are fetched when that dialog opens instead of on every page load. The KPI strip,
+AcquisitionPanel, UnmarkedHoldingsPanel and IPO panel remain whole-book server projections
+(`tests/golden-books.test.ts` pins them to the paisa).
+
+**The bug only e2e could find.** `initialRows` is a `useState` initialiser, and an initialiser
+does not re-run when the prop changes — so after `router.refresh()` (the account switcher,
+every server action on this screen) the table went on rendering the PREVIOUS server render's
+rows while the KPI strip above it showed the new account. `e2e/v297-surfaces.spec.ts` caught it
+(expected 0 rows in the empty second account, got the first account's 125). Fixed by adjusting
+state DURING RENDER on a changed prop — not in an effect; the `loading` flag is derived
+(`servedKey !== filterKey`) for the same reason.
+
+**Perf, 25k seed, prod build, 43 routes × 3 rounds:** `/trades` **1,968 → 1,063 ms median**
+(p95 2,280 → 1,115), a 46% cut and comfortably inside budget. A second sweep on the same
+server read 1,093. **Caveat, stated rather than buried:** this machine was slower than the W4
+baseline across the board — overall median 910 → 954 (sweep 1) and 1,067 (sweep 2), with
+`/settings` +27%, `/` +26%, `/review` +16%, `/reports/edge` +14%, `/ipos` +14%,
+`/reports/discipline` +13%, `/strategies` +12% — routes that share nothing with this change but
+the ORDER BY, which is plan- and time-identical (above). Read those as load, not regression,
+and confirm on W3's double sweep.
+
+**Invalidated if:** a W3 sweep on an idle machine still shows `/` or `/settings` above the W4
+baseline by more than the ±40 ms that run called noise; or `lib/import/commit.ts` starts
+writing a sub-second `created_at`, which would shrink the tie blocks but NOT restore a total
+order (two rows can still share a millisecond).
+
 ## 2026-08-31 — The render-windowing pass: 6 budget breaches → 1 (v3.4.0)
 
 **Context:** the v3.0.0 six-route deferral, opened by three parallel read-only analyses of the

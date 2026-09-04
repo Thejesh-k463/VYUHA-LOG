@@ -1,0 +1,22 @@
+-- v3.9 — the book gets a TOTAL order, and the hot-path index follows it.
+--
+-- `trades_account_sell_created_idx` (migration 0043) matched the exact
+-- ORDER BY of the day: account_id, sell_date DESC, created_at DESC. That was
+-- never a total order. `created_at` is `datetime('now')` at SECOND resolution
+-- and lib/import/commit.ts never sets it, so every row of one import batch
+-- carries the same value — 842 of the owner's 905 rows sit in 174 such tie
+-- blocks, the largest 36 rows wide. Within a block SQLite was free to return
+-- any order, and demonstrably returned different orders for different plans.
+--
+-- Every projection in lib/queries/trades.ts now ends on `id DESC`
+-- (AUTOINCREMENT, therefore unique, therefore total), and /trades pages the
+-- book by keyset on (sell_date, created_at, id) — a keyset page NEEDS the
+-- tiebreaker in the index or the seek degrades to a scan-and-filesort.
+--
+-- The index KEEPS ITS NAME. docs/DECISIONS.md 2026-08-29 cites
+-- `trades_account_sell_created_idx` by name as the proof that the hot path is
+-- an index scan rather than a temp B-tree sort; a rename would silently make
+-- that record unverifiable. Same name, one more column.
+DROP INDEX `trades_account_sell_created_idx`;
+--> statement-breakpoint
+CREATE INDEX `trades_account_sell_created_idx` ON `trades` (`account_id`, `sell_date` DESC, `created_at` DESC, `id` DESC);

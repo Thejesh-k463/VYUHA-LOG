@@ -241,7 +241,7 @@ describe("the projections that replaced whole-row reads", () => {
     ).toBeLessThan(SLIM_TRADE_FIELDS.length - 15);
   });
 
-  it("every projection still orders by the same keys, so tie order is unchanged", () => {
+  it("every projection orders on the same THREE keys — a total order", () => {
     // Projections are safe precisely because they add no WHERE and no new sort.
     // If one of these gains an ORDER BY of its own, the equivalence argument in
     // this file's header stops holding — see docs/DECISIONS.md 2026-08-29.
@@ -249,8 +249,16 @@ describe("the projections that replaced whole-row reads", () => {
     // every .orderBy( in this file must be the one canonical ordering.
     // Only orderings on the TRADES table — `getImportBatches` legitimately
     // orders importBatches by importedAt and is not part of this contract.
+    //
+    // v3.9: the canonical form gained `desc(trades.id)`. The two-key form it
+    // used to pin was NOT a total order — `created_at` is second-resolution and
+    // an import batch shares one, so the order within a batch was whatever
+    // SQLite's plan produced (842 of the owner's 905 rows sit in such ties).
+    // This pin is why the tiebreaker cannot be dropped from one projection and
+    // left on the others: that is exactly how /trades and /reports/tax would
+    // start disagreeing about row order again.
     const onTrades = (src.match(/\.orderBy\(desc\(trades\./g) ?? []).length;
-    const canonical = (src.match(/\.orderBy\(desc\(trades\.sellDate\),\s*desc\(trades\.createdAt\)\)/g) ?? []).length;
+    const canonical = (src.match(/\.orderBy\(desc\(trades\.sellDate\),\s*desc\(trades\.createdAt\),\s*desc\(trades\.id\)\)/g) ?? []).length;
     expect(onTrades).toBeGreaterThanOrEqual(4);
     expect(canonical, `${onTrades - canonical} trades query orders differently`).toBe(onTrades);
   });

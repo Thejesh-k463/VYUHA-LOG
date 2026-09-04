@@ -3,6 +3,10 @@ import { KpiCard } from "@/components/kpi-card";
 import { TradesClient } from "@/components/trades/trades-client";
 import { toSlimTrade } from "@/lib/domain/slim-trade";
 import { getJournalTrades, tradeStatsOf } from "@/lib/queries/trades";
+import { getTradesPage, countTrades } from "@/lib/queries/trades-page";
+import { EMPTY_TRADE_FILTERS, type TradeFilters } from "@/lib/domain/trades-filter";
+import { parseTradesQuery } from "@/lib/domain/trades-query";
+import { defaultBucket } from "@/lib/domain/workspace";
 import { getAttachmentCounts } from "@/lib/queries/trades";
 import { getEntitlement } from "@/lib/queries/license";
 import { getPlaybooks } from "@/lib/queries/playbooks";
@@ -22,7 +26,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
-export default function TradesPage() {
+export default async function TradesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // The deep-link query, read on the SERVER (v3.9).
+  //
+  // The client used to restore these filters in a mount microtask, which was
+  // free while it held the whole book. Now the server decides which page to
+  // send, so it has to know the filters BEFORE it queries — otherwise a
+  // `?view=open-loss` link would paint 500 unrelated rows and then swap them.
+  // Same parser as the client (lib/domain/trades-query.ts), so the two cannot
+  // read one href two ways.
+  const sp = await searchParams;
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) if (typeof v === "string") qs.set(k, v);
+  const link = parseTradesQuery(qs.toString());
   // Wire shape + acquisition fields selected in SQL — same rows, order and
   // values as getTrades(), without mapping the 74-column row to use 47
   // (perf sweep 2026-08-29). The KPI strip reduces over the same rows in the
@@ -31,6 +51,25 @@ export default function TradesPage() {
   // A6 — only the aggregate view leaves "which account?" unanswered.
   const writeAccounts = isAggregateView() ? getAccounts().filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name })) : [];
   const stats = tradeStatsOf(trades);
+  const workspace = asWorkspace(getSettings()?.workspace);
+  // The bucket filter's default comes from the workspace — the CLIENT applied
+  // it before v3.9, so the server has to apply the same one or the first page
+  // would not be the page the user is about to see.
+  const filters: TradeFilters = {
+    ...EMPTY_TRADE_FILTERS,
+    q: link.symbol,
+    segment: link.segment,
+    bucket: defaultBucket(workspace),
+    view: link.view ?? "all",
+    realised: link.realised,
+    basisUnknown: link.basis === "unknown",
+    from: link.from,
+    to: link.to,
+  };
+  // One page of rows (500) instead of the whole book across the RSC stream,
+  // plus the whole-set counts that go around it.
+  const firstPage = getTradesPage(filters);
+  const bookTotal = countTrades({ ...EMPTY_TRADE_FILTERS });
   const chargePct = stats.gross !== 0 ? (stats.charges / Math.abs(stats.gross)) * 100 : 0;
 
   // Sales whose purchase is not in the data — resolved here, at the top, because
@@ -116,7 +155,12 @@ export default function TradesPage() {
         )}
 
         <TradesClient
-          trades={trades.map(toSlimTrade)}
+          initialRows={firstPage.rows.map(toSlimTrade)}
+          initialCursor={firstPage.nextCursor}
+          initialTotal={firstPage.total}
+          initialViewCounts={firstPage.viewCounts}
+          initialFilters={filters}
+          bookTotal={bookTotal}
           // `?basis=unknown` filters to exactly the rows the AcquisitionPanel
           // above lists — same `hasKnownBasis` verdict, ids only, so the slim
           // wire shape does not widen by two columns per row.
@@ -126,7 +170,6 @@ export default function TradesPage() {
           writeAccounts={writeAccounts}
           attachmentCounts={Object.fromEntries(getAttachmentCounts())}
           pro={getEntitlement().pro}
-          workspace={asWorkspace(getSettings()?.workspace)}
         />
       </div>
     </>

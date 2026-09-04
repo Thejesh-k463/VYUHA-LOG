@@ -30,7 +30,6 @@ import {
   BROKERS, BROKER_LABELS, SEGMENTS, SEGMENT_LABELS, EXCHANGES, BUCKETS, BUCKET_LABELS,
   type Segment,
 } from "@/lib/domain/constants";
-import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 import { parseTradesQuery, serializeTradesQuery, type TradesQuery } from "@/lib/domain/trades-query";
 import { todayIstIso } from "@/lib/domain/trading-day";
 // SlimTrade, aliased: every `Trade` annotation below narrows to the wire
@@ -41,8 +40,13 @@ import { JournalDialog, type PlaybookOption } from "@/components/behavior/journa
 import { plannedRewardRisk } from "@/lib/risk/calculators";
 import { entryExitPrices, investedSummary, tradeQty } from "@/lib/domain/trade-columns";
 import {
-  TRADE_VIEWS, matchesView, countViews, countForView, type TradeView,
+  TRADE_VIEWS, countForView, type TradeView, type ViewCounts,
 } from "@/lib/analytics/trade-status";
+import { matchesTradeFilters, type TradeFilters } from "@/lib/domain/trades-filter";
+// Rows per server page — the same constant lib/queries/trades-page.ts pages by,
+// so the "Load N more" label can never advertise a page size the server does
+// not use.
+import { TRADES_PAGE_SIZE } from "@/lib/domain/trades-filter";
 import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -70,16 +74,37 @@ const PINNED_COLUMNS = 2;
 const NO_IDS: readonly number[] = [];
 
 export function TradesClient({
-  trades,
+  initialRows,
+  initialCursor,
+  initialTotal,
+  initialViewCounts,
+  initialFilters,
+  bookTotal,
   unknownBasisIds = NO_IDS,
   playbooks = [],
   mtfMarginByBroker = {},
   writeAccounts = [],
   attachmentCounts = {},
-  workspace = "both",
   pro = true,
 }: {
-  trades: Trade[];
+  /** THE FIRST SERVER PAGE — 500 rows, not the book (v3.9). The whole book
+   *  used to cross the RSC stream here; /trades was the one route over the
+   *  1,500 ms budget because of it. Later pages arrive from
+   *  /api/trades/page, filtered by the SAME predicates in SQL. */
+  initialRows: Trade[];
+  /** Keyset cursor for the page after `initialRows`, or null if that was all. */
+  initialCursor: string | null;
+  /** Rows matching the initial filters ACROSS THE WHOLE BOOK — never a page count. */
+  initialTotal: number;
+  /** View counts over the whole filtered set, computed in SQL. */
+  initialViewCounts: ViewCounts;
+  /** The filters the server already applied — seeded from the deep-link query
+   *  and the workspace default, so the first paint is already the right rows
+   *  and the client does not have to re-fetch on mount. */
+  initialFilters: TradeFilters;
+  /** Rows in the account-scoped book, filters ignored — the "of N in the book"
+   *  half of the row counter. */
+  bookTotal: number;
   /** Ids of sales with no cost basis on record — the AcquisitionPanel's
    *  population, decided server-side by `hasKnownBasis`. `?basis=unknown`
    *  (Data Quality Center, import summary) filters the table to exactly these. */
@@ -93,8 +118,6 @@ export function TradesClient({
   /** tradeId → screenshot count, for the row indicator. Server-computed in one
    *  grouped query so the badge never costs a query per row. */
   attachmentCounts?: Record<number, number>;
-  /** Seeds the bucket filter from the user's workspace mode (a default, not a lock). */
-  workspace?: Workspace;
   /** Entitlement — gates the Pro-only "Open trade" entry point. */
   pro?: boolean;
 }) {
@@ -114,23 +137,29 @@ export function TradesClient({
   const [selected, setSelected] = React.useState<ReadonlySet<number>>(new Set());
   const [deleting, setDeleting] = React.useState(false);
 
-  const [search, setSearch] = React.useState("");
-  const [broker, setBroker] = React.useState("");
-  const [segment, setSegment] = React.useState("");
-  const [bucket, setBucket] = React.useState<string>(() => defaultBucket(workspace));
+  // Seeded from `initialFilters`, which the SERVER built from the same
+  // deep-link query and the same workspace default — so the markup React
+  // hydrates already carries these values and the first page it was sent is
+  // already the right one. (Before v3.9 the filters were restored in a mount
+  // microtask, which was fine when the client held the whole book and is not
+  // fine when the server has to be told what to fetch.)
+  const [search, setSearch] = React.useState(initialFilters.q);
+  const [broker, setBroker] = React.useState(initialFilters.broker);
+  const [segment, setSegment] = React.useState(initialFilters.segment);
+  const [bucket, setBucket] = React.useState<string>(initialFilters.bucket);
   /** Status + outcome in one control: open/closed/staged, and in-gain /
    *  in-loss / profit / loss. See lib/analytics/trade-status.ts for why an
    *  UNMARKED open position deliberately belongs to neither gain nor loss. */
-  const [view, setView] = React.useState<TradeView>("all");
+  const [view, setView] = React.useState<TradeView>(initialFilters.view);
   // Date window, set by deep links from the KPI drill-downs (e.g. "worst day").
-  const [from, setFrom] = React.useState("");
-  const [to, setTo] = React.useState("");
+  const [from, setFrom] = React.useState(initialFilters.from);
+  const [to, setTo] = React.useState(initialFilters.to);
   /** Set by a realised-P&L drill-down: restrict to closed trades so the rows
    *  reconcile exactly with the figure that was clicked. */
-  const [realised, setRealised] = React.useState(false);
+  const [realised, setRealised] = React.useState(initialFilters.realised);
   /** Set by the Data Quality Center's "Unknown acquisition cost" link:
    *  restrict to the sales the AcquisitionPanel above is asking about. */
-  const [basisUnknown, setBasisUnknown] = React.useState(false);
+  const [basisUnknown, setBasisUnknown] = React.useState(initialFilters.basisUnknown);
   const unknownBasisSet = React.useMemo(() => new Set(unknownBasisIds), [unknownBasisIds]);
 
   // Deep links — the contract lives in lib/domain/trades-query.ts. Two kinds:
@@ -155,13 +184,6 @@ export function TradesClient({
     void Promise.resolve().then(() => {
       if (q.add === "manual") setAddOpen(true);
       else if (q.add === "open") setAddOpenTrade(true);
-      if (q.symbol) setSearch(q.symbol);
-      if (q.from) setFrom(q.from);
-      if (q.to) setTo(q.to);
-      if (q.realised) setRealised(true);
-      if (q.segment) setSegment(q.segment);
-      if (q.basis === "unknown") setBasisUnknown(true);
-      if (q.view) setView(q.view);
     });
     // Strip ONLY `add`: a reload must not re-open the dialog, but must keep
     // whatever filters rode along with it.
@@ -179,41 +201,141 @@ export function TradesClient({
     window.history.replaceState(null, "", window.location.pathname + serializeTradesQuery({ ...currentQuery(), ...patch }));
   }, [currentQuery]);
 
-  const data = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return trades.filter((t) => {
-      if (broker && t.broker !== broker) return false;
-      if (segment && t.segment !== segment) return false;
-      if (bucket && t.bucket !== bucket) return false;
-      if (!matchesView(t, view)) return false;
-      if (basisUnknown && !unknownBasisSet.has(t.id)) return false;
-      // Date window matches the trade's EFFECTIVE date: the exit for a closed
-      // trade, the entry for one still open.
-      //
-      // This deliberately mirrors lib/analytics/metrics.ts#dailyPnl, which
-      // buckets realised P&L on sellDate. Matching either leg instead would
-      // pull in positions opened that day but closed later, and the trades
-      // shown would not add up to the daily figure the user just clicked.
-      // A REALISED drill-down must show exactly the population dailyPnl
-      // summed — closed trades only. An open position can carry a sell date
-      // (a partial exit, or a holding sold without a recorded purchase), and
-      // including it here put rupees on screen that were never in the figure
-      // the user clicked. Off by the open trade's charges, every time.
-      if (realised && t.isOpen) return false;
+  /** The filters, in the ONE shape both halves of the contract speak
+   *  (lib/domain/trades-filter.ts). The server transcribes this to SQL. */
+  const filters = React.useMemo<TradeFilters>(
+    () => ({ q: search, broker, segment, bucket, view, realised, basisUnknown, from, to }),
+    [search, broker, segment, bucket, view, realised, basisUnknown, from, to],
+  );
+  const filterKey = JSON.stringify(filters);
 
-      if (from || to) {
-        // Effective date: exit for a closed trade, ENTRY for an open one.
-        // `sellDate ?? buyDate` looked equivalent but is not — it hands an
-        // open position its exit date whenever one exists.
-        const d = t.isOpen ? t.buyDate : t.sellDate;
-        if (!d) return false;
-        if (from && d < from) return false;
-        if (to && d > to) return false;
-      }
-      if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
-      return true;
-    });
-  }, [trades, search, broker, segment, bucket, from, to, realised, view, basisUnknown, unknownBasisSet]);
+  // The server pages the table (v3.9).
+  //
+  // `page` holds what has been fetched SO FAR for the current filters, plus
+  // the whole-set numbers around it. `total` and `viewCounts` are aggregates
+  // over the entire filtered book — never over `rows` — because a count that
+  // silently means "of the rows we happened to fetch" is a fabricated
+  // denominator (invariant 6). The date window, the realised drill-down, the
+  // view and the free text are all applied in SQL; the JS pass below is the
+  // second opinion, not the filter.
+  const [page, setPage] = React.useState<{ rows: Trade[]; cursor: string | null; total: number; viewCounts: ViewCounts }>(
+    () => ({ rows: initialRows, cursor: initialCursor, total: initialTotal, viewCounts: initialViewCounts }),
+  );
+  /** "A page for these filters has not arrived yet" is DERIVED, never stored:
+   *  it is exactly `servedKey !== filterKey`. Storing it would mean a
+   *  setState inside the effect below, which is the one thing this repo does
+   *  not do (AGENTS.md — a silenced react-hooks/set-state-in-effect broke this
+   *  very component under the React Compiler). Only "load more" needs a flag,
+   *  and that one is set in a click handler. */
+  const [moreLoading, setMoreLoading] = React.useState(false);
+
+  /** The QUERY half only. Every call site below spells the path out as a
+   *  literal `/api/trades/page?…` prefix, which is what keeps this file out of
+   *  tests/egress-guard.test.ts's DYNAMIC_URL_CALL_SITES: the host is readable
+   *  off the call, and there isn't one. */
+  const pageQuery = React.useCallback((f: TradeFilters, cursor: string | null, mode?: string) => {
+    const p = new URLSearchParams();
+    if (f.q.trim()) p.set("q", f.q.trim());
+    if (f.broker) p.set("broker", f.broker);
+    if (f.segment) p.set("segment", f.segment);
+    if (f.bucket) p.set("bucket", f.bucket);
+    if (f.view !== "all") p.set("view", f.view);
+    if (f.realised) p.set("realised", "1");
+    if (f.basisUnknown) p.set("basis", "unknown");
+    if (f.from) p.set("from", f.from);
+    if (f.to) p.set("to", f.to);
+    if (cursor) p.set("cursor", cursor);
+    if (mode) p.set("mode", mode);
+    return p.toString();
+  }, []);
+
+  // The server already rendered page 1 for `initialFilters`, so the first run
+  // of the effect below must NOT refetch it — `servedKey` starts on that key.
+  const initialKey = JSON.stringify(initialFilters);
+  const [servedKey, setServedKey] = React.useState(initialKey);
+
+  /**
+   * A SERVER REFRESH REPLACES THE PAGE — the account switcher, and every
+   * server action on this screen.
+   *
+   * `initialRows` is a `useState` initialiser, and an initialiser does not run
+   * again when the prop changes. So after `router.refresh()` (switching
+   * accounts, saving an edit, deleting a trade) the table would have gone on
+   * rendering the PREVIOUS server render's rows for ever — the account
+   * switcher would change the KPI strip and leave the journal below it showing
+   * another book. Found by e2e (`v297-surfaces`: expected 0 rows in the empty
+   * second account, got the first account's 125).
+   *
+   * Adjusted DURING RENDER, the React-sanctioned way to react to a changed
+   * prop — not in an effect, which is the rule this repo learned the hard way
+   * (AGENTS.md: never silence react-hooks/set-state-in-effect).
+   */
+  const [servedRows, setServedRows] = React.useState(initialRows);
+  if (servedRows !== initialRows) {
+    setServedRows(initialRows);
+    if (filterKey === initialKey) {
+      // The filters on screen are the ones the server just answered: adopt it.
+      setPage({ rows: initialRows, cursor: initialCursor, total: initialTotal, viewCounts: initialViewCounts });
+      setServedKey(initialKey);
+    } else {
+      // The user has since changed a filter, so the fresh server page is for
+      // the wrong question — ask again for the right one.
+      setServedKey("");
+    }
+  }
+
+  React.useEffect(() => {
+    if (servedKey === filterKey) return;
+    const f = JSON.parse(filterKey) as TradeFilters;
+    let cancelled = false;
+    // NOTHING is set before the await: the table keeps showing the rows it has
+    // until the new page actually arrives, which is the StagedPanel lesson
+    // (AGENTS.md) applied to a much bigger fetch.
+    void fetch(`/api/trades/page?${pageQuery(f, null)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.ok) return;
+        setPage({ rows: j.rows as Trade[], cursor: j.nextCursor, total: j.total, viewCounts: j.viewCounts });
+        setServedKey(filterKey);
+      });
+    return () => { cancelled = true; };
+  }, [servedKey, filterKey, pageQuery]);
+
+  /** True while the rows on screen answer a question the user has moved on
+   *  from — derived from the two keys, not tracked. */
+  const loading = servedKey !== filterKey || moreLoading;
+
+  const loadMore = React.useCallback(() => {
+    if (!page.cursor || servedKey !== filterKey || moreLoading) return;
+    setMoreLoading(true);
+    const f = JSON.parse(filterKey) as TradeFilters;
+    void fetch(`/api/trades/page?${pageQuery(f, page.cursor)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.ok) return;
+        // Append, never replace: the keyset order is TOTAL as of v3.9, so a
+        // page boundary can neither repeat a row nor skip one.
+        setPage((prev) => ({
+          rows: [...prev.rows, ...(j.rows as Trade[])],
+          cursor: j.nextCursor, total: j.total, viewCounts: j.viewCounts,
+        }));
+      })
+      .finally(() => setMoreLoading(false));
+  }, [page.cursor, servedKey, filterKey, moreLoading, pageQuery]);
+
+  /**
+   * The rows the table renders.
+   *
+   * The server has already applied every one of these predicates in SQL, so
+   * this pass is a no-op — and `tests/trades-page-parity.test.ts` is what says
+   * so, id for id, on every view and every filter. It stays because the two
+   * halves must agree: if a future edit ever makes the SQL WIDER than the
+   * filter, the table narrows rather than showing a row the user excluded.
+   */
+  const data = React.useMemo(
+    () => page.rows.filter((t) => matchesTradeFilters(t, filters, (id) => unknownBasisSet.has(id))),
+    [page.rows, filters, unknownBasisSet],
+  );
 
   // A selection that outlives its filter would let "delete selected" remove
   // rows the user can no longer see. Visible-set changes reset it.
@@ -250,8 +372,31 @@ export function TradesClient({
   // hiding, or the count it shows is not the truth about that range.
   const [scopeOpen, setScopeOpen] = React.useState(false);
   const [scoped, setScoped] = React.useState<{ preview: DeletePreview; reason: string } | null>(null);
-  const allDeletable = React.useMemo(() => trades.map(toDeletable), [trades, toDeletable]);
-  const viewIds = React.useMemo(() => data.map((t) => t.id), [data]);
+  /**
+   * The chooser's two whole-book lists, fetched WHEN THE DIALOG OPENS.
+   *
+   * Neither can come from the rendered page and stay honest: a date-range
+   * delete must be able to name a trade the current filter is hiding, and
+   * "delete this view" must mean every row the view matches, not the 500 that
+   * happen to be on screen. Before v3.9 both were free because the client held
+   * the whole book; now they are one request, paid only by the user who opens
+   * the dialog.
+   */
+  const [scopeData, setScopeData] = React.useState<{ candidates: DeletableTrade[]; viewIds: number[] } | null>(null);
+  React.useEffect(() => {
+    if (!scopeOpen) return;
+    let cancelled = false;
+    const f = JSON.parse(filterKey) as TradeFilters;
+    void fetch(`/api/trades/page?${pageQuery(f, null, "scope")}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.ok) return;
+        setScopeData({ candidates: j.candidates as DeletableTrade[], viewIds: j.viewIds as number[] });
+      });
+    return () => { cancelled = true; };
+  }, [scopeOpen, filterKey, pageQuery]);
+  const allDeletable = React.useMemo(() => scopeData?.candidates ?? [], [scopeData]);
+  const viewIds = React.useMemo(() => scopeData?.viewIds ?? [], [scopeData]);
   const viewLabel = React.useMemo(() => {
     const bits = [
       TRADE_VIEWS.find((v) => v.value === view)?.label ?? "All trades",
@@ -270,25 +415,17 @@ export function TradesClient({
    * view itself — so each option shows how many rows choosing it would give,
    * rather than how many exist in the whole book.
    */
-  const viewCounts = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const base = trades.filter((t) => {
-      if (broker && t.broker !== broker) return false;
-      if (segment && t.segment !== segment) return false;
-      if (bucket && t.bucket !== bucket) return false;
-      if (basisUnknown && !unknownBasisSet.has(t.id)) return false;
-      if (realised && t.isOpen) return false;
-      if (from || to) {
-        const d = t.isOpen ? t.buyDate : t.sellDate;
-        if (!d) return false;
-        if (from && d < from) return false;
-        if (to && d > to) return false;
-      }
-      if (q && !(`${t.symbol} ${t.tradingsymbol} ${t.setupTag ?? ""}`.toLowerCase().includes(q))) return false;
-      return true;
-    });
-    return countViews(base);
-  }, [trades, search, broker, segment, bucket, from, to, realised, basisUnknown, unknownBasisSet]);
+  /**
+   * Counts for the dropdown, computed AFTER the other filters but BEFORE the
+   * view itself — so each option shows how many rows choosing it would give,
+   * rather than how many exist in the whole book.
+   *
+   * Computed in SQL as of v3.9 (`getViewCounts`, one aggregate query over the
+   * whole filtered book) rather than by counting an array the client no longer
+   * holds. Counting the fetched PAGE here would have been the silent bug this
+   * whole change had to avoid: every option would have read "≤ 500".
+   */
+  const viewCounts = page.viewCounts;
 
   // ── User-ordered columns ────────────────────────────────────────────────
   //
@@ -603,7 +740,23 @@ export function TradesClient({
           </button>
         )}
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{data.length} of {trades.length}</span>
+          {/* NUMBER FIRST, deliberately. Four e2e specs read this counter with
+              /^(\d+)/ and /of\s+(\d+)/ — it is the pin that the figure on
+              screen is the whole FILTERED population and not the fetched page,
+              which is exactly the thing server pagination could break in
+              silence. `page.total` is a SQL count over the filtered book. */}
+          <span className="text-xs text-muted-foreground">
+            {/* The bare "N of M" is its own text node: z-remove-broker.spec.ts
+                matches it ANCHORED (/^\d+ of \d+$/), so anything appended
+                inside the same node stops the pin from finding it. */}
+            <span>{data.length} of {page.total}</span>
+            {page.total !== bookTotal && <> · {bookTotal} in the book</>}
+          </span>
+          {page.cursor && (
+            <Button size="sm" variant="ghost" className="text-xs" onClick={loadMore} disabled={loading}>
+              {loading ? "Loading…" : `Load ${Math.min(TRADES_PAGE_SIZE, page.total - data.length)} more`}
+            </Button>
+          )}
           {/* An invisible affordance is not a feature: the grip only appears on
               hover, so the table has to say it is there. */}
           <span className="hidden items-center gap-1 text-xs text-muted-foreground xl:inline-flex">

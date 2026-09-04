@@ -207,9 +207,16 @@ export const trades = sqliteTable(
     index("trades_playbook_idx").on(t.playbookId),
     index("trades_account_idx").on(t.accountId),
     // getTrades()'s exact filter+sort — WHERE account_id ORDER BY sell_date
-    // DESC, created_at DESC — as one composite, so the hottest query in the
-    // app (25 force-dynamic pages) is an index scan instead of a filesort.
-    index("trades_account_sell_created_idx").on(t.accountId, sql`${t.sellDate} DESC`, sql`${t.createdAt} DESC`),
+    // DESC, created_at DESC, id DESC — as one composite, so the hottest query
+    // in the app (25 force-dynamic pages) is an index scan instead of a
+    // filesort, and so the /trades keyset seek can use it too.
+    //
+    // `id DESC` arrived in migration 0063 and is NOT decoration: the first two
+    // keys are not a total order (an import batch shares one second-resolution
+    // `created_at`), so without it the order inside a batch was whatever the
+    // plan produced. The index KEEPS its 0043 name so the plan proof recorded
+    // in docs/DECISIONS.md 2026-08-29 still names a real index.
+    index("trades_account_sell_created_idx").on(t.accountId, sql`${t.sellDate} DESC`, sql`${t.createdAt} DESC`, sql`${t.id} DESC`),
     // Search v1 lookups (migration 0060). The same migration also creates the
     // FTS5 index `trades_fts` (external content, trigram tokenizer), its
     // content view `trades_fts_src` and the four triggers that keep it in

@@ -11,7 +11,7 @@ export const getTrades = cache((): Trade[] => {
   const accountId = getSelectedAccountId();
   const q = db.select().from(trades);
   return (accountId > 0 ? q.where(eq(trades.accountId, accountId)) : q)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all();
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all();
 });
 
 /**
@@ -45,7 +45,7 @@ function scopedBookRows<K extends keyof Trade & keyof typeof trades>(
   const accountId = getSelectedAccountId();
   const q = db.select(pickCols(keys)).from(trades);
   return (accountId > 0 ? q.where(eq(trades.accountId, accountId)) : q)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt))
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id))
     .all() as Pick<Trade, K>[];
 }
 
@@ -183,7 +183,7 @@ export const getOptionTrades = cache((): OptionJournalRow[] => {
   const isOption = eq(trades.instrumentType, "option");
   return db.select(pickCols(OPTION_JOURNAL_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isOption, eq(trades.accountId, accountId)) : isOption)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all() as OptionJournalRow[];
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all() as OptionJournalRow[];
 });
 
 /**
@@ -214,7 +214,7 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
   // rename a strategy on screen.
   return db.select(pickCols(STRATEGY_LEG_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isLeg, eq(trades.accountId, accountId)) : isLeg)
-    .orderBy(desc(trades.sellDate), desc(trades.createdAt)).all() as StrategyLegRow[];
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all() as StrategyLegRow[];
 });
 
 const ARJUN_FIELDS = [
