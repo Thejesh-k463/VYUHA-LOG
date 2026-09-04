@@ -139,6 +139,21 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
+**Upgrading from v3.8.0 to v3.9.0 — nothing is asked of you.** The v3.9.0 installer runs the
+v3.8.0 uninstaller once before it installs, and that one is the *guarded* uninstaller. If its
+"Delete the application data" checkbox appears, ticking it still erases the whole data folder,
+but not before Vyuha has named your journal database and your licence key and copied
+`vyuha.sqlite`, your attachments and the pre-migration backups it took for you to
+`Documents\Vyuha-backup-<date>` — and Cancel stops the uninstaller with everything left exactly
+as it is. So the "leave the box unticked" caution below is only for people coming from **v3.7.1
+or earlier**, whose uninstaller has no backup step at all.
+
+**Migrations on first launch.** v3.9.0 applies three database upgrades (0061-0063: ledger and
+audit search, the broker-reference tables behind Broker Truth, and the Trades list's order
+index). Before it applies any of them it writes a full copy of your database to
+`backups\pre-migrate-<timestamp>.sqlite` inside your data folder, keeping the ten most recent.
+If your schema is already current, no migration runs and no backup is taken.
+
 **Upgrading from v3.7.1 to v3.8.0 — one thing to know.** The installer runs the *previous*
 version's uninstaller once before it installs, and the v3.7.1 uninstaller has no backup step of
 its own. When its "Delete the application data" checkbox appears, **leave it UNTICKED** and
@@ -171,7 +186,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_3.8.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Local · Offline · v3.7`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_3.9.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Local · Offline · v3.9`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

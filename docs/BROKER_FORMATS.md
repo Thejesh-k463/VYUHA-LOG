@@ -469,7 +469,7 @@ ledger rows of the dividend kind through the same Cash & Ledger door
 
 All seven of these are BUILT as of 2026-09-04 — see the section below.
 
-## Status (2026-09-04) — v3.8.0, built, in audit
+## Status (2026-09-05) — v3.9.0, built, audited (6 → fix → 3 → fix → 1 finders), release in progress 2026-09-05
 
 Third batch: the owner's 29 real exports (two Dhan accounts, Paytm, Groww,
 Zerodha, Upstox, Angel One), read in place and never copied into the repo;

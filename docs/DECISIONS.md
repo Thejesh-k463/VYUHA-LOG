@@ -3014,3 +3014,18 @@ feed list is seven files now that three sources emit `charge` rows (the docs sai
 contract-note line on a date with no trades is "Not compared", not "Broker higher" against ₹0.
 Checked clean by the same finder: enrichment identity both ways, units (paise → rupees on read),
 FY assignment by levy date, veto region documented, empty states, versions still 3.8.0.
+
+## 2026-09-05 — v3.9.0 perf gate: the "uniform regression" was the measuring session itself
+
+Five sweeps of HEAD read ~35% slower than the W3 pair on every route. A same-session control of
+the W3 commit (`c04e1ad`, rebuilt in place) read 967 ms overall — so it looked like a real shared-
+path regression in `4d9e9bd..fcddb22`. The discriminators said otherwise: server TTFB ×5 on `/`,
+`/settings`, `/risk`, `/trades` identical within noise at both commits; the initial-script set for
+`/settings` byte-identical (20 scripts, 1,825,730 bytes both); `DeletedItemsBadge` is only called
+from the backup page, never the layout. Re-measured with NOTHING else running: HEAD 947 / 932 ms
+overall, slowest `/risk` 1,384 / `/` 1,380, `/trades` 998 / 950 — all 44 routes inside 1,500 ms,
+within 3% of the W3 record. The earlier inflation came from this session's own concurrent work (a
+repo-wide grep, a queued verify, the e2e harness) and the other session's Playwright driver.
+**Rule:** a sweep is a regression signal only beside a same-session control sweep of the reference
+commit, and only with this session's own background jobs finished. The v3.9.0 perf record is HEAD
+947 / 932 ms, `/trades` 998 / 950 (was 1,968 at v3.8.0).
