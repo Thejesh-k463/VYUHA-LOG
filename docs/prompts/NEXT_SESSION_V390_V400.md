@@ -7,12 +7,9 @@ v3.8.0 paid for. Written 2026-09-04 by the v3.8 orchestrator.
 
 Explore, analyze, plan and then build with delegated multi-agents.
 
-Read `VYUHA-STATE.md` (repo root) first. **State:** v3.8.0 "Trust the import" is TAGGED on
-`74e8d49`, deep-verified (3/3 signatures, key `4FF85F3BBE1DA21D`), and its GitHub DRAFT
-is/was awaiting my publish + a non-build-machine install + WDSI. **Before any v3.9 code, confirm
-with me via pop-up whether v3.8.0 is PUBLISHED**; if not, do the remaining release-skill steps
-(§7, §9, §10) first — nothing in v3.9 starts on top of an unpublished release. If it is published,
-update VYUHA-STATE §2 to PUBLISHED and move on.
+Read `VYUHA-STATE.md` (repo root) first. **State (owner-confirmed 2026-09-04):** v3.8.0
+"Trust the import" is PUBLISHED — tag `74e8d49`, CI 6/6, 3/3 signatures deep-verified, installed
+clean on a non-build machine, WDSI submitted. No open release actions. Live Desk is v4.0.
 
 ## Task
 

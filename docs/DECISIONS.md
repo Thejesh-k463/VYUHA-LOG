@@ -2699,3 +2699,10 @@ archives; 3/3 signatures cryptographically verified over the published bytes. Dr
 9 assets, `isDraft=true`, `isPrerelease=false`; revocation list untouched.
 **Decision:** hand to the owner: publish the draft, install on a non-build machine, WDSI.
 **Invalidated if:** any asset is re-uploaded after this run (re-run `--deep`).
+
+## 2026-09-04 — v3.8.0 PUBLISHED (owner-confirmed)
+
+**Measured:** draft published; installed and launched clean on a non-build machine; WDSI
+submission filed with the client-ZIP installer SHA-256 `47A2B542…4865`. `releases/latest` is
+v3.8.0; the revocation list stays a prerelease, untouched. **Decision:** v3.8.0 is the release;
+v3.9.0 starts from `docs/prompts/NEXT_SESSION_V390_V400.md`.
