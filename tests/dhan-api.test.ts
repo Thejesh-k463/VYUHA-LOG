@@ -4,7 +4,7 @@ import {
   normalizeDhanPositions, productHintOf, exchangeOf, toParsedFile,
   canonicalDerivativeName, markOf,
   dhanAuthUrl, mintDhanAccessToken, resolveDhanAccessToken, jwtLooksUnexpired,
-  fetchDhanPositions, dhanTotpEnrolled,
+  fetchDhanPositions, dhanTotpEnrolled, DHAN_TOTP_ACK_VERSION,
   type DhanPositionRow,
 } from "@/lib/import/api/dhan";
 import { classify } from "@/lib/engine/classify";
@@ -500,6 +500,19 @@ describe("dhanTotpEnrolled — pin+totp WITHOUT the recorded consent is NOT enro
     expect(dhanTotpEnrolled({ pin: PIN, totpSecret: SECRET, totpAckVersion: 0 })).toBe(false);
     expect(dhanTotpEnrolled({ pin: PIN, totpSecret: SECRET, totpAckVersion: NaN })).toBe(false);
   });
+
+  // The required version is a PARAMETER defaulting to DHAN_TOTP_ACK_VERSION
+  // (v3.8.0 fix wave, finder 3 item 4). The check used to be the literal
+  // `>= 1`, so bumping the constant to force re-consent left every v1 blob
+  // enrolled and the re-consent silently never happened.
+  it("a v1 blob is NOT enrolled once the required ack version is 2", () => {
+    const v1 = { pin: PIN, totpSecret: SECRET, totpAckVersion: 1 };
+    expect(dhanTotpEnrolled(v1, 2)).toBe(false);
+    expect(dhanTotpEnrolled({ ...v1, totpAckVersion: 2 }, 2)).toBe(true);
+    // The default is the shipped constant, and the route imports the same one.
+    expect(dhanTotpEnrolled(v1)).toBe(true);
+    expect(DHAN_TOTP_ACK_VERSION).toBe(1);
+  });
 });
 
 describe("fetchDhanPositions in TOTP mode — mint feeds the positions call (red-on-revert)", () => {
@@ -565,8 +578,40 @@ describe("retry-on-401 — a REVOKED but unexpired-looking token mints once and 
     expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
   });
 
-  it("403 is treated like 401", async () => {
-    const calls = stub([403, 200]);
+  // A 403 is NOT an authentication verdict by itself (v3.8.0 fix wave, finder
+  // 3 item 3). Dhan answers a PERMISSIONS problem — a segment or data API the
+  // account is not subscribed to — with 403 too, and the old
+  // `status === 401 || status === 403` retry spent the one mint allowed per 2
+  // minutes on a token that was never the problem, overwrote the stored token
+  // with it, and then told the user their token had expired. So a 403 mints
+  // only when the BODY names one of Dhan's authentication error codes.
+  it("a bare permissions 403 does NOT mint: one call, no auth.dhan.co, and the message does not blame the token", async () => {
+    const calls: Array<{ host: string }> = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      calls.push({ host: u.host });
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { accessToken: "fresh-jwt" });
+      return jsonResponse(403, { errorMessage: "This data API is not subscribed for this account" });
+    });
+    await expect(fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() })).rejects.toThrow(
+      /not subscribed[\s\S]*forbidden without naming an authentication failure/i,
+    );
+    // Red on revert: the old rejected-on-403 rule made this
+    // ["api.dhan.co", "auth.dhan.co", "api.dhan.co"] — a burnt mint.
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co"]);
+  });
+
+  it("a 403 whose body names an auth failure (DH-901) still mints once and retries", async () => {
+    const calls: Array<{ host: string }> = [];
+    let n = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      calls.push({ host: u.host });
+      if (u.host === "auth.dhan.co") return jsonResponse(200, { accessToken: "fresh-jwt" });
+      return n++ === 0
+        ? jsonResponse(403, { errorCode: "DH-901", errorType: "Invalid_Authentication", errorMessage: "Invalid token" })
+        : jsonResponse(200, [] as DhanPositionRow[]);
+    });
     await fetchDhanPositions({ clientId: CLIENT, pin: PIN, totpSecret: SECRET, accessToken: stored() });
     expect(calls.map((c) => c.host)).toEqual(["api.dhan.co", "auth.dhan.co", "api.dhan.co"]);
   });
@@ -604,6 +649,7 @@ describe("read-only by surface", () => {
     // that this code path CANNOT trade. Enforced by the module surface — this
     // pin makes adding an order method a CI failure, not a review comment.
     expect(Object.keys(dhan).sort()).toEqual([
+      "DHAN_TOTP_ACK_VERSION",
       "canonicalDerivativeName",
       "dhanAuthUrl",
       "dhanImportSource",

@@ -89,10 +89,20 @@
 ; So before anything is removed this hook (1) stops the sidecar, (2) says in
 ; plain words what lives in the folder and that a copy is being made — Cancel
 ; ends the uninstall with nothing touched — and (3) copies the raw database
-; files (*.sqlite plus any -wal/-shm/-journal sibling) and attachments\ to
+; files (*.sqlite plus any -wal/-shm/-journal sibling), the sidecar's own
+; backups\ folder of pre-migration snapshots, and attachments\ to
 ; $DOCUMENTS\Vyuha-backup-<yyyy-mm-dd>\ (the user's Documents folder). The
 ; copy is made even when the checkbox is left unticked: it is cheap, and the
 ; alternative is trusting that a label which never says "journal" was read.
+;
+; CopyFiles /SILENT reports failure ONLY through the NSIS error flag — a full
+; disk, a OneDrive files-on-demand placeholder that cannot be hydrated, and a
+; locked -wal sibling all fail quietly. Nothing read that flag until
+; 2026-09-04, so "before anything can be deleted" was true only when the copy
+; happened to work; the template's RmDir ran either way. Each copy is now
+; bracketed by ClearErrors/${Errors}, the arrival of vyuha.sqlite is confirmed
+; independently of the flag, and any failure ends the uninstall with exit
+; code 1 before Section Uninstall can remove a byte.
 ;
 ; Skipped in update mode: tauri-plugin-updater runs the installer with /UPDATE,
 ; which never invokes the uninstaller interactively, and the template's own
@@ -104,7 +114,7 @@
 ; would exit 2 and show "unable to uninstall", which is the wrong story).
 ;
 ; What a hook may use, verified against the installer.nsi template embedded in
-; @tauri-apps/cli 2.11.3 (NSIS 3.11): the hooks file is !included AFTER
+; @tauri-apps/cli 2.11.4 (NSIS 3.11): the hooks file is !included AFTER
 ; MUI2.nsh (which pulls LogicLib), FileFunc.nsh, WordFunc.nsh, StrFunc.nsh and
 ; utils.nsh, so ${GetTime}, ${If}/${FileExists}, $DOCUMENTS and the template's
 ; own SetContext macro all resolve. FileFunc's ${GetTime} is an
@@ -132,10 +142,45 @@
       SetErrorLevel 1
       Quit
       CreateDirectory "$7"
+      ; $9 = why the copy failed; empty means it did not. CopyFiles only SETS
+      ; the error flag, never clears it, so every copy is preceded by
+      ; ClearErrors and read immediately — a flag left over from an earlier
+      ; copy would otherwise be reported against the wrong file.
+      StrCpy $9 ""
+      ClearErrors
       CopyFiles /SILENT "$APPDATA\${BUNDLEID}\*.sqlite*" "$7"
+      ${If} ${Errors}
+        StrCpy $9 "the journal database could not be copied"
+      ${EndIf}
+      ; The sidecar's own pre-migration snapshots (scripts/desktop-server.mjs
+      ; keeps the newest ten in backups\pre-migrate-<stamp>.sqlite). The
+      ; install guide points buyers at them, so they travel with the journal.
+      ${If} ${FileExists} "$APPDATA\${BUNDLEID}\backups\*.*"
+        CreateDirectory "$7\backups"
+        ClearErrors
+        CopyFiles /SILENT "$APPDATA\${BUNDLEID}\backups\*.sqlite" "$7\backups"
+        ${If} ${Errors}
+          StrCpy $9 "the pre-migration backups could not be copied"
+        ${EndIf}
+      ${EndIf}
       ${If} ${FileExists} "$APPDATA\${BUNDLEID}\attachments\*.*"
         CreateDirectory "$7\attachments"
+        ClearErrors
         CopyFiles /SILENT "$APPDATA\${BUNDLEID}\attachments\*.*" "$7\attachments"
+        ${If} ${Errors}
+          StrCpy $9 "the attachments could not be copied"
+        ${EndIf}
+      ${EndIf}
+      ; The flag is the only signal CopyFiles gives and it is easy to lose, so
+      ; the database is independently confirmed to have ARRIVED. Either way a
+      ; failure stops the uninstall here, before Section Uninstall's RmDir.
+      ${IfNot} ${FileExists} "$7\vyuha.sqlite"
+        StrCpy $9 "the journal database did not arrive in the copy"
+      ${EndIf}
+      ${If} $9 != ""
+        MessageBox MB_OK|MB_ICONSTOP "The safety copy failed — $9.$\r$\n$\r$\nNOTHING has been removed. Your journal and your licence key are still in:$\r$\n$APPDATA\${BUNDLEID}$\r$\n$\r$\nFree some disk space, or pause OneDrive (and any other file sync) so these files are really on this machine rather than online-only placeholders, then run the uninstaller again." /SD IDOK
+        SetErrorLevel 1
+        Quit
       ${EndIf}
     ${EndIf}
     !insertmacro SetContext

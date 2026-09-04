@@ -16,10 +16,20 @@ import { SOURCE_KEYS, type SourceKey } from "./search-scope";
 /** FTS5 trigram: a term shorter than this matches nothing. */
 export const TRIGRAM_MIN = 3;
 
-/** Lower-cased, whitespace-split, de-duplicated, in query order. */
+/**
+ * Lower-cased, whitespace-split, de-duplicated, in query order.
+ *
+ * CONTROL CHARACTERS ARE STRIPPED FIRST. A NUL (or any C0 byte) pasted into
+ * the box reached FTS5 inside a quoted term and SQLite answered
+ * `unterminated string`, which surfaced as an unhandled 500 from
+ * /api/search — the quote-doubling in `ftsMatch` cannot escape a NUL because
+ * SQLite's own string reader stops there. Stripping at the token boundary
+ * keeps every downstream consumer (FTS and the in-memory ranker) fed the same
+ * text, so a control byte narrows nothing and throws nothing.
+ */
 export function tokenise(q: string): string[] {
   const out: string[] = [];
-  for (const raw of String(q ?? "").toLowerCase().split(/\s+/)) {
+  for (const raw of String(q ?? "").toLowerCase().replace(/[\u0000-\u001f\u007f]/g, "").split(/\s+/)) {
     const t = raw.trim();
     if (t && !out.includes(t)) out.push(t);
   }

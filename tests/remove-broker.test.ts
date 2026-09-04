@@ -198,8 +198,14 @@ describe("removeBrokerRows — dhan out of account 1", () => {
     expect(row.entity).toBe("account");
     expect(row.entityId).toBe(A1);
     expect(row.source).toBe("test");
-    expect(row.beforeJson).toEqual({ accountId: A1, broker: "dhan", trades: 122, closed: 116, open: 6 });
-    expect(row.afterJson).toEqual({ accountId: A1, broker: "dhan", trades: 0, closed: 0, open: 0 });
+    // v3.8: the unlink counts are keys that MOVE, so the audit view (which
+    // renders changed keys only) stops omitting the ledger entries and IPOs
+    // this remove detached, and the summary names the broker so "trades 122 → 0"
+    // can no longer read as "the whole account was emptied".
+    expect(row.summary).toMatch(/^dhan:/);
+    expect(row.summary).toMatch(/other brokers are untouched/);
+    expect(row.beforeJson).toEqual({ accountId: A1, broker: "dhan", trades: 122, closed: 116, open: 6, unlinkedLedger: 0, unlinkedIpos: 0 });
+    expect(row.afterJson).toEqual({ accountId: A1, broker: "dhan", trades: 0, closed: 0, open: 0, unlinkedLedger: 1, unlinkedIpos: 1 });
     expect(Object.keys(row.beforeJson!).sort()).toEqual(Object.keys(row.afterJson!).sort());
   });
 
@@ -287,11 +293,17 @@ describe("POST/GET /api/import/remove-broker", () => {
 
     // The owner's actual workflow: the same file goes back in as new rows.
     expect(await importFixture("groww-pnl.xlsx", A2)).toBe(130);
-    // ...and the snapshot's rows can no longer land on top of them (dedup), so
-    // a restore skips rather than duplicating.
+    // ...and the restore now REFUSES outright rather than leaning on the dedup
+    // index to skip row by row (v3.8). Dedup only saves this case because the
+    // SAME file went back in; the workflow the remove exists for is a parser
+    // FIX, whose rows carry new hashes and collide with nothing — there the
+    // per-row skip did not fire and the book doubled with a success toast.
     const back = trash.restoreTrashSnapshot(json.snapshotId, "test");
+    expect(back.ok).toBe(false);
+    expect(back.code).toBe("NEWER_ROWS");
     expect(back.restored).toBe(0);
-    expect(back.skipped).toHaveLength(130);
+    expect(back.skipped).toEqual([]);
+    expect(back.message).toMatch(/130 groww trades were imported after this removal/);
     expect(tradesOf(A2, "groww")).toHaveLength(130);
   });
 });

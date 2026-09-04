@@ -94,6 +94,43 @@ function key(broker: string, plan: string, segment: string, exchange: string) {
   return `${broker}|${plan}|${segment}|${exchange}`;
 }
 
+/**
+ * A commodity contract can be LISTED off MCX — the real Dhan Global
+ * Transaction Report carries `OPT CRUDEOIL 09 Jun 2026 8000 PE` on NSE, and
+ * NSE does list crude options. `charge_config` prices commodity segments at
+ * MCX only, so the venue the broker states used to have to be thrown away to
+ * make the row priceable, which put a wrong exchange on the user's own record.
+ *
+ * Instead the record keeps the stated venue and the LOOKUP falls back: price
+ * at MCX, record at NSE. Nothing is hard-coded — the MCX row of
+ * `charge_config` is what prices it, so an operator edit still governs
+ * (invariant 3). The fallback applies ONLY to commodity segments and ONLY
+ * when the stated exchange has no commodity row of its own; the day one is
+ * added, it wins.
+ */
+const COMMODITY_FALLBACK: Exchange = "MCX";
+
+function isCommoditySegment(segment: Segment): boolean {
+  return segment.startsWith("commodity");
+}
+
+/** The exchange whose `charge_config` rows would actually price this key. */
+export function pricingExchange(
+  map: RatesMap,
+  broker: Broker,
+  segment: Segment,
+  exchange: Exchange,
+  plan = "default",
+): Exchange {
+  const direct = map.get(key(broker, plan, segment, exchange));
+  if (direct && direct.length > 0) return exchange;
+  if (isCommoditySegment(segment) && exchange !== COMMODITY_FALLBACK) {
+    const fb = map.get(key(broker, plan, segment, COMMODITY_FALLBACK));
+    if (fb && fb.length > 0) return COMMODITY_FALLBACK;
+  }
+  return exchange;
+}
+
 /** ISO `YYYY-MM-DD` compares correctly as a string; no Date object needed. */
 function covers(r: ChargeRates, onDate: string): boolean {
   const from = r.effectiveFrom ?? "1970-01-01";
@@ -254,7 +291,9 @@ export function findRates(
   /** Which pricing plan. Defaults to the free tier most accounts are on. */
   plan = "default",
 ): ChargeRates {
-  const list = map.get(key(broker, plan, segment, exchange));
+  // Commodity contracts listed off MCX are priced at MCX — see pricingExchange.
+  const venue = pricingExchange(map, broker, segment, exchange, plan);
+  const list = map.get(key(broker, plan, segment, venue));
   if (!list || list.length === 0) {
     throw new Error(
       `No charge_config for ${broker} / ${plan} / ${segment} / ${exchange}`,
@@ -266,7 +305,7 @@ export function findRates(
       .map((r) => `${r.effectiveFrom ?? "1970-01-01"}→${r.effectiveTo ?? "open"}`)
       .join(", ");
     throw new Error(
-      `No charge_config epoch covers ${onDate} for ${broker} / ${plan} / ${segment} / ${exchange}. On file: ${windows}`,
+      `No charge_config epoch covers ${onDate} for ${broker} / ${plan} / ${segment} / ${venue}. On file: ${windows}`,
     );
   }
   return hit;

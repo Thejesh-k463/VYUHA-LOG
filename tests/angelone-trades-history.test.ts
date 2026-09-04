@@ -87,6 +87,23 @@ describe("detection", () => {
     expect(rankParsers(c)[0].sourceId).toBe("angelone");
   });
 
+  it("under a ZERODHA-NAMED filename Angel One still wins, by a margin that is pinned", () => {
+    // `detectZerodha === 0` above holds only under a neutral or Angel-shaped
+    // name. Rename the same bytes and Zerodha's filename bonus lifts it to
+    // ~0.85 against Angel One's ~0.95 — a 0.10 margin nothing asserted, so a
+    // 0.06 drift in either detector would route a real Angel One export to
+    // Zerodha's parser (the 2026-08-12 misroute class) with every test green.
+    // The filename bonus is BY DESIGN — a user who renames a file after a
+    // broker is telling us something — so the pin is on the MARGIN, not on
+    // Zerodha scoring 0 here.
+    const c = buildContext("Tradebook -zerodha.xlsx", workbook());
+    const angel = detectAngelOne(c);
+    const zerodha = detectZerodha(c);
+    expect(zerodha).toBeGreaterThan(0); // the bonus really does fire
+    expect(angel - zerodha).toBeGreaterThanOrEqual(0.05);
+    expect(rankParsers(c)[0].sourceId).toBe("angelone");
+  });
+
   it("the same header on a differently named sheet is not the fingerprint", () => {
     expect(detectAngelOne(buildContext("export.xlsx", workbook("Sheet1")))).toBe(0);
   });
@@ -169,6 +186,22 @@ describe.skipIf(!REAL)("the owner's real Trades_History export, read in place", 
     expect(detectZerodha(c)).toBe(0);
     expect(detectAngelOne(c)).toBeGreaterThanOrEqual(0.9);
     expect(rankParsers(c)[0].sourceId).toBe("angelone");
+    // The margin under a ZERODHA-NAMED filename, pinned.
+    //
+    // `detectZerodha === 0` above holds only under the NEUTRAL name. Rename the
+    // same bytes `Tradebook -zerodha.xlsx` and Zerodha's filename bonus lifts
+    // it to ~0.85 against Angel One's ~0.95 — a 0.10 margin nothing asserted,
+    // so a 0.06 drift in either detector would flip a real Angel One export
+    // into Zerodha's parser (the 2026-08-12 misroute class) with every test
+    // still green. The filename bonus is BY DESIGN — a user who renames a file
+    // after a broker is telling us something — so the pin is on the MARGIN,
+    // not on Zerodha scoring 0.
+    const named = buildContext("Tradebook -zerodha.xlsx", bytes);
+    const angelNamed = detectAngelOne(named);
+    const zerodhaNamed = detectZerodha(named);
+    expect(angelNamed - zerodhaNamed).toBeGreaterThanOrEqual(0.05);
+    expect(rankParsers(named)[0].sourceId).toBe("angelone");
+
     const out = parseAngelOne(buildContext(filename, fs.readFileSync(REAL!)));
     expect(out.sourceRows).toBe(24);
     expect(out.reported?.statedTotalCharges).toBe(252.19);

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -15,6 +15,7 @@ process.env.VYUHA_VAULT_PROVIDER = "machine";
 
 let t: TempDb;
 let job: typeof import("@/lib/jobs/auto-pull");
+let vault: typeof import("@/lib/vault");
 
 // Wednesday 2026-09-02, 07:20 IST (01:50 UTC) — launch time.
 const WED_0720_IST = new Date("2026-09-02T01:50:00Z");
@@ -22,6 +23,7 @@ const WED_0720_IST = new Date("2026-09-02T01:50:00Z");
 beforeAll(async () => {
   t = await openTempDb("auto-pull", { seed: true });
   job = await import("@/lib/jobs/auto-pull");
+  vault = await import("@/lib/vault");
 });
 afterAll(() => t?.cleanup());
 
@@ -153,5 +155,82 @@ describe("runAutoPull — dispatch, skips recorded, one stamp per day", () => {
     expect(out.line).toBeNull(); // silence is the default — nothing was attempted
     expect(pullOne).not.toHaveBeenCalled();
     expect(lastPullDate()).toBe("2026-09-02");
+  });
+});
+
+describe("the real Dhan pull — reuse the stored token, PERSIST a mint (finder 3 item 1)", () => {
+  /**
+   * Dhan mints at most ONE token per 2 minutes (live-verified 2026-09-02), so
+   * the manual route resolves reuse-first and writes every mint back to the
+   * vault. Auto-pull built its credentials with no `accessToken` and no
+   * `onMinted` at all: every sweep minted a token and threw it away, and a
+   * manual Preview inside the next two minutes (or the reverse order) then
+   * failed on the rate limit. These run the DEFAULT pullOne — the real
+   * adapter — with fetch stubbed; no network, no commit (an empty book is
+   * "nothing new").
+   */
+  const ENROLLED = { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 };
+  const jwt = (expSec: number) => ["e30", Buffer.from(JSON.stringify({ exp: expSec })).toString("base64url"), "sig"].join(".");
+  const alive = () => jwt(Math.floor(Date.now() / 1000) + 3600);
+  const dead = () => jwt(Math.floor(Date.now() / 1000) - 3600);
+
+  /** Pre-vault plaintext columns read fine through readSecret (see addConn). */
+  function addDhan(accessToken: string) {
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (1, 'dhan', '1000000009', ?, ?)")
+      .run(accessToken, JSON.stringify(ENROLLED));
+  }
+
+  const storedToken = () => {
+    const row = t.sqlite.prepare("SELECT access_token AS a FROM broker_connections WHERE broker = 'dhan'").get() as { a: string };
+    const read = vault.readSecret(row.a);
+    return read.ok ? read.value : `UNREADABLE: ${read.reason}`;
+  };
+
+  /** Records every call; mints "minted-jwt" at auth.dhan.co, empty book at api.dhan.co. */
+  function stubFetch() {
+    const calls: Array<{ host: string; token?: string }> = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      calls.push({ host: u.host, token: (init?.headers as Record<string, string> | undefined)?.["access-token"] });
+      const body = u.host === "auth.dhan.co" ? { accessToken: "minted-jwt" } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    return calls;
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("a stored token that is still alive is REUSED — no mint call at all", async () => {
+    const token = alive();
+    addDhan(token);
+    const calls = stubFetch();
+
+    const out = await job.runAutoPull(WED_0720_IST); // the REAL pullOne
+
+    // THE assertion, red on revert: with no accessToken passed through, the
+    // resolver has nothing to reuse and the hosts are
+    // ["auth.dhan.co", "api.dhan.co"] — a mint on every single sweep.
+    expect(calls.map((c) => c.host)).toEqual(["api.dhan.co"]);
+    expect(calls[0]!.token).toBe(token);
+    expect(storedToken()).toBe(token); // untouched
+    expect(out.summary[0]!.status).toBe("nothingNew");
+  });
+
+  it("when the stored token is dead, the ONE mint is persisted into the vault", async () => {
+    addDhan(dead());
+    const calls = stubFetch();
+
+    await job.runAutoPull(WED_0720_IST);
+
+    expect(calls.map((c) => c.host)).toEqual(["auth.dhan.co", "api.dhan.co"]);
+    expect(calls[1]!.token).toBe("minted-jwt");
+    // THE assertion, red on revert: without onMinted the mint was thrown away
+    // and this still held the dead token — so the next call (a manual Preview,
+    // or tomorrow's sweep inside the 2-minute window) minted again and failed.
+    expect(storedToken()).toBe("minted-jwt");
+    // ...and it is stored ENCRYPTED, the same vault path the route uses.
+    const raw = (t.sqlite.prepare("SELECT access_token AS a FROM broker_connections WHERE broker = 'dhan'").get() as { a: string }).a;
+    expect(raw).not.toBe("minted-jwt");
   });
 });

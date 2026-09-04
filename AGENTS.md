@@ -111,8 +111,12 @@ this is about catching it before the push, not instead of CI.
   a deliberate exception recorded in docs/DECISIONS.md. That caveat is now DISCHARGED: on
   2026-08-20 a real 414-execution export was reconciled against Paytm's own Realized P&L Detail
   (47 of 52 in-window scrips within ₹25, closed net within 1.4%, charges conserved to ₹0.16).
-  Upstox is the one that is still schema-only — its three real exports carried zero data rows, so
-  its layouts are VERIFIED and every value behaviour is INFERRED until a populated export arrives.
+  Upstox was the last schema-only broker — its first three real exports carried zero data rows.
+  That caveat is DISCHARGED as of 2026-09-04: `tests/golden-books.test.ts` pins a POPULATED
+  realised-P&L export against Upstox's own stated figures (gross −1.05, net −4.28, charges 3.23,
+  met to the paisa) and a populated trade report (11 executions → 4 positions, net −271.90 — our
+  arithmetic, since a trade report states no P&L). Its layouts AND its realised-P&L value
+  behaviour are VERIFIED; the Upstox ledger still has no parser.
 - **Every DB-reading page/layout is `force-dynamic`.**
 - **Native/heavy modules are `serverExternalPackages`** in `next.config.ts`: `better-sqlite3`,
   `pdf-parse`.

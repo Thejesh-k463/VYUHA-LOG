@@ -18,6 +18,7 @@ import {
   searchUrl,
   toggleCat,
   useSearchSession,
+  visibleResults,
 } from "./use-search-session";
 
 /**
@@ -93,16 +94,35 @@ const NO_HITS: SearchResult[] = [];
 
 interface Hits {
   q: string;
+  /**
+   * ACCOUNT + chips. The account belongs in the cache key because the palette
+   * is mounted once by the root layout and survives an account switch (the
+   * switcher POSTs, then router.refresh() — no client state is torn down).
+   * Without it, `fresh` short-circuits the fetch and the same query renders
+   * account A's trade rows while the sidebar says B.
+   */
   key: string;
   results: SearchResult[];
   error: boolean;
 }
 
-/** Ctrl+K / Cmd+K command palette — keyboard-first navigation over every screen + quick actions, and Search v1. */
-export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }) {
+/** `hits` is valid only for the account it was fetched under, and the chips it was fetched with. */
+function hitsKey(accountId: number, cats: readonly SourceKey[]): string {
+  return `${accountId}|${catsKey(cats)}`;
+}
+
+/**
+ * Ctrl+K / Cmd+K command palette — keyboard-first navigation over every screen + quick actions, and Search v1.
+ *
+ * `accountId` is the SELECTED account, read server-side by the layout. The
+ * layout also keys this component on it, so a switch remounts the palette;
+ * the key and the session's own account stamp are the belt to that braces —
+ * either one alone stops account A's results appearing under account B.
+ */
+export function CommandPalette({ workspace = "both", accountId = 0 }: { workspace?: Workspace; accountId?: number }) {
   const router = useRouter();
   const nav = useNavHistory();
-  const session = useSearchSession();
+  const session = useSearchSession(accountId);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
@@ -165,7 +185,7 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
 
   // ── Search (debounced, aborted on change) ────────────────────────────────
   const searching = open && q.length >= MIN_QUERY;
-  const key = catsKey(cats);
+  const key = hitsKey(accountId, cats);
   // `fresh` is derived, not stored: a restored frame or a landed fetch makes
   // it true, and a true `fresh` is what stops the effect from fetching again.
   const fresh = hits != null && hits.q === q && hits.key === key;
@@ -194,7 +214,7 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
   // Stale results stay on screen (dimmed by `loading`) while the next fetch
   // runs — the list the cursor walks is exactly the list on screen.
   const shownHits = searching && hits ? hits.results : NO_HITS;
-  const ordered = React.useMemo(() => groupBySource(shownHits).flatMap((g) => g.results), [shownHits]);
+  const ordered = React.useMemo(() => groupBySource(visibleResults(q, shownHits)).flatMap((g) => g.results), [q, shownHits]);
   const total = commands.length + ordered.length;
 
   function go(c: Command) {
@@ -214,7 +234,7 @@ export function CommandPalette({ workspace = "both" }: { workspace?: Workspace }
     if (!frame) return;
     setQuery(frame.q);
     setCats(frame.cats);
-    setHits({ q: frame.q, key: catsKey(frame.cats), results: frame.results, error: false });
+    setHits({ q: frame.q, key: hitsKey(accountId, frame.cats), results: frame.results, error: false });
     setActive(0);
   }
 

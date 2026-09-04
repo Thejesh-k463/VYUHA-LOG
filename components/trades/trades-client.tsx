@@ -32,6 +32,7 @@ import {
 } from "@/lib/domain/constants";
 import { defaultBucket, type Workspace } from "@/lib/domain/workspace";
 import { parseTradesQuery, serializeTradesQuery, type TradesQuery } from "@/lib/domain/trades-query";
+import { todayIstIso } from "@/lib/domain/trading-day";
 // SlimTrade, aliased: every `Trade` annotation below narrows to the wire
 // projection (lib/domain/slim-trade.ts) without touching a single identifier.
 // A column/filter/dialog reading a dropped field is now a COMPILE error.
@@ -97,7 +98,10 @@ export function TradesClient({
   /** Entitlement — gates the Pro-only "Open trade" entry point. */
   pro?: boolean;
 }) {
-  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // IST, not UTC: this is the user's day (it seeds date defaults and the
+  // "today" comparisons in the table), and after 05:30 IST a UTC date is
+  // yesterday for every Indian trader. See lib/domain/trading-day.ts.
+  const today = React.useMemo(() => todayIstIso(), []);
   const [addOpen, setAddOpen] = React.useState(false);
   const [addOpenTrade, setAddOpenTrade] = React.useState(false);
   const [editing, setEditing] = React.useState<Trade | null>(null);

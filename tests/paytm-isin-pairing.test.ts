@@ -4,6 +4,7 @@ import path from "node:path";
 import * as XLSX from "xlsx";
 import { detectPaytmTradebook, parsePaytmTradebook } from "@/lib/import/parsers/paytm-tradebook";
 import { relabelledFromWarnings } from "@/lib/domain/import-shape";
+import { ownerFile } from "./helpers/owner-broker-files";
 
 /**
  * Paytm pairs by ISIN (2026-09-04).
@@ -157,7 +158,7 @@ describe("the key", () => {
 // private fixtures). Read-only: nothing from it is copied anywhere. The
 // numbers asserted are the ones the 2026-09-04 research measured on it.
 const PRIVATE = path.join(process.cwd(), "tests", "fixtures", "private");
-const OWNER_DIR = process.env.VYUHA_OWNER_BOOK_DIR;
+
 function dataRowCount(file: string): number {
   const book = XLSX.read(fs.readFileSync(file), { type: "buffer" });
   const ws = book.Sheets[book.SheetNames[0]!];
@@ -167,7 +168,11 @@ function dataRowCount(file: string): number {
 function realBook(): string | null {
   const candidates = [
     path.join(PRIVATE, "Paytm Money - Tradebook (real).xlsx"),
-    OWNER_DIR ? path.join(OWNER_DIR, "ACCOUNT 2=3-PAYTM MONEY-LARGE DATA-TIMEPERIOD CHANGE.xlsx") : null,
+    // The owner's real book, found by the shared helper. This used to read a
+    // `process.env.VYUHA_OWNER_BOOK_DIR` that nothing ever sets, so the only
+    // path that ever resolved was the private demo fixture below and the real
+    // 7,544-row reconciliation silently never ran.
+    ownerFile(/^ACCOUNT 2=3-PAYTM MONEY-LARGE DATA-TIMEPERIOD CHANGE\.xlsx$/),
     // The same export, as the private demo fixture (2026-08-30).
     path.join(PRIVATE, "Paytm Money - Tradebook (demo 2026-08-30).xlsx"),
   ];

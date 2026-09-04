@@ -2483,3 +2483,86 @@ files, four Playwright specs serialised on port 3100 by the coord hook.
 
 **Invalidated if:** Tauri changes the reinstall page's exit-code handling (re-extract
 `installer.nsi` and re-verify), or `SlimTrade` gains acquisition fields (drop the ids prop).
+
+## 2026-09-04 — v3.8 double perf sweep: search and the enriched snapshot moved no route
+
+**Context:** owner rule — Search v1 must not move any swept route; `/trades` stays out of scope.
+Sweeps on the 25k seed, prod build, idle machine, 43 routes × 3 rounds, 1500 ms median budget.
+
+**Measured:** W0 baseline (v3.7.1 + docs, BUILD `r2dBohbj59BbphovX5n1x`) vs W4 final (`9007c2d`,
+BUILD after the hydration fix): overall median 949 → 910 ms; zero console/page errors in the final
+sweep (the W3 sweep had React #418 on `/import` ×3 — a `<p>` wrapping a Badge `<div>`, fixed);
+worst deltas `/equity` +39, `/risk` +8 (the sector resolution now runs there; a W3 sweep read +96,
+noise), `/data-quality` +6; best `/options-journal` −225, `/arjuns-eye` −168, `/reports/charges`
+−147. `/trades` 2041 → 1968 ms median, still the only breach (exit 1 is that breach alone).
+Logs: `docs/perf-sweep-v380-w0.log`, `docs/perf-sweep-v380-w4.log`.
+
+**Decision:** perf gate passed for v3.8.0; `/trades` pagination stays v3.9 with its own
+before/after proof (DECISIONS 2026-09-03).
+
+**Invalidated if:** a later sweep on the same seed moves any route by more than the ±40 ms this
+run showed as noise.
+
+## 2026-09-04 — v3.8 audit fix wave (docs/installer half)
+
+**Context:** finders 5 and 6 of the W6 adversarial audit found the uninstall guard shipped in
+this release promising more than it delivered, and four buyer-facing claims that had drifted
+past their code.
+
+**The safety copy was never proven.** `installer-hooks.nsh` copied the journal with
+`CopyFiles /SILENT`, which reports failure ONLY through the NSIS error flag — a full disk, a
+OneDrive files-on-demand placeholder that will not hydrate, a locked `-wal` sibling. Nothing
+read that flag, and the template's `RmDir /r "$APPDATA{BUNDLEID}"` then ran anyway if the box
+was ticked. So "before anything can be deleted" was true only when the copy happened to work.
+Every copy is now bracketed `ClearErrors` / `${If} ${Errors}`, the arrival of `vyuha.sqlite`
+in the target is confirmed independently of the flag, and any failure ends the uninstall with
+a MessageBox and exit code 1 before Section Uninstall runs. The sidecar's own
+`backups\pre-migrate-*.sqlite` snapshots are copied too — the install guide cites them, and
+they were being left behind. The hook comment cited `@tauri-apps/cli 2.11.3`; installed is
+2.11.4, and `tests/installer-hooks.test.ts` now fails if that citation drifts from
+`node_modules` again.
+
+**A pin that only caught the exact old sentence.** `tests/uninstall-claims.test.ts` matched
+`Documents\Vyuha-backup` anywhere in the FILE, so "Uninstalling leaves your journal in place"
+in one paragraph passed on the strength of a mention six paragraphs away, and nothing required
+the checkbox to be named at all. Every rule is now scoped to the PARAGRAPH that mentions
+uninstalling (markdown table rows counted one by one, because a feature table tells the whole
+story in one cell): it must name the "Delete the application data" checkbox, say that ticking
+it erases the data folder, and either promise the `Documents\Vyuha-backup` copy or — if it is
+about the v3.7.1 upgrade — say that the old uninstaller has no backup step. Five evasions that
+passed the old rule were planted and proven caught.
+
+**The in-app backup cannot save a licence key.** The install guide told buyers to export one
+"belt-and-braces" before the v3.7.1 uninstaller runs, but the envelope BLANKS `licenseKey`
+(`lib/backup-format.ts:83`) — the file restores the journal and not the thing the checkbox
+destroys. Corrected in the guide and the client README, and the test now fails any
+upgrade/uninstall paragraph that offers the in-app backup without saying the key is not in it.
+
+**Three claims narrowed to what the code does.** (1) The changelog said the audit log "refuses"
+a drifted before/after; `lib/audit.ts:116` throws only outside production and, in the shipped
+app, records the entry and warns — a mutation must not lose its trail over a logging defect.
+(2) "restorable from Trash" named no screen; every site now says **Backup & Restore → Deleted
+items**. (3) AGENTS.md and `docs/BROKER_FORMATS.md` still called Upstox schema-only with "every
+value behaviour INFERRED" a fortnight after `tests/golden-books.test.ts` began pinning two
+POPULATED exports (realised P&L against Upstox's own gross −1.05 / net −4.28 / charges 3.23, met
+to the paisa; trade report 11 executions → 4 positions, net −271.90 as our own arithmetic since
+a trade report states no P&L). The banner is what a future agent reads before deciding whether
+an Upstox number may be trusted, so it now has a pin of its own.
+
+**Privacy told a partial truth.** PRIVACY.md said the data is one file in one folder. A
+non-update uninstall writes a second, unencrypted copy to `Documents\Vyuha-backup-<date>`,
+which syncs to OneDrive if Documents is redirected. One sentence added; the "Exactly four kinds"
+egress sentence is untouched (grep count still 1) and `tests/egress-guard.test.ts` is green.
+
+**"Every date is IST" was KEPT, not weakened.** It is true only once
+`components/trades/trades-client.tsx` loses its last UTC site in this same wave; the zero
+inventory in `tests/today-clock.test.ts` (agent D's file) is the proof, and this entry is the
+record that the claim depends on it.
+
+**Decision:** a claim about what happens before data is destroyed needs a test that reads the
+mechanism, not the sentence. `CopyFiles` without `IfErrors` is the same defect class as a
+file-scoped doc pin: both make the happy path look like a guarantee.
+
+**Invalidated if:** Tauri's template stops guarding its `RmDir` with `$UpdateMode <> 1`, the
+hooks file stops being `!include`d after LogicLib (`${Errors}` and `${IfNot}` would not
+resolve), or the sidecar moves its pre-migration snapshots out of `backups\`.

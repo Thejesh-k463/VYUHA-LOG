@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-4247%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-4470%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-81%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
@@ -416,7 +416,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **4,247** | **43** | **0** |
+| **4470** | **43** | **0** |
 | tests, 81 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -559,7 +559,7 @@ forever.** Your own record of your trading is never held hostage.
 - **Vyuha recovers that cost from the file's own footer.** The rows omit the purchase, but the broker's gross P&L includes it, so subtracting everything matchable leaves what it must have cost. On a real report: −₹8,268.27 matched against a −₹8,489.60 footer left −₹221.33 for one holding — 37 shares sold for ₹21,904, implying **₹597.98 a share**. Pre-filled for confirmation, never applied silently.
 - IPO P&L is reported **apart from trading edge** — a listing-day pop is not a repeatable skill.
 - **The import summary warns about the shape of what it read (v3.8).** When sales-without-a-purchase are 10% or more of a file's positions, or a security appeared under two labels, it says so with the count before you trust Net P&L — the product-side twin of the release harness. An unpriced sale contributes only its charges to Net P&L, and the screen now says exactly that.
-- **Remove a broker's imported rows, then re-import clean.** One confirmed, audit-logged, account-scoped step on the Import screen takes every row a broker's imports created into Trash, restorable as a set under the original ids; ledger and IPO rows are unlinked, never deleted.
+- **Remove a broker's imported rows, then re-import clean.** One confirmed, audit-logged, account-scoped step on the Import screen takes every row a broker's imports created into Trash, restorable as a set under the original ids from **Backup & Restore → Deleted items**; ledger and IPO rows are unlinked, never deleted.
 
 ### 📥 Import that tells you what kind of file you brought
 
@@ -711,7 +711,7 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. **Upgrading from v3.7.1 to v3.8.0:** the installer runs the old v3.7.1 uninstaller once, and that one has no backup step — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v3.7.1 to v3.8.0:** the installer runs the old v3.7.1 uninstaller once, and that one has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
@@ -748,7 +748,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       4247 unit + integration tests across 247 files (+ tests/load: 16 load cases, run separately)
+tests/       4470 unit + integration tests across 252 files (+ tests/load: 16 load cases, run separately)
 e2e/         81 Playwright flows through the real app, in 26 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -769,7 +769,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **4,247 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **4470 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -785,7 +785,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (4,247 tests) |
+| `npm test` | Vitest unit + integration suite (4470 tests) |
 | `npm run test:e2e` | Playwright e2e — 81 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -805,7 +805,9 @@ export. The Tauri shell spawns the Next **standalone** server as a **bundled-Nod
 on macOS. On first run the launcher copies a seeded template DB (empty journal) into the OS app-data
 dir (`%APPDATA%\in.vyuha.tradejournal`, or `~/Library/Application Support/in.vyuha.tradejournal`);
 your data persists there across updates and reinstalls; the uninstaller warns and copies the journal
-and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. The sidecar's stdout/stderr go to
+and licence to `Documents\Vyuha-backup-<date>` before its "Delete the application data" checkbox can act —
+ticking that box erases the app-data folder, so the copy, and a Cancel, is what stands between a
+mis-read label and the journal. The sidecar's stdout/stderr go to
 `<data-dir>/logs/sidecar.log` (`%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` on Windows).
 
 ```bash
@@ -853,7 +855,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 4247 Vitest unit + integration tests (+ tests/load)
+  tests/          # 4470 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

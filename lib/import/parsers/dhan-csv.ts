@@ -57,6 +57,11 @@ function dhanSheet(ctx: ParseContext): string[][] | null {
   );
 }
 
+/** Where a Dhan CSV names its broker — the trading name, or either legal name.
+ *  Mirrors `DHAN_MARKER` in `dhan-realised-pnl.ts`, deliberately: two parsers
+ *  for the same broker must recognise the same identity. */
+const DHAN_MARKER = /\bdhan\b|raise securities|moneylicious/i;
+
 /** Confidence this is a Dhan P&L export — the CSV, or its `.xlsx` twin. */
 export function detectDhanCsv(ctx: ParseContext): number {
   const text = ctx.text ?? "";
@@ -70,8 +75,21 @@ export function detectDhanCsv(ctx: ParseContext): number {
     if (isDhanGtrText(text) || isDhanLedgerText(text) || isDhanDividendText(text)) return 0;
     let score = 0;
     if (/dhan/i.test(ctx.filename)) score += 0.3;
-    if (/^PnL report/i.test(text.trimStart())) score += 0.4;
-    if (/Scrip Name,.*Realised P&L/i.test(text)) score += 0.4;
+    // IDENTITY BEFORE SHAPE (AGENTS.md). Until 2026-09-04 the shape rule was
+    // `/Scrip Name,.*Realised P&L/i` — a substring match with no word boundary
+    // and no column anchoring, so Angel One's tax-P&L header line
+    // (`…,Scrip Name,…,Short term Unrealised P&L`) scored 0.4 with no broker
+    // named anywhere, beating the generic mapper's 0.05. Nothing above the
+    // FILENAME bonus is awarded now unless the content names Dhan (trading or
+    // legal name) or carries Dhan's own `PnL report` title line — the same gate
+    // `detectDhanRealisedPnl` applies to the workbook.
+    const titled = /^PnL report/i.test(text.trimStart());
+    if (!titled && !DHAN_MARKER.test(text)) return Math.min(1, score);
+    if (titled) score += 0.4;
+    // The header as COLUMNS, not as a substring: `Scrip Name` must be column 0
+    // and `Realised P&L` a whole cell of its own — `Unrealised P&L` is not it.
+    const rows = (Papa.parse<string[]>(text, { skipEmptyLines: true }).data ?? []) as string[][];
+    if (rows.some((r) => Array.isArray(r) && isPnlHeaderRow(r))) score += 0.4;
     if (/Net P&L,.*Brokerage,.*Gross P&L,.*Total Charges/i.test(text)) score += 0.2;
     return Math.min(1, score);
   }

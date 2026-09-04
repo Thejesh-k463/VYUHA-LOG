@@ -101,6 +101,10 @@ export default function RootLayout({
   } catch {
     // DB not migrated yet — render with defaults.
   }
+  // Read ONCE, server-side: the sidebar renders it and the command palette is
+  // KEYED on it (below), so both halves of the page agree on which book is
+  // open even across a switch that only calls router.refresh().
+  const selectedAccountId = getSelectedAccountId();
   const themeSide = theme === "light" ? "light" : "dark";
   // Literal --color-* tokens (chrome tint / custom theme / wallpaper) applied
   // inline so they win over every class-level token — and so the chart canvas,
@@ -134,11 +138,18 @@ export default function RootLayout({
         <TooltipProvider>
           <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
             <div className="contents print:hidden">
-              <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={getSelectedAccountId()} workspace={workspace} />
+              <Sidebar accounts={getAccounts().map((a)=>({id:a.id,name:a.name,archived:a.archived}))} selectedAccountId={selectedAccountId} workspace={workspace} />
             </div>
             <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
           </div>
-          <CommandPalette workspace={workspace} />
+          {/* KEYED ON THE ACCOUNT. The palette is mounted once for the whole
+              app, so its search results and session stack would otherwise
+              outlive an account switch (the switcher POSTs, then
+              router.refresh() — client state is never torn down) and show one
+              book's trades under another's name. The key remounts it; the
+              accountId prop also stamps the cache key and the session frames,
+              so neither half depends on the other. */}
+          <CommandPalette key={selectedAccountId} accountId={selectedAccountId} workspace={workspace} />
           {/* Mounted once, so each navigation is recorded exactly once. */}
           <NavHistoryTracker />
           {/* First-run wizard (opens over the dashboard only — it gates on the

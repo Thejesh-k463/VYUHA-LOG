@@ -26,7 +26,14 @@ describe("lockFor — the pure rule", () => {
     { href: "/playbooks", ent: FREE, locked: false },
     { href: "/help", ent: FREE, locked: false },
     { href: "/", ent: FREE, locked: false },
-    { href: "/lenses", ent: FREE, locked: true }, // the page itself is on the list (partial capability, but listed by its path)
+    // `/lenses` is a PARTIAL feature: the page opens for a free user (grouping,
+    // counts and cleanup are free; only the per-group edge columns are Pro,
+    // and lib/license.ts forbids wrapping such a page in <ProGate>). Locking
+    // it here hung a padlock in the palette on a screen a free user can walk
+    // straight into, which reads as "you cannot open this" and is false.
+    { href: "/lenses", ent: FREE, locked: false },
+    { href: "/lenses", ent: PRO, locked: false },
+    { href: "/trades?add=open", ent: FREE, locked: false }, // the other partial: an action on the free journal
   ];
   it.each(cases)("$href under pro=$ent.pro → locked=$locked", ({ href, ent, locked }) => {
     const lock = lockFor(href, ent);
@@ -40,6 +47,12 @@ describe("lockFor — the pure rule", () => {
 
   it("every whole-page Pro feature locks under free and unlocks under Pro", () => {
     for (const f of PRO_FEATURES) {
+      // `partial` entries are a Pro capability inside a FREE page: the page
+      // itself never locks, and the screen states its own gate.
+      if (f.partial) {
+        expect(lockFor(f.href.split("?")[0], FREE), f.href).toEqual({ locked: false });
+        continue;
+      }
       if (f.href.includes("?")) continue;
       expect(lockFor(f.href, FREE), f.href).toEqual({ locked: true, unlocks: f.label });
       expect(lockFor(f.href, PRO), f.href).toEqual({ locked: false });

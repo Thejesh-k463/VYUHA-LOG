@@ -61,8 +61,14 @@ describe("palette keywords derive from the help registry", () => {
 
   it("the palette module carries no KEYWORDS literal and reads HELP_ENTRIES", () => {
     const src = fs.readFileSync(path.join(process.cwd(), "components/system/command-palette.tsx"), "utf8");
-    expect(src).not.toMatch(/\bKEYWORDS\b/);
-    expect(src).toContain("HELP_ENTRIES");
+    // Both halves were hollow. `\bKEYWORDS\b` is evaded by any prefixed name
+    // (`SCREEN_KEYWORDS`, `NAV_KEYWORDS`): there is no word boundary between
+    // `_` and `K`. And `toContain("HELP_ENTRIES")` was satisfied by the JSDoc
+    // paragraph above this describe, which names the registry in prose — the
+    // palette could drop the derivation entirely and still pass. Pin the
+    // DECLARATION shape and the CALL instead.
+    expect(src, "a second keyword map has grown back").not.toMatch(/KEYWORDS\s*[:=]/);
+    expect(src, "the palette no longer derives keywords from the registry").toContain("deriveKeywords(m.HELP_ENTRIES");
   });
 });
 

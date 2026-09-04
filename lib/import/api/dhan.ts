@@ -249,6 +249,19 @@ export interface DhanCredentials {
 }
 
 /**
+ * The Dhan PIN+TOTP consent version the save route stamps into auth_json as
+ * `totpAckVersion`, and the version an enrolment must MEET to count as
+ * enrolled. It lives here, next to `dhanTotpEnrolled`, so that bumping it
+ * actually invalidates older acknowledgements: the check used to be the
+ * literal `>= 1`, so raising the route's copy of the constant left every v1
+ * blob "enrolled" and the re-consent never happened. MUST equal
+ * DHAN_TOTP_CONSENT_VERSION exported next to the consent copy in
+ * components/import/broker-connect.tsx (a "use client" module this one cannot
+ * import — tests/broker-auth-gate.test.ts pins the two to the same number).
+ */
+export const DHAN_TOTP_ACK_VERSION = 1;
+
+/**
  * Is this auth_json blob a COMPLETE Dhan unattended-auth enrollment?
  *
  * Complete means pin + totpSecret + a recorded consent (`totpAckVersion`,
@@ -262,8 +275,9 @@ export interface DhanCredentials {
  */
 export function dhanTotpEnrolled(
   auth: { pin?: string; totpSecret?: string; totpAckVersion?: number } | null | undefined,
+  required: number = DHAN_TOTP_ACK_VERSION,
 ): boolean {
-  return Boolean(auth?.pin && auth?.totpSecret && Number(auth.totpAckVersion) >= 1);
+  return Boolean(auth?.pin && auth?.totpSecret && Number(auth.totpAckVersion) >= required);
 }
 
 /** The generateAccessToken URL, built pure so tests can pin its shape.
@@ -408,7 +422,29 @@ export async function resolveDhanAccessToken(creds: DhanCredentials): Promise<{ 
   }
 }
 
-/** The 401/403 hint, shared by the first refusal and the post-retry one. */
+/**
+ * Does the REFUSAL itself name an authentication failure?
+ *
+ * 401 always does. A 403 does NOT by itself: Dhan answers a permissions
+ * problem (a segment or data API the account is not subscribed to) with 403
+ * too, and treating that as "token expired" burned the one mint allowed per 2
+ * minutes on a token that was never the problem — and then told the user to
+ * check a token that was fine. So a 403 counts only when the body states one
+ * of Dhan's own authentication error codes (DH-901 Invalid_Authentication,
+ * DH-902 Invalid_Access) or the matching errorType.
+ */
+function namesAuthFailure(status: number, json: unknown): boolean {
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  const o = json as { errorCode?: unknown; internalErrorCode?: unknown; errorType?: unknown } | null;
+  const code = String(o?.errorCode ?? o?.internalErrorCode ?? "").toUpperCase();
+  const type = String(o?.errorType ?? "").toLowerCase();
+  return /^DH-?90[12]$/.test(code) || /invalid[_ -]?(authentication|access)\b/.test(type);
+}
+
+/** The auth hint, shared by the first refusal and the post-retry one. It is
+ *  attached only when the refusal actually names an authentication failure —
+ *  a bare permissions 403 gets Dhan's own message and no token advice. */
 function dhanApiError(status: number, json: unknown): Error {
   const msg =
     (json as { errorMessage?: string; message?: string } | null)?.errorMessage ??
@@ -416,9 +452,11 @@ function dhanApiError(status: number, json: unknown): Error {
     `HTTP ${status}`;
   return new Error(
     `Dhan API: ${msg}${
-      status === 401 || status === 403
+      namesAuthFailure(status, json)
         ? " (access token expired or wrong? Pasted Dhan tokens from web.dhan.co → DhanHQ Trading APIs last 24 hours; with PIN + TOTP saved, Vyuha mints a fresh one at every pull instead.)"
-        : ""
+        : status === 403
+          ? " (Dhan refused this request as forbidden without naming an authentication failure — check that this account is enabled for the data/segment being pulled; the access token is not necessarily the problem.)"
+          : ""
     }`,
   );
 }
@@ -437,7 +475,9 @@ async function dhanGetRaw(path: string, accessToken: string): Promise<{ res: Res
 
 /**
  * One authenticated GET, with the token resolved reuse-first (see
- * resolveDhanAccessToken) and ONE retry on 401/403:
+ * resolveDhanAccessToken) and ONE retry on a refusal that NAMES an
+ * authentication failure (401, or a 403 carrying DH-901/DH-902 — see
+ * namesAuthFailure; a bare permissions 403 must not spend the mint):
  *
  * A stored token can be REVOKED while its own `exp` still says alive (the user
  * regenerated it at web.dhan.co, or Dhan invalidated the session). Reuse-first
@@ -455,7 +495,7 @@ async function dhanGet<T>(path: string, creds: DhanCredentials, onMinted?: (toke
     onMinted?.(token);
   }
   let r = await dhanGetRaw(path, token);
-  const rejected = r.res.status === 401 || r.res.status === 403;
+  const rejected = namesAuthFailure(r.res.status, r.json);
   const canMint = Boolean(creds.pin && creds.totpSecret);
   if (!r.res.ok && rejected && !minted && canMint) {
     let fresh: string;

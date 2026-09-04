@@ -277,6 +277,31 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   const warnings: string[] = [];
   const unreadable: string[] = [];
 
+  /**
+   * Label → the ISIN the file itself gave that label, where it gave exactly one.
+   *
+   * Paytm leaves the ISIN cell blank on some rows (seen on sells). Keying the
+   * position on `isin ?? symbol` then split one holding in two: the buy landed
+   * under `INE…`, the sell under `TICKER`, and the sale became an OPENING SELL
+   * with no basis — an open ₹20,000 position and a −₹51.70 phantom instead of
+   * the real ₹1,000 gain. The file already says who that label is on its other
+   * rows, so it is read once up front and the blank cell bridged. A label the
+   * file maps to TWO ISINs is left alone: the whole point of keying on the ISIN
+   * is that a ticker is not an identity.
+   */
+  const isinOfLabel = new Map<string, string | null>();
+  let bridgedRows = 0;
+  if (cIsin >= 0) {
+    for (const r of dataRows) {
+      const label = (r[cScript] ?? "").trim();
+      const isin = (r[cIsin] ?? "").trim().toUpperCase();
+      if (!label || !isin) continue;
+      const seen = isinOfLabel.get(label);
+      if (seen === undefined) isinOfLabel.set(label, isin);
+      else if (seen !== isin) isinOfLabel.set(label, null); // ambiguous — never bridge
+    }
+  }
+
   // ── Pass 1: read every execution row, refusing rather than coercing ───────
   const fills: Fill[] = [];
   const isinOf = new Map<string, string | null>();
@@ -290,7 +315,9 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   for (const r of dataRows) {
     const symbol = (r[cScript] ?? "").trim();
     if (!symbol) continue;
-    const isin = cIsin >= 0 ? (r[cIsin] ?? "").trim().toUpperCase() || null : null;
+    const stated = cIsin >= 0 ? (r[cIsin] ?? "").trim().toUpperCase() || null : null;
+    const isin = stated ?? isinOfLabel.get(symbol) ?? null;
+    if (stated == null && isin != null) bridgedRows++;
     const security = isin ?? symbol;
     const shown = displayOf.get(security);
     if (shown == null || (isCode(shown) && !isCode(symbol))) displayOf.set(security, symbol);
@@ -549,6 +576,11 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   warnings.push(
     "Executions are paired FIFO per scrip (by ISIN, so a security Paytm relabels from ticker to code stays one book); delivery vs intraday is derived from Paytm's own STT and stamp duty per day (the Product Type column says EQ, which is the segment, not the product).",
   );
+  if (bridgedRows > 0) {
+    warnings.push(
+      `${bridgedRows} execution${bridgedRows === 1 ? "" : "s"} left the ISIN cell blank; ${bridgedRows === 1 ? "it was" : "they were"} matched to the ISIN this file gives the same scrip name elsewhere, so the buy and the sell stay one position instead of the sale becoming a holding with no cost basis.`,
+    );
+  }
   const relabelled = [...labelsOf.values()].filter((s) => s.size >= 2).length;
   const relabelNote = relabelledNote(relabelled);
   if (relabelNote) warnings.push(relabelNote);

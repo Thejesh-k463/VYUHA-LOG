@@ -72,10 +72,19 @@ describe("invalid HTML nesting on /import — the #418 the sweep caught", () => 
   }
 });
 
-/** A top-level declaration's name; components are UpperCamel, helpers are not. */
+/**
+ * A top-level declaration's name; components are UpperCamel, helpers are not.
+ *
+ * `default` and the modifier ORDER matter. A Next.js page is
+ * `export default function ImportPage()`, which the old pattern
+ * (`(?:export )?(?:async )?function`) did not match at all: the scan then
+ * attributed every hazard in app/import/page.tsx to the last thing it DID
+ * match — `export const dynamic = "force-dynamic"` — whose name is lowercase,
+ * so the whole file was silently exempt from the guard below.
+ */
 function enclosingDeclaration(src: string, idx: number): string | null {
   const head = src.slice(0, idx);
-  const decls = [...head.matchAll(/^(?:export )?(?:async )?(?:function\s+([A-Za-z_$][\w$]*)|const\s+([A-Za-z_$][\w$]*)\s*=)/gm)];
+  const decls = [...head.matchAll(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\s+([A-Za-z_$][\w$]*)|const\s+([A-Za-z_$][\w$]*)\s*=)/gm)];
   const last = decls[decls.length - 1];
   return last ? (last[1] ?? last[2] ?? null) : null;
 }
@@ -83,24 +92,56 @@ function enclosingDeclaration(src: string, idx: number): string | null {
 const RENDER_HAZARDS = /\b(toLocaleString|toLocaleDateString|toLocaleTimeString|Date\.now)\(|\blocalStorage\b|\bsessionStorage\b|typeof window/g;
 const IDIOM = /useStoredValue\(|useSyncExternalStore\(/;
 
+/** The hazard sweep itself, over ALREADY-BLANKED source — so it can run
+ *  against a planted string as well as against the four real files. */
+function hazardOffenders(rel: string, src: string): string[] {
+  const offenders: string[] = [];
+  for (const m of src.matchAll(RENDER_HAZARDS)) {
+    const lineNo = lineOf(src, m.index!);
+    const line = src.split("\n")[lineNo - 1] ?? "";
+    if (IDIOM.test(line)) continue; // the sanctioned idiom: server snapshot is the default
+    const decl = enclosingDeclaration(src, m.index!);
+    // A component (UpperCamel) evaluating the hazard in its own body puts
+    // it on the SSR path. A lowercase helper is only as safe as its input:
+    // the pin below keeps that input client-fetched.
+    if (decl && /^[A-Z]/.test(decl)) offenders.push(`${rel}:${lineNo} in <${decl}>: ${m[0]} — renders on the server too; read it via useStoredValue/useSyncExternalStore or after mount`);
+  }
+  return offenders;
+}
+
 describe("time, locale and storage never reach the server render of /import", () => {
   for (const rel of FILES) {
     it(`${rel}: hazards live in helpers or behind the post-mount idiom, never directly in a component body`, () => {
-      const src = markupOnly(read(rel));
-      const offenders: string[] = [];
-      for (const m of src.matchAll(RENDER_HAZARDS)) {
-        const lineNo = lineOf(src, m.index!);
-        const line = src.split("\n")[lineNo - 1] ?? "";
-        if (IDIOM.test(line)) continue; // the sanctioned idiom: server snapshot is the default
-        const decl = enclosingDeclaration(src, m.index!);
-        // A component (UpperCamel) evaluating the hazard in its own body puts
-        // it on the SSR path. A lowercase helper is only as safe as its input:
-        // the pin below keeps that input client-fetched.
-        if (decl && /^[A-Z]/.test(decl)) offenders.push(`${rel}:${lineNo} in <${decl}>: ${m[0]} — renders on the server too; read it via useStoredValue/useSyncExternalStore or after mount`);
-      }
+      const offenders = hazardOffenders(rel, markupOnly(read(rel)));
       expect(offenders, offenders.join("\n")).toEqual([]);
     });
   }
+
+  // SELF-TEST — the guard above is only as good as its declaration regex,
+  // and it was blind to exactly the shape a Next.js page uses. Planted
+  // source, so it stays red whether or not app/import/page.tsx has a hazard
+  // of its own today.
+  const PLANTED = [
+    'export const dynamic = "force-dynamic";',
+    "",
+    "export default function ImportPage() {",
+    "  const stamp = Date.now();",
+    "  return stamp;",
+    "}",
+    "",
+  ].join("\n");
+
+  it("enclosingDeclaration names an `export default function` page, not the `export const` above it", () => {
+    expect(enclosingDeclaration(PLANTED, PLANTED.indexOf("Date.now"))).toBe("ImportPage");
+    const asyncPage = "export default async function Page() {\n  const t = Date.now();";
+    expect(enclosingDeclaration(asyncPage, asyncPage.indexOf("Date.now"))).toBe("Page");
+  });
+
+  it("a hazard planted in an `export default function` component IS flagged", () => {
+    const offenders = hazardOffenders("planted.tsx", markupOnly(PLANTED));
+    expect(offenders, "the sweep is blind to export-default components").toHaveLength(1);
+    expect(offenders[0]).toContain("in <ImportPage>: Date.now(");
+  });
 
   it("broker-connect: the rows that feed formatTs/tokenExpired start EMPTY, so the locale strings never SSR", () => {
     // `formatTs` (toLocaleString) and `tokenExpired` (Date.now) are pure

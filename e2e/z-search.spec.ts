@@ -26,7 +26,12 @@ import { ensureTrades, gotoHydrated } from "./helpers";
  * `z-` prefix: seeds, so it must sort after import-dashboard (AGENTS.md).
  */
 
-const E2E_DB = process.env.VYUHA_DB_PATH ?? path.join(process.cwd(), "data", "e2e.sqlite");
+// The isolated e2e database, hard-coded exactly as playwright.config.ts defines
+// it. `VYUHA_DB_PATH` is set in the config's `webServer.env`, which scopes it to
+// the SERVER process — the spec process does not inherit it, so reading the var
+// here picked up whatever the runner's own shell happened to hold and wrote
+// `settings.trial_started_at` into the developer's real journal.
+const E2E_DB = path.join(process.cwd(), "data", "e2e.sqlite");
 
 function withDb<T>(fn: (db: Database.Database) => T): T {
   const db = new Database(E2E_DB);

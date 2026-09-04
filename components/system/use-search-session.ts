@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CATEGORY_CHIPS } from "@/lib/domain/search-rank";
+import { CATEGORY_CHIPS, TRIGRAM_MIN, tokenise } from "@/lib/domain/search-rank";
 import { SOURCES, type SearchResult, type SourceKey } from "@/lib/domain/search-scope";
 
 /**
@@ -37,6 +37,14 @@ export interface SearchFrame {
   /** Selected chips, in chip order; empty = every source. */
   cats: SourceKey[];
   results: SearchResult[];
+  /**
+   * The account the frame was CAPTURED under. A frame carries rows that were
+   * account-scoped server-side, so restoring one under a different account
+   * would put account A's trades on screen while the app says B — with no
+   * fetch to correct it, because `fresh` short-circuits on q+key. Stamped by
+   * `pushSession`, checked by `popSession`.
+   */
+  account?: number;
 }
 
 /** Chips normalised to registry order, so `["help","trades"]` and `["trades","help"]` are one key. */
@@ -73,6 +81,70 @@ export function pushFrame(stack: readonly SearchFrame[], frame: SearchFrame): Se
 export function popFrame(stack: readonly SearchFrame[]): { stack: SearchFrame[]; frame: SearchFrame | null } {
   if (stack.length === 0) return { stack: [], frame: null };
   return { stack: stack.slice(0, -1), frame: stack[stack.length - 1] };
+}
+
+// ── The stack is owned by an ACCOUNT ────────────────────────────────────────
+//
+// The palette is mounted once by the root layout, so it outlives an account
+// switch (the switcher POSTs and calls router.refresh(); no client state is
+// torn down). Frames captured under account A must not come back under B.
+// This is expressed as pure state-in / state-out so it needs no effect: a
+// stack belonging to another account is simply not this session's stack, and
+// `framesFor` returns none of it.
+
+export interface SearchSession {
+  /** The account whose frames `frames` holds. */
+  account: number;
+  frames: SearchFrame[];
+}
+
+const NO_FRAMES: SearchFrame[] = [];
+
+export const EMPTY_SESSION: SearchSession = { account: 0, frames: NO_FRAMES };
+
+/** The frames this account may restore — none of another account's. */
+export function framesFor(session: SearchSession, account: number): SearchFrame[] {
+  return session.account === account ? session.frames : NO_FRAMES;
+}
+
+/** Push under `account`, discarding any stack that belonged to another one. */
+export function pushSession(session: SearchSession, account: number, frame: SearchFrame): SearchSession {
+  return { account, frames: pushFrame(framesFor(session, account), { ...frame, account }) };
+}
+
+/** Pop under `account`; a stack from another account yields no frame. */
+export function popSession(session: SearchSession, account: number): { session: SearchSession; frame: SearchFrame | null } {
+  const { stack, frame } = popFrame(framesFor(session, account));
+  return { session: { account, frames: stack }, frame };
+}
+
+// ── MIN_QUERY is 2, but FTS5's trigram tokenizer needs 3 ────────────────────
+//
+// The palette starts searching at two characters, and every in-memory source
+// answers a two-character query fine (prefix ranking). The TRADES source
+// cannot: `ftsTokens` drops every token shorter than TRIGRAM_MIN before the
+// MATCH is built, so "IT" searches trades for nothing at all and "it swing"
+// searches them for "swing" ALONE — a trade row would then be on screen under
+// a weaker rule than every other source, which requires all tokens to hit.
+//
+// The rule chosen (v3.8 fix wave): a query carrying ANY token below
+// TRIGRAM_MIN yields NO trade rows, and the list says why. Silently returning
+// fewer trades than the query asked for, or more than it asked for, are both
+// worse than saying "trades need 3+ characters".
+
+/** Query tokens FTS5 cannot see — shorter than TRIGRAM_MIN. */
+export function shortTokens(q: string): string[] {
+  return tokenise(q).filter((t) => [...t].length < TRIGRAM_MIN);
+}
+
+/** True when the trade side of this query could not be answered honestly. */
+export function tradesUnsearchable(q: string): boolean {
+  return shortTokens(q).length > 0;
+}
+
+/** The rows the palette actually shows — and the SAME list its cursor walks. */
+export function visibleResults(q: string, results: readonly SearchResult[]): SearchResult[] {
+  return tradesUnsearchable(q) ? results.filter((r) => r.source !== "trades") : [...results];
 }
 
 export interface SearchGroup {
@@ -113,19 +185,26 @@ export function deriveKeywords(entries: readonly { href: string; keywords: reado
   return words.join(" ").toLowerCase();
 }
 
-export function useSearchSession() {
-  const [stack, setStack] = React.useState<SearchFrame[]>([]);
+export function useSearchSession(account = 0) {
+  const [session, setSession] = React.useState<SearchSession>(EMPTY_SESSION);
+  // Derived, not reset in an effect (house rule): the visible depth of a
+  // stack captured under another account is zero, so the "← previous search"
+  // control is not even rendered after a switch.
+  const stack = framesFor(session, account);
 
-  const push = React.useCallback((frame: SearchFrame) => {
-    setStack((s) => pushFrame(s, frame));
-  }, []);
+  const push = React.useCallback(
+    (frame: SearchFrame) => {
+      setSession((s) => pushSession(s, account, frame));
+    },
+    [account],
+  );
 
   // Returns the popped frame so the caller can restore it in the same tick.
   const pop = React.useCallback((): SearchFrame | null => {
-    const { stack: next, frame } = popFrame(stack);
-    if (frame) setStack(next);
+    const { session: next, frame } = popSession(session, account);
+    if (frame) setSession(next);
     return frame;
-  }, [stack]);
+  }, [session, account]);
 
   return { depth: stack.length, previous: stack[stack.length - 1] ?? null, push, pop };
 }

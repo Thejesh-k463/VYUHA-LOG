@@ -28,8 +28,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ## 2. Current state — v3.8.0 "Trust the import" BUILT 2026-09-04, in adversarial audit (v3.7.1 is still the published release)
 
-**Status:** branch `main` at `1e67296` plus an uncommitted Dhan Client-ID hydration fix
-(`components/import/broker-connect.tsx` + `tests/import-hydration-guard.test.ts`). Waves 0–5 are
+**Status:** branch `main` at `9007c2d` — the Dhan Client-ID hydration fix
+(`components/import/broker-connect.tsx` + `tests/import-hydration-guard.test.ts`) is COMMITTED,
+not pending. Waves 0–5 are
 done; **W6 (6-finder adversarial audit) → fix wave → W6b (audit of the fix wave) → W7 (release
 skill, client ZIP, WDSI) are still ahead.** Nothing is tagged, bumped or published. The spec is
 `docs/V380_BUILD_PLAN.md`; the measured record is the five `docs/DECISIONS.md` entries dated
@@ -76,7 +77,9 @@ skill, client ZIP, WDSI) are still ahead.** Nothing is tagged, bumped or publish
 
 **Measured baseline (W0):** verify EXIT 0 at 211 files / 3,434 tests; perf sweep 43 routes × 3,
 median 949 ms, `/trades` 2041/2391 the only breach (pre-existing, out of scope). Post-build test
-counts are NOT yet re-stated anywhere — W5/W7 owns the README figures.
+counts ARE stated in one place — README.md carries a 4,247-test figure — so that figure is a
+claim under audit like any other; W7 re-measures it against a full `npm run verify` and corrects
+it there.
 
 **Not in v3.8 → v3.9 "Trust the numbers":** Paytm P&L parser; DP charges / holdings / Upstox +
 Angel ledgers / Angel P&L statement; reconciliation screen; MTF Report + Contract Note; `/trades`

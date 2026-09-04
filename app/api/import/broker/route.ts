@@ -5,7 +5,7 @@ import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
-import { dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { DHAN_TOTP_ACK_VERSION, dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
@@ -80,7 +80,18 @@ const API_BROKERS: Record<string, { label: string; keyLabel: string; note: strin
   },
 };
 
-const mask = (s: string) => (s.length <= 4 ? "••••" : `${s.slice(0, 4)}…${"•".repeat(4)}`);
+/**
+ * Mask a credential for the audit log: reveal a PROPORTION of it, never a
+ * fixed four characters. The old fixed prefix showed 4 of an 8-character
+ * Angel One API key — half the secret — while showing the same 4 of a 20
+ * character one. A short credential (< 6) gets no prefix at all, only the
+ * last-two "is this mine?" tail that maskId uses.
+ */
+const mask = (s: string) => {
+  if (s.length <= 2) return "••••";
+  if (s.length < 6) return `${"•".repeat(4)}${s.slice(-2)}`;
+  return `${s.slice(0, Math.min(4, Math.floor(s.length / 3)))}…${"•".repeat(4)}`;
+};
 
 /** Mask an account/user id down to its last two characters — enough to
  *  recognise your own id, not enough to leak someone else's. */
@@ -88,14 +99,14 @@ const maskId = (s: string) => (s.length <= 2 ? "••" : `${"•".repeat(s.leng
 
 /**
  * The Dhan PIN+TOTP consent version the save handler stamps into auth_json as
- * `totpAckVersion`. MUST equal DHAN_TOTP_CONSENT_VERSION exported next to the
- * consent copy in components/import/broker-connect.tsx — the route cannot
- * import that "use client" module, so tests/broker-auth-gate.test.ts pins the
- * two to the same number instead. An auth_json blob without this field is a
- * legacy enrollment saved before the server-side gate existed and is treated
- * as NOT enrolled (dhanTotpEnrolled).
+ * `totpAckVersion` now lives in lib/import/api/dhan.ts, beside the
+ * `dhanTotpEnrolled` check that must COMPARE against it — the two drifted
+ * while the check was the literal `>= 1`, so bumping the constant here would
+ * have re-asked for consent while leaving every v1 blob enrolled. It MUST
+ * still equal DHAN_TOTP_CONSENT_VERSION exported next to the consent copy in
+ * components/import/broker-connect.tsx (a "use client" module neither can
+ * import; tests/broker-auth-gate.test.ts pins the two to the same number).
  */
-const DHAN_TOTP_ACK_VERSION = 1;
 
 /** One OpenAlgo instance fronts ONE broker, and a user can run several — so
  *  each is its own connection row, `openalgo:<underlying>` (see the adapter).
@@ -446,6 +457,26 @@ export async function POST(req: Request) {
             ? "API key plus either the day's access token or the API secret are required."
             : `${spec.keyLabel}${spec.needsToken ? " and access token are" : " is"} required.`;
       return NextResponse.json({ ok: false, message }, { status: 400 });
+    }
+
+    // A KEPT key must still be READABLE. Carrying the stored ciphertext over
+    // byte-for-byte answered "Connection saved" over a row whose key the vault
+    // can no longer decrypt — and the next pull then 400s "saved credentials
+    // cannot be read", pointing at a save that had just said it worked. The
+    // key is only VERIFIED here (the ciphertext is still what gets stored,
+    // never a re-encryption).
+    if (!apiKey) {
+      const kept = readSecret(existing!.apiKey);
+      if (!kept.ok || !kept.value) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "STORED_KEY_UNREADABLE",
+            message: `The saved ${spec.keyLabel} can no longer be read (${kept.ok ? "it is empty" : kept.reason}) — re-enter the ${spec.keyLabel} to save this connection.`,
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather

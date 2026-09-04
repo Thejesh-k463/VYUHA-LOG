@@ -13,7 +13,7 @@ import { detectDhanCsv } from "@/lib/import/parsers/dhan-csv";
 import { detectDhanGtr } from "@/lib/import/parsers/dhan-gtr";
 import { detectDhanRealisedPnl } from "@/lib/import/parsers/dhan-realised-pnl";
 import { detectDhanDividend, detectDhanLedgerFile } from "@/lib/import/parsers/dhan-ledger";
-import { ownerContext, ownerFile, ownerFiles } from "./helpers/owner-broker-files";
+import { ownerContext, ownerFiles } from "./helpers/owner-broker-files";
 
 /**
  * THE MISROUTE MATRIX — every real export routes to its own parser, and every
@@ -136,32 +136,115 @@ describe.skipIf(!havePrivate)("the real exports route exactly like their redacte
   }
 });
 
+/**
+ * THE CONTAINER RULE — a refusal only counts when the detector can READ the
+ * container it is offered.
+ *
+ * `buildContext` decodes `ctx.text` for `.csv`/`.txt` ONLY (detect.ts). A
+ * text-only detector opens `if (!text) return 0`, so it scores 0 on every
+ * `.xlsx` by EXTENSION, deciding nothing whatever about the content: the
+ * identical Dhan GTR bytes score 0.98 as `export.csv` and 0 as `export.xlsx`.
+ * Until 2026-09-04 that made 48 of this matrix's cells vacuous — the three
+ * text-only Dhan detectors against sixteen workbook fixtures.
+ *
+ * Each detector therefore declares its container, and each fixture is offered
+ * in both: its own bytes ("binary"), and the same workbook projected to CSV
+ * text by SheetJS under a NEUTRAL `.csv` name ("text"). A detector is asserted
+ * only in a container it reads, so every cell below is content-decided.
+ */
+type Container = "text" | "binary" | "both";
+const CROSS_DETECTORS: {
+  name: string;
+  broker: string;
+  container: Container;
+  fn: (ctx: ReturnType<typeof buildContext>) => number;
+}[] = [
+  { name: "detectZerodha", broker: "zerodha", container: "both", fn: detectZerodha },
+  // `if (!ctx.buffer) return 0` — these three read a workbook or nothing.
+  { name: "detectGrowwXlsx", broker: "groww", container: "binary", fn: detectGrowwXlsx },
+  { name: "detectGrowwOrders", broker: "groww", container: "binary", fn: detectGrowwOrders },
+  { name: "detectAngelOne", broker: "angelone", container: "both", fn: detectAngelOne },
+  { name: "detectAngelOneTaxPnl", broker: "angelone", container: "binary", fn: detectAngelOneTaxPnl },
+  { name: "detectUpstox", broker: "upstox", container: "both", fn: detectUpstox },
+  { name: "detectPaytmTradebook", broker: "paytm", container: "both", fn: detectPaytmTradebook },
+  // 2026-09-04: the five Dhan detectors join the refusal matrix.
+  { name: "detectDhanGtr", broker: "dhan", container: "text", fn: detectDhanGtr },
+  { name: "detectDhanCsv", broker: "dhan", container: "both", fn: detectDhanCsv },
+  // `if (ctx.text != null) return 0` — a .xls/.xlsx report, never a CSV.
+  { name: "detectDhanRealisedPnl", broker: "dhan", container: "binary", fn: detectDhanRealisedPnl },
+  { name: "detectDhanLedgerFile", broker: "dhan", container: "text", fn: detectDhanLedgerFile },
+  { name: "detectDhanDividend", broker: "dhan", container: "text", fn: detectDhanDividend },
+];
+const readsText = (c: Container) => c === "text" || c === "both";
+const readsBinary = (c: Container) => c === "binary" || c === "both";
+
+/**
+ * The same bytes in a TEXT container: EVERY sheet flattened to CSV by the
+ * repo's SheetJS and offered under a neutral `.csv` name, so `buildContext`
+ * decodes `ctx.text` and a text-only detector actually runs its content
+ * fingerprints. A `.csv` fixture is passed through unchanged.
+ */
+function loadAsText(dir: string, file: string): ReturnType<typeof buildContext> {
+  const bytes = fs.readFileSync(path.join(dir, file));
+  if (/\.(csv|txt)$/i.test(file)) return buildContext("export.csv", bytes);
+  const wb = XLSX.read(bytes, { type: "buffer" });
+  const csv = wb.SheetNames.map((n) => XLSX.utils.sheet_to_csv(wb.Sheets[n]!)).join("\n");
+  return buildContext("export.csv", Buffer.from(csv, "utf8"));
+}
+
 describe("no detector claims another BROKER's file", () => {
   // Strict zero applies CROSS-broker. A detector may recognise its own
   // broker's name on a sibling format (detectAngelOne returns its named-file
   // floor on the Angel tax P&L) — that is not a misroute as long as the real
   // owner outranks it, which the routing block above pins.
-  const DETECTORS: { name: string; broker: string; fn: (ctx: ReturnType<typeof buildContext>) => number }[] = [
-    { name: "detectZerodha", broker: "zerodha", fn: detectZerodha },
-    { name: "detectGrowwXlsx", broker: "groww", fn: detectGrowwXlsx },
-    { name: "detectGrowwOrders", broker: "groww", fn: detectGrowwOrders },
-    { name: "detectAngelOne", broker: "angelone", fn: detectAngelOne },
-    { name: "detectAngelOneTaxPnl", broker: "angelone", fn: detectAngelOneTaxPnl },
-    { name: "detectUpstox", broker: "upstox", fn: detectUpstox },
-    { name: "detectPaytmTradebook", broker: "paytm", fn: detectPaytmTradebook },
-    // 2026-09-04: the five Dhan detectors join the refusal matrix.
-    { name: "detectDhanGtr", broker: "dhan", fn: detectDhanGtr },
-    { name: "detectDhanCsv", broker: "dhan", fn: detectDhanCsv },
-    { name: "detectDhanRealisedPnl", broker: "dhan", fn: detectDhanRealisedPnl },
-    { name: "detectDhanLedgerFile", broker: "dhan", fn: detectDhanLedgerFile },
-    { name: "detectDhanDividend", broker: "dhan", fn: detectDhanDividend },
-  ];
-
-  for (const d of DETECTORS) {
+  for (const d of CROSS_DETECTORS) {
     for (const f of FIXTURES) {
       if (f.broker === d.broker) continue;
-      it(`${d.name} scores 0 on ${f.label}`, () => {
-        expect(d.fn(load(f.file))).toBe(0);
+      // DEFECT FIXED 2026-09-04 — kept as a named regression, not a pin.
+      // `detectDhanCsv`'s TEXT branch used to score 0.4 on Angel One's tax P&L
+      // content with no broker named anywhere: `/Scrip Name,.*Realised P&L/i`
+      // had no word boundary and no column anchoring, so Angel One's
+      // "…,Scrip Name,…,Short term Unrealised P&L" header line matched — a
+      // claim on SHAPE alone, the class AGENTS.md forbids, and 0.4 beat the
+      // generic mapper's 0.05. It could not bite only because Angel One ships
+      // this report as .xlsx (no `ctx.text`); a `.csv` export in the same
+      // layout would have imported as Dhan. The parser now gates every score
+      // above the filename bonus on a Dhan/Raise/Moneylicious content
+      // fingerprint or Dhan's own `PnL report` title, and reads the header as
+      // COLUMNS. Expected here — as for every other foreign file — is 0.
+      if (readsBinary(d.container)) {
+        it(`${d.name} scores 0 on ${f.label} [binary container]`, () => {
+          expect(d.fn(load(f.file))).toBe(0);
+        });
+      }
+      if (readsText(d.container)) {
+        it(`${d.name} scores 0 on ${f.label} [text container]`, () => {
+          expect(d.fn(loadAsText(DIR, f.file))).toBe(0);
+        });
+      }
+    }
+  }
+});
+
+/**
+ * The committed Dhan CSVs (redacted real exports) close the other half of the
+ * container rule: real broker text that every FOREIGN detector must refuse,
+ * on CI, without the owner's folder. `tests/fixtures/zerodha-tradebook.csv` is
+ * the reverse direction — a non-Dhan CSV no Dhan detector may claim.
+ */
+const CSV_FIXTURES: { dir: string; file: string; broker: string; label: string }[] = [
+  { dir: DIR, file: "dhan-gtr-2026-04-01_2026-09-04-a1.csv", broker: "dhan", label: "Dhan Global Transaction Report" },
+  { dir: DIR, file: "dhan-ledger-2026-04-01_2026-09-03-a1.csv", broker: "dhan", label: "Dhan ledger" },
+  { dir: DIR, file: "dhan-dividend-2025-04-01_2026-03-31.csv", broker: "dhan", label: "Dhan dividend payout" },
+  { dir: path.join(process.cwd(), "tests", "fixtures"), file: "zerodha-tradebook.csv", broker: "zerodha", label: "Zerodha tradebook (CSV)" },
+];
+
+describe("no detector claims another BROKER's CSV", () => {
+  for (const d of CROSS_DETECTORS.filter((x) => readsText(x.container))) {
+    for (const f of CSV_FIXTURES) {
+      if (f.broker === d.broker) continue;
+      it(`${d.name} scores 0 on ${f.label} [text container]`, () => {
+        expect(d.fn(loadAsText(f.dir, f.file))).toBe(0);
       });
     }
   }
@@ -250,48 +333,64 @@ describe("the incident files, replayed", () => {
  * detector scores 0 on the files that are not its broker's. Skipped, not
  * failed, anywhere the folder is absent.
  */
-const OWNER: { file: string; broker: string; expect: string }[] = [
-  ...ownerFiles(/^Dhan_Ledger_.*\.csv$/).map((file) => ({ file, broker: "dhan", expect: "dhan-ledger" })),
-  ...ownerFiles(/^Dhan_Dividend_.*\.csv$/).map((file) => ({ file, broker: "dhan", expect: "dhan-dividend" })),
-  ...ownerFiles(/^Dhan_P&L_.*\.xlsx$/).map((file) => ({ file, broker: "dhan", expect: "dhan-csv" })),
-  ...ownerFiles(/^realized_pnl-report.*\.xls$/).map((file) => ({ file, broker: "dhan", expect: "dhan-realised-pnl" })),
-  ...(ownerFile(/^Trades_History_.*\.xlsx$/) ? [{ file: ownerFile(/^Trades_History_.*\.xlsx$/)!, broker: "angelone", expect: "angelone" }] : []),
+/**
+ * PRESENCE IS ASSERTED PER PATTERN, never in bulk. A single `OWNER.length >= 8`
+ * threshold meant renaming ONE of the owner's eight files silently skipped all
+ * 67 tests below — a green run proving nothing. Each pattern now either finds
+ * its files and runs, or produces an `it.skip` NAMED with the pattern that
+ * found nothing, so an absent folder reads as "skipped" and a renamed file
+ * reads as "this pattern found nothing".
+ */
+const OWNER_PATTERNS: { pattern: RegExp; broker: string; expect: string }[] = [
+  { pattern: /^Dhan_Ledger_.*\.csv$/, broker: "dhan", expect: "dhan-ledger" },
+  { pattern: /^Dhan_Dividend_.*\.csv$/, broker: "dhan", expect: "dhan-dividend" },
+  { pattern: /^Dhan_P&L_.*\.xlsx$/, broker: "dhan", expect: "dhan-csv" },
+  { pattern: /^realized_pnl-report.*\.xls$/, broker: "dhan", expect: "dhan-realised-pnl" },
+  { pattern: /^Trades_History_.*\.xlsx$/, broker: "angelone", expect: "angelone" },
 ];
-const haveOwner = OWNER.length >= 8;
-
-describe.skipIf(!haveOwner)("the owner's real Dhan and Angel One exports route to their own source", () => {
-  for (const o of OWNER) {
-    it(`${path.basename(o.file).slice(0, 22)}… → ${o.expect}`, () => {
-      const { filename, bytes } = ownerContext(o.file);
-      const ranked = rankParsers(buildContext(filename, bytes));
-      expect(ranked[0].sourceId).toBe(o.expect);
-      expect(ranked[0].confidence).toBeGreaterThanOrEqual(0.9);
-    });
+describe("the owner's real Dhan and Angel One exports route to their own source", () => {
+  for (const p of OWNER_PATTERNS) {
+    const found = ownerFiles(p.pattern);
+    if (found.length === 0) {
+      it.skip(`no owner file matches ${p.pattern} — expected ${p.expect}`, () => {});
+      continue;
+    }
+    for (const file of found) {
+      it(`${path.basename(file).slice(0, 22)}… → ${p.expect}`, () => {
+        const { filename, bytes } = ownerContext(file);
+        const ranked = rankParsers(buildContext(filename, bytes));
+        expect(ranked[0].sourceId).toBe(p.expect);
+        expect(ranked[0].confidence).toBeGreaterThanOrEqual(0.9);
+      });
+    }
   }
 });
 
-describe.skipIf(!haveOwner)("no detector claims another broker's REAL file (owner's folder)", () => {
-  const DETECTORS: { name: string; broker: string; fn: (ctx: ReturnType<typeof buildContext>) => number }[] = [
-    { name: "detectZerodha", broker: "zerodha", fn: detectZerodha },
-    { name: "detectGrowwXlsx", broker: "groww", fn: detectGrowwXlsx },
-    { name: "detectGrowwOrders", broker: "groww", fn: detectGrowwOrders },
-    { name: "detectAngelOne", broker: "angelone", fn: detectAngelOne },
-    { name: "detectAngelOneTaxPnl", broker: "angelone", fn: detectAngelOneTaxPnl },
-    { name: "detectUpstox", broker: "upstox", fn: detectUpstox },
-    { name: "detectPaytmTradebook", broker: "paytm", fn: detectPaytmTradebook },
-    { name: "detectDhanGtr", broker: "dhan", fn: detectDhanGtr },
-    { name: "detectDhanCsv", broker: "dhan", fn: detectDhanCsv },
-    { name: "detectDhanRealisedPnl", broker: "dhan", fn: detectDhanRealisedPnl },
-    { name: "detectDhanLedgerFile", broker: "dhan", fn: detectDhanLedgerFile },
-    { name: "detectDhanDividend", broker: "dhan", fn: detectDhanDividend },
-  ];
-  for (const d of DETECTORS) {
-    for (const o of OWNER) {
-      if (o.broker === d.broker) continue;
-      it(`${d.name} scores 0 on ${path.basename(o.file).slice(0, 22)}…`, () => {
-        const { filename, bytes } = ownerContext(o.file);
-        expect(d.fn(buildContext(filename, bytes))).toBe(0);
-      });
+describe("no detector claims another broker's REAL file (owner's folder)", () => {
+  // The container rule applies here too: an owner `.xlsx` is offered to a
+  // text-only detector as its CSV projection, never as bytes it cannot open.
+  for (const d of CROSS_DETECTORS) {
+    for (const p of OWNER_PATTERNS) {
+      if (p.broker === d.broker) continue;
+      const found = ownerFiles(p.pattern);
+      if (found.length === 0) {
+        it.skip(`${d.name}: no owner file matches ${p.pattern}`, () => {});
+        continue;
+      }
+      for (const file of found) {
+        const label = `${path.basename(file).slice(0, 22)}…`;
+        if (readsBinary(d.container)) {
+          it(`${d.name} scores 0 on ${label} [binary container]`, () => {
+            const { filename, bytes } = ownerContext(file);
+            expect(d.fn(buildContext(filename, bytes))).toBe(0);
+          });
+        }
+        if (readsText(d.container)) {
+          it(`${d.name} scores 0 on ${label} [text container]`, () => {
+            expect(d.fn(loadAsText(path.dirname(file), path.basename(file)))).toBe(0);
+          });
+        }
+      }
     }
   }
 });

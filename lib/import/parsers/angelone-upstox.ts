@@ -277,6 +277,8 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     const cOther = tradesHistory ? find("other charges") : -1;
     let sourceRows = 0;
     let chargeOnlyRows = 0;
+    /** Date cells no calendar could hold (month above 12) — dropped, not guessed. */
+    const undatedRows: string[] = [];
     const groups = new Map<string, Acc>();
     for (const r of dataRows) {
       const rawSymbol = (r[cSymbol] ?? "").trim();
@@ -310,6 +312,13 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
         : toNum(r[cPrice]);
       const rawDate = cDate >= 0 ? (r[cDate] || null) : null;
       const date = tradesHistory ? usDateToIso(rawDate) : rawDate;
+      // A date cell that names no real calendar day is refused, not guessed —
+      // an undated row would be stored with a month above 12 and price at the
+      // wrong rate epoch. The row (and its charges) is dropped and counted.
+      if (tradesHistory && rawDate && date === null) {
+        undatedRows.push(String(rawDate).trim());
+        continue;
+      }
       const time = tradesHistory ? null : (extractTime(cTime >= 0 ? r[cTime] : null) ?? extractTime(date));
       if (tradesHistory) {
         // Charges are stated PER ROW, including rows with quantity 0 — the
@@ -429,6 +438,11 @@ function parseFor(broker: Broker, ctx: ParseContext): ParsedFile {
     warnings.push(
       `Angel One Trades_History: ${sourceRows} rows read, ${chargeOnlyRows} of them per-order charge lines (quantity 0) folded into their contract's charges. Charges are the broker's stated figures per row; product comes from Order Type; there are no fill times.`,
     );
+    if (undatedRows.length > 0) {
+      warnings.push(
+        `${undatedRows.length} row${undatedRows.length === 1 ? " was" : "s were"} skipped: the date cell names no real calendar day (first sample: "${undatedRows[0]}"). Vyuha will not guess whether such a file is day-first or month-first — please report it so the grammar can be extended.`,
+      );
+    }
     if (reported.statedTotalCharges != null && reported.nonTradeCharges != null) {
       warnings.push(
         `The file's Total Charges ₹${reported.statedTotalCharges} includes ₹${reported.nonTradeCharges} of non-trade charges (DP, AMC, interest, pledge) that belong to the ledger, not to these trades.`,
@@ -535,13 +549,23 @@ export function canonicalAngelContract(raw: string): string {
 
 /** SheetJS renders a date cell as `8/27/26 0:00` (m/d/yy) when read with
  *  raw:false — US order, because that is Excel's default short date. ISO
- *  dates pass through; anything else is left for the committer to refuse. */
+ *  dates pass through; anything else is left for the committer to refuse.
+ *
+ *  A cell whose FIRST token is above 12 is not US order at all (`27/08/26` is
+ *  day-first), and composing it anyway produced `2026-27-08` — a string the
+ *  committer stored verbatim, so a trade sat under a month that does not
+ *  exist. That is refused (null) the way `parseGtrDate` refuses a numeric
+ *  month above 12, and the caller drops the row rather than guessing which
+ *  order the file meant. */
 export function usDateToIso(raw: string | null): string | null {
   if (!raw) return null;
   const s = raw.trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?!\d)/);
   if (!m) return s;
+  const mm = Number(m[1]);
+  const dd = Number(m[2]);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
   const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
   return `${yyyy}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
 }

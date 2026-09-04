@@ -44,13 +44,17 @@ const COMMODITY_SET = new Set<string>(COMMODITY_UNDERLYINGS);
 /**
  * A commodity derivative the report places on a venue other than MCX (the
  * real 2026 report has one: `OPT CRUDEOIL 09 Jun 2026 8000 PE` on NSE — NSE
- * does list crude options). Vyuha's rate table prices commodity segments at
- * MCX only, and the Dhan Realised P&L parser already files the whole
- * commodity segment there; carrying "NSE" through made the WHOLE import
- * throw at commit (`No charge_config for dhan / default / commodity_option /
- * NSE`). The stated venue is kept on the trade as a note, the classifier is
- * handed no hint so the position lands where it can be priced, and the
- * charges stay the broker's own per-row figures — nothing is re-estimated.
+ * does list crude options).
+ *
+ * Vyuha's rate table prices commodity segments at MCX only, and carrying
+ * "NSE" through used to make the WHOLE import throw at commit
+ * (`No charge_config for dhan / default / commodity_option / NSE`). The first
+ * fix dropped the hint, which put the row on MCX in the user's own record — a
+ * venue the broker never traded it on, contradicting the note beside it. Since
+ * v3.8.0 the record keeps the stated venue and `findRates` falls back to the
+ * MCX rows for a commodity segment the exchange has no config for: priced at
+ * MCX, recorded on NSE. Charges here are the broker's own per-row figures
+ * either way — nothing is re-estimated.
  */
 function commodityOffMcx(symbol: string, exchange: string | null): boolean {
   if (!exchange || exchange === "MCX") return false;
@@ -154,7 +158,20 @@ export interface GtrParsed {
    * empty. Blank spacer lines and the footer are not counted.
    */
   unparsedDates: { count: number; sample: string | null };
+  /**
+   * The numeric date grammar both ACCEPTED some cells and REFUSED others in
+   * the same file — a month token above 12 next to cells that read cleanly as
+   * dd-mm-yyyy. A genuine day-first file can never contain a refused numeric
+   * date, so the file is month-first (US-ordered) and every "accepted" cell
+   * was read backwards. Reading 68 of 209 lines swapped and skipping the other
+   * 141 puts FIFO in the wrong order and dumps the skipped lines' charges on
+   * an arbitrary symbol, so the file is refused whole (audit finding 2).
+   */
+  ambiguousDates: boolean;
 }
+
+/** The shape the numeric grammar claims, before range validation. */
+const NUMERIC_DATE_RE = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:\s|$)/;
 
 /** Split the file into data rows and the footer totals. Pure string work. */
 export function readGtr(text: string): GtrParsed {
@@ -163,6 +180,8 @@ export function readGtr(text: string): GtrParsed {
   const rows: GtrRow[] = [];
   const reported: Record<string, number> = {};
   const unparsedDates: GtrParsed["unparsedDates"] = { count: 0, sample: null };
+  let numericAccepted = 0;
+  let numericRefused = 0;
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -184,8 +203,13 @@ export function readGtr(text: string): GtrParsed {
     if (/^NOTE\s*:/i.test(line)) continue;
 
     const c = splitCsvLine(line);
-    const date = parseGtrDate(c[0] ?? "");
+    const cell = c[0] ?? "";
+    const date = parseGtrDate(cell);
     if (!c[1]) continue;
+    if (NUMERIC_DATE_RE.test(cell)) {
+      if (date) numericAccepted++;
+      else numericRefused++;
+    }
     if (!date) {
       unparsedDates.count++;
       unparsedDates.sample ??= c[0] ?? "";
@@ -204,7 +228,15 @@ export function readGtr(text: string): GtrParsed {
     });
   }
 
-  return { rows, reported, unparsedDates };
+  // A day-first file never refuses a numeric date; a month-first one refuses
+  // every row whose day is above 12 and reads the rest swapped. Mixed verdicts
+  // therefore mean the file's order is unknown, and half a book read backwards
+  // is worse than no book.
+  if (numericAccepted > 0 && numericRefused > 0) {
+    return { rows: [], reported, unparsedDates, ambiguousDates: true };
+  }
+
+  return { rows, reported, unparsedDates, ambiguousDates: false };
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -285,15 +317,16 @@ function venueOffMcx(flag: boolean, p: PairedPosition, sink: string[]): boolean 
 
 export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   const text = ctx.text ?? ctx.buffer?.toString("utf-8") ?? "";
-  const { rows, reported, unparsedDates } = readGtr(text);
+  const { rows, reported, unparsedDates, ambiguousDates } = readGtr(text);
   const warnings: string[] = [];
 
   if (rows.length === 0) {
     // A detected GTR that yields nothing is a parser gap until proven
     // otherwise, so the warning names the date cell it could not read — the
     // one fact that turns "no rows" into a bug report someone can act on.
-    const why =
-      unparsedDates.count > 0
+    const why = ambiguousDates
+      ? `Nothing was imported: this report's dates are ambiguous. ${unparsedDates.count} line${unparsedDates.count === 1 ? "" : "s"} carr${unparsedDates.count === 1 ? "ies" : "y"} a numeric date whose month token is above 12 (first sample: "${unparsedDates.sample}") while other lines read cleanly as dd-mm-yyyy, so the file is written month-first and every date Vyuha could read would be read backwards. Vyuha will not import half a book in the wrong order — please report this file so the grammar can be extended.`
+      : unparsedDates.count > 0
         ? `No transaction rows could be read: ${unparsedDates.count} line${unparsedDates.count === 1 ? "" : "s"} under the header carr${unparsedDates.count === 1 ? "ies" : "y"} a date Vyuha does not recognise (first sample: "${unparsedDates.sample}"). Supported forms are dd Mon yyyy, dd-mm-yyyy and dd/mm/yyyy — please report this file so the grammar can be extended.`
         : "No transaction rows found under the header — the report window may be empty.";
     return { sourceId: "dhan-gtr", broker: "dhan", format: "transactions", trades: [], warnings: [why] };
@@ -354,7 +387,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
     const venueOverridden = commodityOffMcx(p.symbol, p.exchange);
     if (venueOffMcx(venueOverridden, p, offMcx)) {
       notes.push(
-        `Report states exchange ${p.exchange}; classified at MCX because Vyuha prices commodity contracts there only. Charges are the broker's own figures for this row, not re-estimated.`,
+        `Recorded on ${p.exchange}, the venue the report states; priced with Vyuha's MCX commodity rates, because the rate table carries commodity rows for MCX only. Charges are the broker's own figures for this row, not re-estimated.`,
       );
     }
 
@@ -374,7 +407,9 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
       buyDate: p.buyDate,
       sellDate: p.sellDate,
       productHint: toHint(p.product),
-      exchangeHint: venueOverridden ? null : ((p.exchange as Exchange | null) ?? null),
+      // The stated venue is kept even for a commodity contract off MCX — the
+      // rate lookup falls back to the MCX rows rather than the record bending.
+      exchangeHint: (p.exchange as Exchange | null) ?? null,
       sourceFile: ctx.filename,
       // Settlement stamps, not fill times — see the header note.
       entryTime: null,
@@ -398,11 +433,27 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   // both would make the journal disagree with the broker's own total by a
   // few paise, so the residual is handed to the last position and said so —
   // the way the Paytm parser's residual slice works.
+  //
+  // The fold is CAPPED at the rounding it exists to absorb — `summarisePairing`
+  // already derives that ceiling (N positions × 1 paisa, floor ₹0.05). Above
+  // the cap the difference is not rounding: the footer covers every line in the
+  // file, `given` only the lines that became trades, so a skipped line would
+  // otherwise dump its whole charge bill on whichever symbol happens to be last
+  // and call it "rounding" (one 13-13-2026 line moved ₹238.87 onto an unrelated
+  // scrip — audit finding 1). Then Vyuha says so and leaves every position's
+  // charges exactly as the report states them.
   const statedTotal = reported.totalCharges != null ? r2(reported.totalCharges) : r2(totalCharges);
   const given = r2(trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0));
   const residual = r2(statedTotal - given);
+  const foldCap = check.valueTolerance;
   const last = trades[trades.length - 1];
-  if (residual !== 0 && last?.reportedCharges) {
+  if (residual !== 0 && Math.abs(residual) > foldCap) {
+    warnings.push(
+      unparsedDates.count > 0
+        ? `₹${Math.abs(residual).toFixed(2)} of the footer's charges belong to ${unparsedDates.count} skipped line${unparsedDates.count === 1 ? "" : "s"} — more than the ₹${foldCap.toFixed(2)} this file's rounding can explain, so it was NOT folded into any position. Every position keeps the charges the report states for it, and the book's charges total ₹${given.toLocaleString("en-IN")} against the footer's ₹${statedTotal.toLocaleString("en-IN")}.`
+        : `The footer's Total Charges (₹${statedTotal.toLocaleString("en-IN")}) differ from the positions' own charges (₹${given.toLocaleString("en-IN")}) by ₹${Math.abs(residual).toFixed(2)} — more than the ₹${foldCap.toFixed(2)} rounding tolerance, so nothing was folded and each position keeps the report's own figures. Please report this file.`,
+    );
+  } else if (residual !== 0 && last?.reportedCharges) {
     const b = last.reportedCharges;
     type Head = "brokerage" | "gst" | "sttCtt" | "exchangeTxn" | "stampDuty" | "sebi";
     const head = (["brokerage", "gst", "sttCtt", "exchangeTxn", "stampDuty", "sebi"] as Head[])
@@ -450,7 +501,7 @@ export function parseDhanGtr(ctx: ParseContext): ParsedFile {
   }
   if (offMcx.length > 0) {
     warnings.push(
-      `${offMcx.length} commodity contract${offMcx.length === 1 ? "" : "s"} the report places on NSE ${offMcx.length === 1 ? "is" : "are"} classified at MCX (Vyuha prices commodity contracts there only; the broker's own charges are kept): ${offMcx.slice(0, 3).join("; ")}.`,
+      `${offMcx.length} commodity contract${offMcx.length === 1 ? "" : "s"} the report places off MCX ${offMcx.length === 1 ? "is" : "are"} recorded on the stated exchange and priced with Vyuha's MCX commodity rates (the rate table carries commodity rows for MCX only; the broker's own charges are kept): ${offMcx.slice(0, 3).join("; ")}.`,
     );
   }
   warnings.push(

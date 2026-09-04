@@ -44,14 +44,31 @@ const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z&%]/g, 
  * Text money → number. ` 1,23,456.78 ` → 123456.78 (Indian or Western
  * grouping — the commas are simply removed), `-` / ` -   ` / `` → 0,
  * `(1,234.00)` → -1234. Anything unreadable is 0, never NaN.
+ *
+ * Three notations the exports actually contain used to read as **zero**, which
+ * is the worst possible answer — a charge or a P&L silently vanishing rather
+ * than refusing:
+ *   `1,234.00 Dr` → -1234   (bank/ledger notation: Dr is money out)
+ *   `1,234.00 Cr` →  1234   (Cr is money in)
+ *   `−1,234.00`   → -1234   (U+2212 MINUS SIGN, what Excel writes when a cell
+ *                            is formatted, not the ASCII hyphen `Number` reads)
  */
 export function parseTextMoney(v: unknown): number {
-  const s = String(v ?? "").replace(/[₹,\s]/g, "");
+  let s = String(v ?? "").replace(/[\u20B9,\s]/g, "").replace(/[\u2212\u2012\u2013\u2014]/g, "-");
+  if (!s || s === "-") return 0;
+  // Dr/Cr may be written either side of the figure, with or without a stop.
+  let sign = 1;
+  const drcr = s.match(/^(?:(dr|cr)\.?)?(.*?)(?:(dr|cr)\.?)?$/i);
+  const tag = (drcr?.[1] ?? drcr?.[3] ?? "").toLowerCase();
+  if (tag) {
+    sign = tag === "dr" ? -1 : 1;
+    s = drcr![2];
+  }
   if (!s || s === "-") return 0;
   const neg = /^\(.*\)$/.test(s);
   const x = Number(s.replace(/[()]/g, ""));
   if (!Number.isFinite(x)) return 0;
-  return neg ? -x : x;
+  return sign * (neg ? -x : x);
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

@@ -108,6 +108,23 @@ export async function POST(req: Request) {
     );
   }
 
+  // Neither has a file that parsed cleanly into NO trades — a Dhan ledger or
+  // dividend statement, a PDF whose rows this route cannot read. The guard
+  // above covered only the generic-unmapped case, so those committed an
+  // `import_batches` row with rowCount 0: the Imports table then shows a
+  // successful import of nothing, and the user has no idea the file was the
+  // wrong one. Say so instead; the file's own warnings carry the detail.
+  if (mode === "commit" && parsed.trades.length === 0) {
+    return NextResponse.json(
+      {
+        error: "This file was read successfully but contains no trades to import — nothing was written.",
+        code: "NO_TRADES_PARSED",
+        warnings: parsed.warnings,
+      },
+      { status: 422 },
+    );
+  }
+
   if (mode === "commit") {
     try {
       const result = commitParsedFile(parsed, file.name, productOverrides, accountId);

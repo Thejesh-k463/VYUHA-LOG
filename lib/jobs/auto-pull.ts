@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { brokerConnections, settings as settingsTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { readSecret } from "@/lib/vault";
+import { encryptSecret, readSecret } from "@/lib/vault";
 import { recordAudit } from "@/lib/audit";
 import { toIst } from "@/lib/domain/trading-day";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
@@ -135,8 +135,32 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       const { trades, refused } = normalizeAngelTrades(await fetchAngelTradeBook(creds, jwtToken), today);
       parsed = angelToParsedFile(trades, refused);
     } else if (conn.broker === "dhan") {
-      // Eligibility already guaranteed pin+totp; never the pasted-token mode.
-      const source = dhanImportSource({ clientId: keyRead.value, pin: auth?.pin, totpSecret: auth?.totpSecret });
+      // Eligibility already guaranteed pin+totp, but the pull must still go
+      // through the SAME reuse-first token path as the manual route: Dhan mints
+      // at most one token per 2 minutes (live-verified 2026-09-02). Passing no
+      // stored token and no onMinted meant every sweep minted a token and threw
+      // it away — so a manual Preview a minute later (or the reverse) failed on
+      // the rate limit. Reuse the stored token when it is alive, and PERSIST any
+      // mint into the same vault column the route writes.
+      const tokenRead = readSecret(conn.accessToken);
+      const source = dhanImportSource(
+        {
+          clientId: keyRead.value,
+          accessToken: (tokenRead.ok && tokenRead.value) || undefined,
+          pin: auth?.pin,
+          totpSecret: auth?.totpSecret,
+        },
+        (minted) => {
+          try {
+            db.update(brokerConnections)
+              .set({ accessToken: encryptSecret(minted), updatedAt: new Date().toISOString() })
+              .where(eq(brokerConnections.id, conn.id))
+              .run();
+          } catch {
+            /* cache miss only — the next pull mints again */
+          }
+        },
+      );
       parsed = dhanToParsedFile(await source.fetchTrades({}));
     } else if (conn.broker === "upstox") {
       parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));

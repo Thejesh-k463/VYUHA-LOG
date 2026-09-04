@@ -1,0 +1,55 @@
+
+> vyuha@3.7.1 perf:sweep
+> node scripts/perf-sweep.mjs
+
+sweeping 43 routes × 3 rounds at http://127.0.0.1:3100 (budget 1500 ms/route median)
+
+route                     median    p95    max   errors
+/                           1237   1569   1569   -
+/risk                       1298   1426   1426   -
+/strategies                 1006   1091   1091   -
+/equity                      934    979    979   -
+/active                      827    832    832   -
+/targets/equity              927    936    936   -
+/calculator                  637    643    643   -
+/targets/active              933    942    942   -
+/trades                     1968   2280   2280   -  ← over budget
+/lenses                      898    903    903   -
+/sessions                    689    694    694   -
+/review                     1081   1087   1087   -
+/playbooks                   924    954    954   -
+/options-journal             877    939    939   -
+/ipos                        621    634    634   -
+/import                      639    681    681   -
+/import-help                 622    628    628   -
+/reports/tax                 861    888    888   -
+/reports/advance-tax         718    750    750   -
+/reports/harvest            1308   1318   1318   -
+/reports/itr                1045   1056   1056   -
+/reports/ais                 625    651    651   -
+/reports/performance         865    907    907   -
+/arjuns-eye                 1020   1055   1055   -
+/reports/monthly            1060   1095   1095   -
+/reports/charges            1085   1100   1100   -
+/reports/broker-compare     1134   1137   1137   -
+/reports/expiry              952    966    966   -
+/reports/rom                1019   1051   1051   -
+/reports/edge                991   1005   1005   -
+/reports/scaling             910    921    921   -
+/reports/discipline         1057   1117   1117   -
+/cash                        863    872    872   -
+/surveillance                663    669    669   -
+/corporate-actions           623    627    627   -
+/aliases                     604    609    609   -
+/instruments                 623    627    627   -
+/settings                    975    990    990   -
+/backup                      623    637    637   -
+/audit                       691    716    716   -
+/data-quality                955    965    965   -
+/rule-packs                  613    614    614   -
+/help                        643    646    646   -
+
+visits: 129 · overall median 910 ms · slowest median 1968 ms
+
+✗ 1 route(s) over the 1500 ms budget:
+    /trades  median 1968 ms (p95 2280, max 2280)

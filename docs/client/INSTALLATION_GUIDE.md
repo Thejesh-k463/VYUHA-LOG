@@ -142,14 +142,20 @@ database migration).
 **Upgrading from v3.7.1 to v3.8.0 — one thing to know.** The installer runs the *previous*
 version's uninstaller once before it installs, and the v3.7.1 uninstaller has no backup step of
 its own. When its "Delete the application data" checkbox appears, **leave it UNTICKED** and
-continue. From v3.8.0 onward the uninstaller protects your data as described below. If you want
-a belt-and-braces copy first, export a backup from Backup & Restore inside the app.
+continue — ticking it erases the whole data folder, journal and licence key together. From
+v3.8.0 onward the uninstaller protects your data as described below. If you want a
+belt-and-braces copy first, export a backup from Backup & Restore inside the app — but the
+in-app backup carries your journal and **not** your licence key, so keep the key email too.
+Leaving that checkbox unticked is what keeps the key.
 
 **Uninstalling.** The uninstaller offers a "Delete the application data" checkbox — at
-uninstall, and mid-upgrade if you choose to uninstall the old version first. Before it runs,
-Vyuha copies your journal database and licence key (both live in `vyuha.sqlite`) plus your
-attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm; Cancel keeps everything
-in place. Leave the box unticked to keep the data where it is.
+uninstall, and mid-upgrade if you choose to uninstall the old version first. Ticking it erases
+the whole data folder: journal, licence key and attachments. Before it runs, Vyuha copies your
+journal database and licence key (both live in `vyuha.sqlite`), the pre-migration backups it
+took for you and your attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm;
+Cancel keeps everything in place, and if that copy cannot be made — a full disk, or a
+files-on-demand placeholder OneDrive will not hydrate — the uninstall stops with nothing
+removed. Leave the box unticked to keep the data where it is.
 
 ## 9. Troubleshooting
 

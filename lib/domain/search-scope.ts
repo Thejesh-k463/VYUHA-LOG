@@ -94,7 +94,7 @@ export interface Lock {
   unlocks?: string;
 }
 
-type Feature = { href: string; label: string };
+type Feature = { href: string; label: string; partial?: true };
 
 const FREE: Lock = { locked: false };
 
@@ -104,11 +104,19 @@ const FREE: Lock = { locked: false };
  * Matches the PATH only, so a feature that is a query-string ACTION on a free
  * page (`/trades?add=open`, `partial`) never locks the page itself: `/trades`
  * is the core journal.
+ *
+ * `partial: true` entries are SKIPPED entirely. A partial feature is a Pro
+ * CAPABILITY inside an otherwise-free page (lib/license.ts says so in as many
+ * words, and forbids wrapping such a page in <ProGate>): `/lenses` opens for
+ * a free user — grouping, counts and cleanup are free, only the per-group
+ * edge columns are not. Locking it here put a padlock in the palette on a
+ * screen the user can walk straight into, which reads as "you cannot open
+ * this" and is simply false. The screen states its own partial gate.
  */
 export function lockFor(href: string, entitlement: { pro: boolean }, features: readonly Feature[] = PRO_FEATURES): Lock {
   if (entitlement.pro) return FREE;
   const path = href.split("?")[0].split("#")[0];
-  const hit = features.find((f) => f.href === path);
+  const hit = features.find((f) => f.href === path && !f.partial);
   return hit ? { locked: true, unlocks: hit.label } : FREE;
 }
 

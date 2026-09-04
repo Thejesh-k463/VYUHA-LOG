@@ -1,9 +1,9 @@
 "use client";
 
 import { CornerDownLeft, Lock } from "lucide-react";
-import { CATEGORY_CHIPS } from "@/lib/domain/search-rank";
-import { SOURCES, type SearchResult, type SourceKey } from "@/lib/domain/search-scope";
-import { groupBySource, unlockLine } from "./use-search-session";
+import { CATEGORY_CHIPS, TRIGRAM_MIN } from "@/lib/domain/search-rank";
+import { RESULT_CAP, SOURCES, type SearchResult, type SourceKey } from "@/lib/domain/search-scope";
+import { groupBySource, shortTokens, tradesUnsearchable, unlockLine, visibleResults } from "./use-search-session";
 
 /**
  * The palette's search results (v3.8 Wave 3) — LAZY. command-palette.tsx
@@ -33,7 +33,11 @@ export interface SearchResultsProps {
 }
 
 export default function SearchResults({ q, results, loading, error, cats, onToggleCat, activeIndex, onHover, onOpen }: SearchResultsProps) {
-  const groups = groupBySource(results);
+  // The palette derives its cursor from `visibleResults` too, so the row the
+  // cursor is on is the row on screen.
+  const groups = groupBySource(visibleResults(q, results));
+  const short = shortTokens(q);
+  const tradesOff = tradesUnsearchable(q);
   let cursor = 0;
 
   return (
@@ -58,6 +62,16 @@ export default function SearchResults({ q, results, loading, error, cats, onTogg
         {loading && <span className="ml-auto text-[10px] text-muted-foreground">Searching…</span>}
       </div>
 
+      {/* Why the Trades group is missing. FTS5's trigram index cannot see a
+          term shorter than three characters, so "IT" (and the "it" in "it
+          swing") matches no trade — saying so beats an empty group or, worse,
+          trades matched on only the long half of the query. */}
+      {tradesOff && (
+        <p data-search-note="short-token" className="px-3 pb-1 text-[11px] text-muted-foreground">
+          Trades need {TRIGRAM_MIN}+ characters — &ldquo;{short.join("”, “")}&rdquo; {short.length > 1 ? "are" : "is"} too short, so no trades are shown.
+        </p>
+      )}
+
       {error ? (
         <p className="px-3 pb-3 text-sm text-muted-foreground">Search failed — try again.</p>
       ) : groups.length === 0 && !loading ? (
@@ -66,7 +80,13 @@ export default function SearchResults({ q, results, loading, error, cats, onTogg
         <div className="p-1.5 pt-0">
           {groups.map((g) => (
             <section key={g.key} data-search-group={g.key} aria-label={g.label}>
-              <h3 className="px-3 pb-0.5 pt-2 text-[10px] uppercase tracking-wide text-muted-foreground">{g.label}</h3>
+              {/* A global source is not filtered by the selected account, so
+                  its rows come from every book — the label says so, otherwise
+                  a user on one account reads them as that account's. */}
+              <h3 className="px-3 pb-0.5 pt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {g.label}
+                {SOURCES[g.key].scope === "global" && <span className="opacity-70"> · all accounts</span>}
+              </h3>
               {g.results.map((r) => {
                 const i = cursor++;
                 const active = i === activeIndex;
@@ -94,6 +114,14 @@ export default function SearchResults({ q, results, loading, error, cats, onTogg
                   </button>
                 );
               })}
+              {/* Every reader is capped at RESULT_CAP, so a full group is a
+                  TRUNCATED group — without this line the 51st match simply
+                  does not exist as far as the user can tell. */}
+              {g.results.length === RESULT_CAP && (
+                <p data-search-note="capped" className="px-3 pb-1 pt-0.5 text-[11px] text-muted-foreground">
+                  Showing first {RESULT_CAP} — refine the query.
+                </p>
+              )}
             </section>
           ))}
         </div>

@@ -29,7 +29,18 @@ export async function GET(req: Request) {
   }
 
   const accountId = getSelectedAccountId();
-  const { results, tookMs } = searchAll(q, { accountId, categories: categories ?? undefined });
+  // A search box is a place users PASTE into, so the fan-out is treated as
+  // fallible input handling, not as trusted code: any throw (a malformed FTS5
+  // expression, a locked DB, a reader that meets a row it cannot shape) is
+  // the QUERY's failure, and the palette renders "Search failed — try again."
+  // off a 400. It used to be an unhandled 500 — a NUL in the query reached
+  // FTS5 as `unterminated string` and the whole route crashed.
+  let results, tookMs;
+  try {
+    ({ results, tookMs } = searchAll(q, { accountId, categories: categories ?? undefined }));
+  } catch {
+    return NextResponse.json({ ok: false, message: "That query could not be searched." }, { status: 400 });
+  }
   return NextResponse.json(
     { ok: true, q, categories: categories ?? SOURCE_KEYS, cap: RESULT_CAP, results, tookMs },
     { headers: { "Cache-Control": "no-store" } },

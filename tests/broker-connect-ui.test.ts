@@ -51,7 +51,16 @@ describe("the pure gate module is the gate", () => {
     // The v3.7.1 inline expression's opening — `!apiKey` alone was the bug.
     expect(SRC).not.toMatch(/busy != null \|\| !apiKey \|\|/);
     const btn = between("onClick={save}", '{busy === "save"');
-    expect(btn).toMatch(/disabled=\{[\s\S]*saveDisabled\(\{[\s\S]*hasSavedRow: saveTargetConn != null/);
+    // `[\s\S]*` between `disabled={` and `saveDisabled({` accepted ANYTHING in
+    // the gap, so re-inserting the v3.7.1 inline rule on its own line passed
+    // this pin. Read the gap and require it to be EXACTLY the account guard.
+    const at = btn.indexOf("disabled={");
+    expect(at, "the Save button has no disabled prop").toBeGreaterThan(-1);
+    const call = btn.indexOf("saveDisabled({", at);
+    expect(call, "the disabled prop does not call the gate").toBeGreaterThan(-1);
+    const gap = btn.slice(at + "disabled={".length, call);
+    expect(gap.replace(/\s+/g, " ").trim(), "the disabled prop carries a rule the gate module does not own").toBe("pickMissing ||");
+    expect(btn).toMatch(/saveDisabled\(\{[\s\S]*hasSavedRow: saveTargetConn != null/);
   });
 });
 

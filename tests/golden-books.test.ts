@@ -166,6 +166,9 @@ const GOLDEN: Golden[] = [
     reference: { gross: -67517.25, tol: 0.01 },
     charges: { mode: "engine" },
     reportedPins: { charges: 3269.4101, realisedPnl: -67517.25, brokerage: 1340, sttCtt: 899, gst: 357.1643 },
+    // DEFECT (by design until v3.9 reconciliation): the pinned charges are the ENGINE's
+    // estimate, not the broker's. Zerodha states 3,269.41 for these very rows; the journal
+    // holds 3,183.73, 85.68 under. Pinned so the number cannot drift, NOT because it is right.
     commit: { net: -70700.98, gross: -67517.25, charges: 3183.73 },
     note: "Console P&L for F&O FY25-26, 22 symbol rows, no dates (the report states none). Same book as the FY25-26 tax P&L: gross agrees to the paisa. The Summary's Charges 3,269.4101 and per-head table now travel in `reported` (pinned above); the rows state no charges, so the journal holds the engine's 3,183.73 — ₹85.68 under the broker, visible beside it rather than hidden.",
   },
@@ -224,6 +227,11 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 1011, open: 2, openingSells: 0 },
     reference: { gross: -1093133.24, tol: 0.05 },
     charges: { mode: "engine" },
+    // DEFECT (by design until v3.9 reconciliation): the ENGINE's estimate stands in for
+    // charges this file does not state — 719,936.21 against the broker's own 812,563.17,
+    // with equity over-estimated ~3x (277,765.57 vs 92,379.85: no product column, so every
+    // equity row is assumed delivery and pays delivery STT) and F&O under-estimated ~39%
+    // (seeded plan brokerage, not the 278,939.23 Dhan billed). Frozen, not endorsed.
     commit: { net: -1813069.44, gross: -1093133.23, charges: 719936.21 },
     segments: {
       equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 277765.57, engineNet: -460416.66 },
@@ -238,6 +246,9 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 146, open: 3, openingSells: 0 },
     reference: { gross: -152158.28, tol: 0.05 },
     charges: { mode: "engine" },
+    // DEFECT (by design until v3.9 reconciliation): engine estimate, not the broker's —
+    // 165,564.67 against 81,058.88 (equity 151,668.54 vs 48,311.04, same delivery-STT
+    // assumption as account 1). Frozen so it cannot drift, not because it is right.
     commit: { net: -317722.98, gross: -152158.31, charges: 165564.67 },
     segments: {
       equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151668.54, engineNet: -252839.81 },
@@ -251,6 +262,9 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 1011, closed: 1011, open: 0, openingSells: 0 },
     reference: { gross: -1093133.27, tol: 0.01 },
     charges: { mode: "engine" },
+    // DEFECT (by design until v3.9 reconciliation): the per-scrip rows state no charges,
+    // so the journal holds the engine's 719,935.15 against the broker's own segment rows'
+    // 812,562.24 — equity 277,764.51 vs 92,379.85 (delivery STT assumed for every row).
     commit: { net: -1813068.42, gross: -1093133.27, charges: 719935.15 },
     segments: {
       equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 277764.51, engineNet: -460415.61 },
@@ -265,6 +279,8 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 146, closed: 146, open: 0, openingSells: 0 },
     reference: { gross: -152158.33, tol: 0.01 },
     charges: { mode: "engine" },
+    // DEFECT (by design until v3.9 reconciliation): engine estimate again — 165,410.93
+    // against the broker's 80,880.89 (equity 151,514.80 vs 48,311.04). Frozen, not endorsed.
     commit: { net: -317569.26, gross: -152158.33, charges: 165410.93 },
     segments: {
       equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151514.8, engineNet: -252686.09 },

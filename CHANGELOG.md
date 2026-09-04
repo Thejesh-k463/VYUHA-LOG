@@ -29,7 +29,7 @@ empty result with a 0.98 detection score on the first run.
 - **Remove a broker's imported rows, then re-import clean.** A broker-scoped
   remove on the Import screen (account-scoped, confirmed, audit-logged) takes
   every row that broker's imports created into Trash, from where the whole set is
-  restorable under its original ids. Ledger and IPO rows are unlinked, never
+  restorable under its original ids in **Backup & Restore → Deleted items**. Ledger and IPO rows are unlinked, never
   deleted. It exists so a mis-paired book can be replaced in one step instead of
   ~50 hand deletions.
 - **Dhan connects the way the form promised.** The Client-ID box no longer blocks
@@ -83,8 +83,10 @@ empty result with a 0.98 detection score on the first run.
   application data" UNTICKED.** From v3.8.0 on the guard is in place.
 - **Every date is IST.** Forty-one screens that computed "today" in UTC now use
   one IST helper; the owner's book priced identically before and after.
-- **Guards behind the scenes.** The audit log refuses a before/after record whose
-  keys drift (the class that survived two v3.7 audits); writes refuse the
+- **Guards behind the scenes.** The audit log flags a before/after record whose
+  keys drift (the class that survived two v3.7 audits) — outside production it throws, so a
+  test that exercises the write fails on the shape; in the shipped app it records the entry
+  and logs a warning, because a mutation must not lose its trail over a logging defect; writes refuse the
   "All accounts" view with a typed error; a golden-book harness over 27 redacted
   real exports — exact shape counts and broker-stated totals — is a release gate,
   and the load suite runs as its own required CI job.

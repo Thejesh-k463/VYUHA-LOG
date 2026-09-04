@@ -68,10 +68,24 @@ describe("detection", () => {
     expect(detectDhanCsv(buildContext("pnl.xlsx", workbook("Sheet1", { title: false })))).toBe(0);
   });
 
-  it("the sibling Dhan detectors score 0 on it", () => {
+  it("the same-container sibling stands down on the WORKBOOK", () => {
+    // CONTAINER RULE: `buildContext` decodes `ctx.text` for `.csv`/`.txt` only.
+    // `detectDhanGtr`/`detectDhanLedgerFile`/`detectDhanDividend` all open
+    // `if (!text) return 0`, so against this `.xlsx` they scored 0 by
+    // EXTENSION and asserted nothing about the workbook's content. Only
+    // `detectDhanRealisedPnl` reads the binary container, so only it is
+    // asserted here; the three text detectors are asserted against the
+    // identical P&L content in its CSV container below.
     const c = buildContext("export.xlsx", workbook("Dhan_P&L"));
-    expect(detectDhanGtr(c)).toBe(0);
     expect(detectDhanRealisedPnl(c)).toBe(0);
+  });
+
+  it("the text-container siblings stand down on the same P&L content as CSV", () => {
+    // Same table, same footer, same title line — a container these three can
+    // actually read, so the refusal is decided by the content.
+    const c = buildContext("export.csv", Buffer.from(CSV));
+    expect(detectDhanCsv(c)).toBeGreaterThanOrEqual(0.4); // the owner still claims it
+    expect(detectDhanGtr(c)).toBe(0);
     expect(detectDhanLedgerFile(c)).toBe(0);
     expect(detectDhanDividend(c)).toBe(0);
   });

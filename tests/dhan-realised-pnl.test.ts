@@ -91,12 +91,16 @@ describe("detection", () => {
     expect(detectDhanRealisedPnl(buildContext("export.xls", workbook({ marker: false, sheet: "Dhan Realised" })))).toBeGreaterThanOrEqual(0.9);
   });
 
-  it("the other Dhan detectors score 0 on it", () => {
+  it("the SAME-CONTAINER Dhan detector stands down on it", () => {
+    // CONTAINER RULE: `buildContext` decodes `ctx.text` for `.csv`/`.txt` only,
+    // so `detectDhanGtr`/`detectDhanLedgerFile`/`detectDhanDividend` — each of
+    // which opens `if (!text) return 0` — score 0 on this `.xls` by EXTENSION
+    // and decide nothing about its content. Asserting them here proved only
+    // that the file is not a CSV. They are asserted against real Dhan CSV
+    // content in the stand-down matrix at the foot of this file instead.
+    // `detectDhanCsv` reads both containers, so its refusal IS content-decided.
     const c = buildContext("export.xls", workbook());
     expect(detectDhanCsv(c)).toBe(0);
-    expect(detectDhanGtr(c)).toBe(0);
-    expect(detectDhanLedgerFile(c)).toBe(0);
-    expect(detectDhanDividend(c)).toBe(0);
   });
 
   it("the help card says: either the Global Transaction Report or this, never both", () => {
@@ -209,28 +213,70 @@ describe.skipIf(!haveAll)("the owner's real Dhan Realised P&L reports, read in p
   });
 });
 
-describe.skipIf(!haveAll)("mutual stand-down — every Dhan detector on every Dhan file type", () => {
-  const DETECTORS = {
-    "dhan-gtr": detectDhanGtr,
-    "dhan-csv": detectDhanCsv,
-    "dhan-realised-pnl": detectDhanRealisedPnl,
-    "dhan-ledger": detectDhanLedgerFile,
-    "dhan-dividend": detectDhanDividend,
-  } as const;
-  const FILES: { file: string; owner: keyof typeof DETECTORS }[] = [
-    { file: GTR_FIXTURE, owner: "dhan-gtr" },
-    ...REAL_PNL.map((file) => ({ file, owner: "dhan-csv" as const })),
-    ...REAL_REALISED.map((file) => ({ file, owner: "dhan-realised-pnl" as const })),
-    ...REAL_LEDGER.map((file) => ({ file, owner: "dhan-ledger" as const })),
-    { file: REAL_DIVIDEND!, owner: "dhan-dividend" },
-  ];
-  for (const f of FILES) {
-    for (const [id, fn] of Object.entries(DETECTORS)) {
-      const want = id === f.owner ? "≥ 0.9" : "0";
-      it(`${id} on ${path.basename(f.file).slice(0, 24)} → ${want}`, () => {
+/**
+ * MUTUAL STAND-DOWN — every Dhan detector on every Dhan file type.
+ *
+ * It runs on the COMMITTED redacted fixtures, so it runs on CI: until
+ * 2026-09-04 the whole matrix was gated on the owner's private folder and
+ * therefore ran on exactly one machine. The owner's real files are APPENDED
+ * when present, so nothing that was covered is lost.
+ *
+ * CONTAINER RULE — a stand-down only counts when the detector can READ the
+ * container it is offered. `buildContext` decodes `ctx.text` for `.csv`/`.txt`
+ * only, so:
+ *   - "text"   detectors open `if (!text) return 0`  → a workbook scores 0 by
+ *              EXTENSION and the cell decides nothing;
+ *   - "binary" `detectDhanRealisedPnl` opens `if (ctx.text != null) return 0`
+ *              → a CSV scores 0 by extension, same vacuity;
+ *   - "both"   `detectDhanCsv` reads either.
+ * Sixteen of the old matrix's thirty-two non-owner cells were one of those two
+ * vacuous kinds. A pair is now asserted ONLY when detector and file share a
+ * container; the rest are skipped with the pair named, never silently counted.
+ */
+const DHAN_DETECTORS = {
+  "dhan-gtr": { fn: detectDhanGtr, container: "text" },
+  "dhan-csv": { fn: detectDhanCsv, container: "both" },
+  "dhan-realised-pnl": { fn: detectDhanRealisedPnl, container: "binary" },
+  "dhan-ledger": { fn: detectDhanLedgerFile, container: "text" },
+  "dhan-dividend": { fn: detectDhanDividend, container: "text" },
+} as const satisfies Record<string, { fn: (c: ParseContextLike) => number; container: "text" | "binary" | "both" }>;
+type ParseContextLike = ReturnType<typeof buildContext>;
+type DhanSourceId = keyof typeof DHAN_DETECTORS;
+
+const REDACTED = path.join(process.cwd(), "tests", "fixtures", "redacted");
+const redacted = (re: RegExp) =>
+  fs.readdirSync(REDACTED).filter((f) => re.test(f)).sort().map((f) => path.join(REDACTED, f));
+
+/** Committed first (CI), then the owner's real files when this machine has them. */
+const STAND_DOWN_FILES: { file: string; owner: DhanSourceId }[] = [
+  ...redacted(/^dhan-gtr-.*\.csv$/).map((file) => ({ file, owner: "dhan-gtr" as const })),
+  ...redacted(/^dhan-pnl-.*\.xlsx$/).map((file) => ({ file, owner: "dhan-csv" as const })),
+  ...redacted(/^dhan-realised-pnl-.*\.xls$/).map((file) => ({ file, owner: "dhan-realised-pnl" as const })),
+  ...redacted(/^dhan-ledger-.*\.csv$/).map((file) => ({ file, owner: "dhan-ledger" as const })),
+  ...redacted(/^dhan-dividend-.*\.csv$/).map((file) => ({ file, owner: "dhan-dividend" as const })),
+  { file: GTR_FIXTURE, owner: "dhan-gtr" },
+  ...ownerFiles(/^Dhan_GlobalTransction_Report_.*\.csv$/).map((file) => ({ file, owner: "dhan-gtr" as const })),
+  ...REAL_PNL.map((file) => ({ file, owner: "dhan-csv" as const })),
+  ...REAL_REALISED.map((file) => ({ file, owner: "dhan-realised-pnl" as const })),
+  ...REAL_LEDGER.map((file) => ({ file, owner: "dhan-ledger" as const })),
+  ...ownerFiles(/^Dhan_Dividend_.*\.csv$/).map((file) => ({ file, owner: "dhan-dividend" as const })),
+];
+
+describe("mutual stand-down — every Dhan detector on every Dhan file type", () => {
+  for (const f of STAND_DOWN_FILES) {
+    const fileIsText = /\.(csv|txt)$/i.test(f.file);
+    for (const [id, d] of Object.entries(DHAN_DETECTORS) as [DhanSourceId, (typeof DHAN_DETECTORS)[DhanSourceId]][]) {
+      const reads = fileIsText ? d.container === "text" || d.container === "both"
+                               : d.container === "binary" || d.container === "both";
+      const label = `${id} on ${path.basename(f.file).slice(0, 30)}`;
+      if (!reads) {
+        it.skip(`${label} — ${d.container}-only detector, ${fileIsText ? "text" : "binary"} file: no shared container`, () => {});
+        continue;
+      }
+      it(`${label} → ${id === f.owner ? "≥ 0.9" : "0"}`, () => {
         // Under the REAL filename too: "dhan" in the name must not resurrect a claim.
         for (const filename of ["export" + path.extname(f.file), path.basename(f.file)]) {
-          const score = fn(buildContext(filename, fs.readFileSync(f.file)));
+          const score = d.fn(buildContext(filename, fs.readFileSync(f.file)));
           if (id === f.owner) expect(score, filename).toBeGreaterThanOrEqual(0.9);
           else expect(score, filename).toBe(0);
         }

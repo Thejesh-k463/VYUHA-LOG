@@ -30,6 +30,27 @@ describe("detection", () => {
   it("does not claim a file it cannot read", () => {
     expect(detectDhanGtr({ filename: "x.csv", text: "Symbol,Qty\nFOO,1" })).toBe(0);
   });
+
+  /**
+   * CROSS-BROKER refusal, decided by CONTENT and running on CI.
+   *
+   * `detectDhanGtr` opens `if (!text) return 0`, and `buildContext` decodes
+   * `text` for `.csv`/`.txt` only — so every cross-broker cell it had in the
+   * detection matrix was against a workbook and scored 0 by EXTENSION, proving
+   * nothing. These are the committed CSVs of OTHER brokers: real text this
+   * detector actually reads, under both a neutral name and the fixture's own.
+   */
+  const OTHER_BROKER_CSVS = [
+    { file: "zerodha-tradebook.csv", label: "a Zerodha tradebook CSV" },
+    { file: "REG_IND070826.csv", label: "an NSE regulatory list CSV" },
+  ];
+  for (const f of OTHER_BROKER_CSVS) {
+    it(`scores 0 on ${f.label} — no Dhan fingerprint, no claim`, () => {
+      const other = fs.readFileSync(path.join(process.cwd(), "tests", "fixtures", f.file), "utf8");
+      expect(detectDhanGtr({ filename: "export.csv", text: other })).toBe(0);
+      expect(detectDhanGtr({ filename: f.file, text: other })).toBe(0);
+    });
+  }
 });
 
 describe("date parsing", () => {

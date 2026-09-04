@@ -251,6 +251,15 @@ export interface TrashRestoreResult {
   /** Trades that could not come back, and why — never silently dropped. */
   skipped: { id: number; symbol: string; reason: string }[];
   message: string;
+  /**
+   * v3.8: why a restore refused, for a caller that must branch on the reason
+   * rather than on prose. Absent on success and on the older prose-only
+   * refusals (a missing snapshot, an account-id conflict).
+   *
+   *   NEWER_ROWS   — the broker has rows imported since the removal
+   *   ACCOUNT_GONE — the account the rows belong to has been deleted since
+   */
+  code?: "NEWER_ROWS" | "ACCOUNT_GONE";
 }
 
 /**
@@ -281,7 +290,9 @@ export interface TrashRestoreResult {
  * are checking whether the recovery worked, is not a tidy-up.
  */
 export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreResult {
-  const fail = (message: string): TrashRestoreResult => ({ ok: false, restored: 0, legs: 0, attachments: 0, skipped: [], message });
+  const fail = (message: string, code?: TrashRestoreResult["code"]): TrashRestoreResult => ({
+    ok: false, restored: 0, legs: 0, attachments: 0, skipped: [], message, ...(code ? { code } : {}),
+  });
 
   if (!isTrashSnapshotId(id)) return fail("That is not a snapshot id.");
   const env = readEnvelope(id);
@@ -291,6 +302,71 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   // A v2 account-deletion snapshot can legitimately hold zero trades (the
   // account was empty): the account row itself is still worth restoring.
   if (rows.length === 0 && !env.account) return fail("That snapshot holds no trades.");
+
+  // ── The account these rows belong to must still exist ─────────────────────
+  //
+  // There is no foreign key on `trades.account_id`, so restoring into an
+  // account that has been deleted since plants rows in a book that no longer
+  // has a name, a selector entry or a remove path — `countTradesByBroker`
+  // answers ACCOUNT_NOT_FOUND for the dead id, so the user cannot even take
+  // them out again. Refuse, and never re-home them: putting one book's trades
+  // into another account is exactly the merge invariant 8 forbids.
+  //
+  // An account-DELETION envelope carries `env.account` and recreates the book
+  // below, so it is deliberately exempt (its own conflict rules run instead).
+  // `accountId` 0 is the aggregate view rather than a place (invariant 9): the
+  // rows' own `account_id` values are what get checked in that case.
+  if (!env.account) {
+    const needed = new Set<number>();
+    if (typeof env.accountId === "number" && env.accountId > 0) needed.add(env.accountId);
+    for (const r of rows) {
+      const a = (r as { accountId?: unknown }).accountId;
+      if (typeof a === "number" && a > 0) needed.add(a);
+    }
+    const missing = [...needed].filter(
+      (a) => !db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, a)).get(),
+    );
+    if (missing.length > 0) {
+      return fail(
+        `account ${missing.join(", ")} has been deleted since — these trades have nowhere to go, so nothing was restored. ` +
+          `Restore that account first (it has its own entry in Deleted items), then restore these trades.`,
+        "ACCOUNT_GONE",
+      );
+    }
+  }
+
+  // ── A broker-remove cannot be undone on top of the re-import ──────────────
+  //
+  // `removeBrokerRows` exists for one workflow: a parser fix changed what a
+  // file MEANS, so the broker's rows come out and the file goes back in clean.
+  // The re-imported rows carry different hashes and different positions — that
+  // is the whole point of the fix — so nothing collides, and a restore run
+  // afterwards would put the WRONG rows back beside the right ones and report
+  // it as a success. That is the same class of double-book the v3.7 wizard
+  // produced. Refuse while any newer row of that (account, broker) is present.
+  //
+  // `created_at` is `datetime('now')` (`YYYY-MM-DD HH:MM:SS`, UTC) while
+  // `deletedAt` is an ISO string, so the cutoff is normalised to the same
+  // shape; the comparison is `>=` because the delete took EVERY row of that
+  // (account, broker), so anything standing there now in the delete's own
+  // second arrived after it.
+  if (env.kind === "broker-remove" && typeof env.broker === "string" && env.broker !== "") {
+    const cutoff = env.deletedAt.slice(0, 19).replace("T", " ");
+    const sameSecond = (s: unknown) => (typeof s === "string" ? s.slice(0, 19).replace("T", " ") : "");
+    const newer = db
+      .select({ id: trades.id, createdAt: trades.createdAt })
+      .from(trades)
+      .where(and(eq(trades.accountId, env.accountId), eq(trades.broker, env.broker)))
+      .all()
+      .filter((r) => sameSecond(r.createdAt) >= cutoff);
+    if (newer.length > 0) {
+      return fail(
+        `${newer.length} ${env.broker} trade${newer.length === 1 ? " was" : "s were"} imported after this removal — ` +
+          `remove those first, or restore into an empty broker. Nothing was changed.`,
+        "NEWER_ROWS",
+      );
+    }
+  }
 
   // ── Account conflicts refuse the WHOLE restore (nothing partial) ──────────
   //
@@ -660,7 +736,18 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
     accountId,
   });
 
-  const counts = { accountId, broker, trades: rows.length, closed, open };
+  // The audit view renders CHANGED keys only, so a projection whose only
+  // moving figure is `trades` reads "account N: trades 122 → 0" — which says
+  // the account was emptied when in fact one broker's rows went and every
+  // other broker's stayed. The broker is therefore named in the summary text
+  // (below), and the ledger/IPO unlinks — money that moved and applications
+  // the user made, silently absent until now — are counted as changing keys.
+  // Both projections carry the same key set: `lib/audit.ts` throws in test on
+  // any before/after asymmetry.
+  const counts = {
+    accountId, broker, trades: rows.length, closed, open,
+    unlinkedLedger: 0, unlinkedIpos: 0,
+  };
   try {
     db.transaction((tx) => {
       chunkedWrite(ids, (chunk) => tx.delete(tradeLegs).where(inArray(tradeLegs.tradeId, chunk)).run());
@@ -675,9 +762,15 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
         entity: "account",
         entityId: accountId,
         action: REMOVE_BROKER_AUDIT_ACTION,
-        summary: `${reason} — ${rows.length} trade${rows.length === 1 ? "" : "s"} (${closed} closed, ${open} open), snapshot ${snapshotId}`,
+        summary:
+          `${broker}: ${rows.length} trade${rows.length === 1 ? "" : "s"} (${closed} closed, ${open} open) removed from account ${accountId} ` +
+          `for a clean re-import — the account's other brokers are untouched` +
+          (ledgerRefRows.length || ipoRefRows.length
+            ? `; ${ledgerRefRows.length} ledger entr${ledgerRefRows.length === 1 ? "y" : "ies"} and ${ipoRefRows.length} IPO${ipoRefRows.length === 1 ? "" : "s"} unlinked (kept)`
+            : "") +
+          `, snapshot ${snapshotId}`,
         before: counts,
-        after: { ...counts, trades: 0, closed: 0, open: 0 },
+        after: { ...counts, trades: 0, closed: 0, open: 0, unlinkedLedger: ledgerRefRows.length, unlinkedIpos: ipoRefRows.length },
         source,
       });
     });

@@ -36,10 +36,10 @@ You don't get that from software with a support queue.
 
 | Upgrade | What it gives you |
 |---|---|
-| **Upgrading from v3.7.1 — read this first** | The v3.8.0 installer runs the **old v3.7.1 uninstaller once** before it installs, and that older uninstaller has no backup step. When its "Delete the application data" checkbox appears, **leave it UNTICKED**. From v3.8.0 on, the uninstaller names your journal and licence, copies them to `Documents\Vyuha-backup-<date>` and asks before anything can be deleted. |
+| **Upgrading from v3.7.1 — read this first** | The v3.8.0 installer runs the **old v3.7.1 uninstaller once** before it installs, and that older uninstaller has no backup step. When its "Delete the application data" checkbox appears, **leave it UNTICKED** — ticking it erases the whole data folder: your journal, your licence key and your attachments. From v3.8.0 on, the uninstaller names your journal and licence, copies them to `Documents\Vyuha-backup-<date>` and asks before anything can be deleted. |
 | **Paytm Money imports pair on ISIN** | Paytm switches a security's label from ticker to numeric code mid-window, and pairing on the label split one security into two books — a phantom open buy and a phantom "sale with no purchase". Fills now pair on ISIN regardless of label, and the file's own stamp duty and STT decide whether a same-day round trip was intraday or delivery. On a real 7,544-execution book: 804 → 793 positions and 72 → 38 unpriced sales — the 38 left are IPO allotments, which genuinely have no buy. The line saying an unpriced sale was "already counted in Net P&L" is gone; only its charges ever were. |
 | **The import summary warns about shape** | If 10% or more of the positions in a file are sales with no purchase, or a security appeared under two labels, the summary says so — with the count — before you trust Net P&L. |
-| **Remove a broker's imported rows** | On the Import screen: take every row a broker's imports created into Trash in one confirmed, audit-logged step, restorable as a set. Built so a mis-paired book can be re-imported clean instead of deleted by hand. |
+| **Remove a broker's imported rows** | On the Import screen: take every row a broker's imports created into Trash in one confirmed, audit-logged step, restorable as a set from **Backup & Restore → Deleted items**. Built so a mis-paired book can be re-imported clean instead of deleted by hand. |
 | **Dhan connects without a fight** | Re-saving an enrolment no longer demands the Client ID again (the stored one is kept on your machine); an expired token is re-minted and retried once; an enrolment that cannot be read is named as such; every connection shows its mode — "PIN + TOTP · mints its own token" or "pasted token · expires …" — with a one-time note when a pasted token expires; and in All-accounts view, "Save connection" names the account it will write to. |
 | **More broker files, and one silent-empty fix** | Dhan's Global Transaction Report was reading the 2026 date format as nothing at all — it imported zero rows while reporting a confident match; fixed, and an empty result on a recognised file now warns. New: Dhan Realised P&L (`.xls`), Dhan P&L (`.xlsx`), Dhan Ledger and Dividend payout on the Cash & Ledger screen, and Angel One's `Trades_History` tradebook with its per-row charges. Zerodha files must now look like Zerodha before they are claimed as such. |
 | **Search — Ctrl+K** | One box over your trades (notes, tags, symbols — mid-word hits included), symbols, playbooks, instruments, sessions, challans, help and screens, with category chips. Screens your plan does not include are shown with a lock and one line on what unlocks them, never hidden; your own trades are never locked. A "previous search" and a "back to where I was" control. |
@@ -460,12 +460,16 @@ Everything lives in one SQLite file on your machine:
 
 **Back it up** from Backup & Restore inside the app. The backup includes the complete
 database plus screenshot attachments; set a password when the file will leave your machine.
-You can still copy the SQLite file for a quick local snapshot.
+It carries your journal but **not** your licence key — the key is left out on purpose, so a
+shared backup can never leak it — so keep the key email as well. You can still copy the
+SQLite file for a quick local snapshot.
 The uninstaller offers a "Delete the application data" checkbox — at uninstall, and
-mid-upgrade if you choose to uninstall the old version first. Before it runs, Vyuha
-copies your journal database and licence key (both live in `vyuha.sqlite`) plus your
-attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm; Cancel keeps
-everything in place. Leave the box unticked to keep the data where it is; a new version
+mid-upgrade if you choose to uninstall the old version first. Ticking it erases that whole
+folder: journal, licence key and attachments. Before it runs, Vyuha copies your journal
+database and licence key (both live in `vyuha.sqlite`), the pre-migration backups it took
+for you and your attachments to `Documents\Vyuha-backup-<date>` and asks you to confirm;
+Cancel keeps everything in place, and if the copy cannot be made the uninstall stops with
+nothing removed. Leave the box unticked to keep the data where it is; a new version
 migrates it in place after taking its own pre-migration backup.
 
 ---

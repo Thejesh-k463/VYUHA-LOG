@@ -18,9 +18,18 @@ codes, PANs and names). This document deliberately contains **no identifiers**.
 > redacted schema-only copies in `tests/fixtures/redacted/`): a Paytm Money
 > tradebook with **414 executions** and its Equity P&L (`.xls`, 3 sheets, 124
 > realised lots), a Zerodha Console tradebook with **1,554 fills** and a
-> Console P&L with 53 rows, and three Upstox reports that are **schema-only**
-> (the account had no trades). Value-level behaviour is therefore VERIFIED for
-> Paytm and Zerodha tradebooks and still INFERRED for Upstox. What the data
+> Console P&L with 53 rows, and three Upstox reports that were **schema-only**
+> (that account had no trades). Value-level behaviour was therefore VERIFIED for
+> Paytm and Zerodha tradebooks and INFERRED for Upstox.
+>
+> **2026-09-04 — Upstox is no longer schema-only.** `tests/golden-books.test.ts`
+> now pins two POPULATED Upstox exports: a realised-P&L export whose single row is
+> checked against Upstox's own stated figures (gross −1.05, net −4.28, charges
+> 3.23, met to the paisa by the engine's estimate), and a trade report of 11
+> executions → 4 positions committing net −271.90 (a trade report states neither
+> P&L nor charges, so that one pins our own arithmetic, not the broker's). Upstox
+> value behaviour is therefore VERIFIED for the realised-P&L export and pinned for
+> the trade report; the Upstox ledger still has no parser. What the data
 > changed is recorded per broker below and in DECISIONS.md 2026-08-20.
 
 ---
@@ -329,9 +338,14 @@ for Equity from …" preamble, or a name — before it counts.
 
 ## Upstox
 
-Three real exports examined 2026-08-20 — **all schema-only** (the account had
-no trades), so the layouts below are VERIFIED and every value behaviour is
-INFERRED. Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
+Three real exports examined 2026-08-20 were **all schema-only** (that account had
+no trades). A fourth and fifth, examined 2026-09-04, are POPULATED and pinned by
+`tests/golden-books.test.ts` — a realised-P&L export checked against Upstox's own
+stated figures (gross −1.05, net −4.28, charges 3.23, met to the paisa) and a trade
+report of 11 executions → 4 positions committing net −271.90. So the layouts below
+are VERIFIED, and value behaviour is VERIFIED for the realised-P&L export and pinned
+(against our own arithmetic, not a broker statement) for the trade report; the ledger
+still has no parser. Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
 `realizedPnL_EQ_<from>_To_<to>_<code>.xlsx`, `ledger_<from>_To_<to>_trading_<code>.xlsx`.
 **Fingerprint: `UPSTOX SECURITIES PRIVATE LIMITED` in A1** (then `(Formerly …)`,
 `Dealing Office …`, `UCC`/`Name`/… label rows, `Report Time Period`, `Generated On`).

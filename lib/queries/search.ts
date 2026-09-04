@@ -9,7 +9,7 @@ import { NAV_ITEMS } from "@/components/layout/nav-config";
 import isinSymbols from "@/lib/data/isin-symbols.json";
 import type { ListingTuple } from "@/lib/import/isin-symbol";
 import { ftsMatch, minTrigram, rankCandidates, type Candidate } from "@/lib/domain/search-rank";
-import { lockForSource, RESULT_CAP, SOURCE_KEYS, type SearchResult, type SourceKey } from "@/lib/domain/search-scope";
+import { lockForSource, RESULT_CAP, SOURCE_KEYS, SOURCES, type SearchResult, type SourceKey } from "@/lib/domain/search-scope";
 
 /**
  * SEARCH v1 (v3.8) — the fan-out behind /api/search.
@@ -334,10 +334,19 @@ export function searchAll(q: string, opts: SearchAllOptions): { results: SearchR
   const query = String(q ?? "").trim();
   const keys = opts.categories ?? SOURCE_KEYS;
   const results: SearchResult[] = [];
+  // The account id is the one input here that can silently WIDEN a search.
+  // Every scoped reader spells the rule `accountId > 0 ? filter : all`, so a
+  // NaN, a float, a negative or an undefined would fall through to "all
+  // accounts" and merge two books into one result list with nothing on screen
+  // looking wrong (invariant 8). Only a non-negative integer is an account
+  // selection; anything else means NO ROWS from the scoped sources, never
+  // every row. 0 remains the deliberate "All accounts" view.
+  const accountId = Number.isInteger(opts.accountId) && opts.accountId >= 0 ? opts.accountId : null;
   if (query) {
     const entitlement = opts.entitlement ?? getEntitlement();
     for (const key of keys) {
-      for (const r of SOURCE_READERS[key](query, opts.accountId).slice(0, RESULT_CAP)) {
+      if (accountId == null && SOURCES[key].scope === "account") continue;
+      for (const r of SOURCE_READERS[key](query, accountId ?? 0).slice(0, RESULT_CAP)) {
         const lock = lockForSource(key, r.href, entitlement);
         results.push(lock.locked ? { ...r, locked: true, unlocks: lock.unlocks } : { ...r, locked: false });
       }

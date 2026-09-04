@@ -277,3 +277,86 @@ describe("item 7 — two-account enrolment preservation", () => {
     expect(all.find((r) => r.account_id === PRIMARY)!.auth_json).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 8. A KEPT api_key must still be READABLE (v3.8.0 fix wave, finder 3 item 2)
+// ---------------------------------------------------------------------------
+
+/** Real vault ciphertext with a segment lopped off: prefixed, so readSecret
+ *  reports it UNREADABLE rather than treating it as a plaintext legacy key. */
+function brokenCiphertext(): string {
+  return vault.encryptSecret(CLIENT).split(":").slice(0, 4).join(":");
+}
+
+function seedBrokenKey(accountId: number, broker: string) {
+  t.sqlite
+    .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (?, ?, ?, ?, NULL)")
+    .run(accountId, broker, brokenCiphertext(), "tok-1");
+}
+
+describe("item 8 — carrying over an UNDECRYPTABLE stored key", () => {
+  it("is refused 400 STORED_KEY_UNREADABLE naming the Client ID, and nothing is written", async () => {
+    seedBrokenKey(PRIMARY, "dhan");
+    const before = rows()[0]!;
+
+    const res = await post({ action: "save", broker: "dhan", apiKey: "", accessToken: "tok-2" });
+
+    // Red-on-revert: `encKey = apiKey ? … : existing!.apiKey` carried the
+    // undecryptable ciphertext forward and answered 200 "Connection saved" —
+    // and the next pull then 400s "saved credentials cannot be read".
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { code?: string; message: string };
+    expect(json.code).toBe("STORED_KEY_UNREADABLE");
+    expect(json.message).toMatch(/re-enter the Client ID/i);
+    // The save really did nothing — the token was not moved either.
+    expect(rows()[0]!.access_token).toBe(before.access_token);
+  });
+
+  it("re-entering the key is the way out: the same save with a real Client ID succeeds", async () => {
+    seedBrokenKey(PRIMARY, "dhan");
+    expect((await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-2" })).status).toBe(200);
+    expect(decrypt(rows()[0]!.api_key)).toBe(CLIENT);
+  });
+
+  it("a READABLE stored key still carries over — the guard is not a blanket refusal", async () => {
+    await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-1" });
+    const before = rows()[0]!.api_key;
+    expect((await post({ action: "save", broker: "dhan", apiKey: "", accessToken: "tok-2" })).status).toBe(200);
+    expect(rows()[0]!.api_key).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. The audit mask reveals a PROPORTION (v3.8.0 fix wave, finder 3 item 5)
+// ---------------------------------------------------------------------------
+
+const lastAuditSummary = () =>
+  (t.sqlite.prepare("SELECT summary AS s FROM audit_log ORDER BY id DESC LIMIT 1").get() as { s: string } | undefined)?.s ?? "";
+
+describe("item 9 — masking a credential for the audit log", () => {
+  it("an 8-character key reveals 2 characters, not half of it", async () => {
+    expect((await post({ action: "save", broker: "dhan", apiKey: "ABCD1234", accessToken: "tok-1" })).status).toBe(200);
+    const s = lastAuditSummary();
+    // Red-on-revert: the fixed 4-character prefix wrote "ABCD…" — 50% of an
+    // 8-character credential (the length of a real Angel One API key).
+    expect(s).toContain("AB…");
+    expect(s).not.toContain("ABCD");
+  });
+
+  it("a 10-character key reveals 3, and nothing ever reveals more than 4", async () => {
+    expect((await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-1" })).status).toBe(200);
+    expect(lastAuditSummary()).toContain(`${CLIENT.slice(0, 3)}…`);
+    expect(lastAuditSummary()).not.toContain(CLIENT.slice(0, 4));
+
+    const long = "ABCDEFGHIJKLMNOPQRST";
+    expect((await post({ action: "save", broker: "dhan", apiKey: long, accessToken: "tok-1" })).status).toBe(200);
+    expect(lastAuditSummary()).toContain("ABCD…");
+    expect(lastAuditSummary()).not.toContain("ABCDE");
+  });
+
+  it("a kept key is still audited as 'kept', never as a mask of something", async () => {
+    await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-1" });
+    await post({ action: "save", broker: "dhan", apiKey: "", accessToken: "tok-2" });
+    expect(lastAuditSummary()).toMatch(/key kept/);
+  });
+});

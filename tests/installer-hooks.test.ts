@@ -65,6 +65,14 @@ describe("installer-hooks.nsh pre-uninstall guard", () => {
     expect(body).toMatch(/CopyFiles \/SILENT "\$APPDATA\\\$\{BUNDLEID\}\\\*\.sqlite\*" "\$7"/);
   });
 
+  it("copies the sidecar's pre-migration backups folder too", () => {
+    // scripts/desktop-server.mjs writes them to $APPDATA\<bundle>\backups\
+    // and the install guide points buyers at them.
+    expect(body).toMatch(/\$\{If\} \$\{FileExists\} "\$APPDATA\\\$\{BUNDLEID\}\\backups\\\*\.\*"/);
+    expect(body).toMatch(/CreateDirectory "\$7\\backups"/);
+    expect(body).toMatch(/CopyFiles \/SILENT "\$APPDATA\\\$\{BUNDLEID\}\\backups\\\*\.sqlite" "\$7\\backups"/);
+  });
+
   it("copies the attachments folder recursively beside the database", () => {
     expect(body).toMatch(/CopyFiles \/SILENT "\$APPDATA\\\$\{BUNDLEID\}\\attachments\\\*\.\*" "\$7\\attachments"/);
   });
@@ -78,6 +86,58 @@ describe("installer-hooks.nsh pre-uninstall guard", () => {
     // Shell-var context is forced per-user for the copy and restored after.
     expect(body).toMatch(/SetShellVarContext current/);
     expect(body).toMatch(/!insertmacro SetContext/);
+  });
+
+  // ── The copy must be PROVEN before anything is removed ────────────────────
+  // CopyFiles /SILENT reports failure only through the NSIS error flag (full
+  // disk, an unhydratable OneDrive placeholder, a locked -wal sibling). Until
+  // 2026-09-04 nothing read it, so the template's RmDir ran even when the
+  // "safety copy" the docs promise had silently produced nothing.
+
+  it("clears the error flag immediately before every CopyFiles", () => {
+    const lines = body.split(/\r?\n/).map((l) => l.trim());
+    const copies = lines.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("CopyFiles"));
+    expect(copies.length).toBeGreaterThanOrEqual(3);
+    for (const [line, i] of copies) {
+      const before = lines.slice(0, i).filter((l) => l && !l.startsWith(";"));
+      expect(before.at(-1), `no ClearErrors immediately before: ${line}`).toBe("ClearErrors");
+    }
+  });
+
+  it("reads the flag after every CopyFiles instead of dropping it", () => {
+    const lines = body.split(/\r?\n/).map((l) => l.trim());
+    for (const [i, line] of lines.entries()) {
+      if (!line.startsWith("CopyFiles")) continue;
+      const after = lines.slice(i + 1).filter((l) => l && !l.startsWith(";"));
+      expect(after[0], `the error flag is dropped after: ${line}`).toBe("${If} ${Errors}");
+    }
+  });
+
+  it("confirms vyuha.sqlite actually arrived, independently of the flag", () => {
+    expect(body).toMatch(/\$\{IfNot\} \$\{FileExists\} "\$7\\vyuha\.sqlite"/);
+  });
+
+  it("a failed copy stops the uninstall with exit code 1 before the macro ends", () => {
+    // The guard is the LAST thing the macro does, so no removal can follow it.
+    const tail = body.slice(body.lastIndexOf("${IfNot} ${FileExists}"));
+    const stop = tail.match(/MessageBox[^\n]*\n\s*SetErrorLevel 1\s*\r?\n\s*Quit/);
+    expect(stop, "no MessageBox + SetErrorLevel 1 + Quit after the arrival check").not.toBeNull();
+    const box = stop![0].split(/\r?\n/)[0];
+    expect(box, "the failure box must say nothing was removed").toMatch(/NOTHING has been removed/);
+    expect(box, "and must name the two things that cause it").toMatch(/disk space/i);
+    expect(box).toMatch(/OneDrive/i);
+    expect(box, "a failure box the user cannot dismiss into a delete").toMatch(/MB_OK\b/);
+    // Nothing but the guard may follow the last CopyFiles-bearing branch.
+    expect(tail.indexOf("CopyFiles"), "a copy runs after the failure guard").toBe(-1);
+  });
+
+  it("the guard cites the tauri CLI whose template it was verified against", () => {
+    const installed = JSON.parse(
+      readFileSync(path.join(root, "node_modules/@tauri-apps/cli/package.json"), "utf8"),
+    ).version as string;
+    expect(nsh, `hook comment cites a tauri CLI other than the installed ${installed}`).toContain(
+      `@tauri-apps/cli ${installed}`,
+    );
   });
 
   it("the install-side hooks are untouched: preinstall only kills the sidecar", () => {

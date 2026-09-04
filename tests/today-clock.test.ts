@@ -137,6 +137,8 @@ describe("source guard — one today", () => {
       "lib/queries/limits.ts",
       "lib/queries/wallpaper.ts",
       "lib/risk/sebi-radar.ts",
+      // Fix wave: the last Wave 3 holdout.
+      "components/trades/trades-client.tsx",
     ];
     const hits = rg("new Date\\(\\)\\s*\\.toISOString\\(\\)\\.(slice|substring)\\(\\s*0,\\s*10\\s*\\)");
     const inMigrated = hits.filter((l) => MIGRATED.includes(l.split(":")[0]));
@@ -153,12 +155,13 @@ describe("source guard — one today", () => {
     // to the fix wave. Delete the row when you migrate the file; adding one
     // means writing a new UTC today, which is the bug this file exists to
     // prevent.
-    const FROZEN: Record<string, number> = {
-      // Wave 3: components/trades/trades-client.tsx is owned by the Trades
-      // agent this wave — its `today` memo (line ~92) is a page date and
-      // migrates to todayIstIso() in the fix wave.
-      "components/trades/trades-client.tsx": 1,
-    };
+    // EMPTY, and it stays empty. The fix wave migrated the last row
+    // (components/trades/trades-client.tsx, the `today` memo) to
+    // todayIstIso(), so the docs' "every date is IST" claim is now true of
+    // the whole tree. A new row here is a new UTC today — the bug this file
+    // exists to prevent — so add one only with the reason it is not a user's
+    // day, and prefer ALLOWED_UTC_STAMPS if it is a machine stamp.
+    const FROZEN: Record<string, number> = {};
     // Sites that LOOK like a UTC today but are a genuine machine stamp
     // (a log line, an updatedAt) and may keep UTC — each with its reason.
     // Empty after the sweep: no such site exists among the 42 it found.
