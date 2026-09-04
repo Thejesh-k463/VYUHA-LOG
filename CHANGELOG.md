@@ -2,8 +2,8 @@
 
 ## v3.8.0 — trust the import
 
-*Built 2026-09-04; in adversarial audit — not yet published. v3.7.1 remains the
-release until the audit, the fix-wave audit and the release procedure clear it.*
+*Cut 2026-09-04 after three adversarial audit passes — the diff, the fix wave, and
+the second fix pass — each proven with red-on-revert tests.*
 
 The theme is the word "trust": every figure a broker file produces should survive
 being checked against the broker's own statement. The release was built against
