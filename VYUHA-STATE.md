@@ -26,7 +26,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.8.0 TAGGED 2026-09-04 on `74e8d49` (CI 6/6, verify 254 files / 4,515 tests; awaiting deep verify + owner publish)
+## 2. Current state — v3.8.0 TAGGED + DEEP-VERIFIED 2026-09-04 on `74e8d49` (CI 6/6, verify 254 files / 4,515 tests, 3/3 signatures over published bytes; DRAFT awaiting owner publish + non-build install + WDSI)
 
 **Status:** branch `main` at `9007c2d` — the Dhan Client-ID hydration fix
 (`components/import/broker-connect.tsx` + `tests/import-hydration-guard.test.ts`) is COMMITTED,

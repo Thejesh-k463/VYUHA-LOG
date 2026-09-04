@@ -2689,3 +2689,13 @@ agent); WDSI submission (owner, details handed over); revocation list untouched 
 
 **Invalidated if:** the deep verify fails (then delete the draft and re-run the workflow — never
 re-upload by hand).
+
+## 2026-09-04 — v3.8.0 deep signature verify: safe to publish
+
+**Measured:** `npm run release:verify v3.8.0 -- --deep` EXIT 0 — `tauri.conf.json` pubkey id
+`4FF85F3BBE1DA21D`; `Vyuha_3.8.0_x64-setup.exe.sig` verifies over the published exe (33.7 MB,
+prehashed), `Vyuha_aarch64.app.tar.gz.sig` and `Vyuha_x64.app.tar.gz.sig` verify over their
+archives; 3/3 signatures cryptographically verified over the published bytes. Draft `v3.8.0`:
+9 assets, `isDraft=true`, `isPrerelease=false`; revocation list untouched.
+**Decision:** hand to the owner: publish the draft, install on a non-build machine, WDSI.
+**Invalidated if:** any asset is re-uploaded after this run (re-run `--deep`).
