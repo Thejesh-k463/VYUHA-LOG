@@ -2706,3 +2706,101 @@ archives; 3/3 signatures cryptographically verified over the published bytes. Dr
 submission filed with the client-ZIP installer SHA-256 `47A2B542…4865`. `releases/latest` is
 v3.8.0; the revocation list stays a prerelease, untouched. **Decision:** v3.8.0 is the release;
 v3.9.0 starts from `docs/prompts/NEXT_SESSION_V390_V400.md`.
+
+## 2026-09-04 — v3.9 recon corrections, owner rulings, and what Wave 1 measured
+
+**Context.** Six read-only recon agents checked every v3.9 plan claim against the tree at `30332a3`
+before any code. The owner then ruled on the contradictions; four Opus build agents landed Wave 1.
+
+**Recon contradictions (all verified with file:line, all now settled):**
+- Broker `reported` figures were never persisted — `PreviewResult.reconciliation` was the only
+  carrier. **Ruling:** one `broker_reference` table (migration 0062) for every reference source;
+  0061 is the ledger + audit FTS. Scopes `fy | scrip | segment | holding | charge`, replace-on-conflict
+  on `(account, broker, source, scope, key, coalesce(as_of,''))`.
+- Paytm's `Realized P&L Detail` is ONE lot table with a `Total` row (918 lots on the owner's file);
+  the "three stacked tables" are the `Summary P&L` sheet (headers at r9/r42, not the r9/r38/r44/r105
+  the plan predicted — headers are found by text). The detail Σ equals its Total to the paisa
+  (21,371,252.57); the Summary's own realised Total differs by 7 paisa, so the detail sheet wins.
+  Dates are `dd-MMM-yyyy`, unambiguous. The workbook never contains the string "Paytm": 0.9 on
+  sheet+header, 1.0 only via filename. The inbox files named `realized_pnl-report*.xls` are Dhan.
+- Migration 0059 already re-keys `classification_overrides` (`data-fixes.ts:111`); what it cannot
+  reach are collision-skipped rows, blank-ISIN rows, and target-key-taken rows. Not orphaned in bulk.
+- `trades-client.tsx:92` was already IST (`todayIstIso`, :104); VYUHA-STATE §2 and §8.0 were stale.
+- NSE-buy/BSE-sell split: measured and rejected in v3.8 (38 → 101 opening sells on the 7,544-row
+  Paytm book; `tests/paytm-isin-pairing.test.ts:130` pins one trade). **Ruling: note only, no split.**
+- No `generic-map` golden row exists; its coverage is `tests/generic-map.test.ts`.
+- `dp-charges.xls` and Angel `ProfitLoss_Statement` name no broker anywhere. **Ruling:** format
+  fingerprint (sheet + header + title) = 0.9, broker in filename +0.1 — the named exception
+  `Trades_History` already uses, documented in each parser header and BROKER_FORMATS.
+- Dhan MTF Report is a web screen with no export (owner screenshot 2026-09-04). **Ruling:** no MTF
+  file parser; MTF figures come from GTR / Realised P&L / ledger. The owner's one futures trade
+  (FUT WIPRO 28 Apr 2026) was intraday on 15-Apr-2026; its contract note carries both fills.
+- `dhan-pnl-fresh.csv` scores 1.0 under its own name, 0.8 neutral (no footer, `dhan-csv.ts:93`).
+  **Ruling:** pin both facts (`tests/dhan-csv-fresh.test.ts`), matrix rule "named only".
+- The `/trades` order change lands in `scopedBookRows` (shared by every projection) and reds
+  `tests/render-windowing.test.ts:244`, which pins the two-key form; the perf book's `created_at`
+  is per-row synthetic (`seed-perf-db.mjs:246`) so only the real book proves batch ties. (W2.)
+- Angel "partial lock rule": no lock exists; the artefact is the note at `angelone-taxpnl.ts:212`.
+
+**Covered short — ruling: same-day only.** `chronological()` already sorts buys before sells within
+a date, so the arithmetic of a same-day sell-then-buy was already right; what was missing was the
+meaning. `shortCoverQtys()` reads FILE ORDER before the sort (the only sequence signal legs carry —
+they have no time) and labels the closed position `INTRADAY_SHORT_NOTE`; a sell that an existing
+holding could deliver is NOT called a short. Multi-day stays an opening sell (cash equity cannot be
+short overnight). No golden pin moved (146/146).
+
+**Cross-exchange note.** `Lot` now carries `exchange`; a closed position whose lots and sell leg span
+venues gets "Bought on NSE, sold on BSE — one holding, the exchange is where the fill happened."
+Position `exchange` unchanged.
+
+**`pair-legs.ts:302` spread → `for…of` push.** Proven red first: `RangeError: Maximum call stack size
+exceeded at pairLegs (pair-legs.ts:302:39)` at ~123k positions on one symbol (190,000-leg C8 case,
+`time(...)` not `growthRatio` — the 25 ms floor and the 4n run would mask the RangeError).
+
+**Wave 1 parser facts (owner files read in place, zero identity strings emitted):**
+- Dhan DP charges: 173 rows / Total 2,492.50 (a2: 94 / 1,325.00), both conserve to the paisa. 352
+  merges; the only merge touching the Charges column is the title row — no data cell is lost.
+  Emits ledger rows (kind `charge`, negative) AND `charge` reference rows keyed by ISIN.
+- Dhan holdings: statement date comes from the `For dd-mm-yyyy` CELL; the filename is fallback and
+  a disagreement warns. qty = free + locked + safe-keep + pledges (formula stated in a note).
+- Dhan contract note (PDF, `pdf-parse` in-process): 0.95 named / 1.00 vs `detectPdf`'s flat 0.90;
+  requires BOTH "CONTRACT NOTE" and a Dhan marker in the raw bytes. Emits `enrich` rows only —
+  fill times + instrument type applied to EXISTING trades matched on (symbol, date, side, qty),
+  never creating one. WIPRO 15-Apr-2026: 12:26:49 buy / 12:28:33 sell, 3,000 @ 205.72 / 205.41.
+- Upstox `LEDGER_V3`: 4 rows, dd-mm-yyyy proved by day > 12; Σdebit 437.29 / Σcredit 2,500.00 /
+  closing 2,062.71 exact. Angel `YourStatement`: running balance chains 0 → 1,417.56 with no break;
+  the Charges tables are `chargeRows` + reference, NOT ledger rows — the DP charge is already posted
+  in the Broking Ledger on a different date and folding it would debit twice.
+- Angel P&L statement: no ISIN and no date column → keyed by symbol, `asOf` null, FY from `To Date`;
+  delivery 3.95 + intraday −2.21 = summary 1.74, F&O 149.25, both reconcile.
+- Dhan Realised P&L now also emits `segment` reference rows but NO `fy` row: the report states no
+  period, and filing figures under an unstated year is a fabricated denominator.
+- FTS trap: an FTS5 virtual table with `account_id UNINDEXED` reports that column to
+  `pragma_table_info` and enters the account-scoped-table registry (`tests/account-isolation`).
+  0061 keeps `account_id` in the VIEW only, exactly as 0060 does.
+- `redact-broker-export.mjs`'s parity check compared only trades/rows/gross/charges/reported — vacuous
+  for a reference source; `parserView` now includes `reference` and `enrich`.
+
+**Governor.** Owner's usage at session start: weekly all-models 76% used, Fable 85% used, reset Mon
+19:30. Owner ruling: run everything (build, wiring, finders) on Opus and finish the build; rule (c)
+still applies if the all-models limit trips.
+
+**A7 `/cash` load case is machine-noise sensitive, not a W1 regression (measured 2026-09-04).**
+The W1 gate's load run failed `a7-cash-ledger` at 7.3× (ceiling 6×). Suspect was 0061's trigram
+index inflating the page-cache footprint. Discriminator: three runs at HEAD `30332a3` with every W1
+change stashed — 2 of 3 failed (8.4×, 8.2×); three runs with W1 restored — 1 of 3 failed (7.2×).
+The timed region is `assemble()` only (seeding is outside `time()`), and no W1 file touches the
+`/cash` path. Verdict: pre-existing, load-dependent on this laptop while a build and a second
+session run; the CI `load` job (idle runner) stays the arbiter. Nothing in the engine was changed.
+Working tree restored byte-for-byte after the stash (51 entries before and after).
+
+**BIFF8 declares the whole sheet as its used range — every detector paid for 65,536 rows.**
+The W1 gate's golden row for `dhan-dp-charges-….xls` hit vitest's 10 s hook timeout under load.
+Measured idle: `XLSX.read` 19 ms, but `rankParsers` 3,717 ms — each of ~13 xls-reading detectors
+spent 270–440 ms in `sheet_to_json({ defval: "" })` because the sheet's `!ref` is `A1:Q65536` for
+1,400 real cells. `workbookOf` now trims every sheet's `!ref` to its populated bounding box once on
+the memoised workbook (`trimSheetRanges`, `lib/import/types.ts`): 440 ms → 2 ms per flatten.
+Nothing a parser SEES changes except phantom trailing rows; merges untouched. Pinned by
+`tests/workbook-range-trim.test.ts` (red: `expected 65535 to be less than 400`). Same trap will hit
+any Dhan `.xls` (Realised P&L is BIFF too) and any detector added later — the memo is the fix, not
+per-parser row caps.

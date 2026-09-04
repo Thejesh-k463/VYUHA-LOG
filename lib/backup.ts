@@ -45,6 +45,7 @@ const TABLE_MAP: Record<BackupTable, any> = {
   ipos: schema.ipos,
   restricted_securities: schema.restrictedSecurities,
   ledger_entries: schema.ledgerEntries,
+  broker_reference: schema.brokerReference,
   audit_log: schema.auditLog,
   trade_legs: schema.tradeLegs,
   symbol_aliases: schema.symbolAliases,

@@ -23,7 +23,12 @@ export type AuditEntity =
   // rows a merge can move or amend, so their mutations belong in the trail
   // beside bf_loss's.
   | "weekly_review"
-  | "advance_tax_challan";
+  | "advance_tax_challan"
+  // v3.9 "Trust the numbers": a broker-stated figure set landing in
+  // `broker_reference` at import. One entry per reference import, not one
+  // per figure — the trail records that the broker's side of the
+  // reconciliation changed, and which file changed it.
+  | "broker_reference";
 
 export interface AuditInput {
   entity: AuditEntity;

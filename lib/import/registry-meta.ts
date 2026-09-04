@@ -34,13 +34,20 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   // copy says so, and points at the screen that reads them.
   { sourceId: "dhan-ledger", label: "Dhan Ledger (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan ledger (→ Cash & Ledger)" },
   { sourceId: "dhan-dividend", label: "Dhan Dividend payout (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan dividend report (→ Cash & Ledger)" },
+  { sourceId: "dhan-dp-charges", label: "Dhan DP Charges (XLS) — depository fees, feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan DP charges (→ Cash & Ledger)" },
+  { sourceId: "dhan-holdings", label: "Dhan Demat Holding summary (XLSX) — broker-stated holdings, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan demat holdings" },
+  { sourceId: "dhan-contract-note", label: "Dhan Contract Note (PDF) — adds fill times to trades already imported, never creates them", broker: "dhan", tab: "transactions", hint: "Dhan contract note (fill times)" },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", broker: "groww", tab: "pnl", hint: "Groww XLSX" },
   { sourceId: "groww-orders", label: "Groww Stocks Order History (XLSX)", broker: "groww", tab: "transactions", hint: "Groww order history" },
   { sourceId: "zerodha", label: "Zerodha Tradebook / Console (CSV/XLSX)", broker: "zerodha", tab: "both", hint: "Zerodha tradebook / Console" },
   { sourceId: "angelone", label: "Angel One Tradebook / P&L (CSV/XLSX)", broker: "angelone", tab: "both", hint: "Angel One" },
   { sourceId: "angelone-taxpnl", label: "Angel One Tax P&L (XLSX)", broker: "angelone", tab: "pnl", hint: "Angel One tax P&L" },
   { sourceId: "upstox", label: "Upstox Tradebook / P&L (CSV/XLSX)", broker: "upstox", tab: "both", hint: "Upstox" },
+  { sourceId: "upstox-ledger", label: "Upstox Ledger (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "upstox", tab: "pnl", hint: "Upstox ledger (→ Cash & Ledger)" },
+  { sourceId: "angelone-ledger", label: "Angel One Account Statement (XLSX) — feeds the Cash & Ledger screen, does not import trades", broker: "angelone", tab: "pnl", hint: "Angel One statement (→ Cash & Ledger)" },
+  { sourceId: "angelone-pnl-statement", label: "Angel One P&L Statement (XLSX) — broker-stated P&L reference, does not import trades", broker: "angelone", tab: "pnl", hint: "Angel One P&L statement (reference)" },
   { sourceId: "paytm-tradebook", label: "Paytm Money Tradebook (XLSX)", broker: "paytm", tab: "transactions", hint: "Paytm Money tradebook" },
+  { sourceId: "paytm-realised-pnl", label: "Paytm Money Realized P&L (XLS) — broker-stated figures, imports no trades", broker: "paytm", tab: "pnl", hint: "Paytm Money Realized P&L (reference only)" },
   // PDF is a TEXT EXTRACTOR, not an importer, and the copy has to say so:
   // lib/import/parsers/pdf.ts returns `trades: []` on every path because no
   // broker PDF layout has been calibrated yet. It was labelled "Broker P&L

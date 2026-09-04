@@ -13,6 +13,13 @@ import { detectDhanCsv } from "@/lib/import/parsers/dhan-csv";
 import { detectDhanGtr } from "@/lib/import/parsers/dhan-gtr";
 import { detectDhanRealisedPnl } from "@/lib/import/parsers/dhan-realised-pnl";
 import { detectDhanDividend, detectDhanLedgerFile } from "@/lib/import/parsers/dhan-ledger";
+import { detectDhanDpCharges } from "@/lib/import/parsers/dhan-dp-charges";
+import { detectDhanHoldings } from "@/lib/import/parsers/dhan-holdings";
+import { detectDhanContractNote } from "@/lib/import/parsers/dhan-contract-note";
+import { detectPaytmRealisedPnl } from "@/lib/import/parsers/paytm-realised-pnl";
+import { detectUpstoxLedger } from "@/lib/import/parsers/upstox-ledger";
+import { detectAngelOneLedger } from "@/lib/import/parsers/angelone-ledger";
+import { detectAngelOnePnlStatement } from "@/lib/import/parsers/angelone-pnl-statement";
 import { ownerContext, ownerFiles } from "./helpers/owner-broker-files";
 
 /**
@@ -44,9 +51,10 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   { file: "zerodha-console-pnl.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console P&L" },
   { file: "paytm-tradebook.xlsx", broker: "paytm", expect: "paytm-tradebook", label: "Paytm Money tradebook" },
   { file: "angelone-tax-pnl.xlsx", broker: "angelone", expect: "angelone-taxpnl", label: "Angel One tax P&L" },
-  // The ledger and P&L summary have no parser: the mapper (or nothing, for a
-  // zero-data-row sample) must take them — no parser may claim them outright.
-  { file: "YourStatement_TEST0000.xlsx", broker: "angelone", expect: "generic-or-none", label: "Angel One ledger" },
+  // 2026-09-04: the Angel One account statement gained a parser — it feeds the
+  // Cash & Ledger screen and imports no trades, but it must be NAMED rather
+  // than fall to the column mapper.
+  { file: "YourStatement_TEST0000.xlsx", broker: "angelone", expect: "angelone-ledger", label: "Angel One ledger" },
   { file: "paytm-pnl.xlsx", broker: "paytm", expect: "generic-or-none", label: "Paytm Money P&L" },
   // ── 2026-08-20 batch: schema-only copies of a SECOND set of real exports
   // (Paytm, Zerodha and Upstox), redacted the same way — the owner's real
@@ -55,12 +63,20 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
   // either: `Tradebook_EQ.xlsx`, `trade_<from>_<to>_<code>.xlsx`, …), so
   // every claim below is carried by in-content fingerprints alone.
   { file: "paytm-tradebook-v2.xlsx", broker: "paytm", expect: "paytm-tradebook", label: "Paytm Money tradebook (Tradebook_EQ export, numeric Script codes)" },
-  { file: "paytm-equity-pnl.xls", broker: "paytm", expect: "generic-or-none", label: "Paytm Money Equity P&L (.xls, 3 sheets)" },
+  // 2026-09-04: the Paytm Realized P&L gained a parser. It imports no trades —
+  // it stores Paytm's own stated figures for reconciliation — so the claim is
+  // carried entirely by its in-content fingerprint under a neutral filename.
+  { file: "paytm-equity-pnl.xls", broker: "paytm", expect: "paytm-realised-pnl", label: "Paytm Money Equity P&L (.xls, 3 sheets)" },
   { file: "zerodha-tradebook-console.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha tradebook (Console export with preamble)" },
   { file: "zerodha-console-pnl-cola.xlsx", broker: "zerodha", expect: "zerodha", label: "Zerodha Console P&L (column-A variant)" },
   { file: "upstox-trade-report.xlsx", broker: "upstox", expect: "upstox", label: "Upstox trade report" },
   { file: "upstox-realized-pnl.xlsx", broker: "upstox", expect: "upstox", label: "Upstox realised P&L report" },
   // No column header at all — nothing can read it; nothing may claim it.
+  // The `upstox-ledger` parser exists as of 2026-09-04, and it still must NOT
+  // claim THIS copy: the redacted sample carries no header row, so
+  // `findUpstoxLedgerHeader` finds nothing and the detector scores 0. The
+  // refusal is by design, not a gap — a populated ledger is pinned by
+  // tests/golden-books.test.ts against the owner's real export.
   { file: "upstox-ledger.xlsx", broker: "upstox", expect: "generic-or-none", label: "Upstox ledger" },
   // ── 2026-09-01 batch: Zerodha Console TAX P&L (taxpnl-*.xlsx), redacted
   // from two real multi-sheet exports. The trade table sits on sheet 0 and
@@ -82,7 +98,7 @@ const FIXTURES: { file: string; broker: string; expect: string; label: string }[
 const PRIVATE_DIR = path.join(process.cwd(), "tests", "fixtures", "private");
 const PRIVATE: { file: string; expect: string }[] = [
   { file: "Paytm Money - Tradebook (real).xlsx", expect: "paytm-tradebook" },
-  { file: "Paytm Money - EquityPnL (real).xls", expect: "generic-or-none" },
+  { file: "Paytm Money - EquityPnL (real).xls", expect: "paytm-realised-pnl" },
   { file: "Zerodha Tradebook (real).xlsx", expect: "zerodha" },
   { file: "Zerodha Console PnL (real).xlsx", expect: "zerodha" },
   { file: "Upstox trade report (schema-only).xlsx", expect: "upstox" },
@@ -174,6 +190,16 @@ const CROSS_DETECTORS: {
   { name: "detectDhanRealisedPnl", broker: "dhan", container: "binary", fn: detectDhanRealisedPnl },
   { name: "detectDhanLedgerFile", broker: "dhan", container: "text", fn: detectDhanLedgerFile },
   { name: "detectDhanDividend", broker: "dhan", container: "text", fn: detectDhanDividend },
+  // 2026-09-04: the seven v3.9 reference/enrichment sources. All are workbook
+  // or PDF readers — each returns 0 without `ctx.buffer` — so all join as
+  // "binary" only.
+  { name: "detectDhanDpCharges", broker: "dhan", container: "binary", fn: detectDhanDpCharges },
+  { name: "detectDhanHoldings", broker: "dhan", container: "binary", fn: detectDhanHoldings },
+  { name: "detectDhanContractNote", broker: "dhan", container: "binary", fn: detectDhanContractNote },
+  { name: "detectPaytmRealisedPnl", broker: "paytm", container: "binary", fn: detectPaytmRealisedPnl },
+  { name: "detectUpstoxLedger", broker: "upstox", container: "binary", fn: detectUpstoxLedger },
+  { name: "detectAngelOneLedger", broker: "angelone", container: "binary", fn: detectAngelOneLedger },
+  { name: "detectAngelOnePnlStatement", broker: "angelone", container: "binary", fn: detectAngelOnePnlStatement },
 ];
 const readsText = (c: Container) => c === "text" || c === "both";
 const readsBinary = (c: Container) => c === "binary" || c === "both";
@@ -347,6 +373,23 @@ const OWNER_PATTERNS: { pattern: RegExp; broker: string; expect: string }[] = [
   { pattern: /^Dhan_P&L_.*\.xlsx$/, broker: "dhan", expect: "dhan-csv" },
   { pattern: /^realized_pnl-report.*\.xls$/, broker: "dhan", expect: "dhan-realised-pnl" },
   { pattern: /^Trades_History_.*\.xlsx$/, broker: "angelone", expect: "angelone" },
+  // ── 2026-09-04: the v3.9 reference sources, by the broker's own filename
+  // shape. Nothing here reads a path — `ownerFiles` matches in place.
+  { pattern: /^dp-charges.*\.xls$/, broker: "dhan", expect: "dhan-dp-charges" },
+  { pattern: /^Dhan_Demat_Holding.*\.xlsx$/, broker: "dhan", expect: "dhan-holdings" },
+  { pattern: /_Contract_Note_.*\.pdf$/, broker: "dhan", expect: "dhan-contract-note" },
+  { pattern: /^ledger_.*\.xlsx$/, broker: "upstox", expect: "upstox-ledger" },
+  { pattern: /^YourStatement_.*\.xlsx$/, broker: "angelone", expect: "angelone-ledger" },
+  { pattern: /^ProfitLoss_Statement_.*\.xlsx$/, broker: "angelone", expect: "angelone-pnl-statement" },
+  // The owner's two Paytm files share a stem and differ only by extension:
+  // the `.xls` is the Realized P&L, the `.xlsx` is the tradebook. The pattern
+  // is anchored on `\.xls$` for exactly that reason — an unanchored
+  // `.*\.xls` would have swallowed the tradebook too and pinned the wrong
+  // source for it. The tradebook keeps its own mapping, in the redacted
+  // routing block above (`paytm-tradebook-v2.xlsx`, loaded NEUTRAL); it is
+  // deliberately not listed here because under a neutral name it scores 0.75
+  // on content alone, below this block's 0.9 floor for a named real export.
+  { pattern: /^ACCOUNT 2=3-PAYTM MONEY-LARGE DATA\.xls$/, broker: "paytm", expect: "paytm-realised-pnl" },
 ];
 describe("the owner's real Dhan and Angel One exports route to their own source", () => {
   for (const p of OWNER_PATTERNS) {
@@ -361,7 +404,11 @@ describe("the owner's real Dhan and Angel One exports route to their own source"
         const ranked = rankParsers(buildContext(filename, bytes));
         expect(ranked[0].sourceId).toBe(p.expect);
         expect(ranked[0].confidence).toBeGreaterThanOrEqual(0.9);
-      });
+      // Ranking opens the workbook once per fingerprinting detector, and the
+      // owner's real files are the big ones (the DP charges .xls carries ~350
+      // merged ranges over 173 rows). Two of these crossed the 5 s default the
+      // moment the v3.9 detectors joined — slow by size, not by defect.
+      }, 60_000);
     }
   }
 });
@@ -383,12 +430,12 @@ describe("no detector claims another broker's REAL file (owner's folder)", () =>
           it(`${d.name} scores 0 on ${label} [binary container]`, () => {
             const { filename, bytes } = ownerContext(file);
             expect(d.fn(buildContext(filename, bytes))).toBe(0);
-          });
+          }, 60_000);
         }
         if (readsText(d.container)) {
           it(`${d.name} scores 0 on ${label} [text container]`, () => {
             expect(d.fn(loadAsText(path.dirname(file), path.basename(file)))).toBe(0);
-          });
+          }, 60_000);
         }
       }
     }

@@ -1219,7 +1219,8 @@ Deferred OUT of v3.8.0 by the plan (`docs/V380_BUILD_PLAN.md` §2) and the 2026-
 - **Floating search assistant** (draggable, persists `vyuha-search-panel {v:1,x,y,open}`, stays
   open across navigation); audit log + ledger join the index; Search v1 hardening from the owner's
   own use.
-- **v3.8 fix-wave carry-overs:** the one remaining UTC-today site (`trades-client.tsx:92`); the 5
+- **v3.8 fix-wave carry-overs:** the UTC-today site at `trades-client.tsx:92` was ALREADY fixed in
+  the v3.8 fix wave (`todayIstIso`, now :104 — v3.9 recon 2026-09-04 found this line stale); the 5
   size indices absent from `nse-index-map.json` with no recorded reason (owner question at v4.0).
 
 **v4.0 — Live Desk + sector analytics. REMIND THE OWNER when v4.0 planning opens:** ask via pop-up

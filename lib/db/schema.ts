@@ -1206,6 +1206,46 @@ export const regulatoryRulePacks = sqliteTable("regulatory_rule_packs", {
   index("regulatory_rule_pack_effective_idx").on(t.effectiveFrom),
 ]);
 
+// ---------------------------------------------------------------------------
+// broker_reference (v3.9 "Trust the numbers") — figures the BROKER states, kept
+// beside the figures Vyuha derives and never mixed into them. Migration 0062
+// carries the full rationale; the two rules that matter at a call site:
+//
+//  - `figuresJson` is a JSON object of the canonical `ParsedFile.reported`
+//    names (buyValue, sellValue, grossPnl, netPnl, totalCharges, qty, …). It is
+//    TEXT, not a money column: these are the broker's numbers verbatim, and the
+//    integer-paise convention (invariant 1) applies to money Vyuha owns.
+//  - The unique index coalesces `asOf` to '' — SQLite treats NULLs in a unique
+//    index as DISTINCT, so two FY totals (asOf NULL) would both be admitted and
+//    the reconciliation would read the broker's side twice.
+// ---------------------------------------------------------------------------
+export const brokerReference = sqliteTable(
+  "broker_reference",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: integer("account_id").notNull(),
+    broker: text("broker").notNull(),
+    sourceId: text("source_id").notNull(),
+    scope: text("scope").notNull().$type<"fy" | "scrip" | "segment" | "holding" | "charge">(),
+    key: text("key").notNull(),
+    isin: text("isin"),
+    symbol: text("symbol"),
+    fy: text("fy"),
+    asOf: text("as_of"),
+    figuresJson: text("figures_json").notNull().default("{}"),
+    note: text("note"),
+    importBatchId: integer("import_batch_id"),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("broker_reference_uq").on(
+      t.accountId, t.broker, t.sourceId, t.scope, t.key, sql`coalesce(${t.asOf}, '')`,
+    ),
+    index("broker_reference_fy_idx").on(t.accountId, t.fy),
+    index("broker_reference_isin_idx").on(t.accountId, t.isin),
+  ],
+);
+
 // Type exports
 export type Trade = typeof trades.$inferSelect;
 export type Playbook = typeof playbooks.$inferSelect;
@@ -1241,3 +1281,5 @@ export type BrokerConnection = typeof brokerConnections.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type TradingSession = typeof tradingSessions.$inferSelect;
 export type RegulatoryRulePack = typeof regulatoryRulePacks.$inferSelect;
+export type BrokerReferenceRow = typeof brokerReference.$inferSelect;
+export type NewBrokerReferenceRow = typeof brokerReference.$inferInsert;

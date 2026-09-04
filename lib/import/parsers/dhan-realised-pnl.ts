@@ -35,8 +35,9 @@
 import * as XLSX from "xlsx";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
-import type { ParseContext, ParsedFile } from "../types";
+import type { ParseContext, ParsedFile, ReferenceRow } from "../types";
 import { workbookOf } from "../types";
+import { fyOfDate } from "@/lib/analytics/ais";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().replace(/[^a-z&%]/g, "");
 
@@ -191,6 +192,75 @@ function blockKind(title: string): BlockKind | null {
   return { key, supported: true, exchangeHint: null };
 }
 
+/**
+ * v3.9 "Trust the numbers" — the segment summary, restated as `reference`.
+ *
+ * The same figures already travel in `reported` (which the preview screen and
+ * the golden-book tests read); this is the SAME numbers in the shape
+ * `broker_reference` stores, so every reference source feeds the store
+ * uniformly and the reconciliation screen needs no per-broker code. Nothing is
+ * recomputed here — a second arithmetic path over the same cells is exactly how
+ * two screens end up showing two totals for one file.
+ *
+ * `reported` is flat and doubly-keyed: `equity.grossPnl` per segment AND
+ * `grossPnl` for the file-wide total. Only the DOTTED keys become segment
+ * rows; the bare ones are the sum of those rows and would be a third copy.
+ */
+export function dhanReferenceRows(reported: Record<string, number>, fy: string | null): ReferenceRow[] {
+  const bySegment = new Map<string, Record<string, number>>();
+  for (const [k, v] of Object.entries(reported)) {
+    const dot = k.indexOf(".");
+    if (dot < 0) continue; // a file-wide total, not a segment's own figure
+    const seg = k.slice(0, dot);
+    const field = k.slice(dot + 1);
+    const cur = bySegment.get(seg) ?? {};
+    cur[field] = v;
+    bySegment.set(seg, cur);
+  }
+  return [...bySegment].map(([seg, figures]) => ({
+    scope: "segment" as const,
+    key: seg,
+    isin: null,
+    symbol: null,
+    fy,
+    asOf: null,
+    figures,
+    note: null,
+  }));
+}
+
+/**
+ * The FY the report covers, when the report SAYS. It usually does not: the
+ * verified exports carry a `Generated on` stamp and nothing else, so there is
+ * no period to read and no FY row is emitted. Invariant 6 — a figure filed
+ * under a year the file never stated is a fabricated denominator with a date
+ * on it; the reconciliation shows it unfiled instead.
+ */
+export function dhanStatedFy(rows: string[][]): string | null {
+  for (const r of rows.slice(0, 12)) {
+    for (const c of r) {
+      const m = String(c).match(/(?:from|period)\s*:?\s*(\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{4})\s*(?:to|-|–)\s*(\d{1,2}[-/][A-Za-z0-9]{2,3}[-/]\d{4})/i);
+      if (m) return fyOfDate(isoOf(m[2]) ?? "") ?? fyOfDate(isoOf(m[1]) ?? "");
+    }
+  }
+  return null;
+}
+
+const MONTHS: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+function isoOf(s: string): string | null {
+  let m = s.match(/^(\d{1,2})[-/]([A-Za-z]{3})[-/](\d{4})$/);
+  if (m) {
+    const mm = MONTHS[m[2].toLowerCase()];
+    return mm ? `${m[3]}-${mm}-${m[1].padStart(2, "0")}` : null;
+  }
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
+}
+
 export function parseDhanRealisedPnl(ctx: ParseContext): ParsedFile {
   const empty = (why: string): ParsedFile => ({
     sourceId: "dhan-realised-pnl", broker: "dhan", format: "pnl", trades: [], warnings: [why],
@@ -289,12 +359,22 @@ export function parseDhanRealisedPnl(ctx: ParseContext): ParsedFile {
     "Import EITHER the Global Transaction Report OR this report for a window, never both — they describe the same trades and would double-count.",
   );
 
+  // v3.9: the SAME segment figures, in the shape broker_reference stores.
+  const statedFy = dhanStatedFy(rows);
+  const reference = Object.keys(reported).length ? dhanReferenceRows(reported, statedFy) : [];
+  if (reference.length && statedFy == null) {
+    warnings.push(
+      "This report states no period, so its segment totals are stored without a financial year — they reconcile against your whole book for this broker, not against one FY.",
+    );
+  }
+
   return {
     sourceId: "dhan-realised-pnl",
     broker: "dhan",
     format: "pnl",
     trades,
     reported: Object.keys(reported).length ? reported : undefined,
+    reference: reference.length ? reference : undefined,
     sourceRows,
     warnings,
   };

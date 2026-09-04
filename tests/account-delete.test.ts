@@ -64,6 +64,7 @@ function scopedRows(accountId: number) {
     capitalSnapshots: inAcc(t.db.select().from(t.schema.capitalSnapshots).all()),
     brokerConnections: inAcc(t.db.select().from(t.schema.brokerConnections).all()),
     panelDismissals: inAcc(t.db.select().from(t.schema.panelDismissals).all()),
+    brokerReference: inAcc(t.db.select().from(t.schema.brokerReference).all()),
   };
 }
 
@@ -117,6 +118,7 @@ describe("purge", () => {
     t.db.insert(t.schema.capitalSnapshots).values({ accountId: 10, bucket: "equity", asOfDate: "2026-08-01", openingCapital: 1000 }).run();
     t.db.insert(t.schema.brokerConnections).values({ accountId: 10, broker: "dhan", apiKey: "k", accessToken: "t" }).run();
     t.db.insert(t.schema.panelDismissals).values({ accountId: 10, panel: "risk", fingerprint: "fp-1" }).run();
+    t.db.insert(t.schema.brokerReference).values({ accountId: 10, broker: "dhan", sourceId: "dhan-dp-charges", scope: "charge", key: "INE000000001", asOf: "2026-08-01", figuresJson: JSON.stringify({ charges: 13.5 }) }).run();
     selectAccount(10);
 
     const res = mod.deleteAccount({ accountId: 10, mode: "purge", connections: "delete" });
@@ -124,7 +126,7 @@ describe("purge", () => {
     expect(res.snapshotId).toBeTruthy();
     snapshotId = res.snapshotId!;
 
-    // Zero rows across all 8 scoped tables.
+    // Zero rows across all 9 scoped tables.
     const left = scopedRows(10);
     for (const [tbl, rows] of Object.entries(left)) {
       expect(rows, `${tbl} still holds rows for the purged account`).toHaveLength(0);
@@ -450,6 +452,28 @@ describe("import commit racing an account delete", () => {
     // No ghost batch either — the transaction rolled back before any write.
     expect(t.db.select().from(t.schema.importBatches).all().filter((b) => b.accountId === 95)).toHaveLength(0);
     selectAccount(1);
+  });
+});
+
+describe("merge — broker reference figures", () => {
+  it("moves the source's figures to the target and drops only the ones the target already states", () => {
+    addAccount(90, "Ref-Source", { pnlRolledIn: 0 });
+    addAccount(91, "Ref-Target", { pnlRolledIn: 0 });
+    const row = (accountId: number, key: string, charges: number) => ({
+      accountId, broker: "dhan" as const, sourceId: "dhan-dp-charges", scope: "charge" as const, key, asOf: "2026-08-01",
+      figuresJson: JSON.stringify({ charges }),
+    });
+    // Same statement imported into both accounts: INE…1 collides, INE…2 is source-only.
+    t.db.insert(t.schema.brokerReference).values([row(90, "INE000000001", 13.5), row(90, "INE000000002", 4.0)]).run();
+    t.db.insert(t.schema.brokerReference).values([row(91, "INE000000001", 13.5)]).run();
+
+    const res = mod.deleteAccount({ accountId: 90, mode: "merge", targetId: 91, connections: "delete" });
+    expect(res.ok).toBe(true);
+
+    const left = t.db.select().from(t.schema.brokerReference).all();
+    expect(left.filter((r) => r.accountId === 90)).toHaveLength(0);
+    const target = left.filter((r) => r.accountId === 91).map((r) => r.key).sort();
+    expect(target).toEqual(["INE000000001", "INE000000002"]);
   });
 });
 

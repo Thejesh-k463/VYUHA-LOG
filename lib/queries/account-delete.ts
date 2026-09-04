@@ -19,6 +19,7 @@ import {
   advanceTaxChallans,
   brokerConnections,
   panelDismissals,
+  brokerReference,
 } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
@@ -578,6 +579,11 @@ export function deleteAccount(opts: {
         tx.delete(advanceTaxChallans).where(eq(advanceTaxChallans.accountId, accountId)).run();
         tx.delete(brokerConnections).where(eq(brokerConnections.accountId, accountId)).run();
         tx.delete(panelDismissals).where(eq(panelDismissals.accountId, accountId)).run();
+        // Broker-stated reference figures (v3.9) are per-account like every
+        // table above: they describe THIS book's imports, and a row left
+        // behind would be invisible (every read is account-scoped) yet still
+        // occupy the account in `broker_reference_uq`.
+        tx.delete(brokerReference).where(eq(brokerReference.accountId, accountId)).run();
       } else {
         const targetId = r.target!.id;
         // Unlink anything pointing at the SKIPPED (deleted) duplicates, then
@@ -593,6 +599,16 @@ export function deleteAccount(opts: {
         tx.update(importBatches).set({ accountId: targetId }).where(eq(importBatches.accountId, accountId)).run();
         tx.update(ipos).set({ accountId: targetId }).where(eq(ipos.accountId, accountId)).run();
         tx.update(ledgerEntries).set({ accountId: targetId }).where(eq(ledgerEntries.accountId, accountId)).run();
+        // Broker reference figures move too. A figure the target already holds
+        // (same broker/source/scope/key/as_of — the same statement imported into
+        // both accounts) is dropped from the source: the unique index would
+        // reject it and the target's copy states the same number.
+        tx.run(sql`delete from broker_reference where account_id = ${accountId} and exists (
+          select 1 from broker_reference t where t.account_id = ${targetId}
+            and t.broker = broker_reference.broker and t.source_id = broker_reference.source_id
+            and t.scope = broker_reference.scope and t.key = broker_reference.key
+            and coalesce(t.as_of, '') = coalesce(broker_reference.as_of, ''))`);
+        tx.update(brokerReference).set({ accountId: targetId }).where(eq(brokerReference.accountId, accountId)).run();
 
         // Sessions move; a date the target already has is discarded (UNIQUE
         // account+date — two plans for the same day cannot both survive, and

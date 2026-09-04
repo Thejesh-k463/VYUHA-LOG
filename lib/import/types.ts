@@ -21,6 +21,23 @@ export interface ParsedFile {
    */
   sourceRows?: number;
   warnings: string[];
+  /**
+   * v3.9 "Trust the numbers": figures the BROKER states that Vyuha does not
+   * derive — realised P&L per FY / per scrip, demat holdings, statement-level
+   * charge totals. Persisted to `broker_reference` at commit and shown beside
+   * Vyuha's own numbers on the reconciliation screen. A reference source
+   * (Dhan Realised P&L, Paytm Realized P&L Detail, Angel P&L statement, Dhan
+   * holdings) fills this and usually emits NO trades; the book stays the
+   * tradebook (GTR / tradebook exports).
+   */
+  reference?: ReferenceRow[];
+  /**
+   * Facts a secondary source knows about trades the book already holds —
+   * fill times and the instrument type from a Dhan contract note. Applied at
+   * commit to EXISTING rows matched on (symbol, date, side, qty); never
+   * creates a trade. Unmatched enrichments are reported, not stored.
+   */
+  enrich?: EnrichmentRow[];
   /** Raw text (PDF) when a guided manual mapping is needed. */
   rawText?: string;
   /**
@@ -35,6 +52,43 @@ export interface ParsedFile {
     /** Best-guess mapping, pre-filled in the UI for the user to correct. */
     suggested: ColumnMapping;
   };
+}
+
+/** What a reference figure describes. */
+export type ReferenceScope = "fy" | "scrip" | "segment" | "holding" | "charge";
+
+/**
+ * One broker-stated figure set. `key` is the FY label ("2025-26"), the ISIN
+ * (scrip/holding), the segment name ("equity" | "fno" | "commodity" |
+ * "currency") or the charge type. `figures` keys are the canonical names used
+ * by `reported` (buyValue, sellValue, grossPnl, netPnl, totalCharges, qty,
+ * closingPrice, valuation, …) so every source lands in one table.
+ */
+export interface ReferenceRow {
+  scope: ReferenceScope;
+  key: string;
+  isin?: string | null;
+  symbol?: string | null;
+  /** FY label the figure belongs to, when the file states or implies one. */
+  fy?: string | null;
+  /** ISO yyyy-mm-dd the figure is stated for (holdings: statement date; lots: sell date). */
+  asOf?: string | null;
+  figures: Record<string, number>;
+  note?: string | null;
+}
+
+/** A fact about an existing trade from a secondary source (contract note). */
+export interface EnrichmentRow {
+  symbol: string;
+  /** ISO yyyy-mm-dd */
+  date: string;
+  side: "buy" | "sell";
+  qty: number;
+  /** "HH:MM:SS" IST as printed by the broker. */
+  time?: string | null;
+  instrumentType?: "equity" | "option" | "future" | null;
+  exchange?: string | null;
+  note?: string | null;
 }
 
 export interface ParseContext {
@@ -88,7 +142,35 @@ export function workbookOf(ctx: ParseContext, opts: { bookSheets?: boolean } = {
     if (memo.full) return memo.full;
     return (memo.sheetsOnly ??= XLSX.read(ctx.buffer, { type: "buffer", bookSheets: true }));
   }
-  return (memo.full ??= XLSX.read(ctx.buffer, { type: "buffer" }));
+  return (memo.full ??= trimSheetRanges(XLSX.read(ctx.buffer, { type: "buffer" })));
+}
+
+/**
+ * A BIFF8 export can declare its used range as the whole sheet (`A1:Q65536`
+ * on Dhan's DP-charges file, 1,400 real cells). `sheet_to_json({ defval })`
+ * then materialises 65,536 rows per detector — 3.7 s of ranking on a 91 KB
+ * file, a hook timeout under load. Trim each sheet's `!ref` to the bounding
+ * box of its populated cells once, on the memoised workbook. Merges are left
+ * alone; a merge past the last cell is a merge of empties.
+ */
+export function trimSheetRanges(wb: XLSX.WorkBook): XLSX.WorkBook {
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws || !ws["!ref"]) continue;
+    let maxR = -1;
+    let maxC = -1;
+    for (const key of Object.keys(ws)) {
+      if (key[0] === "!") continue;
+      const { r, c } = XLSX.utils.decode_cell(key);
+      if (r > maxR) maxR = r;
+      if (c > maxC) maxC = c;
+    }
+    if (maxR < 0) continue;
+    const declared = XLSX.utils.decode_range(ws["!ref"]);
+    if (declared.e.r <= maxR && declared.e.c <= maxC) continue;
+    ws["!ref"] = XLSX.utils.encode_range({ s: declared.s, e: { r: Math.max(maxR, declared.s.r), c: Math.max(maxC, declared.s.c) } });
+  }
+  return wb;
 }
 
 /**
@@ -133,4 +215,20 @@ export interface CommitResult {
    * against their broker's own statement.
    */
   shape: ImportShape;
+  /**
+   * v3.9: what the commit did BEYOND writing trades — how many broker-stated
+   * figures landed in `broker_reference`, and how many of a secondary source's
+   * enrichment lines found an existing trade. Additive and optional: a commit
+   * of a plain tradebook reports none of it.
+   */
+  referenceStored?: number;
+  enrichApplied?: number;
+  enrichTotal?: number;
+  /**
+   * Sentences the COMMIT produced (not the parse). The parse's own warnings
+   * still travel on `ParsedFile.warnings`; these are facts only the write knew
+   * — "Fill times applied to 41 of 52 contract-note lines", "N reference
+   * figures stored".
+   */
+  warnings?: string[];
 }

@@ -51,6 +51,10 @@ export const BACKUP_TABLES = [
   "ipos",
   "restricted_securities",
   "ledger_entries",
+  // v3.9: broker-stated figures (realised P&L, holdings, charges) — imported
+  // journal data like ledger_entries; a restore without them loses the
+  // reconciliation screen until every statement is re-imported.
+  "broker_reference",
   "audit_log",
   "trade_legs",
   "symbol_aliases",

@@ -36,6 +36,30 @@
  *                                                      IPO allotment), so the
  *                                                      cost basis is unknown
  *
+ * ── Sequence within a date: file order is the ONLY signal ─────────────────
+ *
+ * A leg carries a DATE and no time — every broker export this module reads
+ * states the settlement date, not the fill timestamp. So the only evidence of
+ * what happened first on a given day is the order the rows appear in the file,
+ * which is the order the broker printed them. `chronological()` sorts on the
+ * date and keeps buys ahead of sells within a date so exchange same-day
+ * netting still works: a holder who sells and re-buys the same scrip today has
+ * ONE intraday trade and still holds the old lot, whichever way round the two
+ * rows are printed. Within a side, same-date legs keep file order (Array#sort
+ * is stable and the input is copied before sorting).
+ *
+ * The one thing file order alone can say is a COVERED SHORT: a sell printed
+ * before a buy of the same scrip on the same day, at a moment when no lot
+ * exists to deliver from. Cash equity cannot be short overnight, so that shape
+ * is only ever intraday, and `shortCoverQtys()` reads it off the file order
+ * BEFORE the sort — the sorted order has deliberately destroyed it. It changes
+ * no arithmetic: the position closes against the same covering buy either way,
+ * with the same basis. What it adds is the note, so the row does not read as a
+ * purchase the trader never placed first.
+ *
+ * A sell followed by a buy on a LATER day is not a short — it is a holding
+ * acquired before the file begins, and stays an opening sell.
+ *
  * The third is the one that matters. An opening sell has no purchase price
  * anywhere in the file, so its P&L is not merely unknown — it is unknowable.
  * Reporting it as a 100% gain because buyValue is zero would be a fabrication,
@@ -89,6 +113,81 @@ function chronological(a: Leg, b: Leg): number {
   return a.side === "buy" ? -1 : 1;
 }
 
+/**
+ * The one fixed note a covered intraday short carries. See the header: this is
+ * a presentation fact read off file order, not a change of arithmetic.
+ */
+export const INTRADAY_SHORT_NOTE =
+  "Intraday short: sold before buying on the same day, covered by the later buy.";
+
+/**
+ * How much of each sell leg was a COVERED SHORT — sold with no lot to deliver
+ * from, and covered by a later buy of the same symbol on the SAME date, in
+ * FILE ORDER. Keyed on the leg object, so it survives the sort.
+ *
+ * `held` is the running net position in file order; `buyLeft` is each buy's
+ * quantity not already spent covering an earlier short, so a covering buy is
+ * never counted twice (once as cover, once as a new holding). The per-date
+ * index with a forward-only head keeps this linear — a naive look-ahead is
+ * O(n²) on an opening-sell-heavy book, which is exactly the shape
+ * tests/load/c8-pairing-depth measures.
+ */
+function shortCoverQtys(legsIn: Leg[]): Map<Leg, number> {
+  const covers = new Map<Leg, number>();
+  const buyLeft = legsIn.map((l) => (l.side === "buy" ? l.qty : 0));
+  const byDateBuys = new Map<string, { idx: number[]; head: number }>();
+  for (let i = 0; i < legsIn.length; i++) {
+    if (legsIn[i].side !== "buy") continue;
+    const e = byDateBuys.get(legsIn[i].date);
+    if (e) e.idx.push(i);
+    else byDateBuys.set(legsIn[i].date, { idx: [i], head: 0 });
+  }
+
+  let held = 0;
+  for (let i = 0; i < legsIn.length; i++) {
+    const leg = legsIn[i];
+    if (leg.side === "buy") {
+      // Only the part not already committed to covering an earlier short.
+      held += buyLeft[i];
+      continue;
+    }
+    const fromHolding = Math.min(leg.qty, held);
+    held -= fromHolding;
+    let uncovered = leg.qty - fromHolding;
+    if (uncovered <= 0) continue;
+
+    const e = byDateBuys.get(leg.date);
+    if (!e) continue;
+    while (e.head < e.idx.length && (e.idx[e.head] <= i || buyLeft[e.idx[e.head]] <= 0)) e.head++;
+    let cover = 0;
+    for (let k = e.head; k < e.idx.length && uncovered > 0; k++) {
+      const j = e.idx[k];
+      if (j <= i || buyLeft[j] <= 0) continue;
+      const take = Math.min(uncovered, buyLeft[j]);
+      buyLeft[j] -= take;
+      uncovered -= take;
+      cover += take;
+    }
+    if (cover > 0) covers.set(leg, cover);
+  }
+  return covers;
+}
+
+/**
+ * One note when a closed position's buy and sell were filled on DIFFERENT
+ * exchanges. The position is NOT split by exchange: one ISIN is one holding,
+ * and splitting it turned 38 opening sells into 101 on a real book (measured
+ * and rejected, v3.8; pinned by tests/paytm-isin-pairing.test.ts). The
+ * position's own `exchange` stays the first leg's — the note is what tells the
+ * trader the two fills happened in different places.
+ */
+function crossExchangeNote(buyExchanges: string[], sellExchange: string | null | undefined): string | null {
+  if (!sellExchange) return null;
+  const from = [...new Set(buyExchanges.filter(Boolean))];
+  if (from.length === 0 || !from.some((e) => e !== sellExchange)) return null;
+  return `Bought on ${from.join("/")}, sold on ${sellExchange} — one holding, the exchange is where the fill happened.`;
+}
+
 /** Pick the most specific product across the legs that formed a position. */
 function resolveProduct(products: (Leg["product"] | undefined)[]): PairedPosition["product"] {
   const seen = new Set(products.filter(Boolean) as string[]);
@@ -113,7 +212,18 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
   const symbol = legs[0].symbol;
   const exchange = legs.find((l) => l.exchange)?.exchange ?? null;
 
-  type Lot = { date: string; qty: number; value: number; charges: number; product: Leg["product"]; opening?: boolean };
+  type Lot = {
+    date: string;
+    qty: number;
+    value: number;
+    charges: number;
+    product: Leg["product"];
+    exchange?: string | null;
+    opening?: boolean;
+  };
+
+  // Read off the ORIGINAL file order — the sort above has destroyed it.
+  const shortCovers = shortCoverQtys(legsIn);
 
   /**
    * One pairing pass. `openingQty` > 0 seeds the FIFO queue with a lot of
@@ -159,7 +269,8 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
       if (e) e.arr.push(lot);
       else byDate.set(lot.date, { arr: [lot], head: 0 });
     };
-    if (openingQty > 0) pushLot({ date: "", qty: openingQty, value: 0, charges: 0, product: undefined, opening: true });
+    if (openingQty > 0)
+      pushLot({ date: "", qty: openingQty, value: 0, charges: 0, product: undefined, exchange: null, opening: true });
     const out: PairedPosition[] = [];
     const orphanSells: Leg[] = [];
     let orphanQty = 0;
@@ -167,7 +278,14 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
     for (const leg of legs) {
       if (leg.side === "buy") {
         if (leg.qty > 0) {
-          pushLot({ date: leg.date, qty: leg.qty, value: leg.value, charges: leg.charges, product: leg.product });
+          pushLot({
+            date: leg.date,
+            qty: leg.qty,
+            value: leg.value,
+            charges: leg.charges,
+            product: leg.product,
+            exchange: leg.exchange ?? null,
+          });
         }
         continue;
       }
@@ -184,7 +302,15 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         const take = Math.min(remaining, lot.qty);
         const share = lot.qty > 0 ? take / lot.qty : 0;
         if (lot.opening) openingTaken += take;
-        else consumed.push({ date: lot.date, qty: take, value: r2(lot.value * share), charges: r2(lot.charges * share), product: lot.product });
+        else
+          consumed.push({
+            date: lot.date,
+            qty: take,
+            value: r2(lot.value * share),
+            charges: r2(lot.charges * share),
+            product: lot.product,
+            exchange: lot.exchange ?? null,
+          });
         lot.qty -= take;
         lot.value = r2(lot.value * (1 - share));
         lot.charges = r2(lot.charges * (1 - share));
@@ -212,6 +338,15 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
       if (consumed.length > 0) {
         const matchedQty = consumed.reduce((s, c) => s + c.qty, 0);
         const portion = leg.qty > 0 ? matchedQty / leg.qty : 1;
+        const shortQty = shortCovers.get(leg) ?? 0;
+        const notes: string[] = [];
+        if (shortQty > 0) notes.push(INTRADAY_SHORT_NOTE);
+        const xNote = crossExchangeNote(consumed.map((c) => c.exchange ?? ""), leg.exchange);
+        if (xNote) notes.push(xNote);
+        let product = resolveProduct([...consumed.map((c) => c.product), leg.product]);
+        // Cash equity cannot be short overnight, so a covered short is intraday
+        // unless the legs themselves said otherwise.
+        if (shortQty > 0 && product === "unknown") product = "intraday";
         out.push({
           symbol,
           kind: "closed",
@@ -225,9 +360,9 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
           buyDate: consumed.reduce((d, c) => (c.date < d ? c.date : d), consumed[0].date),
           sellDate: leg.date,
           charges: r2(consumed.reduce((s, c) => s + c.charges, 0) + sellCharges * portion),
-          product: resolveProduct([...consumed.map((c) => c.product), leg.product]),
+          product,
           basisUnknown: false,
-          notes: [],
+          notes,
         });
       }
 
@@ -299,7 +434,14 @@ export function pairLegs(legs: Leg[]): PairedPosition[] {
   }
 
   const out: PairedPosition[] = [];
-  for (const [, arr] of bySymbol) out.push(...pairSymbolLegs(arr));
+  // NOT `out.push(...pairSymbolLegs(arr))`: spread passes every position as a
+  // separate ARGUMENT, so one symbol with more positions than V8's argument
+  // limit throws `RangeError: Maximum call stack size exceeded` — a hard
+  // failure, not a slowdown. Pinned by tests/load/c8-pairing-depth at 190,000
+  // legs on one symbol (it threw at ~123,000 positions).
+  for (const [, arr] of bySymbol) {
+    for (const pos of pairSymbolLegs(arr)) out.push(pos);
+  }
 
   return out.sort(
     (a, b) =>

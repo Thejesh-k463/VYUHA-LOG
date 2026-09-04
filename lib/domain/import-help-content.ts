@@ -91,10 +91,12 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Dhan",
     summary: "Transaction report, P&L and the Realised P&L report by file; ledger and dividends to Cash & Ledger; today's positions — and MTF, stated — over the API or OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("dhan-gtr", "dhan-csv", "dhan-realised-pnl", "dhan-ledger", "dhan-dividend"),
+    formats: sources("dhan-gtr", "dhan-csv", "dhan-realised-pnl", "dhan-ledger", "dhan-dividend", "dhan-dp-charges", "dhan-holdings", "dhan-contract-note"),
     steps: [
       "As of Aug 2026: web.dhan.co → Statements & Reports — the Global Transaction Report downloads as CSV; the P&L report as CSV or XLSX (both read the same); the Realised P&L report as XLS. Dhan ledger and dividend payout files are recognised on the dropzone by name but import on the Cash & Ledger screen, where the ledger's weekly MTF interest postings are reconciled before anything is written and dividends land as dividend entries.",
       "Import EITHER the Global Transaction Report OR the Realised P&L report for a date window — never both. They describe the same trades: the transaction report has dates and a product read from each bill's charge signature; the Realised P&L has neither, but states every charge head per segment (brokerage, exchange, SEBI, GST, STT, stamp duty) — the figures to reconcile against.",
+      "As of Sep 2026, three more Dhan files are read and none of them books a trade. DP Charges (XLS) are the depository fees that appear in no other Dhan export; they land on the Cash & Ledger screen and as a stated fee per scrip per day. The Demat Holding summary (XLSX) stores what the depository says you hold on one date. The signed contract note (PDF) adds the TIME of each fill to trades already imported — it never creates one, because the Global Transaction Report is the book and importing both would double-book the same executions.",
+      "The MTF Report on web.dhan.co is a screen with no download in any format (checked Sep 2026), so there is no MTF file to import. Vyuha's MTF figures come from the transaction report, the Realised P&L and the ledger's MTF interest postings.",
     ],
     api: [
       "Pulls today's positions with your Client ID and an access token from web.dhan.co → DhanHQ Trading APIs; the token lasts 24 hours by default.",
@@ -133,10 +135,11 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Angel One",
     summary: "Tradebook and Tax P&L by file; unattended same-day pulls over SmartAPI, or through OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("angelone", "angelone-taxpnl"),
+    formats: sources("angelone", "angelone-taxpnl", "angelone-ledger", "angelone-pnl-statement"),
     steps: [
       "As of Aug 2026: Angel One (web or app) → Reports → Tradebook / P&L for the regular exports; the Tax P&L (XLSX) is under the tax reports.",
       "The Tax P&L carries an explicit MTF Qty column — the only examined broker file that states MTF directly, so a stated figure is read, not inferred.",
+      "As of Sep 2026 two more Angel files are read, and neither books a trade. The account statement (YourStatement) feeds the Cash & Ledger screen; its four charge tables are a breakdown of money the ledger has already posted, so they are shown, not posted again. The P&L statement (ProfitLoss_Statement) is stored as Angel's own stated figures — it states P&L, not the executions behind it, so your Angel book stays the tradebook.",
     ],
     api: [
       "SmartAPI pulls today's fills from the trade book — and nothing expires on you: the login runs unattended from your TOTP secret (the base32 string behind the enrollment QR, not the 6-digit code).",
@@ -154,9 +157,10 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Upstox",
     summary: "Trade report and realised P&L by file; a year-long read-only Analytics token for the API, or OpenAlgo.",
     channels: ["files", "api", "openalgo"],
-    formats: sources("upstox"),
+    formats: sources("upstox", "upstox-ledger"),
     steps: [
       "As of Aug 2026: account.upstox.com → Reports — the trade report and the realised P&L download as XLSX. The filenames name no broker; Vyuha recognises the files by the legal name inside them.",
+      "As of Sep 2026 the ledger (XLSX) is read too. It feeds the Cash & Ledger screen and imports no trades. A ledger export with no header row is left to the column mapper rather than half-read.",
     ],
     api: [
       "Pulls today's fills using the Analytics token — it lasts a year and is read-only by design (it cannot place orders, even in principle).",
@@ -177,10 +181,11 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     title: "Paytm Money",
     summary: "The richest tradebook of the examined brokers by file; same-day pulls only through OpenAlgo.",
     channels: ["files", "openalgo"],
-    formats: sources("paytm-tradebook"),
+    formats: sources("paytm-tradebook", "paytm-realised-pnl"),
     steps: [
       "As of Aug 2026: Paytm Money (web or app) → Statements & Reports → Tradebook — downloads as Tradebook_EQ.xlsx.",
       "It carries per-execution rows AND the full per-trade charge breakdown — verified against a real 414-execution export and Paytm's own Realized P&L Detail (2026-08-20). Scrip codes are numeric; Vyuha resolves the symbol from the ISIN at commit.",
+      "As of Sep 2026 the Realized P&L (XLS) is read as well, and it imports no trades — it is Paytm\'s own lot-matching over the same executions the tradebook already carries, so importing both would count them twice. What it stores is what Vyuha cannot derive: Paytm\'s stated realised figures per scrip. Note that its P&L Value is GROSS — the file states no charges of any kind.",
     ],
     openalgo: [
       "As of Aug 2026: create a developer app on Paytm Money's developer portal with Product Type \"Trading Bridge\". The credentials appear only after the app reaches Active status — an app still in review shows nothing to paste, which looks broken and is only pending.",

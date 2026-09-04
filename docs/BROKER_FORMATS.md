@@ -372,8 +372,9 @@ Long Term | Speculation | Turn Over
 `Speculation` ≠ 0 → intraday; `Short Term`/`Long Term` ≠ 0 → delivery (derived).
 
 ### Ledger — sheet `LEDGER_V3`
-`Wallet | TRADING` and **no column header at all** in the sample — nothing to
-map; no parser claims it.
+The schema-only sample carries `Wallet | TRADING` and **no column header at
+all** — nothing to map, so no parser claims THAT copy, by design. A populated
+export does have the header row and is read by `upstox-ledger` (below).
 
 ---
 
@@ -466,8 +467,7 @@ ledger rows of the dividend kind through the same Cash & Ledger door
 (`parseDhanCashFile`), checked against its own stated total. Registered as
 `dhan-dividend`.
 
-Not built (v3.9): DP charges (`.xls`), demat holdings, Upstox/Angel ledgers,
-Angel P&L statement.
+All seven of these are BUILT as of 2026-09-04 — see the section below.
 
 ## Status (2026-09-04) — v3.8.0, built, in audit
 
@@ -529,6 +529,201 @@ Upstox on the A1 legal name and maps `Trade Time`, `Buy/Sell Date`,
 `Buy/Sell Amt`, `Total PL`, `Speculation`. Seven more redacted fixtures in the
 matrix test, plus a private block that replays the real files when present.
 
+---
+
+## Reference and enrichment sources (v3.9, 2026-09-04)
+
+Seven formats that are **not books**. Six emit `reference` rows — figures the
+broker states and Vyuha does not derive — and one emits `enrich` rows. None of
+them creates a trade, and each says so in a warning of its own. The book for a
+broker stays what it was: the tradebook or the Global Transaction Report.
+
+They are registered sources all the same, so the dropzone can NAME the file
+instead of misfiling it, and the import route lets a zero-trade parse commit
+when it carries reference or enrichment rows (`app/api/import/route.ts`).
+
+**Two of the seven name no broker anywhere**, and are the only format-only
+claims in the repo: **Dhan DP Charges** and the **Angel One P&L statement**.
+Both are owner-recorded exceptions to the AGENTS.md name rule, not precedents —
+each is written up under its own heading below.
+
+### Paytm Money — Realized P&L (`.xls`) → `paytm-realised-pnl`
+
+Three sheets in a fixed order: `Summary P&L`, `Realized P&L Detail`,
+`Unrealized Transactions`. **Fingerprint:** the detail sheet's header row —
+`Scrip Name | ISIN | Quantity | Buy Date | Buy Price | Buy Value | Sell Date |
+Sell Price | Sell Value | P&L Value`. Rows 0–3 of that sheet are UCC / Name /
+PAN / Period — identity, read for nothing and emitted nowhere.
+
+**Emits:** `reference` rows carrying what Vyuha cannot derive — Paytm's own
+realised P&L per scrip and per FY, keyed by ISIN. **No trades:** this is Paytm's own lot-matching over the same
+executions the Paytm tradebook already carries, so importing both would
+double-count. **No charges:** the file states no brokerage, no STT, no GST — its
+`P&L Value` is GROSS, and the parser says so in a warning rather than letting a
+reconciliation read a gross figure as net. **Conservation:** the sheet's own
+`Total` row is skipped as a row and used as a check — Σ P&L Value must equal it
+to the paisa. Dates are `dd-MMM-yyyy`; a numeric day-first date whose day never
+exceeds 12 is genuinely ambiguous and warns rather than guessing.
+
+### Dhan — DP Charges (`dp-charges*.xls`) → `dhan-dp-charges`
+
+One sheet, `DP Charges`. Title cell `DP Charges | From <d> to <d>`; header on
+row 5: `Sr. | Date | ISIN | Security Name | … | Quantity | Buy/Sell | Type of
+Transaction | | Charges` (columns 0,1,2,3,9,10,11,13 — the gaps are merge
+padding), then one row per debit, a `Total <amount>` row and a
+system-generated footer.
+
+**Fingerprint — the FORMAT, because the file names no broker.** Nowhere in any
+cell or sheet name does it say Dhan, or the legal entity. Owner ruling
+(2026-09-04): the sheet must be called `DP Charges`, the title cell must say
+`DP Charges`, and the header must be that exact eight-column set. The word
+"dhan" in the filename adds a further 0.1. This is a deliberate exception to
+the name rule and is recorded as such.
+
+**Emits:** ledger rows (kind `charge`, amount negative — money out) for the
+Cash & Ledger screen, AND `reference` rows of scope `charge` keyed by
+(ISIN, date), aggregated per day with the fee types listed in `note`. **No
+trades:** a DP charge is a fee on a delivery, not an execution.
+**Conservation:** Σ of the lines is checked against the file's own `Total` and
+a disagreement becomes a warning, never an adjustment; the sheet's ~350 merged
+ranges are all cosmetic, and any data row whose Charges cell falls inside a
+merge is reported for review rather than silently read as 0.
+
+### Dhan — Demat Holding summary (`Dhan_Demat_Holding_<dd-mm-yyyy>.xlsx`) → `dhan-holdings`
+
+One sheet, `Dhan_Demat_Holding` — **the broker's name is in the SHEET NAME**,
+which is the in-content fingerprint; the cells never say Dhan anywhere else.
+Title row states `Holding summary | For dd-mm-yyyy`; header on row 6:
+`Scrip Name | ISIN Code | Free Holding | Locked In | Safe Keep | MTF Pledge |
+Margin Pledge | CUSA Pledge | Closing Price | Valuation`, then one row per
+scrip and a `Valuation` / `Total Number of Securities` footer.
+
+**Emits:** `reference` rows only, scope `holding`, keyed by ISIN and dated with
+the statement date. `figures.qty` is the TOTAL in the demat account —
+Free + Locked In + Safe Keep + MTF Pledge + Margin Pledge + CUSA Pledge,
+because pledged and locked stock is still owned — with `freeQty` and
+`mtfPledgeQty` carried separately and the formula repeated in each row's note.
+**No trades and no ledger:** a holding is a position statement, and inventing
+entries from it would double-count buys the tradebook already has.
+**Conservation:** the statement date is read from the file's own `For` cell and
+cross-checked against the filename's date — a disagreement warns, it is never a
+silent pick; an ambiguous day-first date is refused rather than guessed.
+
+### Dhan — Contract Note (`*_Contract_Note_Eqfo_signed.pdf`) → `dhan-contract-note`
+
+The only Dhan document that states the TIME of every fill. `pdf-parse` renders
+the annexure as one line per fill —
+`<order no> <hh:mm:ss> <trade no> <hh:mm:ss> <description> <B|S> <qty> <price>
+<net rate> <net amount> [remark]` — under a segment marker line
+(`NCL-NSE-Equity-M`, `NSEFO`). Descriptions come as `SYMBOL-Company Name`
+(equity) or `FUTSTK/OPTIDX <symbol> <expiry> [<strike> <CE|PE>] - NSE`
+(derivative). The DERIVATIVE SUMMARY table above the annexure is **not** read:
+it wraps mid-description and states WAP-after-brokerage rather than the traded
+price.
+
+**Fingerprint:** detection is synchronous and PDF text is compressed, so the
+text cannot be read while ranking — what can be read is the raw bytes, and the
+notes carry the broker's legal name (`Raise Securities` / `Moneylicious`)
+uncompressed in the document metadata, alongside a `contract note` marker.
+Scores 0.95 (1.00 with "dhan" in the filename) against the generic `pdf`
+source's 0.90, so a Dhan note is claimed here and every other PDF still falls
+to the generic text extractor. If a future note stops carrying the marker this
+returns 0 and the user gets text plus a question, not a wrong answer.
+
+**Emits:** `enrich` rows — fill time, instrument type and exchange, applied at
+commit to trades the book ALREADY holds — plus `reference` rows for the note's
+own charge totals. **It never creates a trade:** the Global Transaction Report
+is the book, a note covers one day on one exchange pair, and importing it as
+trades would double-book every execution the GTR carries with no dedup key
+strong enough to notice. Unmatched enrichments are reported, not stored.
+
+### Upstox — Ledger (`ledger_<from>_To_<to>_<wallet>_<code>.xlsx`, sheet `LEDGER_V3`) → `upstox-ledger`
+
+Banner rows `UPSTOX SECURITIES PRIVATE LIMITED` / `(Formerly EPX Uptech Private
+Limited)` / dealing office, then a UCC / Name / PAN / Wallet label block, then
+the header `Wallet | Trade Date | Settlement Date | Exchange | Segment | Type |
+Narration | Debit | Credit | Closing Balance`, the data rows, and a `Total`
+row.
+
+**Fingerprint:** Upstox filenames name nobody (`ledger_…`, `trade_…`,
+`realizedPnL_…`), so the claim is carried entirely by CONTENT — the
+legal-entity banner (the same fingerprint `angelone-upstox.ts` uses) or the
+sheet name `LEDGER_V3`. **The header row is mandatory**: the zero-data-row
+sample in `tests/fixtures/redacted/upstox-ledger.xlsx` carries the banner but
+no header, and is deliberately left to the column mapper — the detector claims
+only what it can actually read.
+
+**Emits:** ledger rows for the Cash & Ledger screen. **No trades.** Amounts are
+formatted text (`Rs2,500.00`) with an EN DASH for "no value"; debit and credit
+collapse into one signed rupee amount, money out negative, exactly as the Dhan
+ledger does. **Conservation:** dates are asserted `dd-mm-yyyy`, not assumed —
+a file whose second component exceeds 12 while no first component does is
+month-first and is REFUSED; when every day in the window is ≤ 12 the question
+is undetectable and the parser says so in a warning rather than pretending it
+checked.
+
+### Angel One — Account statement (`YourStatement_<code>.xlsx`) → `angelone-ledger`
+
+Sheet `Broking Ledger`: a label block, a balance summary
+(Opening / Closing Balance), a Funds Summary (Total Credit / Total Debit), then
+`Transaction Details` and the header `Transaction | Date | Segment | Voucher |
+Debit | Credit | Running Balance`. Sheet `Charges`: **four stacked tables** —
+DP Charges, Pledge/Unpledge, CUSPA Sell-off, Interest — each located by its
+TITLE TEXT and never by a fixed row index, because a table with rows pushes the
+next one down.
+
+**Fingerprint:** `Angelone charge` is a column header Angel One writes into its
+own charges sheet and no other examined broker uses; that in-content name
+carries the claim (0.9), and "Angel" in the filename adds 0.1 without ever
+substituting for it.
+
+**Emits:** ledger rows from the Broking Ledger, plus the charge tables as
+`chargeRows` and as `reference` rows of scope `charge`. **No trades** — Angel's
+book stays `Trades_History` (parser `angelone`). **The charge tables are
+deliberately NOT ledger entries:** they are a breakdown of money the Broking
+Ledger has already posted. In the verified export the DP table's single row
+(₹23.60 = CDSL 3.50 + Angel 16.50 + GST 3.60) is the same rupees as the
+ledger's `DP Charges` line, and the running balance chains through it exactly
+once — posting both would debit the account twice, and the two rows even carry
+different dates, so date+amount de-duplication would not catch it.
+
+### Angel One — P&L statement (`ProfitLoss_Statement_<code>.xlsx`) → `angelone-pnl-statement`
+
+Sheet `Equity P&L`: a label block, an `Equity P&L Summary` block, then two
+stacked tables located by title text — `Delivery PnL` and `Intraday PnL`, both
+18 columns (`Scrip Symbol | Company Name | Quantity | Avg Buy Price | Buy Value
+| Avg Sell Price | Sell Value | Gross PnL | Brokerage | GST | Exchange Service
+Tax | Turnover Tax | SEBI Charges | Stamp Duty | STT | Other Charges | IPFT
+Charges | Net PnL`, the last column reading `Intraday PnL` on the second).
+Sheet `F&O P&L`: one 16-column table; its `Buy price` / `Sell Price` are
+TOTALS, not per-unit levels (verified 65 × 17.65 = 1147.25), so they map to
+buyValue / sellValue.
+
+**Fingerprint — the FORMAT, because the file names no broker.** No banner, no
+column header, no disclaimer and no filename says Angel One. Owner ruling
+(2026-09-04): both sheet names `Equity P&L` and `F&O P&L` present in one
+workbook AND the two verified header rows found inside them, worth 0.9;
+"Angel" or "ProfitLoss_Statement" in the filename adds 0.1. A deliberate
+exception, recorded rather than generalised — and it scores 0 on Angel's own
+tax P&L, which is a different file.
+
+**Emits:** `reference` rows of the broker's stated P&L. **No trades:** the file
+states P&L, not the executions that produced it. **What it cannot say:** there
+is no ISIN column on either sheet, so every scrip reference is keyed by SYMBOL;
+and there is no date column of any kind, so `asOf` is null on every row and the
+FY comes from the statement's own `To Date`. Nothing is invented to fill either.
+
+### Dhan MTF Report — no export exists
+
+The Dhan MTF Report is a **web screen only**: it offers no download in any
+format, verified by the owner on 2026-09-04. There is therefore no MTF file to
+parse and no parser for one. Vyuha's MTF figures come from the files that do
+exist — the Global Transaction Report and the Realised P&L for the positions,
+and the ledger for MTF interest (the Dhan ledger's MTF interest postings are
+already classified and totalled). Anything the MTF screen shows that those
+three do not state is not in Vyuha.
+
+
 ## Status (2026-08-12)
 
 Parsers now keyed on the fingerprints above: `zerodha.ts` (Auction / `- Z`
@@ -537,8 +732,9 @@ Redacted committable copies of every file here live in
 `tests/fixtures/redacted/` (regenerate from `tests/fixtures/private/` with the
 redaction script, then re-run the leak scan);
 `tests/import-detection-matrix.test.ts` pins the routing and the cross-broker
-refusal matrix. The Paytm P&L and Angel One ledger deliberately have NO
-parser: the P&L belongs to the generic mapper, the ledger to the ledger route.
+refusal matrix. (The Paytm P&L and the Angel One ledger deliberately had NO
+parser until v3.9; both gained one on 2026-09-04 as REFERENCE sources — see
+"Reference and enrichment sources" above.)
 
 ## Why the Groww file imported as Zerodha (measured, now fixed)
 

@@ -358,6 +358,13 @@ async function parserView(detect, filename, bytes) {
   view.gross = r2(parsed.trades.reduce((s, t) => s + (t.grossPnl ?? 0), 0));
   view.charges = r2(parsed.trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0));
   view.reported = JSON.stringify(parsed.reported ?? null);
+  // A REFERENCE source (Paytm/Angel P&L, Dhan DP charges and holdings, the
+  // ledgers) and an ENRICH source (the Dhan contract note) parse to ZERO
+  // trades, so every field above is 0/null for them and a redaction that
+  // changed their entire output would have compared equal. These two carry
+  // what those files actually emit, so the refusal covers them too.
+  view.reference = JSON.stringify(parsed.reference ?? null);
+  view.enrich = JSON.stringify(parsed.enrich ?? null);
   view.tableRows = parsed.table?.totalRows ?? null;
   return view;
 }

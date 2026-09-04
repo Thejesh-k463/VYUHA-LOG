@@ -5,6 +5,10 @@ import { ledgerEntries, trades } from "@/lib/db/schema";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { parseDhanCashFile, reconcileMtfInterest } from "@/lib/import/parsers/dhan-ledger";
+import { buildContext } from "@/lib/import/detect";
+import type { ParseContext } from "@/lib/import/types";
+import { detectUpstoxLedger, parseUpstoxLedger, type ParsedCashFile } from "@/lib/import/parsers/upstox-ledger";
+import { detectAngelOneLedger, parseAngelOneLedger } from "@/lib/import/parsers/angelone-ledger";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
@@ -20,6 +24,50 @@ export const runtime = "nodejs";
  * a ledger import writes to the account's money history and the user should see
  * the delta before that happens.
  */
+
+/**
+ * The workbook cash files this door accepts, resolved THROUGH THE PARSERS'
+ * OWN DETECT FUNCTIONS -- never by extension, never by filename.
+ *
+ * Until 2026-09-04 this route read the upload as UTF-8 text and handed it
+ * straight to `parseDhanCashFile`, so an `.xlsx` ledger arrived as mojibake
+ * and came back "no rows". Upstox and Angel One both publish their ledgers as
+ * workbooks only, so the door had to learn bytes.
+ *
+ * The CSV path below is UNCHANGED and deliberately not routed through
+ * detection: `parseDhanCashFile` already tells the Dhan ledger and the Dhan
+ * dividend payout apart by their verified headers, and every existing CSV
+ * behaviour -- including the exact warning text a file with no header comes
+ * back with -- is a behaviour the Cash & Ledger screen is tested against.
+ */
+const WORKBOOK_CASH_SOURCES: {
+  detect: (ctx: ParseContext) => number;
+  parse: (ctx: ParseContext) => ParsedCashFile;
+}[] = [
+  { detect: detectUpstoxLedger, parse: parseUpstoxLedger },
+  { detect: detectAngelOneLedger, parse: parseAngelOneLedger },
+];
+
+/** Read whichever cash file was uploaded. */
+function readCashFile(filename: string, bytes: Buffer): ParsedCashFile {
+  const ctx = buildContext(filename, bytes);
+  // The dividend payout report shares this door (2026-09-04): it is cash that
+  // reached the account, so it lands as dividend entries in the same table.
+  if (ctx.text != null) return parseDhanCashFile(ctx.text);
+
+  let best: { score: number; parse: (c: ParseContext) => ParsedCashFile } | null = null;
+  for (const s of WORKBOOK_CASH_SOURCES) {
+    const score = s.detect(ctx);
+    if (score > 0 && (!best || score > best.score)) best = { score, parse: s.parse };
+  }
+  if (best) return best.parse(ctx);
+  return {
+    rows: [], mtfInterestTotal: 0, unclassified: [], openingBalance: null, from: null, to: null,
+    warnings: [
+      `No cash-file parser recognised ${filename}. The Cash & Ledger screen reads Dhan's ledger and dividend payout CSVs, the Upstox ledger workbook and the Angel One account statement -- a file it cannot recognise is refused rather than read as something it is not.`,
+    ],
+  };
+}
 
 /** Ledger rows already present in the same window, so re-importing the same
  *  file does not double-post. Keyed on date+amount+narration, which is as close
@@ -87,10 +135,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "No file supplied." }, { status: 400 });
   }
 
-  const text = Buffer.from(await file.arrayBuffer()).toString("utf-8");
-  // The dividend payout report shares this door (2026-09-04): it is cash that
-  // reached the account, so it lands as dividend entries in the same table.
-  const parsed = parseDhanCashFile(text);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const parsed = readCashFile(file.name, bytes);
 
   if (parsed.rows.length === 0) {
     return NextResponse.json({ ok: false, message: parsed.warnings.join(" ") }, { status: 422 });

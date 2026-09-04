@@ -8,6 +8,9 @@ import { detectDhanRealisedPnl, parseDhanRealisedPnl } from "./parsers/dhan-real
 import {
   detectDhanDividend, detectDhanLedgerFile, parseDhanDividendSource, parseDhanLedgerSource,
 } from "./parsers/dhan-ledger";
+import { detectDhanDpCharges, parseDhanDpCharges } from "./parsers/dhan-dp-charges";
+import { detectDhanHoldings, parseDhanHoldings } from "./parsers/dhan-holdings";
+import { detectDhanContractNote, parseDhanContractNote } from "./parsers/dhan-contract-note";
 import { detectGrowwXlsx, parseGrowwXlsx } from "./parsers/groww-xlsx";
 import { detectGrowwOrders, parseGrowwOrders } from "./parsers/groww-orders";
 import { detectZerodha, parseZerodha } from "./parsers/zerodha";
@@ -15,6 +18,10 @@ import { detectPdf, parsePdf } from "./parsers/pdf";
 import { detectAngelOne, parseAngelOne, detectUpstox, parseUpstox } from "./parsers/angelone-upstox";
 import { detectAngelOneTaxPnl, parseAngelOneTaxPnl } from "./parsers/angelone-taxpnl";
 import { detectPaytmTradebook, parsePaytmTradebook } from "./parsers/paytm-tradebook";
+import { detectPaytmRealisedPnl, parsePaytmRealisedPnl } from "./parsers/paytm-realised-pnl";
+import { detectUpstoxLedger, parseUpstoxLedgerSource } from "./parsers/upstox-ledger";
+import { detectAngelOneLedger, parseAngelOneLedgerSource } from "./parsers/angelone-ledger";
+import { detectAngelOnePnlStatement, parseAngelOnePnlStatementSource } from "./parsers/angelone-pnl-statement";
 import { detectGenericTable, parseGenericTable } from "./parsers/generic-table";
 
 export interface DetectedParser {
@@ -60,6 +67,13 @@ const PARSERS: Record<string, (ctx: ParseContext) => Promise<ParsedFile> | Parse
   "angelone-taxpnl": parseAngelOneTaxPnl,
   upstox: parseUpstox,
   "paytm-tradebook": parsePaytmTradebook,
+  "paytm-realised-pnl": parsePaytmRealisedPnl,
+  "upstox-ledger": parseUpstoxLedgerSource,
+  "angelone-ledger": parseAngelOneLedgerSource,
+  "angelone-pnl-statement": parseAngelOnePnlStatementSource,
+  "dhan-dp-charges": parseDhanDpCharges,
+  "dhan-holdings": parseDhanHoldings,
+  "dhan-contract-note": parseDhanContractNote,
   pdf: parsePdf,
   "generic-table": parseGenericTable,
 };
@@ -85,6 +99,13 @@ const DETECTORS: Record<string, (ctx: ParseContext) => number> = {
   "angelone-taxpnl": detectAngelOneTaxPnl,
   upstox: detectUpstox,
   "paytm-tradebook": detectPaytmTradebook,
+  "paytm-realised-pnl": detectPaytmRealisedPnl,
+  "upstox-ledger": detectUpstoxLedger,
+  "angelone-ledger": detectAngelOneLedger,
+  "angelone-pnl-statement": detectAngelOnePnlStatement,
+  "dhan-dp-charges": detectDhanDpCharges,
+  "dhan-holdings": detectDhanHoldings,
+  "dhan-contract-note": detectDhanContractNote,
   pdf: detectPdf,
   "generic-table": detectGenericTable,
 };

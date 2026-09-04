@@ -125,17 +125,17 @@ const GOLDEN: Golden[] = [
   },
   {
     file: "paytm-equity-pnl-2026-04-01_2026-08-28.xls",
-    parser: null, minScore: 0.7, honestBest: "generic-table",
-    shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
+    parser: "paytm-realised-pnl", minScore: 0.9,
+    shape: { sourceRows: 918, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
-    note: "Paytm Money Equity P&L (.xls, three stacked tables: Summary, Realized P&L Detail, Unrealized Transactions; realised 21,371,252.64). No parser until v3.9 — pinned at generic-table@0.05 so the v3.9 parser flips this row on purpose.",
+    note: "Paytm Money Equity P&L (.xls, three stacked tables: Summary, Realized P&L Detail, Unrealized Transactions; realised 21,371,252.64). FLIPPED 2026-09-04: the v3.9 `paytm-realised-pnl` parser claims it, as the honest row said a parser one day would. It is a REFERENCE source, not a book — 918 stated lot lines become 703 broker-stated reference figures and ZERO trades, so every trade count and every commit figure is legitimately 0. The realised total is Paytm's, over lots bought before this window; Vyuha's own book for the same period is the tradebook row above.",
   },
   {
     file: "paytm-equity-pnl-2026-08-01_2026-08-18.xls",
-    parser: null, minScore: 0.7, honestBest: "generic-table",
-    shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
+    parser: "paytm-realised-pnl", minScore: 0.9,
+    shape: { sourceRows: 124, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
-    note: "Same layout, the window of the 414-execution tradebook; read directly (SheetJS) by tests/private-reconciliation.test.ts as the lot-level reference. Uncovered until v3.9.",
+    note: "Same layout, the window of the 414-execution tradebook; read directly (SheetJS) by tests/private-reconciliation.test.ts as the lot-level reference. FLIPPED 2026-09-04 to `paytm-realised-pnl`: 124 stated lot lines → 102 reference figures, no trades, so the shape and commit figures are zero by design and not by omission.",
   },
 
   // ── Zerodha ────────────────────────────────────────────────────────────────
@@ -305,6 +305,26 @@ const GOLDEN: Golden[] = [
     note: "Ledger, account 2: the opening-balance row is stamped 01-01-1970 (the epoch row) and the parser reads it as opening 0 with the first real posting on 2026-06-27; closing 8,860.60.",
   },
   {
+    file: "dhan-dp-charges-2026-04-01_2026-09-03.xls",
+    parser: "dhan-dp-charges", minScore: 0.9,
+    shape: { sourceRows: 173, closed: 0, open: 0, openingSells: 0 },
+    reference: null,
+    charges: { mode: "stated" },
+    reportedPins: { totalCharges: 2492.5 },
+    commit: { net: 0, gross: 0, charges: 0 },
+    note: "DP charges (depository fees), account 1: 173 printed lines folded to 91 broker-stated (ISIN, date) reference figures and ZERO trades — a DP fee is not a trade, so the shape and every commit figure are zero by design. Charges are conserved the reference way: the sum of the 91 figures' `charges` equals the file's own Total row, 2,492.50, which the parser carries as `reported.totalCharges` (and `statedTotalCharges`). No P&L reference: the file states none.",
+  },
+  {
+    file: "dhan-holdings-2026-07-01.xlsx",
+    parser: "dhan-holdings", minScore: 0.9,
+    shape: { sourceRows: 1, closed: 0, open: 0, openingSells: 0 },
+    reference: null,
+    charges: { mode: "engine" },
+    reportedPins: { valuation: 1293.9, statedValuation: 1293.9, statedSecurities: 1 },
+    commit: { net: 0, gross: 0, charges: 0 },
+    note: "Demat holding summary as at 2026-07-01: one holding row → one broker-stated holding figure, valuation 1,293.90 as the file states it. It imports no trades — a holding is a position Vyuha did not see opened — so the shape carries only `sourceRows: 1` and every commit figure is zero. No charges anywhere in the file.",
+  },
+  {
     file: "dhan-dividend-2025-04-01_2026-03-31.csv",
     parser: "dhan-dividend", minScore: 1,
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
@@ -355,17 +375,17 @@ const GOLDEN: Golden[] = [
   },
   {
     file: "angelone-profitloss-2026-08-01_2026-08-31.xlsx",
-    parser: null, minScore: 0.7, honestBest: "angelone",
+    parser: "angelone-pnl-statement", minScore: 0.9,
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
-    note: "ProfitLoss_Statement (Equity P&L + F&O P&L summary sheets, 10 + 8 merged ranges). No parser: angelone scores 0.30 on the own name (name only, no header it recognises) and generic-table 0.05 neutral. Pinned so a parser flips it on purpose.",
+    note: "ProfitLoss_Statement (Equity P&L + F&O P&L summary sheets, 10 + 8 merged ranges). FLIPPED 2026-09-04 to the v3.9 `angelone-pnl-statement` parser, exactly as the honest row anticipated. It is a broker-stated P&L REFERENCE: 14 stated figures, zero trades — Angel states summary P&L, not the executions behind it — so no shape and no commit figure can be anything but zero.",
   },
   {
     file: "angelone-statement-2026-08-01_2026-08-31.xlsx",
-    parser: null, minScore: 0.7, honestBest: "angelone",
+    parser: "angelone-ledger", minScore: 0.9,
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
-    note: "YourStatement (Broking Ledger + Charges sheets; opening 0, closing 1,417.56). No parser: 0.30 own name / 0.05 neutral.",
+    note: "YourStatement (Broking Ledger + Charges sheets; opening 0, closing 1,417.56). FLIPPED 2026-09-04 to the v3.9 `angelone-ledger` parser: cash postings plus the Charges sheet as ONE broker-stated reference figure, and no trades — so the shape, the commit figures and the charge conservation are all zero because this file is a statement, not a book.",
   },
 
   // ── Upstox ─────────────────────────────────────────────────────────────────
@@ -389,10 +409,10 @@ const GOLDEN: Golden[] = [
   },
   {
     file: "upstox-ledger-2025-07-19_2026-09-04.xlsx",
-    parser: null, minScore: 0.7, honestBest: "upstox",
+    parser: "upstox-ledger", minScore: 0.9,
     shape: { sourceRows: null, closed: 0, open: 0, openingSells: 0 },
     reference: null, charges: { mode: "engine" }, commit: { net: 0, gross: 0, charges: 0 },
-    note: "Ledger (4 data rows, wallet/narration/debit/credit). No parser: upstox scores 0.30 on the own name (name only) and generic-table 0.05 neutral.",
+    note: "Ledger (4 data rows, wallet/narration/debit/credit). FLIPPED 2026-09-04: the v3.9 `upstox-ledger` parser claims it and feeds the Cash & Ledger screen. It reads cash postings, never trades — no positions, no P&L, no charges on any trade — so every figure below is zero because the file is not a book. The parser sets no `sourceRows` (it counts ledger lines, not executions), so that stays null.",
   },
 ];
 
@@ -476,12 +496,21 @@ GOLDEN.forEach((row, i) => {
       if (!parsed) return expect(row.charges.mode).toBe("engine");
       const perRow = sum(parsed.trades.map((x) => x.reportedCharges?.total ?? 0));
       const stated = parsed.reported?.totalCharges ?? parsed.reported?.total ?? null;
+      // A REFERENCE source states charges but books no trades (Dhan DP charges
+      // — a depository fee belongs to no position). Its conservation is the
+      // same question asked of the rows it DOES emit: the broker-stated
+      // figures. Without this branch a zero-trade stated file would have to
+      // pin its whole total as a "leak", which reads as a defect and is the
+      // opposite of the truth.
+      const carried = parsed.trades.length > 0
+        ? perRow
+        : sum((parsed.reference ?? []).map((r) => r.figures.charges ?? r.figures.totalCharges ?? 0));
       switch (row.charges.mode) {
         case "stated":
           expect(stated).not.toBeNull();
           // DEFECT rows pin the current leak exactly; a fix flips this red.
           // (`|| 0` folds a −0 from r2(−0.003) into 0 — toBe is Object.is.)
-          expect(r2(stated! - perRow) || 0).toBe(row.charges.leak ?? 0);
+          expect(r2(stated! - carried) || 0).toBe(row.charges.leak ?? 0);
           break;
         case "columns":
           expect(perRow).toBeGreaterThan(0);

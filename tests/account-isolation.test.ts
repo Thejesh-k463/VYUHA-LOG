@@ -333,6 +333,12 @@ describe("account-scoped table registry", () => {
     advance_tax_challans: ["lib/queries/challans.ts", "lib/queries/account-delete.ts"],
     broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts", "lib/queries/account-delete.ts"],
     panel_dismissals: ["lib/queries/dismissals.ts", "lib/queries/account-delete.ts"],
+    // v3.9 (migration 0062). Reads scope through getSelectedAccountId; the
+    // ONLY writer is the import commit path, which resolves the WRITE
+    // account (invariant 9) before it stores a single broker figure —
+    // filing one book's broker statement against another book would make
+    // the reconciliation screen quote figures for trades it cannot see.
+    broker_reference: ["lib/queries/reference.ts", "lib/import/commit.ts"],
   };
 
   it("every table carrying account_id has a declared owner", () => {

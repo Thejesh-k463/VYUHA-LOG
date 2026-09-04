@@ -9,6 +9,7 @@ import {
   mtmPrices,
   tradeLegs,
   accounts as accountsTable,
+  brokerReference,
 } from "@/lib/db/schema";
 import { eq, and, ne, sql } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
@@ -19,7 +20,7 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
-import type { CommitResult, ParsedFile } from "./types";
+import type { CommitResult, EnrichmentRow, ParsedFile, ReferenceRow } from "./types";
 import { relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
 import { getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
@@ -488,6 +489,139 @@ export function previewParsedFile(
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// v3.9 "Trust the numbers" — the BROKER's figures, and facts about trades the
+// book already holds. Neither writes a trade; both are additive to the commit.
+// ---------------------------------------------------------------------------
+
+/**
+ * `reported` → `reference`, for a source that states segment totals but was
+ * written before the reference contract existed.
+ *
+ * `reported` is flat and DOUBLY keyed: `equity.grossPnl` for a segment's own
+ * figure AND `grossPnl` for the file-wide sum of those. Only the dotted keys
+ * become rows — the bare ones are a third copy of the same money, and storing
+ * them would make the broker's side of a reconciliation add up to twice the
+ * file. A source that already emits `reference` never reaches this.
+ */
+export function referenceFromReported(reported: Record<string, number> | undefined): ReferenceRow[] {
+  if (!reported) return [];
+  const bySegment = new Map<string, Record<string, number>>();
+  for (const [k, v] of Object.entries(reported)) {
+    const dot = k.indexOf(".");
+    if (dot < 0) continue;
+    const seg = k.slice(0, dot);
+    const cur = bySegment.get(seg) ?? {};
+    cur[k.slice(dot + 1)] = v;
+    bySegment.set(seg, cur);
+  }
+  return [...bySegment].map(([key, figures]) => ({
+    scope: "segment" as const, key, isin: null, symbol: null, fy: null, asOf: null, figures, note: null,
+  }));
+}
+
+/**
+ * Persist broker-stated figures, REPLACING what the same statement said before.
+ *
+ * The identity of a figure is (account, broker, source, scope, key, as_of) —
+ * `broker_reference_uq`, which coalesces a NULL `as_of` to '' because SQLite
+ * counts NULLs in a unique index as distinct and an FY total imported twice
+ * would otherwise be admitted twice. ON CONFLICT DO UPDATE rather than INSERT
+ * OR REPLACE: the row keeps its id and its created_at, so "when did this
+ * figure first arrive" survives a re-import.
+ *
+ * Returns how many figures landed.
+ */
+function persistReference(
+  tx: { run: (q: ReturnType<typeof sql>) => unknown },
+  rows: ReferenceRow[],
+  accountId: number,
+  broker: string,
+  sourceId: string,
+  batchId: number,
+): number {
+  let stored = 0;
+  for (const r of rows) {
+    const figures = JSON.stringify(r.figures ?? {});
+    tx.run(sql`
+      INSERT INTO ${brokerReference}
+        (account_id, broker, source_id, scope, "key", isin, symbol, fy, as_of, figures_json, note, import_batch_id)
+      VALUES (${accountId}, ${broker}, ${sourceId}, ${r.scope}, ${r.key}, ${r.isin ?? null}, ${r.symbol ?? null},
+              ${r.fy ?? null}, ${r.asOf ?? null}, ${figures}, ${r.note ?? null}, ${batchId})
+      ON CONFLICT (account_id, broker, source_id, scope, "key", coalesce(as_of, '')) DO UPDATE SET
+        isin = excluded.isin, symbol = excluded.symbol, fy = excluded.fy,
+        figures_json = excluded.figures_json, note = excluded.note,
+        import_batch_id = excluded.import_batch_id`);
+    stored++;
+  }
+  return stored;
+}
+
+/**
+ * Apply a secondary source's facts to trades the book ALREADY holds.
+ *
+ * A contract note knows two things a P&L export does not: the exact fill time,
+ * and whether a line was an option or a future. It knows them about trades
+ * that are already in the journal — so this NEVER creates a trade. An
+ * enrichment that matches nothing is counted and reported, not stored: a row
+ * conjured from a contract note would be an execution with no cost basis, no
+ * charges and no dedup hash, and it would double-count the moment the real
+ * tradebook arrives.
+ *
+ * Matching is (symbol, date, side, qty), symbol case-insensitively against
+ * BOTH `symbol` and `tradingsymbol` because a broker's contract note names the
+ * scrip its own way. Writes are one-directional and non-destructive:
+ *   - entry_time / exit_time are set ONLY where NULL — a time the book already
+ *     has came from the tradebook, which is the better source.
+ *   - instrument_type is set ONLY where the classifier left "equity" AND the
+ *     note says option or future. A stated derivative beats a defaulted
+ *     equity; nothing ever demotes a classified derivative back to equity.
+ */
+function applyEnrichments(
+  tx: typeof db,
+  rows: EnrichmentRow[],
+  accountId: number,
+): { applied: number; unmatched: number } {
+  let applied = 0;
+  let unmatched = 0;
+  for (const e of rows) {
+    const wantSymbol = e.symbol.trim().toLowerCase();
+    const isBuy = e.side === "buy";
+    const dateCol = isBuy ? tradesTable.buyDate : tradesTable.sellDate;
+    const qtyCol = isBuy ? tradesTable.buyQty : tradesTable.sellQty;
+    const candidate = tx
+      .select({
+        id: tradesTable.id,
+        entryTime: tradesTable.entryTime,
+        exitTime: tradesTable.exitTime,
+        instrumentType: tradesTable.instrumentType,
+      })
+      .from(tradesTable)
+      .where(and(
+        eq(tradesTable.accountId, accountId),
+        eq(dateCol, normalizeDate(e.date) ?? e.date),
+        eq(qtyCol, e.qty),
+        sql`(lower(${tradesTable.symbol}) = ${wantSymbol} OR lower(${tradesTable.tradingsymbol}) = ${wantSymbol})`,
+      ))
+      .get();
+    if (!candidate) {
+      unmatched++;
+      continue;
+    }
+    const patch: Record<string, unknown> = {};
+    if (e.time && isBuy && candidate.entryTime == null) patch.entryTime = e.time;
+    if (e.time && !isBuy && candidate.exitTime == null) patch.exitTime = e.time;
+    if (
+      (e.instrumentType === "option" || e.instrumentType === "future")
+      && candidate.instrumentType === "equity"
+    ) patch.instrumentType = e.instrumentType;
+    if (Object.keys(patch).length) tx.update(tradesTable).set(patch).where(eq(tradesTable.id, candidate.id)).run();
+    applied++;
+  }
+  return { applied, unmatched };
+}
+
 export function commitParsedFile(
   parsedIn: ParsedFile,
   fileName: string,
@@ -655,6 +789,49 @@ export function commitParsedFile(
       .where(eq(importBatches.id, batchId))
       .run();
 
+    // ── v3.9: the broker's own figures, and facts about existing trades ─────
+    // Both run INSIDE the same transaction as the trades: a file that states
+    // both must land wholly or not at all, or a failed import leaves a
+    // reconciliation screen quoting figures for trades that were never
+    // written. A reference-only file (Paytm's Realized P&L, a holdings
+    // statement) reaches here with `parsed.trades.length === 0` and commits
+    // successfully — that is the sanctioned exception to "nothing to import",
+    // which stays a refusal for a TRADEBOOK that produced no rows.
+    const commitWarnings: string[] = [];
+    const referenceRows = parsed.reference?.length ? parsed.reference : referenceFromReported(parsed.reported);
+    const referenceStored = referenceRows.length
+      ? persistReference(tx, referenceRows, accountId, parsed.broker, parsed.sourceId, batchId)
+      : 0;
+    if (referenceStored > 0) {
+      commitWarnings.push(
+        `${referenceStored} reference figure${referenceStored === 1 ? "" : "s"} stored — the broker's own numbers, kept beside yours for reconciliation, not merged into them.`,
+      );
+      // ONE audit entry per reference import, not one per figure: what changed
+      // is the broker's side of the reconciliation, and which file changed it.
+      recordAudit({
+        entity: "broker_reference",
+        entityId: batchId,
+        action: "create",
+        summary: `${referenceStored} broker-stated figure${referenceStored === 1 ? "" : "s"} from ${fileName}`,
+        before: null,
+        after: { accountId, broker: parsed.broker, sourceId: parsed.sourceId, figures: referenceStored, importBatchId: batchId },
+        source: "import",
+      });
+    }
+
+    let enrichApplied = 0;
+    const enrichTotal = parsed.enrich?.length ?? 0;
+    if (enrichTotal > 0) {
+      const outcome = applyEnrichments(tx as unknown as typeof db, parsed.enrich!, accountId);
+      enrichApplied = outcome.applied;
+      commitWarnings.push(`Fill times applied to ${enrichApplied} of ${enrichTotal} contract-note lines`);
+      if (outcome.unmatched > 0) {
+        commitWarnings.push(
+          `${outcome.unmatched} contract-note line${outcome.unmatched === 1 ? "" : "s"} matched no trade in this account and were NOT imported — a contract note enriches trades the book already holds, it never creates one.`,
+        );
+      }
+    }
+
     return {
       batchId,
       broker: parsed.broker,
@@ -670,6 +847,10 @@ export function commitParsedFile(
         openingSells,
         relabelled: relabelledFromWarnings(parsed.warnings),
       },
+      referenceStored,
+      enrichApplied,
+      enrichTotal,
+      warnings: commitWarnings,
     };
   });
 }

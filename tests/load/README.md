@@ -111,6 +111,21 @@ show at all.
 |---|---|---|
 | **C8** | `c8-pairing-depth.load.ts` | **Real defect, fixed — and it was invisible to every other case.** `lib/import/pair-legs.ts` was rewritten on 2026-08-20 (v2.99.98) from one pass to two, five days AFTER this suite was written; an import-graph scan showed **none of the thirteen existing cases import that module**, though it is the hot path for five sources (Zerodha, Paytm Money, Dhan GTR, Groww orders, generic mapper). Each sell ran **three O(lots) scans** — a full-queue walk for same-day lots, `.some()` **and** `.find()` re-scanning inside the oldest-first `while`, and a reverse `splice` compaction — so a queue that grows (buys outnumbering sells) made the walk O(n²): **one symbol 8,000 → 79 ms, 32,000 → 1,249 ms, ratio 15.89**; opening-sell heavy **13.32**. Many symbols was always fine at **4.19** with per-item flat at 1.10 → 1.14 µs — work partitions per symbol, so no realistic book was affected. Fixed with a forward-only `head` pointer (replacing the splice) plus a per-date index: **ratios 3.70 and 4.10**, and 50,000 legs on one symbol **775 → 63 ms** with byte-identical output (28,269 positions, qty delta 0, value drift ₹3.29 on ₹1.5 bn = 2.19 ppb, unchanged). 1,920 unit tests and both real-file reconciliations pass unchanged |
 
+A **fifth C8 case** was added on 2026-09-04: *"survives 190,000 legs on ONE
+symbol — position collection must not spread"*. **Real defect, fixed.**
+`pairLegs` collected each symbol's results with `out.push(...pairSymbolLegs(arr))`,
+and spread passes every position as a separate ARGUMENT — so the argument count
+IS the position count for that symbol, and V8 throws
+`RangeError: Maximum call stack size exceeded` north of roughly 125k arguments.
+A hard failure, not a slowdown, and invisible to every other case: the four
+above partition across symbols or stop well below the threshold, and
+`growthRatio` would simply throw out of the harness rather than report. The
+case therefore uses `time(...)` and asserts on the RESULT, not a ratio —
+190,000 legs at 65 % buys (deterministic seed `0xc8e`, so the position count is
+the same on every machine) must yield > 100,000 positions with `qtyDelta` 0.
+Fixed by collecting with a `for…of` push instead of the spread, which the
+comment at `lib/import/pair-legs.ts:437` now states in so many words.
+
 Two lessons worth keeping. **A load suite only covers the modules it imports** —
 thirteen cases and 13-of-13 green said nothing about the engine none of them
 touched, and "we have load tests" read as coverage it did not have. And **fixing

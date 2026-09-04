@@ -428,6 +428,20 @@
       "when": 1788200000000,
       "tag": "0060_trades-fts",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1788300000000,
+      "tag": "0061_ledger-audit-fts",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1788400000000,
+      "tag": "0062_broker-reference",
+      "breakpoints": true
     }
   ]
 }

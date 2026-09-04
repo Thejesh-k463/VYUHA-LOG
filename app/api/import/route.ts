@@ -114,7 +114,15 @@ export async function POST(req: Request) {
   // `import_batches` row with rowCount 0: the Imports table then shows a
   // successful import of nothing, and the user has no idea the file was the
   // wrong one. Say so instead; the file's own warnings carry the detail.
-  if (mode === "commit" && parsed.trades.length === 0) {
+  //
+  // A reference-only source (Paytm/Angel P&L statements, Dhan DP charges and
+  // holdings, the ledgers) and an enrich-only source (the Dhan contract note,
+  // which adds fill times to trades already imported) BOTH parse to zero
+  // trades by design and still have something to write. They are exempt: the
+  // refusal fires only when the file yields no trades, no reference figures
+  // and no enrichments — i.e. genuinely nothing. Preview is never gated; it
+  // shows what would be stored either way.
+  if (mode === "commit" && parsed.trades.length === 0 && !parsed.reference?.length && !parsed.enrich?.length) {
     return NextResponse.json(
       {
         error: "This file was read successfully but contains no trades to import — nothing was written.",

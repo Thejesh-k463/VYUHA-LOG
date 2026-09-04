@@ -195,4 +195,32 @@ describe("C8 · pairing engine at depth", () => {
      */
     expect(relDrift, `value drifted ₹${s.valueDelta} on ₹${totalIn.toFixed(0)}`).toBeLessThan(1e-6);
   });
+
+  /**
+   * ONE SYMBOL, 190,000 LEGS — the call-stack case, not a timing case.
+   *
+   * `pairLegs` collected each symbol's positions with `out.push(...pairSymbolLegs(arr))`.
+   * Spread passes every element as a separate ARGUMENT, so the argument count is
+   * the position count for that one symbol, and V8 throws
+   * `RangeError: Maximum call stack size exceeded` somewhere north of ~125k
+   * arguments. It is a hard failure, not a slowdown: nothing about it is
+   * visible to `growthRatio`, whose 25 ms floor and 4n pair would simply throw
+   * out of the harness. So this case uses `time(...)` like the abusive
+   * conservation case above, and asserts on the RESULT rather than a ratio.
+   *
+   * 65% buys so the lot queue grows and the position count stays close to the
+   * leg count; deterministic seed so the count is the same on every machine.
+   */
+  it("survives 190,000 legs on ONE symbol — position collection must not spread", () => {
+    const legs = oneSymbol(190_000, 0.65, 0xc8e);
+    let paired!: ReturnType<typeof pairLegs>;
+    const t = time("pairLegs, 190,000 legs on ONE symbol", legs.length, () => {
+      paired = pairLegs(legs);
+    });
+    const s = summarisePairing(legs, paired);
+    report(t, { test: "c8", shape: "one-symbol-spread-overflow", positions: paired.length, ...s });
+    console.log(`    190,000 legs → ${paired.length} positions on one symbol`);
+    expect(paired.length, "one symbol produced no positions at 190k legs").toBeGreaterThan(100_000);
+    expect(s.qtyDelta, "pairing lost or invented quantity at 190k legs").toBe(0);
+  });
 });
