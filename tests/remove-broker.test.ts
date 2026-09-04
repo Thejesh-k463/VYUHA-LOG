@@ -155,7 +155,7 @@ describe("removeBrokerRows — dhan out of account 1", () => {
 
     const res = trash.removeBrokerRows({ accountId: A1, broker: "dhan", actor: "test" });
     snapshotId = res.snapshotId;
-    expect(res.removed).toEqual({ trades: 122, closed: 116, open: 6, legs: 1, attachments: 1 });
+    expect(res.removed).toEqual({ trades: 122, closed: 116, open: 6, legs: 1, attachments: 1, referenceRows: 0 });
     expect(res.unlinked).toEqual({ ledgerEntries: 1, ipos: 1 });
     expect(res.orphanedFiles).toEqual([]);
     expect(res.message).toMatch(/Deleted items/);
@@ -204,8 +204,8 @@ describe("removeBrokerRows — dhan out of account 1", () => {
     // can no longer read as "the whole account was emptied".
     expect(row.summary).toMatch(/^dhan:/);
     expect(row.summary).toMatch(/other brokers are untouched/);
-    expect(row.beforeJson).toEqual({ accountId: A1, broker: "dhan", trades: 122, closed: 116, open: 6, unlinkedLedger: 0, unlinkedIpos: 0 });
-    expect(row.afterJson).toEqual({ accountId: A1, broker: "dhan", trades: 0, closed: 0, open: 0, unlinkedLedger: 1, unlinkedIpos: 1 });
+    expect(row.beforeJson).toEqual({ accountId: A1, broker: "dhan", trades: 122, closed: 116, open: 6, referenceRows: 0, unlinkedLedger: 0, unlinkedIpos: 0 });
+    expect(row.afterJson).toEqual({ accountId: A1, broker: "dhan", trades: 0, closed: 0, open: 0, referenceRows: 0, unlinkedLedger: 1, unlinkedIpos: 1 });
     expect(Object.keys(row.beforeJson!).sort()).toEqual(Object.keys(row.afterJson!).sort());
   });
 

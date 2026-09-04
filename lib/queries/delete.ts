@@ -1,7 +1,7 @@
 import "server-only";
 import { inArray, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { trades, tradeLegs, tradeAttachments, importBatches, ipos, ledgerEntries } from "@/lib/db/schema";
+import { trades, tradeLegs, tradeAttachments, importBatches, ipos, ledgerEntries, brokerReference } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { resolveDeleteScope, type DeletePreview } from "@/lib/domain/delete-scope";
@@ -94,8 +94,20 @@ export function collectIdChunks<T>(ids: number[], run: (chunk: number[]) => T[])
  * @param ids the exact ids from the confirmation preview — never a re-derived
  *   set, so what was shown is what is removed.
  * @param reason recorded in the audit log so the history says why.
+ * @param referenceRows `broker_reference` rows that must go WITH these trades
+ *   — the figures the broker stated ABOUT them (v3.9 "Trust the numbers").
+ *   Only `deleteImportBatch` passes any: a batch's reference rows describe the
+ *   very trades that batch created, so leaving them behind would leave
+ *   `reconcile()` comparing the broker's stated totals against a book that no
+ *   longer holds the rows. They ride in the same snapshot and come back with
+ *   the restore, under their original ids (`import_batch_id` intact).
  */
-export function deleteTradesByIds(ids: number[], reason: string, source = "ui"): DeleteResult {
+export function deleteTradesByIds(
+  ids: number[],
+  reason: string,
+  source = "ui",
+  referenceRows: (typeof brokerReference.$inferSelect)[] = [],
+): DeleteResult {
   const unique = [...new Set(ids)].filter((n) => Number.isInteger(n) && n > 0);
   if (unique.length === 0) {
     return { ok: false, deleted: 0, legs: 0, attachments: 0, orphanedFiles: [], snapshotId: null, message: "Nothing was selected to delete." };
@@ -139,6 +151,10 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
       legs: legRows as unknown as Record<string, unknown>[],
       attachments: attachRows as unknown as Record<string, unknown>[],
       ledgerRefs: ledgerRefRows,
+      // Undefined, not [], when there are none: JSON.stringify drops an
+      // undefined field, so an ordinary delete keeps writing the EXACT shape
+      // it always did (tests/trash-roundtrip.test.ts pins that).
+      referenceRows: referenceRows.length ? (referenceRows as unknown as Record<string, unknown>[]) : undefined,
       reason,
       accountId,
     });
@@ -180,6 +196,10 @@ export function deleteTradesByIds(ids: number[], reason: string, source = "ui"):
       // feature to follow it renders a hole. The snapshot carries the pairs.
       forEachIdChunk(allowedIds, (chunk) => tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, chunk)).run());
       forEachIdChunk(allowedIds, (chunk) => tx.delete(trades).where(inArray(trades.id, chunk)).run());
+      // The broker-stated figures about these trades, snapshotted above.
+      forEachIdChunk(referenceRows.map((r) => r.id), (chunk) =>
+        tx.delete(brokerReference).where(inArray(brokerReference.id, chunk)).run(),
+      );
 
       return {
         ok: true,
@@ -235,14 +255,43 @@ export function deleteImportBatch(batchId: number, cascade: boolean, source = "u
   }
 
   let res: DeleteResult = { ok: true, deleted: 0, legs: 0, attachments: 0, orphanedFiles: [], snapshotId: null, message: "" };
+  // The figures this batch stored about its own trades (v3.9
+  // `broker_reference`). They are keyed on `import_batch_id`, which is also
+  // what `holdsBookTrades` (lib/import/commit.ts) reads — so they follow the
+  // batch's TRADES, not the batch record:
+  //
+  //   cascade  — the trades go, so the figures stated about them go too, into
+  //              the same snapshot, and come back with the restore.
+  //   no cascade — the trades STAY, so the figures stay. Deleting them here
+  //              would leave the broker's own statement gone while its rows
+  //              remain, and would silently reclassify those surviving rows as
+  //              BOOK trades in `holdsBookTrades` — the double-count guard the
+  //              column exists for. The batch RECORD going is exactly what the
+  //              caller asked for; the column keeps naming the same rows.
+  const refRows = cascade
+    ? db.select().from(brokerReference).where(eq(brokerReference.importBatchId, batchId)).all()
+    : [];
   if (cascade) {
     const ids = db.select({ id: trades.id }).from(trades).where(eq(trades.importBatchId, batchId)).all().map((r) => r.id);
     if (ids.length > 0) {
-      res = deleteTradesByIds(ids, `import “${batch.fileName}” deleted`, source);
+      res = deleteTradesByIds(ids, `import “${batch.fileName}” deleted`, source, refRows);
       // If the trades could not be removed, leave the batch in place too —
       // deleting the record while its trades survive destroys the only link
       // back to where they came from.
       if (!res.ok) return { ...res, batchRemoved: false };
+    } else if (refRows.length > 0) {
+      // A reference-only batch (a realised-P&L statement that produced figures
+      // and no book trades) still has figures to take with it — and they are
+      // the only copy, so they get their own snapshot rather than a bare
+      // delete. `restoreTrashSnapshot` reads a figures-only envelope.
+      const snapshotId = writeTrashSnapshot({
+        trades: [], legs: [], attachments: [],
+        referenceRows: refRows as unknown as Record<string, unknown>[],
+        reason: `import “${batch.fileName}” deleted`,
+        accountId: batch.accountId,
+      });
+      db.delete(brokerReference).where(eq(brokerReference.importBatchId, batchId)).run();
+      res = { ...res, snapshotId };
     }
   }
 

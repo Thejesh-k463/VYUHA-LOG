@@ -15,6 +15,7 @@ import {
   tradingSessions,
   capitalSnapshots,
   weeklyReviews,
+  brokerReference,
 } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { recordAudit, type AuditInput } from "@/lib/audit";
@@ -87,6 +88,8 @@ export interface SnapshotInput {
   merge?: TrashEnvelope["merge"];
   /** v3: IPO records about to be UNLINKED (not deleted) — see trash-format.ts. */
   ipoRefs?: { ipoId: number; tradeId: number }[];
+  /** v4: `broker_reference` rows being DESTROYED — see trash-format.ts. */
+  referenceRows?: Record<string, unknown>[];
   /** v3: what produced the snapshot; absent for ordinary deletes. */
   kind?: TrashKind;
   broker?: string;
@@ -128,6 +131,7 @@ export function writeTrashSnapshot(input: SnapshotInput): string {
     accountRows: input.accountRows,
     merge: input.merge,
     ipoRefs: input.ipoRefs,
+    referenceRows: input.referenceRows,
     kind: input.kind,
     broker: input.broker,
   };
@@ -301,7 +305,9 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
   const rows = env.trades as (Record<string, unknown> & { id: number; symbol?: string })[];
   // A v2 account-deletion snapshot can legitimately hold zero trades (the
   // account was empty): the account row itself is still worth restoring.
-  if (rows.length === 0 && !env.account) return fail("That snapshot holds no trades.");
+  if (rows.length === 0 && !env.account && (env.referenceRows?.length ?? 0) === 0) {
+    return fail("That snapshot holds no trades.");
+  }
 
   // ── The account these rows belong to must still exist ─────────────────────
   //
@@ -540,6 +546,23 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
         }
       }
 
+      // v4: the broker-stated reference figures the delete destroyed. NOT
+      // gated on `env.account` — an account purge, a broker-remove and a
+      // cascading import delete all carry them, and only the first has an
+      // account row. Restored under their ORIGINAL ids so `import_batch_id`
+      // still names the batch that stored them (`holdsBookTrades`). A row the
+      // unique index refuses (the same statement re-imported since) is COUNTED,
+      // never duplicated under a fresh id.
+      for (const row of env.referenceRows ?? []) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tx.insert(brokerReference).values(row as any).run();
+          extraRestored++;
+        } catch {
+          extraSkipped++;
+        }
+      }
+
       for (const row of rows) {
         if (!landed.has(row.id)) continue;
         recordAudit({
@@ -590,7 +613,7 @@ export function restoreTrashSnapshot(id: string, source = "ui"): TrashRestoreRes
     }
   }
   if (extraRestored > 0) {
-    message += ` ${extraRestored} related row${extraRestored === 1 ? "" : "s"} (imports, sessions, capital history, IPOs, ledger, weekly reviews) came back with it.`;
+    message += ` ${extraRestored} related row${extraRestored === 1 ? "" : "s"} (imports, sessions, capital history, IPOs, ledger, weekly reviews, broker-stated figures) came back with it.`;
   }
   if (extraSkipped > 0) {
     message += ` ${extraSkipped} related row${extraSkipped === 1 ? " was" : "s were"} already present and skipped.`;
@@ -660,7 +683,7 @@ export interface RemoveBrokerInput {
 export interface RemoveBrokerResult {
   accountId: number;
   broker: string;
-  removed: { trades: number; closed: number; open: number; legs: number; attachments: number };
+  removed: { trades: number; closed: number; open: number; legs: number; attachments: number; referenceRows: number };
   /** Links nulled, rows kept — restore re-points them. */
   unlinked: { ledgerEntries: number; ipos: number };
   snapshotId: string;
@@ -723,8 +746,20 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
     db.select({ ipoId: ipos.id, tradeId: ipos.tradeId }).from(ipos).where(inArray(ipos.tradeId, chunk)).all(),
   ) as { ipoId: number; tradeId: number }[];
 
+  // v4: the figures THIS broker stated about THIS account go with its rows.
+  // Leaving them behind is not inert — `reconcile()` (lib/queries/reference.ts)
+  // would keep comparing the broker's stated totals against a book that no
+  // longer holds any of that broker's trades, and report the whole statement
+  // as missing. They ride in the same envelope and come back with the restore.
+  const refRows = db
+    .select()
+    .from(brokerReference)
+    .where(and(eq(brokerReference.accountId, accountId), eq(brokerReference.broker, broker)))
+    .all();
+
   const reason = `${broker} rows removed from account ${accountId} for a clean re-import`;
   const snapshotId = writeTrashSnapshot({
+    referenceRows: refRows.length ? (refRows as unknown as Record<string, unknown>[]) : undefined,
     trades: rows as unknown as Record<string, unknown>[],
     legs: legRows as unknown as Record<string, unknown>[],
     attachments: attachRows as unknown as Record<string, unknown>[],
@@ -746,7 +781,7 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
   // any before/after asymmetry.
   const counts = {
     accountId, broker, trades: rows.length, closed, open,
-    unlinkedLedger: 0, unlinkedIpos: 0,
+    unlinkedLedger: 0, unlinkedIpos: 0, referenceRows: refRows.length,
   };
   try {
     db.transaction((tx) => {
@@ -755,6 +790,8 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
       chunkedWrite(ids, (chunk) => tx.update(ipos).set({ tradeId: null }).where(inArray(ipos.tradeId, chunk)).run());
       chunkedWrite(ids, (chunk) => tx.update(ledgerEntries).set({ refTradeId: null }).where(inArray(ledgerEntries.refTradeId, chunk)).run());
       chunkedWrite(ids, (chunk) => tx.delete(trades).where(inArray(trades.id, chunk)).run());
+      // The broker's stated figures for this account, snapshotted above.
+      tx.delete(brokerReference).where(and(eq(brokerReference.accountId, accountId), eq(brokerReference.broker, broker))).run();
       // ONE row, symmetric keys: `before` and `after` describe the same five
       // facts, so the audit diff shows exactly the counts that changed and no
       // phantom column. The per-trade before-images live in the snapshot.
@@ -770,7 +807,7 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
             : "") +
           `, snapshot ${snapshotId}`,
         before: counts,
-        after: { ...counts, trades: 0, closed: 0, open: 0, unlinkedLedger: ledgerRefRows.length, unlinkedIpos: ipoRefRows.length },
+        after: { ...counts, trades: 0, closed: 0, open: 0, referenceRows: 0, unlinkedLedger: ledgerRefRows.length, unlinkedIpos: ipoRefRows.length },
         source,
       });
     });
@@ -790,7 +827,7 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
   return {
     accountId,
     broker,
-    removed: { trades: rows.length, closed, open, legs: legRows.length, attachments: attachRows.length },
+    removed: { trades: rows.length, closed, open, legs: legRows.length, attachments: attachRows.length, referenceRows: refRows.length },
     unlinked: { ledgerEntries: ledgerRefRows.length, ipos: ipoRefRows.length },
     snapshotId,
     orphanedFiles: failed,
@@ -798,6 +835,7 @@ export function removeBrokerRows(input: RemoveBrokerInput): RemoveBrokerResult {
       `Removed ${rows.length} ${broker} trade${rows.length === 1 ? "" : "s"} (${closed} closed, ${open} open)` +
       (legRows.length ? `, ${legRows.length} leg${legRows.length === 1 ? "" : "s"}` : "") +
       (attachRows.length ? `, ${attachRows.length} attachment${attachRows.length === 1 ? "" : "s"}` : "") +
+      (refRows.length ? `, ${refRows.length} broker-stated figure${refRows.length === 1 ? "" : "s"}` : "") +
       ` from account ${accountId}. Recoverable from Backup & Restore → Deleted items.` +
       (failed.length ? ` ${failed.length} attachment file${failed.length === 1 ? "" : "s"} could not be moved into the snapshot.` : ""),
   };

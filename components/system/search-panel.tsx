@@ -18,6 +18,7 @@ import {
   useSearchSession,
   visibleResults,
 } from "./use-search-session";
+import { frameFor, isPanelToggleChord } from "./search-panel-keys";
 import {
   DEFAULT_PANEL_STATE,
   PANEL_SIZE,
@@ -94,6 +95,11 @@ interface Hits {
   q: string;
   /** ACCOUNT + chips — the palette's rule, and for the same reason (invariant 8). */
   key: string;
+  /** The chips these results were FETCHED with. `openHit` pushes the session
+   *  frame from here, never from the live `cats`: a chip toggled between the
+   *  fetch and the click made the pushed frame's results and its filter
+   *  disagree, and restoring it hid results under chips they never matched. */
+  cats: readonly SourceKey[];
   results: SearchResult[];
   error: boolean;
 }
@@ -110,6 +116,13 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
   const stored = parsePanelState(useStoredValue(PANEL_STATE_KEY));
 
   const inputRef = React.useRef<HTMLInputElement>(null);
+  /** The launcher, so closing the panel can put focus BACK on it. There is no
+   *  PopoverTrigger here (see the header note), and Radix restores focus to
+   *  `triggerRef` — which is null — so focus fell to <body>: a keyboard user
+   *  who closed the panel landed at the top of the document with no way back
+   *  except Tab from the start of the page. */
+  const launcherRef = React.useRef<HTMLButtonElement>(null);
+  const panelId = React.useId();
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const [cats, setCats] = React.useState<SourceKey[]>([]);
@@ -140,7 +153,7 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
   // touched here — two surfaces, two chords, neither shadowing the other.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "k") {
+      if (isPanelToggleChord(e)) {
         e.preventDefault();
         setOpen(!stored.open);
       }
@@ -169,11 +182,11 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
         .then(async (res) => {
           const body = (await res.json().catch(() => null)) as { ok?: boolean; results?: SearchResult[] } | null;
           if (ctrl.signal.aborted) return;
-          setHits({ q, key, results: body?.ok ? (body.results ?? []) : [], error: !body?.ok });
+          setHits({ q, key, cats, results: body?.ok ? (body.results ?? []) : [], error: !body?.ok });
         })
         .catch((e: unknown) => {
           if ((e as { name?: string })?.name === "AbortError") return;
-          setHits({ q, key, results: [], error: true });
+          setHits({ q, key, cats, results: [], error: true });
         });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
@@ -186,7 +199,8 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
   const ordered = React.useMemo(() => groupBySource(visibleResults(q, shownHits)).flatMap((g) => g.results), [q, shownHits]);
 
   function openHit(r: SearchResult) {
-    if (hits) session.push({ q: hits.q, cats, results: hits.results });
+    const frame = frameFor(hits);
+    if (frame) session.push({ q: frame.q, cats: [...frame.cats], results: frame.results });
     // The panel STAYS OPEN — that is the whole point of it. The query stays
     // too, so the next result of the same search is one click away.
     router.push(r.href);
@@ -198,7 +212,7 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
     if (!frame) return;
     setQuery(frame.q);
     setCats(frame.cats);
-    setHits({ q: frame.q, key: hitsKey(accountId, frame.cats), results: frame.results, error: false });
+    setHits({ q: frame.q, key: hitsKey(accountId, frame.cats), cats: frame.cats, results: frame.results, error: false });
     setActive(0);
   }
 
@@ -246,10 +260,12 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
       {/* Plain button, NOT a PopoverTrigger — see the header note: a second
           anchor is what pinned this panel to 0,0. */}
       <button
+        ref={launcherRef}
         type="button"
         aria-label="Search assistant (Ctrl+Shift+K)"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen(!stored.open)}
         className="fixed bottom-4 right-4 z-40 inline-flex size-10 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[var(--shadow-overlay)] transition-colors hover:border-primary/40 hover:text-foreground print:hidden"
       >
@@ -281,7 +297,16 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
             e.preventDefault();
             inputRef.current?.focus();
           }}
-          className="flex flex-col overflow-hidden p-0"
+          onCloseAutoFocus={(e) => {
+            // Radix restores focus to its trigger; this popover HAS no trigger
+            // (a second anchor is what pinned the panel to 0,0), so its
+            // triggerRef is null and focus fell to <body>. Put it back on the
+            // launcher, which is where the user's attention already is.
+            e.preventDefault();
+            launcherRef.current?.focus();
+          }}
+          id={panelId}
+          className="flex flex-col overflow-hidden p-0 print:hidden"
           style={{ width: PANEL_SIZE.w, height: PANEL_SIZE.h }}
           data-search-panel
           data-dragging={drag.dragging || undefined}
@@ -290,7 +315,13 @@ export function SearchPanel({ accountId = 0 }: { accountId?: number }) {
           <div
             data-search-panel-header
             tabIndex={0}
-            role="toolbar"
+            // A toolbar role would promise that the arrow keys move focus
+            // BETWEEN its controls (the APG roving-tabindex pattern),
+            // and here they move the PANEL. A screen-reader user following
+            // that promise would drag the window instead of reaching the close
+            // button. `group` makes the same label available and promises
+            // nothing about the arrows.
+            role="group"
             aria-label="Move the search assistant (arrow keys)"
             onPointerDown={drag.onPointerDown}
             onKeyDown={onHeaderKey}

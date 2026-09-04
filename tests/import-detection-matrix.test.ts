@@ -441,3 +441,54 @@ describe("no detector claims another broker's REAL file (owner's folder)", () =>
     }
   }
 });
+
+/**
+ * THE VETO — the two format-only claims, and the rival that could steal them.
+ *
+ * `dhan-dp-charges` and `angelone-pnl-statement` are the two named exceptions
+ * to "a broker-named parser must SEE the broker's name": their files name
+ * nobody, so the FORMAT is the whole fingerprint. That makes them hijackable
+ * in exactly the way `detectZerodha` was on 2026-08-12 — a rival shipping the
+ * same headers would be imported under the wrong broker and priced at the
+ * wrong rates, reported as success. The filename cannot VOUCH for a broker
+ * here; it can only VETO one, and so can any cell.
+ */
+describe("a format-only claim is vetoed by another broker's name", () => {
+  const bytesOf = (f: string) => fs.readFileSync(path.join(DIR, f));
+
+  const CASES: { name: string; fixture: string; fn: (c: ReturnType<typeof buildContext>) => number; rivals: string[]; own: string }[] = [
+    {
+      name: "dhan-dp-charges",
+      fixture: "dhan-dp-charges-2026-04-01_2026-09-03.xls",
+      fn: detectDhanDpCharges,
+      rivals: ["zerodha-dp-charges.xls", "GROWW_dp_charges.xls", "upstox_dp.xls", "paytm-dp.xls", "angelone-dp-charges.xls"],
+      own: "dhan-dp-charges.xls",
+    },
+    {
+      name: "angelone-pnl-statement",
+      fixture: "angelone-profitloss-2026-08-01_2026-08-31.xlsx",
+      fn: detectAngelOnePnlStatement,
+      rivals: ["zerodha-pnl.xlsx", "groww_ProfitLoss_Statement.xlsx", "upstox-pnl.xlsx", "paytm_pnl.xlsx", "Dhan_P&L.xlsx"],
+      own: "AngelOne_ProfitLoss_Statement.xlsx",
+    },
+  ];
+
+  for (const c of CASES) {
+    for (const rival of c.rivals) {
+      it(`${c.name} scores 0 on its own format under the name ${rival}`, () => {
+        expect(c.fn(buildContext(rival, bytesOf(c.fixture)))).toBe(0);
+      }, 60_000);
+    }
+    it(`${c.name} still claims its own file, named or neutral`, () => {
+      expect(c.fn(buildContext("export" + path.extname(c.fixture), bytesOf(c.fixture)))).toBeGreaterThanOrEqual(0.9);
+      expect(c.fn(buildContext(c.own, bytesOf(c.fixture)))).toBe(1);
+    }, 60_000);
+    it(`${c.name} refuses a vetoed file rather than letting it route anywhere else broker-named`, () => {
+      // The file falls to the generic column mapper, which ASKS whose it is —
+      // a question beats a confident wrong answer.
+      const ranked = rankParsers(buildContext(c.rivals[0]!, bytesOf(c.fixture)));
+      expect(ranked.find((r) => r.sourceId === c.name)?.confidence ?? 0).toBe(0);
+      expect(ranked.filter((r) => r.confidence >= 0.9)).toEqual([]);
+    }, 60_000);
+  }
+});

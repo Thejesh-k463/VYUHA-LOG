@@ -175,12 +175,28 @@ export function usePanelDrag(committed: Point, size: Size, viewport: Size | null
 
   const position = gesture ? clamp(dragDelta(gesture.start, gesture.from, gesture.to)) : committed;
 
+  /**
+   * The live gesture, readable from a listener WITHOUT being a dependency.
+   *
+   * The effect below used to depend on `gesture` itself — an object whose `to`
+   * is rewritten on every pointermove. So a single drag across the screen tore
+   * down and re-registered four window listeners a few hundred times, once per
+   * frame, and each teardown raced the move it was handling. Holding `to` in a
+   * ref and depending on `gesture != null` registers them ONCE per drag.
+   */
+  const gestureRef = React.useRef(gesture);
+  // Synced in an effect, not during render (react-hooks/refs): a pointerup
+  // cannot arrive before the commit that follows the render which moved it.
+  React.useEffect(() => { gestureRef.current = gesture; }, [gesture]);
+  const dragging = gesture != null;
+
   React.useEffect(() => {
-    if (!gesture) return;
+    if (!dragging) return;
     const move = (e: PointerEvent) => setGesture((g) => (g ? { ...g, to: { x: e.clientX, y: e.clientY } } : g));
     const up = (e: PointerEvent) => {
+      const g = gestureRef.current;
       setGesture(null);
-      onCommit(clamp(dragDelta(gesture.start, gesture.from, { x: e.clientX, y: e.clientY })));
+      if (g) onCommit(clamp(dragDelta(g.start, g.from, { x: e.clientX, y: e.clientY })));
     };
     // Escape CANCELS: the panel snaps back to where it was picked up, and
     // nothing is written. Captured and stopped so the same key does not also
@@ -201,7 +217,7 @@ export function usePanelDrag(committed: Point, size: Size, viewport: Size | null
       window.removeEventListener("pointercancel", up);
       window.removeEventListener("keydown", key, true);
     };
-  }, [gesture, clamp, onCommit]);
+  }, [dragging, clamp, onCommit]);
 
   const onPointerDown = React.useCallback(
     (e: React.PointerEvent) => {
@@ -220,5 +236,5 @@ export function usePanelDrag(committed: Point, size: Size, viewport: Size | null
     [committed, clamp, onCommit],
   );
 
-  return { position, dragging: gesture != null, onPointerDown, nudge };
+  return { position, dragging, onPointerDown, nudge };
 }

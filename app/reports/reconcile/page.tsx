@@ -6,7 +6,7 @@ import { getAccounts, getSelectedAccountId, isAggregateView } from "@/lib/querie
 import { summariseSources } from "@/lib/analytics/reconcile";
 
 /**
- * v3.9 "Trust the numbers" — Broker truth.
+ * v3.9 "Trust the numbers" — Broker Truth.
  *
  * The broker's own figures beside the book's, with the delta and the reasons.
  * EVERY number on this screen comes out of `reconcile()`; this file reads,
@@ -38,7 +38,7 @@ export default function BrokerTruthPage() {
   return (
     <>
       <PageHeader
-        title="Broker truth"
+        title="Broker Truth"
         description="Your broker's own figures beside Vyuha's — the difference, and what accounts for it."
       />
       <div className="space-y-5 p-6">

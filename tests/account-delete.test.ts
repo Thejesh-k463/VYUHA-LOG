@@ -46,6 +46,7 @@ function attach(tradeId: number, name: string) {
 function readEnvelope(snapshotId: string): Record<string, unknown> & {
   account?: { id: number; name: string };
   accountRows?: Record<string, Record<string, unknown>[]>;
+  referenceRows?: Record<string, unknown>[];
   merge?: { targetId: number; targetName: string; carried: number };
   trades: unknown[];
 } {
@@ -100,7 +101,7 @@ describe("refusals", () => {
 
 describe("purge", () => {
   let snapshotId: string;
-  let tr1: number, tr2: number;
+  let tr1: number, tr2: number, refId: number;
 
   it("removes every scoped row, the children, the account — and moves the selection", () => {
     addAccount(10, "Doomed-Purge");
@@ -118,7 +119,9 @@ describe("purge", () => {
     t.db.insert(t.schema.capitalSnapshots).values({ accountId: 10, bucket: "equity", asOfDate: "2026-08-01", openingCapital: 1000 }).run();
     t.db.insert(t.schema.brokerConnections).values({ accountId: 10, broker: "dhan", apiKey: "k", accessToken: "t" }).run();
     t.db.insert(t.schema.panelDismissals).values({ accountId: 10, panel: "risk", fingerprint: "fp-1" }).run();
-    t.db.insert(t.schema.brokerReference).values({ accountId: 10, broker: "dhan", sourceId: "dhan-dp-charges", scope: "charge", key: "INE000000001", asOf: "2026-08-01", figuresJson: JSON.stringify({ charges: 13.5 }) }).run();
+    refId = t.db.insert(t.schema.brokerReference)
+      .values({ accountId: 10, broker: "dhan", sourceId: "dhan-dp-charges", scope: "charge", key: "INE000000001", asOf: "2026-08-01", figuresJson: JSON.stringify({ charges: 13.5 }) })
+      .returning({ id: t.schema.brokerReference.id }).get()!.id;
     selectAccount(10);
 
     const res = mod.deleteAccount({ accountId: 10, mode: "purge", connections: "delete" });
@@ -156,6 +159,12 @@ describe("purge", () => {
     // Credentials must never enter a trash file.
     expect(JSON.stringify(env)).not.toContain("brokerConnections");
     expect(JSON.stringify(env)).not.toContain('"apiKey"');
+    // v4: the broker-stated figures the purge DESTROYED. Without these the
+    // restore brought the book back with the broker's own numbers about it
+    // permanently gone — the purge deletes them (account-delete.ts) and
+    // nothing carried them.
+    expect(env.referenceRows).toHaveLength(1);
+    expect(env.referenceRows![0]).toMatchObject({ id: refId, accountId: 10, broker: "dhan", key: "INE000000001" });
   });
 
   it("restore recreates the account and puts its trades AND scoped rows back", () => {
@@ -178,6 +187,10 @@ describe("purge", () => {
     expect(back10.tradingSessions[0].sessionDate).toBe("2026-08-01");
     expect(back10.capitalSnapshots).toHaveLength(1);
     expect(back10.capitalSnapshots[0].openingCapital).toBe(1000);
+    // v4: the broker-stated figures come back under their ORIGINAL ids, so
+    // `import_batch_id` still names the batch that stored them.
+    expect(back10.brokerReference).toHaveLength(1);
+    expect(back10.brokerReference[0]).toMatchObject({ id: refId, broker: "dhan", key: "INE000000001" });
     // Connections were never snapshotted, so none can come back.
     expect(back10.brokerConnections).toHaveLength(0);
     expect(back.message).toMatch(/came back with it/i);
@@ -474,6 +487,18 @@ describe("merge — broker reference figures", () => {
     expect(left.filter((r) => r.accountId === 90)).toHaveLength(0);
     const target = left.filter((r) => r.accountId === 91).map((r) => r.key).sort();
     expect(target).toEqual(["INE000000001", "INE000000002"]);
+
+    // v4: the dropped row is the only one the merge DESTROYED, so it is the
+    // only one in the envelope — the other MOVED and needs no recovery.
+    const env = readEnvelope(res.snapshotId!);
+    expect(env.referenceRows).toHaveLength(1);
+    expect(env.referenceRows![0]).toMatchObject({ accountId: 90, key: "INE000000001" });
+
+    // …and it comes back with the source account when the merge is undone.
+    const back = trash.restoreTrashSnapshot(res.snapshotId!);
+    expect(back.ok).toBe(true);
+    const after = t.db.select().from(t.schema.brokerReference).all().filter((r) => r.accountId === 90);
+    expect(after.map((r) => r.key)).toEqual(["INE000000001"]);
   });
 });
 

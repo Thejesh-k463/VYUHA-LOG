@@ -213,7 +213,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Your broker's stated figures beside Vyuha's, per segment, per financial year and per scrip, with the difference and what accounts for it. Nothing is averaged or corrected into anything else: the two sides stay two sides, and the delta is shown as it falls.",
       "Every reason is a counted fact from your own book — unpriced sales and what they sold for, charges the file states nothing about, quantity still open against a scrip the broker calls realised, a product the file files elsewhere. A gap with no knowable cause is shown with no cause.",
-      "It fills in when you import a Dhan Realised P&L, a Paytm Money Realized P&L, an Angel One P&L statement or a Dhan demat holding summary. Those files import no trades — they are the broker's numbers, kept beside yours.",
+      "Five files fill it in: a Dhan Realised P&L, a Paytm Money Realized P&L, an Angel One P&L statement, a Dhan demat holding summary and a Dhan DP charges report. Those files import no trades — they are the broker's numbers, kept beside yours.",
     ],
     keywords: ["reconcile", "broker truth", "reconciliation", "realised pnl", "statement", "delta", "holdings", "mismatch", "broker figures"],
   },

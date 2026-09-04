@@ -40,15 +40,23 @@ test("trades: status/outcome views filter, and their counts reconcile", async ({
   //
   // Read the "N of M" counter, NOT tbody row counts: the table is virtualized
   // (data-table.tsx `virtual`), so the DOM holds only the window + overscan —
-  // rendered rows < population is CORRECT behaviour now. The counter is
-  // data.length over the full filtered array, which is the same population the
-  // dropdown counted; asserting it keeps the reconcile contract honest.
+  // rendered rows < population is CORRECT behaviour now.
+  //
+  // The SECOND number, deliberately. Since v3.9 the table is server-PAGED, so
+  // the first number is the rows LOADED (at most TRADES_PAGE_SIZE = 500) and
+  // the second is `page.total`, the SQL count over the whole filtered book —
+  // which is the population the dropdown counted. Asserting the first number
+  // only passed because the e2e database holds 303 rows: it would have gone
+  // green on a 500-row page of a 25,000-row book while the reconcile contract
+  // this spec exists to pin was broken.
   for (const [value, expected] of [["open", open], ["closed", closed], ["closed-loss", lossC]] as const) {
     await view.selectOption(value);
     await expect
       .poll(async () => {
-        const counter = await page.getByText(/\d+\s+of\s+\d+/).first().textContent();
-        return Number(counter?.match(/^(\d+)/)?.[1] ?? -1);
+        // Anchored, like z-remove-broker.spec.ts: "Loaded" and the "· N in the
+        // book" tail live in sibling nodes, so this node is the bare pair.
+        const counter = await page.getByText(/^\d+ of \d+$/).first().textContent();
+        return Number(counter?.match(/of\s+(\d+)/)?.[1] ?? -1);
       }, { timeout: 15_000 })
       .toBe(expected);
   }

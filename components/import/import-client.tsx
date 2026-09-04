@@ -14,7 +14,7 @@ import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
 import Link from "next/link";
-import { BROKER_TRUTH_HREF, enrichAppliedNote, importShapeSentence, openingSellNote, openingSellReviewNote, referenceStoredNote, relabelledNote, type ImportShape } from "@/lib/domain/import-shape";
+import { BROKER_TRUTH_HREF, enrichAppliedNote, importShapeSentence, openingSellNote, openingSellReviewNote, referenceStoredNote, relabelledNote, storeButtonLabel, type ImportShape } from "@/lib/domain/import-shape";
 import { RemoveBrokerPanel } from "./remove-broker-panel";
 
 /** Where the opening-sell caution sends the reader: the trades whose cost basis is unknown. */
@@ -459,7 +459,7 @@ export function ImportClient({
                 <p data-testid="commit-reference" className="text-xs text-muted-foreground">
                   {referenceStoredNote(committed.referenceStored)}{" "}
                   <Link href={BROKER_TRUTH_HREF} className="underline underline-offset-2 hover:text-foreground">
-                    Open Broker truth →
+                    Open Broker Truth →
                   </Link>
                 </p>
               )}
@@ -498,9 +498,11 @@ export function ImportClient({
                 <Badge variant="accent">{Math.round(preview!.detected.confidence * 100)}% match</Badge>
               </CardTitle>
               <Button onClick={doCommit} disabled={busy || (p.summary.newCount === 0 && !storesOnly)}>
-                {storesOnly
-                  ? `Store ${preview!.stores!.reference > 0 ? `${preview!.stores!.reference} broker figure${preview!.stores!.reference === 1 ? "" : "s"}` : `${preview!.stores!.enrich} fill time${preview!.stores!.enrich === 1 ? "" : "s"}`}`
-                  : `Commit ${p.summary.newCount} new trade${p.summary.newCount === 1 ? "" : "s"}`}
+                {/* BOTH counts when the file stores both — the old ternary
+                    named the figures and silently stored the fill times too
+                    (lib/domain/import-shape.ts). */}
+                {(storesOnly && storeButtonLabel(preview!.stores!.reference, preview!.stores!.enrich))
+                  || `Commit ${p.summary.newCount} new trade${p.summary.newCount === 1 ? "" : "s"}`}
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">

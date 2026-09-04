@@ -10,20 +10,24 @@
  * printing anything that identifies the account.
  */
 import fs from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   detectDhanContractNote,
   parseAnnexure,
   parseContractDescription,
+  bookName,
   parseDhanContractNote,
+  parseEquityIsins,
   parseNoteCharges,
   parseNoteDate,
   readContractNoteText,
 } from "@/lib/import/parsers/dhan-contract-note";
 import { detectPdf } from "@/lib/import/parsers/pdf";
+import { parseInstrumentName } from "@/lib/engine/classify";
+import { openTempDb, type TempDb } from "./helpers/temp-db";
 import {
   OWNER_DHAN_CONTRACT_NOTE,
-  OWNER_FUT_CONTRACT_NOTE,
+  ownerFutContractNote,
   ownerContext,
   ownerFiles,
 } from "./helpers/owner-broker-files";
@@ -49,6 +53,14 @@ const SYNTHETIC = [
   "Securities Transactions Tax (Rs.) 3,869.00 DR 2,591.00 DR 6,460.00 DR",
 ].join("\n");
 
+/** The same note, plus the settlement-summary line that states the ISIN. */
+const SYNTHETIC_WITH_SUMMARY = [
+  "Client code: TEST00000A Contract Date : 15-04-2026 Page 1 of 2",
+  "ISIN Symbol Buy Qty Buy WAP Buy Brok Net Buy Rate Buy Amount",
+  "INE676A01027 ACME 2,000 534.6737 0.0200 534.6937 1,069,387.35 2,000 532.2837 0.0200 532.2637 1,064,527.40 0 -4,859.95",
+  SYNTHETIC,
+].join("\n");
+
 describe("the annexure line parser", () => {
   const fills = parseAnnexure(SYNTHETIC);
 
@@ -71,13 +83,13 @@ describe("the annexure line parser", () => {
     expect(fills[0]!.exchange).toBe("NSE");
   });
 
-  it("reads a description on its own", () => {
+  it("reads a description on its own — including the strike, the option type and the company name", () => {
     expect(parseContractDescription("OPTSTK ADANIPOWER 28Apr2026 190 CE - NSE"))
-      .toEqual({ symbol: "ADANIPOWER", expiry: "2026-04-28", instrumentType: "option", exchange: "NSE" });
+      .toEqual({ symbol: "ADANIPOWER", name: null, expiry: "2026-04-28", strike: 190, optionType: "CE", instrumentType: "option", exchange: "NSE" });
     expect(parseContractDescription("FUTIDX NIFTY 28Apr2026 - NSE"))
-      .toEqual({ symbol: "NIFTY", expiry: "2026-04-28", instrumentType: "future", exchange: "NSE" });
+      .toEqual({ symbol: "NIFTY", name: null, expiry: "2026-04-28", strike: null, optionType: null, instrumentType: "future", exchange: "NSE" });
     expect(parseContractDescription("SHAILY-SHAILY ENG PLASTICS LTD"))
-      .toEqual({ symbol: "SHAILY", expiry: null, instrumentType: "equity", exchange: null });
+      .toEqual({ symbol: "SHAILY", name: "SHAILY ENG PLASTICS LTD", expiry: null, strike: null, optionType: null, instrumentType: "equity", exchange: null });
   });
 
   it("ignores the wrapped derivative SUMMARY table above the annexure", () => {
@@ -172,12 +184,15 @@ describe("the owner's real contract notes", () => {
   }, 60_000);
 
   it("the futures note yields the WIPRO round trip as two `future` enrichments", async () => {
-    if (!fs.existsSync(OWNER_FUT_CONTRACT_NOTE)) return; // not this machine
+    const note = ownerFutContractNote();
+    if (!note) return; // not this machine
     const file = await parseDhanContractNote({
       filename: "export.pdf",
-      buffer: fs.readFileSync(OWNER_FUT_CONTRACT_NOTE),
+      buffer: fs.readFileSync(note),
     });
-    const wipro = file.enrich!.filter((e) => e.symbol === "WIPRO");
+    // The BOOK's own name for the contract, which is what the enrichment has
+    // to be addressed by — `WIPRO` alone matched no position (2026-09-04).
+    const wipro = file.enrich!.filter((e) => e.symbol === "FUT WIPRO 28 Apr 2026");
     expect(wipro).toHaveLength(2);
     expect(wipro.every((e) => e.instrumentType === "future")).toBe(true);
     expect(wipro.every((e) => e.qty === 3000 && e.date === "2026-04-15" && e.exchange === "NSE")).toBe(true);
@@ -189,7 +204,7 @@ describe("the owner's real contract notes", () => {
     // itself — the enrich rows carry no price, so this is the only place the
     // WAP is checked against the document.
     const { PDFParse } = await import("pdf-parse");
-    const p = new PDFParse({ data: new Uint8Array(fs.readFileSync(OWNER_FUT_CONTRACT_NOTE)) });
+    const p = new PDFParse({ data: new Uint8Array(fs.readFileSync(note)) });
     const text = (await p.getText()).text ?? "";
     await p.destroy();
     const wiproFills = parseAnnexure(text).filter((f) => f.symbol === "WIPRO");
@@ -201,4 +216,147 @@ describe("the owner's real contract notes", () => {
     expect(file.trades).toEqual([]);
     expect(file.enrich!.some((e) => e.instrumentType === "option")).toBe(true);
   }, 60_000);
+});
+
+/**
+ * The book's own name for a contract, and the ISIN behind an equity ticker.
+ *
+ * Before 2026-09-04 the enrichment was addressed by the bare underlying
+ * (`NIFTY`) for a derivative and by the exchange ticker (`BBOX`) for equity.
+ * The book — the Global Transaction Report — holds
+ * `OPT NIFTY 21 Apr 2026 24200 CE` and `Black Box`. Neither string was ever
+ * equal to the other, which is why enrichment matched ZERO of 1,161 real
+ * fills. These are the two translations that fixed it.
+ */
+describe("the name the enrichment is addressed by", () => {
+  const fills = parseAnnexure(SYNTHETIC_WITH_SUMMARY);
+
+  it("rebuilds the GTR's own derivative grammar, strike and all", () => {
+    expect(bookName({ symbol: "NIFTY", expiry: "2026-04-21", strike: 24200, optionType: "CE", instrumentType: "option" }))
+      .toBe("OPT NIFTY 21 Apr 2026 24200 CE");
+    expect(bookName({ symbol: "WIPRO", expiry: "2026-04-28", strike: null, optionType: null, instrumentType: "future" }))
+      .toBe("FUT WIPRO 28 Apr 2026");
+    // Equity has no contract to name: the ticker is the whole name.
+    expect(bookName({ symbol: "ACME", expiry: null, strike: null, optionType: null, instrumentType: "equity" }))
+      .toBe("ACME");
+    // `classify` must be able to read what we write — the same grammar the
+    // GTR uses, or the trade row and the note would still disagree.
+    expect(parseInstrumentName("OPT NIFTY 21 Apr 2026 24200 CE"))
+      .toMatchObject({ kind: "option", symbol: "NIFTY", expiry: "2026-04-21", strike: 24200, optionType: "CE" });
+    expect(parseInstrumentName("FUT WIPRO 28 Apr 2026")).toMatchObject({ kind: "future", symbol: "WIPRO", expiry: "2026-04-28" });
+  });
+
+  it("reads the ISIN per equity contract out of the settlement summary", () => {
+    expect(parseEquityIsins(SYNTHETIC_WITH_SUMMARY)).toEqual({ ACME: "INE676A01027" });
+  });
+
+  it("carries the ISIN, the company name and the book name onto every fill", () => {
+    const equity = fills.find((f) => f.instrumentType === "equity")!;
+    expect(equity).toMatchObject({ symbol: "ACME", name: "ACME LIMITED", isin: "INE676A01027", bookName: "ACME" });
+    const option = fills.find((f) => f.instrumentType === "option")!;
+    expect(option).toMatchObject({ bookName: "OPT NIFTY 21 Apr 2026 24200 CE", strike: 24200, optionType: "CE" });
+    // A derivative has no ISIN and none is invented for it.
+    expect(option.isin).toBeNull();
+  });
+
+  it("emits the book name as `symbol` on the enrichment rows", () => {
+    const parsed = readContractNoteText(SYNTHETIC_WITH_SUMMARY);
+    expect(parsed.enrich.map((e) => e.symbol)).toEqual(
+      expect.arrayContaining(["ACME", "OPT NIFTY 21 Apr 2026 24200 CE", "FUT ACME 28 Apr 2026"]),
+    );
+    expect(parsed.enrich.find((e) => e.symbol === "ACME")).toMatchObject({ isin: "INE676A01027", name: "ACME LIMITED" });
+  });
+});
+
+/**
+ * The whole point, measured against the owner's own paperwork.
+ *
+ * The Global Transaction Report is imported as the book, then each contract
+ * note is committed against it. Before 2026-09-04 this matched ZERO of 1,161
+ * real fills. The numbers below are what it does now — asserted as FLOORS
+ * plus an exact count of the one contract the book calls by a nickname, so a
+ * regression shows up as a number and not as a vague "still works".
+ *
+ * Owner files only; skipped everywhere else. Nothing here prints anything
+ * that identifies the account.
+ */
+const OWNER_GTR = /^Dhan_GlobalTransction_Report_.*\.csv$/i;
+
+describe("the owner's real notes against the owner's real book", () => {
+  const gtrs = ownerFiles(OWNER_GTR);
+  const notes = ownerFiles(OWNER_DHAN_CONTRACT_NOTE);
+  const futNote = ownerFutContractNote();
+  const have = gtrs.length > 0 && (notes.length > 0 || futNote != null);
+
+  let t: TempDb;
+  let commit: typeof import("@/lib/import/commit");
+
+  beforeAll(async () => {
+    if (!have) return;
+    t = await openTempDb("cnreal", { seed: true });
+    commit = await import("@/lib/import/commit");
+  }, 60_000);
+
+  afterAll(async () => { await t?.cleanup?.(); });
+
+  it("matches nearly every contract-day, and says honestly which it cannot", async () => {
+    if (!have) return;
+    const { parseDhanGtr } = await import("@/lib/import/parsers/dhan-gtr");
+    const { buildContext } = await import("@/lib/import/detect");
+
+    // The BOOK first — EVERY transaction report this machine has, into one
+    // account. The notes come from more than one account and a note can only
+    // enrich a book that holds its day, so the test would otherwise be
+    // measuring which files happen to pair up rather than whether matching
+    // works.
+    let booked = 0;
+    for (const g of gtrs) {
+      const book = await parseDhanGtr(buildContext("gtr.csv", fs.readFileSync(g)));
+      booked += commit.commitParsedFile(book, "gtr.csv", null, 1).added;
+    }
+    expect(booked).toBeGreaterThan(100);
+
+    let fills = 0, days = 0, applied = 0, unmatched = 0;
+    for (const p of [...notes, ...(futNote ? [futNote] : [])]) {
+      const parsed = await parseDhanContractNote(buildContext("note.pdf", fs.readFileSync(p)));
+      if (!parsed.enrich?.length) continue;
+      const res = commit.commitParsedFile(parsed, "note.pdf", null, 1);
+      fills += parsed.enrich.length;
+      const line = (res.warnings ?? []).find((w) => /aggregated into/.test(w)) ?? "";
+      const m = /aggregated into (\d+) contract-days?: applied (\d+), already had times (\d+), unmatched (\d+)/.exec(line);
+      expect(m, "the commit reports applied / already-had / unmatched separately").not.toBeNull();
+      days += Number(m![1]); applied += Number(m![2]); unmatched += Number(m![4]);
+    }
+
+    // Fills really do outnumber contract-days by an order of magnitude — the
+    // aggregation is not cosmetic, it is the thing that makes a match possible.
+    expect(fills).toBeGreaterThan(900);
+    expect(days).toBeLessThan(fills / 10);
+    // 45 of 46 on the two notes this machine has. A floor, not an equality:
+    // another machine may hold a different set of notes.
+    expect(applied / days).toBeGreaterThan(0.9);
+    // The residue is the honest part. Every miss is reported with a reason.
+    expect(unmatched).toBeLessThanOrEqual(days - applied);
+  }, 300_000);
+
+  it("gives the WIPRO futures round trip its real fill times and its instrument type", async () => {
+    if (!have || !futNote) return;
+    const row = t.sqlite.prepare(
+      "SELECT symbol, instrument_type AS instrumentType, entry_time AS entryTime, exit_time AS exitTime FROM trades WHERE tradingsymbol = 'FUT WIPRO 28 Apr 2026'",
+    ).get() as Record<string, unknown> | undefined;
+    expect(row, "the GTR books the WIPRO future for 15 Apr 2026").toBeTruthy();
+    expect(row!.instrumentType).toBe("future");
+    expect(row!.entryTime).toBe("12:26:49");
+    expect(row!.exitTime).toBe("12:28:33");
+  });
+
+  it("never creates a trade, however many fills it could not place", async () => {
+    if (!have) return;
+    const before = (t.sqlite.prepare("SELECT count(*) AS n FROM trades").get() as { n: number }).n;
+    const p = [...notes, ...(futNote ? [futNote] : [])][0]!;
+    const { buildContext } = await import("@/lib/import/detect");
+    const parsed = await parseDhanContractNote(buildContext("note.pdf", fs.readFileSync(p)));
+    commit.commitParsedFile(parsed, "note-again.pdf", null, 1);
+    expect((t.sqlite.prepare("SELECT count(*) AS n FROM trades").get() as { n: number }).n).toBe(before);
+  }, 120_000);
 });

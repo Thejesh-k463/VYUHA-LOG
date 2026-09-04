@@ -511,9 +511,11 @@ What changed per broker:
 - Workbook decode is memoised once per `ParseContext` (the ≤8-decode load
   bound had broken at 11 when the new detectors landed).
 
-Still not built (v3.9): Paytm P&L parser, Dhan DP charges and holdings,
-Upstox and Angel One ledgers, Angel One P&L statement, Dhan MTF Report and
-Contract Note, short-sell / cross-exchange pairing.
+Still not built (as of 2026-09-04): the Paytm P&L parser, the Dhan MTF Report,
+short-sell / cross-exchange pairing. (Everything else this line used to list —
+Dhan DP charges, holdings and contract note, the Upstox and Angel One ledgers
+and the Angel One P&L statement — shipped in v3.9; see "Reference and
+enrichment sources" below.)
 
 ## Status (2026-08-20)
 
@@ -580,14 +582,37 @@ cell or sheet name does it say Dhan, or the legal entity. Owner ruling
 "dhan" in the filename adds a further 0.1. This is a deliberate exception to
 the name rule and is recorded as such.
 
+**The veto (2026-09-04).** Because the claim rests on format alone, a rival
+broker shipping the same eight headers would be imported as Dhan and priced at
+Dhan's rates. So the filename and the cells, which cannot VOUCH for a broker
+here, are allowed to VETO one: if the filename, a sheet name or any cell names
+a DIFFERENT known broker (zerodha / groww / upstox / paytm / angel one), the
+score is 0 and the file falls to the generic column mapper, which asks. The
+same veto guards the Angel One P&L statement, the other format-only claim.
+
 **Emits:** ledger rows (kind `charge`, amount negative — money out) for the
 Cash & Ledger screen, AND `reference` rows of scope `charge` keyed by
 (ISIN, date), aggregated per day with the fee types listed in `note`. **No
 trades:** a DP charge is a fee on a delivery, not an execution.
+
+**The door is the Cash & Ledger screen, and it accepts this file (v3.9.0).**
+`app/api/import/ledger/route.ts` reads it through `detectDhanDpCharges`
+alongside the Dhan ledger/dividend CSVs, the Upstox ledger and the Angel One
+statement. Each printed debit lands as a `charge` entry under the WRITE
+account; the file's own per-(ISIN, day) figures land in `broker_reference` in
+the same transaction, with ONE audit entry for the batch. Until 2026-09-04 the
+route listed Upstox and Angel One only, so the screen answered 422 to the very
+file this parser told the user to bring there.
+
 **Conservation:** Σ of the lines is checked against the file's own `Total` and
-a disagreement becomes a warning, never an adjustment; the sheet's ~350 merged
-ranges are all cosmetic, and any data row whose Charges cell falls inside a
-merge is reported for review rather than silently read as 0.
+a disagreement becomes a warning, never an adjustment. The `Total` row is found
+by the row's FIRST FILLED CELL (the real export prints the label in the `Type of
+Transaction` column), so a security or transaction type containing the word
+"Total" is still a data row; a file with TWO Total rows uses the LAST and says
+so; a Total row with no figure warns that conservation is unchecked rather than
+passing silently. The sheet's ~350 merged ranges are all cosmetic, and any data
+row whose Charges cell falls inside a merge is reported for review rather than
+silently read as 0.
 
 ### Dhan — Demat Holding summary (`Dhan_Demat_Holding_<dd-mm-yyyy>.xlsx`) → `dhan-holdings`
 
@@ -636,6 +661,40 @@ own charge totals. **It never creates a trade:** the Global Transaction Report
 is the book, a note covers one day on one exchange pair, and importing it as
 trades would double-book every execution the GTR carries with no dedup key
 strong enough to notice. Unmatched enrichments are reported, not stored.
+
+**How an enrichment is matched (rewritten 2026-09-04).** The first version
+matched one row at a time on (symbol, date, side, qty) and matched ZERO of
+1,161 real fills, for three structural reasons: a note prints one line per
+FILL while the book holds the paired POSITION; a note names an equity by its
+exchange ticker (`BBOX`) while the GTR names the company (`Black Box`); and a
+note named a derivative by its bare underlying, so every option on a day
+looked like one instrument. The rule now is:
+
+- The parser emits the BOOK's own name in `symbol` — `OPT NIFTY 21 Apr 2026
+  24200 CE`, `FUT WIPRO 28 Apr 2026`, rebuilt from the contract description in
+  the grammar `lib/engine/classify.ts` parses — plus the ISIN (read from the
+  note's own settlement summary, `INE676A01027 BBOX …`) and the company name
+  from the description, for equity.
+- At commit, fills are AGGREGATED per (identity, date, side) before anything is
+  looked up: quantities summed, earliest fill for the entry, latest for the
+  exit. Candidates are that account's trades for that BROKER on that date, read
+  in `id asc` order, and each (trade, side) is claimed at most once per import.
+- Identity resolves through the ISIN, then the note's names, then the bundled
+  listing snapshot's ticker and registered name for that ISIN (`Black Box` in
+  the book vs `Black Box Limited` in the registry).
+- When a day's fills for one contract cover more than one position they are
+  consumed as a CUMULATIVE PREFIX in time order, and the warning says that is
+  an inference — the note states no position id.
+- The commit reports three separate counts — `applied`, `already had times`,
+  `unmatched` — with the top reasons for the misses. "Applied" used to include
+  a row whose patch was empty, which made the number report the lookup rather
+  than the write.
+
+Measured on the owner's real paperwork (2026-09-04): 1,161 fills across three
+notes aggregate to 58 contract-days, of which 57 match the Global Transaction
+Report. The single miss is a scrip the report books under a short name the
+note never prints (`NALCO` vs `NATIONALUM` / `National Aluminium Company
+Limited`), and it is reported with that reason rather than force-matched.
 
 ### Upstox — Ledger (`ledger_<from>_To_<to>_<wallet>_<code>.xlsx`, sheet `LEDGER_V3`) → `upstox-ledger`
 

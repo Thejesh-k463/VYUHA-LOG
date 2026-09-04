@@ -60,6 +60,32 @@
  * A sell followed by a buy on a LATER day is not a short — it is a holding
  * acquired before the file begins, and stays an opening sell.
  *
+ * ── The short label is a claim about DELIVERABILITY, and it may not lie ────
+ *
+ * THE RULE: a sell is a short only when NO lot — real or seeded — could have
+ * delivered it, and `product` is NEVER moved from `unknown` to `intraday` on
+ * the strength of the label alone. Two things the first version of this got
+ * wrong, both of which understate charges on authentic input:
+ *
+ *   1. `shortCoverQtys` ran with `held = 0`, blind to the pre-file lot pass 2
+ *      seeds (see `run`). A holder of 100 who sells 100 and re-buys 100 today
+ *      was labelled short although the seeded lot delivered the sale. On a
+ *      Dhan GTR (no product column) `unknown → intraday` reaches
+ *      `productHint` as eq_intraday, and STT is charged at 0.025% instead of
+ *      0.1%. `held` is now seeded with the SAME `openingQty` the pass uses, so
+ *      the covers are read against the book the pass actually pairs against.
+ *   2. `held` accumulated in FILE order while the lots it stands for are held
+ *      in DATE order. A newest-first export (sell 05 Jan, buy 05 Jan, buy
+ *      01 Jan) therefore reached the 05 Jan sell with `held = 0` and called a
+ *      position bought on the 1st an intraday short. The walk is now
+ *      chronological, with FILE order kept only as the WITHIN-DAY tiebreak -
+ *      which is the only thing file order ever evidenced.
+ *
+ * And a hard guard on top of both: neither the note nor the product override
+ * is ever attached to a position whose `buyDate` differs from its `sellDate`.
+ * Cash equity cannot be short overnight, so a multi-day position is not one,
+ * whatever the cover arithmetic upstream concluded.
+ *
  * The third is the one that matters. An opening sell has no purchase price
  * anywhere in the file, so its P&L is not merely unknown — it is unknowable.
  * Reporting it as a 100% gain because buyValue is zero would be a fabrication,
@@ -125,27 +151,37 @@ export const INTRADAY_SHORT_NOTE =
  * from, and covered by a later buy of the same symbol on the SAME date, in
  * FILE ORDER. Keyed on the leg object, so it survives the sort.
  *
- * `held` is the running net position in file order; `buyLeft` is each buy's
- * quantity not already spent covering an earlier short, so a covering buy is
- * never counted twice (once as cover, once as a new holding). The per-date
- * index with a forward-only head keeps this linear — a naive look-ahead is
- * O(n²) on an opening-sell-heavy book, which is exactly the shape
- * tests/load/c8-pairing-depth measures.
+ * `held` is the running net position walked in DATE order with file order as
+ * the within-day tiebreak, seeded with `openingQty` — the pre-file lot the
+ * pairing pass itself is holding (see `run`). Both halves matter: a walk in
+ * raw file order mis-reads a newest-first export, and a walk that starts at
+ * zero mis-reads a book the file never shows being bought. `buyLeft` is each
+ * buy's quantity not already spent covering an earlier short, so a covering
+ * buy is never counted twice (once as cover, once as a new holding). The
+ * per-date index with a forward-only head keeps this linear — a naive
+ * look-ahead is O(n²) on an opening-sell-heavy book, which is exactly the
+ * shape tests/load/c8-pairing-depth measures.
+ *
+ * The sort is by DATE ONLY and Array#sort is stable, so same-date legs keep
+ * the order the broker printed them in — which is the whole signal a covered
+ * short is read from. `chronological()` must NOT be used here: it lifts buys
+ * ahead of sells within a date, destroying exactly that evidence.
  */
-function shortCoverQtys(legsIn: Leg[]): Map<Leg, number> {
+function shortCoverQtys(legsIn: Leg[], openingQty = 0): Map<Leg, number> {
   const covers = new Map<Leg, number>();
-  const buyLeft = legsIn.map((l) => (l.side === "buy" ? l.qty : 0));
+  const ordered = [...legsIn].sort((a, b) => a.date.localeCompare(b.date));
+  const buyLeft = ordered.map((l) => (l.side === "buy" ? l.qty : 0));
   const byDateBuys = new Map<string, { idx: number[]; head: number }>();
-  for (let i = 0; i < legsIn.length; i++) {
-    if (legsIn[i].side !== "buy") continue;
-    const e = byDateBuys.get(legsIn[i].date);
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].side !== "buy") continue;
+    const e = byDateBuys.get(ordered[i].date);
     if (e) e.idx.push(i);
-    else byDateBuys.set(legsIn[i].date, { idx: [i], head: 0 });
+    else byDateBuys.set(ordered[i].date, { idx: [i], head: 0 });
   }
 
-  let held = 0;
-  for (let i = 0; i < legsIn.length; i++) {
-    const leg = legsIn[i];
+  let held = openingQty > 0 ? openingQty : 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const leg = ordered[i];
     if (leg.side === "buy") {
       // Only the part not already committed to covering an earlier short.
       held += buyLeft[i];
@@ -222,9 +258,6 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
     opening?: boolean;
   };
 
-  // Read off the ORIGINAL file order — the sort above has destroyed it.
-  const shortCovers = shortCoverQtys(legsIn);
-
   /**
    * One pairing pass. `openingQty` > 0 seeds the FIFO queue with a lot of
    * that size that PRE-DATES the file: holdings the file never shows being
@@ -238,6 +271,10 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
    * measures, so total opening-sell quantity is identical either way.
    */
   const run = (openingQty: number): { out: PairedPosition[]; orphanQty: number } => {
+    // Read off the ORIGINAL file order (`legs` above has destroyed it), against
+    // the SAME seeded book this pass pairs with — a cover is only a short when
+    // no lot, seeded ones included, could have delivered the sale.
+    const shortCovers = shortCoverQtys(legsIn, openingQty);
     // Open buy lots, oldest first — the FIFO queue.
     const lots: Lot[] = [];
     /**
@@ -338,14 +375,21 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
       if (consumed.length > 0) {
         const matchedQty = consumed.reduce((s, c) => s + c.qty, 0);
         const portion = leg.qty > 0 ? matchedQty / leg.qty : 1;
-        const shortQty = shortCovers.get(leg) ?? 0;
+        // Entry is the OLDEST lot consumed: FIFO decides the holding period
+        // (the same-day lot is consumed first but is never the oldest).
+        const buyDate = consumed.reduce((d, c) => (c.date < d ? c.date : d), consumed[0].date);
+        // HARD GUARD (header): cash equity cannot be short overnight, so a
+        // position whose entry and exit fall on different days is not one,
+        // whatever the cover arithmetic upstream concluded.
+        const shortQty = buyDate === leg.date ? (shortCovers.get(leg) ?? 0) : 0;
         const notes: string[] = [];
         if (shortQty > 0) notes.push(INTRADAY_SHORT_NOTE);
         const xNote = crossExchangeNote(consumed.map((c) => c.exchange ?? ""), leg.exchange);
         if (xNote) notes.push(xNote);
         let product = resolveProduct([...consumed.map((c) => c.product), leg.product]);
-        // Cash equity cannot be short overnight, so a covered short is intraday
-        // unless the legs themselves said otherwise.
+        // Only now, and only here: the sale was covered on its own day and NO
+        // lot — real or seeded — could have delivered it. Anything weaker and
+        // `unknown → intraday` understates STT on a file that states no product.
         if (shortQty > 0 && product === "unknown") product = "intraday";
         out.push({
           symbol,
@@ -355,9 +399,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
           buyValue: r2(consumed.reduce((s, c) => s + c.value, 0)),
           sellQty: matchedQty,
           sellValue: r2(perShare * matchedQty),
-          // Entry is the OLDEST lot consumed: FIFO decides the holding period
-          // (the same-day lot is consumed first but is never the oldest).
-          buyDate: consumed.reduce((d, c) => (c.date < d ? c.date : d), consumed[0].date),
+          buyDate,
           sellDate: leg.date,
           charges: r2(consumed.reduce((s, c) => s + c.charges, 0) + sellCharges * portion),
           product,

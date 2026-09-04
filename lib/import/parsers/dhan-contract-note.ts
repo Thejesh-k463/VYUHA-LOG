@@ -68,8 +68,20 @@ export interface ContractNoteFill {
   tradeTime: string;
   description: string;
   symbol: string;
+  /** The company name the description prints after the ticker (equity only). */
+  name: string | null;
   expiry: string | null;
+  strike: number | null;
+  optionType: "CE" | "PE" | null;
   instrumentType: "equity" | "option" | "future";
+  /**
+   * The name the BOOK uses for this contract — `OPT NIFTY 21 Apr 2026 24200 CE`
+   * / `FUT WIPRO 28 Apr 2026` for a derivative, the ticker for equity. See
+   * `bookName` below for why this, and not the bare underlying.
+   */
+  bookName: string;
+  /** From the note's own settlement summary, when it prints one (equity). */
+  isin: string | null;
   side: "buy" | "sell";
   qty: number;
   price: number;
@@ -102,30 +114,93 @@ const MONTHS: Record<string, string> = {
  */
 export function parseContractDescription(desc: string): {
   symbol: string;
+  name: string | null;
   expiry: string | null;
+  strike: number | null;
+  optionType: "CE" | "PE" | null;
   instrumentType: ContractNoteFill["instrumentType"];
   exchange: string | null;
 } {
   const s = String(desc ?? "").trim();
-  const der = /^(OPTIDX|OPTSTK|FUTIDX|FUTSTK|OPTCUR|FUTCUR|OPTCOM|FUTCOM)\s+(\S+)\s+(\d{1,2})([A-Za-z]{3})(\d{4})/.exec(s);
+  const der = /^(OPTIDX|OPTSTK|FUTIDX|FUTSTK|OPTCUR|FUTCUR|OPTCOM|FUTCOM)\s+(\S+)\s+(\d{1,2})([A-Za-z]{3})(\d{4})(?:\s+([\d,]+(?:\.\d+)?)\s+(CE|PE))?/i.exec(s);
   if (der) {
     const mm = MONTHS[der[4]!.toLowerCase()];
     const exch = /-\s*(NSE|BSE|MCX)\b/i.exec(s);
+    const strike = der[6] ? Number(der[6].replace(/,/g, "")) : null;
     return {
       symbol: der[2]!.toUpperCase(),
+      name: null,
       expiry: mm ? `${der[5]}-${mm}-${der[3]!.padStart(2, "0")}` : null,
-      instrumentType: der[1]!.startsWith("OPT") ? "option" : "future",
+      strike: strike != null && Number.isFinite(strike) ? strike : null,
+      optionType: der[7] ? (der[7].toUpperCase() as "CE" | "PE") : null,
+      instrumentType: der[1]!.toUpperCase().startsWith("OPT") ? "option" : "future",
       exchange: exch ? exch[1]!.toUpperCase() : null,
     };
   }
-  // Equity: `SYMBOL-COMPANY NAME`. The symbol is what precedes the first "-".
-  const sym = s.split("-")[0]!.trim().toUpperCase();
-  return { symbol: sym, expiry: null, instrumentType: "equity", exchange: null };
+  // Equity: `SYMBOL-COMPANY NAME`. The symbol is what precedes the first "-";
+  // the remainder is the company's own registered name, which is how the
+  // Global Transaction Report books an equity line (`Black Box`), so it is
+  // kept rather than thrown away — see `bookName`.
+  const cut = s.indexOf("-");
+  const sym = (cut >= 0 ? s.slice(0, cut) : s).trim().toUpperCase();
+  const name = cut >= 0 ? s.slice(cut + 1).trim() : null;
+  return { symbol: sym, name: name || null, expiry: null, strike: null, optionType: null, instrumentType: "equity", exchange: null };
+}
+
+/** `2026-04-28` → `28 Apr 2026`, the shape the GTR (and `classify`) writes. */
+function gtrDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  const mon = Object.entries(MONTHS).find(([, v]) => v === m)?.[0] ?? "";
+  return `${d} ${mon.charAt(0).toUpperCase()}${mon.slice(1)} ${y}`;
+}
+
+/**
+ * The name the BOOK holds for this contract.
+ *
+ * The Global Transaction Report — the book — writes a derivative as
+ * `OPT NIFTY 07 Apr 2026 23000 CE` / `FUT WIPRO 28 Apr 2026` and `classify`
+ * parses exactly that grammar, so the trade row carries it in
+ * `tradingsymbol`. Until 2026-09-04 this parser emitted the bare underlying
+ * (`NIFTY`) and buried the strike and expiry in a prose note, which made
+ * every option on a busy day look like the same contract — and matched the
+ * wrong one, or none. Rebuilding the book's own name is what makes an
+ * enrichment addressable.
+ */
+export function bookName(p: {
+  symbol: string;
+  expiry: string | null;
+  strike: number | null;
+  optionType: "CE" | "PE" | null;
+  instrumentType: ContractNoteFill["instrumentType"];
+}): string {
+  if (p.instrumentType === "equity" || !p.expiry) return p.symbol;
+  const head = p.instrumentType === "option" ? "OPT" : "FUT";
+  const tail = p.instrumentType === "option" && p.strike != null
+    ? ` ${p.strike}${p.optionType ? ` ${p.optionType}` : ""}`
+    : "";
+  return `${head} ${p.symbol} ${gtrDate(p.expiry)}${tail}`;
+}
+
+/**
+ * ISIN per equity contract, read from the note's own settlement summary —
+ * `INE676A01027 BBOX 2,000 534.6737 …`, one line per scrip. This is the only
+ * identity in the document that is not a name, and a name is exactly what the
+ * two sides disagree about: the annexure prints the exchange ticker (`BBOX`)
+ * while the book prints the company (`Black Box`).
+ */
+export function parseEquityIsins(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of String(text ?? "").split(/\r?\n/)) {
+    const m = /^\s*(IN[EF][0-9A-Z]{9})\s+([A-Z0-9&.\-]{1,20})\s+-?[\d,]/.exec(raw.trim());
+    if (m && !out[m[2]!.toUpperCase()]) out[m[2]!.toUpperCase()] = m[1]!;
+  }
+  return out;
 }
 
 /** Every fill in the trade annexure, in the order the note prints them. */
 export function parseAnnexure(text: string): ContractNoteFill[] {
   const out: ContractNoteFill[] = [];
+  const isins = parseEquityIsins(text);
   let segmentExchange: string | null = null;
   for (const raw of String(text ?? "").split(/\r?\n/)) {
     const line = raw.trim();
@@ -142,8 +217,13 @@ export function parseAnnexure(text: string): ContractNoteFill[] {
       tradeTime: m[4]!,
       description: desc,
       symbol: parsed.symbol,
+      name: parsed.name,
       expiry: parsed.expiry,
+      strike: parsed.strike,
+      optionType: parsed.optionType,
       instrumentType: parsed.instrumentType,
+      bookName: bookName(parsed),
+      isin: parsed.instrumentType === "equity" ? (isins[parsed.symbol] ?? null) : null,
       side: m[6] === "B" ? "buy" : "sell",
       qty: num(m[7]!),
       price: num(m[8]!),
@@ -241,9 +321,16 @@ export function readContractNoteText(text: string): ParsedContractNote {
   const fills = parseAnnexure(text);
   if (fills.length === 0) warnings.push("No trade-annexure lines could be read from this note. Nothing is imported; the extracted text is returned so the layout can be checked.");
 
+  // ONE ROW PER FILL, still — the aggregation into positions happens at
+  // commit, where the book's own quantities are visible. What changed on
+  // 2026-09-04 is WHAT each row is addressed by: the book's own contract name
+  // and, for equity, the ISIN and the company name, because the ticker the
+  // annexure prints is not what the book stores.
   const enrich: EnrichmentRow[] = date
     ? fills.map((f) => ({
-        symbol: f.symbol,
+        symbol: f.bookName,
+        isin: f.isin,
+        name: f.name,
         date,
         side: f.side,
         qty: f.qty,

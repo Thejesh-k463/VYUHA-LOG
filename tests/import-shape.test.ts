@@ -121,6 +121,7 @@ import {
   openingSellReviewNote,
   relabelledFromWarnings,
   relabelledNote,
+  storeButtonLabel,
 } from "@/lib/domain/import-shape";
 
 describe("opening-sell review caution", () => {
@@ -183,9 +184,22 @@ describe("relabelled securities", () => {
  */
 describe("reference figures stored", () => {
   it("says how many, and points at the screen that reads them", () => {
-    expect(referenceStoredNote(47)).toBe("47 broker figures stored — see Broker truth");
-    expect(referenceStoredNote(1)).toBe("1 broker figure stored — see Broker truth");
-    expect(referenceStoredNote(1204)).toBe("1,204 broker figures stored — see Broker truth");
+    expect(referenceStoredNote(47)).toBe("47 broker figures stored — see Broker Truth");
+    expect(referenceStoredNote(1)).toBe("1 broker figure stored — see Broker Truth");
+    expect(referenceStoredNote(1204)).toBe("1,204 broker figures stored — see Broker Truth");
+  });
+
+  it("the pre-commit button names BOTH things a file stores, never just one", () => {
+    // A workbook that carries the broker's figures AND fill times used to
+    // advertise only the figures, then store both.
+    expect(storeButtonLabel(4, 2)).toBe("Store 4 broker figures + 2 fill times");
+    expect(storeButtonLabel(1, 1)).toBe("Store 1 broker figure + 1 fill time");
+    expect(storeButtonLabel(47, 0)).toBe("Store 47 broker figures");
+    expect(storeButtonLabel(0, 13)).toBe("Store 13 fill times");
+    expect(storeButtonLabel(1204, 0)).toBe("Store 1,204 broker figures");
+    // Nothing to store: the caller falls back to the trade count.
+    expect(storeButtonLabel(0, 0)).toBeNull();
+    expect(storeButtonLabel(null, undefined)).toBeNull();
   });
 
   it("says nothing when the file stored nothing", () => {

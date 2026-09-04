@@ -47,6 +47,10 @@ import { matchesTradeFilters, type TradeFilters } from "@/lib/domain/trades-filt
 // so the "Load N more" label can never advertise a page size the server does
 // not use.
 import { TRADES_PAGE_SIZE } from "@/lib/domain/trades-filter";
+import {
+  LOADED_COUNT_PREFIX, RELOADED_TO_FIRST_PAGE, SEARCH_DEBOUNCE_MS, WHOLE_BOOK_CAPTION,
+  acceptsPage, appendPage, loadedScopeCaption, rowCountLabel,
+} from "@/lib/domain/trades-paging";
 import { Plus, Pencil, Printer, SquarePen, LogOut, Trash2, NotebookPen, Layers, Paperclip, Lock } from "lucide-react";
 
 const pnlClass = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
@@ -143,7 +147,19 @@ export function TradesClient({
   // already the right one. (Before v3.9 the filters were restored in a mount
   // microtask, which was fine when the client held the whole book and is not
   // fine when the server has to be told what to fetch.)
+  /** The BOX's value — echoed instantly, so typing never stutters. */
+  const [searchInput, setSearchInput] = React.useState(initialFilters.q);
+  /** The value the FILTERS use, `SEARCH_DEBOUNCE_MS` behind the box: every
+   *  keystroke used to be a `/api/trades/page` request over the whole book. */
   const [search, setSearch] = React.useState(initialFilters.q);
+  React.useEffect(() => {
+    if (searchInput === search) return;
+    // setState inside a TIMER, not in the effect body — the house rule is
+    // about a synchronous state-sync (AGENTS.md); a debounce has nowhere else
+    // to live, and the box itself stays controlled by `searchInput`.
+    const t = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput, search]);
   const [broker, setBroker] = React.useState(initialFilters.broker);
   const [segment, setSegment] = React.useState(initialFilters.segment);
   const [bucket, setBucket] = React.useState<string>(initialFilters.bucket);
@@ -228,6 +244,12 @@ export function TradesClient({
    *  very component under the React Compiler). Only "load more" needs a flag,
    *  and that one is set in a click handler. */
   const [moreLoading, setMoreLoading] = React.useState(false);
+  /** A refresh re-adopted page 1 while pages 2..n were on screen.
+   *  It CANNOT be derived — "we used to have more rows than we have now" is a
+   *  fact about the previous render, and nothing else on this screen records
+   *  it. Set in the render-phase prop adjustment below, cleared by the next
+   *  page or the next question. */
+  const [reloadedToPage1, setReloadedToPage1] = React.useState(false);
 
   /** The QUERY half only. Every call site below spells the path out as a
    *  literal `/api/trades/page?…` prefix, which is what keeps this file out of
@@ -277,6 +299,9 @@ export function TradesClient({
       // The filters on screen are the ones the server just answered: adopt it.
       setPage({ rows: initialRows, cursor: initialCursor, total: initialTotal, viewCounts: initialViewCounts });
       setServedKey(initialKey);
+      // Losing pages 2..n to a refresh is invisible otherwise: the table just
+      // gets shorter while the counter still says the same total.
+      setReloadedToPage1(page.rows.length > initialRows.length);
     } else {
       // The user has since changed a filter, so the fresh server page is for
       // the wrong question — ask again for the right one.
@@ -297,6 +322,7 @@ export function TradesClient({
         if (cancelled || !j?.ok) return;
         setPage({ rows: j.rows as Trade[], cursor: j.nextCursor, total: j.total, viewCounts: j.viewCounts });
         setServedKey(filterKey);
+        setReloadedToPage1(false);
       });
     return () => { cancelled = true; };
   }, [servedKey, filterKey, pageQuery]);
@@ -305,20 +331,43 @@ export function TradesClient({
    *  from — derived from the two keys, not tracked. */
   const loading = servedKey !== filterKey || moreLoading;
 
+  /** The two keys as they stand WHEN A RESPONSE LANDS. A `.then` closure holds
+   *  the values from the moment it was created, which is exactly the stale
+   *  reading the guard exists to reject. Written in an effect (a ref write, no
+   *  state), which has long flushed by the time a network reply arrives. */
+  const keysRef = React.useRef({ servedKey, filterKey });
+  React.useEffect(() => { keysRef.current = { servedKey, filterKey }; }, [servedKey, filterKey]);
+
+  /** Set when a `router.refresh()` (account switch, save, delete) or a filter
+   *  change lands while a "load more" is in flight — the response is then for
+   *  a scope nobody is looking at any more and must not append. Same shape as
+   *  the filter effect's `cancelled`, which had this guard from the start. */
+  const moreCancelled = React.useRef(false);
+  React.useEffect(() => {
+    // A new question, or a new server render: whatever is in flight is stale.
+    moreCancelled.current = true;
+  }, [filterKey, servedRows]);
+
   const loadMore = React.useCallback(() => {
     if (!page.cursor || servedKey !== filterKey || moreLoading) return;
     setMoreLoading(true);
+    // The key this page is being fetched FOR. `acceptsPage` compares it with
+    // the keys that hold when the response lands.
+    const requestedKey = filterKey;
+    moreCancelled.current = false;
     const f = JSON.parse(filterKey) as TradeFilters;
     void fetch(`/api/trades/page?${pageQuery(f, page.cursor)}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
-        if (!j?.ok) return;
+        // Without this the PREVIOUS scope's rows 501-1000 appended onto the
+        // new scope's page 1 and its total/viewCounts overwrote the new ones —
+        // two books in one table, nothing on screen looking broken
+        // (lib/domain/trades-paging.ts, invariant 8).
+        if (!acceptsPage({ requestedKey, servedKey: keysRef.current.servedKey, filterKey: keysRef.current.filterKey, cancelled: moreCancelled.current }, j)) return;
         // Append, never replace: the keyset order is TOTAL as of v3.9, so a
         // page boundary can neither repeat a row nor skip one.
-        setPage((prev) => ({
-          rows: [...prev.rows, ...(j.rows as Trade[])],
-          cursor: j.nextCursor, total: j.total, viewCounts: j.viewCounts,
-        }));
+        setPage((prev) => appendPage(prev, j));
+        setReloadedToPage1(false);
       })
       .finally(() => setMoreLoading(false));
   }, [page.cursor, servedKey, filterKey, moreLoading, pageQuery]);
@@ -669,7 +718,7 @@ export function TradesClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="Search symbol / setup…" value={search} onChange={(e) => { setSearch(e.target.value); syncUrl({ symbol: e.target.value }); }} className="h-8 w-56" />
+        <Input placeholder="Search symbol / setup…" value={searchInput} onChange={(e) => { setSearchInput(e.target.value); syncUrl({ symbol: e.target.value }); }} className="h-8 w-56" />
         <Select value={broker} onChange={(e) => setBroker(e.target.value)} className="h-8 w-32">
           <option value="">All brokers</option>
           {BROKERS.map((b) => <option key={b} value={b}>{BROKER_LABELS[b]}</option>)}
@@ -746,12 +795,20 @@ export function TradesClient({
               which is exactly the thing server pagination could break in
               silence. `page.total` is a SQL count over the filtered book. */}
           <span className="text-xs text-muted-foreground">
-            {/* The bare "N of M" is its own text node: z-remove-broker.spec.ts
-                matches it ANCHORED (/^\d+ of \d+$/), so anything appended
-                inside the same node stops the pin from finding it. */}
-            <span>{data.length} of {page.total}</span>
+            {/* "Loaded" sits OUTSIDE the counter node. The bare "N of M" is its
+                own text node: z-remove-broker.spec.ts matches it ANCHORED
+                (/^\d+ of \d+$/) and trade-views.spec.ts reads its SECOND
+                number, so anything appended inside the same node breaks both
+                pins — while the word itself is what makes the figure honest,
+                because the first number is the LOADED page, not the result. */}
+            {LOADED_COUNT_PREFIX}{" "}
+            <span>{rowCountLabel(data.length, page.total)}</span>
             {page.total !== bookTotal && <> · {bookTotal} in the book</>}
           </span>
+          {/* The KPI strip above /trades is whole-book by design (app/trades/page.tsx);
+              the table under it is filtered. Two true numbers that disagree read
+              as one wrong number unless the screen says which is which. */}
+          <span className="text-xs text-muted-foreground" data-testid="trades-kpi-scope">{WHOLE_BOOK_CAPTION}</span>
           {page.cursor && (
             <Button size="sm" variant="ghost" className="text-xs" onClick={loadMore} disabled={loading}>
               {loading ? "Loading…" : `Load ${Math.min(TRADES_PAGE_SIZE, page.total - data.length)} more`}
@@ -894,6 +951,15 @@ export function TradesClient({
           virtual
           emptyMessage="No trades yet — import a broker file or add one manually."
         />
+        {/* Sorting and selection run over `data` — the rows FETCHED so far —
+            because TanStack's getSortedRowModel (components/ui/data-table.tsx)
+            sees exactly that array, while the counter and the view dropdown
+            are SQL aggregates over the whole filtered book. Both halves are
+            right; a screen showing them together without saying so is not. */}
+        <p className="px-3 pb-2 text-xs text-muted-foreground" data-testid="trades-scope-caption">
+          {loadedScopeCaption(page.total)}
+          {reloadedToPage1 && <> · {RELOADED_TO_FIRST_PAGE}</>}
+        </p>
         <DeleteTradesDialog
           preview={deletePreview}
           reason="selected in the trades table"

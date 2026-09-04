@@ -19,6 +19,22 @@
  *   npx tsx --tsconfig scripts/tsconfig.invariants.json \
  *     scripts/order-invariants.mjs <db.sqlite> [out.json]
  *
+ * ── What is the real code, and what is still a copy ─────────────────────────
+ *
+ * REAL: every projection (`lib/queries/trades.ts`), the tax base
+ * (`getTaxBase` + `taxByFy`), the holding clock (`holdingClock`), gain
+ * classification (`classifyGain`), the FY window (`fyWindowFor`) and — since
+ * v3.9 — the /trades first page, which comes from `getTradesPage` at the
+ * imported `TRADES_PAGE_SIZE` rather than a hand-typed slice of a projection.
+ *
+ * STILL COPIES, and why: the open-lot list and the realised STCG/LTCG sums are
+ * built inline inside `app/reports/harvest/page.tsx` (a React server component,
+ * not importable from a plain script — its `daysHeld` helper is page-local
+ * too), and the exit-row mapping is built inline inside
+ * `app/arjuns-eye/page.tsx` the same way. Both copies feed REAL analytics
+ * functions, so what is duplicated is the row shape, not the arithmetic. If
+ * either page ever lifts its mapping into `lib/`, import it here.
+ *
  * It reads through the app's own query modules and prints ONLY aggregates and
  * row ids — a trade row never leaves this process, so the output of a real
  * book is safe to keep. The ONE write it makes is the settings row's
@@ -41,7 +57,13 @@ if (!fs.existsSync(dbPath)) {
 process.env.VYUHA_DB_PATH = path.resolve(dbPath);
 
 const { sqlite } = await import("../lib/db/index.ts");
-const { getJournalTrades, getArjunTrades, getHarvestTrades } = await import("../lib/queries/trades.ts");
+const { getArjunTrades, getHarvestTrades } = await import("../lib/queries/trades.ts");
+// The /trades first page comes from the REAL pager, not a slice of a projection
+// — that is the whole surface this script is fingerprinting, and a hand-copied
+// `.slice(0, 500)` fingerprints the copy instead (it never touched the keyset
+// SQL, the cursor, or the page size the route actually serves).
+const { getTradesPage } = await import("../lib/queries/trades-page.ts");
+const { TRADES_PAGE_SIZE, EMPTY_TRADE_FILTERS } = await import("../lib/domain/trades-filter.ts");
 const { getTaxBase } = await import("../lib/queries/tax-itr.ts");
 const { taxByFy, currentFy: deriveCurrentFy } = await import("../lib/analytics/tax.ts");
 const { holdingClock } = await import("../lib/analytics/exit-behaviour.ts");
@@ -50,8 +72,6 @@ const { fyWindowFor } = await import("../lib/analytics/harvest.ts");
 const { getSettings } = await import("../lib/queries/settings.ts");
 const { todayIstIso } = await import("../lib/domain/trading-day.ts");
 
-/** The one page-size the /trades table pages at. Keep in step with TRADES_PAGE_SIZE. */
-const FIRST_PAGE = 500;
 const EQUITY_SEGMENTS = new Set(["eq_delivery", "eq_mtf"]);
 const daysHeld = (a, b) => (a ? Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000) : 0);
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -117,8 +137,11 @@ function snapshotForSelectedAccount() {
     .slice(0, 15)
     .map((t) => t.symbol);
 
-  // /trades — the ids the first server page renders.
-  const firstPageIds = getJournalTrades().slice(0, FIRST_PAGE).map((t) => t.id);
+  // /trades — the ids the first page renders, from `getTradesPage` itself:
+  // the same keyset SQL, the same page size (TRADES_PAGE_SIZE, imported, never
+  // re-typed) and the same default filters the route uses.
+  const firstPage = getTradesPage(EMPTY_TRADE_FILTERS, null, TRADES_PAGE_SIZE);
+  const firstPageIds = firstPage.rows.map((t) => t.id);
 
   return {
     taxByFy: tax,
@@ -127,17 +150,29 @@ function snapshotForSelectedAccount() {
     holdingClock: clock,
     holdingClockTop15: clockTop15,
     tradesFirstPageIds: firstPageIds,
-    tradesTotal: getJournalTrades().length,
+    tradesFirstPageCursor: firstPage.nextCursor,
+    tradesTotal: firstPage.total,
   };
 }
 
 const accounts = sqlite.prepare("select id, name from accounts order by id").all();
-const original = sqlite.prepare("select selected_account_id as id from settings limit 1").get()?.id ?? 0;
+// The settings row is a single row, but `update settings set …` with no WHERE
+// is a whole-table write — on a book that somehow holds two rows it silently
+// rewrites both, and the restore below would put only one of them back. Scope
+// it to the row this script actually read.
+const settingsRow = sqlite.prepare("select id, selected_account_id as sel from settings order by id limit 1").get();
+const settingsId = settingsRow?.id ?? null;
+const original = settingsRow?.sel ?? 0;
 const out = { db: path.resolve(dbPath), whole: ties(0), accounts: {} };
 
 // One snapshot per account, plus the aggregate view (0). `settings` is written
 // and RESTORED — the only write this script makes, and it never touches a trade.
-const setSel = sqlite.prepare("update settings set selected_account_id = ?");
+const setSel = settingsId == null
+  ? { run: () => {} }
+  : (() => {
+      const stmt = sqlite.prepare("update settings set selected_account_id = ? where id = ?");
+      return { run: (v) => stmt.run(v, settingsId) };
+    })();
 try {
   for (const a of [{ id: 0, name: "(all accounts)" }, ...accounts]) {
     setSel.run(a.id);

@@ -155,3 +155,32 @@ describe("financial year", () => {
     expect(fyOf(null)).toBeNull();
   });
 });
+
+/**
+ * The one parser allowed to claim on FORMAT alone is, by construction, the
+ * one a rival's identically-shaped file could hijack. The filename cannot
+ * vouch for a broker here — but it can veto one, and so can a cell.
+ */
+describe("the rival-broker veto", () => {
+  const FIX = path.join(process.cwd(), "tests", "fixtures", "redacted", "angelone-profitloss-2026-08-01_2026-08-31.xlsx");
+  const bytes = () => fs.readFileSync(FIX);
+
+  it("refuses a file whose NAME says another broker", () => {
+    for (const name of ["zerodha-pnl.xlsx", "GROWW_ProfitLoss_Statement.xlsx", "upstox-pnl.xlsx", "paytm_pnl.xlsx", "Dhan_P&L.xlsx"]) {
+      expect(detectAngelOnePnlStatement(buildContext(name, bytes())), name).toBe(0);
+    }
+    expect(detectAngelOnePnlStatement(buildContext("export.xlsx", bytes()))).toBeCloseTo(0.9, 10);
+  });
+
+  it("refuses a file whose CONTENT names another broker", () => {
+    const wb = XLSX.read(bytes(), { type: "buffer" });
+    const out = XLSX.utils.book_new();
+    for (const n of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[n]!, { header: 1, raw: false, defval: "" }) as unknown[][];
+      if (n === wb.SheetNames[0]) rows.unshift(["Zerodha Broking Limited"]);
+      XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(rows), n);
+    }
+    const buf = XLSX.write(out, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    expect(detectAngelOnePnlStatement(buildContext("export.xlsx", buf))).toBe(0);
+  });
+});

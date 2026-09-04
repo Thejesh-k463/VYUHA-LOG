@@ -28,11 +28,29 @@ import { describe, expect, it } from "vitest";
  * perf sweep (scripts/perf-sweep.mjs), which fails on any console error.
  */
 
+/**
+ * The surfaces this guard covers.
+ *
+ * It began as "/import", which was where the sweep found #418. That scope was
+ * already wrong by v3.9: `SearchPanel` is mounted by the ROOT layout, so it
+ * server-renders on every route in the app — a locale string or a storage read
+ * in its body would throw away the server markup of every page, not one. Its
+ * drag hook and the Popover primitive it renders through are in the same
+ * position. The Broker-truth screen is here because it is the newest
+ * server-rendered surface and cheap to keep honest.
+ *
+ * All five are clean today; they are listed so that stays true.
+ */
 const FILES = [
   "components/import/broker-connect.tsx",
   "components/import/remove-broker-panel.tsx",
   "components/import/import-client.tsx",
   "app/import/page.tsx",
+  "components/system/search-panel.tsx",
+  "components/system/use-panel-drag.ts",
+  "components/ui/popover.tsx",
+  "app/reports/reconcile/page.tsx",
+  "components/reports/reconcile-tables.tsx",
 ];
 
 // CRLF on disk (Windows checkout) — normalise so offsets and regexes agree.

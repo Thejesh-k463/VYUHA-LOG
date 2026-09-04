@@ -3,7 +3,7 @@ import path from "node:path";
 import { gotoHydrated, gotoImportReady } from "./helpers";
 
 /**
- * v3.9 "Trust the numbers" — Broker truth, end to end.
+ * v3.9 "Trust the numbers" — Broker Truth, end to end.
  *
  * Imports the owner's own pair of redacted Dhan exports in the order he
  * actually uses them — the transaction report first, then the Realised P&L
@@ -56,7 +56,7 @@ test.describe("broker truth", () => {
 
     // The commit says how many broker figures it stored, and points here.
     expect(after, "a reference import must not report itself as \"Imported 0 trades\" and nothing else")
-      .toMatch(/\d+ broker figures? stored — see Broker truth/);
+      .toMatch(/\d+ broker figures? stored — see Broker Truth/);
 
     await gotoHydrated(page, "/reports/reconcile");
 
@@ -112,6 +112,19 @@ test.describe("broker truth", () => {
     // The suite shares one database and this spec's two files are imported
     // into it, so how many such rows exist is not fixed; what they may say is.
     const checked = page.locator("[data-checked]");
+
+    // The loop below asserts nothing when there are no such rows, and an empty
+    // `[data-checked]` set is exactly what a screen that stopped explaining
+    // itself would produce. So pin the floor first: the equity row must carry
+    // at least one counted reason OR a checked-and-found-nothing line — never
+    // neither, which is a silent gap wearing a status word.
+    const equityRow = page.locator('[data-recon-key="equity"]').first();
+    if (await equityRow.count()) {
+      const explained =
+        (await equityRow.locator("[data-reason]").count()) + (await equityRow.locator("[data-checked]").count());
+      expect(explained, "an equity row with no reason and no checked line explains nothing").toBeGreaterThan(0);
+    }
+
     for (const text of await checked.allInnerTexts()) {
       expect(text.trim().length, "a checked-and-found-nothing line is a sentence too").toBeGreaterThan(20);
       expect(text.toLowerCase()).not.toContain("mismatch");

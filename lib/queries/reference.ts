@@ -170,6 +170,27 @@ function scripKey(isin: string | null | undefined, symbol: string | null | undef
 }
 
 /**
+ * EVERY identity one of the book's trades can be joined on — its ISIN AND its
+ * upper-cased symbol/tradingsymbol, so the book is indexed under all of them.
+ *
+ * A reference row still picks ONE key (`scripKey` above): a row that states an
+ * ISIN joins on the ISIN, a row that states none joins on the symbol. Indexing
+ * the book on the ISIN alone meant the Angel One P&L statement — which emits
+ * `isin: null, key: symbol` for every scrip row — could never join a single
+ * line: each one landed beside a Vyuha side of zero and reported the whole of
+ * the broker's figure as the delta. The two keys never double-count a line,
+ * because a line looks up exactly one of them.
+ */
+function scripKeysOf(t: Pick<ReconcileTrade, "isin" | "symbol" | "tradingsymbol">): string[] {
+  const out: string[] = [];
+  for (const v of [t.isin, t.symbol, t.tradingsymbol]) {
+    const k = (v ?? "").trim().toUpperCase();
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
+/**
  * Vyuha's segment → the broker's segment family.
  *
  * TYPED `Record<Segment, …>` ON PURPOSE: this map used to be hand-written from
@@ -248,6 +269,14 @@ export function reconcileFrom(
   const openQtyByScrip = new Map<string, number>();
   /** Open positions per segment family — the segment-scope twin of the above. */
   const openByFamily = new Map<string, { count: number; qty: number }>();
+  /**
+   * Open positions across the WHOLE book. An open lot has no sell date, so
+   * `fyOf(null)` puts it in the current FY and in no other — which is exactly
+   * where an FY line may state it, and the only FY line that may.
+   */
+  const openAll = { count: 0, qty: 0 };
+  /** Closed trades whose segment no family classifies — the one line that owns them. */
+  const vyuhaUnclassified = emptyFigures();
   /** Book segments no family classifies. A fact, and the guard on FAMILY_OF. */
   const unclassified = new Map<string, number>();
   const unpricedByScrip = new Map<string, { count: number; sellValue: number }>();
@@ -257,9 +286,9 @@ export function reconcileFrom(
   const labelByScrip = new Map<string, string>();
 
   for (const t of trades) {
-    const key = scripKey(t.isin, t.symbol ?? t.tradingsymbol);
-    if (key && !labelByScrip.has(key)) labelByScrip.set(key, t.symbol ?? t.tradingsymbol ?? key);
-    if (key) {
+    const keys = scripKeysOf(t);
+    for (const key of keys) {
+      if (!labelByScrip.has(key)) labelByScrip.set(key, t.symbol ?? t.tradingsymbol ?? key);
       const segs = segmentsByScrip.get(key) ?? new Set<string>();
       segs.add(t.segment);
       segmentsByScrip.set(key, segs);
@@ -282,7 +311,7 @@ export function reconcileFrom(
         uf.count++; uf.sellValue += t.sellValue;
         unpricedByFamily.set(family, uf);
       }
-      if (key) {
+      for (const key of keys) {
         const us = unpricedByScrip.get(key) ?? { count: 0, sellValue: 0 };
         us.count++; us.sellValue += t.sellValue;
         unpricedByScrip.set(key, us);
@@ -292,12 +321,13 @@ export function reconcileFrom(
     if (t.isOpen) {
       // An open lot is the commonest honest reason for a gap: the broker has
       // realised a position Vyuha still holds open (or vice versa).
-      if (key) openQtyByScrip.set(key, (openQtyByScrip.get(key) ?? 0) + (t.buyQty - t.sellQty));
+      for (const key of keys) openQtyByScrip.set(key, (openQtyByScrip.get(key) ?? 0) + (t.buyQty - t.sellQty));
       if (family) {
         const o = openByFamily.get(family) ?? { count: 0, qty: 0 };
         o.count++; o.qty += Math.abs(t.buyQty - t.sellQty);
         openByFamily.set(family, o);
       }
+      openAll.count++; openAll.qty += Math.abs(t.buyQty - t.sellQty);
       continue;
     }
     const fyAcc = vyuhaByFy.get(fy) ?? emptyFigures();
@@ -307,8 +337,10 @@ export function reconcileFrom(
       const famAcc = vyuhaByFamily.get(family) ?? emptyFigures();
       addTrade(famAcc, t);
       vyuhaByFamily.set(family, famAcc);
+    } else {
+      addTrade(vyuhaUnclassified, t);
     }
-    if (key) {
+    for (const key of keys) {
       const sAcc = vyuhaByScrip.get(key) ?? emptyFigures();
       addTrade(sAcc, t);
       vyuhaByScrip.set(key, sAcc);
@@ -401,11 +433,21 @@ export function reconcileFrom(
         });
       }
 
+      /**
+       * OPEN LOTS, at every scope. Which lines may state the fact, and so
+       * which lines may later claim to have CHECKED it, differs:
+       *   segment — the family's own open positions;
+       *   scrip   — that scrip's own open quantity;
+       *   fy      — the whole book's open lots, and ONLY on the current-FY
+       *           line: an open lot has no sell date, so it belongs to that
+       *           year and to no other. An older FY line does not check this.
+       */
+      let openChecked = true;
       if (scope === "segment") {
-        // The same four facts the scrip table states, asked of a segment
-        // family. They were computed for scrip lines ONLY, so the Dhan
-        // Realised P&L — which states segment rows and nothing else — put
-        // every one of its lines on screen with an empty "Why" column.
+        // The facts the scrip table states, asked of a segment family. They
+        // were computed for scrip lines ONLY, so the Dhan Realised P&L —
+        // which states segment rows and nothing else — put every one of its
+        // lines on screen with an empty "Why" column.
         const open = openByFamily.get(key);
         if (open && open.count > 0) {
           reasons.push({
@@ -414,19 +456,24 @@ export function reconcileFrom(
             detail: `${open.qty.toLocaleString("en-IN")} share${open.qty === 1 ? "" : "s"} across ${open.count} position${open.count === 1 ? "" : "s"} are still open in your book; a segment total states only what the broker has already realised.`,
           });
         }
-        if (unclassified.size > 0) {
-          const n = [...unclassified.values()].reduce((a, b) => a + b, 0);
+      } else if (scope === "fy") {
+        openChecked = key === fallbackFy;
+        if (openChecked && openAll.count > 0) {
           reasons.push({
-            code: "product_difference",
-            count: n,
-            detail: `${n} trade${n === 1 ? "" : "s"} in your book are tagged ${[...unclassified.keys()].sort().join(", ")}, which belongs to no segment family — they are counted on neither side of this row.`,
+            code: "open_lots",
+            count: openAll.count,
+            detail: `${openAll.qty.toLocaleString("en-IN")} share${openAll.qty === 1 ? "" : "s"} across ${openAll.count} position${openAll.count === 1 ? "" : "s"} are still open in your book. An open lot has no sell date, so it falls in ${fallbackFy}, the current year; an FY total states only what the broker has already realised.`,
           });
         }
       }
 
       if (scope === "scrip") {
+        // NOT gated on a stated quantity: the Angel One P&L statement states a
+        // gross P&L per scrip and no qty at all, so the gate silently turned
+        // every one of its lines into a claim of "0 open lots" on a book that
+        // was holding the scrip.
         const open = openQtyByScrip.get(key) ?? 0;
-        if (open !== 0 && (b.stated.qty ?? 0) > 0) {
+        if (open !== 0) {
           reasons.push({
             code: "open_lots",
             count: Math.abs(open),
@@ -451,8 +498,18 @@ export function reconcileFrom(
       // nothing a reader can act on. It is a list of the facts that were
       // checked and came back zero, so the next question is obvious and the
       // screen never pretends to an explanation it does not have (invariant 6).
+      // ONLY the facts THIS scope actually computed. The note used to recite
+      // all four on every line, so an FY line — where neither open lots nor
+      // segment tagging is looked at — swore it had checked both and found
+      // them zero. A note that names a check nobody ran is worse than no note.
+      const checkedFacts = [
+        "0 sales without a purchase",
+        ...(openChecked ? ["0 open lots"] : []),
+        ...(scope === "scrip" ? ["no segment tagged outside the broker's families"] : []),
+        b.statesCharges ? "this file states its own charges" : "your book states no charges for these rows either",
+      ];
       const checkedNote = !matched && reasons.length === 0
-        ? `Nothing in your book accounts for this gap: 0 sales without a purchase, 0 open lots, no segment tagged outside the broker's families, and this file states its own charges. Checked, and found nothing — the cause is outside these 4 facts.`
+        ? `Nothing in your book accounts for this gap: ${checkedFacts.join(", ")}. Checked, and found nothing — the cause is outside these ${checkedFacts.length} facts.`
         : null;
       return {
         scope,
@@ -484,9 +541,44 @@ export function reconcileFrom(
     };
   }).sort((a, b) => a.key.localeCompare(b.key));
 
+  /**
+   * Trades tagged with a segment no family classifies are attributed ONCE, to
+   * a line of their own. They used to be pushed as a `product_difference`
+   * reason onto EVERY segment line, so one stray trade blamed equity, F&O and
+   * commodity alike for a gap none of them contains it in. The line states
+   * Vyuha's side and no broker side, because the broker states none — it reads
+   * as "not compared", which is what it is.
+   */
+  const segmentLines = lines("segment", segmentBuckets, vyuhaByFamily, unpricedByFamily);
+  if (unclassified.size > 0 && segmentBuckets.size > 0) {
+    const n = [...unclassified.values()].reduce((a, b) => a + b, 0);
+    const u = vyuhaUnclassified;
+    segmentLines.push({
+      scope: "segment",
+      key: "unclassified",
+      label: "Unclassified segment",
+      isin: null,
+      fy: null,
+      broker: null,
+      stated: {},
+      vyuha: {
+        qty: r2(u.qty), buyValue: r2(u.buyValue), sellValue: r2(u.sellValue),
+        grossPnl: r2(u.grossPnl), netPnl: r2(u.netPnl), totalCharges: r2(u.totalCharges),
+      },
+      delta: {},
+      matched: false,
+      reasons: [{
+        code: "product_difference",
+        count: n,
+        detail: `${n} trade${n === 1 ? "" : "s"} in your book are tagged ${[...unclassified.keys()].sort().join(", ")}, which belongs to no segment family — they are counted on neither side of the rows above, and are stated here instead.`,
+      }],
+      checkedNote: null,
+    });
+  }
+
   return {
     fy: lines("fy", fyBuckets, vyuhaByFy, unpricedByFy),
-    segment: lines("segment", segmentBuckets, vyuhaByFamily, unpricedByFamily),
+    segment: segmentLines,
     scrip: lines("scrip", scripBuckets, vyuhaByScrip, unpricedByScrip),
     holdings,
   };

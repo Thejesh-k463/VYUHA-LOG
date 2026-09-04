@@ -664,3 +664,26 @@ describe("restore re-runs the data fixes on the restored rows", () => {
     expect(marker()).toBeTruthy();
   });
 });
+
+describe("the restore message counts the tables the ENVELOPE carried", () => {
+  it("reports 33 of 34 for an envelope missing one table, not the build's whole list", async () => {
+    // `Restored N rows across ${BACKUP_TABLES.length} tables` said 34 for an
+    // envelope that carried 33 — a count describing rows nobody had
+    // (invariant 6). Absent key = table preserved, not restored.
+    const fmt = await import("@/lib/backup-format");
+    const dump = backup.dumpDatabase(false);
+    const carried = fmt.BACKUP_TABLES.filter((n) => dump.tables[n] !== undefined).length;
+    expect(carried).toBe(fmt.BACKUP_TABLES.length);
+
+    const full = backup.restoreDatabase(dump);
+    expect(full.ok).toBe(true);
+    expect(full.message).toContain(`across ${fmt.BACKUP_TABLES.length} tables`);
+
+    const partial = backup.dumpDatabase(false);
+    delete (partial.tables as Record<string, unknown>).mtf_margins;
+    const res = backup.restoreDatabase(partial);
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain(`across ${fmt.BACKUP_TABLES.length - 1} tables`);
+    expect(res.message).not.toContain(`across ${fmt.BACKUP_TABLES.length} tables`);
+  });
+});

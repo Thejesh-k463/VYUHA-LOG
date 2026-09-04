@@ -65,13 +65,34 @@ export function encodeCursor(c: TradesCursor): string {
   return `${c.sellDate ?? ""}|${c.createdAt}|${c.id}`;
 }
 
-/** Never throws: a malformed cursor is no cursor, i.e. the first page. */
+/** `sell_date` is a plain ISO day; the empty field is the null-sell-date token. */
+const CURSOR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** `created_at` is `datetime('now')` — `YYYY-MM-DD HH:MM:SS`. An ISO `T` and a
+ *  fractional/Z tail are accepted too, so a hand-written row cannot be locked
+ *  out of paging by its own timestamp shape. */
+const CURSOR_STAMP = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/;
+
+/**
+ * Never throws: a malformed cursor is NO cursor.
+ *
+ * Strict, not lenient. `""` used to decode to a null `sellDate`, so any
+ * three-field string with a plausible id — `garbage||7`, a truncated token, a
+ * cursor from another sort — silently became "the null-sell-date tail of the
+ * book" and returned a page from the WRONG place with no error anywhere. Both
+ * date fields are now shape-checked, and the route turns a `null` here into a
+ * 400 rather than quietly serving page one (app/api/trades/page/route.ts).
+ */
 export function decodeCursor(raw: string | null | undefined): TradesCursor | null {
   if (!raw) return null;
   const parts = raw.split("|");
   if (parts.length !== 3) return null;
   const id = Number(parts[2]);
-  if (!Number.isInteger(id) || id <= 0 || !parts[1]) return null;
+  if (!Number.isInteger(id) || id <= 0) return null;
+  // Shape AND calendar: `2026-13-45` matches the shape and is not a day.
+  // ISO parsing is strict about ranges, so this rejects 31 February too.
+  const isDay = (d: string) => CURSOR_DATE.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+  if (parts[0] !== "" && !isDay(parts[0])) return null;
+  if (!CURSOR_STAMP.test(parts[1]) || !isDay(parts[1].slice(0, 10))) return null;
   return { sellDate: parts[0] === "" ? null : parts[0], createdAt: parts[1], id };
 }
 

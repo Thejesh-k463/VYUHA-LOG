@@ -271,8 +271,14 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
         tx.delete(TABLE_MAP[name]).run();
       }
       let restored = 0;
+      // Tables the ENVELOPE actually carried, not the tables this build knows
+      // about. A v3.8 envelope restores 33 of 34, and reporting 34 states that
+      // a table was restored when the envelope never held it (invariant 6: a
+      // count must not describe rows nobody had).
+      let tablesRestored = 0;
       for (const name of BACKUP_TABLES) {
         if (tables[name] === undefined) continue;
+        tablesRestored++;
         const rows = tables[name] as Record<string, unknown>[];
         for (const r of rows) {
           // A redacted broker connection is a name without a credential —
@@ -309,7 +315,7 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
       // transaction (`sqlite` is the connection `db` wraps, so the raw
       // statements join it; the fix's own transaction() becomes a savepoint).
       rerunDataFixesAfterRestore(sqlite);
-      return { ok: true, message: `Restored ${restored} rows across ${BACKUP_TABLES.length} tables.`, restored };
+      return { ok: true, message: `Restored ${restored} rows across ${tablesRestored} table${tablesRestored === 1 ? "" : "s"}.`, restored };
     });
   } catch (e) {
     if (replaceAttachments) fs.rmSync(stagingDir, { recursive: true, force: true });

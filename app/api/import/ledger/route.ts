@@ -9,6 +9,9 @@ import { buildContext } from "@/lib/import/detect";
 import type { ParseContext } from "@/lib/import/types";
 import { detectUpstoxLedger, parseUpstoxLedger, type ParsedCashFile } from "@/lib/import/parsers/upstox-ledger";
 import { detectAngelOneLedger, parseAngelOneLedger } from "@/lib/import/parsers/angelone-ledger";
+import { detectDhanDpCharges, parseDhanDpChargesWorkbook } from "@/lib/import/parsers/dhan-dp-charges";
+import { persistReference } from "@/lib/import/commit";
+import type { ReferenceRow } from "@/lib/import/types";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
@@ -40,16 +43,57 @@ export const runtime = "nodejs";
  * behaviour -- including the exact warning text a file with no header comes
  * back with -- is a behaviour the Cash & Ledger screen is tested against.
  */
+/**
+ * A cash file plus the two things a reference-carrying one also states: whose
+ * figures they are, and which export they came from.
+ */
+type CashParse = ParsedCashFile & {
+  reference?: ReferenceRow[];
+  broker?: string;
+  sourceId?: string;
+};
+
+/**
+ * Dhan's DP charges report as CASH.
+ *
+ * The parser has always ended its own warning with "upload it on the Cash &
+ * Ledger screen, where each line lands as a charge entry" — and until
+ * 2026-09-04 that screen refused the file with a 422, because this list named
+ * Upstox and Angel One only. Advertising a door that is shut is worse than
+ * having no door. Each printed debit lands as a `charge` entry; the file's own
+ * per-(ISIN, day) figures land in `broker_reference` beside them.
+ */
+function parseDpChargesAsCash(ctx: ParseContext): CashParse {
+  const p = parseDhanDpChargesWorkbook(ctx);
+  const dates = p.rows.map((r) => r.date).filter(Boolean).sort();
+  return {
+    rows: p.rows,
+    mtfInterestTotal: 0,
+    unclassified: [],
+    openingBalance: null,
+    // The title states the window; the rows are the fallback, because a
+    // window Vyuha cannot read must not become a crash on `parsed.from!`.
+    from: p.from ?? dates[0] ?? null,
+    to: p.to ?? dates[dates.length - 1] ?? null,
+    warnings: p.warnings,
+    source: "dhan-dp-charges",
+    reference: p.reference,
+    broker: "dhan",
+    sourceId: "dhan-dp-charges",
+  };
+}
+
 const WORKBOOK_CASH_SOURCES: {
   detect: (ctx: ParseContext) => number;
-  parse: (ctx: ParseContext) => ParsedCashFile;
+  parse: (ctx: ParseContext) => CashParse;
 }[] = [
   { detect: detectUpstoxLedger, parse: parseUpstoxLedger },
-  { detect: detectAngelOneLedger, parse: parseAngelOneLedger },
+  { detect: detectAngelOneLedger, parse: (c) => ({ ...parseAngelOneLedger(c), broker: "angelone", sourceId: "angelone-ledger" }) },
+  { detect: detectDhanDpCharges, parse: parseDpChargesAsCash },
 ];
 
 /** Read whichever cash file was uploaded. */
-function readCashFile(filename: string, bytes: Buffer): ParsedCashFile {
+function readCashFile(filename: string, bytes: Buffer): CashParse {
   const ctx = buildContext(filename, bytes);
   // The dividend payout report shares this door (2026-09-04): it is cash that
   // reached the account, so it lands as dividend entries in the same table.
@@ -64,7 +108,7 @@ function readCashFile(filename: string, bytes: Buffer): ParsedCashFile {
   return {
     rows: [], mtfInterestTotal: 0, unclassified: [], openingBalance: null, from: null, to: null,
     warnings: [
-      `No cash-file parser recognised ${filename}. The Cash & Ledger screen reads Dhan's ledger and dividend payout CSVs, the Upstox ledger workbook and the Angel One account statement -- a file it cannot recognise is refused rather than read as something it is not.`,
+      `No cash-file parser recognised ${filename}. The Cash & Ledger screen reads Dhan's ledger and dividend payout CSVs, Dhan's DP charges report, the Upstox ledger workbook and the Angel One account statement -- a file it cannot recognise is refused rather than read as something it is not.`,
     ],
   };
 }
@@ -177,7 +221,9 @@ export async function POST(req: Request) {
     });
   }
 
-  db.transaction((tx) => {
+  const source = parsed.source ?? "dhan-ledger";
+  let referenceStored = 0;
+  const writeAccountId = db.transaction((tx) => {
     const accountId = getWriteAccountId();
     for (const r of fresh) {
       tx.insert(ledgerEntries)
@@ -188,19 +234,49 @@ export async function POST(req: Request) {
           type: r.kind,
           amountPaise: Math.round(r.amount * 100),
           note: r.narration.slice(0, 240),
-          source: parsed.source ?? "dhan-ledger",
+          source,
         })
         .run();
     }
+    // A cash file can also STATE figures (Dhan's DP charges report gives a fee
+    // per ISIN per day; Angel One's statement gives its charge tables). Those
+    // are the broker's own numbers and belong in `broker_reference`, in the
+    // same transaction as the entries they describe — under the WRITE account,
+    // never the selection, and never account #1 by fallback.
+    if (parsed.reference?.length) {
+      referenceStored = persistReference(
+        tx as unknown as Parameters<typeof persistReference>[0],
+        parsed.reference,
+        accountId,
+        parsed.broker ?? "dhan",
+        parsed.sourceId ?? source,
+        null,
+      );
+    }
+    return accountId;
   });
 
+  // The audit line used to say "Dhan ledger imported" whatever the file was —
+  // an Upstox ledger, an Angel One statement and a DP charges report all
+  // logged themselves as a Dhan ledger. It names the actual source now.
   recordAudit({
     entity: "settings",
     action: "create",
-    summary: `Dhan ledger imported: ${fresh.length} entries (${from} → ${to}), MTF interest ₹${mtf.actual}`,
+    summary: `${source} imported: ${fresh.length} entries (${from} → ${to}), MTF interest ₹${mtf.actual}`,
     before: null,
-    after: { from, to, added: fresh.length, mtfInterest: mtf.actual },
+    after: { source, from, to, added: fresh.length, mtfInterest: mtf.actual, referenceStored },
   });
+  // ONE audit entry per reference import, not one per figure — the house shape
+  // from commitParsedFile.
+  if (referenceStored > 0) {
+    recordAudit({
+      entity: "broker_reference",
+      action: "create",
+      summary: `${referenceStored} broker-stated figure${referenceStored === 1 ? "" : "s"} from ${file.name}`,
+      before: null,
+      after: { accountId: writeAccountId, broker: parsed.broker ?? "dhan", sourceId: parsed.sourceId ?? source, figures: referenceStored },
+    });
+  }
 
   for (const p of ["/cash", "/reports/charges", "/"]) revalidatePath(p);
 
@@ -211,6 +287,8 @@ export async function POST(req: Request) {
     skipped: parsed.rows.length - fresh.length,
     from,
     to,
+    source,
+    referenceStored,
     mtf,
     warnings: parsed.warnings,
   });

@@ -146,9 +146,16 @@ describe("enrichment applies facts to trades the book already holds", () => {
     }, "contract-note.pdf", null, ACCOUNT);
 
     expect(result.enrichTotal).toBe(4);
-    expect(result.enrichApplied).toBe(3);
-    expect(result.warnings).toEqual(expect.arrayContaining(["Fill times applied to 3 of 4 contract-note lines"]));
-    expect(result.warnings!.some((w) => /1 contract-note line matched no trade/.test(w))).toBe(true);
+    // TWO, not three. The INFY line matched a trade that already held both
+    // times, so its patch was EMPTY — counting it as applied made the number
+    // report the lookup rather than the write, which is the one thing it was
+    // for. Three outcomes, named separately.
+    expect(result.enrichApplied).toBe(2);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      "4 contract-note fills aggregated into 4 contract-days: applied 2, already had times 1, unmatched 1.",
+    ]));
+    expect(result.warnings!.some((w) => /1 contract-day matched no trade/.test(w))).toBe(true);
+    expect(result.warnings!.some((w) => /Why: 1× /.test(w)), "the miss says WHY").toBe(true);
 
     const a = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, withoutTime)).get()!;
     expect(a.entryTime).toBe("09:16:31");
@@ -173,6 +180,123 @@ describe("enrichment applies facts to trades the book already holds", () => {
       enrich: [{ symbol: "NIFTY", date: "2026-07-14", side: "buy", qty: 75, instrumentType: "future" }],
     }, "cn2.pdf", null, ACCOUNT);
     expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.instrumentType).toBe("option");
+  });
+});
+
+/**
+ * The four structural defects that made enrichment match ZERO of 1,161 real
+ * fills, each pinned on its own.
+ */
+describe("what the enrichment is matched ON", () => {
+  const note = (enrich: Parameters<typeof commit.commitParsedFile>[0]["enrich"], file = "cn.pdf", broker = "dhan") =>
+    commit.commitParsedFile(
+      { sourceId: "dhan-contract-note", broker: broker as "dhan", format: "contract-note", trades: [], warnings: [], enrich },
+      file, null, ACCOUNT,
+    );
+
+  it("aggregates a day's FILLS into the position the book actually holds", () => {
+    const id = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "Black Box", tradingsymbol: "Black Box",
+      buyDate: "2026-08-03", buyQty: 43, sellDate: "2026-08-04", sellQty: 43,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    // Four fills at four times; NONE of them is 43, which is why a row-for-row
+    // (symbol, date, side, qty) lookup could never match a real note.
+    const r = note([
+      { symbol: "BBOX", isin: "INE676A01027", date: "2026-08-03", side: "buy", qty: 11, time: "10:56:35" },
+      { symbol: "BBOX", isin: "INE676A01027", date: "2026-08-03", side: "buy", qty: 19, time: "10:56:35" },
+      { symbol: "BBOX", isin: "INE676A01027", date: "2026-08-03", side: "buy", qty: 2, time: "10:56:41" },
+      { symbol: "BBOX", isin: "INE676A01027", date: "2026-08-03", side: "buy", qty: 11, time: "11:02:09" },
+    ], "cn-agg.pdf");
+
+    expect(r.enrichTotal).toBe(4);
+    expect(r.enrichApplied).toBe(1);
+    expect(r.warnings).toEqual(expect.arrayContaining([
+      "4 contract-note fills aggregated into 1 contract-day: applied 1, already had times 0, unmatched 0.",
+    ]));
+    // EARLIEST fill, not the last one read.
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.entryTime).toBe("10:56:35");
+  });
+
+  it("resolves an equity through its ISIN when the note's ticker is not the book's name", () => {
+    // The note prints `DYCL`; the book prints `Dynamic Cables`. Only the ISIN
+    // connects them, and the registered name behind it is what matches.
+    const id = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "Dynamic Cables", tradingsymbol: "Dynamic Cables",
+      buyDate: "2026-08-05", buyQty: 100, sellDate: "2026-08-05", sellQty: 100,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    note([{ symbol: "DYCL", isin: "INE600Y01019", date: "2026-08-05", side: "sell", qty: 100, time: "14:31:02" }], "cn-isin.pdf");
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.exitTime).toBe("14:31:02");
+  });
+
+  it("addresses a derivative by the BOOK's contract name, so two strikes are two contracts", () => {
+    const a = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "NIFTY", tradingsymbol: "OPT NIFTY 21 Apr 2026 24200 CE",
+      instrumentType: "option", buyDate: "2026-04-21", buyQty: 75, sellDate: "2026-04-21", sellQty: 75,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const b = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "NIFTY", tradingsymbol: "OPT NIFTY 21 Apr 2026 24400 CE",
+      instrumentType: "option", buyDate: "2026-04-21", buyQty: 75, sellDate: "2026-04-21", sellQty: 75,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    note([
+      { symbol: "OPT NIFTY 21 Apr 2026 24400 CE", date: "2026-04-21", side: "buy", qty: 75, time: "09:46:52", instrumentType: "option" },
+    ], "cn-strike.pdf");
+
+    const rowA = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, a)).get()!;
+    const rowB = t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, b)).get()!;
+    expect(rowB.entryTime, "the 24400 strike is the one the note names").toBe("09:46:52");
+    expect(rowA.entryTime, "the 24200 strike is a different contract and is untouched").toBeNull();
+  });
+
+  it("never writes onto ANOTHER broker's position", () => {
+    const id = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "zerodha", symbol: "SBIN", tradingsymbol: "SBIN",
+      buyDate: "2026-08-06", buyQty: 10, sellDate: "2026-08-06", sellQty: 10,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const r = note([{ symbol: "SBIN", date: "2026-08-06", side: "buy", qty: 10, time: "09:30:00" }], "cn-broker.pdf");
+    expect(r.enrichApplied).toBe(0);
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, id)).get()!.entryTime).toBeNull();
+  });
+
+  it("splits a day's fills across two positions by cumulative prefix, and says so", () => {
+    const first = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "IDEA", tradingsymbol: "IDEA",
+      buyDate: "2026-08-07", buyQty: 30, sellDate: "2026-08-09", sellQty: 30,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    const second = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "IDEA", tradingsymbol: "IDEA",
+      buyDate: "2026-08-07", buyQty: 70, sellDate: "2026-08-10", sellQty: 70,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+
+    const r = note([
+      { symbol: "IDEA", date: "2026-08-07", side: "buy", qty: 10, time: "09:20:00" },
+      { symbol: "IDEA", date: "2026-08-07", side: "buy", qty: 20, time: "09:25:00" },
+      { symbol: "IDEA", date: "2026-08-07", side: "buy", qty: 70, time: "11:40:00" },
+    ], "cn-prefix.pdf");
+
+    expect(r.enrichApplied).toBe(2);
+    expect(r.warnings!.some((w) => /CUMULATIVE PREFIX/.test(w)), "an inference says it is one").toBe(true);
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, first)).get()!.entryTime).toBe("09:20:00");
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, second)).get()!.entryTime).toBe("11:40:00");
+  });
+
+  it("claims a trade's leg once — two identical contract-days cannot both take it", () => {
+    const only = t.db.insert(t.schema.trades).values(tradeRow({
+      accountId: ACCOUNT, broker: "dhan", symbol: "ONGC", tradingsymbol: "ONGC",
+      buyDate: "2026-08-11", buyQty: 5, sellDate: "2026-08-12", sellQty: 5,
+    })).returning({ id: t.schema.trades.id }).get()!.id;
+    // Two DIFFERENT identities that both resolve to the same book row.
+    const r = note([
+      { symbol: "ONGC", date: "2026-08-11", side: "buy", qty: 5, time: "10:00:00" },
+      { symbol: "ONGC-EQ", date: "2026-08-11", side: "buy", qty: 5, time: "12:00:00" },
+    ], "cn-claim.pdf");
+    expect(r.enrichApplied).toBe(1);
+    expect(r.warnings!.some((w) => /already claimed by an earlier line/.test(w))).toBe(true);
+    // WHICH one wins is fixed by the group key order (`ONGC-EQ` sorts before
+    // `ONGC|`), not by insertion order — the same file always resolves the
+    // same way, which is the property that matters.
+    expect(t.db.select().from(t.schema.trades).where(eq(t.schema.trades.id, only)).get()!.entryTime).toBe("12:00:00");
   });
 });
 

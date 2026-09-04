@@ -167,3 +167,55 @@ describe("transaction classification", () => {
     expect(classifyAngelRow("DP Charges", -23.6).kind).toBe("charge");
   });
 });
+
+/**
+ * Two things the ledger reader used to do in silence, both of which change
+ * what the numbers MEAN rather than merely how they look.
+ */
+describe("dates and dropped rows are facts, not silence", () => {
+  /** Rewrite the ledger sheet's Date column through `f`. */
+  function withDates(f: (d: string) => string): Buffer {
+    const m = matrices();
+    const sheet = Object.keys(m).find((n) => m[n]!.some((r) => r.map((c) => c.toLowerCase().replace(/[^a-z]/g, "")).includes("runningbalance")))!;
+    const rows = m[sheet]!;
+    const h = rows.findIndex((r) => r.map((c) => c.toLowerCase().replace(/[^a-z]/g, "")).includes("runningbalance"));
+    const dCol = rows[h]!.findIndex((c) => c.toLowerCase().replace(/[^a-z]/g, "") === "date");
+    for (let i = h + 1; i < rows.length; i++) {
+      const v = rows[i]![dCol];
+      if (v && v.trim() !== "") rows[i]![dCol] = f(v);
+    }
+    return rebuild(m);
+  }
+
+  it("REFUSES a month-first file rather than transposing every date", () => {
+    // Second component above 12, first never above 12: provably month-first.
+    // `parseLedgerDate` rejects those outright, which is exactly why the raw
+    // strings are gathered BEFORE the parse — otherwise the file the check
+    // exists for would arrive as "no dated rows" and say nothing.
+    const buf = withDates(() => "07-25-2026");
+    const parsed = parseAngelOneLedger(buildContext("YourStatement_X.xlsx", buf));
+    expect(parsed.warnings.join(" ")).toMatch(/dates are month-first/);
+    expect(parsed.rows).toEqual([]);
+  });
+
+  it("says out loud when day-first vs month-first is undetectable", () => {
+    const parsed = parseAngelOneLedger(neutral());
+    expect(parsed.warnings.join(" ")).toMatch(/dd-mm-yyyy|undetectable by construction/);
+  });
+
+  it("counts and names the rows it dropped for having no readable date", () => {
+    const m = matrices();
+    const sheet = Object.keys(m).find((n) => m[n]!.some((r) => r.map((c) => c.toLowerCase().replace(/[^a-z]/g, "")).includes("runningbalance")))!;
+    const rows = m[sheet]!;
+    const h = rows.findIndex((r) => r.map((c) => c.toLowerCase().replace(/[^a-z]/g, "")).includes("runningbalance"));
+    const head = rows[h]!.map((c) => c.toLowerCase().replace(/[^a-z]/g, ""));
+    const undated = rows[h]!.map(() => "");
+    undated[head.indexOf("transaction")] = "Funds Added";
+    undated[head.indexOf("date")] = "--";
+    undated[head.indexOf("credit")] = "1000";
+    rows.splice(h + 1, 0, undated);
+    const parsed = parseAngelOneLedger(buildContext("YourStatement_X.xlsx", rebuild(m)));
+    expect(parsed.warnings.join(" ")).toMatch(/1 row in this ledger states a transaction or an amount but no readable date/);
+    expect(parsed.rows.some((r) => r.narration.includes("Funds Added") && r.amount === 1000)).toBe(false);
+  });
+});

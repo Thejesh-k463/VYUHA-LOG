@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { workbookOf } from "@/lib/import/types";
+import { trimSheetRanges, workbookOf } from "@/lib/import/types";
 
 /**
  * A BIFF8 (.xls) export can declare its used range as the WHOLE sheet
@@ -34,5 +34,42 @@ describe("workbookOf trims a declared-whole-sheet range", () => {
     expect(rows.length).toBeLessThan(400);
     // The last populated cell survives: the footer row is still there.
     expect(rows.some((r) => r.some((c) => String(c).startsWith("Total")))).toBe(true);
+  });
+});
+
+/**
+ * The two sheets `workbookOf`'s own fixture cannot show, built by hand
+ * because no real export has yet been seen with either shape — and both are
+ * the difference between "trimmed" and "not trimmed at all".
+ */
+describe("trimSheetRanges on the shapes the real fixture does not have", () => {
+  const wbWith = (ws: XLSX.WorkSheet): XLSX.WorkBook => ({ SheetNames: ["S"], Sheets: { S: ws } });
+
+  it("a sheet whose ONLY content is merges is trimmed to the merge bounds, not left at A1:Q65536", () => {
+    const ws: XLSX.WorkSheet = {
+      "!ref": "A1:Q65536",
+      "!merges": [{ s: { r: 0, c: 0 }, e: { r: 2, c: 5 } }],
+    };
+    trimSheetRanges(wbWith(ws));
+    expect(ws["!ref"]).toBe("A1:F3");
+    // And the point of the whole function: no 65,536-row materialisation.
+    expect(XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "" }).length).toBeLessThan(10);
+  });
+
+  it("a sheet with neither cells nor merges collapses to its own first cell", () => {
+    const ws: XLSX.WorkSheet = { "!ref": "A1:Q65536" };
+    trimSheetRanges(wbWith(ws));
+    expect(ws["!ref"]).toBe("A1"); // SheetJS encodes a single-cell range as "A1"
+  });
+
+  it("NEVER expands: a cell outside the declared range cannot widen it", () => {
+    // B2 is declared; Z9 exists in the object but the file said A1:B2. The
+    // range only ever shrinks, so a reader is never handed columns the file
+    // did not declare.
+    const ws: XLSX.WorkSheet = { "!ref": "A1:B2", A1: { t: "s", v: "a" }, Z9: { t: "s", v: "z" } };
+    trimSheetRanges(wbWith(ws));
+    const r = XLSX.utils.decode_range(ws["!ref"]!);
+    expect(r.e.c).toBeLessThanOrEqual(1);
+    expect(r.e.r).toBeLessThanOrEqual(1);
   });
 });

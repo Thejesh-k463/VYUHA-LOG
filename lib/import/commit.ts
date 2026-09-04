@@ -28,7 +28,7 @@ import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
-import { bundledSymbolByIsin, isCodedSymbol, resolveCodedSymbols } from "./isin-symbol";
+import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 
@@ -603,13 +603,15 @@ export function referenceFromReported(reported: Record<string, number> | undefin
  *
  * Returns how many figures landed.
  */
-function persistReference(
+export function persistReference(
   tx: { run: (q: ReturnType<typeof sql>) => unknown },
   rows: ReferenceRow[],
   accountId: number,
   broker: string,
   sourceId: string,
-  batchId: number,
+  /** The import batch that carried these figures, when there was one. The
+   *  Cash & Ledger door writes reference rows without creating a trade batch. */
+  batchId: number | null,
 ): number {
   let stored = 0;
   for (const r of rows) {
@@ -639,57 +641,271 @@ function persistReference(
  * charges and no dedup hash, and it would double-count the moment the real
  * tradebook arrives.
  *
- * Matching is (symbol, date, side, qty), symbol case-insensitively against
- * BOTH `symbol` and `tradingsymbol` because a broker's contract note names the
- * scrip its own way. Writes are one-directional and non-destructive:
+ * ── Why this is not a row-for-row lookup (2026-09-04) ─────────────────────
+ *
+ * It used to match (symbol, date, side, qty) one enrichment row at a time, and
+ * against the owner's own files that matched ZERO of 1,161 real fills. Three
+ * independent reasons, all of them structural:
+ *
+ *   • A note prints one line per FILL — 11, 19, 2, 11 shares at 10:56:35 —
+ *     while the book holds the paired POSITION (2,000). No fill's quantity is
+ *     ever a position's quantity, so `qty` could not match.
+ *   • A note names an equity by its exchange TICKER (`BBOX`); the Global
+ *     Transaction Report names it by the company (`Black Box`). Neither
+ *     `symbol` nor `tradingsymbol` ever equalled the other.
+ *   • A note named a derivative by its bare underlying (`NIFTY`) with the
+ *     strike and expiry in a prose note, while the book carries the whole
+ *     contract name. Every option on a busy day looked like one instrument.
+ *
+ * So: fills are AGGREGATED per (identity, date, side) before anything is
+ * looked up — earliest fill for the entry, latest for the exit, quantities
+ * summed — and identity is resolved through the ISIN and the registered
+ * company name, not through one string. When a day's fills for one contract
+ * cover more than one position, they are consumed as a CUMULATIVE PREFIX in
+ * time order (the first N fills that sum to a position's quantity are that
+ * position's), and the warning says so rather than pretending to certainty.
+ *
+ * Writes are one-directional and non-destructive:
  *   - entry_time / exit_time are set ONLY where NULL — a time the book already
  *     has came from the tradebook, which is the better source.
  *   - instrument_type is set ONLY where the classifier left "equity" AND the
  *     note says option or future. A stated derivative beats a defaulted
  *     equity; nothing ever demotes a classified derivative back to equity.
+ *
+ * Candidates are filtered by BROKER as well as account — a Dhan note has no
+ * business writing a time onto a Zerodha position — read in `id asc` order so
+ * the same file always resolves the same way, and each (trade, side) is
+ * claimed at most once per import.
  */
+interface EnrichOutcome {
+  /** Groups whose match actually WROTE a column. */
+  applied: number;
+  /** Groups that matched a trade which already held every fact offered. */
+  alreadyHad: number;
+  /** Groups that matched no trade at all. */
+  unmatched: number;
+  /** Aggregated (identity, date, side) groups the rows collapsed into. */
+  groups: number;
+  /** Why the unmatched ones missed, most common first. */
+  reasons: { reason: string; count: number }[];
+  /** Facts only the matching knew — e.g. that a prefix split was used. */
+  notes: string[];
+}
+
+/**
+ * A name reduced to what two documents can agree on: letters and digits, no
+ * leading "The", no trailing Limited/Ltd. `Black Box` and
+ * `Black Box Limited` become the same string; `BBOX` does not, which is why
+ * the ISIN carries the equity case.
+ */
+function normIdent(s: string | null | undefined): string {
+  let v = String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (v.startsWith("THE")) v = v.slice(3);
+  for (;;) {
+    const next = v.replace(/(?:LIMITED|LTD)$/, "");
+    if (next === v) break;
+    v = next;
+  }
+  return v;
+}
+
+interface EnrichGroup {
+  key: string;
+  date: string;
+  side: "buy" | "sell";
+  qty: number;
+  fills: { time: string | null; qty: number }[];
+  instrumentType: EnrichmentRow["instrumentType"];
+  /** Every string this contract could be called in the book. */
+  names: string[];
+  isin: string | null;
+  lines: number;
+}
+
+type EnrichCandidate = {
+  id: number;
+  symbol: string | null;
+  tradingsymbol: string | null;
+  isin: string | null;
+  buyDate: string | null;
+  sellDate: string | null;
+  buyQty: number;
+  sellQty: number;
+  entryTime: string | null;
+  exitTime: string | null;
+  instrumentType: string | null;
+};
+
+/** Does this book row describe the same security the enrichment names? */
+function identityMatches(c: EnrichCandidate, g: EnrichGroup): boolean {
+  if (g.isin && c.isin && c.isin.trim().toUpperCase() === g.isin) return true;
+  const book = [normIdent(c.symbol), normIdent(c.tradingsymbol)].filter((x) => x.length > 0);
+  for (const n of g.names) {
+    for (const b of book) {
+      if (n === b) return true;
+      // `Granules` (book) inside `Granules India Limited` (registry), and the
+      // other way round. Four characters minimum, because a three-letter
+      // prefix is a coincidence waiting to happen — and every match still has
+      // to agree on account, broker, date, side and quantity.
+      if (b.length >= 4 && n.length >= 4 && (n.startsWith(b) || b.startsWith(n))) return true;
+    }
+  }
+  return false;
+}
+
 function applyEnrichments(
   tx: typeof db,
   rows: EnrichmentRow[],
   accountId: number,
-): { applied: number; unmatched: number } {
-  let applied = 0;
-  let unmatched = 0;
+  broker: string,
+): EnrichOutcome {
+  const notes: string[] = [];
+  const reasons = new Map<string, number>();
+  const miss = (r: string) => reasons.set(r, (reasons.get(r) ?? 0) + 1);
+
+  // ── 1. Fills → contract-days ────────────────────────────────────────────
+  const groups = new Map<string, EnrichGroup>();
   for (const e of rows) {
-    const wantSymbol = e.symbol.trim().toLowerCase();
-    const isBuy = e.side === "buy";
-    const dateCol = isBuy ? tradesTable.buyDate : tradesTable.sellDate;
-    const qtyCol = isBuy ? tradesTable.buyQty : tradesTable.sellQty;
-    const candidate = tx
-      .select({
-        id: tradesTable.id,
-        entryTime: tradesTable.entryTime,
-        exitTime: tradesTable.exitTime,
-        instrumentType: tradesTable.instrumentType,
-      })
-      .from(tradesTable)
-      .where(and(
-        eq(tradesTable.accountId, accountId),
-        eq(dateCol, normalizeDate(e.date) ?? e.date),
-        eq(qtyCol, e.qty),
-        sql`(lower(${tradesTable.symbol}) = ${wantSymbol} OR lower(${tradesTable.tradingsymbol}) = ${wantSymbol})`,
-      ))
-      .get();
-    if (!candidate) {
-      unmatched++;
+    const date = normalizeDate(e.date) ?? e.date;
+    const isin = e.isin ? e.isin.trim().toUpperCase() : null;
+    const key = `${isin ?? e.symbol.trim().toUpperCase()}|${date}|${e.side}`;
+    let g = groups.get(key);
+    if (!g) {
+      // Every alias this contract answers to: the book-style name the source
+      // built, the company name it printed, and — through the ISIN — the
+      // ticker and registered name the bundled listing snapshot knows.
+      const names = new Set<string>();
+      const add = (s: string | null | undefined) => { const n = normIdent(s); if (n) names.add(n); };
+      add(e.symbol);
+      add(e.name);
+      if (isin) { add(bundledSymbolByIsin(isin)); add(nameByIsin(isin)); }
+      g = {
+        key, date, side: e.side, qty: 0, fills: [],
+        instrumentType: e.instrumentType ?? null,
+        names: [...names], isin, lines: 0,
+      };
+      groups.set(key, g);
+    }
+    g.qty += e.qty;
+    g.lines++;
+    g.fills.push({ time: e.time ?? null, qty: e.qty });
+    if (!g.instrumentType && e.instrumentType) g.instrumentType = e.instrumentType;
+  }
+
+  // ── 2. The book's rows for those days, once ─────────────────────────────
+  const dates = [...new Set([...groups.values()].map((g) => g.date))];
+  const candidates: EnrichCandidate[] = dates.length === 0 ? [] : tx
+    .select({
+      id: tradesTable.id,
+      symbol: tradesTable.symbol,
+      tradingsymbol: tradesTable.tradingsymbol,
+      isin: tradesTable.isin,
+      buyDate: tradesTable.buyDate,
+      sellDate: tradesTable.sellDate,
+      buyQty: tradesTable.buyQty,
+      sellQty: tradesTable.sellQty,
+      entryTime: tradesTable.entryTime,
+      exitTime: tradesTable.exitTime,
+      instrumentType: tradesTable.instrumentType,
+    })
+    .from(tradesTable)
+    .where(and(
+      eq(tradesTable.accountId, accountId),
+      eq(tradesTable.broker, broker),
+      or(inArray(tradesTable.buyDate, dates), inArray(tradesTable.sellDate, dates)),
+    ))
+    .orderBy(tradesTable.id)
+    .all() as EnrichCandidate[];
+
+  // One (trade, side) is claimed at most once per import: the buy leg and the
+  // sell leg of the same position are two different columns, but two different
+  // contract-days must never both write the same one.
+  const claimed = new Set<string>();
+  let applied = 0, alreadyHad = 0, unmatched = 0, prefixSplits = 0;
+
+  const write = (c: EnrichCandidate, g: EnrichGroup, first: string | null, last: string | null): boolean => {
+    const patch: Record<string, unknown> = {};
+    const isBuy = g.side === "buy";
+    if (isBuy && first && c.entryTime == null) patch.entryTime = first;
+    if (!isBuy && last && c.exitTime == null) patch.exitTime = last;
+    if (
+      (g.instrumentType === "option" || g.instrumentType === "future")
+      && c.instrumentType === "equity"
+    ) {
+      patch.instrumentType = g.instrumentType;
+      c.instrumentType = g.instrumentType; // the row is reused across groups
+    }
+    if (Object.keys(patch).length === 0) return false;
+    if (patch.entryTime) c.entryTime = patch.entryTime as string;
+    if (patch.exitTime) c.exitTime = patch.exitTime as string;
+    tx.update(tradesTable).set(patch).where(eq(tradesTable.id, c.id)).run();
+    return true;
+  };
+
+  // ── 3. Match, in a deterministic order ──────────────────────────────────
+  for (const g of [...groups.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) {
+    const isBuy = g.side === "buy";
+    const qtyOf = (c: EnrichCandidate) => (isBuy ? c.buyQty : c.sellQty);
+    const onDay = candidates.filter((c) => (isBuy ? c.buyDate : c.sellDate) === g.date && qtyOf(c) > 0);
+    if (onDay.length === 0) { unmatched++; miss("no trade of this broker in this account on that date"); continue; }
+
+    const byName = onDay.filter((c) => identityMatches(c, g));
+    if (byName.length === 0) { unmatched++; miss("no trade on that date carries this security's name or ISIN"); continue; }
+
+    const free = byName.filter((c) => !claimed.has(`${c.id}|${g.side}`));
+    if (free.length === 0) { unmatched++; miss("every matching trade was already claimed by an earlier line of this note"); continue; }
+
+    const times = g.fills.map((f) => f.time).filter((t): t is string => !!t).sort();
+    const first = times[0] ?? null;
+    const last = times[times.length - 1] ?? null;
+
+    const exact = free.find((c) => qtyOf(c) === g.qty);
+    if (exact) {
+      claimed.add(`${exact.id}|${g.side}`);
+      if (write(exact, g, first, last)) applied++; else alreadyHad++;
       continue;
     }
-    const patch: Record<string, unknown> = {};
-    if (e.time && isBuy && candidate.entryTime == null) patch.entryTime = e.time;
-    if (e.time && !isBuy && candidate.exitTime == null) patch.exitTime = e.time;
-    if (
-      (e.instrumentType === "option" || e.instrumentType === "future")
-      && candidate.instrumentType === "equity"
-    ) patch.instrumentType = e.instrumentType;
-    if (Object.keys(patch).length) tx.update(tradesTable).set(patch).where(eq(tradesTable.id, candidate.id)).run();
-    applied++;
+
+    // A day's fills covered more than one position: consume them as a
+    // cumulative prefix in time order. The first N fills that sum to a
+    // position's quantity ARE that position — the note states no position id,
+    // so this is an inference, and it says so.
+    const sorted = [...g.fills].sort((a, b) => String(a.time ?? "").localeCompare(String(b.time ?? "")));
+    let cum = 0, from: string | null = null, to: string | null = null, hits = 0;
+    for (const f of sorted) {
+      cum += f.qty;
+      if (!from) from = f.time ?? null;
+      if (f.time) to = f.time;
+      const hit = free.find((c) => !claimed.has(`${c.id}|${g.side}`) && qtyOf(c) === cum);
+      if (!hit) continue;
+      claimed.add(`${hit.id}|${g.side}`);
+      if (write(hit, g, from, to)) applied++; else alreadyHad++;
+      hits++;
+      cum = 0; from = null; to = null;
+    }
+    if (hits > 0) {
+      prefixSplits++;
+      if (cum > 0) miss("part of a day's fills for one contract summed to no position");
+    } else {
+      unmatched++;
+      miss(`the day's fills sum to a quantity no trade holds`);
+    }
   }
-  return { applied, unmatched };
+
+  if (prefixSplits > 0) {
+    notes.push(
+      `${prefixSplits} contract-day${prefixSplits === 1 ? "" : "s"} held more fills than one position, so the fills were split by CUMULATIVE PREFIX in time order — the first fills that sum to a position's quantity were treated as that position's. The note states no position id, so that is an inference, not a fact it printed.`,
+    );
+  }
+
+  return {
+    applied,
+    alreadyHad,
+    unmatched,
+    groups: groups.size,
+    reasons: [...reasons].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
+    notes,
+  };
 }
 
 export function commitParsedFile(
@@ -909,12 +1125,19 @@ export function commitParsedFile(
     let enrichApplied = 0;
     const enrichTotal = parsed.enrich?.length ?? 0;
     if (enrichTotal > 0) {
-      const outcome = applyEnrichments(tx as unknown as typeof db, parsed.enrich!, accountId);
+      const outcome = applyEnrichments(tx as unknown as typeof db, parsed.enrich!, accountId, parsed.broker);
       enrichApplied = outcome.applied;
-      commitWarnings.push(`Fill times applied to ${enrichApplied} of ${enrichTotal} contract-note lines`);
+      // Three outcomes, named separately. "Applied" used to count a row whose
+      // patch was EMPTY — a trade that already had both times was reported as
+      // enriched, which is the one thing the number was for.
+      commitWarnings.push(
+        `${enrichTotal} contract-note fill${enrichTotal === 1 ? "" : "s"} aggregated into ${outcome.groups} contract-day${outcome.groups === 1 ? "" : "s"}: applied ${outcome.applied}, already had times ${outcome.alreadyHad}, unmatched ${outcome.unmatched}.`,
+      );
+      for (const n of outcome.notes) commitWarnings.push(n);
       if (outcome.unmatched > 0) {
+        const why = outcome.reasons.slice(0, 3).map((r) => `${r.count}× ${r.reason}`).join("; ");
         commitWarnings.push(
-          `${outcome.unmatched} contract-note line${outcome.unmatched === 1 ? "" : "s"} matched no trade in this account and were NOT imported — a contract note enriches trades the book already holds, it never creates one.`,
+          `${outcome.unmatched} contract-day${outcome.unmatched === 1 ? "" : "s"} matched no trade in this account and ${outcome.unmatched === 1 ? "was" : "were"} NOT imported — a contract note enriches trades the book already holds, it never creates one. Why: ${why}.`,
         );
       }
     }

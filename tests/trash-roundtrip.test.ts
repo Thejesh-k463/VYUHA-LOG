@@ -60,22 +60,25 @@ describe("a delete leaves a snapshot behind", () => {
     expect(res.message).toMatch(/Deleted items/i);
   });
 
-  it("v3 format: an ordinary delete carries no broker-remove labels, and older envelopes still validate", async () => {
+  it("v4 format: an ordinary delete carries no broker-remove labels, and older envelopes still validate", async () => {
     const fmt = await import("@/lib/trash-format");
-    expect(fmt.TRASH_VERSION).toBe(3);
+    expect(fmt.TRASH_VERSION).toBe(4);
     const id = seedTrade({ symbol: "PLAIN", tradingsymbol: "PLAIN" });
     const res = del.deleteTradesByIds([id], "plain delete");
     const env = JSON.parse(fs.readFileSync(path.join(trashDir, res.snapshotId!, "snapshot.json"), "utf8"));
-    expect(env.v).toBe(3);
+    expect(env.v).toBe(4);
     expect("kind" in env).toBe(false);
     expect("broker" in env).toBe(false);
+    // An ordinary trade delete carries no reference rows, so the field is
+    // absent exactly as it was before the bump — the v4 field is additive.
+    expect("referenceRows" in env).toBe(false);
     const summary = trash.listTrashSnapshots().find((s) => s.id === res.snapshotId)!;
     expect("kind" in summary).toBe(false);
-    // Additive bump: a v2 (and v1) envelope is still readable.
-    for (const v of [1, 2]) {
+    // Additive bump: a v3 (and v2, v1) envelope is still readable.
+    for (const v of [1, 2, 3]) {
       expect(fmt.validateTrashEnvelope({ ...env, v }).ok).toBe(true);
     }
-    expect(fmt.validateTrashEnvelope({ ...env, v: 4 }).ok).toBe(false);
+    expect(fmt.validateTrashEnvelope({ ...env, v: 5 }).ok).toBe(false);
   });
 
   it("lists the snapshot with an honest summary", () => {
@@ -237,5 +240,43 @@ describe("purge", () => {
 
   it("says so when there is nothing to purge", () => {
     expect(trash.purgeTrashSnapshot("2026-01-01T00-00-00-000Z-cafe").ok).toBe(false);
+  });
+});
+
+describe("broker-remove takes the broker's stated figures with it (v4)", () => {
+  it("snapshots them, deletes them, and brings them back on restore", () => {
+    // The v3.8 remove took every Dhan trade and left Dhan's stated totals
+    // behind, so `reconcile()` (lib/queries/reference.ts) went on comparing
+    // the broker's own figures against a book with none of those rows in it.
+    t.db.delete(t.schema.brokerReference).run();
+    const id = seedTrade({ broker: "dhan", symbol: "REFB", tradingsymbol: "REFB" });
+    const batch = t.db.insert(t.schema.importBatches)
+      .values({ accountId: 1, broker: "dhan", fileName: "dhan-realised.csv", rowCount: 1, status: "completed" })
+      .returning({ id: t.schema.importBatches.id }).get()!.id;
+    const mine = t.db.insert(t.schema.brokerReference).values({
+      accountId: 1, broker: "dhan", sourceId: "dhan-realised-pnl", scope: "fy", key: "2026-27",
+      figuresJson: JSON.stringify({ netPnl: 99 }), importBatchId: batch,
+    }).returning({ id: t.schema.brokerReference.id }).get()!.id;
+    // Another broker's figure in the same account must survive untouched.
+    t.db.insert(t.schema.brokerReference).values({
+      accountId: 1, broker: "groww", sourceId: "groww-realised-pnl", scope: "fy", key: "2026-27", figuresJson: "{}",
+    }).run();
+
+    const res = trash.removeBrokerRows({ accountId: 1, broker: "dhan", actor: "test" });
+    expect(res.removed.referenceRows).toBe(1);
+    expect(res.message).toMatch(/broker-stated figure/);
+    expect(t.db.select().from(t.schema.brokerReference).all().map((r) => r.broker)).toEqual(["groww"]);
+
+    const env = JSON.parse(fs.readFileSync(path.join(trashDir, res.snapshotId, "snapshot.json"), "utf8"));
+    expect(env.referenceRows).toHaveLength(1);
+    expect(env.referenceRows[0]).toMatchObject({ id: mine, broker: "dhan", importBatchId: batch });
+
+    const back = trash.restoreTrashSnapshot(res.snapshotId, "test");
+    expect(back.ok).toBe(true);
+    const rows = t.db.select().from(t.schema.brokerReference).all();
+    expect(rows.map((r) => r.broker).sort()).toEqual(["dhan", "groww"]);
+    // ORIGINAL id and batch link — `holdsBookTrades` reads `import_batch_id`.
+    expect(rows.find((r) => r.broker === "dhan")).toMatchObject({ id: mine, importBatchId: batch });
+    expect(t.db.select().from(t.schema.trades).all().filter((r) => r.id === id)).toHaveLength(1);
   });
 });

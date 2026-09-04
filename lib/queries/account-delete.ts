@@ -501,6 +501,26 @@ export function deleteAccount(opts: {
     ),
   };
 
+  // ── Broker-stated figures (v3.9 `broker_reference`) ──────────────────────
+  // purge: every row of the account is destroyed, so every row is snapshotted.
+  // merge: the rows MOVE to the target, except the ones the target already
+  // states (same broker/source/scope/key/as_of) — the unique index refuses
+  // those, so the merge DELETES them and only those are snapshotted. The key
+  // is built exactly as `broker_reference_uq` builds it, `as_of` coalesced to
+  // '' (SQLite treats NULLs in a unique index as distinct).
+  const refKey = (r: { broker: string; sourceId: string; scope: string; key: string; asOf: string | null }) =>
+    [r.broker, r.sourceId, r.scope, r.key, r.asOf ?? ""].join("\u0000");
+  const sourceRefRows = db.select().from(brokerReference).where(eq(brokerReference.accountId, accountId)).all();
+  const destroyedRefRows =
+    mode === "purge"
+      ? sourceRefRows
+      : (() => {
+          const held = new Set(
+            db.select().from(brokerReference).where(eq(brokerReference.accountId, r.target!.id)).all().map(refKey),
+          );
+          return sourceRefRows.filter((row) => held.has(refKey(row)));
+        })();
+
   // merge: the marker share that follows the trades whose realised P&L
   // actually reaches the target — see the module header for the arithmetic.
   let carried = 0;
@@ -532,6 +552,7 @@ export function deleteAccount(opts: {
       ledgerRefs: ledgerRefRows,
       account: account as unknown as Record<string, unknown> & { id: number; name: string },
       accountRows: destroyedRows,
+      referenceRows: destroyedRefRows.length ? (destroyedRefRows as unknown as Record<string, unknown>[]) : undefined,
       merge: mode === "merge" ? { targetId: r.target!.id, targetName: r.target!.name, carried } : undefined,
       reason,
       accountId,

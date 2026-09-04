@@ -159,7 +159,34 @@ export const BROKER_TRUTH_HREF = "/reports/reconcile";
  */
 export function referenceStoredNote(count: number | undefined | null): string | null {
   if (!count || count <= 0) return null;
-  return `${n(count)} broker ${plural(count, "figure", "figures")} stored — see Broker truth`;
+  return `${n(count)} broker ${plural(count, "figure", "figures")} stored — see Broker Truth`;
+}
+
+/**
+ * The pre-commit button on a file that BOOKS NO TRADES.
+ *
+ * It used to name one of the two things a file can store and never both:
+ * `reference > 0 ? "N broker figures" : "M fill times"`. A Dhan Realised P&L
+ * with a contract note's fill times in the same workbook therefore offered
+ * "Store 47 broker figures", stored the fill times as well, and the user had
+ * no way to know before pressing it — the same understatement
+ * `importShapeSentence` exists to prevent, on the other side of the commit.
+ *
+ * Null when there is nothing to store, so the caller falls back to the trade
+ * count rather than rendering an empty button.
+ */
+export function storeButtonLabel(
+  reference: number | undefined | null,
+  enrich: number | undefined | null,
+): string | null {
+  const r = reference ?? 0;
+  const e = enrich ?? 0;
+  const figures = `${n(r)} broker ${plural(r, "figure", "figures")}`;
+  const times = `${n(e)} fill ${plural(e, "time", "times")}`;
+  if (r > 0 && e > 0) return `Store ${figures} + ${times}`;
+  if (r > 0) return `Store ${figures}`;
+  if (e > 0) return `Store ${times}`;
+  return null;
 }
 
 /**

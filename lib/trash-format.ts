@@ -41,7 +41,17 @@
 // under the original ids; `kind`/`broker` only label the list. `ipoRefs` is
 // the IPO counterpart of `ledgerRefs`: `ipos.tradeId` is unlinked on delete
 // and re-pointed on restore where it is still null.
-export const TRASH_VERSION = 3;
+//
+// v4 (2026-09-04, broker-stated reference figures): adds the OPTIONAL
+// `referenceRows` field below. Additive in the same way — every reader treats
+// it as optional, so v1/v2/v3 snapshots restore exactly as before and lose
+// nothing they did not already lose. It exists because `broker_reference`
+// (v3.9 "Trust the numbers") is an account-scoped table that account purge
+// DESTROYS and that a broker-remove orphans: without it, restoring a purged
+// account brought the book back without the figures the broker stated about
+// it, and removing a broker's rows left that broker's stated totals to be
+// reconciled against an empty book.
+export const TRASH_VERSION = 4;
 
 /** What produced the snapshot. Absent (v1/v2) means an ordinary trade delete
  *  or, when `account` is present, an account deletion. */
@@ -81,6 +91,25 @@ export interface TrashEnvelope {
    * already lose.
    */
   ipoRefs?: { ipoId: number; tradeId: number }[];
+  /**
+   * v4: `broker_reference` rows DESTROYED by the delete, exactly as
+   * `db.select()` returned them — the figures the BROKER stated about the rows
+   * that went. Unlike `accountRows`, this list is restored on EVERY kind of
+   * snapshot, because every path that destroys reference rows carries it:
+   *
+   *   account purge   — every reference row of the account
+   *   account merge   — only the rows the merge DISCARDS (the target already
+   *                     states the same figure; the rest MOVE with the book)
+   *   broker-remove   — every reference row of that broker in that account
+   *   import delete   — the rows that batch stored (cascade only: the trades
+   *                     go, so the figures stated about them go with them)
+   *
+   * They come back under their ORIGINAL ids, so `import_batch_id` keeps
+   * pointing at the batch it always did (`holdsBookTrades` in
+   * lib/import/commit.ts reads exactly that column). A row whose id or unique
+   * key is taken is COUNTED as skipped, never duplicated under a fresh id.
+   */
+  referenceRows?: Record<string, unknown>[];
   /**
    * v3: discriminator for the Deleted-items list. `"broker-remove"` marks a
    * snapshot written by `removeBrokerRows` (every trade of one broker in one

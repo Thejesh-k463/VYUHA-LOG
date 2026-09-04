@@ -109,3 +109,57 @@ describe("an unrecognised workbook is refused, not read as something it is not",
     expect((await res.json()).message).toMatch(/No cash-file parser recognised holdings\.xlsx/);
   });
 });
+
+/**
+ * The DP charges report reaches the door it was always told to use.
+ *
+ * `dhan-dp-charges.ts` has ended its own warning with "upload it on the Cash
+ * & Ledger screen, where each line lands as a charge entry" since it was
+ * written — and this route's source list named Upstox and Angel One only, so
+ * the screen answered 422. Advertising a door that is shut is worse than
+ * having no door at all.
+ */
+describe("the Dhan DP charges report at the Cash & Ledger door", () => {
+  const dp = () => fixture("dhan-dp-charges-2026-04-01_2026-09-03.xls");
+
+  it("is ACCEPTED, and every line previews as a charge", async () => {
+    const res = await route.POST(post("dp-charges.xls", dp()));
+    expect(res.status, "it used to be 422 — the parser told the user to come here").toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.total).toBe(173);
+    const kinds = Object.fromEntries((json.byKind as { kind: string; amount: number }[]).map((k) => [k.kind, k.amount]));
+    expect(Object.keys(kinds)).toEqual(["charge"]);
+    // Money OUT: the file's own Total, negative.
+    expect(kinds.charge).toBe(-2492.5);
+  });
+
+  it("commits the entries AND the broker's own per-scrip figures, under the write account", async () => {
+    const before = t.db.select().from(t.schema.ledgerEntries).all().length;
+    const res = await route.POST(post("dp-charges.xls", dp(), "commit"));
+    const json = await res.json();
+    expect(json.added).toBe(173);
+    expect(json.source).toBe("dhan-dp-charges");
+    expect(json.referenceStored).toBeGreaterThan(0);
+
+    const rows = t.db.select().from(t.schema.ledgerEntries).all();
+    expect(rows.length).toBe(before + 173);
+    expect(rows.filter((r) => r.source === "dhan-dp-charges").every((r) => r.accountId === 1)).toBe(true);
+
+    const refs = t.sqlite.prepare(
+      "SELECT account_id AS accountId, broker, source_id AS sourceId, scope FROM broker_reference",
+    ).all() as Record<string, unknown>[];
+    expect(refs.length).toBe(json.referenceStored);
+    expect(new Set(refs.map((r) => r.sourceId))).toEqual(new Set(["dhan-dp-charges"]));
+    expect(refs.every((r) => r.accountId === 1 && r.broker === "dhan" && r.scope === "charge")).toBe(true);
+  });
+
+  it("names the ACTUAL source in the audit line, not 'Dhan ledger' for everything", async () => {
+    const audit = t.sqlite.prepare("SELECT entity, summary FROM audit_log ORDER BY id").all() as { entity: string; summary: string }[];
+    expect(audit.some((a) => /^dhan-dp-charges imported: 173 entries/.test(a.summary))).toBe(true);
+    expect(audit.some((a) => /^upstox-ledger imported: /.test(a.summary))).toBe(true);
+    // ONE reference audit entry per import, not one per figure.
+    expect(audit.filter((a) => a.entity === "broker_reference")).toHaveLength(1);
+    expect(audit.some((a) => a.entity === "broker_reference" && /broker-stated figures from dp-charges\.xls/.test(a.summary))).toBe(true);
+  });
+});

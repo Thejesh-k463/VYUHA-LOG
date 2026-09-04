@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  getTradesPage, getDeletableTrades, getFilteredTradeIds,
+  getTradesPage, getDeletableTrades, getFilteredTradeIds, decodeCursor,
   TRADES_PAGE_SIZE, type TradesPageFilters,
 } from "@/lib/queries/trades-page";
 import { SEGMENTS, BROKERS, BUCKETS } from "@/lib/domain/constants";
@@ -68,6 +68,13 @@ export async function GET(req: Request) {
     ? rawLimit
     : TRADES_PAGE_SIZE;
 
-  const page = getTradesPage(filters, url.searchParams.get("cursor"), limit);
+  // A cursor that does not decode is an ERROR, not page one: serving the first
+  // page for a malformed token silently restarts the user's scroll.
+  const cursor = url.searchParams.get("cursor");
+  if (cursor && !decodeCursor(cursor)) {
+    return NextResponse.json({ ok: false, error: "Malformed cursor." }, { status: 400 });
+  }
+
+  const page = getTradesPage(filters, cursor, limit);
   return NextResponse.json({ ok: true, ...page });
 }

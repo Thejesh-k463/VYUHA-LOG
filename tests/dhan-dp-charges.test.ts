@@ -188,3 +188,92 @@ describe("the owner's real exports", () => {
     }
   });
 });
+
+/**
+ * The Total row: how it is FOUND, and the two shapes of it that state
+ * nothing usable. `r.some(/^total$/)` matched the word anywhere on the row,
+ * so a security or a transaction type called "Total" would have been read as
+ * the footer and its charge dropped from the sum in silence.
+ */
+describe("finding the Total row", () => {
+  const sheetOf = (rows: unknown[][]): Buffer => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "DP Charges");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  };
+  const HEAD = ["Sr.", "Date", "ISIN", "Security Name", "Quantity", "Buy/Sell", "Type of Transaction", "Charges"];
+  const TITLE = ["DP Charges | From 01-April-2026 to 03-September-2026"];
+
+  it("a SECURITY called Total is a data row, not the footer", () => {
+    const parsed = parseDhanDpChargesWorkbook({
+      filename: "dhan-dp.xlsx",
+      buffer: sheetOf([
+        TITLE, HEAD,
+        ["1", "23-Jul-2026", "INE062A01020", "Total", "1", "Sell", "Total", "12.5"],
+        ["", "", "", "", "", "", "Total", "12.5"],
+      ]),
+    });
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.total).toBe(12.5);
+    expect(parsed.statedTotal).toBe(12.5);
+    expect(parsed.warnings.join(" ")).not.toMatch(/difference of/);
+  });
+
+  it("two Total rows: the LAST is used, and the file is told it had two", () => {
+    const parsed = parseDhanDpChargesWorkbook({
+      filename: "dhan-dp.xlsx",
+      buffer: sheetOf([
+        TITLE, HEAD,
+        ["1", "23-Jul-2026", "INE062A01020", "A LIMITED", "1", "Sell", "Other Fees", "12.5"],
+        ["", "", "", "", "", "", "Total", "5.5"],
+        ["2", "24-Jul-2026", "INE062A01020", "A LIMITED", "1", "Sell", "Other Fees", "7"],
+        ["", "", "", "", "", "", "Total", "19.5"],
+      ]),
+    });
+    expect(parsed.statedTotal).toBe(19.5);
+    expect(parsed.warnings.join(" ")).toMatch(/more than one Total row; the LAST one/);
+    expect(parsed.warnings.join(" ")).not.toMatch(/difference of/);
+  });
+
+  it("a Total row with no figure says conservation is UNCHECKED rather than nothing", () => {
+    const parsed = parseDhanDpChargesWorkbook({
+      filename: "dhan-dp.xlsx",
+      buffer: sheetOf([
+        TITLE, HEAD,
+        ["1", "23-Jul-2026", "INE062A01020", "A LIMITED", "1", "Sell", "Other Fees", "12.5"],
+        ["", "", "", "", "", "", "Total", ""],
+      ]),
+    });
+    expect(parsed.statedTotal).toBeNull();
+    expect(parsed.warnings.join(" ")).toMatch(/Total row with no figure in the Charges column/);
+    expect(parsed.warnings.join(" ")).toMatch(/states no total, so conservation is unchecked/);
+  });
+});
+
+/**
+ * The format-only fingerprint is hijackable by construction: a rival broker
+ * shipping the same eight headers would be imported as Dhan and priced at
+ * Dhan's rates. The filename cannot vouch for a broker here — but it can veto
+ * one, and so can a cell.
+ */
+describe("the rival-broker veto", () => {
+  const buffer = fs.readFileSync(FIXTURE);
+  it("refuses a file whose NAME says another broker", () => {
+    for (const name of ["zerodha-dp-charges.xls", "GROWW_dp_charges.xls", "upstox-dp.xls", "paytm-dp-charges.xls", "AngelOne-dp.xls"]) {
+      expect(detectDhanDpCharges({ filename: name, buffer }), name).toBe(0);
+    }
+    // …and still claims one that names nobody, or names Dhan.
+    expect(detectDhanDpCharges({ filename: "export.xls", buffer })).toBeCloseTo(0.9, 10);
+  });
+
+  it("refuses a file whose CONTENT names another broker", () => {
+    const wb = XLSX.read(buffer, { type: "buffer" });
+    const ws = wb.Sheets["DP Charges"]!;
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: "" }) as unknown[][];
+    rows[0] = ["DP Charges | From 01-April-2026 to 03-September-2026", "Zerodha Broking Ltd"];
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(rows.slice(0, 40)), "DP Charges");
+    const bytes = XLSX.write(wb2, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    expect(detectDhanDpCharges({ filename: "export.xlsx", buffer: bytes })).toBe(0);
+  });
+});

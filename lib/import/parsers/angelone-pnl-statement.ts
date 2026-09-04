@@ -62,6 +62,13 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const EQUITY_SHEET = /^equity p&l$/i;
 const FNO_SHEET = /^f&o p&l$/i;
 
+/**
+ * Every broker Vyuha has a named parser for, minus this one. A format-only
+ * fingerprint cannot tell a rival's identically-shaped file apart, so the one
+ * thing it CAN read — whose name is on the document — becomes a veto.
+ */
+const RIVALS = /(?<![a-z0-9])(zerodha|groww|upstox|paytm|dhan)(?![a-z0-9])/i;
+
 /** The columns that must be present for a table to be the verified one. */
 const EQUITY_MUST = ["scripsymbol", "companyname", "quantity", "buyvalue", "sellvalue", "grosspnl", "stt", "ipftcharges"];
 const FNO_MUST = ["scripsymbol", "quantity", "buyprice", "sellprice", "grosspnl", "stt", "ipftcharges"];
@@ -92,6 +99,14 @@ export function detectAngelOnePnlStatement(ctx: ParseContext): number {
   if (!equity || !fno) return 0;                       // both sheet names, or no claim
   if (headerRowIn(equity.rows, EQUITY_MUST) < 0) return 0;
   if (headerRowIn(fno.rows, FNO_MUST) < 0) return 0;
+  // The veto (2026-09-04). This claim rests on FORMAT alone, so a rival's
+  // identically-shaped P&L statement would be imported as Angel One and
+  // priced at Angel One's rates. The filename cannot vouch for a broker here,
+  // but it can rule one out: a file that names a DIFFERENT known broker — in
+  // its name, in a sheet name or in any cell — is not claimed at all, and
+  // falls to the generic column mapper, which asks.
+  if (RIVALS.test(ctx.filename)) return 0;
+  if (sheets.some((s) => RIVALS.test(s.name) || s.rows.some((r) => r.some((c) => RIVALS.test(c))))) return 0;
   const named = /angel/i.test(ctx.filename) || /profitloss[_ -]?statement/i.test(ctx.filename);
   return Math.min(1, 0.9 + (named ? 0.1 : 0));
 }

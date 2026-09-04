@@ -257,9 +257,17 @@ describe("the projections that replaced whole-row reads", () => {
     // This pin is why the tiebreaker cannot be dropped from one projection and
     // left on the others: that is exactly how /trades and /reports/tax would
     // start disagreeing about row order again.
-    const onTrades = (src.match(/\.orderBy\(desc\(trades\./g) ?? []).length;
-    const canonical = (src.match(/\.orderBy\(desc\(trades\.sellDate\),\s*desc\(trades\.createdAt\),\s*desc\(trades\.id\)\)/g) ?? []).length;
-    expect(onTrades).toBeGreaterThanOrEqual(4);
+    //
+    // v3.9, second pass: the pin covered lib/queries/trades.ts ONLY, so the
+    // three `.orderBy(...)` calls in lib/queries/trades-page.ts — the pager,
+    // the delete-scope id list and the whole-book delete candidates — could
+    // lose the tiebreak with nothing going red. A keyset page needs the total
+    // order MORE than a projection does: without it a page boundary inside a
+    // tie block drops rows or repeats them. Both files are checked here.
+    const orderSrc = src + "\n" + read("lib/queries/trades-page.ts");
+    const onTrades = (orderSrc.match(/\.orderBy\(desc\(trades\./g) ?? []).length;
+    const canonical = (orderSrc.match(/\.orderBy\(desc\(trades\.sellDate\),\s*desc\(trades\.createdAt\),\s*desc\(trades\.id\)\)/g) ?? []).length;
+    expect(onTrades).toBeGreaterThanOrEqual(7);
     expect(canonical, `${onTrades - canonical} trades query orders differently`).toBe(onTrades);
   });
 });

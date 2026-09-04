@@ -2923,3 +2923,49 @@ budget): no breach.** Sweep 1: overall median 978 ms, slowest 1,472, `/trades` 1
 Sweep 2: overall 929, slowest 1,394, `/trades` 954 (p95 1,009). The W2 sweep's +12–27% moves on
 `/`, `/settings`, `/review` were machine load, as suspected: on an idle machine they sit inside the
 budget. `/trades` is no longer the one route over budget (1,968 → ~1,000).
+
+## 2026-09-04 — v3.9 first audit (6 finders over 30332a3..c04e1ad): what they found
+
+Two stop-ships, both on the release's own theme:
+- **Covered-short label changed STT on authentic Dhan input.** `shortCoverQtys` started `held = 0`
+  and ignored the engine's own pre-file seed lot, so `sell → buy` on one day with an older holding
+  was labelled an intraday short and `unknown → intraday` reached `productHint` → sell-side STT
+  0.025% instead of 0.1%. Conservation cannot see it (qty/value delta 0). Also mislabels on a
+  newest-first export (file order desync). Fix: seed `held` with the pass's opening qty, compute in
+  chronological order with file order as the within-day tiebreak, never note/override when
+  `buyDate !== sellDate`.
+- **Contract-note enrichment matched 0 of 1,161 real fills** against the owner's own GTRs: the note
+  emits the underlying (`NIFTY`) while the GTR books `OPT NIFTY 07 Apr 2026 23000 CE`; equity notes
+  print the ticker while the GTR books the company name; and a note is one line per FILL while the
+  book is one paired position. The unit tests passed because their fixtures hand-aligned all three.
+  Fix: build the GTR-style name, join through ISIN / the symbol snapshot, aggregate fills per
+  (symbol, date, side) and match on the summed qty.
+Must-fixes: `applied++` counted empty patches; DP charges advertised on five surfaces at a door that
+refused it (422); `broker_reference` orphaned by broker-remove and batch-delete and not in the trash
+envelope on purge; the id-tiebreak "red-first" test stayed green with every `desc(id)` reverted and
+`render-windowing` never covered `trades-page.ts`; `loadMore` had no cancellation guard (a refresh
+mid-load appends another account's rows); `e2e/trade-views` asserted the loaded-page count against
+the whole-set dropdown and passed only because the e2e DB has 303 rows; page-local column sort
+with no label; panel close dropped focus to `<body>` (no PopoverTrigger → null triggerRef); help
+copy named four feeds where the code has five; format-only fingerprints hijackable by a rival's
+file (filename cannot veto); Angel ledger dropped undated rows silently; Angel scrip lines never
+joined the book (ISIN-keyed index vs symbol-keyed rows); `checkedNote` asserted facts FY lines never
+computed.
+Verified clean by the finders: zero cross-claims across 46 fixtures + 29 owner files under neutral
+names; zero PII in fixtures and outputs; upgrade 0060→0063 populates FTS for pre-existing rows and
+removes the temp B-tree from the plan; keyset paging correct across the NULL sell_date boundary; all
+filter values bound, LIKE escaped; SQL/JS parity on 23 filter shapes × 4 account scopes on the 25k
+book; PRIVACY "four kinds" holds (one same-origin fetch added); macOS absent from selling surfaces;
+version strings still 3.8.0; perf `/trades` 273 ms median of 5 on the prod build.
+Lesson recorded: an enrichment/join feature is proven on the OWNER'S paired files, never on a
+fixture whose keys were written to match; and a "red-first" claim must be re-proven by a finder.
+
+**Fix-wave perf sweep was NOT an idle-machine measurement (2026-09-04, after the first audit's fix
+wave).** Three sweeps read every route ~37% slower than the W3 pair (overall median 929 → 1,278 ms;
+`/` 1,751, `/risk` 1,675, `/review` 1,584, `/reports/harvest` 1,664 over the 1,500 budget; `/trades`
+1,307 vs 954). A uniform shift across all 44 routes is the machine, not a route: `Get-CimInstance`
+showed the TRADE-SENTINAL session's Playwright driver and a 318 MB Codex node process running
+concurrently. The fix wave changed no server route (`git diff c04e1ad -- app lib/queries` = the
+cursor 400 and the reference purge/trash paths only). Ruling: the W3 idle pair stands as the v3.9
+perf record; the sweep is re-run on an idle machine at W5 BEFORE the tag, and a breach there is a
+stop-ship. Other-session processes are never killed from this session.

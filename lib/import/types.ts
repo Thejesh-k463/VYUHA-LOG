@@ -79,7 +79,20 @@ export interface ReferenceRow {
 
 /** A fact about an existing trade from a secondary source (contract note). */
 export interface EnrichmentRow {
+  /**
+   * The name the BOOK is expected to hold — a GTR-style contract name for a
+   * derivative (`OPT NIFTY 07 Apr 2026 23000 CE`), the ticker for equity.
+   */
   symbol: string;
+  /**
+   * The security's ISIN when the secondary source states one. The ONLY
+   * identity a contract note and a transaction report agree on for equity:
+   * the note prints the exchange ticker (BBOX), the report prints the company
+   * (Black Box). Optional — a derivative has none.
+   */
+  isin?: string | null;
+  /** The company name the source prints, when it prints one (equity). */
+  name?: string | null;
   /** ISO yyyy-mm-dd */
   date: string;
   side: "buy" | "sell";
@@ -150,8 +163,19 @@ export function workbookOf(ctx: ParseContext, opts: { bookSheets?: boolean } = {
  * on Dhan's DP-charges file, 1,400 real cells). `sheet_to_json({ defval })`
  * then materialises 65,536 rows per detector — 3.7 s of ranking on a 91 KB
  * file, a hook timeout under load. Trim each sheet's `!ref` to the bounding
- * box of its populated cells once, on the memoised workbook. Merges are left
- * alone; a merge past the last cell is a merge of empties.
+ * box of its populated cells once, on the memoised workbook.
+ *
+ * Two rules, both of which a sheet in the wild breaks:
+ *
+ *   • A sheet with NO populated cells at all still has to be trimmed. It used
+ *     to `continue` on `maxR < 0` and keep `A1:Q65536` — the exact 65,536-row
+ *     materialisation this function exists to stop. Its merges bound it if it
+ *     has any (a merge is real layout, even over empty cells); otherwise it
+ *     collapses to its own first cell.
+ *   • The range only ever SHRINKS. `Math.max` against the populated bounds
+ *     could push the end column past the declared range on a sheet whose
+ *     cells sit outside its own `!ref` — inventing columns no reader asked
+ *     for. Every bound is clamped to what the file declared.
  */
 export function trimSheetRanges(wb: XLSX.WorkBook): XLSX.WorkBook {
   for (const name of wb.SheetNames) {
@@ -165,10 +189,25 @@ export function trimSheetRanges(wb: XLSX.WorkBook): XLSX.WorkBook {
       if (r > maxR) maxR = r;
       if (c > maxC) maxC = c;
     }
-    if (maxR < 0) continue;
     const declared = XLSX.utils.decode_range(ws["!ref"]);
+    if (maxR < 0) {
+      // Nothing populated: fall back to the merge bounds, else to the single
+      // starting cell. Never the declared grid, which is the whole problem.
+      for (const m of (ws["!merges"] ?? []) as XLSX.Range[]) {
+        if (m.e.r > maxR) maxR = m.e.r;
+        if (m.e.c > maxC) maxC = m.e.c;
+      }
+      if (maxR < 0) { maxR = declared.s.r; maxC = declared.s.c; }
+    }
     if (declared.e.r <= maxR && declared.e.c <= maxC) continue;
-    ws["!ref"] = XLSX.utils.encode_range({ s: declared.s, e: { r: Math.max(maxR, declared.s.r), c: Math.max(maxC, declared.s.c) } });
+    ws["!ref"] = XLSX.utils.encode_range({
+      s: declared.s,
+      e: {
+        // Shrink only: clamp to the declared end as well as to the start.
+        r: Math.min(declared.e.r, Math.max(maxR, declared.s.r)),
+        c: Math.min(declared.e.c, Math.max(maxC, declared.s.c)),
+      },
+    });
   }
   return wb;
 }

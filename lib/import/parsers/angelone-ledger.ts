@@ -51,7 +51,7 @@
  */
 import type { ParseContext, ParsedFile, ReferenceRow } from "../types";
 import { classifyNarration, parseLedgerDate, type LedgerKind, type LedgerRow } from "./dhan-ledger";
-import { money, sheetMatrices, type ParsedCashFile } from "./upstox-ledger";
+import { dateFormatEvidence, money, sheetMatrices, type ParsedCashFile } from "./upstox-ledger";
 
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -190,18 +190,47 @@ export function parseAngelOneLedger(ctx: ParseContext): ParsedAngelStatement {
   }
 
   const out: LedgerRow[] = [];
+  const rawDates: string[] = [];
+  // A row that carries money but no readable date used to `continue` in
+  // silence — the file's own Total could then disagree with the rows and
+  // nothing said why. Counted, and named in a warning.
+  let undated = 0;
   for (let i = h + 1; i < rows.length; i++) {
     const c = rows[i]!;
     if (c.every((x) => x === "")) continue;
     if (/^msg$/i.test((c[0] ?? "").trim())) continue;
-    const date = parseLedgerDate((c[cDate] ?? "").trim());
-    if (!date) continue;
+    const rawDate = (c[cDate] ?? "").trim();
+    // Collected BEFORE the parse: a month-first date (`08-28-2026`) fails
+    // `parseLedgerDate` outright, so gathering these only from rows that
+    // parsed would hide exactly the file the evidence check exists for.
+    if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(rawDate)) rawDates.push(rawDate);
+    const date = parseLedgerDate(rawDate);
+    if (!date) {
+      // Only rows that state SOMETHING are a loss; a label or spacer row that
+      // carries no money at all is not a dropped ledger line.
+      if (money(c[cCredit]) !== 0 || money(c[cDebit]) !== 0 || (c[cTxn] ?? "").trim() !== "") undated++;
+      continue;
+    }
     const amount = r2(money(c[cCredit]) - money(c[cDebit]));
     const txn = (c[cTxn] ?? "").trim();
     const narration = [txn, cSeg >= 0 ? c[cSeg] : "", cVou >= 0 && c[cVou] ? `voucher ${c[cVou]}` : ""]
       .map((x) => String(x ?? "").trim()).filter(Boolean).join(" · ");
     const { kind, unclassified } = classifyAngelRow(txn, amount);
     out.push({ date, narration, amount, kind, unclassified, balance: cBal >= 0 && c[cBal] !== "" ? money(c[cBal]) : null });
+  }
+
+  // -- Which way round are dd and mm? ---------------------------------------
+  // The same sweep the Upstox ledger does, and for the same reason: reading a
+  // month-first file day-first transposes every date silently. A refusal is
+  // the whole file, because a ledger read on the wrong days is worse than no
+  // ledger; the undetectable case is a warning, never a silent assumption.
+  const evidence = dateFormatEvidence(rawDates);
+  if (evidence.refusal) return empty([evidence.refusal]);
+  if (evidence.warning) warnings.push(evidence.warning);
+  if (undated > 0) {
+    warnings.push(
+      `${undated} row${undated === 1 ? "" : "s"} in this ledger state${undated === 1 ? "s" : ""} a transaction or an amount but no readable date, so ${undated === 1 ? "it was" : "they were"} NOT imported. The file's own totals will not agree with the rows by that much.`,
+    );
   }
 
   // -- Conservation: the running balance must chain --------------------------

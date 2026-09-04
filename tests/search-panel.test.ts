@@ -12,6 +12,7 @@ import {
   resolvePosition,
   serialisePanelState,
 } from "@/components/system/use-panel-drag";
+import { frameFor, isPanelToggleChord } from "@/components/system/search-panel-keys";
 
 /**
  * The floating search panel (v3.9 Search v2) — the PURE half.
@@ -98,6 +99,43 @@ describe("drag geometry", () => {
   });
 });
 
+describe("the toggle chord", () => {
+  const chord = (o: Partial<Parameters<typeof isPanelToggleChord>[0]>) =>
+    isPanelToggleChord({ ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, key: "k", ...o });
+
+  it("fires on Ctrl+Shift+K and on Cmd+Shift+K, whatever the case of the key", () => {
+    expect(chord({ ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(chord({ metaKey: true, shiftKey: true, key: "K" })).toBe(true);
+  });
+
+  it("does NOT fire on Ctrl+K — that chord is the modal palette's", () => {
+    expect(chord({ ctrlKey: true })).toBe(false);
+  });
+
+  it("does NOT fire when Alt is held: Ctrl+Alt is AltGr, and AltGr+K is a CHARACTER", () => {
+    // A chord that fires while the user is typing a character opens and closes
+    // the panel under their cursor.
+    expect(chord({ ctrlKey: true, shiftKey: true, altKey: true })).toBe(false);
+  });
+
+  it("ignores every other key and the bare modifiers", () => {
+    expect(chord({ ctrlKey: true, shiftKey: true, key: "j" })).toBe(false);
+    expect(chord({ shiftKey: true })).toBe(false);
+  });
+});
+
+describe("a session frame carries the chips its results were FETCHED with", () => {
+  it("takes cats off the hits, not off whatever is on screen now", () => {
+    const hits = { q: "reli", cats: ["trades"] as const, results: [] };
+    expect(frameFor(hits)).toEqual({ q: "reli", cats: ["trades"], results: [] });
+  });
+
+  it("is null when there is nothing to push", () => {
+    expect(frameFor(null)).toBeNull();
+    expect(frameFor(undefined)).toBeNull();
+  });
+});
+
 describe("panel contracts (source)", () => {
   const src = read(PANEL);
 
@@ -124,8 +162,12 @@ describe("panel contracts (source)", () => {
   });
 
   it("has its own toggle chord, and never steals Ctrl+K from the palette", () => {
-    expect(src, "Ctrl+Shift+K toggles the panel").toMatch(/e\.shiftKey[\s\S]{0,120}"k"/);
+    // The chord itself is `isPanelToggleChord` (search-panel-keys.ts), unit
+    // tested above; the panel must use THAT and not spell a second one out.
+    expect(src, "Ctrl+Shift+K toggles the panel").toContain("isPanelToggleChord(e)");
+    expect(src, "no second, un-guarded copy of the chord").not.toMatch(/e\.shiftKey && e\.key/);
     expect(src, "Ctrl+K belongs to the modal palette").not.toMatch(/!e\.shiftKey/);
+    expect(read(DRAG), "and the drag hook owns no chord at all").not.toMatch(/shiftKey && /);
   });
 
   it("says nothing about dev Fast Refresh, and wraps no Badge in a <p>", () => {
@@ -150,6 +192,46 @@ describe("panel contracts (source)", () => {
     expect(src, "and it is not even imported").toContain('import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";');
     expect(src, "the anchor is what positions the panel").toContain("<PopoverAnchor asChild>");
     expect(src, "the launcher toggles the stored envelope directly").toMatch(/aria-label="Search assistant \(Ctrl\+Shift\+K\)"/);
+  });
+
+  it("returns focus to the LAUNCHER on close — with no trigger, Radix drops it on <body>", () => {
+    // `PopoverContent` restores focus to `triggerRef`, and this popover has no
+    // PopoverTrigger by design (see the test above). triggerRef is null, so
+    // closing the panel left focus on <body>: a keyboard user was returned to
+    // the top of the document with no way back to the launcher.
+    expect(src, "close must not leave focus on <body>").toContain("onCloseAutoFocus");
+    expect(src).toMatch(/onCloseAutoFocus=\{\(e\) => \{[\s\S]{0,600}launcherRef\.current\?\.focus\(\)/);
+    expect(src, "the launcher needs a ref to be focusable").toContain("ref={launcherRef}");
+    expect(src, "and it must name the panel it controls").toContain("aria-controls={panelId}");
+    expect(src).toContain("id={panelId}");
+  });
+
+  it("the drag handle is a GROUP, not a toolbar — its arrow keys move the panel", () => {
+    // role="toolbar" promises the APG roving-tabindex behaviour: arrows move
+    // focus between the toolbar's controls. Here they move the window.
+    expect(src, "arrow keys move the panel, not focus").not.toMatch(/role="toolbar"/);
+    expect(src).toContain('role="group"');
+  });
+
+  it("never reaches paper — the panel and its launcher are print:hidden", () => {
+    const printable = src.match(/print:hidden/g) ?? [];
+    expect(printable.length, "launcher AND PopoverContent").toBeGreaterThanOrEqual(2);
+  });
+
+  it("the chord and the frame come from the pure module, not a second copy here", () => {
+    expect(src).toContain("isPanelToggleChord(e)");
+    expect(src, "openHit must push the FETCHED cats").toContain("frameFor(hits)");
+    expect(src, "Hits carries the chips it was fetched with").toMatch(/cats: readonly SourceKey\[\];/);
+  });
+
+  it("the drag effect registers its window listeners ONCE per gesture, not per pointermove", () => {
+    // Depending on `gesture` (whose `to` is rewritten every frame) tore down
+    // and re-registered four window listeners a few hundred times per drag.
+    const drag = read(DRAG);
+    expect(drag, "the live gesture is read through a ref").toContain("gestureRef.current");
+    expect(drag, "the effect keys on whether a drag is running, not on its position")
+      .toMatch(/\}, \[dragging, clamp, onCommit\]\);/);
+    expect(drag).not.toMatch(/\}, \[gesture, clamp, onCommit\]\);/);
   });
 
   it("is mounted ONCE by the root layout, keyed per account (invariant 8)", () => {

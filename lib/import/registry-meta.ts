@@ -34,7 +34,7 @@ export const IMPORT_SOURCES: readonly ImportSourceMeta[] = [
   // copy says so, and points at the screen that reads them.
   { sourceId: "dhan-ledger", label: "Dhan Ledger (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan ledger (→ Cash & Ledger)" },
   { sourceId: "dhan-dividend", label: "Dhan Dividend payout (CSV) — feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan dividend report (→ Cash & Ledger)" },
-  { sourceId: "dhan-dp-charges", label: "Dhan DP Charges (XLS) — depository fees, feeds the Cash & Ledger screen, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan DP charges (→ Cash & Ledger)" },
+  { sourceId: "dhan-dp-charges", label: "Dhan DP Charges (XLS) — depository fees; lands as charge entries on Cash & Ledger and as stated fees on Broker Truth, imports no trades", broker: "dhan", tab: "pnl", hint: "Dhan DP charges (→ Cash & Ledger)" },
   { sourceId: "dhan-holdings", label: "Dhan Demat Holding summary (XLSX) — broker-stated holdings, does not import trades", broker: "dhan", tab: "pnl", hint: "Dhan demat holdings" },
   { sourceId: "dhan-contract-note", label: "Dhan Contract Note (PDF) — adds fill times to trades already imported, never creates them", broker: "dhan", tab: "transactions", hint: "Dhan contract note (fill times)" },
   { sourceId: "groww-xlsx", label: "Groww Stocks P&L (XLSX)", broker: "groww", tab: "pnl", hint: "Groww XLSX" },

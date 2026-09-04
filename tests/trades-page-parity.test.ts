@@ -185,6 +185,42 @@ describe("keyset pages concatenate to the unpaginated order", () => {
     expect(got).toEqual(expected);
   });
 
+  it("REJECTS a cursor whose dates are not dates — an empty sell_date is the only token", () => {
+    // `""` mapping to a null `sellDate` was the whole check: any three-field
+    // string with a plausible id decoded, so `garbage||7` silently became "the
+    // null-sell-date tail of the book" and returned a page from the WRONG
+    // place. Both date fields are shape-checked now.
+    for (const bad of [
+      "garbage|2026-04-01 09:15:00|7",   // sell_date is not a date
+      "2026-13-45|2026-04-01 09:15:00|7", // …nor is that
+      "|notatimestamp|7",                 // created_at is not a timestamp
+      "||7",                              // both empty
+      "2026-01-01|2026-01-01|7",          // created_at is a DAY, not a stamp
+    ]) {
+      expect(page.decodeCursor(bad), `${bad} decoded`).toBeNull();
+    }
+    // The shapes that ARE the format still decode, including the null token.
+    expect(page.decodeCursor("2026-03-31|2026-04-01 09:15:00|7")).toEqual({ sellDate: "2026-03-31", createdAt: "2026-04-01 09:15:00", id: 7 });
+    expect(page.decodeCursor("|2026-04-01 09:15:00|7")).toEqual({ sellDate: null, createdAt: "2026-04-01 09:15:00", id: 7 });
+    // Every cursor the pager itself emits round-trips.
+    let cursor: string | null = page.getTradesPage(F(), null, 2).nextCursor;
+    let guard = 0;
+    while (cursor && guard++ < 50) {
+      expect(page.decodeCursor(cursor), `${cursor} did not round-trip`).not.toBeNull();
+      cursor = page.getTradesPage(F(), cursor, 2).nextCursor;
+    }
+    expect(guard).toBeGreaterThan(1);
+  });
+
+  it("the route answers 400 for a malformed cursor rather than quietly serving page one", async () => {
+    const route = await import("@/app/api/trades/page/route");
+    const bad = await route.GET(new Request("http://localhost/api/trades/page?cursor=garbage%7C%7C7"));
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).ok).toBe(false);
+    const good = await route.GET(new Request("http://localhost/api/trades/page"));
+    expect(good.status).toBe(200);
+  });
+
   it("a malformed cursor is the first page, never an exception", () => {
     for (const bad of ["", "x", "a|b", "2026-01-01|x|y|z", "2026-01-01|2026|0"]) {
       expect(() => page.getTradesPage(F(), bad, 3)).not.toThrow();

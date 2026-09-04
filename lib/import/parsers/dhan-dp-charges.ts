@@ -128,8 +128,25 @@ function dpSheet(ctx: ParseContext): { name: string; rows: string[][]; ws: XLSX.
 }
 
 /**
+ * Every broker Vyuha has a named parser for, minus this one. A format-only
+ * fingerprint cannot tell a rival's identically-shaped file apart, so the
+ * one thing it CAN read — whose name is on the document — becomes a veto.
+ */
+const RIVALS = /(?<![a-z0-9])(zerodha|groww|upstox|paytm|angel[\s_-]?one|angel[\s_-]?broking)(?![a-z0-9])/i;
+
+/**
  * Detection. Sheet name + title cell + the exact header = the format, worth
  * 0.9 on its own (see the header note above); "dhan" in the filename adds 0.1.
+ *
+ * ── The veto (2026-09-04) ────────────────────────────────────────────────
+ *
+ * Because this claim rests on FORMAT alone, a rival broker who ships a DP
+ * charges sheet with the same eight headers would be imported as Dhan and
+ * priced at Dhan's rates — the exact 2026-08-12 defect AGENTS.md records for
+ * `detectZerodha`. The filename cannot VOUCH for a broker here (that is why
+ * the format is the fingerprint), but it can VETO one: a file whose name, or
+ * whose sheet names or cells, name a DIFFERENT known broker is not claimed at
+ * all. It falls to the generic column mapper, which asks.
  */
 export function detectDhanDpCharges(ctx: ParseContext): number {
   const sheet = dpSheet(ctx);
@@ -138,6 +155,9 @@ export function detectDhanDpCharges(ctx: ParseContext): number {
   if (!found) return 0;
   const titled = sheet.rows.slice(0, found.at).some((r) => r.some((c) => TITLE.test(c)));
   if (!titled) return 0;
+  if (RIVALS.test(ctx.filename)) return 0;
+  if (RIVALS.test(sheet.name)) return 0;
+  if (sheet.rows.some((r) => r.some((c) => RIVALS.test(c)))) return 0;
   return Math.min(1, 0.9 + (/dhan/i.test(ctx.filename) ? 0.1 : 0));
 }
 
@@ -204,10 +224,30 @@ export function parseDhanDpChargesWorkbook(ctx: ParseContext): ParsedDpCharges {
     const r = sheet.rows[i]!;
     const cell = (n: number) => String(r[n] ?? "").trim();
 
-    // The file's own Total row: `… | Total | | <amount>`.
-    if (r.some((c) => /^\s*total\s*$/i.test(String(c ?? "")))) {
+    // The file's own Total row.
+    //
+    // Detected by the row's FIRST FILLED CELL — the real export prints the
+    // label in the `Type of Transaction` column with everything before it
+    // blank, so "column 0" literally would find nothing. `r.some(...)` was
+    // the other extreme: it matched the word "Total" anywhere on the row, so
+    // a security called `Total Gas` or a transaction type containing "Total"
+    // would be read as the footer and its charge silently dropped from the
+    // sum. A data row's first filled cell is always its Sr. number, so this
+    // cannot collide with one.
+    const firstFilled = r.map((c) => String(c ?? "").trim()).find((c) => c !== "") ?? "";
+    if (/^total$/i.test(firstFilled)) {
       const v = cell(cols.charges);
-      if (v) statedTotal = parseTextMoney(v);
+      if (!v) {
+        warnings.push(`Row ${i + 1} is a Total row with no figure in the Charges column, so this file states no total and the lines could not be checked against one.`);
+      } else if (statedTotal !== null) {
+        // Two Totals is a file that was concatenated or re-exported. The LAST
+        // one is the one that follows every data row, so it is the one used —
+        // said out loud rather than silently overwritten.
+        statedTotal = parseTextMoney(v);
+        warnings.push(`This file states more than one Total row; the LAST one (₹${statedTotal.toFixed(2)}) is the one the lines are checked against.`);
+      } else {
+        statedTotal = parseTextMoney(v);
+      }
       continue;
     }
     if (!/^\d+$/.test(cell(cols.sr))) continue; // footer / blank / padding
@@ -258,6 +298,9 @@ export function parseDhanDpChargesWorkbook(ctx: ParseContext): ParsedDpCharges {
   }
 
   const total = Math.round(rows.reduce((s, r) => s + Math.abs(r.amount), 0) * 100) / 100;
+  if (statedTotal === null && rows.length > 0) {
+    warnings.push(`This file states no total, so conservation is unchecked: the ${rows.length} lines add up to ₹${total.toFixed(2)} and there is nothing in the file to check that against.`);
+  }
   if (statedTotal !== null && Math.abs(total - statedTotal) >= 0.005) {
     warnings.push(
       `The rows add up to ₹${total.toFixed(2)} but the file's own Total says ₹${statedTotal.toFixed(2)} — a difference of ₹${(total - statedTotal).toFixed(2)}. The lines are shown as read; nothing was adjusted to make them agree.`,
@@ -289,7 +332,7 @@ export function parseDhanDpCharges(ctx: ParseContext): ParsedFile {
     reported: { totalCharges: parsed.total, ...(parsed.statedTotal !== null ? { statedTotalCharges: parsed.statedTotal } : {}) },
     reference: parsed.reference,
     warnings: [
-      `This is a Dhan DP charges report${window} — depository fees on delivery debits and pledges, not trades. No trade is created from it: upload it on the Cash & Ledger screen, where each line lands as a charge entry.`,
+      `This is a Dhan DP charges report${window} — depository fees on delivery debits and pledges, not trades. No trade is created from it: upload it on the Cash & Ledger screen, which accepts it (v3.9.0) and lands each line as a charge entry.`,
       ...parsed.warnings,
     ],
   };
