@@ -176,6 +176,11 @@ export async function POST(req: Request) {
     // Present only for the generic source: the file's own headers, sample rows
     // and a suggested mapping for the user to confirm or correct.
     table: parsed.table ?? null,
+    // v3.9: what this file would write BESIDES trades. The commit button used
+    // to enable on new trades alone, so a statement whose every position was
+    // already imported (a Realised P&L after the tradebook — the owner's own
+    // order) offered no way to store the broker's stated figures at all.
+    stores: { reference: parsed.reference?.length ?? 0, enrich: parsed.enrich?.length ?? 0 },
     warnings: parsed.warnings,
     preview,
   });

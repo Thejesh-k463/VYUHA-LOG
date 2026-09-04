@@ -274,6 +274,7 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/reports/advance-tax", label: "Advance Tax planner — 15 Jun/Sep/Dec/Mar instalments" },
   { href: "/reports/harvest", label: "Tax Harvest — LTCG exemption and loss harvesting" },
   { href: "/reports/ais", label: "AIS Reconcile — the portal's JSON against your journal" },
+  { href: "/reports/reconcile", label: "Broker Truth — your broker's own stated figures against your journal, with the reasons they differ" },
   // Costs, data & exports
   { href: "/reports/broker-compare", label: "Broker cost comparison + cross-broker MTF margins" },
   { href: "/reports/charges", label: "Charges & MTF Leak — where the money actually goes" },

@@ -67,6 +67,8 @@ const LOOPBACK = /^(?:127\.0\.0\.1|localhost|\[?::1\]?|0\.0\.0\.0)$/;
 const DYNAMIC_URL_CALL_SITES: Record<string, string> = {
   "components/system/command-palette.tsx":
     "Search v1 (v3.8) fetches searchUrl(q, cats) from use-search-session.ts — a SAME-ORIGIN relative path pinned to the literal /api/search prefix by tests/search-palette.test.ts; no host, no egress.",
+  "components/system/search-panel.tsx":
+    "Search v2 (v3.9) — the floating panel is the palette's second surface over the SAME engine and fetches the same searchUrl(q, cats) from use-search-session.ts: a SAME-ORIGIN relative path pinned to the literal /api/search prefix by tests/search-panel.test.ts; no host, no egress.",
   "lib/jobs/auto-mtm.ts":
     "builds the bhavcopy URL from the NSE_ARCHIVE constant (nsearchives.nseindia.com) — the literal is checked below.",
   "lib/import/api/angelone.ts":

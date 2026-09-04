@@ -1,5 +1,147 @@
 # Changelog
 
+## v3.9.0 — trust the numbers
+
+*Built 2026-09-04 against the owner's own broker exports, read in place. Where
+v3.8.0 asked whether a broker file was read correctly, v3.9.0 asks the next
+question: does the book agree with what the broker itself says?*
+
+- **The Dhan transaction report is the book; the Realised P&L is the reference.**
+  Importing both into one account used to double every position — the two files
+  state the same trades differently, so duplicate detection could not see it.
+  A statement that carries broker figures AND trades now stores the figures
+  always, and imports its trades only when that account holds no transaction
+  report for the broker; either way the import says which happened.
+
+- **Broker Truth — your broker's stated figures beside your journal's.** A new
+  Pro screen (**Import → Broker Truth**) puts the broker's own numbers next to
+  Vyuha's, per financial year, per segment and per scrip, with the difference
+  and — where the difference has a knowable cause — the cause. Nothing is
+  averaged, blended or corrected into anything else: the two sides stay two
+  sides. Each reason is a counted fact from your own book (sales with no
+  purchase and what they sold for, charges a file states nothing about,
+  quantity still open against a scrip the broker calls realised, a product
+  filed under a different segment); a gap with no knowable cause is shown with
+  no cause rather than an invented one. A demat holding summary adds a
+  quantities-only comparison — what the broker holds, what your book has open,
+  and the difference. The status word is a direction, never the word
+  "mismatch": *Within tolerance · Broker higher · Vyuha higher · Not compared*.
+  Lines are joined on **ISIN first and on the symbol only as a fallback**, and
+  the screen says which was used, because a symbol join can be wrong. In the
+  "All accounts" view it renders one book per account rather than one summed
+  book — two brokers' statements added together is a figure no statement
+  states. Five files feed it: **Dhan Realised P&L**, **Paytm Money Realized
+  P&L**, **Angel One P&L Statement**, **Dhan Demat Holding summary** and **Dhan
+  DP Charges**.
+- **Seven new file formats read natively — none of which imports a trade.**
+  Paytm Money Realized P&L, Dhan DP Charges, Dhan Demat Holding summary, Dhan
+  contract note (PDF), Upstox ledger, Angel One account statement and Angel One
+  P&L statement. Six store the broker's stated figures; the contract note
+  enriches trades you already have; the DP-charge, Upstox and Angel statements
+  also post to **Cash & Ledger**. Each one warns out loud that it created no
+  trades, and the book for a broker stays what it was — the tradebook or the
+  Global Transaction Report. **A parser must see the broker's own fingerprint
+  before it claims a file**, either the name in the filename or a name inside
+  the file; shape alone claims nothing. **Two of the seven are recorded
+  exceptions** — Dhan's DP Charges report and Angel One's P&L statement name no
+  broker anywhere, in any cell, sheet name or filename, so their *format* is
+  the fingerprint (an exact sheet-and-header conjunction, worth 0.9; the
+  broker's name in the filename adds 0.1). Both are written up as deliberate
+  exceptions in `docs/BROKER_FORMATS.md`, not as a precedent.
+- **A contract note never creates a trade.** It adds the **fill times** and the
+  **instrument type** to trades your book already holds, matched on symbol,
+  date, side and quantity. The Global Transaction Report is the book; a note
+  covers one day on one exchange pair, and importing it as trades would
+  double-book every execution. An enrichment that matches nothing is reported,
+  not stored.
+- **The Dhan MTF Report is a web screen with no export in any format**
+  (verified 2026-09-04), so it is not an import source and there is no parser
+  for one. Vyuha's MTF figures come from the files that do exist — the Global
+  Transaction Report and the Realised P&L for the positions, the ledger for MTF
+  interest.
+- **The Trades list now has a total order, and it did not before.** Rows
+  imported in one batch share a `created_at` to the second, so ordering by
+  (sell date, created time) left every row inside a batch tied — their order
+  within the batch was **unspecified until now, and is now by id, which is
+  insertion order**. On the owner's own book this was not an edge case: **842
+  of 905 rows sat inside a tie block** (174 blocks, the largest 36). Only the
+  order of tied rows changed — every tax-by-FY total is identical to the paisa,
+  every harvest lot keeps its long/short status, and the holding clock is
+  unchanged.
+- **/trades is served in pages of 500 from the server.** Filters, views and
+  sorting are applied in SQL, and **every count is computed over the whole
+  filtered set, never over the page you were sent** — a count that quietly
+  means "of what we fetched" is a fabricated denominator. The KPI strip, the
+  acquisition panel, the unmarked-holdings panel and the delete-by-scope list
+  remain whole-book figures. Measured on a 25,000-trade book: **/trades 1,968 →
+  1,063 ms median** (95th percentile 2,280 → 1,115), the last route over
+  budget.
+- **Switching accounts no longer leaves the previous account's rows on
+  screen.** The Trades table kept rendering the earlier server render's rows
+  after an account switch while the totals above it had already changed; found
+  by an end-to-end flow, not by a unit test.
+- **Same-day covered shorts are labelled as what they were.** Sell first and
+  buy back the same day and the closed position now says so; the arithmetic was
+  already right, the meaning was missing. A sale an existing holding could
+  deliver is not called a short, and cash equity cannot be short overnight, so
+  a multi-day sale without a purchase stays an unpriced sale.
+- **Bought on one exchange, sold on another — noted, not split.** A closed
+  position whose buys and sell span NSE and BSE now carries a note saying so.
+  It is deliberately **not** split into two positions: that was measured in
+  v3.8 and rejected, because on the owner's 7,544-execution book it turned 38
+  sales-without-a-purchase into 101. One holding; the exchange is where the
+  fill happened.
+- **Two limits found by driving the engine harder than any real file will.** A
+  book with 190,000 legs on one symbol crashed the import pairing with a stack
+  overflow at around 123,000 positions — now fixed and pinned by a load case.
+  And every Excel `.xls` in the older BIFF8 format declares its whole sheet as
+  its used range, so a 1,400-cell file was being read as 65,536 rows by every
+  detector that examined it: the range is now trimmed once to what the sheet
+  actually contains, taking a per-sheet flatten from 440 ms to 2 ms and file
+  ranking from 3.7 s to under a second.
+- **Search, second pass.** The **ledger** and the **audit trail** are now
+  searchable alongside trades, symbols, playbooks, instruments, sessions,
+  challans, help entries and screens. A **floating search assistant**
+  (**Ctrl + Shift + K**) stays open while you navigate, so a result can be
+  opened, read and the next one tried without retyping; it can be dragged
+  anywhere, remembers where you put it, and is pulled back on-screen if it is
+  reopened on a smaller display. Ctrl+K's palette is unchanged, and both
+  surfaces run the same engine. One copy correction: a group of results that is
+  not filtered by your account selection now reads "across all accounts" rather
+  than "all accounts", which in the aggregate view read as a claim about those
+  rows specifically.
+- **Migrations 0061, 0062 and 0063.** A v3.8.x journal upgrades in place on
+  first launch — the ledger and audit search indexes, the store for brokers'
+  stated figures, and the Trades index that carries the new total order. As
+  always, **the app writes a backup of your database before applying any
+  migration**.
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+- **Still true for anyone coming from v3.7.1:** the installer runs the old,
+  unguarded v3.7.1 uninstaller once, and that one has no backup step, so leave
+  "Delete the application data" UNTICKED — ticking it there erases the data
+  folder with no copy taken. From v3.8.0 on the guard is in place.
+
+**Known limits, stated rather than buried.**
+
+- **Angel One's P&L statement carries no ISIN column and no date column of any
+  kind.** Its scrip figures are therefore joined on the symbol, and the
+  financial year comes from the statement's own period ("To Date"). Nothing is
+  invented to fill either.
+- **Dhan's Realised P&L states no period.** It contributes per-segment figures
+  but no financial-year line, because filing figures under an unstated year
+  would be a fabricated denominator.
+- **One load case (`a7-cash-ledger`) is sensitive to machine noise.** It fails
+  intermittently on a busy development laptop at the previous release's code
+  too — measured, three runs each way — and nothing in the engine it times was
+  changed. The idle CI runner is the arbiter.
+
 ## v3.8.0 — trust the import
 
 *Cut 2026-09-04 after three adversarial audit passes — the diff, the fix wave, and

@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-5042%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-81%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-5100%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-84%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
 [![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
@@ -416,8 +416,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **5042** | **43** | **0** |
-| tests, 81 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
+| **5100** | **43** | **0** |
+| tests, 84 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -514,6 +514,9 @@ forever.** Your own record of your trading is never held hostage.
 - **Qty · Invested · Entry · Exit** replaced the raw Buy/Sell rupee totals (v2.99.96): the quantity, what you actually put in, and the two weighted-average prices — universal, because every import path (six parsers, the column mapper, three API pulls) already produced them.
 - On **MTF rows, Invested is *your own* contribution** with the broker-funded amount alongside; when the funding split is not yet resolved it says so instead of inventing a percentage.
 - An open trade shows **"—" for its exit, never ₹0**, and sorts to the bottom of an Exit sort — a missing side is `undefined`, not zero.
+- **Served in pages of 500, from the server (v3.9).** Every filter, view and sort is transcribed to SQL, and **the counts are aggregates over the whole filtered set, never over the page** — a count that quietly means "of what we fetched" is a fabricated denominator. The KPI strip, the acquisition and unmarked-holdings panels and the delete-by-scope candidate list stay whole-book projections. Measured on a 25,000-trade book: **1,968 → 1,063 ms median** (p95 2,280 → 1,115), the last route over budget.
+- **The order was never total, and now is.** `created_at` has second resolution and an import batch writes one value for every row it commits, so ordering by (sell date, created time) left whole batches tied — on the owner's own book **842 of 905 rows sat inside a tie block** (174 blocks, largest 36), and SQLite demonstrably returned different orders for different query plans. Rows imported in one batch are now ordered by id, which is insertion order, newest first. Nothing else moved: tax-by-FY is identical to the paisa on both books, every harvest lot keeps its id, LT/ST status and quantity, and the holding clock is unchanged.
+- **Switching accounts no longer leaves the previous account's rows on screen.** `initialRows` was a `useState` initialiser, which does not re-run when the prop changes, so after a refresh the table rendered the earlier server render while the KPI strip above it showed the new account. State is now adjusted during render, not in an effect. Only an end-to-end flow could find it.
 
 ### 🔎 See exactly the trades you mean
 
@@ -528,6 +531,7 @@ forever.** Your own record of your trading is never held hostage.
 - **Gated screens are shown with a lock and one line on what unlocks them — never hidden.** Your own trade rows are never locked; a user's record of their trades is not held hostage.
 - A **previous-search** control and a **"back to where I was"** control, neither of which touches browser history. Results for trades return ids only, so the Trades screen keeps its own ordering — search can never reorder a page.
 - Every source is account-scoped on its own terms (three tables carry no account column, and a test asserts the scope is carried per source). On a 25,000-trade book a query returns in about 15 ms.
+- **Search v2 (v3.9): the ledger and the audit trail joined the index**, and there is now a second surface for them — a **floating search assistant on `Ctrl + Shift + K`** that stays open across navigation, so a result can be opened, read, and the next one tried without retyping. It drags anywhere, remembers where you left it, and is clamped back into the viewport when reopened on a smaller display — a panel restored off-screen is unreachable, because the only way to move it is a header you cannot see. Both surfaces call the same API through the same helpers and render the same result list, so the chips, the locks and the notices are identical by construction rather than by two copies kept in step. A results group that is *not* narrowed by your account selection says "across all accounts"; the account-scoped groups deliberately say nothing, because the only account they could name is the one already on screen.
 
 ### 🧾 Reads the product type out of the charges themselves
 
@@ -559,6 +563,8 @@ forever.** Your own record of your trading is never held hostage.
 - **Vyuha recovers that cost from the file's own footer.** The rows omit the purchase, but the broker's gross P&L includes it, so subtracting everything matchable leaves what it must have cost. On a real report: −₹8,268.27 matched against a −₹8,489.60 footer left −₹221.33 for one holding — 37 shares sold for ₹21,904, implying **₹597.98 a share**. Pre-filled for confirmation, never applied silently.
 - IPO P&L is reported **apart from trading edge** — a listing-day pop is not a repeatable skill.
 - **The import summary warns about the shape of what it read (v3.8).** When sales-without-a-purchase are 10% or more of a file's positions, or a security appeared under two labels, it says so with the count before you trust Net P&L — the product-side twin of the release harness. An unpriced sale contributes only its charges to Net P&L, and the screen now says exactly that.
+- **A same-day covered short is named as one (v3.9).** Sell first, buy back the same session, and the closed position says so — the arithmetic was already right (buys sort before sells within a date), the *meaning* was missing. A sale an existing holding could deliver is not called a short, and cash equity cannot be short overnight, so a multi-day sale with no purchase stays exactly that.
+- **Bought on NSE, sold on BSE: a note, deliberately not a split.** The position carries "one holding, the exchange is where the fill happened". Splitting it was measured in v3.8 and rejected — on the owner's 7,544-execution book it turned 38 sales-without-a-purchase into 101.
 - **Remove a broker's imported rows, then re-import clean.** One confirmed, audit-logged, account-scoped step on the Import screen takes every row a broker's imports created into Trash, restorable as a set under the original ids from **Backup & Restore → Deleted items**; ledger and IPO rows are unlinked, never deleted.
 
 ### 📥 Import that tells you what kind of file you brought
@@ -567,7 +573,20 @@ forever.** Your own record of your trading is never held hostage.
 - So the P&L path **asks once, before commit** — grouped by symbol, with a guess pre-selected. Changing a product **re-prices immediately**, because charges, MTF interest and ROM all derive from it.
 - Same-day round trips are *inferred* as intraday. **MTF is never inferred** — it is indistinguishable from delivery in a P&L file — so the default is delivery, the safest wrong answer, and guessed rows are labelled *assumed*.
 - **More of each broker's catalogue reads natively (v3.8):** Dhan's **Realised P&L** (`.xls`, the per-segment charge reference), Dhan **P&L `.xlsx`**, Dhan **Ledger** and **Dividend payout** as cash sources on the Cash & Ledger screen, and Angel One's **`Trades_History`** tradebook with per-row charges. A broker-named parser must see the broker's own fingerprint before it claims a file — Zerodha's detector had been claiming Angel One's tradebook on two column names.
+- **Seven more formats in v3.9, none of which imports a trade.** Paytm Money's **Realized P&L**, Dhan's **DP Charges** and **Demat Holding** summary, the Dhan **contract note** (PDF), the **Upstox ledger**, Angel One's **account statement** and Angel One's **P&L statement**. Six store the broker's own stated figures; the contract note enriches trades you already have; three also post to Cash & Ledger. Each warns out loud that it created no trades, so a reference import can never be mistaken for an import that read nothing. **Two are recorded exceptions to the name rule** — Dhan's DP Charges and Angel One's P&L statement name no broker in any cell, sheet name or filename, so an exact sheet-and-header conjunction is the fingerprint (0.9; the broker's name in the filename adds 0.1), written up as deliberate exceptions in [`docs/BROKER_FORMATS.md`](docs/BROKER_FORMATS.md) rather than as a precedent.
+- **A contract note never creates a trade.** It is the only Dhan document that states the **time of every fill**, so those times and the instrument type are applied to trades the book *already* holds, matched on symbol, date, side and quantity; unmatched enrichments are reported, not stored. The transaction report is the book — importing a note as trades would double-book every execution it carries, with no dedup key strong enough to notice. **The Dhan MTF Report is a web screen with no export in any format**, so there is no MTF file and no parser for one; those figures come from the transaction report, the Realised P&L and the ledger.
+- **BIFF8 `.xls` files declare the whole sheet as their used range.** A 1,400-cell DP-charge report has a `!ref` of `A1:Q65536`, so every detector that opened it paid 270–440 ms to flatten 65,536 rows, and ranking one file cost 3.7 s. Each sheet's range is now trimmed once, on the memoised workbook, to its populated bounding box: **440 ms → 2 ms** per flatten. Nothing a parser sees changes except phantom trailing rows.
 - **A confidently empty import is the worst kind.** Dhan's Global Transaction Report was detecting at 0.98 and importing zero rows once the 2026 export changed its date grammar; a **golden-book harness** over 27 redacted real exports — exact position shapes, the broker's own totals, charges conserved — caught it on its first run and is now a release gate. A recognised file that parses to nothing warns with the unparsed sample.
+
+### ⚖ Broker Truth — the broker's own figures beside yours
+
+- **Import → Broker Truth** puts what the broker's statement says next to what your journal says — **per financial year, per segment and per scrip**, with the delta — plus a quantities-only table for a demat holding summary: what the broker holds, what your book has open, and the difference.
+- **Nothing is averaged, blended or corrected into anything else.** The screen computes no arithmetic of its own; every figure on it comes out of one query, because a total recomputed on the way to a page is a second arithmetic path over the same cells, and the app would then show two numbers for one file.
+- **Where they differ, the reason is a counted fact from your own book** — how many sales have no purchase and what they sold for, charges the file states nothing about, quantity still open against a scrip the broker calls realised, a product filed under a different segment. **A delta with no knowable cause is reported with no cause**, never with an invented one.
+- The status is a **direction, not the word "mismatch"**: *Within tolerance · Broker higher · Vyuha higher*. A file that states no gross P&L at all reads **"Not compared"** — not a zero, and not a match.
+- **Joined on ISIN first, symbol only as a fallback — and it says which.** ISIN is the only stable identity: Paytm restated the same security under a ticker and then a numeric BSE code mid-window, so a symbol join is said out loud rather than assumed.
+- On **All accounts** it renders one book per account, never one summed book — two brokers' statements added together is a figure no statement states.
+- Five files feed it: **Dhan Realised P&L · Paytm Money Realized P&L · Angel One P&L Statement · Dhan Demat Holding summary · Dhan DP Charges**. The empty state names them from the import registry, so it can never advertise a file the app cannot read.
 
 ### 📐 Return on Margin — what your capital actually earned
 <img src="docs/screenshots/rom-report.png" alt="Return on Margin — capital blocked per segment, ROM per day, capital-efficient trades" width="900" />
@@ -748,8 +767,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       5042 unit + integration tests across 270 files (+ tests/load: 16 load cases, run separately)
-e2e/         81 Playwright flows through the real app, in 26 specs
+tests/       5100 unit + integration tests across 274 files (+ tests/load: 16 load cases, run separately)
+e2e/         84 Playwright flows through the real app, in 28 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -769,7 +788,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **5042 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **5100 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -785,8 +804,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (5042 tests) |
-| `npm run test:e2e` | Playwright e2e — 81 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (5100 tests) |
+| `npm run test:e2e` | Playwright e2e — 84 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -855,7 +874,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 5042 Vitest unit + integration tests (+ tests/load)
+  tests/          # 5100 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

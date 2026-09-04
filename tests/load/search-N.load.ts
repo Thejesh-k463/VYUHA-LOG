@@ -12,8 +12,16 @@ import { growthRatio, report, time } from "./helpers/measure";
  * per-query p95, not the mean — a search box that stalls one keystroke in
  * twenty feels broken.
  *
+ * v3.9 (Search v2) adds TWO MORE FTS5 sources — the cash ledger and the audit
+ * trail (migration 0061) — hit on the same keystroke as the trades index. The
+ * per-query p95 claim is therefore no longer a claim about one index, so the
+ * new pair is measured on its own book of the same size: a ledger and an audit
+ * trail of 25,000 rows each, indexed by the same triggers a real write goes
+ * through.
+ *
  * Asserted:
  *   - p95 per FTS query < 50 ms on a 25,000-trade book;
+ *   - p95 per ledger+audit fan-out < 50 ms on 25,000 rows of each;
  *   - p95 per in-memory fan-out < 10 ms;
  *   - growthRatio() of the FTS path between a 5k and a 20k book ≤ 6
  *     (growthRatio measures n and 4n; the 25k book is then measured on its
@@ -96,6 +104,52 @@ function runFts(): number[] {
   return out;
 }
 
+/** Search v2's two new FTS sources, fanned out exactly as the route does. */
+const FTS_V2 = ["ledger", "audit"] as const;
+
+/** Insert until ledger_entries and audit_log each hold `size` rows. Idempotent. */
+function topUpV2(size: number): void {
+  const have = (n: string) => (t.sqlite.prepare(`SELECT count(*) AS n FROM ${n}`).get() as { n: number }).n;
+  const l0 = have("ledger_entries");
+  const a0 = have("audit_log");
+  t.db.transaction((tx) => {
+    for (let i = l0; i < size; i++) {
+      tx.insert(t.schema.ledgerEntries)
+        .values({
+          accountId: 1 + (i % 2),
+          date: `2026-0${(i % 8) + 1}-1${i % 9}`,
+          type: ["deposit", "withdrawal", "charge", "dividend", "mtf_interest"][i % 5],
+          bucket: i % 2 ? "equity" : "active",
+          symbol: sym(i),
+          amountPaise: 1000 * (i % 97),
+          note: `${NOTES[i % NOTES.length]} ledger #${i}`,
+        })
+        .run();
+    }
+    for (let i = a0; i < size; i++) {
+      tx.insert(t.schema.auditLog)
+        .values({
+          ts: `2026-0${(i % 8) + 1}-1${i % 9}T09:${String(i % 60).padStart(2, "0")}:00.000Z`,
+          entity: ["trade", "settings", "ledger", "capital", "risk_config"][i % 5],
+          action: ["create", "update", "delete", "close", "override"][i % 5],
+          summary: `${NOTES[i % NOTES.length]} audit #${i}`,
+        })
+        .run();
+    }
+  });
+}
+
+function runFtsV2(): number[] {
+  const out: number[] = [];
+  for (const q of QUERIES) {
+    const t0 = performance.now();
+    search.searchAll(q, { accountId: 0, categories: FTS_V2, entitlement: { pro: true } });
+    search.searchAll(q, { accountId: 1, categories: FTS_V2, entitlement: { pro: true } });
+    out.push(performance.now() - t0);
+  }
+  return out;
+}
+
 const IN_MEMORY = ["symbols", "help", "screens", "playbooks", "instruments"] as const;
 
 function runInMemory(): number[] {
@@ -140,6 +194,18 @@ describe("SEARCH-N · ranked queries at scale", () => {
     const total = ms.reduce((a, b) => a + b, 0);
     report({ label: `FTS ${N} queries @ 25k (p95 per query)`, ms: worst, n: N, perItemUs: (total * 1000) / N }, { test: "search-N-fts-p95", p95: worst, max: Math.max(...ms) });
     console.log(`    FTS @ 25k: p95 ${worst.toFixed(2)} ms, mean ${(total / N).toFixed(2)} ms, max ${Math.max(...ms).toFixed(2)} ms`);
+    expect(worst).toBeLessThan(50);
+  });
+
+  it(`ledger + audit FTS p95 per query < 50 ms on ${HEAVY.toLocaleString()} rows of each`, () => {
+    const build = time("build 25k ledger + 25k audit (FTS triggers on)", HEAVY, () => topUpV2(HEAVY));
+    report(build, { test: "search-N-build" });
+    runFtsV2(); // warm
+    const ms = runFtsV2();
+    const worst = p95(ms);
+    const total = ms.reduce((a, b) => a + b, 0);
+    report({ label: `ledger+audit ${N} queries @ 25k each (p95 per query)`, ms: worst, n: N, perItemUs: (total * 1000) / N }, { test: "search-N-fts-v2-p95", p95: worst, max: Math.max(...ms) });
+    console.log(`    ledger+audit @ 25k each: p95 ${worst.toFixed(2)} ms, mean ${(total / N).toFixed(2)} ms, max ${Math.max(...ms).toFixed(2)} ms`);
     expect(worst).toBeLessThan(50);
   });
 

@@ -112,7 +112,17 @@ describe("values (synthetic rows)", () => {
     expect(del.productHint).toBe("mtf"); // full cover — the file states it
     const intra = p.trades.find((t) => t.tradingsymbol === "ACME")!;
     expect(intra.productHint).toBe("intraday"); // partial cover never re-tags
-    expect((intra.importNotes ?? []).join(" ")).toMatch(/2 of 10 as MTF/);
+    // Pinned in full. The note must state the FACT and the CONSEQUENCE and
+    // claim nothing else: an earlier wording ("part of this position is
+    // broker-funded") left the reader to guess whether Vyuha had split the
+    // row on the 2:8 ratio. It does not, and now the note says so.
+    expect((intra.importNotes ?? []).join(" ")).toBe(
+      "Qty Breakup shows 2 of 10 as MTF; Vyuha keeps the row as one position and does not split it on a ratio.",
+    );
+    // The file-level warning states the same two things about the source.
+    expect(p.warnings.join(" ")).toContain(
+      "MTF quantities are read from the file's own Qty Breakup — Angel One is the only broker examined that states them. A position the breakup covers in full is tagged MTF; one it covers in part keeps its own product and carries a note.",
+    );
   });
 
   it("refuses transfer transactions and counts them out loud", () => {

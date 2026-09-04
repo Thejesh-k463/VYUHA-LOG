@@ -258,7 +258,10 @@ describe("reconcileFrom — the reasons are computed facts, never explanations",
     ];
     const disagree = reconcileFrom(refs, [trade({ segment: "eq_delivery" })]);
     expect(disagree.scrip[0].reasons.some((x) => x.code === "product_difference")).toBe(true);
-    const agree = reconcileFrom(refs, [trade({ segment: "opt_stock" })]);
+    // `stock_option`, from lib/domain/constants.ts#SEGMENTS. This line read
+    // "opt_stock" — a segment name that has never existed — which is the same
+    // invented vocabulary `FAMILY_OF` was written over (v3.9 fix, 2026-09-04).
+    const agree = reconcileFrom(refs, [trade({ segment: "stock_option" })]);
     expect(agree.scrip[0].reasons.some((x) => x.code === "product_difference")).toBe(false);
   });
 

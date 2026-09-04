@@ -724,6 +724,14 @@ already classified and totalled). Anything the MTF screen shows that those
 three do not state is not in Vyuha.
 
 
+### Dhan: the GTR is the BOOK, the Realised P&L is the REFERENCE
+
+Both files describe the same trades and hash differently, so dedup cannot see
+the overlap: whichever lands second books every position a second time. Rule
+(v3.9.0, enforced in `commitParsedFile`): a source in `RECONCILE_SOURCE_IDS`
+that also carries trades stores its figures always, and imports its trades only
+when the account holds no trades for that broker from a non-reference source.
+
 ## Status (2026-08-12)
 
 Parsers now keyed on the fingerprints above: `zerodha.ts` (Auction / `- Z`

@@ -78,6 +78,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Import
   { href: "/import", label: "Import", icon: Upload, group: "Import" },
   { href: "/import-help", label: "Import Help", icon: FileQuestion, group: "Import" },
+  { href: "/reports/reconcile", label: "Broker Truth", icon: Scale, group: "Import" },
   // Tax
   { href: "/reports/tax", label: "Tax Summary", icon: FileText, group: "Tax" },
   { href: "/reports/advance-tax", label: "Advance Tax", icon: Landmark, group: "Tax" },

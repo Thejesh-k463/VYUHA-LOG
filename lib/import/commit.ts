@@ -11,7 +11,7 @@ import {
   accounts as accountsTable,
   brokerReference,
 } from "@/lib/db/schema";
-import { eq, and, ne, sql } from "drizzle-orm";
+import { eq, and, ne, or, sql, isNull, inArray, notInArray } from "drizzle-orm";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
 import { findRates, pricingDate, type RatesMap } from "@/lib/engine/rates";
@@ -21,7 +21,7 @@ import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@
 import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, EnrichmentRow, ParsedFile, ReferenceRow } from "./types";
-import { relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
+import { referenceVsBookNote, relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
 import { getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
@@ -30,6 +30,7 @@ import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
+import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
  * leverage varies by broker), falling back to the seeded default if missing. */
@@ -244,6 +245,67 @@ function stagedFromExecutions(t: NormalizedTrade): boolean {
 }
 
 
+/**
+ * The BOOK vs the REFERENCE, decided on the ACCOUNT rather than on the file.
+ *
+ * `RECONCILE_SOURCE_IDS` names the statements that state the broker's own
+ * figures. Four of the five emit no trades at all; the Dhan Realised P&L still
+ * emits per-scrip positions, because in v3.8 it was the only Dhan source there
+ * was. Import it into an account that already holds the Dhan Global
+ * Transaction Report and every position is booked twice — and dedup skips
+ * ZERO, because a P&L row and a transaction row state the same trade
+ * differently and so hash differently by construction. On the owner's own
+ * a2 pair the F&O segment read exactly 2x the broker's figure.
+ *
+ * KEYING: neither `trades` nor `import_batches` carries a source id — only
+ * `broker_reference` does. So a batch that stored reference figures is
+ * identifiable by `broker_reference.import_batch_id`, and a BOOK trade is one
+ * whose batch is not among those (a manually entered trade has no batch at all
+ * and is book by the same reading). Adding a `source_id` column to trades
+ * would say the same thing twice.
+ */
+const REFERENCE_SOURCE_IDS: readonly string[] = RECONCILE_SOURCE_IDS;
+
+type TxLike = Pick<typeof db, "select">;
+
+function holdsBookTrades(tx: TxLike, accountId: number, broker: string): boolean {
+  const refBatches = tx
+    .select({ b: brokerReference.importBatchId })
+    .from(brokerReference)
+    .where(and(
+      eq(brokerReference.accountId, accountId),
+      eq(brokerReference.broker, broker),
+      inArray(brokerReference.sourceId, REFERENCE_SOURCE_IDS),
+    ))
+    .all()
+    .map((r) => r.b)
+    .filter((b): b is number => b != null);
+
+  const row = tx
+    .select({ id: tradesTable.id })
+    .from(tradesTable)
+    .where(and(
+      eq(tradesTable.accountId, accountId),
+      eq(tradesTable.broker, broker),
+      // `x NOT IN (...)` is NULL for a NULL x, which would silently drop every
+      // manual trade out of the answer — hence the explicit IS NULL arm.
+      refBatches.length
+        ? or(isNull(tradesTable.importBatchId), notInArray(tradesTable.importBatchId, refBatches))
+        : undefined,
+    ))
+    .limit(1)
+    .get();
+  return row != null;
+}
+
+/** Would this file's trades be SKIPPED as already-held book rows? */
+function supersededByBookNow(tx: TxLike, parsed: ParsedFile, accountId: number): boolean {
+  if (parsed.trades.length === 0) return false;
+  if (!REFERENCE_SOURCE_IDS.includes(parsed.sourceId)) return false;
+  return holdsBookTrades(tx, accountId, parsed.broker);
+}
+
+
 export interface PreviewRow {
   tradingsymbol: string;
   symbol: string;
@@ -282,6 +344,13 @@ export interface PreviewResult {
   crossSource?: CrossSourceReport;
   /** Same instrument, same day, DIFFERENT broker — informational only. */
   crossBroker?: string | null;
+  /**
+   * v3.9: this file states the broker's figures AND carries trades, and the
+   * target account already holds this broker's book. The commit will store the
+   * figures and skip the trades — so the button must offer to STORE, not to
+   * commit rows that will never land.
+   */
+  supersededByBook?: boolean;
 }
 
 
@@ -401,6 +470,7 @@ export function previewParsedFile(
     format: parsed.format,
     warnings: parsed.warnings,
     rawText: parsed.rawText,
+    supersededByBook: supersededByBookNow(db, parsed, accountId),
     rows,
     shape: {
       sourceRows: parsed.sourceRows ?? null,
@@ -667,6 +737,14 @@ export function commitParsedFile(
     let added = 0, skipped = 0, netPnl = 0, openCount = 0, openingSells = 0;
     const seenInThisFile = new Set<string>();
 
+    // ── The book wins over the reference ───────────────────────────────────
+    // Decided ONCE, before any row is written, and against the account as it
+    // stands at the start of this transaction — evaluating it per row would
+    // let this file's own first insert make itself the book.
+    const referenceCarryingTrades =
+      parsed.trades.length > 0 && REFERENCE_SOURCE_IDS.includes(parsed.sourceId);
+    const bookHeld = referenceCarryingTrades && holdsBookTrades(tx as unknown as TxLike, accountId, parsed.broker);
+
     for (const t of parsed.trades) {
       const b = buildRow(t, rates, overrides, defaults);
       // Counted BEFORE the duplicate check, and over every parsed row: the
@@ -674,6 +752,10 @@ export function commitParsedFile(
       // against their broker's statement. Added/skipped is a separate fact.
       if (t.basisUnknown) openingSells++;
       else if (b.isOpen) openCount++;
+      // Superseded rows are neither ADDED nor SKIPPED-as-duplicate: they are a
+      // third outcome, counted in `total` and named in its own warning. Calling
+      // them duplicates would be a lie — dedup could not see them.
+      if (bookHeld) continue;
       if (existing.has(b.dedup) || seenInThisFile.has(b.dedup)) {
         skipped++;
         continue;
@@ -817,6 +899,11 @@ export function commitParsedFile(
         after: { accountId, broker: parsed.broker, sourceId: parsed.sourceId, figures: referenceStored, importBatchId: batchId },
         source: "import",
       });
+    }
+
+    if (referenceCarryingTrades) {
+      const note = referenceVsBookNote(parsed.trades.length, bookHeld);
+      if (note) commitWarnings.push(note);
     }
 
     let enrichApplied = 0;

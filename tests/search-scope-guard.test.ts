@@ -53,6 +53,26 @@ beforeAll(async () => {
       { accountId: SWING, fy: "2026-27", paidOn: "2026-06-15", amount: 5000, note: "june instalment" },
     ])
     .run();
+  // Ledger (v3.9, Search v2) — account-scoped, and the FIRST source whose
+  // scope is enforced by a JOIN rather than a drizzle `where`: `ledger_fts`
+  // deliberately carries no account_id (migration 0061), so the reader must
+  // join back to `ledger_entries` for it. That is exactly the kind of filter
+  // that can be dropped without anything on screen looking wrong.
+  t.db
+    .insert(t.schema.ledgerEntries)
+    .values([
+      { accountId: PRIMARY, date: "2026-06-01", type: "charge", amountPaise: -5000, note: "brokerage truing-up alpha" },
+      { accountId: SWING, date: "2026-06-02", type: "charge", amountPaise: -7000, note: "brokerage truing-up beta" },
+    ])
+    .run();
+  // Audit is GLOBAL — audit_log has no account_id at all (0061 says so in as
+  // many words), so it has nothing to scope by and must not pretend to.
+  t.db
+    .insert(t.schema.auditLog)
+    .values([
+      { ts: "2026-06-01T10:00:00.000Z", entity: "ledger", action: "create", summary: "recorded brokerage truing-up" },
+    ])
+    .run();
 });
 
 afterAll(() => t?.cleanup());
@@ -114,6 +134,7 @@ describe("readers", () => {
     { key: "trades", q: "kou" },
     { key: "sessions", q: "gap fade" },
     { key: "challans", q: "june" },
+    { key: "ledger", q: "truing" },
   ];
 
   it.each(scoped)("$key reader filters by the account id it is handed, and 0 means every account", ({ key, q }) => {
@@ -125,6 +146,25 @@ describe("readers", () => {
     expect(swing, `${key}: nothing found for account ${SWING}`).toHaveLength(1);
     expect(primary[0].id).not.toBe(swing[0].id);
     expect(all.map((r) => r.id).sort()).toEqual([primary[0].id, swing[0].id].sort());
+  });
+
+  it("the ledger reader's ids are the FTS's own rowids, which are ledger_entries.id", () => {
+    const rows = t.sqlite
+      .prepare("SELECT l.id AS id FROM ledger_fts f JOIN ledger_entries l ON l.id = f.rowid WHERE ledger_fts MATCH ? AND l.account_id = ?")
+      .all('"truing"', PRIMARY) as { id: number }[];
+    expect(rows).toHaveLength(1);
+    expect(search.SOURCE_READERS.ledger("truing", PRIMARY).map((r) => r.id)).toEqual(rows.map((r) => r.id));
+  });
+
+  it("audit is global: its ids are audit_fts rowids and every account sees them", () => {
+    const rows = t.sqlite
+      .prepare("SELECT a.id AS id FROM audit_fts f JOIN audit_log a ON a.id = f.rowid WHERE audit_fts MATCH ?")
+      .all('"truing"') as { id: number }[];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(SOURCES.audit.scope).toBe("global");
+    for (const id of [PRIMARY, SWING, 0]) {
+      expect(search.SOURCE_READERS.audit("truing", id).map((r) => r.id), `account ${id}`).toEqual(rows.map((r) => r.id));
+    }
   });
 
   it("every account-scoped source in the registry is covered by the filter proof above", () => {

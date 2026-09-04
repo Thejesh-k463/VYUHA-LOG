@@ -18,7 +18,17 @@ import { PRO_FEATURES } from "@/lib/license";
 
 export type SearchScope = "account" | "global";
 
-export type SourceKey = "trades" | "symbols" | "playbooks" | "instruments" | "sessions" | "challans" | "help" | "screens";
+export type SourceKey =
+  | "trades"
+  | "symbols"
+  | "playbooks"
+  | "instruments"
+  | "sessions"
+  | "challans"
+  | "ledger"
+  | "help"
+  | "screens"
+  | "audit";
 
 export interface SourceSpec {
   /** Chip label in the UI. */
@@ -46,8 +56,18 @@ export const SOURCES: Readonly<Record<SourceKey, SourceSpec>> = {
   instruments: { label: "Instruments", scope: "global", table: "instruments" },
   sessions: { label: "Sessions", scope: "account", table: "trading_sessions" },
   challans: { label: "Challans", scope: "account", table: "advance_tax_challans" },
+  // Search v2 (v3.9). `ledger_entries` carries account_id, so the ledger is
+  // account data and its reader joins `ledger_fts` back to the base table for
+  // the filter — the FTS index itself declares no account_id (migration 0061
+  // explains why an index must not enter the account-scoped-table registry).
+  ledger: { label: "Ledger", scope: "account", table: "ledger_entries" },
   help: { label: "Help", scope: "global", perResultLock: true },
   screens: { label: "Screens", scope: "global", perResultLock: true },
+  // `audit_log` HAS NO account_id — one append-only history for the whole
+  // install — so the audit trail is global by the shape of the table, not by
+  // an omission here. If it ever gains the column, this line and its reader
+  // must change together, and the scope guard fails until they do.
+  audit: { label: "Audit", scope: "global", table: "audit_log" },
 };
 
 /** Registry order = chip order. */

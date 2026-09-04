@@ -157,7 +157,18 @@ describe("MIN_QUERY is 2 but the trigram index needs 3", () => {
     expect(src, "the cursor and the list must walk the SAME rows").toContain("groupBySource(visibleResults(q, results))");
     expect(src, "no word on why Trades is missing").toMatch(/Trades need \{TRIGRAM_MIN\}\+ characters/);
     expect(src, "a truncated group looks complete").toMatch(/g\.results\.length === RESULT_CAP[\s\S]*Showing first \{RESULT_CAP\} — refine the query\./);
-    expect(src, "global rows read as the selected account's").toMatch(/SOURCES\[g\.key\]\.scope === "global"[\s\S]*· all accounts/);
+    // COPY PASS (v3.9). "· all accounts" was ambiguous in the aggregate view:
+    // there, EVERY group covers every account, so the suffix read as a claim
+    // about this group's rows rather than about the source's scope. The suffix
+    // now says what it means — these rows were NOT filtered by the account
+    // selection — and the account-scoped groups still say nothing at all,
+    // because this component is not told which account is selected and must
+    // not imply one.
+    expect(src, "global rows read as the selected account's").toMatch(/SOURCES\[g\.key\]\.scope === "global"[\s\S]{0,120}· across all accounts/);
+    expect(src, "the old ambiguous suffix is gone").not.toMatch(/· all accounts/);
+    const suffixes = src.match(/· across all accounts/g) ?? [];
+    expect(suffixes, "exactly one suffix, and it is the global-scope one").toHaveLength(1);
+    expect(src, "the results list must not be told the selected account").not.toMatch(/accountId/);
   });
 
   it("the palette's keyboard cursor walks the same filtered list", () => {

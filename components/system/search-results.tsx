@@ -82,10 +82,24 @@ export default function SearchResults({ q, results, loading, error, cats, onTogg
             <section key={g.key} data-search-group={g.key} aria-label={g.label}>
               {/* A global source is not filtered by the selected account, so
                   its rows come from every book — the label says so, otherwise
-                  a user on one account reads them as that account's. */}
+                  a user on one account reads them as that account's.
+
+                  COPY (v3.9): the old bare suffix read as a claim about THESE
+                  rows, which is ambiguous in the aggregate view — there every
+                  group covers every account, so it appeared to distinguish
+                  groups that are not in fact different. The wording below
+                  states the property that is actually true of this source:
+                  its rows were not filtered by the account selection.
+
+                  The account-scoped groups say NOTHING, deliberately. This
+                  component is never told which account is selected — the
+                  route resolves it server-side (invariant 8) — so any suffix
+                  here would either name an account it cannot know or repeat
+                  the sidebar. Silence means "the selection you can already
+                  see", which is what the rows are. */}
               <h3 className="px-3 pb-0.5 pt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
                 {g.label}
-                {SOURCES[g.key].scope === "global" && <span className="opacity-70"> · all accounts</span>}
+                {SOURCES[g.key].scope === "global" && <span className="opacity-70"> · across all accounts</span>}
               </h3>
               {g.results.map((r) => {
                 const i = cursor++;

@@ -144,3 +144,57 @@ export function importShapeCompact(s: ImportShape): string {
     ? `${n(s.sourceRows)} → ${n(s.positions)}`
     : n(s.positions);
 }
+
+/**
+ * The Broker-truth screen. Named here because the sentence below points at it
+ * and the two must not drift apart.
+ */
+export const BROKER_TRUTH_HREF = "/reports/reconcile";
+
+/**
+ * A reference file imports NO trades — that is what it is for. Ending such a
+ * commit on "Imported 0 trades" describes a failure that did not happen, so
+ * the figures it DID store get their own sentence, and the sentence points at
+ * the screen that reads them. Null when nothing was stored.
+ */
+export function referenceStoredNote(count: number | undefined | null): string | null {
+  if (!count || count <= 0) return null;
+  return `${n(count)} broker ${plural(count, "figure", "figures")} stored — see Broker truth`;
+}
+
+/**
+ * An enrichment changes rows that were already in the book; it creates none.
+ * BOTH numbers are stated for the same reason the shape sentence states both
+ * of its own: "applied to 13" alone hides the five lines that matched nothing,
+ * and a partial reported as a success is how a silent gap survives. Null when
+ * the file carried no enrichment at all.
+ */
+export function enrichAppliedNote(
+  applied: number | undefined | null,
+  total: number | undefined | null,
+): string | null {
+  if (!total || total <= 0) return null;
+  return `Fill times applied to ${n(applied ?? 0)} of ${n(total)} contract-note ${plural(total, "line", "lines")}`;
+}
+
+/**
+ * A source that states the broker's FIGURES but also emits trades (the Dhan
+ * Realised P&L is the only one) meets one of two accounts, and the sentence
+ * says which. The figures are stored either way; only the trades are at stake.
+ *
+ * `bookHeld` — the account already holds trades for this broker from a
+ * non-reference source, i.e. the transaction report, which is the book. The
+ * P&L's own per-scrip rows describe the SAME trades and hash differently, so
+ * importing them books every position twice with nothing on screen looking
+ * broken. They are skipped, and the count that was skipped is stated.
+ *
+ * Otherwise the v3.8 behaviour stands — the rows are the only record of those
+ * trades there is, so they are imported — with the caveat said out loud rather
+ * than discovered later. Nothing is auto-deleted when the book arrives.
+ */
+export function referenceVsBookNote(positions: number, bookHeld: boolean): string | null {
+  if (positions <= 0) return null;
+  return bookHeld
+    ? `${n(positions)} ${plural(positions, "position", "positions")} from the Realised P&L ${plural(positions, "was", "were")} not imported — your Dhan transaction report is the book; the file's figures were stored for Broker Truth.`
+    : "Imported as trades because no Dhan transaction report is in this account; import the transaction report to make it the book — these rows will then be superseded";
+}

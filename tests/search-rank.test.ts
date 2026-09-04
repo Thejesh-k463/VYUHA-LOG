@@ -114,6 +114,8 @@ describe("rankCandidates — order and tie-break", () => {
 describe("category chips", () => {
   it("are the registry's keys, in registry order", () => {
     expect(CATEGORY_CHIPS).toEqual(SOURCE_KEYS);
-    expect(CATEGORY_CHIPS).toEqual(["trades", "symbols", "playbooks", "instruments", "sessions", "challans", "help", "screens"]);
+    // v3.9 (Search v2): `ledger` sits with the other account data, `audit`
+    // last — a history of what the app did, not of what the market did.
+    expect(CATEGORY_CHIPS).toEqual(["trades", "symbols", "playbooks", "instruments", "sessions", "challans", "ledger", "help", "screens", "audit"]);
   });
 });

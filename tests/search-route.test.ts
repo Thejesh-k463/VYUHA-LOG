@@ -62,6 +62,18 @@ beforeAll(async () => {
   primaryTradeId = rows[0].id;
   swingTradeId = rows[1].id;
   t.db.insert(t.schema.playbooks).values({ name: "Gap fade", description: "Fade the opening gap into VWAP", rules: ["wait for the first 15m close"] }).run();
+  // Search v2 (v3.9): the cash ledger and the audit trail join the index.
+  t.db
+    .insert(t.schema.ledgerEntries)
+    .values([
+      { accountId: PRIMARY, date: "2026-06-01", type: "deposit", amountPaise: 100000, note: "quarterly topup alpha" },
+      { accountId: SWING, date: "2026-06-02", type: "deposit", amountPaise: 200000, note: "quarterly topup beta" },
+    ])
+    .run();
+  t.db
+    .insert(t.schema.auditLog)
+    .values({ ts: "2026-06-03T09:30:00.000Z", entity: "settings", action: "update", summary: "quarterly topup recorded" })
+    .run();
 });
 
 afterAll(() => t?.cleanup());
@@ -161,11 +173,46 @@ describe("shape", () => {
     const body = (await get("?q=overflow")).body;
     expect(body.ok).toBe(true);
     expect(body.cap).toBe(50);
-    expect(body.categories).toEqual(["trades", "symbols", "playbooks", "instruments", "sessions", "challans", "help", "screens"]);
+    expect(body.categories).toEqual(["trades", "symbols", "playbooks", "instruments", "sessions", "challans", "ledger", "help", "screens", "audit"]);
     expect(typeof body.tookMs).toBe("number");
     const counts = new Map<string, number>();
     for (const r of body.results as Result[]) counts.set(r.source, (counts.get(r.source) ?? 0) + 1);
     for (const [source, n] of counts) expect(n, source).toBeLessThanOrEqual(50);
     expect(counts.get("trades")).toBe(50);
+  });
+});
+
+describe("ledger and audit (Search v2)", () => {
+  it("a ledger row is found only in the selected account, and in both under All", async () => {
+    selectAccount(PRIMARY);
+    const primary = ((await get("?q=topup&cat=ledger")).body.results as Result[]).filter((r) => r.source === "ledger");
+    expect(primary.map((r) => r.title)).toHaveLength(1);
+    expect(primary[0].href).toBe("/cash");
+    expect(primary[0].locked, "the user's own cash ledger is never gated (invariant 7)").toBe(false);
+
+    selectAccount(SWING);
+    const swing = ((await get("?q=topup&cat=ledger")).body.results as Result[]).filter((r) => r.source === "ledger");
+    expect(swing).toHaveLength(1);
+    expect(swing[0].id).not.toBe(primary[0].id);
+
+    selectAccount(ALL);
+    const all = ((await get("?q=topup&cat=ledger")).body.results as Result[]).filter((r) => r.source === "ledger");
+    expect(all.map((r) => r.id).sort()).toEqual([primary[0].id, swing[0].id].sort());
+  });
+
+  it("an audit row is global — the same answer whichever account is selected", async () => {
+    for (const id of [PRIMARY, SWING, ALL]) {
+      selectAccount(id);
+      const hits = ((await get("?q=topup&cat=audit")).body.results as Result[]).filter((r) => r.source === "audit");
+      expect(hits.length, `account ${id}`).toBe(1);
+      expect(hits[0].href).toBe("/audit");
+      expect(hits[0].locked).toBe(false);
+    }
+  });
+
+  it("neither screen is on PRO_FEATURES, so neither source can arrive locked", () => {
+    const gated = new Set(PRO_FEATURES.filter((f) => !f.partial).map((f) => f.href.split("?")[0]));
+    expect(gated.has("/cash")).toBe(false);
+    expect(gated.has("/audit")).toBe(false);
   });
 });

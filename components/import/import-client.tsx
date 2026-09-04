@@ -14,7 +14,7 @@ import { ColumnMapper } from "./column-mapper";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 import type { Broker } from "@/lib/domain/constants";
 import Link from "next/link";
-import { importShapeSentence, openingSellNote, openingSellReviewNote, relabelledNote, type ImportShape } from "@/lib/domain/import-shape";
+import { BROKER_TRUTH_HREF, enrichAppliedNote, importShapeSentence, openingSellNote, openingSellReviewNote, referenceStoredNote, relabelledNote, type ImportShape } from "@/lib/domain/import-shape";
 import { RemoveBrokerPanel } from "./remove-broker-panel";
 
 /** Where the opening-sell caution sends the reader: the trades whose cost basis is unknown. */
@@ -80,12 +80,17 @@ interface PreviewResp {
     suggested: ColumnMapping;
   } | null;
   detected: { sourceId: string; label: string; confidence: number };
+  /** What the file would write besides trades: broker figures, fill times. */
+  stores?: { reference: number; enrich: number };
   candidates: { sourceId: string; label: string; confidence: number }[];
   preview: {
     sourceId: string; broker: string; format: string; warnings: string[]; rawText?: string;
     rows: PreviewRow[];
     shape: ImportShape;
     summary: { total: number; newCount: number; dupCount: number; grossPnl: number; chargesTotal: number; netPnl: number };
+    /** The file states broker figures AND carries trades the account's book
+     *  already holds: the commit stores the figures and skips the rows. */
+    supersededByBook?: boolean;
     reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
     crossSource?: { collisions: { symbol: string; kind: string; detail: string }[]; symbols: string[]; risky: boolean; message: string | null };
   };
@@ -132,7 +137,7 @@ export function ImportClient({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape } | null>(null);
+  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number } | null>(null);
   const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
   /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
   const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
@@ -179,7 +184,7 @@ export function ImportClient({
         fd.append("productOverrides", JSON.stringify(productOverrides));
       }
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape } }>(res);
+      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number } }>(res);
       if (!res.ok) { setError(json.error ?? "Commit failed"); return; }
       setCommitted(json.result);
       setPreview(null);
@@ -265,6 +270,16 @@ export function ImportClient({
     : 0;
 
   const p = preview?.preview;
+  /**
+   * A file with nothing NEW to import can still have something to write: a
+   * broker's stated figures, or fill times for trades already in the book.
+   * The button used to enable on new trades alone, which made the whole
+   * reference path unreachable the moment the tradebook had been imported
+   * first — the order the owner actually imports in.
+   */
+  const storesOnly =
+    ((p?.summary.newCount ?? 0) === 0 || p?.supersededByBook === true) &&
+    ((preview?.stores?.reference ?? 0) > 0 || (preview?.stores?.enrich ?? 0) > 0);
 
   const isPnlTab = tab === "pnl";
 
@@ -437,6 +452,22 @@ export function ImportClient({
                   {openingSellNote(committed.shape.openingSells)}
                 </p>
               )}
+              {/* A reference file imports no trades and an enrichment creates
+                  none, so without these two lines both land on "Imported 0
+                  trades" — a failure report for a file that worked. */}
+              {referenceStoredNote(committed.referenceStored) && (
+                <p data-testid="commit-reference" className="text-xs text-muted-foreground">
+                  {referenceStoredNote(committed.referenceStored)}{" "}
+                  <Link href={BROKER_TRUTH_HREF} className="underline underline-offset-2 hover:text-foreground">
+                    Open Broker truth →
+                  </Link>
+                </p>
+              )}
+              {enrichAppliedNote(committed.enrichApplied, committed.enrichTotal) && (
+                <p data-testid="commit-enrich" className="text-xs text-muted-foreground">
+                  {enrichAppliedNote(committed.enrichApplied, committed.enrichTotal)}
+                </p>
+              )}
             </div>
             <Button size="sm" variant="secondary" className="shrink-0" onClick={() => router.push("/trades")}>
               View trades →
@@ -466,8 +497,10 @@ export function ImportClient({
                 Detected: {preview!.detected.label}
                 <Badge variant="accent">{Math.round(preview!.detected.confidence * 100)}% match</Badge>
               </CardTitle>
-              <Button onClick={doCommit} disabled={busy || p.summary.newCount === 0}>
-                Commit {p.summary.newCount} new trade{p.summary.newCount === 1 ? "" : "s"}
+              <Button onClick={doCommit} disabled={busy || (p.summary.newCount === 0 && !storesOnly)}>
+                {storesOnly
+                  ? `Store ${preview!.stores!.reference > 0 ? `${preview!.stores!.reference} broker figure${preview!.stores!.reference === 1 ? "" : "s"}` : `${preview!.stores!.enrich} fill time${preview!.stores!.enrich === 1 ? "" : "s"}`}`
+                  : `Commit ${p.summary.newCount} new trade${p.summary.newCount === 1 ? "" : "s"}`}
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">

@@ -2887,3 +2887,39 @@ Nothing a parser SEES changes except phantom trailing rows; merges untouched. Pi
 `tests/workbook-range-trim.test.ts` (red: `expected 65535 to be less than 400`). Same trap will hit
 any Dhan `.xls` (Realised P&L is BIFF too) and any detector added later — the memo is the fix, not
 per-parser row caps.
+
+## 2026-09-04 — v3.9 W3 (UI): what the two screens and the e2e run settled
+
+- **Broker Truth (`/reports/reconcile`)** — Pro-gated, nav group Import (no Reports group exists),
+  per-FY / per-scrip / per-segment / holdings tables; ISIN-first join, symbol fallback, the match
+  key printed per row (the Paytm ticker→code relabel makes a silent symbol join unsafe). Five
+  reference sources feed it (`RECONCILE_SOURCE_IDS`), not the four the brief said.
+- **The Dhan Realised P&L was double-counting the book.** It still emitted per-scrip trades (v3.8,
+  when it was the only Dhan source) beside its v3.9 reference rows; imported after the GTR into one
+  account the F&O segment read exactly 2× the broker and dedup skipped 0 (hashes differ by
+  construction). Rule now in `commitParsedFile`: a reference source whose account already holds
+  BOOK trades from that broker stores figures and skips its trades ("your Dhan transaction report is
+  the book"); into an empty account it still imports them and says they will be superseded. Keyed on
+  `broker_reference.import_batch_id` vs `trades.import_batch_id` with an explicit `IS NULL` arm for
+  manual trades — neither `trades` nor `import_batches` carries a source id. Golden leg 5 (one
+  account per fixture) untouched. **Proof the screen works:** with the double count gone, the F&O
+  segment reconciles to ₹0.01 on the a2 pair; equity's ₹665.98 gap carries "1 sale worth ₹21,904 has
+  no purchase" + "439 shares across 4 positions still open".
+- `reconcileFrom` had two defects before that: reasons were computed at scrip scope only (segment
+  rows — the only rows the Dhan file states — showed an empty Why column), and `FAMILY_OF` used an
+  invented segment vocabulary so every F&O trade fell to `null` (Vyuha ₹0). Now `Record<Segment,…>`
+  so tsc enforces exhaustiveness; an out-of-tolerance line with zero facts prints the facts checked.
+- **Floating search assistant** — the first e2e run showed the panel at (0,0) for everyone, not just
+  the test: `PopoverTrigger` registers itself as the Popper anchor before `PopoverAnchor`'s effect
+  flips `hasCustomAnchor`, and Radix never releases the detached node. The launcher is now a plain
+  button; the positioned `PopoverAnchor` is the popover's only anchor. Hook + envelope were correct.
+- Ledger + audit FTS: p95 15.5 ms at 25k rows each (200 queries × 2 scopes); trades unchanged.
+- e2e first full run: 82 passed, the two new specs failed on real defects above (not on the harness).
+- README counts drifted twice in one wave (a fix agent adds a test file after the sync) — the sync
+  is the LAST thing before verify, never before fix agents run.
+
+**W3 double perf sweep (25k seed, prod build, idle machine, 44 routes × 3, 1,500 ms median
+budget): no breach.** Sweep 1: overall median 978 ms, slowest 1,472, `/trades` 1,010 (p95 1,025).
+Sweep 2: overall 929, slowest 1,394, `/trades` 954 (p95 1,009). The W2 sweep's +12–27% moves on
+`/`, `/settings`, `/review` were machine load, as suspected: on an idle machine they sit inside the
+budget. `/trades` is no longer the one route over budget (1,968 → ~1,000).

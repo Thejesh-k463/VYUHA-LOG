@@ -7,6 +7,7 @@ import { getSettings } from "./settings";
 import { withinTolerance } from "@/lib/analytics/ais";
 import { currentFy } from "@/lib/analytics/tax";
 import type { ReferenceScope } from "@/lib/import/types";
+import type { Segment } from "@/lib/domain/constants";
 
 /**
  * v3.9 "Trust the numbers" — reading `broker_reference`, and reconciling it
@@ -61,11 +62,18 @@ export interface ReconcileReason {
 }
 
 export interface ReconcileLine {
-  scope: "fy" | "scrip";
-  /** FY label, or the ISIN (symbol when the broker stated no ISIN). */
+  scope: "fy" | "scrip" | "segment";
+  /** FY label, the segment family, or the ISIN (symbol when none was stated). */
   key: string;
   label: string;
   isin: string | null;
+  /**
+   * The FY every row in this bucket belongs to, or null when the broker
+   * stated none or stated more than one. It exists so the screen can FILTER
+   * by year without re-deriving a year from a date — two bucketings of the
+   * same rows is exactly the kind of delta this module refuses to invent.
+   */
+  fy: string | null;
   broker: string | null;
   /** The broker's stated figures, verbatim. */
   stated: Record<string, number>;
@@ -76,11 +84,47 @@ export interface ReconcileLine {
   /** Gross P&L agreement under the AIS tolerance (max ₹10, 0.5%). */
   matched: boolean;
   reasons: ReconcileReason[];
+  /**
+   * Set ONLY on a line that is out of tolerance and for which none of the four
+   * computed facts fired: it names the facts that were checked and came back
+   * zero. Never a generic "mismatch" — see `checkedNote`'s construction.
+   */
+  checkedNote: string | null;
+}
+
+/**
+ * A broker's demat statement beside the book's own open quantity.
+ *
+ * Quantities only, and on purpose: a holdings file states a CLOSING PRICE and
+ * a valuation, the journal states a cost basis, and subtracting one from the
+ * other is not a difference in anything — it is unrealised P&L wearing the
+ * costume of a reconciliation.
+ */
+export interface ReconcileHolding {
+  /** ISIN (symbol when the file stated none). */
+  key: string;
+  label: string;
+  isin: string | null;
+  broker: string | null;
+  /** Statement date, verbatim. */
+  asOf: string | null;
+  brokerQty: number;
+  vyuhaQty: number;
+  /** broker − vyuha. Positive = the broker holds more than the book. */
+  delta: number;
 }
 
 export interface Reconciliation {
   fy: ReconcileLine[];
+  /**
+   * Segment families (equity, fno, commodity, currency). The Dhan Realised
+   * P&L states its figures ONLY per segment — no FY row, no scrip row — so
+   * without this the owner's own primary reference file reconciles against an
+   * empty screen.
+   */
+  segment: ReconcileLine[];
   scrip: ReconcileLine[];
+  holdings: ReconcileHolding[];
 }
 
 /** A trade as this module needs it — the projection `reconcile` reads. */
@@ -125,13 +169,40 @@ function scripKey(isin: string | null | undefined, symbol: string | null | undef
   return (symbol ?? "").trim().toUpperCase();
 }
 
-/** Vyuha's segment for a scrip, as a set — used only to NAME a disagreement. */
-const SEGMENT_WORDS: Record<string, string[]> = {
-  equity: ["eq_delivery", "eq_intraday", "eq_mtf"],
-  fno: ["fut_index", "fut_stock", "opt_index", "opt_stock"],
-  commodity: ["comm_fut", "comm_opt"],
-  currency: ["cur_fut", "cur_opt"],
+/**
+ * Vyuha's segment → the broker's segment family.
+ *
+ * TYPED `Record<Segment, …>` ON PURPOSE: this map used to be hand-written from
+ * a vocabulary that does not exist (`fut_index`, `opt_stock`, `comm_fut`, …),
+ * so EVERY F&O trade fell through `FAMILY_OF[t.segment] ?? null` and the F&O
+ * segment line reported Vyuha's side as ₹0 against the broker's own total —
+ * a 100%-of-the-figure error that looked like a reconciliation result. Keyed
+ * on `Segment`, tsc now fails the build when `lib/domain/constants.ts` gains
+ * a segment nobody classified here.
+ *
+ * There is no `currency` entry because Vyuha has no currency segment: a
+ * broker's currency row therefore compares against a real, stated zero.
+ */
+const FAMILY_OF: Record<Segment, "equity" | "fno" | "commodity" | "currency"> = {
+  eq_delivery: "equity",
+  eq_mtf: "equity",
+  eq_intraday: "equity",
+  index_option: "fno",
+  stock_option: "fno",
+  future: "fno",
+  commodity_future: "commodity",
+  commodity_option: "commodity",
 };
+
+/** The reverse, for naming a disagreement. Derived, never re-typed. */
+export const SEGMENT_WORDS: Record<string, string[]> = Object.entries(FAMILY_OF).reduce(
+  (acc, [seg, fam]) => ((acc[fam] ??= []).push(seg), acc),
+  {} as Record<string, string[]>,
+);
+
+/** The family a book segment belongs to, or null when nothing classifies it. */
+const familyOf = (segment: string): string | null =>
+  (FAMILY_OF as Record<string, string>)[segment] ?? null;
 
 function emptyFigures() {
   return { qty: 0, buyValue: 0, sellValue: 0, grossPnl: 0, netPnl: 0, totalCharges: 0 };
@@ -173,9 +244,15 @@ export function reconcileFrom(
   // ── Vyuha's side, bucketed once ─────────────────────────────────────────
   const vyuhaByFy = new Map<string, ReturnType<typeof emptyFigures>>();
   const vyuhaByScrip = new Map<string, ReturnType<typeof emptyFigures>>();
+  const vyuhaByFamily = new Map<string, ReturnType<typeof emptyFigures>>();
   const openQtyByScrip = new Map<string, number>();
+  /** Open positions per segment family — the segment-scope twin of the above. */
+  const openByFamily = new Map<string, { count: number; qty: number }>();
+  /** Book segments no family classifies. A fact, and the guard on FAMILY_OF. */
+  const unclassified = new Map<string, number>();
   const unpricedByScrip = new Map<string, { count: number; sellValue: number }>();
   const unpricedByFy = new Map<string, { count: number; sellValue: number }>();
+  const unpricedByFamily = new Map<string, { count: number; sellValue: number }>();
   const segmentsByScrip = new Map<string, Set<string>>();
   const labelByScrip = new Map<string, string>();
 
@@ -187,72 +264,116 @@ export function reconcileFrom(
       segs.add(t.segment);
       segmentsByScrip.set(key, segs);
     }
-    if (t.isOpen) {
-      // An open lot is the commonest honest reason for a gap: the broker has
-      // realised a position Vyuha still holds open (or vice versa).
-      if (key) openQtyByScrip.set(key, (openQtyByScrip.get(key) ?? 0) + (t.buyQty - t.sellQty));
-      continue;
-    }
+    const family = familyOf(t.segment);
+    if (!family) unclassified.set(t.segment, (unclassified.get(t.segment) ?? 0) + 1);
     const fy = fyOf(t.sellDate, fyStartMonth, fallbackFy);
-    const fyAcc = vyuhaByFy.get(fy) ?? emptyFigures();
-    addTrade(fyAcc, t);
-    vyuhaByFy.set(fy, fyAcc);
-    if (key) {
-      const sAcc = vyuhaByScrip.get(key) ?? emptyFigures();
-      addTrade(sAcc, t);
-      vyuhaByScrip.set(key, sAcc);
-    }
-    if (t.acquisition === "unknown") {
+
+    // An unpriced sale is a SALE WITH NO PURCHASE, and whether the position is
+    // closed or still open changes nothing about that. It used to be counted
+    // only for closed trades, below the `isOpen` guard — so the one shape that
+    // is ALWAYS unpriced, an opening sell, was the one shape never counted,
+    // and the line it explains carried no reason at all.
+    if (t.acquisition === "unknown" && t.sellQty > 0) {
       const u = unpricedByFy.get(fy) ?? { count: 0, sellValue: 0 };
       u.count++; u.sellValue += t.sellValue;
       unpricedByFy.set(fy, u);
+      if (family) {
+        const uf = unpricedByFamily.get(family) ?? { count: 0, sellValue: 0 };
+        uf.count++; uf.sellValue += t.sellValue;
+        unpricedByFamily.set(family, uf);
+      }
       if (key) {
         const us = unpricedByScrip.get(key) ?? { count: 0, sellValue: 0 };
         us.count++; us.sellValue += t.sellValue;
         unpricedByScrip.set(key, us);
       }
     }
+
+    if (t.isOpen) {
+      // An open lot is the commonest honest reason for a gap: the broker has
+      // realised a position Vyuha still holds open (or vice versa).
+      if (key) openQtyByScrip.set(key, (openQtyByScrip.get(key) ?? 0) + (t.buyQty - t.sellQty));
+      if (family) {
+        const o = openByFamily.get(family) ?? { count: 0, qty: 0 };
+        o.count++; o.qty += Math.abs(t.buyQty - t.sellQty);
+        openByFamily.set(family, o);
+      }
+      continue;
+    }
+    const fyAcc = vyuhaByFy.get(fy) ?? emptyFigures();
+    addTrade(fyAcc, t);
+    vyuhaByFy.set(fy, fyAcc);
+    if (family) {
+      const famAcc = vyuhaByFamily.get(family) ?? emptyFigures();
+      addTrade(famAcc, t);
+      vyuhaByFamily.set(family, famAcc);
+    }
+    if (key) {
+      const sAcc = vyuhaByScrip.get(key) ?? emptyFigures();
+      addTrade(sAcc, t);
+      vyuhaByScrip.set(key, sAcc);
+    }
   }
 
   // ── The broker's side, aggregated to the same buckets ────────────────────
-  interface Bucket { stated: Record<string, number>; brokers: Set<string>; isin: string | null; label: string; statesCharges: boolean }
+  interface Bucket { stated: Record<string, number>; brokers: Set<string>; isin: string | null; label: string; statesCharges: boolean; fys: Set<string> }
   const fyBuckets = new Map<string, Bucket>();
   const scripBuckets = new Map<string, Bucket>();
+  const segmentBuckets = new Map<string, Bucket>();
   /** Segment families this broker states any non-zero figure for. */
   const claimedSegments = new Set<string>();
+  /** Demat rows, kept apart from the realised ones — see ReconcileHolding. */
+  interface HoldingBucket { qty: number; label: string; isin: string | null; brokers: Set<string>; asOf: string | null }
+  const holdingBuckets = new Map<string, HoldingBucket>();
 
   const put = (map: Map<string, Bucket>, key: string, r: ReferenceRowRecord, label: string) => {
-    const b = map.get(key) ?? { stated: {}, brokers: new Set<string>(), isin: r.isin ?? null, label, statesCharges: false };
+    const b = map.get(key) ?? { stated: {}, brokers: new Set<string>(), isin: r.isin ?? null, label, statesCharges: false, fys: new Set<string>() };
     for (const [f, v] of Object.entries(r.figures ?? {})) b.stated[f] = r2((b.stated[f] ?? 0) + v);
     b.brokers.add(r.broker);
     if (r.isin && !b.isin) b.isin = r.isin;
     if (typeof r.figures?.totalCharges === "number") b.statesCharges = true;
+    if (r.fy) b.fys.add(r.fy);
     map.set(key, b);
   };
 
   for (const r of refs) {
     if (r.scope === "fy") {
       put(fyBuckets, r.key, r, r.key);
-    } else if (r.scope === "scrip" || r.scope === "holding") {
+    } else if (r.scope === "scrip") {
       const key = scripKey(r.isin ?? r.key, r.symbol ?? r.key);
       put(scripBuckets, key, r, r.symbol ?? r.key);
       // A dated scrip figure also belongs to its FY, but only the broker's
       // OWN fy rows are compared per FY — summing scrip rows into an FY total
       // would state the same money twice when the file gives both.
+    } else if (r.scope === "holding") {
+      // A demat quantity is NOT a realised quantity. Adding it to the scrip
+      // bucket puts a holding beside a sale and calls the sum a disagreement.
+      const key = scripKey(r.isin ?? r.key, r.symbol ?? r.key);
+      const h = holdingBuckets.get(key) ?? { qty: 0, label: r.symbol ?? r.key, isin: r.isin ?? null, brokers: new Set<string>(), asOf: r.asOf };
+      h.qty = r2(h.qty + (r.figures?.qty ?? 0));
+      h.brokers.add(r.broker);
+      if (r.isin && !h.isin) h.isin = r.isin;
+      // The LATEST statement date wins the label: an older demat file states
+      // an older truth, and dating the row with the earlier one would blame
+      // the book for a position opened since.
+      if (r.asOf && (!h.asOf || r.asOf > h.asOf)) h.asOf = r.asOf;
+      holdingBuckets.set(key, h);
     } else if (r.scope === "segment") {
-      // A segment total is neither an FY nor a scrip, so it is never COMPARED.
-      // What it states is which segment families this broker trades in — and
-      // a family whose every figure is zero is not a claim, it is a row the
-      // report prints because it prints all four. Only a non-empty segment
-      // names a family.
-      if (Object.values(r.figures ?? {}).some((v) => v !== 0)) claimedSegments.add(r.key);
+      // A segment total states which families this broker trades in — a family
+      // whose every figure is zero is not a claim, it is a row the report
+      // prints because it prints all four. Only a non-empty segment names one.
+      if (Object.values(r.figures ?? {}).some((v) => v !== 0)) {
+        claimedSegments.add(r.key);
+        put(segmentBuckets, r.key, r, r.key);
+      }
     }
   }
 
   const lines = (
-    scope: "fy" | "scrip",
+    scope: "fy" | "scrip" | "segment",
     buckets: Map<string, Bucket>,
     vyuhaMap: Map<string, ReturnType<typeof emptyFigures>>,
+    unpricedMap: Map<string, { count: number; sellValue: number }>,
   ): ReconcileLine[] =>
     [...buckets].map(([key, b]) => {
       const v = vyuhaMap.get(key) ?? emptyFigures();
@@ -262,13 +383,13 @@ export function reconcileFrom(
       };
       const reasons: ReconcileReason[] = [];
 
-      const unpriced = scope === "fy" ? unpricedByFy.get(key) : unpricedByScrip.get(key);
+      const unpriced = unpricedMap.get(key);
       if (unpriced && unpriced.count > 0) {
         reasons.push({
           code: "unpriced_sales",
           count: unpriced.count,
           amount: r2(unpriced.sellValue),
-          detail: `${unpriced.count} sale${unpriced.count === 1 ? "" : "s"} worth ₹${r2(unpriced.sellValue).toLocaleString("en-IN")} have no purchase in your book, so Vyuha states no cost for them — the broker's figure does.`,
+          detail: `${unpriced.count} sale${unpriced.count === 1 ? "" : "s"} worth ₹${r2(unpriced.sellValue).toLocaleString("en-IN")} ${unpriced.count === 1 ? "has" : "have"} no purchase in your book, so Vyuha states no cost for ${unpriced.count === 1 ? "it" : "them"} — the broker's figure does.`,
         });
       }
 
@@ -278,6 +399,29 @@ export function reconcileFrom(
           amount: r2(v.totalCharges),
           detail: `The file states no charges; Vyuha's own charges for these rows are ₹${r2(v.totalCharges).toLocaleString("en-IN")}, which is the whole of any gross-vs-net gap.`,
         });
+      }
+
+      if (scope === "segment") {
+        // The same four facts the scrip table states, asked of a segment
+        // family. They were computed for scrip lines ONLY, so the Dhan
+        // Realised P&L — which states segment rows and nothing else — put
+        // every one of its lines on screen with an empty "Why" column.
+        const open = openByFamily.get(key);
+        if (open && open.count > 0) {
+          reasons.push({
+            code: "open_lots",
+            count: open.count,
+            detail: `${open.qty.toLocaleString("en-IN")} share${open.qty === 1 ? "" : "s"} across ${open.count} position${open.count === 1 ? "" : "s"} are still open in your book; a segment total states only what the broker has already realised.`,
+          });
+        }
+        if (unclassified.size > 0) {
+          const n = [...unclassified.values()].reduce((a, b) => a + b, 0);
+          reasons.push({
+            code: "product_difference",
+            count: n,
+            detail: `${n} trade${n === 1 ? "" : "s"} in your book are tagged ${[...unclassified.keys()].sort().join(", ")}, which belongs to no segment family — they are counted on neither side of this row.`,
+          });
+        }
       }
 
       if (scope === "scrip") {
@@ -303,21 +447,49 @@ export function reconcileFrom(
 
       const delta = deltaOf(b.stated, vyuha);
       const matched = b.stated.grossPnl != null && withinTolerance(b.stated.grossPnl, vyuha.grossPnl);
+      // A gap the book cannot account for is NOT a "mismatch" — that word says
+      // nothing a reader can act on. It is a list of the facts that were
+      // checked and came back zero, so the next question is obvious and the
+      // screen never pretends to an explanation it does not have (invariant 6).
+      const checkedNote = !matched && reasons.length === 0
+        ? `Nothing in your book accounts for this gap: 0 sales without a purchase, 0 open lots, no segment tagged outside the broker's families, and this file states its own charges. Checked, and found nothing — the cause is outside these 4 facts.`
+        : null;
       return {
         scope,
         key,
         label: b.label,
         isin: b.isin,
+        fy: b.fys.size === 1 ? [...b.fys][0] : null,
         broker: b.brokers.size === 1 ? [...b.brokers][0] : null,
         stated: b.stated,
         vyuha,
         delta,
         matched,
         reasons,
+        checkedNote,
       };
     }).sort((a, b) => a.key.localeCompare(b.key));
 
-  return { fy: lines("fy", fyBuckets, vyuhaByFy), scrip: lines("scrip", scripBuckets, vyuhaByScrip) };
+  const holdings: ReconcileHolding[] = [...holdingBuckets].map(([key, h]) => {
+    const vyuhaQty = r2(openQtyByScrip.get(key) ?? 0);
+    return {
+      key,
+      label: labelByScrip.get(key) ?? h.label,
+      isin: h.isin,
+      broker: h.brokers.size === 1 ? [...h.brokers][0] : null,
+      asOf: h.asOf,
+      brokerQty: h.qty,
+      vyuhaQty,
+      delta: r2(h.qty - vyuhaQty),
+    };
+  }).sort((a, b) => a.key.localeCompare(b.key));
+
+  return {
+    fy: lines("fy", fyBuckets, vyuhaByFy, unpricedByFy),
+    segment: lines("segment", segmentBuckets, vyuhaByFamily, unpricedByFamily),
+    scrip: lines("scrip", scripBuckets, vyuhaByScrip, unpricedByScrip),
+    holdings,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,93 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
+## 2. Current state — v3.9.0 BUILT, awaiting audit (2026-09-04)
+
+**Status:** branch `main` at `b929577` (W2) on top of `fb0e215` (W1); **W3's Broker-truth screen
+and Search v2 are in the working tree, not yet committed.** Nothing is bumped, tagged or
+published — the version strings stay **3.8.0** until the release skill runs. The measured record
+is the two `docs/DECISIONS.md` entries dated 2026-09-04 (`v3.9 recon corrections, owner rulings,
+and what Wave 1 measured`; `v3.9 W2: /trades server pagination, and the order that was never
+total`). **Still ahead: the adversarial audit wave, its fix wave, then the release skill + client
+ZIP + WDSI.**
+
+**What was built (owner's own broker exports, read in place; zero identity strings emitted):**
+- **Reference store (W1).** Migration **0061** (ledger + audit FTS5 — `account_id` in the VIEW
+  only, so an FTS index never enters the account-scoped-table registry) and **0062**
+  (`broker_reference`: scopes `fy | scrip | segment | holding | charge`, replace-on-conflict on
+  `(account, broker, source, scope, key, coalesce(as_of,''))`). `ParsedFile.reference` /
+  `ParsedFile.enrich` contract; commit persists reference rows and applies contract-note fill
+  times to EXISTING trades, never creating one.
+- **Seven parsers (W1), none of which imports a trade.** Paytm Realized P&L (918 lots,
+  `dd-MMM-yyyy`, Σ = the sheet's own Total to the paisa), Dhan DP charges (173 rows / 2,492.50;
+  a2 94 / 1,325.00; 352 merges lose no data cell), Dhan demat holdings (date from the `For` CELL,
+  filename is fallback and a disagreement warns; qty = free + locked + safe-keep + pledges), Dhan
+  contract note (PDF, `pdf-parse`; 0.95 named / 1.00, vs `detectPdf`'s flat 0.90; WIPRO
+  15-Apr-2026 12:26:49 / 12:28:33), Upstox `LEDGER_V3` (Σdebit 437.29 / Σcredit 2,500.00 /
+  closing 2,062.71 exact), Angel One `YourStatement` (running balance chains 0 → 1,417.56; the
+  Charges tables are `chargeRows` + reference, NOT ledger rows — the DP charge is already posted
+  in the Broking Ledger), Angel One `ProfitLoss_Statement` (delivery 3.95 + intraday −2.21 =
+  summary 1.74; F&O 149.25). **Two are format-only claims** — `dp-charges.xls` and Angel's
+  `ProfitLoss_Statement` name no broker anywhere: sheet + header + title = 0.9, broker in the
+  filename +0.1, recorded as owner-ruled exceptions in each parser header and BROKER_FORMATS.
+  **Dhan MTF Report is a web screen with no export** (owner screenshot 2026-09-04) — no parser,
+  and its figures come from GTR / Realised P&L / ledger.
+- **Pairing (W1).** Same-day covered short labelled `INTRADAY_SHORT_NOTE` (file order is the only
+  sequence signal legs carry); cross-exchange note WITHOUT a split (v3.8 measured 38 → 101 opening
+  sells and rejected it); `pair-legs.ts:302` spread → `for…of` (proven red: `RangeError` at ~123k
+  positions on one symbol, 190,000-leg C8 case). No golden pin moved (146/146).
+- **`workbookOf` trims BIFF8's declared-whole-sheet range** (`A1:Q65536` for 1,400 cells):
+  440 ms → 2 ms per `sheet_to_json`, ranking 3.7 s → sub-second (`trimSheetRanges`,
+  `lib/import/types.ts`; `tests/workbook-range-trim.test.ts`).
+- **`/trades` total order + server pagination (W2).** Every projection ends on `desc(trades.id)`;
+  migration **0063** extends the hot-path index to `(account_id, sell_date DESC, created_at DESC,
+  id DESC)` and **keeps the 0043 name** `trades_account_sell_created_idx`. **The batch-tie fact:**
+  `created_at` is `datetime('now')` (second resolution) and `commit.ts` never sets it, so every
+  row of one import batch shares it — owner's book **842 of 905 rows (93%) in 174 tie blocks,
+  largest 36**; the perf book only 4.5% because its seed writes near-unique timestamps. Order
+  within a batch was **unspecified** until now and is now `id DESC` = insertion order.
+  Before/after on BOTH books: `taxByFy` identical to the paisa, harvest LT/ST identical, holding
+  clock identical; only tie-block permutations moved. Keyset pages of **500** via
+  `/api/trades/page`, every filter transcribed to SQL, `total` and `viewCounts` as aggregates over
+  the WHOLE filtered set (invariant 6); the pure predicate lives once in
+  `lib/domain/trades-filter.ts`. **Perf: `/trades` 1,968 → 1,063 ms median (p95 2,280 → 1,115)**
+  on the 25k perf book — the last budget breach closed. e2e caught `initialRows`-as-`useState`
+  leaving stale rows after `router.refresh()` on an account switch; state is now adjusted during
+  render.
+- **Broker truth screen (W3, uncommitted).** `/reports/reconcile` — "Broker Truth", nav group
+  **Import**, **Pro-gated** (`lib/license.ts:277`). Per-FY, per-scrip, per-segment tables plus a
+  quantities-only holdings table; status words are directions (`Within tolerance / Broker higher /
+  Vyuha higher / Not compared`), reasons are counted facts (`unpriced_sales`, `charges_omitted`,
+  `open_lots`, `product_difference`), the join is **ISIN first, symbol as fallback and said out
+  loud**, and the aggregate view renders one book PER ACCOUNT. The maths is
+  `lib/queries/reference.ts#reconcileFrom` (pure); `lib/analytics/reconcile.ts` is the view model
+  and adds no arithmetic (`tests/reconcile-screen.test.ts` fails if one appears in the page).
+  `RECONCILE_SOURCE_IDS` = dhan-realised-pnl · paytm-realised-pnl · angelone-pnl-statement ·
+  dhan-holdings · dhan-dp-charges.
+- **Search v2 (W3, uncommitted).** `ledger` (account-scoped, joins `ledger_fts` back to
+  `ledger_entries`) and `audit` (global — `audit_log` has no `account_id`) added to
+  `lib/domain/search-scope.ts`; floating search assistant on **Ctrl+Shift+K**
+  (`components/system/search-panel.tsx` + `use-panel-drag.ts`, envelope
+  `vyuha-search-panel {v:1,x,y,open}`, off-screen recovery clamps on every read). Copy: a global
+  group now reads "· across all accounts"; account-scoped groups say nothing, deliberately.
+- **Egress unchanged** — the same four kinds PRIVACY.md lists. Broker Truth, Search v2 and
+  `/api/trades/page` are all same-origin.
+
+**Known limits, recorded not buried:** Angel's P&L statement has no ISIN and no date column, so
+its scrip rows key on SYMBOL with `asOf` null and the FY from `To Date`; Dhan's Realised P&L
+states no period, so it emits segment rows and NO `fy` row; the `a7-cash-ledger` load case is
+machine-noise sensitive (2 of 3 failures at HEAD `30332a3` with W1 stashed vs 1 of 3 with W1
+restored — pre-existing, CI's idle runner is the arbiter).
+
+**Docs updated for v3.9.0:** `CHANGELOG.md` (v3.9.0 note), `docs/BROKER_FORMATS.md` (the seven
+formats + the MTF-has-no-export section), `docs/client/README.md`, `docs/client/GETTING_STARTED_DECK.html`,
+`README.md`. `docs/client/INSTALLATION_GUIDE.md` needed no change — its pre-migration-backup and
+uninstaller claims are still exactly true.
+
+**Still v4.0:** sector analytics + Live Desk (see §8.0).
+
+---
+
 ## 2. Current state — v3.8.0 PUBLISHED 2026-09-04 (tag `74e8d49`; CI 6/6; verify 254 files / 4,515 tests; 3/3 signatures deep-verified; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-04)
 
 **Status:** branch `main` at `9007c2d` — the Dhan Client-ID hydration fix

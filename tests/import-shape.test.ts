@@ -3,6 +3,10 @@ import {
   importShapeSentence,
   importShapeCompact,
   openingSellNote,
+  referenceStoredNote,
+  enrichAppliedNote,
+  referenceVsBookNote,
+  BROKER_TRUTH_HREF,
   type ImportShape,
 } from "@/lib/domain/import-shape";
 
@@ -164,5 +168,79 @@ describe("relabelled securities", () => {
   it("changes nothing when absent", () => {
     expect(importShapeSentence({ ...shape({ sourceRows: 3530, positions: 79 }), relabelled: 0 }))
       .toBe("3,530 executions → 79 positions");
+  });
+});
+
+/**
+ * v3.9 "Trust the numbers" — the two things a commit can now do that are not
+ * "imported N trades", and the sentence each one gets.
+ *
+ * A reference file imports NOTHING, and an enrichment file changes rows that
+ * were already there. Both used to end on "Imported 0 trades · 0 duplicates
+ * skipped", which reads as a failed import of a file that worked perfectly.
+ * The sentences are minted here, next to the count they describe, for the same
+ * reason the shape sentence is: one writer, one reader, no drift.
+ */
+describe("reference figures stored", () => {
+  it("says how many, and points at the screen that reads them", () => {
+    expect(referenceStoredNote(47)).toBe("47 broker figures stored — see Broker truth");
+    expect(referenceStoredNote(1)).toBe("1 broker figure stored — see Broker truth");
+    expect(referenceStoredNote(1204)).toBe("1,204 broker figures stored — see Broker truth");
+  });
+
+  it("says nothing when the file stored nothing", () => {
+    expect(referenceStoredNote(0)).toBeNull();
+    expect(referenceStoredNote(undefined)).toBeNull();
+  });
+
+  it("names the screen it links to, so the copy and the route cannot drift", () => {
+    expect(BROKER_TRUTH_HREF).toBe("/reports/reconcile");
+  });
+});
+
+describe("enrichment applied", () => {
+  it("states BOTH numbers — applied, and the lines the file carried", () => {
+    // A contract note whose every line matched a trade already in the book.
+    expect(enrichAppliedNote(18, 18)).toBe("Fill times applied to 18 of 18 contract-note lines");
+    // The honest partial: 5 lines matched nothing, and the sentence shows it
+    // rather than reporting the 13 alone as a success.
+    expect(enrichAppliedNote(13, 18)).toBe("Fill times applied to 13 of 18 contract-note lines");
+    expect(enrichAppliedNote(1, 1)).toBe("Fill times applied to 1 of 1 contract-note line");
+    expect(enrichAppliedNote(0, 18)).toBe("Fill times applied to 0 of 18 contract-note lines");
+  });
+
+  it("says nothing when the file carried no enrichment at all", () => {
+    expect(enrichAppliedNote(0, 0)).toBeNull();
+    expect(enrichAppliedNote(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("a reference file that also carries trades", () => {
+  it("names the count it skipped, and which report is the book", () => {
+    // The owner's own a2 pair: the Realised P&L states 146 positions the Dhan
+    // transaction report already booked. Importing them would double the F&O
+    // segment exactly, and dedup would skip zero.
+    expect(referenceVsBookNote(146, true)).toBe(
+      "146 positions from the Realised P&L were not imported — your Dhan transaction report is the book; the file's figures were stored for Broker Truth.",
+    );
+    expect(referenceVsBookNote(1, true)).toBe(
+      "1 position from the Realised P&L was not imported — your Dhan transaction report is the book; the file's figures were stored for Broker Truth.",
+    );
+    // Grouped, like every other count on this screen.
+    expect(referenceVsBookNote(1234, true)).toMatch(/^1,234 positions from the Realised P&L/);
+  });
+
+  it("with no book in the account, keeps the rows and says they can be superseded", () => {
+    expect(referenceVsBookNote(146, false)).toBe(
+      "Imported as trades because no Dhan transaction report is in this account; import the transaction report to make it the book — these rows will then be superseded",
+    );
+    // Nothing is promised about deletion — the sentence says "will then be
+    // superseded", never that the app removes them for you.
+    expect(referenceVsBookNote(146, false)).not.toMatch(/delet/i);
+  });
+
+  it("says nothing about a file that carries no trades at all", () => {
+    expect(referenceVsBookNote(0, true)).toBeNull();
+    expect(referenceVsBookNote(0, false)).toBeNull();
   });
 });

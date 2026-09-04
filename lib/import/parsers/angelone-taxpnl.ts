@@ -209,7 +209,10 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
     const m = mtfByIsin.get(isin);
     if (!m || m.mtf <= 0) return { hint: false, note: null };
     if (m.mtf >= qty) return { hint: true, note: null };
-    return { hint: false, note: `Qty Breakup shows ${m.mtf} of ${qty} as MTF — part of this position is broker-funded.` };
+    // Fact, then consequence. "Part of this position is broker-funded" said
+    // neither what Vyuha did with the row nor what it did not do, and the
+    // reader was left to assume a 2:8 split that never happens.
+    return { hint: false, note: `Qty Breakup shows ${m.mtf} of ${qty} as MTF; Vyuha keeps the row as one position and does not split it on a ratio.` };
   }
 
   /** Angel states charges per row; STT is a separate column beside them. */
@@ -404,7 +407,9 @@ export function parseAngelOneTaxPnl(ctx: ParseContext): ParsedFile {
   );
   warnings.push("Dividends and non-trade charges in this file are cashflows, not trades — import them on the Cash & Ledger screen.");
   if (mtfByIsin.size > 0) {
-    warnings.push("MTF quantities are stated by the file's Qty Breakup and were applied directly — the only broker examined that declares MTF.");
+    warnings.push(
+      "MTF quantities are read from the file's own Qty Breakup — Angel One is the only broker examined that states them. A position the breakup covers in full is tagged MTF; one it covers in part keeps its own product and carries a note.",
+    );
   }
 
   return {

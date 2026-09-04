@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CommandPalette } from "@/components/system/command-palette";
+import { SearchPanel } from "@/components/system/search-panel";
 import { NavHistoryTracker } from "@/components/layout/nav-history-tracker";
 import { OnboardingWizard, type OnboardingWizardProps } from "@/components/system/onboarding-wizard";
 import { TelegramFailureNote } from "@/components/system/telegram-failure-note";
@@ -150,6 +151,10 @@ export default function RootLayout({
               accountId prop also stamps the cache key and the session frames,
               so neither half depends on the other. */}
           <CommandPalette key={selectedAccountId} accountId={selectedAccountId} workspace={workspace} />
+          {/* The floating search assistant — the SAME engine as the palette,
+              on a surface that survives navigation. Keyed and stamped on the
+              account for the same reason (invariant 8). */}
+          <SearchPanel key={selectedAccountId} accountId={selectedAccountId} />
           {/* Mounted once, so each navigation is recorded exactly once. */}
           <NavHistoryTracker />
           {/* First-run wizard (opens over the dashboard only — it gates on the

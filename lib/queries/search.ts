@@ -259,6 +259,93 @@ function readChallans(q: string, accountId: number): SearchResult[] {
 }
 
 // ---------------------------------------------------------------------------
+// Ledger / audit — FTS5 (migration 0061), ids only
+// ---------------------------------------------------------------------------
+//
+// Same shape as the trades source above and for the same reasons: ONE
+// statement per source, ordered by the index's own `rank`, capped, handing
+// back ids plus the few columns a row needs to describe itself. Neither
+// statement orders a base-table column, so neither can move a figure on the
+// screen it links to.
+//
+// SCOPE. `ledger_fts` declares no `account_id` (an index is not a place data
+// lives — 0061 says so), so the filter is a JOIN back to `ledger_entries`,
+// with the same `@account = 0` short-circuit the trades statement uses.
+// `audit_log` has no account column at all, so `audit_fts` has nothing to
+// scope by — global, by the shape of the table.
+
+interface LedgerHit {
+  id: number;
+  date: string;
+  type: string;
+  bucket: string | null;
+  symbol: string | null;
+  note: string | null;
+}
+
+const LEDGER_FTS_SQL =
+  "SELECT ledger_fts.rowid AS id, ledger_entries.date AS date, ledger_entries.type AS type, " +
+  "ledger_entries.bucket AS bucket, ledger_entries.symbol AS symbol, ledger_entries.note AS note " +
+  "FROM ledger_fts JOIN ledger_entries ON ledger_entries.id = ledger_fts.rowid " +
+  "WHERE ledger_fts MATCH @match AND (@account = 0 OR ledger_entries.account_id = @account) " +
+  `ORDER BY rank LIMIT ${RESULT_CAP}`;
+
+let ledgerStmt: ReturnType<typeof sqlite.prepare> | null = null;
+
+function readLedger(q: string, accountId: number): SearchResult[] {
+  const match = ftsMatch(q);
+  if (!match) return [];
+  ledgerStmt ??= sqlite.prepare(LEDGER_FTS_SQL);
+  const rows = ledgerStmt.all({ match, account: accountId > 0 ? accountId : 0 }) as LedgerHit[];
+  return rows.map((h) => ({
+    source: "ledger",
+    id: h.id,
+    // The ledger is a list of money movements, so the TYPE and the date are
+    // what identify a row; the note is the detail underneath it.
+    title: `${h.type} · ${h.date}`,
+    subtitle: [h.symbol, h.note, h.bucket || null].filter(Boolean).join(" · ") || undefined,
+    // /cash reads no search parameters (checked 2026-09-04), so a deep link
+    // would be a URL the screen ignores — worse than no link, because it
+    // looks like a filter that silently did not apply.
+    href: "/cash",
+    locked: false,
+  }));
+}
+
+interface AuditHit {
+  id: number;
+  ts: string;
+  entity: string;
+  action: string;
+  summary: string | null;
+}
+
+const AUDIT_FTS_SQL =
+  "SELECT audit_fts.rowid AS id, audit_log.ts AS ts, audit_log.entity AS entity, " +
+  "audit_log.action AS action, audit_log.summary AS summary " +
+  "FROM audit_fts JOIN audit_log ON audit_log.id = audit_fts.rowid " +
+  "WHERE audit_fts MATCH @match " +
+  `ORDER BY rank LIMIT ${RESULT_CAP}`;
+
+let auditStmt: ReturnType<typeof sqlite.prepare> | null = null;
+
+/** Global: `audit_log` has no account_id, so `accountId` is accepted and unused. */
+function readAudit(q: string, _accountId: number): SearchResult[] {
+  const match = ftsMatch(q);
+  if (!match) return [];
+  auditStmt ??= sqlite.prepare(AUDIT_FTS_SQL);
+  const rows = auditStmt.all({ match }) as AuditHit[];
+  return rows.map((h) => ({
+    source: "audit",
+    id: h.id,
+    title: `${h.entity} ${h.action}`,
+    subtitle: [h.ts.slice(0, 16).replace("T", " "), h.summary].filter(Boolean).join(" · ") || undefined,
+    href: "/audit",
+    locked: false,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Help / screens — static registries
 // ---------------------------------------------------------------------------
 
@@ -316,8 +403,10 @@ export const SOURCE_READERS: Readonly<Record<SourceKey, SourceReader>> = {
   instruments: readInstruments,
   sessions: readSessions,
   challans: readChallans,
+  ledger: readLedger,
   help: readHelp,
   screens: readScreens,
+  audit: readAudit,
 };
 
 export interface SearchAllOptions {
