@@ -1,0 +1,33 @@
+{
+  "$doc": "VYUHA project hooks. These MERGE with ~/.claude/settings.json (they do not replace it). Claude Code runs hook commands through sh, so every path is absolute and forward-slash, and quoted because this repo's path contains a space. Every hook exits 0 and carries its decision in stdout JSON; a hook that throws is a no-op.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/probe-guard.mjs\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/lockfile-guard.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/session-line.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

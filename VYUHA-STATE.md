@@ -37,7 +37,8 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 3/3 over the published bytes (key id `4FF85F3BBE1DA21D`); client ZIP built, installer SHA-256
 `094949764548D46010AB9E51BEB08F9F164758F21E1A3EF1C2FD38F2327443E8`; WDSI details handed over.
 **Owner confirmed 2026-09-05:** draft published, installed and working on a non-build machine, WDSI
-submitted. No open release actions.
+submitted. No open release actions. Verify baseline for the next release: `npm run verify` EXIT=0,
+276 files / 5,243 tests (35 skipped), 2026-09-05.
 
 **Next (owner directive 2026-09-05):** BEFORE v4.0, a website + web application for Vyuha so users
 can choose local desktop OR the web version — research pack at
@@ -1037,9 +1038,10 @@ cost win in this repo.
 | What is v3.8/v3.9 building and why | **`docs/V380_BUILD_PLAN.md`** — the approved spec; §0 is verified facts, §3 the owner inputs owed |
 | The opener for the v3.8 build session | `docs/prompts/NEXT_SESSION_V380.md` |
 
-Two **project-scoped skills** exist in `.claude/skills/` and override the global ones for
-this repo: `decision-log` (append a measured fact) and `prove-it` (verification before
-claiming done). Use them.
+`decision-log` (append a measured fact) and `prove-it` (verification before claiming
+done) are the **GLOBAL** skills at `C:\Users\theje\.claude\skills\` — there are no project
+copies (verified 2026-09-05). The project-scoped skills in `.claude/skills/` are `release`,
+`vyuha-verify`, `vyuha-status` and `vyuha-audit`. Use them.
 
 ---
 
@@ -1531,13 +1533,17 @@ claims that were not true; hold that line.
 2. **Check `docs/DECISIONS.md` before re-measuring anything** or changing a constant that
    looks arbitrary. It records why the obvious alternative loses.
 3. **Append to `DECISIONS.md`** whenever you measure something or deviate from a default.
-   Use the project-scoped `decision-log` skill.
-4. **`npm run verify` before claiming done** — not `npm test`. Use the `prove-it` skill.
+   Use the global `decision-log` skill (`C:\Users\theje\.claude\skills\decision-log\`).
+4. **`npm run verify` before claiming done** — not `npm test`. Use the global `prove-it`
+   skill (`C:\Users\theje\.claude\skills\prove-it\`), or `/vyuha-verify`.
 5. **One task per session; `/clear` at boundaries.** Update this file before you clear.
    Measured on the sibling project: cost per call scales ~7.5× from <100k to ~1M context, and
    cache reads were 76% of spend. See `C:\Users\theje\.claude\skills\token-efficient-coding\`.
 6. **Money is integer paise in the DB, rupees at runtime.** Converting twice is a 100× bug
    that unit tests did not catch — only a check against real data did.
+7. **Delegate to this repo's agents** — `.claude/agents/`: `vyuha-verifier`, `vyuha-monitor`,
+   `vyuha-auditor`, `vyuha-builder`, `vyuha-release-steward`; commands `/vyuha-verify`,
+   `/vyuha-status`, `/vyuha-audit <target>`. `.claude/hooks/` guards probes and the lockfile.
 
 ---
 
