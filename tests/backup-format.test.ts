@@ -51,7 +51,14 @@ describe("validateBackup", () => {
     //   restored into another database must not carry the donor's markers,
     //   or a fix the target still needs would be skipped; restore re-runs the
     //   fixes instead (lib/backup.ts).
-    const EXCLUDED: string[] = ["data_fixes"];
+    //   atlas_daily / atlas_metric / atlas_staleness — the v4.0 market-context
+    //   CACHE (migration 0065). Every row is recomputed from `price_history`
+    //   rows the user already imported, so nothing the user typed lives here
+    //   and a restore loses nothing by omitting them. Carrying them would be
+    //   actively wrong: each snapshot is bound to its inputs by
+    //   `input_checksum`, so a snapshot restored beside a different set of bars
+    //   is stale EVIDENCE presented as data. The desk recomputes instead.
+    const EXCLUDED: string[] = ["data_fixes", "atlas_daily", "atlas_metric", "atlas_staleness"];
 
     const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();
     expect([...BACKUP_TABLES].sort()).toEqual(expected);

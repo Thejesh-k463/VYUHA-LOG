@@ -124,6 +124,43 @@ export function getSymbolsByIsin(isins: string[]): Map<string, string> {
   return out;
 }
 
+/** SEBI-style size bucket, from NSE's own index membership (Q47). */
+export type CapBand = "large" | "mid" | "small" | "micro";
+
+/**
+ * ISIN (upper) → cap band, for every symbol the bundled map can classify.
+ *
+ * Reference data, not account data — a company's size bucket is a fact about
+ * the market. Read-only: a fresh Map each call, so a caller that mutates the
+ * result cannot poison the bundled snapshot for the rest of the process.
+ *
+ * Keyed by ISIN because a ticker is not an identity (NSE reuses one across a
+ * rename) and every caller that wants a cap band — positions, Atlas — already
+ * carries the ISIN. "unclassified" symbols (in Nifty 200/500 but in none of the
+ * four band-defining lists) are OMITTED rather than shipped as a band: an
+ * absent key says "we do not know", which is the truth, and invariant 6 says
+ * not to fabricate the alternative.
+ *
+ * The bands are effective-dated in the file itself (`sizeIndices[*]
+ * .effective_at` / `.captured_at`, Q50) — this is the CURRENT classification,
+ * never a point-in-time one, and any UI that shows it must say so.
+ */
+export function getCapBandMap(): Map<string, CapBand> {
+  const out = new Map<string, CapBand>();
+  const rows = (nseIndexMap as { symbols?: Record<string, { isin?: string | null; capBand?: string }> }).symbols ?? {};
+  for (const v of Object.values(rows)) {
+    const isin = String(v.isin ?? "").trim().toUpperCase();
+    const band = v.capBand;
+    if (!isin || !band || band === "unclassified") continue;
+    if (band === "large" || band === "mid" || band === "small" || band === "micro") {
+      // First writer wins, same as getSymbolsByIsin: a stable answer beats one
+      // that depends on key order.
+      if (!out.has(isin)) out.set(isin, band);
+    }
+  }
+  return out;
+}
+
 /** symbol (upper) → thematic index names. Reference data — not account-scoped. */
 export function getIndexMembershipMap(): Map<string, string[]> {
   const out = new Map<string, string[]>();

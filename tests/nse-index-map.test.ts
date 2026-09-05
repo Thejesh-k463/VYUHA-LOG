@@ -108,3 +108,98 @@ describe("themeEdge", () => {
     for (const row of r.rows) expect(row.trustworthy).toBe(row.trades >= THEME_MIN_SAMPLE);
   });
 });
+
+// ─── size indices + cap bands (Q46/Q47/Q50) ─────────────────────────────────
+
+/**
+ * The 2026-08-06 map carried the 54 sectoral/thematic lists and NOT one size
+ * index, so nothing in the app could say "large cap" without guessing. Q46
+ * added all eight; Q47 fixed the buckets as SEBI-style index membership; Q50
+ * made effective_at + captured_at a standing rule on every membership row.
+ *
+ * The sectoral half must come through the rebuild BYTE-identical — these pins
+ * are what proves the size work did not quietly re-sector anything.
+ */
+describe("nse-index-map — size indices", () => {
+  const map = nseIndexMap as unknown as {
+    indexCount: number;
+    provenance?: { sizeIndicesReason?: string };
+    sizeIndices?: Record<string, { asOf: string; effective_at: string; captured_at: string; source: string; symbols: string[] }>;
+    symbols: Record<string, { indices: string[]; capBand?: string }>;
+  };
+
+  const EIGHT = [
+    "Nifty 50", "Nifty Next 50", "Nifty 100", "Nifty 200",
+    "Nifty 500", "Nifty Midcap 150", "Nifty Smallcap 250", "Nifty Microcap 250",
+  ];
+
+  it("ships exactly the eight size indices, none of them empty", () => {
+    const si = map.sizeIndices ?? {};
+    expect(Object.keys(si).sort()).toEqual([...EIGHT].sort());
+    for (const [label, v] of Object.entries(si)) {
+      expect(v.symbols.length, label).toBeGreaterThan(40);
+      expect(new Set(v.symbols).size, label).toBe(v.symbols.length);
+    }
+    expect(si["Nifty 50"].symbols.length).toBe(50);
+    expect(si["Nifty 100"].symbols.length).toBe(100);
+  });
+
+  it("every size index is effective-dated AND capture-dated (Q50 standing rule)", () => {
+    // Counted first so the loop below can never pass vacuously on an empty map.
+    expect(Object.keys(map.sizeIndices ?? {}).length).toBe(8);
+    for (const [label, v] of Object.entries(map.sizeIndices ?? {})) {
+      expect(v.effective_at, label).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(v.captured_at, label).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(v.asOf, label).toBe(v.effective_at);
+      expect(v.source, label).toBeTruthy();
+      // A membership cannot have become effective after it was captured.
+      expect(v.effective_at <= v.captured_at, label).toBe(true);
+    }
+  });
+
+  it("capBand is SEBI-style and the LARGEST band wins an overlap", () => {
+    const si = map.sizeIndices!;
+    const band = (s: string) => map.symbols[s]?.capBand;
+    for (const s of si["Nifty 50"].symbols) expect(band(s), s).toBe("large");
+    for (const s of si["Nifty 100"].symbols) expect(band(s), s).toBe("large");
+    // Midcap 150 and Nifty 100 do not overlap, but Midcap/Smallcap files can
+    // both name a symbol at a rebalance — mid must win there.
+    for (const s of si["Nifty Midcap 150"].symbols) {
+      if (!si["Nifty 100"].symbols.includes(s)) expect(band(s), s).toBe("mid");
+    }
+    for (const s of si["Nifty Microcap 250"].symbols) {
+      const bigger = ["Nifty 100", "Nifty Midcap 150", "Nifty Smallcap 250"].some((k) => si[k].symbols.includes(s));
+      if (!bigger) expect(band(s), s).toBe("micro");
+    }
+    const bands = new Set(Object.values(map.symbols).map((v) => v.capBand));
+    expect([...bands].sort()).toEqual(["large", "micro", "mid", "small", "unclassified"]);
+  });
+
+  it("the sectoral half is unchanged: 54 labels, 1155 symbols, 1985 membership rows", () => {
+    const labels = new Set<string>();
+    let rows = 0, withSectoral = 0;
+    for (const v of Object.values(map.symbols)) {
+      rows += v.indices.length;
+      if (v.indices.length) withSectoral += 1;
+      for (const i of v.indices) labels.add(i);
+    }
+    expect(labels.size).toBe(54);
+    expect(withSectoral).toBe(1155);
+    expect(rows).toBe(1985);
+    // No size index leaked into the sectoral membership array.
+    for (const e of EIGHT) expect(labels.has(e)).toBe(false);
+    expect(map.indexCount).toBe(62); // 54 sectoral + 8 size
+  });
+
+  it("records WHY the size indices were absent, and stays inside the 300 KB gz budget", async () => {
+    expect(map.provenance?.sizeIndicesReason ?? "").toMatch(/sectoral|thematic/i);
+    const fs = await import("node:fs");
+    const zlib = await import("node:zlib");
+    const url = await import("node:url");
+    const bytes = fs.readFileSync(
+      url.fileURLToPath(new URL("../lib/data/nse-index-map.json", import.meta.url)),
+    );
+    const gz = zlib.gzipSync(bytes).length;
+    expect(gz, `${(gz / 1024).toFixed(1)} KB gz`).toBeLessThan(300 * 1024);
+  });
+});

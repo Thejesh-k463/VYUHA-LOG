@@ -258,6 +258,16 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // enforce both directions.
   { href: `/trades${serializeTradesQuery({ add: "open" })}`, label: "Open-trade tracking — live positions with SL/TSL/target and risk", partial: true },
   { href: "/lenses", label: "Lenses — per-group win rate, profit factor, expectancy and avg R (grouping, counts and cleanup stay free)", partial: true },
+  // v4.0 Live Desk (owner ruling Q55). The tracker's own RECORD is free —
+  // positions, the mark and P&L — because it is the journal looking at itself
+  // (invariant 7). What is sold is the forward-looking arithmetic on top of
+  // it, so `/live` is `partial` and its page must never grow a <ProGate>; the
+  // Pro columns render as locked chips beside a free row.
+  { href: "/live", label: "Live Desk — R, risk at stop, portfolio heat, chart overlay and alerts (positions, marks and P&L stay free)", partial: true },
+  // The Lab and the Atlas are whole Pro screens, not capabilities inside a
+  // free one: neither shows the user their own record.
+  { href: "/sizing-lab", label: "Sizing Lab — position size by seven methods, with the formula printed beside every number" },
+  { href: "/atlas", label: "Market Atlas — breadth, rotation and market context computed on your own machine" },
   // Deep analytics
   { href: "/arjuns-eye", label: "Arjun's Eye — the trader's cockpit" },
   { href: "/reports/edge", label: "Edge / Setups — expectancy by setup, segment and NSE theme" },

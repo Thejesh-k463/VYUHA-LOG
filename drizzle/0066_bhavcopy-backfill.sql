@@ -1,0 +1,38 @@
+-- 0066 — bhavcopy history backfill: consent + progress (v4.0 Live Desk, UI wave 4)
+--
+-- WHY TWO COLUMNS AND NOT ONE
+--
+-- `auto_mtm_enabled` (0033) consents to ONE file a day for open positions.
+-- The Atlas backfill asks for something materially larger: up to 252 past
+-- files in one sitting, for the whole market and not just what the user
+-- holds. Research answer Q43 requires an explicit user action for that, and
+-- PRIVACY.md item 2 was amended in the same wave to say so. Reusing the
+-- auto-MTM flag would have made a daily consent stand in for a bulk one,
+-- which is the OpenAlgo/Telegram mistake those features already avoided with
+-- their own `*_ack` column — so this follows the same shape:
+--
+--   bhavcopy_backfill_ack       NULL = never asked / never accepted.
+--                               Otherwise the ISO timestamp of the click that
+--                               accepted it. `auto_mtm_enabled` ALSO satisfies
+--                               the check (a user already fetching daily has
+--                               consented to the same host and the same file
+--                               family), so nobody is asked twice for less.
+--
+--   bhavcopy_backfill_progress  JSON `{v:1, …}` — the run's own state, so the
+--                               progress bar survives a reload and a restart,
+--                               and so a second POST can see a run is already
+--                               going instead of starting a second one. The
+--                               versioned envelope matches the localStorage
+--                               convention in AGENTS.md; a shape this app does
+--                               not recognise is discarded, never mis-read.
+--
+-- Both are MACHINE STATE, like `last_auto_mtm_date` above them: they describe
+-- this installation's downloads, not the user's journal. Nothing here is a
+-- denominator for anything (invariant 6) and nothing is account-scoped —
+-- bhavcopy files are a fact about the market, not about one book
+-- (invariants 8/9 do not apply, the same reasoning as the 0065 Atlas cache).
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+
+ALTER TABLE `settings` ADD `bhavcopy_backfill_ack` text;--> statement-breakpoint
+ALTER TABLE `settings` ADD `bhavcopy_backfill_progress` text;

@@ -33,6 +33,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["overview", "equity curve", "calendar", "kpi", "net pnl", "win rate"],
   },
   {
+    href: "/live",
+    title: "Live Desk",
+    answers: "Where do my open positions stand, and what is at risk if every stop is hit?",
+    body: [
+      "Every open position with the levels you recorded and the arithmetic between them: mark, unrealised P&L, open R against the risk frozen at entry, risk at stop, and portfolio heat — the sum of that risk over your capital, printed with its denominator.",
+      "Marks are end-of-day by default. Which source prices the desk — your own manual marks, the stored end-of-day bars, or an OpenAlgo feed — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
+      "A row with no stop recorded is left out of heat and says so, rather than being counted as risk-free. Positions, marks and P&L are free; R, risk at stop, heat, the chart overlay and alerts are Pro.",
+    ],
+    keywords: ["live", "desk", "open positions", "mark", "heat", "risk at stop", "open r", "tracker", "quotes"],
+    refusals: [
+      "Places, modifies and cancels nothing, and names no trade to take. It reports what is recorded and what a position would give back if the stop is hit — stops are not guaranteed fills, and the desk says so.",
+    ],
+  },
+  {
     href: "/risk",
     title: "Portfolio Risk",
     answers: "What am I exposed to at this moment, and what would a bad day cost?",
@@ -81,6 +95,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
     keywords: ["fno", "futures", "options", "open positions", "expiry"],
   },
   {
+    href: "/atlas",
+    title: "Market Atlas",
+    answers: "What was the market doing around my trades — breadth, regime, sectors and cap bands?",
+    body: [
+      "Advance/decline breadth, a regime classification, sector rotation and cap-band behaviour, computed on this machine from the bhavcopy bars already stored in your journal. Every figure uses a published definition and renders with the denominator it was computed over.",
+      "No Chartink data is used. There is no proprietary score, no hidden filter and no parity claim — the owner's own widgets are a separate, opt-in feed and are not computed here.",
+      "A Coverage tab states how many sessions and symbols the read stands on, and a thin day prints an em dash instead of a number. Pro.",
+    ],
+    keywords: ["atlas", "breadth", "regime", "sectors", "rotation", "cap bands", "advance decline", "market context", "bhavcopy"],
+    refusals: [
+      "Describes the market that is in your own stored bars, historically — it names no stock and forecasts nothing.",
+    ],
+  },
+  {
     href: "/targets/equity",
     title: "Targets — Equity",
     answers: "Am I on plan in the equity book?",
@@ -107,6 +135,20 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "What will this trade cost, and what is it worth at target and at stop?",
     body: ["Exact round-trip charges from the same engine that books real trades, net at target, net at stop, charge-adjusted reward:risk and breakeven — equity, F&O or MTF, projected across N trades."],
     keywords: ["charges", "breakeven", "reward risk", "brokerage", "calculator"],
+  },
+  {
+    href: "/sizing-lab",
+    title: "Sizing Lab",
+    answers: "What quantity does my own risk rule allow on this setup?",
+    body: [
+      "One setup, seven sizing methods computed side by side — fixed rupee amount, fixed fractional (% risk), volatility / Turtle unit (N), % volatility, Kelly and fractional Kelly, fixed ratio and equal weight — each with the formula printed beside the size it produced, and a typed reason instead of a number when an input is missing.",
+      "The stop comes from the method you pick (manual, structure, ATR or percent), a deploy cap bounds what one idea can occupy, and round-trip charges are folded into the risk when the charges toggle is on. Lot sizes are respected, so an F&O size is a whole number of lots.",
+      "Nothing here changes your Live Desk defaults on its own: the risk percentage, deploy cap, stop method and heat ceiling are written to Settings only when you press the write-back button, and the dialog shows the stored value next to the new one first.",
+    ],
+    keywords: ["sizing", "position size", "quantity", "kelly", "turtle", "atr stop", "deploy cap", "risk per trade", "lab", "lot size"],
+    refusals: [
+      "Computes sizes from the numbers you enter; it does not rank the methods for you or name a size to use.",
+    ],
   },
   {
     href: "/trades",

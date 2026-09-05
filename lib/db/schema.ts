@@ -484,6 +484,88 @@ export const dataFixes = sqliteTable("data_fixes", {
 });
 
 // ---------------------------------------------------------------------------
+// atlas_daily / atlas_metric / atlas_staleness — the market-context CACHE
+// (migration 0065, v4.0 Live Desk).
+//
+// A CACHE, not a source of truth: every row is recomputed from `price_history`
+// rows the user already imported, so the tables can be dropped and rebuilt
+// without losing anything the user typed. That is why they are deliberately
+// NOT in BACKUP_TABLES (same reasoning as `data_fixes` above) and carry no
+// `account_id` — market breadth is a property of the market, not of a book.
+//
+// Three tables rather than one blob because the three have different keys and
+// different lifetimes:
+//   * atlas_daily     — one row per session: the run's provenance.
+//   * atlas_metric    — long form, one row per (metric, group), so a new metric
+//                       is a row and not a schema change. EVERY row carries its
+//                       own `denominator` and `coverage_ppm`: invariant 6 says
+//                       a figure without its denominator is not publishable.
+//   * atlas_staleness — one row per symbol we could NOT use, with the reason.
+//                       "Excluded" and "insufficient history" are different
+//                       facts and are never summed together.
+//
+// `spec_version` is semver on the FORMULA SET, not on the app. Changing
+// "strictly above SMA" to "at or above" is a MAJOR bump and invalidates every
+// stored row computed under the old one. `input_checksum` is sha256 over the
+// sorted (symbol, date, close, volume) rows actually used; a mismatch makes a
+// stored snapshot stale evidence, never data.
+//
+// Money/ratio convention (invariant 1): ratios are ppm INTEGERS
+// (`value_ppm`, `coverage_ppm`); counts are plain integers. A raw count metric
+// (advances, declines) puts its count in `numerator` and leaves `value_ppm`
+// null rather than pretending a count is a ratio.
+// ---------------------------------------------------------------------------
+export const atlasDaily = sqliteTable("atlas_daily", {
+  asOf: text("as_of").primaryKey(), // the ANCHOR session (latest modal), not max(date)
+  generatedAt: text("generated_at").notNull().default(now),
+  specVersion: text("spec_version").notNull(),
+  sourceMode: text("source_mode").notNull(), // stored | (v4.1) backfill
+  inputChecksum: text("input_checksum").notNull(),
+  universeIncluded: integer("universe_included").notNull().default(0),
+  universeExcluded: integer("universe_excluded").notNull().default(0),
+  anchorCoverage: integer("anchor_coverage").notNull().default(0),
+  anchorCoveragePpm: integer("anchor_coverage_ppm"), // null when the universe is empty
+  payloadJson: text("payload_json"),
+});
+
+export const atlasMetric = sqliteTable(
+  "atlas_metric",
+  {
+    asOf: text("as_of").notNull(),
+    metric: text("metric").notNull(), // A1 | A7 | A8 | A9 | A10 | A12 | …
+    groupKind: text("group_kind").notNull(), // market | sector | industry | index
+    groupName: text("group_name").notNull().default("*"), // '*' = market-wide
+    valuePpm: integer("value_ppm"), // null when the metric is a bare count
+    numerator: integer("numerator"),
+    denominator: integer("denominator"), // null ⇒ the figure is null, never 0
+    coveragePpm: integer("coverage_ppm"),
+    insufficientHistory: integer("insufficient_history").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("atlas_metric_uq").on(t.asOf, t.metric, t.groupKind, t.groupName),
+    index("atlas_metric_asof_idx").on(t.asOf),
+  ],
+);
+
+export const atlasStaleness = sqliteTable(
+  "atlas_staleness",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    asOf: text("as_of").notNull(),
+    symbol: text("symbol").notNull(),
+    // no_bar_on_anchor | insufficient_history | non_equity |
+    // truncated_to_anchor | corporate_action_unreconciled
+    reason: text("reason").notNull(),
+    lastSeenDate: text("last_seen_date"),
+    sessionsBehind: integer("sessions_behind"),
+  },
+  (t) => [
+    uniqueIndex("atlas_staleness_uq").on(t.asOf, t.symbol, t.reason),
+    index("atlas_staleness_asof_idx").on(t.asOf),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // charge_config — editable rate table keyed by broker + segment + exchange.
 // The charges engine reads ONLY from this table; nothing is hard-coded.
 // Rates are stored as fractions of turnover (e.g. 0.1% => 0.001).
@@ -617,6 +699,24 @@ export const riskConfig = sqliteTable(
     concentrationPct: real("concentration_pct"),
     monthlyTargetBase: real("monthly_target_base"),
     monthlyTargetStretch: real("monthly_target_stretch"),
+    // ── v4.0 Live Desk (migration 0064) ────────────────────────────────────
+    // Risk was only ever ₹ `perTradeMaxLoss`; every position-sizing method
+    // needs a FRACTION of capital instead (`riskPpm × capitalP`). ppm integers,
+    // never floats: 2% is 20_000, and a percentage stored as REAL reintroduces
+    // the drift invariant 1 exists to prevent. All nullable except the deploy
+    // cap, so the "risk not set" CTA can fire exactly once and Vyuha never
+    // asserts a number the user did not choose (invariant 6).
+    riskPctPpm: integer("risk_pct_ppm"),
+    stopMethod: text("stop_method"), // manual | structure | atr | percent
+    stopAtrLen: integer("stop_atr_len"),
+    stopAtrMultPermille: integer("stop_atr_mult_permille"), // 2000 = 2.0 × ATR
+    stopDefaultPctPpm: integer("stop_default_pct_ppm"), // shipped UNSET
+    // The one column with a default: a deploy cap that is off by default would
+    // let a single Kelly-full row consume the account. 250000 ppm = 25%.
+    deployCapPpm: integer("deploy_cap_ppm").notNull().default(250_000),
+    // User-set only. The 6% portfolio-heat figure is trading lore, not
+    // regulation, so Vyuha ships no ceiling of its own.
+    heatCeilingPpm: integer("heat_ceiling_ppm"),
     updatedAt: text("updated_at").notNull().default(now),
   },
   (t) => [uniqueIndex("risk_config_scope_key_uq").on(t.scope, t.key)],
@@ -779,6 +879,19 @@ export const settings = sqliteTable("settings", {
   // here nor hides it because the backup's author finished it there. The
   // migration backfilled it wherever trades already exist.
   onboardingCompletedAt: text("onboarding_completed_at"),
+  // Live Desk feed (v4.1, migration 0067) — which quote provider runs, how
+  // fast the desk refreshes on screen, and the once-a-day guard for the
+  // persisted mark. Default 'eod' keeps an upgraded install exactly where v4.0
+  // left it: no new host until the user picks one. Selecting "openalgo" here
+  // is NOT consent — lib/quotes/registry.ts re-applies openAlgoGate() (the two
+  // machine-state consent columns above) on every selection and falls back to
+  // 'eod', which is why these three may travel in a backup while the consent
+  // may not. Refresh seconds is an ON-SCREEN interval (1–5, owner answer Q25);
+  // ticks are never persisted, and last_live_mark_date is the "exactly one
+  // persisted mark per position per day" stamp.
+  liveFeedProvider: text("live_feed_provider").notNull().default("eod"),
+  liveFeedRefreshSeconds: integer("live_feed_refresh_seconds").notNull().default(3),
+  lastLiveMarkDate: text("last_live_mark_date"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });
@@ -1290,3 +1403,9 @@ export type TradingSession = typeof tradingSessions.$inferSelect;
 export type RegulatoryRulePack = typeof regulatoryRulePacks.$inferSelect;
 export type BrokerReferenceRow = typeof brokerReference.$inferSelect;
 export type NewBrokerReferenceRow = typeof brokerReference.$inferInsert;
+export type AtlasDailyRow = typeof atlasDaily.$inferSelect;
+export type NewAtlasDailyRow = typeof atlasDaily.$inferInsert;
+export type AtlasMetricRow = typeof atlasMetric.$inferSelect;
+export type NewAtlasMetricRow = typeof atlasMetric.$inferInsert;
+export type AtlasStalenessRow = typeof atlasStaleness.$inferSelect;
+export type NewAtlasStalenessRow = typeof atlasStaleness.$inferInsert;

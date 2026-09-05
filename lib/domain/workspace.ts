@@ -48,6 +48,20 @@ export const WORKSPACE_LABELS: Record<Workspace, string> = {
  *
  * /settings is never listed for a further reason: it is the only way back out
  * of a mode, so hiding it would strand the user in their own preference.
+ *
+ * v4.0 — THE THREE LIVE DESK ROUTES ARE DELIBERATELY ABSENT, and that absence
+ * is the entry for each of them:
+ *   /live        an open position is an open position in either book; the desk
+ *                renders equity, MTF, futures and option rows from the same
+ *                `trades` read (spec §1: "not listed in SCREEN_DOMAIN →
+ *                shared, shown in equity, F&O and both").
+ *   /sizing-lab  the risk arithmetic is the same for a cash lot and a lot of
+ *                contracts — only `lotSize` differs, and that is a field.
+ *   /atlas       market context has no book.
+ * `Domain` is `equity | fno` and nothing else, so LISTING one of these could
+ * only mean "hide it from the other book", which is the opposite of the rule.
+ * `tests/live-page.test.ts` pins all three visible in every workspace, so a
+ * later entry here fails a test instead of quietly hiding the desk.
  */
 export const SCREEN_DOMAIN: Readonly<Record<string, Domain>> = {
   "/equity": "equity",

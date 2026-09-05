@@ -41,6 +41,9 @@ import {
   Sigma,
   Columns3,
   NotebookPen,
+  Radar,
+  Ruler,
+  Compass,
 } from "lucide-react";
 
 export type NavItem = {
@@ -59,13 +62,18 @@ export const NAV_ITEMS: NavItem[] = [
   // Overview
   { href: "/", label: "Dashboard", icon: LayoutDashboard, group: "Overview" },
   // Positions
+  // v4.0: the Live Desk leads the group — it is the screen a trader opens
+  // during market hours, and NAV_DEFAULT_VISIBLE.Positions promotes it too.
+  { href: "/live", label: "Live Desk", icon: Radar, group: "Positions" },
   { href: "/risk", label: "Portfolio Risk", icon: Gauge, group: "Positions" },
   { href: "/strategies", label: "Option Strategies", icon: Layers, group: "Positions" },
   { href: "/equity", label: "Equity Tracker", icon: Wallet, group: "Positions" },
   { href: "/active", label: "Trade F&O Tracker", icon: Activity, group: "Positions" },
+  { href: "/atlas", label: "Market Atlas", icon: Compass, group: "Positions" },
   // Risk
   { href: "/targets/equity", label: "Targets — Equity", icon: Target, group: "Risk" },
   { href: "/calculator", label: "Trade Calculator", icon: Calculator, group: "Risk" },
+  { href: "/sizing-lab", label: "Sizing Lab", icon: Ruler, group: "Risk" },
   { href: "/targets/active", label: "Targets — Trade F&O", icon: Crosshair, group: "Risk" },
   // Journal
   { href: "/trades", label: "Trades", icon: ListOrdered, group: "Journal" },
@@ -132,7 +140,8 @@ export const NAV_GROUPS = [
  */
 export const NAV_DEFAULT_VISIBLE: Record<string, string[]> = {
   Overview: ["/"],
-  Positions: ["/risk"],
+  // v4.0: /live leads the fold; /risk stays visible beside it.
+  Positions: ["/live", "/risk"],
   Risk: ["/targets/equity", "/calculator"],
   Journal: ["/trades", "/lenses", "/sessions", "/review"],
   Import: ["/import"],
