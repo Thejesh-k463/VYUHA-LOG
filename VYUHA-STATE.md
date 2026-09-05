@@ -28,7 +28,8 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ## 2. Current state — v3.9.0 "Trust the numbers" PUBLISHED 2026-09-05 (tag `e5ea549`; CI 6/6; release 3/3; deep verify 3/3; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-05)
 
-**Status:** branch `main` at `e5ea549` (the release bump). Waves W0–W4 done and pushed: W1 engine
+**Status:** the release bump is `e5ea549`; `main` has since moved to `28d6655` — see **Since the
+release** below. The tag and the published artefacts are untouched. Waves W0–W4 done and pushed: W1 engine
 `fb0e215`, W2 pagination `b929577`, W3 UI `c04e1ad`, audit-1 fix wave `4d9e9bd`, audit-2 fix pass
 `2dc0071`, final-finder fix `fcddb22`. Version strings are **3.9.0** (package.json, lock roots by
 hand, Cargo.toml, Cargo.lock via `cargo update -p vyuha --offline`, tauri.conf.json, sidebar).
@@ -39,6 +40,35 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 **Owner confirmed 2026-09-05:** draft published, installed and working on a non-build machine, WDSI
 submitted. No open release actions. Verify baseline for the next release: `npm run verify` EXIT=0,
 276 files / 5,243 tests (35 skipped), 2026-09-05.
+
+**Since the release — on `main`, UNRELEASED, ships with whatever version comes next:** `6abbc9a`
+state docs, `97b2d6d` the `.claude/` agent layer, `28d6655` the overlay entrance-keyframe fix.
+
+That last one is a real user-visible defect **in the shipped v3.9.0 build**. `@keyframes dialog-in`
+ended at `transform: translate(-50%, -50%)` — the centring idiom from when the centred dialog was
+its only consumer. Tailwind v4 positions these surfaces with the STANDALONE `translate` property,
+which COMPOSES with `transform` rather than being replaced by it, so the keyframe never restated the
+centring: it stacked a second half-size offset onto **every** dialog, command palette, popover and
+tooltip for the animation's full 220ms, then snapped back. The anchored search panel entered 190px
+left of its anchor (half of `PANEL_SIZE.w`). It reddened `Playwright e2e (ubuntu-latest)` on runs
+`33914442158` and `33919288828` with `Received: 189`, and read as flake only because macOS sampled
+after the window and the next run went green with no panel code touched. Both halves are fixed: the
+keyframe now ends at identity, and `e2e/z-search-panel.spec.ts` gained the settle poll its own
+reload block already had. Two traps recorded in `docs/DECISIONS.md` 2026-09-05 — the Tailwind v4
+composition rule, and that **Lightning CSS silently drops a standalone `scale:` from a keyframe**
+(a first attempt shipped the pop missing, with no error).
+
+**Verified at `28d6655`, not recalled:** `npm run verify` **EXIT=0**; **276 files / 5,243 tests
+(5,208 passed, 35 skipped)** — the v3.9.0 baseline exactly, nothing shrank; built keyframe confirmed
+by grepping the emitted chunk (`translateY(6px)scale(.965)` → `translateY(0)scale(1)`, both halves
+survive minification); `z-search-panel.spec.ts` 1 passed locally (42.4s); **CI run `33961995503`
+6/6 green**, including the `Playwright e2e (ubuntu-latest)` job that was failing. One green ubuntu
+run is corroboration rather than proof (the run before the fix was green too) — what settles it is
+that the 220ms window no longer exists.
+
+**No version bump is needed for this to be correct**; a bump and a desktop release are needed only
+to make it REACH installed copies. Nothing in the running app surfaces a PATCH version anyway
+(AGENTS.md). It is cosmetic, carries no data risk, and belongs in the next release batch — see §8.0a.
 
 **Next (owner directive 2026-09-05):** BEFORE v4.0, a website + web application for Vyuha so users
 can choose local desktop OR the web version — research pack at
@@ -1301,6 +1331,11 @@ PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUH
 - **Licence activation** (`app/api/license/route.ts:24`) passes no machine id — binding is enforced
   at read time only. Fine locally; a fact any hosted entitlement design must know.
 - Pack: `T:/Thejesh/CLAUDE-CODE/VYUHA-WEB-PLATFORM-RESEARCH/00-INDEX.md`.
+- **Not from this research, and already DONE on `main` (`28d6655`) — listed so whoever cuts the
+  next release knows it is in the diff:** the overlay entrance-keyframe fix (§2 "Since the
+  release"). `app/globals.css` + `e2e/z-search-panel.spec.ts` only; no component classes moved.
+  It is the one item here that is a defect in the build users are ALREADY running, so it is the
+  argument for cutting v3.9.1 sooner rather than folding it into v4.0.
 
 ### 8.1 Blocking the sale — the owner's stated top priority
 
