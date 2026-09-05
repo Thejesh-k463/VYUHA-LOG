@@ -1,0 +1,58 @@
+{
+  "asOf": "2026-09-05",
+  "what": "Exchange contract-grid facts used by the sizing calculators: index derivative lot sizes and the equity tick-size bands. Both are DATED tables, never constants — NSE has revised index lots roughly half-yearly (the Jan-2026 series cut NIFTY from 75 to 65) and the tick grid changed on 10 Jun 2024. Each revision carries its own effectiveFrom so a calculation made for a past date uses the grid that applied on that date, and the UI can state which revision it used.",
+  "indexLotRevisions": [
+    {
+      "effectiveFrom": "2026-01-01",
+      "label": "Jan-2026 series",
+      "announcedOn": "2025-10-03",
+      "verified": true,
+      "source": "https://www.icicidirect.com/faqs/fno/what-are-the-new-lot-sizes-for-index-derivatives",
+      "corroboration": "https://x.com/zerodhaonline/status/1974363648974881113",
+      "driver": "SEBI contract-value band of Rs 15-20 lakh",
+      "lots": {
+        "NIFTY": 65,
+        "BANKNIFTY": 30,
+        "FINNIFTY": 60,
+        "MIDCPNIFTY": 120,
+        "NIFTYNXT50": 25
+      }
+    },
+    {
+      "effectiveFrom": "1970-01-01",
+      "label": "pre Jan-2026 series",
+      "verified": true,
+      "source": "https://www.icicidirect.com/faqs/fno/what-are-the-new-lot-sizes-for-index-derivatives",
+      "note": "The superseded grid, kept so a calculation dated before the Jan-2026 series resolves the lot that actually applied then.",
+      "lots": {
+        "NIFTY": 75,
+        "BANKNIFTY": 35,
+        "FINNIFTY": 65,
+        "MIDCPNIFTY": 140,
+        "NIFTYNXT50": 25
+      }
+    }
+  ],
+  "equityTickRevisions": [
+    {
+      "effectiveFrom": "2024-06-10",
+      "label": "NSE 1-paisa tick for sub-Rs 250 scrips",
+      "verified": true,
+      "source": "https://www.business-standard.com/markets/news/nse-lowers-tick-size-to-1-paisa-over-1-300-stocks-to-be-impacted-124052700463_1.html",
+      "series": ["EQ", "BE", "BZ", "BO", "RL", "AF"],
+      "excludes": "ETFs",
+      "appliesTo": "T+1 and T+0 alike",
+      "bands": [
+        { "belowPriceP": 25000, "tickP": 1 },
+        { "belowPriceP": null, "tickP": 5 }
+      ]
+    },
+    {
+      "effectiveFrom": "1970-01-01",
+      "label": "pre 10 Jun 2024 uniform 5-paisa tick",
+      "verified": true,
+      "source": "https://www.business-standard.com/markets/news/nse-lowers-tick-size-to-1-paisa-over-1-300-stocks-to-be-impacted-124052700463_1.html",
+      "bands": [{ "belowPriceP": null, "tickP": 5 }]
+    }
+  ]
+}

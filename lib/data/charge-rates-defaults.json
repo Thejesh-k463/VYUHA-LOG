@@ -1,0 +1,248 @@
+{
+  "asOf": "2026-09-05",
+  "what": "DATED statutory + broker rate epochs, in the same fraction convention as the charge_config table and the ChargeRates type (0.1% => 0.001). This file is a dated REFERENCE table for the sizing calculators and for seeding review — invariant 3 stands: the charges engine reads rates only from charge_config, and lib/risk/sizing.ts never feeds this file to the engine on its own. A caller passes a rates object in.",
+  "why": "STT has moved in three consecutive budgets (1 Oct 2024 and 1 Apr 2026 both changed F&O rates). A book that spans a change must be priced at the rate that applied on each trade's own date, so every row carries effectiveFrom and effectiveTo (exclusive).",
+  "broker": "zerodha",
+  "plan": "default",
+  "exchange": "NSE",
+  "sources": {
+    "primary": "https://zerodha.com/charges/",
+    "stt": "https://support.zerodha.com/category/account-opening/resident-individual/ri-charges/articles/how-is-the-securities-transaction-tax-stt-calculated",
+    "sttHistory2024": "https://www.icicidirect.com/research/equity/finace/new-stt-rules-in-futures-and-options-trading",
+    "sttHistory2026": "https://cleartax.in/s/securities-transaction-tax-stt"
+  },
+  "epochs": [
+    {
+      "segment": "eq_delivery",
+      "effectiveFrom": "1970-01-01",
+      "effectiveTo": null,
+      "verified": true,
+      "note": "Equity delivery STT 0.1% on both sides has not moved across the epochs covered here.",
+      "rates": {
+        "brokerageFlat": 0,
+        "brokeragePct": 0,
+        "brokerageCap": null,
+        "brokerageFloor": 0,
+        "sttPct": 0.001,
+        "sttSide": "both",
+        "exchangeTxnPct": 3.07e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 0.00015,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 15.34,
+        "dpPct": 0,
+        "dpGstApplicable": true,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "eq_intraday",
+      "effectiveFrom": "1970-01-01",
+      "effectiveTo": null,
+      "verified": true,
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.00025,
+        "sttSide": "sell",
+        "exchangeTxnPct": 3.07e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "future",
+      "effectiveFrom": "1970-01-01",
+      "effectiveTo": "2024-10-01",
+      "verified": true,
+      "note": "Futures STT before the FY25 budget hike.",
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.000125,
+        "sttSide": "sell",
+        "exchangeTxnPct": 1.83e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "future",
+      "effectiveFrom": "2024-10-01",
+      "effectiveTo": "2026-04-01",
+      "verified": true,
+      "note": "FY25 budget: futures STT 0.0125% -> 0.02%.",
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.0002,
+        "sttSide": "sell",
+        "exchangeTxnPct": 1.83e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "future",
+      "effectiveFrom": "2026-04-01",
+      "effectiveTo": null,
+      "verified": true,
+      "note": "Budget 2026: futures STT 0.02% -> 0.05%, effective 1 Apr 2026.",
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.0005,
+        "sttSide": "sell",
+        "exchangeTxnPct": 1.83e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "index_option",
+      "effectiveFrom": "1970-01-01",
+      "effectiveTo": "2024-10-01",
+      "verified": true,
+      "note": "Options STT is charged on PREMIUM, sell side. Rate before the FY25 budget hike.",
+      "rates": {
+        "brokerageFlat": 20,
+        "brokeragePct": 0,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.000625,
+        "sttSide": "sell",
+        "exchangeTxnPct": 0.0003553,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "index_option",
+      "effectiveFrom": "2024-10-01",
+      "effectiveTo": "2026-04-01",
+      "verified": true,
+      "note": "FY25 budget: options STT 0.0625% -> 0.10% of premium.",
+      "rates": {
+        "brokerageFlat": 20,
+        "brokeragePct": 0,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.001,
+        "sttSide": "sell",
+        "exchangeTxnPct": 0.0003553,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "index_option",
+      "effectiveFrom": "2026-04-01",
+      "effectiveTo": null,
+      "verified": true,
+      "note": "Budget 2026: options STT 0.10% -> 0.15% of premium, effective 1 Apr 2026.",
+      "rates": {
+        "brokerageFlat": 20,
+        "brokeragePct": 0,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.0015,
+        "sttSide": "sell",
+        "exchangeTxnPct": 0.0003553,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    }
+  ],
+  "mtfPresets": {
+    "note": "Headline MTF interest rates, as annual ppm (14.6% p.a. = 146000 ppm), for mtfInterestDrag. Presets the user picks from and edits; the figure a broker publishes moves, so each carries its own asOf and source. No comparison here is a ranking.",
+    "asOf": "2026-09-05",
+    "brokers": [
+      {
+        "broker": "zerodha",
+        "annualPpm": 146000,
+        "headline": "0.04%/day (Rs 40 per lakh)",
+        "verified": true,
+        "source": "https://zerodha.com/charges/"
+      },
+      {
+        "broker": "dhan",
+        "annualPpm": 124900,
+        "headline": "12.49% p.a., slabs to 16.49%",
+        "verified": true,
+        "source": "https://dhan.co/margin-trading-facility/"
+      },
+      {
+        "broker": "angelone",
+        "annualPpm": 149900,
+        "headline": "0.041%/day",
+        "verified": true,
+        "source": "https://www.angelone.in/knowledge-center/mtf/know-angel-ones-mtf-trading-charges"
+      },
+      {
+        "broker": "paytm",
+        "annualPpm": 79900,
+        "headline": "slab-based, from 7.99% p.a.",
+        "verified": true,
+        "source": "https://www.paytmmoney.com/blog/big-news-mtf-interest-rates-now-start-at-just-7-99-p-a/"
+      },
+      {
+        "broker": "upstox",
+        "annualPpm": 182500,
+        "headline": "~18.25% p.a.; a Basic plan bills Rs 20/day per Rs 40,000",
+        "verified": true,
+        "source": "https://upstox.com/margin-trading-facility/"
+      }
+    ]
+  }
+}
