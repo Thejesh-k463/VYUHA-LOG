@@ -1336,6 +1336,13 @@ PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUH
   release"). `app/globals.css` + `e2e/z-search-panel.spec.ts` only; no component classes moved.
   It is the one item here that is a defect in the build users are ALREADY running, so it is the
   argument for cutting v3.9.1 sooner rather than folding it into v4.0.
+- **OWNER RULING 2026-09-05 — do NOT cut a release for the keyframe fix alone.** It rides into
+  **v3.9.1**, batched with the copy fix above (which this section already marks "do it in the next
+  desktop release regardless"). Rationale: the fix is cosmetic and carries no data risk, while the
+  release procedure is the full 11-step skill — desktop build, signing, CI 6/6 before the tag,
+  release run, deep verify, client ZIP, WDSI, owner publish and off-build-machine install. Two
+  must-ship items make a patch release; one 220ms animation offset does not. Nothing to do now; the
+  fix is already on `main`.
 
 ### 8.1 Blocking the sale — the owner's stated top priority
 
