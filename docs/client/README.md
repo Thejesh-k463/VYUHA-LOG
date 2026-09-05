@@ -261,7 +261,7 @@ books. Nothing new leaves your machine — the privacy note is unchanged.
 
 | Upgrade | What it gives you |
 |---|---|
-| **Launch pricing, shown honestly** | The list prices are **₹13,000/yr** (Pro — Annual) and **₹35,999** (Journal — Lifetime). Until the launch offer ends you pay **₹9,999/yr (23% off)** or **₹29,999 (16% off)** — the struck-out figures are the real prices these become, not decoration, and the savings percentages are computed from the numbers and floored, never rounded up (lifetime's true 16.67% displays as 16, not 17). Lifetime is now the recommended plan. |
+| **Launch pricing, shown honestly** | The list prices are **₹13,000/yr** (Pro — Annual) and **₹35,999** (Journal — Lifetime). Until the launch offer ends you pay **₹7,999/yr (38% off)** or **₹29,999 (16% off)** — the struck-out figures are the real prices these become, not decoration, and the savings percentages are computed from the numbers and floored, never rounded up (lifetime's true 16.67% displays as 16, not 17). Lifetime is now the recommended plan. |
 | **How Vyuha compares, on the pricing page** | A factual table of seven other trade journals — pricing, where your data lives, Indian broker support, statutory charges — every cell read from public pages on 2026-08-15, with "not stated" wherever a claim could not be verified. |
 | **Lifetime carries the roadmap** | Lifetime includes every future upgrade at no extra cost — exciting, useful features are on the roadmap. |
 | **This deck caught up with the product** | The getting-started deck now names all six brokers, the column mapper and the three broker-API pulls, lists the full Pro screen set (Lenses included), and carries the SmartScreen note next to the install steps. |
@@ -328,7 +328,7 @@ books. Nothing new leaves your machine — the privacy note is unchanged.
 
 | Upgrade | What it gives you |
 |---|---|
-| **Clear pricing, in the app** | Two plans, stated plainly where you need them: **Pro — Annual ₹9,999/yr** (recommended then; Lifetime is now the recommended plan) and **Journal — Lifetime ₹29,999**. The free tier remains free forever — recording trades, every importer, backups. Prices shown in-app carry the date they were set, and the WhatsApp message quotes exactly what you saw. |
+| **Clear pricing, in the app** | Two plans, stated plainly where you need them: **Pro — Annual ₹7,999/yr** (recommended then; Lifetime is now the recommended plan) and **Journal — Lifetime ₹29,999**. The free tier remains free forever — recording trades, every importer, backups. Prices shown in-app carry the date they were set, and the WhatsApp message quotes exactly what you saw. |
 
 ## New in v2.99.75
 

@@ -71,7 +71,7 @@ export const PRICING_STALE_AFTER_DAYS = 120;
 // strike-throughs. The offer's end date is deliberately NOT rendered in-app
 // (owner's call); it lives here and in the owner docs so the claim stays
 // auditable. The savings percentages are DERIVED (offerPct), never hand-typed:
-// 13,000→9,999 is 23%, 35,999→29,999 is 16% — the owner's requested "30%/20%"
+// 13,000→7,999 is 38%, 35,999→29,999 is 16% — the owner's requested "30%/20%"
 // labels did not survive division and were corrected, not displayed.
 // Lifetime is now the featured entry — the owner sells lifetime first.
 export const PRICING: readonly PricingSku[] = [
@@ -142,7 +142,7 @@ export function featuredSku(): PricingSku {
   return PRICING.find((s) => s.featured) ?? PRICING[0];
 }
 
-/** ₹29,999 / ₹9,999 — en-IN grouping, matching the landing page exactly. */
+/** ₹29,999 / ₹7,999 — en-IN grouping, matching the landing page exactly. */
 export function formatInr(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
 }

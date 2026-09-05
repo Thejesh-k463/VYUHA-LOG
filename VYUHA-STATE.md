@@ -29,6 +29,11 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ## 2. Current state — v3.9.0 "Trust the numbers" PUBLISHED 2026-09-05 (tag `e5ea549`; CI 6/6; release 3/3; deep verify 3/3; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-05)
 
+> **v3.9.1 is IN RELEASE** — committed at `65cec1c` and pushed, `npm run verify` EXIT 0
+> (281 files / 5,253 passed / 35 skipped), installer built, CI run `33985149413` 5/6. NOT tagged.
+> The steward returned NO-GO on stale ₹9,999 pricing; the fix is in the commit that follows.
+> Full detail in **v3.9.1 IN RELEASE** below.
+
 **Status:** the release bump is `e5ea549`; `main` has since moved to `28d6655` — see **Since the
 release** below. The tag and the published artefacts are untouched. Waves W0–W4 done and pushed: W1 engine
 `fb0e215`, W2 pagination `b929577`, W3 UI `c04e1ad`, audit-1 fix wave `4d9e9bd`, audit-2 fix pass
@@ -113,37 +118,47 @@ CLAUDE-CODE root), the sizing-calculator spec, the owner's tweaks, the 5-index r
 **SUPERSEDED 2026-09-05:** credit limits reset, no governor exists — model choice per
 `~/.claude/CLAUDE.md` is an accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
 
-### v3.9.1 IN PROGRESS — on `main`, ALL UNCOMMITTED, `npm run verify` NOT YET RUN for this release
+### v3.9.1 IN RELEASE — COMMITTED at `65cec1c` and PUSHED; gates green; tag NOT cut
 
-Scope is fixed at four items (owner ruling Q5, `06-ANSWERS.md`): copy strike-out, import
-hardening, licence-activation machine-id fix, and the keyframe fix `28d6655` that is already on
-`main`. Nothing from v4.0 lands here. Wave state below is quoted from the build ledger
-(`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`), which is the file to
-update at every wave boundary; each wave's evidence is that wave's own gate output, **not a
-release gate** — no `npm run verify` has been run over the combined 3.9.1 diff yet.
+Scope was fixed at four items (owner ruling Q5, `06-ANSWERS.md`): copy strike-out, import
+hardening, licence-activation machine-id fix, and the keyframe fix that was already on `main`.
+Nothing from v4.0 landed here.
 
-- **W1 copy strike-out — DONE (uncommitted).** 27 files, 64 replacements, PRIVACY four-kinds kept
-  as a desktop-only statement (option A), new `tests/positioning-copy.test.ts`, sidebar footer +
-  `scripts/bump-version.mjs` regex changed together, `tests/pricing.test.ts` updated. Evidence:
-  *148 + 121 tests green; red proof on README:5; eslint clean.*
-- **W1 follow-ups — LEFT.** `node scripts/make-logo.mjs` must run BEFORE the installer build (it
-  regenerates `public/brand/*`, `src-tauri/icon-source.png`, `installer-*.bmp`,
-  `components/brand/mark.tsx`); `tests/readme-claims.test.ts`'s file count must be set to the true
-  on-disk count at the final gate (W1 alone is +1).
-- **W2 import hardening — IN PROGRESS.** `vendor/xlsx-0.20.3.tgz`, `package.json`
-  `"xlsx": "file:vendor/xlsx-0.20.3.tgz"`, lockfile by the owner's Q7 path, route 32 MB cap +
-  `maxDuration = 60`, parse-guard magic bytes, 3 new tests. Evidence: *partial* — finisher was
-  still running when this was written.
-- **W3 licence activation binding — DONE (uncommitted).** `app/api/license/route.ts` now passes
-  `getMachineId()`; `tests/license-activation-binding.test.ts` (3 cases). Evidence: *103 licence
-  tests green; red proof "expected 200 to be 400".*
-- **W4 docs — this section, `docs/DECISIONS.md`, `CHANGELOG.md`, `docs/prompts/*`,
-  `docs/owner/CREATOR_KIT.md:80`.**
-- **Release — LEFT.** The full 11 steps: bump 3.9.0 → 3.9.1 (three version files must agree),
-  `make-logo`, `npm run verify` EXIT 0 with counts ≥ 276 files / 5,243 tests plus the new ones,
-  the adversarial diff audit, desktop build + signing check, CI 6/6 BEFORE the tag, tag, release
-  run, `release:verify --deep`, client ZIP rebuilt, WDSI details handed over unprompted, owner
-  publish + off-build-machine install, then STATE / DECISIONS / CHANGELOG commit + push.
+- **Commit.** `65cec1c` "release: v3.9.1 — positioning, import hardening, licence activation
+  binding", 51 files, +1,074 / −142, pushed to `origin/main`. Nothing about v3.9.1 is
+  uncommitted any more; **the price-fix commit that follows this one** carries the steward's
+  NO-GO fixes (below) and the state/decision updates.
+- **Release gate.** `npm run verify` **EXIT 0** over the combined 3.9.1 diff — **281 files /
+  5,253 tests passed, 35 skipped** (typecheck + lint + vitest + `next build`).
+- **Installer.** `npm run desktop:build` completed and the artefacts were signed with key id
+  `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). It **will be rebuilt after the price fix** —
+  the bundle in `desktop-dist/` predates it and still carries the old comparison-table copy.
+- **CI.** Run `33985149413` on `65cec1c` finished **5/6**. `Playwright e2e (ubuntu-latest)`
+  PASSED; `Playwright e2e (macos-latest)` failed on `e2e/z-column-order.spec.ts:165` — the
+  scroll-predicate wait timed out, the same macOS-only sampling class as the 3.9.0 keyframe
+  investigation, with no matching ubuntu failure. A re-run is in progress; **CI must read 6/6
+  before the tag**.
+- **Release steward: NO-GO**, on stale pricing — the 2026-08-31 reprice (annual ₹9,999 →
+  ₹7,999, anchor unchanged, so `offerPct()` derives **38%**) never reached six prose surfaces.
+  Fixed in the commit that follows: `lib/domain/pricing-comparison.ts:111-112` now DERIVES the
+  Vyuha row from `PRICING`; `docs/sales/landing-page.html:518,533`, `docs/client/README.md:264,331`,
+  `docs/sales/brochure.html:240` ("38% OFF") and `README.md:236,237,309,459` carry the literal
+  ₹7,999 / 38%; `lib/domain/pricing.ts:74,145` doc comments corrected;
+  `docs/sales/landing-page.standalone.html` regenerated with `node scripts/build-landing.mjs`.
+  New guard **`tests/price-surfaces.test.ts`** (16 cases) derives every allowed figure from
+  `PRICING`/`offerPct()` and scans the six surfaces for any other price or savings badge —
+  proven red by restoring one ₹9,999. README's counts moved to **282 files / 5,269 tests**.
+
+- **Release — LEFT.** Version strings are already 3.9.1 in package.json, tauri.conf.json,
+  Cargo.toml and Cargo.lock. What remains: (1) commit the price fix; (2) `npm run verify` EXIT 0
+  on the final tree; (3) `npm run desktop:build` again and confirm the bundle carries ₹7,999 and
+  no ₹9,999, `BUILD_ID` fresh, `.sig` key id `4FF85F3BBE1DA21D`; (4) CI **6/6** on the final
+  commit (macOS e2e re-run); (5) tag `v3.9.1` + release run; (6) `release:verify --deep` over the
+  published bytes; (7) `npm run winget:manifest -- --sha <SHA-256 of the PUBLISHED installer>`
+  (the script REFUSES a local hash — the workflow rebuilds the binary, so the bytes differ);
+  (8) client ZIP rebuilt; (9) WDSI details handed over unprompted; (10) owner publish +
+  off-build-machine install; (11) STATE / DECISIONS / CHANGELOG commit + push.
+
 
 **Deadline (owner, Q1):** Monday 2026-09-07 for everything up to v4.2 — v3.9.1 tagged first, then
 the v4.0 → v4.1 → v4.2 ladder back to back (Q2, Q4).

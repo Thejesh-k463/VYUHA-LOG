@@ -1,4 +1,5 @@
-// PRICING COMPARISON — competitor facts for the /pricing page (PURE, zero imports).
+// PRICING COMPARISON — competitor facts for the /pricing page (PURE; its only
+// import is lib/domain/pricing.ts, which is itself pure and browser-safe).
 //
 // Every cell below was read from the named product's public pages on
 // COMPARISON_AS_OF (2026-08-15) or from third-party 2026 reviews where the
@@ -9,9 +10,16 @@
 // docs/owner/MONETIZATION_PLAN.md §5).
 //
 // ₹ conversions use ~₹88/USD and are deliberately labelled approximate.
+//
+// Vyuha's OWN cells are DERIVED from lib/domain/pricing.ts (pure, browser-safe,
+// the single source of truth) — never typed here. A hand-typed copy of the old
+// annual price survived the 2026-08-31 reprice on this row and on five other
+// surfaces; tests/price-surfaces.test.ts now scans prose for the same drift.
 // Owner approved this table for shipping on 2026-08-15 (full seven-product
 // version, cheap Indian competitors INCLUDED — hiding them would be the
 // dishonesty the product positions against).
+
+import { priceLabel, skuById } from "./pricing";
 
 /** The date every competitor cell was last read from its source. */
 export const COMPARISON_AS_OF = "2026-08-15";
@@ -105,11 +113,14 @@ export const COMPETITORS: readonly CompetitorRow[] = [
   },
 ];
 
+const ANNUAL = priceLabel(skuById("annual"));
+const LIFETIME = priceLabel(skuById("lifetime"));
+
 /** Vyuha's own row, phrased in the same vocabulary as the competitor cells. */
 export const VYUHA_ROW = {
   name: "Vyuha",
-  model: "Annual ₹9,999/yr · Lifetime ₹29,999 once",
-  cheapestPaid: "₹9,999/yr — or ₹29,999 ever",
+  model: `Annual ${ANNUAL} · Lifetime ${LIFETIME} once`,
+  cheapestPaid: `${ANNUAL} — or ${LIFETIME} ever`,
   dataLocation: "Your own PC with Vyuha Desktop; a web platform is in development",
   indianBrokers: "6 auto-detected parsers + column mapper + 4 broker-API pulls",
   chargesEngine: "Computes STT/CTT, stamp duty, GST, exchange & SEBI charges from configurable rates",
@@ -124,7 +135,7 @@ export const WHY_VYUHA: readonly { claim: string; detail: string }[] = [
   {
     claim: "Three-year cost is a subtraction, not a subscription",
     detail:
-      "Lifetime is ₹29,999 once. Three years of the global journals above runs ≈ ₹47,000–95,000 at their current prices.",
+      `Lifetime is ${LIFETIME} once. Three years of the global journals above runs ≈ ₹47,000–95,000 at their current prices.`,
   },
   {
     claim: "Your data lives on your machine",

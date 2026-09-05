@@ -3284,3 +3284,30 @@ context, never by a remaining budget.
 **Rejected: leaving the governor in place as a conservative default** — a rule that no longer
 describes reality gets cited as a blocker, and stopping a half-audited release mid-flight is the
 failure mode it was written to prevent in the first place.
+
+
+## 2026-09-06 — Price surfaces guard: prose is a price surface too
+
+`₹9,999` survived on **six** surfaces after the 2026-08-31 reprice (annual ₹9,999 → ₹7,999,
+anchor ₹13,000 unchanged, so `offerPct()` derives 38%): `lib/domain/pricing-comparison.ts`'s
+Vyuha row, the landing page's comparison table twice, `docs/client/README.md` twice, this
+repo's `README.md` four times, and the brochure's "23% OFF" tag. `tests/pricing.test.ts` was
+green throughout, because it pins the app's amounts to the landing page's price CARD — nothing
+scanned prose, so a buyer could read two different annual prices on one page.
+
+The fix has two halves. In code the figures are now DERIVED: `VYUHA_ROW` and `WHY_VYUHA` build
+their cells from `priceLabel(skuById(...))`, so `pricing-comparison.ts` gains its first import
+(`lib/domain/pricing.ts`, itself pure and browser-safe — the "zero imports" header is amended,
+not broken). In prose the figures are literal and `tests/price-surfaces.test.ts` scans them:
+every ₹ figure in a price context on README.md, the landing page (source and generated
+standalone), the brochure, the client README, the getting-started deck and
+`pricing-comparison.ts` must be one that `PRICING` authorises, and every `NN% off` badge must be
+one `offerPct()` derives. Competitor figures are excluded from the scan by deriving them from
+`COMPETITORS`, and ranges (`₹47,000–95,000`) and approximate conversions (`≈ ₹27,700/yr`) are
+excluded structurally — neither shape can ever be one of our two exact prices.
+
+**Rejected: hand-listing the prices in the test.** A guard that repeats the number it guards is
+a seventh surface to forget; deriving from `PRICING` means the next reprice makes the test fail
+until the prose follows. A fourth case asserts each selling surface still QUOTES a price, because
+"no wrong price" is trivially satisfied by a page with no price at all — the exact funnel leak
+`lib/domain/pricing.ts` was written to fix.
