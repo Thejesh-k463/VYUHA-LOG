@@ -1,10 +1,110 @@
 # Changelog
 
-## v3.9.1 — unreleased
+## v4.0.0 — unreleased
+
+*The release where the journal starts looking at the positions you still hold.
+A Live Desk that prices them and says what each one is risking, a chart that
+draws the trade — entry, stop and target — as a zone instead of three loose
+lines, a Sizing Lab that prints the formula beside every number it returns, and
+a Market Atlas computed from the end-of-day bars already on your machine.
+Everything here is computed on your own PC from data it already has, and v4.0.0
+adds no new network host.*
+
+- **Live Desk (`/live`) — your open positions, priced.** Free, and free for
+  good: symbol, product, quantity, average entry, the mark, the day's move,
+  unrealised ₹ and %, and how many days you have held it — twelve sortable
+  columns, all accounts together with an account filter in the header, a market
+  clock, and a chip on every row saying where its price came from (end of day,
+  a manual mark, a delayed feed) and how old it is, with a **Stale** badge when
+  a row is older than the newest mark on the desk. It is your own record, so it
+  is not sold. **Pro adds the forward-looking arithmetic:** risk at stop, open
+  R, % of capital, the portfolio-heat strip and sector concentration, and the
+  chart overlay. The Pro columns render as locked chips beside a free row — the
+  screen is never taken away, and it never hides a number you already own.
+
+- **A position chart that draws the trade, not just the price.** The expanded
+  row gets a candlestick chart (a line on the compact card) with the entry,
+  stop and target drawn as a shaded reward-and-risk zone by a new
+  `ISeriesPrimitive` — `components/charts/lw/position-zone-primitive.ts` —
+  rendered by the charting library already in the build (lightweight-charts
+  5.2.0). **No dependency was added or upgraded for any of this**: the whole
+  release changes neither `package.json` nor `package-lock.json`.
+
+- **Sizing Lab (`/sizing-lab`, Pro) — seven ways to size a position, each with
+  its formula on screen.** Fixed rupee, fixed fractional, the Turtle volatility
+  unit, % volatility, Kelly (your own win rate and payoff — nothing is inferred
+  from your journal yet), fixed ratio and equal weight, priced for CNC, MTF,
+  intraday or F&O with the charge schedule the segment actually uses. The
+  per-trade risk slider **opens at 0.25% of capital** and runs 0.1–5%; a
+  **deploy cap of 25%** is on by default and visible, because a cap that is off
+  until you switch it on is not a cap — raw Kelly routinely returns a position
+  larger than the account. A portfolio heat ceiling stays EMPTY until you set
+  one: Vyuha draws a limit you chose, never one it invented. Sending a result
+  back into your stored risk settings takes an explicit button and a dialog
+  that shows **old → new** before it writes.
+
+- **Market Atlas (`/atlas`, Pro) — market context from your own bars.** Breadth,
+  advance/decline, new highs and lows, group and cap-band returns and a
+  staleness ledger, all computed from the end-of-day bhavcopy bars in your own
+  database — nothing is fetched to draw this screen, and each panel prints the
+  public definition it uses. Rotation is labelled **"current classification, not
+  point-in-time"**, because a name sits in the band its index membership puts it
+  in today. Without a licence the tab is **locked with a static preview rather
+  than hidden**, so you can see what it is before you pay for it. Bars arrive three
+  ways: the daily download you may already have on (auto-MTM), a **backfill you
+  start yourself** — up to 252 past files, one every 1.5 seconds, with a confirm,
+  a progress list and a stop button, keeping whatever it has already saved — or
+  by dropping bhavcopy files you already hold, which makes no network request at
+  all. NSE's UDiFF file is the primary download with the legacy
+  `sec_bhavdata_full` as the fallback. `docs/client/PRIVACY.md` item #2 is
+  amended to state all of this before it can happen.
+
+- **The bundled index map gains cap bands.** All eight NSE size lists (Nifty 50,
+  Next 50, 100, 200, 500, Midcap 150, Smallcap 250, Microcap 250) are now in
+  `lib/data/nse-index-map.json` beside the 54 sectoral ones — 62 indices, 1,379
+  symbols — so a position can say whether it is large, mid, small or micro. Each
+  list carries its own as-of and capture date. The lists are downloaded on the
+  owner's machine by a build script; the app itself contacts no index website.
+
+- **THIRD-PARTY-NOTICES.txt** ships inside the installer and in the client ZIP,
+  naming every open-source component and its licence.
+
+- **Four database migrations, 0064–0067**, all additive: the risk inputs the
+  sizing methods need (`risk_config`), the Atlas daily cache, the backfill
+  ledger, and the live-feed settings.
+
+- **The live-feed adapter is in the build, and end-of-day is what runs.**
+  `settings.live_feed_provider` defaults to `eod`; the OpenAlgo bridge is
+  selectable only after the disclosure you already have to accept in
+  Integrations, and refreshing prices from it is what v4.1 is about.
+
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+
+- **Still true for anyone coming from v3.7.1:** the installer runs the old,
+  unguarded v3.7.1 uninstaller once, and that one has no backup step, so leave
+  "Delete the application data" UNTICKED — ticking it there erases the data
+  folder with no copy taken. From v3.8.0 on the guard is in place.
+
+- **Not in this release, stated plainly:** Telegram alerts for a stop or target
+  are not built; the owner's proprietary Atlas widgets are not here and will
+  arrive as a separately signed daily file, not as code; cohort analytics stay
+  dark until there is enough history; and there are no native broker feeds —
+  Upstox and Angel One are v4.2. Journal-derived Kelly inputs and a
+  `results_date` on instruments did not make this release either.
+
+## v3.9.1 — released 2026-09-06
 
 *A patch release with four items and nothing else: what Vyuha says about itself,
 what the import route will accept, when a licence key is bound to a machine, and
-a 220ms animation offset that shipped in v3.9.0.*
+a 220ms animation offset that shipped in v3.9.0. Tagged `v3.9.1` at commit
+`0e18b1d`; the published artefacts were built by CI run 33987227426.*
 
 - **Positioning: desktop or web, the trader chooses.** "100% local & offline" is
   retired as a sales line. Vyuha Desktop keeps every technical guarantee it had —

@@ -55,7 +55,7 @@ function createVyuhaReferralForm() {
   form.addTextItem().setTitle(REFERRER_TITLE).setRequired(true)
       .setHelpText("The creator's name or the code they gave you. Type NONE if nobody sent you - honest answers keep creator payouts fair.");
   form.addMultipleChoiceItem().setTitle(PLAN_TITLE).setRequired(true)
-      .setChoiceValues(["Pro - Annual (Rs 9,999)", "Journal - Lifetime", "Not decided yet"]);
+      .setChoiceValues(["Pro - Annual (Rs 7,999)", "Journal - Lifetime", "Not decided yet"]);
   form.addCheckboxItem().setTitle("Brokers you trade with (optional)")
       .setChoiceValues(["Zerodha", "Dhan", "Groww", "Angel One", "Upstox", "Paytm Money", "Kotak Neo", "Sahi"])
       .showOtherOption(true);

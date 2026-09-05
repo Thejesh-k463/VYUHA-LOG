@@ -35,7 +35,7 @@ record-keeping and analytics tool, not advice).
 > staged positions with per-tranche stops, an options-seller journal, an ITR/AIS/advance-tax
 > pack, MTF margin lists for seven brokers (10,501 stocks), risk cockpit and behaviour analytics
 > — the core journal is free forever with no trade or account caps; the analytics are the paid
-> part (₹9,999/yr or ₹29,999 once at launch pricing). Every report returns "—" rather than
+> part (₹7,999/yr or ₹29,999 once at launch pricing). Every report returns "—" rather than
 > invent a number.
 
 **If you have a product demo, provide link.**
@@ -83,7 +83,7 @@ slides the form itself lists: Problem · Solution · Market (India's ~15 crore d
 from `lib/domain/pricing-comparison.ts`) · Competitive advantages (local-first, charges engine
 0.69%, free never-gated core, six-broker auto-detect, honesty positioning) · Product (8–10
 screenshots from `docs/screenshots/`) · Traction (releases, tests, first licences, creator
-outreach) · Business model (₹9,999/yr, ₹29,999 lifetime; WhatsApp checkout today, payment page
+outreach) · Business model (₹7,999/yr, ₹29,999 lifetime; WhatsApp checkout today, payment page
 next; creators get review keys) · Basic forecast [[yours]] · The ask (partnership + optional
 pre-seed) · Team. `docs/client/GETTING_STARTED_DECK.html` is a buyer walkthrough, not this deck.
 

@@ -27,12 +27,20 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.9.0 "Trust the numbers" PUBLISHED 2026-09-05 (tag `e5ea549`; CI 6/6; release 3/3; deep verify 3/3; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-05)
+## 2. Current state — v3.9.1 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v3.9.1` = `0e18b1d`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v4.0.0 IN RELEASE (merge `98eaa63`, bumped, verify pending)
 
-> **v3.9.1 is IN RELEASE** — committed at `65cec1c` and pushed, `npm run verify` EXIT 0
-> (281 files / 5,253 passed / 35 skipped), installer built, CI run `33985149413` 5/6. NOT tagged.
-> The steward returned NO-GO on stale ₹9,999 pricing; the fix is in the commit that follows.
-> Full detail in **v3.9.1 IN RELEASE** below.
+> **v3.9.1 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner.** Tag `v3.9.1` = `0e18b1d`
+> pushed 2026-09-06; CI run `33986790273` 6/6; release run `33987227426` 3/3 (after one re-run of
+> the macOS Apple-silicon DMG job); `npm run release:verify v3.9.1 -- --deep` 3/3 over the
+> PUBLISHED bytes, key id `4FF85F3BBE1DA21D`; client ZIP and winget manifests built; WDSI details
+> handed over. **Three owner actions are open: publish the draft, install it on a non-build
+> machine, submit WDSI.** Detail in **v3.9.1 RELEASE — the evidence** below.
+>
+> **v4.0.0 "Live Desk" is IN RELEASE** on the same day: `live-desk` merged to `main` at `98eaa63`,
+> the 4.0.0 version bump applied, `npm run verify` NOT yet run (the gate was coord-denied while
+> another session held it). See **v4.0.0 IN RELEASE** below.
+
+### v3.9.0 — PUBLISHED 2026-09-05, the previous release (record kept)
 
 **Status:** the release bump is `e5ea549`; `main` has since moved to `28d6655` — see **Since the
 release** below. The tag and the published artefacts are untouched. Waves W0–W4 done and pushed: W1 engine
@@ -44,8 +52,10 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 3/3 over the published bytes (key id `4FF85F3BBE1DA21D`); client ZIP built, installer SHA-256
 `094949764548D46010AB9E51BEB08F9F164758F21E1A3EF1C2FD38F2327443E8`; WDSI details handed over.
 **Owner confirmed 2026-09-05:** draft published, installed and working on a non-build machine, WDSI
-submitted. No open release actions. Verify baseline for the next release: `npm run verify` EXIT=0,
-276 files / 5,243 tests (35 skipped), 2026-09-05.
+submitted. No open release actions. Verify baseline at that release: `npm run verify` EXIT=0,
+276 files / 5,243 tests (35 skipped), 2026-09-05. **Superseded as the baseline: v3.9.1 measured
+282 files / 5,269 tests passed / 35 skipped (EXIT 0, 2026-09-06) — that is the number a v4.0.0 run
+must not fall below. The 4.0.0 figure itself is PENDING; see `VERIFY: <pending>` below.**
 
 **Since the release — on `main`, UNRELEASED, ships with whatever version comes next:** `6abbc9a`
 state docs, `97b2d6d` the `.claude/` agent layer, `28d6655` the overlay entrance-keyframe fix.
@@ -118,11 +128,50 @@ CLAUDE-CODE root), the sizing-calculator spec, the owner's tweaks, the 5-index r
 **SUPERSEDED 2026-09-05:** credit limits reset, no governor exists — model choice per
 `~/.claude/CLAUDE.md` is an accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
 
-### v3.9.1 IN RELEASE — COMMITTED at `65cec1c` and PUSHED; gates green; tag NOT cut
+### v3.9.1 RELEASE — the evidence (TAGGED, BUILT, DEEP-VERIFIED; draft not published)
 
 Scope was fixed at four items (owner ruling Q5, `06-ANSWERS.md`): copy strike-out, import
 hardening, licence-activation machine-id fix, and the keyframe fix that was already on `main`.
 Nothing from v4.0 landed here.
+
+**Where it stands, 2026-09-06:**
+
+- **Tag `v3.9.1` = `0e18b1d`** (the price-fix commit), pushed.
+- **CI run `33986790273` on `0e18b1d`: completed / success, 6/6.**
+- **Release run `33987227426`: completed / success**, after `gh run rerun --failed` for the macOS
+  Apple-silicon job, which had died in `bundle_dmg.sh` / `hdiutil` after `Vyuha.app` built — a
+  packaging flake, not a code defect. All eight assets are on the release: `latest.json`, the
+  Windows `.exe` + `.sig`, both DMGs, both `app.tar.gz` + `.sig`.
+- **`npm run release:verify v3.9.1 -- --deep` 3/3 over the PUBLISHED bytes**, key id
+  `4FF85F3BBE1DA21D` on all three signatures (release runner B, after the re-run).
+- **Draft release** (draft = true, prerelease = false): while it is a draft GitHub gives it a
+  placeholder URL — `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/untagged-1c02c3ba9e08500eb310`
+  — which becomes `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v3.9.1` the moment the
+  owner publishes it.
+- **Client ZIP:** `release-packages/Vyuha_3.9.1_Client_Package.zip`, 12 entries, installer SHA-256
+  `83620FCF57C684861C73C018B1D5DD5C7F7F4CA9D73F9C89B71D1AB9036F88B7`, nine struck positioning
+  phrases 0 hits, prices ₹7,999 / 38% correct and zero ₹9,999. **The GitHub asset is a different
+  binary** — the workflow rebuilds it — SHA-256
+  `45C11F3A26C7EB51C4D989B5BCB9592AC245ECA0227E752C1D8EEB4CB2BC2A92`. Both hashes are real; quote
+  the one that matches the file in hand.
+- **winget manifests:** `release-packages/winget/3.9.1/` (three YAMLs), written against the CI
+  asset hash. Submit only AFTER the publish, and regenerate if the asset is ever re-uploaded.
+- **WDSI:** details handed over (file `Vyuha_3.9.1_x64-setup.exe`, SHA-256 `83620FCF…88B7` = the
+  client-ZIP installer, category "Incorrectly detected as malware/malicious", detection "N/A - no
+  detection", definition version blank).
+
+**OWNER ACTIONS STILL OPEN — the release is not finished until these three are done:**
+1. **Publish the draft release.**
+2. **Install from the client ZIP on a non-build machine** and confirm it runs.
+3. **Submit the WDSI form** with the details above.
+
+**Follow-up carried into the next wave:** stale ₹9,999 figures survive in `docs/owner/**`
+(`CREATOR_OUTREACH.md`, `pitch-deck/deck.html`, `demo-video/02-SHOT-LIST.md`, `DOC_AUDIT.md`,
+`HOW_TO_EDIT_SALES_ASSETS.md`, `LICENSE_OPERATIONS.md`) — those files are SENT to people, so they
+join `tests/price-surfaces.test.ts`'s scanned surfaces rather than staying excluded as history.
+
+**How it got there — the record at `65cec1c`, superseded by `0e18b1d` above. Read it as history,
+not as the current state:**
 
 - **Commit.** `65cec1c` "release: v3.9.1 — positioning, import hardening, licence activation
   binding", 51 files, +1,074 / −142, pushed to `origin/main`. Nothing about v3.9.1 is
@@ -149,16 +198,68 @@ Nothing from v4.0 landed here.
   `PRICING`/`offerPct()` and scans the six surfaces for any other price or savings badge —
   proven red by restoring one ₹9,999. README's counts moved to **282 files / 5,269 tests**.
 
-- **Release — LEFT.** Version strings are already 3.9.1 in package.json, tauri.conf.json,
-  Cargo.toml and Cargo.lock. What remains: (1) commit the price fix; (2) `npm run verify` EXIT 0
-  on the final tree; (3) `npm run desktop:build` again and confirm the bundle carries ₹7,999 and
-  no ₹9,999, `BUILD_ID` fresh, `.sig` key id `4FF85F3BBE1DA21D`; (4) CI **6/6** on the final
-  commit (macOS e2e re-run); (5) tag `v3.9.1` + release run; (6) `release:verify --deep` over the
-  published bytes; (7) `npm run winget:manifest -- --sha <SHA-256 of the PUBLISHED installer>`
-  (the script REFUSES a local hash — the workflow rebuilds the binary, so the bytes differ);
-  (8) client ZIP rebuilt; (9) WDSI details handed over unprompted; (10) owner publish +
-  off-build-machine install; (11) STATE / DECISIONS / CHANGELOG commit + push.
+- **The 11 release steps — steps 1–9 are DONE** (price fix committed as `0e18b1d`; verify EXIT 0
+  at 282 files / 5,269 tests; desktop rebuilt with ₹7,999 and zero ₹9,999, `.sig` key id
+  `4FF85F3BBE1DA21D`; CI 6/6; tag + release run; deep verify 3/3; winget manifests against the
+  PUBLISHED-side asset hash — the script REFUSES a local hash because the workflow rebuilds the
+  binary; client ZIP rebuilt; WDSI handed over). **Step 10 is the owner's** (publish +
+  off-build-machine install) and **step 11** (STATE / DECISIONS / CHANGELOG commit + push) is what
+  this wave writes.
 
+
+### v4.0.0 "Live Desk" IN RELEASE — merged, bumped, gate pending
+
+**Merge.** Branch `live-desk` is on `main` at **`98eaa63`**. Four build commits: `0b56f7e`
+(migrations 0064/0065, `lib/live`, `lib/quotes` + SSE, `lib/risk` sizing/stops, `lib/atlas`),
+`1c28907` (the backup envelope excludes the Atlas cache tables), `892b9ab` (the UI: tracker,
+position chart + zone primitive, Sizing Lab, Atlas, feed card, size indices), `21cb13e` (help
+entries for `/live` `/atlas` `/sizing-lab`, `todayIstIso`, the NOTICES exemption). 132 files,
++26,842 / −56 over `e839502..98eaa63`.
+
+**What shipped**, each verified against the merged code, not recalled: `/live` free read-only
+tracker (12 sortable columns, all accounts + account filter, market clock, per-row staleness chip)
+with R / risk-at-stop / % of capital / heat / concentration / chart overlay as Pro; the
+`ISeriesPrimitive` zone primitive on lightweight-charts **5.2.0** with **no dependency change at
+all** (`package.json` and `package-lock.json` are untouched by the whole range); `/sizing-lab`
+(Pro) with seven methods, deploy cap 25% on by default, the per-trade risk slider opening at 0.25%
+(range 0.1–5%) and write-back behind an explicit old → new dialog; `/atlas` (Pro, locked static
+preview on Free) computed from stored `price_history`, rotation labelled "current classification,
+not point-in-time", UDiFF primary with `sec_bhavdata_full` fallback, user-started backfill (confirm,
+progress, 1.5 s rate limit, stop-and-keep) and file drop, with PRIVACY item #2 amended to match;
+the eight size indices in `lib/data/nse-index-map.json` (62 indices, 1,379 symbols);
+`docs/client/THIRD-PARTY-NOTICES.txt` in the installer resources and the client ZIP; migrations
+**0064–0067**; and the OpenAlgo feed adapter present but not the default —
+`settings.live_feed_provider` ships `eod`.
+
+**Version bump 4.0.0 APPLIED, and applied BEFORE the gate**: `package.json`, both
+`package-lock.json` root version fields by hand, `Cargo.toml`, `Cargo.lock`,
+`src-tauri/tauri.conf.json`, and the sidebar footer (`v4.0`). The gate was coord-denied at the time
+— another session held the machine-wide `npm run verify` lock — so the order was inverted
+deliberately and recorded in `docs/DECISIONS.md` 2026-09-06. The gate still runs, on the bumped
+tree, BEFORE the tag.
+
+**VERIFY: `<pending>`** — `npm run verify` has NOT been run on the bumped 4.0.0 tree. The
+orchestrator fills this line in with `EXIT=<n>`, the file count and the test count. **v3.9.1's
+282 files / 5,269 passed / 35 skipped is the floor.** No tag until this line is filled and green.
+
+**Also uncommitted in the tree while this was written** (other waves, not this one): the
+`docs/owner/**` ₹9,999 sweep with its `tests/price-surfaces.test.ts` surface list, and the
+THIRD-PARTY-NOTICES line in `scripts/build-client-package.mjs`.
+
+**The ladder after 4.0.0** (owner Q4/Q20/Q21): **4.1 = the OpenAlgo live feed**, already built and
+merged, gated on `settings.live_feed_provider` and the existing disclosure consent; **4.2 = native
+`QuoteProvider` adapters for Upstox and Angel One** — NOT Dhan (Q21), and never NSE `quote-equity`
+or Yahoo (Q22).
+
+**The cut list — recorded so nothing is rebuilt by mistake** (owner Q3: "record perfectly what is
+left"): Telegram stop/target alerts (Q18, consent + quiet hours + one per trade/kind/day); the
+signed proprietary-widget feed, wave `atlas-ip-feed` (Q42b); automated cohort analytics (Q51);
+Upstox + Angel One adapters (Q21); the SEBI daily re-auth `VERIFY-CIRCULAR` copy (Q24); the
+`/calculator` → `/sizing-lab` cross-link; the Varsity switch inside the volatility tab (Q-6);
+journal-derived Kelly inputs at ≥ 30 closed trades; `results_date` on `instruments` (Q-9); the
+sha256 half of Q52 (the index map's digest beside its `asOf` in the UI); the 06a Atlas questions
+(AQ1–AQ52), still unasked. The full ledger with per-wave evidence is
+`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`.
 
 **Deadline (owner, Q1):** Monday 2026-09-07 for everything up to v4.2 — v3.9.1 tagged first, then
 the v4.0 → v4.1 → v4.2 ladder back to back (Q2, Q4).

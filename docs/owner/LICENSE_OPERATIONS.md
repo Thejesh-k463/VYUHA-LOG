@@ -132,7 +132,7 @@ ledger reminder** go to stderr so they never contaminate the key itself.
 > ⚠ **Two things the script now refuses, and why.**
 >
 > **No term → refused.** `--years` was positional and its absence meant lifetime,
-> so one forgotten flag on a ₹9,999 annual sale minted a ₹29,999 **lifetime** key
+> so one forgotten flag on a ₹9,999 annual sale (historical price) minted a ₹29,999 **lifetime** key
 > — signed, valid, and undoable only by revoking someone who had just paid you.
 > Lifetime is now opt-in: `--lifetime`.
 >

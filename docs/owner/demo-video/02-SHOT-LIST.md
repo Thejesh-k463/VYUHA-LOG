@@ -111,7 +111,7 @@ Record these as **four separate takes** (5a–5d). The edit cuts between them ha
 
 ## SHOT 8 · THE ASK  ·  ~8 s  ·  pairs with VO-8
 
-Pricing is **not in the sidebar**. Reach it via Settings → License — the two plan pills (**Journal — Lifetime ₹29,999** · **Pro — Annual ₹9,999/yr**) open the plan card.
+Pricing is **not in the sidebar**. Reach it via Settings → License — the two plan pills (**Journal — Lifetime ₹29,999** · **Pro — Annual ₹7,999/yr**) open the plan card.
 
 | Step | Action | Hold |
 |---|---|---|

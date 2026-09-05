@@ -3311,3 +3311,216 @@ a seventh surface to forget; deriving from `PRICING` means the next reprice make
 until the prose follows. A fourth case asserts each selling surface still QUOTES a price, because
 "no wrong price" is trivially satisfied by a page with no price at all — the exact funnel leak
 `lib/domain/pricing.ts` was written to fix.
+
+## 2026-09-06 — All eight NSE size indices ship in the bundled map, and membership is effective-dated from now on (Q46/Q47/Q50)
+
+The 2026-08-06 `lib/data/nse-index-map.json` carried **no size data at all** — every one of its 54
+lists was sectoral or thematic, because the folder that build ran against held only the thematic
+downloads. So `capBand` did not exist, and the market-cap column on the Live Desk and in the Atlas
+would have shipped `null` with its reason printed. **Owner ruling Q46 adds all eight size lists
+now** (Nifty 50, Next 50, 100, 200, 500, Midcap 150, Smallcap 250, Microcap 250). The three that
+were not already on disk were downloaded from niftyindices.com **on the owner's machine, by the
+build-time script** — the app itself never contacts that host (Q59), and v4.0 adds no network host
+of any kind (Q58).
+
+The map is now built from **two folders with two roles**:
+`node scripts/build-nse-index-map.mjs --src "<sectoral lists>" --size-src "<size lists>"`.
+`--src` feeds `symbols[SYM].indices[]`; `--size-src` feeds the `sizeIndices` block and the
+per-symbol `capBand`. A size list is REFUSED by the sectoral pass even when it sits in `--src`,
+because "Nifty 500" as a theme would swamp every real theme in edge analytics. Nifty Midsmallcap
+400 is ignored outright — it is Midcap 150 + Smallcap 250 restated and defines no band of its own.
+
+Measured after the rebuild: **62 indices (54 sectoral + 8 size), 1,379 symbols**, `capBand` **large
+100 / mid 150 / small 250 / micro 254 / unclassified 625**. Micro reads 254 rather than 250 because
+NSE's own Microcap 250 list carried 254 names on the download date; the count is the file's, not a
+rounding of ours. The bands ARE the index memberships — SEBI's rank-based definition (top 100
+large, 101-250 mid, 251+ small) as NSE publishes it (Q47) — and a symbol that appears in two bands
+at a rebalance takes the LARGER one, because over-stating size is the conservative error for
+position sizing and under-stating it is not.
+
+**Q50 is adopted as a STANDING RULE, not as a one-off:** every classification or membership row
+carries `effective_at` (the fact's own as-of) and `captured_at` (the build date). All eight size
+lists carry `captured_at` 2026-09-06 and their own `effective_at` — 2026-09-06 for the four fetched
+that day, 2026-08-14 for the four read from the owner's existing copies — while the sectoral
+snapshot's top-level `asOf` stays 2026-08-06: refreshing one kind of list must never re-date the
+other, and a future point-in-time question has the two dates it needs to be answerable at all.
+
+**This OVERRIDES `08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §0.2 ruling Q-2** ("do NOT
+bundle the 5 size-index lists in v4.0; the market-cap column ships `null` with its reason stated"),
+by owner ruling Q46 — and it is eight lists, not five. The prompt's stated reason was that bundling
+buys one column and costs a provenance and claims problem; the answer is the `provenance` block now
+in the file (`sectoralIndexCount`, `sizeIndexCount`, `sizeIndicesReason`, and per list the source
+URL, file name, count, `effective_at` and `captured_at`), which makes the provenance a fact in the
+artefact rather than a promise.
+**Rejected: fetching the lists from inside the app**, at first run or on a schedule — it would add
+a host PRIVACY does not disclose and make a user's classification depend on the day they installed.
+**Also rejected: deriving cap bands from our own share counts** (TRADE-SENTINAL's work) — a second,
+unpublished definition that would disagree with the buckets the same user reads everywhere else. It
+may feed a DERIVED bucket later, beside this one and labelled, never instead of it.
+
+## 2026-09-06 — The owner's proprietary Atlas widgets ship as a signed results file, never as code (Q42b)
+
+Q42 ruled that every Atlas widget is the owner's own formula: the stock lists MAY ship, the filters
+and formulas must stay concealed. **Concealment inside the installer is not achievable** — the
+desktop bundle is JavaScript on the buyer's own disk, and a formula that runs there can be read
+there, minified or not. So the widget cannot be computed on the customer's machine at all.
+
+**Decision (Q42b):** the proprietary widgets ship as an **Ed25519-signed daily results file**,
+published by the owner from Sentinel/Chartink to the **existing GitHub release channel** — the same
+host PRIVACY item #1 already discloses for the update check and the revocation list, so no new
+egress appears — and **fetched opt-in** by the desktop app, verified exactly the way the revocation
+list is. The Pro panel shows the stock list, its `as_of`, and the label **"proprietary, formula not
+disclosed"**; it never implies a computation the user can reproduce.
+
+**NOT BUILT IN v4.0.** It is recorded as a v4.x wave, `atlas-ip-feed`: owner-side publisher script,
+in-app verifier, panel. What v4.0's `/atlas` computes is only the public definitions, each with its
+formula printed on screen, from the user's own stored bars.
+**Rejected: computing the concealed formulas inside the installer** — see above; it would publish
+the IP to every buyer while claiming it was concealed. **Also rejected: shipping the widgets with
+the formula printed** (gives the IP away deliberately) **and dropping them entirely** (throws away
+the one Atlas layer the owner actually wants a buyer to see).
+
+## 2026-09-06 — Web platform: server-side broker credentials and a server-side feed are Phase 2, not a permanent no (Q61/Q62)
+
+`VYUHA-WEB-PLATFORM-RESEARCH` converged on **"web = file-import only"** — no stored broker
+credential, no server-side quote feed — as a standing rule. **The owner reverses it (Q62), and the
+reversal is recorded here so the pack is not read as current.** Server-side credentials are a
+**Phase 2** capability with four conditions attached (Q61): a **KMS envelope** over every stored
+credential, **read-only scopes**, **revocable by the user at any time**, and **only after WRITTEN
+answers from Upstox and Angel One** on what their terms allow us to redistribute. Until those
+answers exist in writing, Phase 1 web stays file-import.
+
+**Rejected: the pack's own "web = file-import only" conclusion as a rule.** It was written to keep
+custody of secrets out of a hosted product; treated as permanent it also rules out the one thing
+the web version exists to give a user who is not at their desktop. It becomes a **phase boundary**
+instead — the irreversibles the pack settled (region, tenancy, per-tenant SQLite, auth) are
+untouched.
+
+## 2026-09-06 — The owed macOS DMG test is DONE: two users run the 3.9.0 build (Q65b)
+
+`VYUHA-STATE.md` §7.5 has carried an open item since 2026-08-15: the macOS artefacts are built and
+signed by CI, but nobody had ever installed one, so the release checklist owed a DMG test.
+**It is closed: two users downloaded the v3.9.0 DMG from the GitHub release links and run it, and
+report it works** (owner, Q65). That is the test — a real install from the published bytes on a
+machine that did not build them.
+
+**Standing position (Q65b):** macOS is **supported by request** and those two users are treated as
+beta; macOS is **not marketed** — no macOS line on README, the landing page, the brochure, the
+client pack or any listing — **until the app is notarised**, because an un-notarised DMG makes the
+buyer walk through Gatekeeper and that is not an experience we advertise. The "macOS by request"
+note lives in `docs/owner/` only.
+**Rejected: announcing macOS support now on the strength of two working installs** — two installs
+prove the artefact runs, not that a stranger who has never spoken to the owner can get it running.
+**Also rejected: keeping the DMG test open** — the evidence exists, and an owed item nobody can
+close makes the whole checklist read as decorative.
+
+## 2026-09-06 — The daily broker re-authentication sentence carries a VERIFY-CIRCULAR marker until the circular is in hand (Q24)
+
+The Live Feed card states: *"Exchanges and SEBI require broker sessions to be re-authenticated
+daily; Vyuha cannot extend a session."* Every Indian broker API behaves this way, and the owner
+asked for the point to be highlighted so a daily login does not read as Vyuha's design choice
+(Q24). **But the exact circular behind it is not cited anywhere in the tree, and a regulatory claim
+we cannot cite is a claim we must not make.**
+
+**Decision:** the sentence stays, marked in the source with **`VERIFY-CIRCULAR`**
+(`components/settings/live-feed-card.tsx`, `LIVE_FEED_COPY.dailyReauth`), and the release claims
+audit must either attach the circular the owner supplies or soften the sentence to what we can
+prove ("your broker's API session expires daily") before the feed becomes the subject of a release.
+The wording is deliberately neutral: it states the rule and Vyuha's own limit, blames nobody and
+names no broker.
+**Rejected: shipping the sentence unmarked** — it would age into an uncitable regulatory claim on a
+screen a buyer reads. **Also rejected: dropping the sentence** — then the daily login looks like our
+defect, which is exactly the misreading the owner asked to prevent.
+
+## 2026-09-06 — Prices are decided later, with investors; ₹7,999 / ₹29,999 stand and are guarded (Q54)
+
+The owner will set Vyuha's prices **later, together with investors, once the product is ready**
+(Q54). Until then the two figures in `lib/domain/pricing.ts` — **₹7,999 annual** and **₹29,999
+lifetime**, against the unchanged ₹13,000 anchor from which `offerPct()` derives 38% — are the
+prices, and the requirement is only that every surface a buyer can reach states them correctly.
+`tests/price-surfaces.test.ts` is that guard: it derives the allowed figures from `PRICING` rather
+than repeating them, so the next reprice reddens until the prose follows (entry above, same date).
+**Rejected: repricing now, or building a price-change mechanism ahead of the decision** — both
+would be work done against a number the owner has said is not final, and a pricing surface changed
+twice is a pricing surface that goes stale twice.
+
+## 2026-09-06 — The v4.0 build-prompt rulings (§0.2 Q-1…Q-12), and where the build deviated from them
+
+`08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §0.2 pre-ruled twelve design questions so no wave
+would re-ask them. Recorded here with the state each one is actually in at merge `98eaa63`, because
+a ruling that lives only in a build prompt is invisible to the next session.
+
+- **Q-1 `/sizing-lab` is its OWN route in the Risk nav group** (`components/layout/nav-config.ts:76`),
+  not a tab inside `/calculator`. **Rejected: a tab in `/calculator`** — that page is already at its
+  render budget, and the Lab needs stable deep-link params from three call sites. **Deviation:** the
+  ruled cross-link FROM `/calculator` was not built; the deep links that exist run the other way,
+  from the Live Desk (`components/live/tracker-client.tsx`, `position-chart-panel.tsx`,
+  `desk-keys.ts`). The cross-link is a v4.1 item, not a silent drop.
+- **Q-2 SUPERSEDED by owner ruling Q46** — the size indices ARE bundled; see the entry above.
+- **Q-3 one default column order**, identity → mark and P&L → time → the Pro risk columns
+  (`COLUMNS` in `tracker-client.tsx`, 12 columns, every one sortable), with all accounts aggregated,
+  an account filter in the header and the account id available per row (owner Q19).
+- **Q-4 no `openalgo-charts` pilot in v4.0** — and none was added; the range diff touches neither
+  `package.json` nor `package-lock.json`, so the "v4.0 adds zero dependencies" ruling held exactly.
+  **Rejected: piloting it behind the facade now** — 49 stars, one maintainer, a 2.0.2 published one
+  day before the research read it. Re-evaluated only against a sustained 2.x line (Q30 puts the
+  pilot at v4.1 at the earliest).
+- **Q-5 the research pack's §6 list is the IP exclusion list**; anything not on it still prints a
+  plain public formula on screen. `/atlas` computes nothing else (see the Q42b entry above).
+- **Q-6 Turtle is the volatility tab** (`Volatility · Turtle unit (N)` in `components/sizing/lab-config.ts`).
+  **Deviation:** the ruled "Varsity as a labelled switch inside it" is NOT built — the tab ships with
+  the Turtle unit and the % volatility method beside it. v4.1.
+- **Q-7 Kelly inputs are manual in v4.0** — the win rate and payoff are the user's own entries, and
+  the method's description says so. Journal-derived Kelly (at ≥ 30 closed trades) stays v4.1.
+- **Q-8 the risk inputs EXTEND `risk_config`** (migration 0064: `risk_pct_ppm`, `stop_method`,
+  `stop_atr_len`, `stop_atr_mult_permille`, `stop_default_pct_ppm`, `deploy_cap_ppm`,
+  `heat_ceiling_ppm`). **Rejected: a new `live_settings` table** — it would split risk config across
+  two places and break the scope/key uniqueness that `risk-editor.tsx` and
+  `app/api/risk/limits/route.ts` already read.
+- **Q-9 `results_date` on `instruments` only if W1 had slack.** It had none: the column does not
+  exist in `lib/db/schema.ts`. **v4.1.**
+- **Q-10 the bhavcopy backfill was ruled v4.1** because it needed a PRIVACY amendment.
+  **DEVIATION, deliberate:** owner ruling Q43 brought it into v4.0 WITH the amendment — PRIVACY
+  item #2 now states both shapes (one daily file while auto-MTM is on; up to 252 past files, one
+  every 1.5 s, only on a button press and a confirm), that it can be stopped at any point, and that
+  a file drop is the zero-network alternative. The condition the prompt attached was met, so the
+  ruling it protected no longer applies.
+- **Q-11 Telegram live alerts are v4.1** — not built. `lib/live` contains no alert builder; the word
+  "alerts" appears on the desk only in the Pro capability label. **v4.x**, and the alert wording
+  enters the banned-phrase guard in the same commit as the first alert (Q32).
+- **Q-12 no published or hosted feed exists in v4.0** — held; the signed proprietary feed is the
+  separate `atlas-ip-feed` wave (Q42b entry above).
+
+## 2026-09-06 — The 4.0.0 version bump was applied BEFORE the verify gate, because the gate was coord-denied
+
+The release skill runs `npm run verify` and then bumps. This session inverted the two: `main` was at
+merge `98eaa63` with the machine-wide `npm run verify` lock held by another session, and the coord
+hook DENIED the gate outright. The bump (package.json, the two package-lock root version fields by
+hand, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`, the sidebar footer) was applied to the working
+tree while the gate was unavailable, and **the gate still runs, on the bumped tree, before the tag**
+— that is the property the order was protecting, and it is unchanged. `VYUHA-STATE.md` §2 carries a
+literal `VERIFY: <pending>` placeholder until the orchestrator fills in the exit code and counts.
+**Rejected: waiting idle for the lock.** The bump touches six files that no test asserts against the
+tag, the gate that would have caught a bad bump is the same gate that runs afterwards, and an hour
+of idling buys nothing — while a docs wave that cannot start makes the release later for a reason
+no reader would accept. **Not rejected and not weakened: tagging before a green gate.** If the gate
+is red on the bumped tree, the tag does not happen.
+
+## 2026-09-06 — The release ladder after 4.0: 4.1 is the OpenAlgo feed already in the tree, 4.2 is Upstox + Angel One — never Dhan
+
+**v4.1 = the live feed.** It is already BUILT and merged, not a plan: `lib/quotes/openalgo.ts`, the
+provider registry, `persist-mark.ts`, `app/api/live/feed/route.ts` and
+`components/settings/live-feed-card.tsx` all ship in 4.0.0 behind migration **0067**'s
+`settings.live_feed_provider`, whose default is **`eod`**. The tag is gated on that flag and on the
+existing OpenAlgo disclosure consent, so 4.0.0 ships end-of-day marks and 4.1 is the release that
+makes the live provider its subject. OpenAlgo is named in Settings and the consent sheet and
+**nowhere in marketing** (Q60), enforced by `tests/live-feed-copy.test.ts`.
+**Rejected: shipping the live provider ON in 4.0.0** — a feed switched on by a release rather than
+by a user is exactly the consent shape `openAlgoGate` exists to prevent.
+
+**v4.2 = native `QuoteProvider` adapters for Upstox and Angel One** (owner ruling Q21), each behind
+the same interface the EOD, manual, mock and OpenAlgo providers already implement.
+**Rejected: Dhan**, which the earlier build-order note had in the set — the owner ruled Upstox and
+Angel One, in that order, and Dhan is not in v4.2. **Also rejected: NSE `quote-equity` and Yahoo at
+any version** (Q22) — no ToS grant, and either would force a fifth PRIVACY item.
+

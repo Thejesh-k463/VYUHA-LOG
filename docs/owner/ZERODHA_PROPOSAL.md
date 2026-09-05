@@ -82,7 +82,7 @@ full contact map.
 >   derivable from the file). Traders reconcile against Zerodha's numbers; the integration
 >   removes the copy-paste that makes them distrust both sides.
 > - The core journal is free forever and never metered — no trade caps, no account caps.
->   Analytics are the paid part (₹9,999/yr or ₹29,999 once at launch pricing). Nothing in the
+>   Analytics are the paid part (₹7,999/yr or ₹29,999 once at launch pricing). Nothing in the
 >   integration would be gated behind payment.
 > - Zerodha's own reasoning about data staying with the customer matches ours exactly: the
 >   data would move from Zerodha's systems to the customer's machine and nowhere else. We do

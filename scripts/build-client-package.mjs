@@ -126,6 +126,12 @@ const clientDocs = [
   ["docs/client/REFUND_POLICY.md", "REFUND_POLICY.md"],
   ["docs/client/TERMS.md", "TERMS.md"],
   ["docs/client/PRIVACY.md", "PRIVACY.md"],
+  // The open-source attribution file (v4.0). lightweight-charts is Apache-2.0 and
+  // requires TradingView to be named on a surface the buyer can reach; the app
+  // turns the on-canvas attribution logo OFF, so the obligation is met by this
+  // file. It is bundled as a Tauri resource AND carried here, so a buyer who
+  // only ever opens the ZIP still holds the notices.
+  ["docs/client/THIRD-PARTY-NOTICES.txt", "THIRD-PARTY-NOTICES.txt"],
 ];
 for (const [src, name] of clientDocs) {
   const p = path.join(root, src);

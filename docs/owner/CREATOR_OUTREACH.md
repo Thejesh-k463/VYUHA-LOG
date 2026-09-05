@@ -43,7 +43,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 > API pulls from Zerodha Kite and Dhan), computes STT/CTT, stamp duty, GST and exchange charges from a
 > broker × segment × exchange rate table, handles staged positions and an options
 > seller journal, and builds an ITR / AIS / advance-tax pack. Journal is free forever;
-> Pro is ₹9,999/yr or ₹29,999 lifetime.
+> Pro is ₹7,999/yr or ₹29,999 lifetime.
 >
 > I'd like to give you a **free lifetime key** for an honest review — good or bad, no
 > commission, no script. Landing page: https://thejesh-k463.github.io/VYUHA-LOG/.
@@ -84,7 +84,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 >   and a tax pack: ITR schedules, AIS reconcile, advance tax.
 > - Nine skins including a custom theme builder and wallpaper.
 >
-> Pricing: the journal itself is free forever. Pro is ₹9,999/yr or ₹29,999 lifetime
+> Pricing: the journal itself is free forever. Pro is ₹7,999/yr or ₹29,999 lifetime
 > (launch offer; list ₹13,000/yr and ₹35,999 from 1 Jan 2027). Everyone gets a
 > 7-day full trial before a key is needed.
 >
@@ -108,7 +108,7 @@ From `MONETIZATION_PLAN.md` §5 and `GROWTH_ENGINE_PLAN.md` "Non-negotiable":
 
 > Hi [[NAME]] — I build Vyuha, a local-first Windows trade journal for Indian traders:
 > 6 broker importers, Indian statutory charges computed (not copied), options seller
-> journal, ITR/AIS pack, zero cloud. Journal free; Pro ₹9,999/yr or ₹29,999 lifetime.
+> journal, ITR/AIS pack, zero cloud. Journal free; Pro ₹7,999/yr or ₹29,999 lifetime.
 > Would you take a free lifetime key for an honest review? No fee, no script.
 > https://thejesh-k463.github.io/VYUHA-LOG/
 

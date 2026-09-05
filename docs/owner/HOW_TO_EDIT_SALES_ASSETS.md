@@ -15,7 +15,7 @@ else to touch.
 
 | What | Source of truth | Pinned by |
 |---|---|---|
-| SKU prices and anchors (₹9,999 / ₹13,000 · ₹29,999 / ₹35,999) | `lib/domain/pricing.ts` (`PRICING`) | `tests/pricing.test.ts` — every amount must appear inside a `<div class="amt">` on the landing page |
+| SKU prices and anchors (₹7,999 / ₹13,000 · ₹29,999 / ₹35,999) | `lib/domain/pricing.ts` (`PRICING`) | `tests/pricing.test.ts` — every amount must appear inside a `<div class="amt">` on the landing page |
 | The annual → lifetime upgrade sentence | `lib/domain/pricing.ts` (annual `includes`) | same test — must appear **verbatim** on the landing page, brochure and standalone |
 | Competitor table, "Features vs cost" summary, hero "why it wins" strip | `lib/domain/pricing-comparison.ts` (`COMPETITORS`, `VYUHA_ROW`, `WHY_VYUHA`, `COMPARISON_AS_OF`) | owner review — re-read the module when you edit any of those cells |
 | Feature copy (imports, skins, screens) | `docs/client/README.md` for the current release | `tests/no-indicators-in-client-docs.test.ts` forbids "indicator / TradingView / Pine" wording anywhere on the page |

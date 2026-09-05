@@ -36,7 +36,7 @@ Item           Vyuha — Pro (Annual)        [or: Vyuha — Journal (Lifetime)]
 Licence term   1 year from 13 August 2026  [or: perpetual]
 Licence Key ID A1B2-C3D4-E5
 
-Amount paid    ₹9,999                      [or: ₹29,999]
+Amount paid    ₹7,999                      [or: ₹29,999]
 Paid via       UPI                          [or: bank transfer / card]
 Payment ref    <UTR / txn id — the buyer's own reference>
 

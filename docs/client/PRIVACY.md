@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-09-05 · **Applies to:** Vyuha v3.9.1 and later
+**Last updated:** 2026-09-05 · **Applies to:** Vyuha v4.0.0 and later
 
 Vyuha Desktop has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —

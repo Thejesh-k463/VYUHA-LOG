@@ -356,7 +356,7 @@ six-broker import (incl. Angel One ≈15% of India's active accounts), clickable
 
 | SKU | What | Price (launch) | Price (list) | Tooling |
 |---|---|---|---|---|
-| ~~**Trader's Toolkit** (hero)~~ RETIRED v2.99.76 | App lifetime + both indicators (invite-only) | ~~₹4,999–7,999~~ | ~~₹9,999~~ | *legacy — do not issue; sku `toolkit` still verifies for keys already sold* |
+| ~~**Trader's Toolkit** (hero)~~ RETIRED v2.99.76 | App lifetime + both indicators (invite-only) | ~~₹4,999–7,999~~ | ~~₹9,999~~ | *legacy (historical price) — do not issue; sku `toolkit` still verifies for keys already sold* |
 | App only | Lifetime license | ₹1,499–2,999 | — | `license-issue.mjs <email> app` |
 | Indicators only | Both, invite-only lifetime | ₹6,000–12,000 | — | TradingView invite-only |
 | App annual — **✅ BUILT (v2.80)** | Recurring option; expiry is inside the signed key | ₹499–799/yr | — | `license-issue.mjs <email> app --years 1` |
