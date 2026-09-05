@@ -12,7 +12,8 @@ left to do*.
 
 ## 1. What Vyuha is
 
-A local-first trade journal for Indian retail traders, shipped as a **Tauri desktop app**
+A trade journal for Indian retail traders — desktop or web, the trader chooses (owner directive
+2026-09-05). Vyuha Desktop ships as a **Tauri desktop app**
 (Windows + macOS) with a Next.js standalone server running as a Node sidecar. Commercial
 product with per-buyer licensing, a 7-day offline full-Pro trial, and a free tier that never
 holds a user's own record hostage.
@@ -109,6 +110,43 @@ hands over the investor-requested features (not yet provided); split into parts 
 (Downloads), usage screenshot (Fable 85% / all-models 76% at start; owner ruled: everything on
 Opus, finish the build). **Owed for v4.0:** TRADE-SENTINAL sector files (three already dropped in the
 CLAUDE-CODE root), the sizing-calculator spec, the owner's tweaks, the 5-index ruling.
+**SUPERSEDED 2026-09-05:** credit limits reset, no governor exists — model choice per
+`~/.claude/CLAUDE.md` is an accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
+
+### v3.9.1 IN PROGRESS — on `main`, ALL UNCOMMITTED, `npm run verify` NOT YET RUN for this release
+
+Scope is fixed at four items (owner ruling Q5, `06-ANSWERS.md`): copy strike-out, import
+hardening, licence-activation machine-id fix, and the keyframe fix `28d6655` that is already on
+`main`. Nothing from v4.0 lands here. Wave state below is quoted from the build ledger
+(`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`), which is the file to
+update at every wave boundary; each wave's evidence is that wave's own gate output, **not a
+release gate** — no `npm run verify` has been run over the combined 3.9.1 diff yet.
+
+- **W1 copy strike-out — DONE (uncommitted).** 27 files, 64 replacements, PRIVACY four-kinds kept
+  as a desktop-only statement (option A), new `tests/positioning-copy.test.ts`, sidebar footer +
+  `scripts/bump-version.mjs` regex changed together, `tests/pricing.test.ts` updated. Evidence:
+  *148 + 121 tests green; red proof on README:5; eslint clean.*
+- **W1 follow-ups — LEFT.** `node scripts/make-logo.mjs` must run BEFORE the installer build (it
+  regenerates `public/brand/*`, `src-tauri/icon-source.png`, `installer-*.bmp`,
+  `components/brand/mark.tsx`); `tests/readme-claims.test.ts`'s file count must be set to the true
+  on-disk count at the final gate (W1 alone is +1).
+- **W2 import hardening — IN PROGRESS.** `vendor/xlsx-0.20.3.tgz`, `package.json`
+  `"xlsx": "file:vendor/xlsx-0.20.3.tgz"`, lockfile by the owner's Q7 path, route 32 MB cap +
+  `maxDuration = 60`, parse-guard magic bytes, 3 new tests. Evidence: *partial* — finisher was
+  still running when this was written.
+- **W3 licence activation binding — DONE (uncommitted).** `app/api/license/route.ts` now passes
+  `getMachineId()`; `tests/license-activation-binding.test.ts` (3 cases). Evidence: *103 licence
+  tests green; red proof "expected 200 to be 400".*
+- **W4 docs — this section, `docs/DECISIONS.md`, `CHANGELOG.md`, `docs/prompts/*`,
+  `docs/owner/CREATOR_KIT.md:80`.**
+- **Release — LEFT.** The full 11 steps: bump 3.9.0 → 3.9.1 (three version files must agree),
+  `make-logo`, `npm run verify` EXIT 0 with counts ≥ 276 files / 5,243 tests plus the new ones,
+  the adversarial diff audit, desktop build + signing check, CI 6/6 BEFORE the tag, tag, release
+  run, `release:verify --deep`, client ZIP rebuilt, WDSI details handed over unprompted, owner
+  publish + off-build-machine install, then STATE / DECISIONS / CHANGELOG commit + push.
+
+**Deadline (owner, Q1):** Monday 2026-09-07 for everything up to v4.2 — v3.9.1 tagged first, then
+the v4.0 → v4.1 → v4.2 ladder back to back (Q2, Q4).
 
 ---
 
@@ -1067,6 +1105,8 @@ cost win in this repo.
 | How do I open a new session here? | `docs/SESSION_PROMPT.md` — short + full copy-paste openers |
 | What is v3.8/v3.9 building and why | **`docs/V380_BUILD_PLAN.md`** — the approved spec; §0 is verified facts, §3 the owner inputs owed |
 | The opener for the v3.8 build session | `docs/prompts/NEXT_SESSION_V380.md` |
+| What v3.9.1 / v4.0 "Live Desk" is, and every fact it was planned from | **`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/00-INDEX.md`** — research pack; `08-BUILD-PROMPTS/V391-BUILD-PROMPT.md` is the v3.9.1 opener, `06-ANSWERS.md` the owner rulings |
+| What is already built vs still left (so nothing is redone) | **`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`** — owner ruling Q3; updated at every wave boundary |
 
 `decision-log` (append a measured fact) and `prove-it` (verification before claiming
 done) are the **GLOBAL** skills at `C:\Users\theje\.claude\skills\` — there are no project
@@ -1343,6 +1383,11 @@ PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUH
   release run, deep verify, client ZIP, WDSI, owner publish and off-build-machine install. Two
   must-ship items make a patch release; one 220ms animation offset does not. Nothing to do now; the
   fix is already on `main`.
+- **CLOSED 2026-09-05 → shipped in v3.9.1 (pending tag).** All four candidates above are built on
+  `main` (uncommitted at the time of writing) — the copy strike-out went further than "Vyuha
+  Desktop: 100% local & offline" (the whole positioning is retired; see §2 and DECISIONS
+  2026-09-05), import hardening landed as the 32 MB cap + `maxDuration = 60` + magic bytes +
+  SheetJS 0.20.3, and licence activation now passes `getMachineId()`.
 
 ### 8.1 Blocking the sale — the owner's stated top priority
 
@@ -1516,7 +1561,7 @@ qualified legal read, which is an exposure rather than an open question.)*
 parser — by design. Left 2026-08-15: delivery link — mail/WhatsApp manual; v2.99.95 published;
 revocations prerelease exists; annual→lifetime — full credit within the year; intraday — not needed.)*
 
-### 8.6 Growth posture — EVOLVE every day (owner directive 2026-09-01)
+### 8.6 Growth posture — EVOLVE every day (owner directives 2026-09-01, 2026-09-05)
 
 **The former blanket non-goals list ("no more brokers, no more report screens, no cloud AI,
 no backtesting, no new subsystems") is RESCINDED by the owner on 2026-09-01: the product must
@@ -1530,10 +1575,15 @@ Correctness rules that were bundled into the old list SURVIVE on their own merit
 never growth bans): never invent a parser for a format nobody has published — Kotak Neo and
 Sahi stay on the generic column mapper until a VERIFIED real export pins the layout; taglines
 avoid outcome claims (SEBI-adjacent); no paid code signing (a cost decision — free workarounds
-only, revisit separately if the owner chooses). The local-first/privacy promise remains the
-product's differentiator: cloud-touching features (BYO-key LLMs, cloud data sources) need an
-explicit owner decision per feature, opt-in, and honest disclosure copy — not a silent default.
-Reversal recorded in DECISIONS.md 2026-09-01.
+only, revisit separately if the owner chooses). Positioning is now **"Desktop or Web: the trader
+chooses"** (owner directive 2026-09-05): Vyuha is one platform for a trader, from trading to
+journaling. Vyuha Desktop keeps its technical guarantees — a serverless Ed25519 licence check, a
+7-day trial with no signup, a download-only launch check, and the journal in one SQLite file on
+the user's PC — and those stay stated as facts, never as a brand promise. The web platform is the
+more advanced surface. Cloud-touching features ON THE DESKTOP (BYO-key LLMs, cloud data sources)
+still need an explicit owner decision per feature, opt-in, and honest disclosure copy — not a
+silent default.
+Reversal recorded in DECISIONS.md 2026-09-01. Positioning superseded 2026-09-05.
 
 ### 8.7 Standing instructions from the owner
 

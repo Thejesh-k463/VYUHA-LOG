@@ -77,7 +77,9 @@ than any feature. Please avoid:
   Vyuha measures and reports; it does not predict or advise.
 - ❌ "Auto-trading" or "algo trading" — Vyuha places no orders, ever. Read-only.
 - ❌ "Works on Mac" — it is sold for **Windows** only.
-- ❌ "Syncs to cloud / mobile app" — local-first is the point; there is neither.
+- ❌ "Syncs to cloud", "mobile app", or "the web version does X" — Vyuha Desktop has
+  none of these today. A web platform is in development; describe it only as
+  "in development", never with a date and never as if you have used it.
 - ❌ Charges claims beyond the numbers above (don't round 0.69% down to "exact";
   the contract-note sentence above is the strongest claim we make and it's
   already yours to use).

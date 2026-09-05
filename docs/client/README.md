@@ -1,7 +1,9 @@
 # Welcome to Vyuha
 
-A fully local, offline trade journal for Indian retail traders. There is no
-account, no cloud, and no telemetry — nothing about your trades leaves your
+**Every warrior had a charioteer. Yours keeps count.**
+
+A trade journal for Indian retail traders — desktop or web, the trader chooses. You are running Vyuha Desktop. There is no
+account and no telemetry in the desktop app — nothing about your trades leaves your
 computer unless you switch on a feature that sends it, and each one says so
 before you can.
 
@@ -10,7 +12,7 @@ before you can.
 There are plenty of trade journals now, and AI has made it easy for anyone to
 build another. Vyuha is different in what it does — and in where it runs.
 
-- **It works offline.** Everything happens on your machine. Unprompted, the app
+- **It runs on your own PC.** Unprompted, the desktop app
   touches the internet exactly once: a check for updates at launch. Anything
   else — the end-of-day price download, broker pulls, the Telegram digest — is
   off until you switch it on.
@@ -31,6 +33,19 @@ If a request is feasible, it gets built. And where a group of traders — or a
 single trader — needs something specific, a tuned build is on the table.
 
 You don't get that from software with a support queue.
+
+## New in v3.9.1
+
+A patch release. Nothing you already do changes; four things get more honest or
+harder to break.
+
+| Upgrade | What it gives you |
+|---|---|
+| **How Vyuha describes itself** | The old slogan about running entirely on your own machine is retired as a sales line. Every technical guarantee behind it is unchanged — your licence is verified on your own machine with no server call, the 7-day trial needs no signup, the one check at launch is download-only, and your journal stays in one SQLite file on your PC — but they are now stated as facts about **Vyuha Desktop** rather than as a promise about the product, because a web platform is in development. The privacy statement keeps its four-kinds list of network requests word for word. |
+| **The import screen refuses a file it should not read** | An upload over **32 MB** is declined with the limit named, on the file's own declared size, before it is parsed — a whole backup dropped on the import screen by mistake now gets a clear refusal instead of a long wait. The readability check reads the file's **magic bytes** first and refuses a file whose extension and content disagree. Nothing that imported before stops importing. |
+| **The spreadsheet reader is on the patched line** | Vyuha now ships SheetJS 0.20.3, the maintained build that fixes CVE-2023-30533, committed into the repository itself so a build never depends on somebody else's server being up. |
+| **A machine-bound licence key is refused at activation, not later** | If your key is bound to one computer, entering it on a second one is now declined the moment you activate it, with the reason — instead of appearing to work and failing afterwards. Keys issued with no machine binding activate exactly as before. |
+| **Upgrades in place** | A v3.9.0 journal opens straight into v3.9.1, and there are **no database upgrades** in this release. The installer runs the v3.9.0 uninstaller once first, and that one is the guarded uninstaller: ticking "Delete the application data" still erases the data folder, but only after your journal and licence key have been named and copied to `Documents\Vyuha-backup-<date>`, and Cancel leaves everything as it is. |
 
 ## New in v3.9.0
 
@@ -352,7 +367,7 @@ books. Nothing new leaves your machine — the privacy note is unchanged.
 | **MTF across all 7 brokers** | Every broker's real MTF list is bundled — 10,500+ stocks with each broker's actual margin requirement. Add an MTF trade and your capital vs broker-funded splits itself at that stock's real rate, editable both ways. |
 | **Which broker funds it cheapest** | Broker Costs now prices *your* stocks across every broker's MTF list and highlights the cheapest margin — and tells you when a stock is approved but not actually funded. (Sahi offers no MTF delivery.) |
 | **MTF drift check** | Portfolio Risk flags open MTF positions whose margin requirement has moved since you entered — with the top-up amount a re-margin would demand. |
-| **Chart screenshots at entry** | Save a trade and attach your chart screenshots right there — they stay with the trade for review, fully offline. |
+| **Chart screenshots at entry** | Save a trade and attach your chart screenshots right there — they stay with the trade for review. |
 | **Export selected trades as PDF** | Tick trades in the journal → Export PDF → a clean report with full detail per trade. |
 | **Your sidebar, your order** | Arrange screens and groups the way you work; Reset brings the default back. (Now a drag — see v2.99.20 above.) |
 

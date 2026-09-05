@@ -5,6 +5,14 @@ import path from "node:path";
 import { buildContext } from "@/lib/import/detect";
 import { parseZerodha } from "@/lib/import/parsers/zerodha";
 
+// SheetJS 0.20.x ships an `exports` map whose `import` condition resolves to
+// xlsx.mjs, which has no bound `fs` — `XLSX.readFile` throws "Cannot access
+// file". 0.18.5 had no exports map, so the CJS build (which self-binds fs) was
+// picked. Binding it here keeps readFile working; the app itself never calls
+// readFile, it hands SheetJS a Buffer.
+XLSX.set_fs(fs);
+
+
 /**
  * Zerodha Console TAX P&L ("Tradewise Exits") — parsed output reconciled
  * against the workbook's OWN "F&O" summary sheet, on redacted copies of two

@@ -61,8 +61,11 @@ describe("import parse guard — passes everything the pipeline can handle", () 
     // XLSX.read parses arbitrary binary as a garbage single sheet without
     // throwing; refusing it here would replace the column-mapper's honest
     // question with a refusal. Only THROWING bytes are the guard's business.
+    // The name makes no format claim, so the magic-byte check (v3.9.1, and
+    // pinned in tests/import-parse-guard-magic.test.ts) does not apply — under
+    // a .xlsx name these same bytes are now refused for disagreeing with it.
     const junk = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x99, 0x88, 0x77, 0x66, 0x55]);
-    expect(guardReadable("mystery.xlsx", junk)).toEqual({ ok: true });
+    expect(guardReadable("mystery.dat", junk)).toEqual({ ok: true });
   });
 
   it("never probes CSVs or PDFs with XLSX — they take the text and pdf-parse paths", () => {

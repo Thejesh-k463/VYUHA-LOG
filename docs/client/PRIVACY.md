@@ -1,10 +1,11 @@
 # Privacy
 
-**Last updated:** 2026-09-05 · **Applies to:** Vyuha v3.9.0 and later
+**Last updated:** 2026-09-05 · **Applies to:** Vyuha v3.9.1 and later
 
-Vyuha has no account, no server and no telemetry. This page exists because that
+Vyuha Desktop has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —
-including the parts that are not absolute.
+including the parts that are not absolute. It describes the desktop app; a web
+platform is in development and will get its own statement here.
 
 ## What we collect about you
 
@@ -30,7 +31,7 @@ licence key to `Documents\Vyuha-backup-<date>` — still on your own machine, bu
 folder redirected to OneDrive (or any other sync client) will sync that copy along with
 everything else, so move or delete it if you would rather it did not.
 
-## The network requests Vyuha makes
+## The network requests Vyuha Desktop makes
 
 Exactly four kinds, and only one of them is automatic:
 
@@ -57,7 +58,7 @@ Exactly four kinds, and only one of them is automatic:
    stored on Telegram's servers. It is off by default and can only be enabled
    behind a disclosure that says exactly that.
 
-That is the complete list. There is no fifth thing.
+That is the complete list for Vyuha Desktop. There is no fifth thing.
 
 ## Your credentials and licence key
 

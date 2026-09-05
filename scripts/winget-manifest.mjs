@@ -129,17 +129,19 @@ PackageName: Vyuha
 PackageUrl: https://github.com/${REPO}
 License: Proprietary
 Copyright: Copyright (c) ${new Date().getFullYear()} Thejesh K
-ShortDescription: A fully offline trade journal and analytics cockpit for Indian retail traders.
+ShortDescription: A trade journal and analytics cockpit for Indian retail traders — desktop or web.
 Description: |-
-  Vyuha is a local-first trading journal and analytics cockpit built for the
+  Every warrior had a charioteer. Yours keeps count.
+
+  Vyuha is a trading journal and analytics cockpit built for the
   Indian market. It recomputes every charge — brokerage, STT/CTT, exchange,
   SEBI, stamp duty and GST — from your broker's own rate card rather than
   estimating them, and turns that into honest P&L, tax packs and risk analytics.
 
   Imports from six brokers auto-detect (Zerodha, Dhan, Groww, Angel One, Upstox,
   Paytm Money); any other broker's CSV or XLSX goes through a column mapper.
-  Everything is stored in a single SQLite file on your own machine — no account,
-  no cloud, no telemetry.
+  The desktop app stores everything in a single SQLite file on your own machine — no account,
+  no telemetry.
 
   The core journal is free forever. A licence unlocks the analytics layer.
 Moniker: vyuha

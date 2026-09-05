@@ -371,7 +371,7 @@ ${defs()}
   <text x="82" y="196" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="5" fill="#e9eef5">VYUHA</text>
   <text x="82" y="216" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1.4" fill="#8a98a7">JOURNAL · MEASURE · MASTER</text>
   <rect x="52" y="232" width="60" height="2" rx="1" fill="#14b8a6" opacity="0.7"/>
-  <text x="82" y="292" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1" fill="#5b6675">LOCAL · OFFLINE · YOURS</text>
+  <text x="82" y="292" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="7" letter-spacing="1" fill="#5b6675">DESKTOP · WEB · YOURS</text>
 </svg>`;
 }
 

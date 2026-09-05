@@ -2,19 +2,19 @@
 
 # व Vyuha — The Trade Journal That Tells You the Truth
 
-**A fully local, offline-first trade journal + analytics cockpit for Indian retail traders.**
-Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine.
+**Every warrior had a charioteer. Yours keeps count.**
+Exact charges. Honest analytics. Desktop app today; a web platform is in development.
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-5208%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-5253%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-84%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
-[![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-local-first-by-design)
-[![Cloud](https://img.shields.io/badge/cloud-none-black)](#-local-first-by-design)
+[![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
+[![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
 [![Built for](https://img.shields.io/badge/built%20for-Indian%20retail%20traders-ff9933)](#why-vyuha)
 
-### ₹ Exact charges · 🧠 Honest analytics · 🔒 Zero cloud · 🇮🇳 Built for NSE/BSE/MCX
+### ₹ Exact charges · 🧠 Honest analytics · 🖥 Desktop or web · 🇮🇳 Built for NSE/BSE/MCX
 
 <img src="docs/screenshots/dashboard.png" alt="Vyuha dashboard — equity curve, daily P&L calendar, win rate, profit factor" width="900" />
 
@@ -28,7 +28,24 @@ Exact charges. Honest analytics. Zero cloud. Your data never leaves your machine
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v3.7.1** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v3.9.1** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **v3.9.1 — what Vyuha says about itself, and what the import route will
+> accept.** The positioning is now *desktop or web, the trader chooses*: Vyuha
+> Desktop keeps every technical guarantee it had — a licence verified on your
+> own machine with no server call, a 7-day trial with no signup, one
+> download-only check at launch, your journal in one SQLite file on your PC —
+> but they are stated as facts about the desktop app rather than as a promise
+> about the product, while a web platform is in development. The **import
+> route refuses a file before it reads it**: an upload over 32 MB is declined
+> with a 413 that says the limit, and the readability guard checks magic bytes
+> first, so a file whose extension and content disagree is refused rather than
+> handed to the spreadsheet reader. **SheetJS is updated to 0.20.3**, vendored
+> in the repo — the registry copy is the abandoned line and carries
+> CVE-2023-30533. A licence key **bound to one computer is now refused at
+> activation** instead of appearing to activate and failing later. And the
+> 220ms entrance transform that drew dialogs, popovers, tooltips and the
+> command palette up to 190px off before snapping back is fixed.
 >
 > **v3.7.1 — the release. v3.7.0 was cut, audited a second time, and superseded
 > before anyone could install it.** A second adversarial audit — run over the *fixes*
@@ -261,7 +278,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > written down rather than hidden: a permanently offline machine never receives it, and none
 > of this survives a patched binary. Shipping it meant retiring four in-repo promises that no
 > such mechanism would exist and correcting three published claims that described the launch
-> update check as optional — [see below](#-local-first-by-design).
+> update check as optional — [see below](#-your-data-your-choice-of-home).
 >
 > **v2.99.90 — the first broker that connects itself every morning.** **Angel One** joins
 > Zerodha and Dhan for live API pulls — and unlike either, nothing expires on you: each pull
@@ -416,8 +433,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **5208** | **43** | **0** |
-| tests, 84 end-to-end flows | screens, all offline | bytes of *your data* uploaded without your say-so |
+| **5253** | **43** | **0** |
+| tests, 84 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -456,7 +473,7 @@ embeds the price you saw.
 | **Lenses grouping** — by month/broker/type/file, with delete | **Lenses edge** — per-group win rate, profit factor, expectancy |
 | **Recoverable delete** — every delete snapshots first, restorable | |
 
-Every fresh install starts a **7-day full-Pro trial** — offline, no signup, no card. When it ends,
+Every fresh install of Vyuha Desktop starts a **7-day full-Pro trial** — no signup, no card, no server call. When it ends,
 **every trade you have already recorded stays readable, editable and exportable without a key,
 forever.** Your own record of your trading is never held hostage.
 
@@ -683,8 +700,8 @@ IPO tracker with allotment P&L · capital compounding (double-count-safe) · cas
 
 ## 🔑 Licensing (for the maintainer)
 
-Vyuha ships with an **offline licence gate** — an Ed25519 signature verified on the user's own
-machine. Activation itself makes no server call and never has. Every fresh install begins a
+Vyuha Desktop ships with a **serverless licence gate** — an Ed25519 signature verified on the user's own
+machine. Activation makes no server call. Every fresh install begins a
 **7-day full-Pro trial**; the core journal is free forever.
 
 Vendor tooling lives in `scripts/`:
@@ -714,16 +731,16 @@ is stated rather than hidden. Full procedures:
 **Buying is a WhatsApp message.** Every "Get Pro / Get Lifetime" button in the app opens a
 **buy dialog** — the number **+91 73936 73714**, a pre-filled message quoting the plan and the
 price you saw, and *Copy number* / *Copy message* buttons (plus an Open-WhatsApp link when you are
-in a browser). It is a dialog rather than a link because the app is offline by design and the
+in a browser). It is a dialog rather than a link because the
 desktop webview opens no external pages; the key arrives by reply and is pasted into Settings →
 License.
 
 ---
 
-## 🔒 Local-first by design
+## 🔒 Your data, your choice of home
 
-No login. No cloud. No telemetry. No analytics SDKs.
-Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. Unprompted, the desktop app talks to `127.0.0.1` and makes exactly one download-only call: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off. Every other network path exists only if you enable it: the EOD bhavcopy fetch (off by default), broker-API pulls that talk only to your own broker (Dhan's PIN+TOTP sign-in goes only to `auth.dhan.co`, and the opt-in launch auto-pull just runs those same pulls once a day), and the opt-in Telegram EOD digest — the one path that uploads anything, and what it uploads is your own recorded numbers, to Telegram's servers, behind an explicit disclosure. Nothing about you or your trades leaves the machine by any path you didn't switch on.
+Vyuha Desktop needs no login and ships no telemetry and no analytics SDKs. A web platform is in development; when it ships, this section will state what each surface sends.
+On the desktop app: Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. Unprompted, the desktop app talks to `127.0.0.1` and makes exactly one download-only call: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off. Every other network path exists only if you enable it: the EOD bhavcopy fetch (off by default), broker-API pulls that talk only to your own broker (Dhan's PIN+TOTP sign-in goes only to `auth.dhan.co`, and the opt-in launch auto-pull just runs those same pulls once a day), and the opt-in Telegram EOD digest — the one path that uploads anything, and what it uploads is your own recorded numbers, to Telegram's servers, behind an explicit disclosure. On the desktop app, nothing about you or your trades leaves the machine by any path you didn't switch on.
 
 ---
 
@@ -737,10 +754,10 @@ Everything lives in **one SQLite file on your disk** — copy it and you've back
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v3.9.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v3.9.1**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
-**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — fully offline, no signup, no card. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and nothing leaves your machine either way.
+**What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.
 
 **New here?** Flip through the 📽 [**Getting-Started deck**](docs/client/GETTING_STARTED_DECK.html) — 13 visual slides covering install → import → journal → the playbook loop → Pro activation. (Download and open locally, or print to PDF; arrow keys navigate.)
 
@@ -768,7 +785,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       5208 unit + integration tests across 276 files (+ tests/load: 16 load cases, run separately)
+tests/       5253 unit + integration tests across 281 files (+ tests/load: 16 load cases, run separately)
 e2e/         84 Playwright flows through the real app, in 28 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -789,7 +806,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **5208 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **5253 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -805,7 +822,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (5208 tests) |
+| `npm test` | Vitest unit + integration suite (5253 tests) |
 | `npm run test:e2e` | Playwright e2e — 84 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -875,7 +892,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 5208 Vitest unit + integration tests (+ tests/load)
+  tests/          # 5253 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

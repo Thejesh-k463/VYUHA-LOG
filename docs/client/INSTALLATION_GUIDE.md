@@ -1,12 +1,14 @@
 # Vyuha — Installation & Getting-Started Guide
 
-**Vyuha** is a local-first trading journal for the Indian market. Everything runs **on your own
-computer** — your trades never leave your machine. No account, no cloud, and nothing about you or
-your trades is ever uploaded.
+**Every warrior had a charioteer. Yours keeps count.**
+
+**Vyuha** is a trading journal for the Indian market — desktop or web, the trader chooses. This guide covers **Vyuha Desktop**, which runs **on your own
+computer**. No account, and nothing about you or
+your trades is uploaded by the desktop app unless you switch on a feature that sends it.
 
 - **Platform:** Windows 10 / 11 (64-bit).
 - **Disk:** ~200 MB
-- **Internet:** not needed to use Vyuha. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
+- **Internet:** not needed to use Vyuha Desktop. At launch it makes one download-only check to GitHub (is there a newer signed release, and is this licence still valid) which sends nothing about you and skips silently when offline; everything else is optional — the opt-in bhavcopy download and any broker API pull you start yourself.
 
 ---
 
@@ -31,7 +33,7 @@ your trades is ever uploaded.
 
 ## 2. Your 7-day trial, and activating a license
 
-**Every fresh install starts a 7-day full-Pro trial** — no signup, no card, entirely offline.
+**Every fresh install starts a 7-day full-Pro trial** — no signup, no card, no server call.
 The clock starts the first time *you* open the app, not when the installer was built. The core
 journal — recording closed trades, imports, the dashboard, staged positions, playbooks and
 backups — is **free forever**; the trial covers the Pro analytics, plus live open-position
@@ -44,7 +46,7 @@ When you buy:
 2. Paste the **license key** from your purchase email (one line, starts with `VYUHA-`).
 3. Click **Activate**. You'll see **"Licensed to <your email>"**, your SKU, and a **Key ID** like
    `A1B2-C3D4-E5`.
-4. Activation is **offline** — verified on your machine against a signature. Your key is never sent
+4. Activation is **serverless** — verified on your machine against a signature. Your key is never sent
    anywhere and nothing about you is transmitted. (Vyuha still makes the one download-only launch
    check described at the top. A licence withdrawn after a refund or chargeback stops working
    through that check, and only after a dated warning period shown in the app.)
@@ -118,7 +120,7 @@ You have two paths — use either or both:
 | **Analytics → Advance Tax / Tax Harvest / Charges & MTF Leak / Broker Costs** | The money-and-tax toolkit |
 | **Surveillance** | Upload NSE's daily files (fo_secban.csv / REG_IND — ban, ASM, GSM, ESM) or paste any list → alerts on your holdings |
 
-## 6. Auto-MTM & market data (optional, still offline)
+## 6. Auto-MTM & market data (optional, opt-in)
 
 Vyuha never calls a paid feed. To value open positions or feed Greeks:
 - **Portfolio Risk → Auto-MTM from bhavcopy** — paste the free NSE/BSE daily bhavcopy.
@@ -186,7 +188,7 @@ removed. Leave the box unticked to keep the data where it is.
 ## 10. Support
 
 Reply to your purchase email, or reach the support handle listed on the product page. Include your
-Vyuha version (the installer filename carries it in full — `Vyuha_3.9.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Local · Offline · v3.9`) and, if the
+Vyuha version (the installer filename carries it in full — `Vyuha_3.9.0_x64-setup.exe` — and Windows **Settings → Apps → Installed apps** lists it; the sidebar footer shows the release line, `Vyuha Desktop · v3.9`) and, if the
 problem is licence-related, your **Key ID** from **Settings → License** — never the key itself.
 
 ---

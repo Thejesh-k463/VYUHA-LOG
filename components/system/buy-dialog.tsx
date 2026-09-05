@@ -87,7 +87,7 @@ export function BuyDialog({ skuId, trigger }: { skuId?: PricingSkuId; trigger: R
           </div>
 
           <p className="text-[0.6875rem] text-muted-foreground">
-            Vyuha is fully offline — the app itself never contacts anyone. Message us on WhatsApp and we
+            The desktop app makes no payment call of its own. Message us on WhatsApp and we
             confirm the price before any payment.
           </p>
         </div>

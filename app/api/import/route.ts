@@ -10,6 +10,18 @@ import { BROKERS, type Broker } from "@/lib/domain/constants";
 import type { ColumnMapping } from "@/lib/import/generic-map";
 
 export const runtime = "nodejs";
+// A real broker export is measured in kilobytes; the biggest owner file on
+// record is under 2 MB. 32 MB is the ceiling above which a file is a mistake
+// (a whole backup, an archive) rather than a statement.
+// This is NOT a memory guard: `req.formData()` above has already buffered the
+// whole request body, so the bytes are resident before this check runs. What
+// the cap saves is the parse cost and the user's time — it refuses on the
+// declared `file.size` before `arrayBuffer()` copies the upload again and the
+// parsers spend seconds on a file that was never a statement.
+const MAX_IMPORT_BYTES = 32 * 1024 * 1024;
+// Parsing a large workbook is CPU-bound and single-shot; the platform default
+// (10s) kills it mid-parse and the client sees a dead socket, not an error.
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const form = await req.formData().catch(() => null);
@@ -37,6 +49,18 @@ export async function POST(req: Request) {
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
+  }
+
+  // Refuse an oversized upload on its declared size, BEFORE arrayBuffer() pulls
+  // it into memory — the one check that has to happen without reading a byte.
+  if (file.size > MAX_IMPORT_BYTES) {
+    return NextResponse.json(
+      {
+        error:
+          "This file is larger than 32 MB. Vyuha imports broker statements, not archives — export a narrower date range from your broker and import that.",
+      },
+      { status: 413 },
+    );
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());

@@ -605,7 +605,7 @@ export function Sidebar({accounts,selectedAccountId,workspace="both"}:{accounts:
       </nav>
 
       <div className={cn("flex flex-col gap-1 border-t border-border py-2 text-[10px] text-muted-foreground", collapsed ? "items-center px-1" : "px-4")}>
-        {!collapsed && <span>Local · Offline · v3.9</span>}
+        {!collapsed && <span>Vyuha Desktop · v3.9</span>}
         <MarketClock />
       </div>
 

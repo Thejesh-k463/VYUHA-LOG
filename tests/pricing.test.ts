@@ -258,12 +258,12 @@ describe("the buy step is a dialog, never a bare target=_blank anchor", () => {
     // No window.open() race before the dialog — in the webview it no-ops.
     expect(src).not.toContain("window.open(");
     // The number and the message are shown via the pure helpers, and the copy
-    // buttons plus the offline reassurance are present.
+    // buttons plus the no-payment-call reassurance are present.
     expect(src).toContain("formatWhatsAppNumber(");
     expect(src).toContain("buyMessageText(");
     expect(src).toContain("Copy number");
     expect(src).toContain("Copy message");
-    expect(src).toContain("Vyuha is fully offline");
+    expect(src).toContain("The desktop app makes no payment call of its own");
   });
 
   it("the number reads as +91 XXXXX XXXXX and carries exactly WHATSAPP_NUMBER's digits", () => {

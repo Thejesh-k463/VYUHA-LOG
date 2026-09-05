@@ -44,7 +44,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Vyuha — Trade Journal",
-  description: "Local-first trade journal & analytics cockpit for Indian markets.",
+  description: "Trade journal & analytics cockpit for Indian markets.",
   // app/favicon.ico is picked up by convention; these add the retina PNG and
   // the iOS home-screen icon. All local files — the app must run offline.
   icons: {

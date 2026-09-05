@@ -49,17 +49,10 @@ are the open question (Vyuha stores none; PRIVACY's "exactly four kinds" must st
 opt-in EOD bhavcopy is the only source). Also decide the 5 size indices absent from
 `nse-index-map.json` (no recorded reason). v4.0 gets its own recon, wave plan, approval, audits.
 
-## Budget governor (non-negotiable)
+## Model choice (replaces the budget governor, 2026-09-05)
 
-Read my usage screenshot when I give it; otherwise ask for it at every wave gate. **Fable is the
-orchestrator and the adversarial finders only; every build/fix/docs agent runs on Opus
-(`model: "opus"`).** v3.8.0 consumed far more than 13 Fable points; do not pretend otherwise.
-Rules: (a) a wave is never started that cannot be gated AND audited inside the remaining budget;
-(b) v3.9 ships complete (double audit + release skill) before one line of v4.0; (c) if the
-governor trips mid-v3.9, finish the current wave's gate, commit, push, write VYUHA-STATE, and
-STOP — a half-audited release is how v3.5.0 and v3.7.0 died; (d) keep this session's context lean:
-delegate reads, tight greps (a wide grep once dumped a whole page source into context), never
-`cat` a log — grep the two lines you need.
+Credit limits reset 2026-09-05 — no governor. Model choice per `~/.claude/CLAUDE.md` is an
+accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
 
 ## Standing gates (unchanged from v3.5–v3.8; each exists because skipping it shipped a defect)
 

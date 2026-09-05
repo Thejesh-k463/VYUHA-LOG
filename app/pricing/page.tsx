@@ -41,8 +41,8 @@ export default function PricingPage() {
         <p className="text-xs text-muted-foreground">
           Every purchase is a WhatsApp conversation, not a checkout — the key is issued personally and shows your
           email in-app. The free tier is not a trial: recording closed trades, every broker importer, the
-          dashboard, staged positions, playbooks, the calculator and backups stay free forever, and your data
-          never leaves this machine either way. Already bought?{" "}
+          dashboard, staged positions, playbooks, the calculator and backups stay free forever, and your
+          record stays yours either way. Already bought?{" "}
           <Link href="/settings#license" className="text-accent underline-offset-2 hover:underline">
             Activate your key
           </Link>

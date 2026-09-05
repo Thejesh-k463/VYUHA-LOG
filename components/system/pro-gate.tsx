@@ -154,7 +154,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
         <p className="text-sm text-muted-foreground">
           This screen is part of <span className="text-foreground">Vyuha Pro</span>. Your
           journal keeps working forever — trades, imports, dashboard, playbooks, backups are never locked, and
-          your data never leaves this machine either way.
+          your record stays yours either way.
         </p>
         <ul className="space-y-1.5 text-sm">
           {PRO_FEATURES.map((f) => (
@@ -187,7 +187,7 @@ export function ProGate({ children }: { children: React.ReactNode }) {
             plan the reprice introduced, and it sat directly under a table
             offering both. */}
         <p className="text-[0.6875rem] text-muted-foreground">
-          Annual or lifetime, verified fully offline — activation never phones home. One key per trader; it shows
+          Annual or lifetime, verified on your own machine with no server call — activation never phones home. One key per trader; it shows
           your email in-app.
         </p>
       </CardContent>

@@ -47,7 +47,7 @@ export default function BackupPage() {
     <>
       <PageHeader
         title="Backup & restore"
-        description="Export the full journal as a portable file, or restore from one — your data never leaves the device."
+        description="Export the full journal as a portable file, or restore from one — the export is written where you choose."
         actions={<Badge variant="secondary">{total} rows</Badge>}
       />
       <div className="space-y-5 p-6">

@@ -1,5 +1,57 @@
 # Changelog
 
+## v3.9.1 — unreleased
+
+*A patch release with four items and nothing else: what Vyuha says about itself,
+what the import route will accept, when a licence key is bound to a machine, and
+a 220ms animation offset that shipped in v3.9.0.*
+
+- **Positioning: desktop or web, the trader chooses.** "100% local & offline" is
+  retired as a sales line. Vyuha Desktop keeps every technical guarantee it had —
+  a licence verified on your own machine with no server call, a 7-day trial with
+  no signup, one download-only check at launch, and your journal in one SQLite
+  file on your PC — but they are now stated as facts about the desktop app rather
+  than as a promise about the product. A web platform is in development.
+  `docs/client/PRIVACY.md` keeps its four-kinds list word for word, now stated as
+  a Vyuha Desktop statement.
+- **The import route refuses a file before it reads it.** Uploads over **32 MB**
+  are declined with a 413 and a message that says the limit, checked from the
+  file's own size before a single byte is read into memory; the route declares
+  `maxDuration = 60` so a slow parse cannot run unbounded. The readability guard
+  now checks **magic bytes** first — zip/xlsx, legacy CFB `.xls`, `%PDF`, or
+  text-like — and refuses a file whose extension and content disagree, instead of
+  handing an untrusted buffer to the spreadsheet reader to find out. CSV and PDF
+  still go straight to their own parsers, and a file the reader can open at all
+  still reaches the generic column mapper, so nothing that imported before stops
+  importing.
+- **SheetJS updated to 0.20.3, vendored in the repo.** The registry copy
+  (`xlsx@0.18.5`) is the one SheetJS abandoned; **CVE-2023-30533** is fixed only
+  in the line published on the vendor's own CDN. That build is now committed as a
+  tarball and installed from the file, so a build never depends on a third
+  party's host being up.
+- **A licence key bound to one computer is now refused when it is activated, not
+  after.** The activation route did not pass the machine id, so a bound key
+  entered on another machine appeared to activate and only failed later. It now
+  gets the same check the app already applied when reading the licence, with the
+  same message. Keys issued without a machine binding activate exactly as before.
+- **Dialogs, popovers, tooltips and the command palette open in the right place.**
+  The entrance animation ended on a transform that Tailwind v4 composes with its
+  own positioning instead of replacing, so for 220ms every one of those surfaces
+  was drawn offset — up to 190px for the search panel — and then snapped back.
+  Fixed in `28d6655`, already on `main` before this release was cut.
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+- **Still true for anyone coming from v3.7.1:** the installer runs the old,
+  unguarded v3.7.1 uninstaller once, and that one has no backup step, so leave
+  "Delete the application data" UNTICKED — ticking it there erases the data
+  folder with no copy taken. From v3.8.0 on the guard is in place.
+
 ## v3.9.0 — trust the numbers
 
 *Built 2026-09-04 against the owner's own broker exports, read in place. Where

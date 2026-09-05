@@ -76,7 +76,7 @@ let changed = 0;
 // 4) sidebar.tsx footer — "v1.6" (major.minor only).
 {
   const src = read(sidebarPath);
-  const next = src.replace(/(Offline · v)\d+\.\d+(?:\.\d+)?/, `$1${minor}`);
+  const next = src.replace(/(Desktop · v)\d+\.\d+(?:\.\d+)?/, `$1${minor}`);
   if (next !== src) {
     writeFileSync(sidebarPath, next);
     console.log(`sidebar.tsx footer      -> v${minor}`);

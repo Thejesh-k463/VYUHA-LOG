@@ -3,7 +3,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { verifyLicenseKey, SKU_LABELS, ENTITLEMENT_PATHS } from "@/lib/license";
+import { verifyLicenseKey, SKU_LABELS, ENTITLEMENT_PATHS, LICENSE_PUBLIC_KEY_PEM, REVOKED_KEY_IDS } from "@/lib/license";
+import { getMachineId } from "@/lib/machine-id.server";
 import { encryptSecret } from "@/lib/vault";
 import { recordAudit } from "@/lib/audit";
 
@@ -21,7 +22,13 @@ export async function POST(req: Request) {
 
   if (body.action === "activate") {
     const key = String(body.key ?? "").trim();
-    const check = verifyLicenseKey(key);
+    // Same question the read path asks (lib/queries/license.ts): a key bound
+    // to another machine used to ACTIVATE cleanly here and only read back
+    // unlicensed later, so the buyer saw "Activated" and an unlicensed app
+    // with no explanation. Verified with this computer's id, the refusal
+    // carries lib/license.ts's own mismatch sentence — the one the read
+    // path already shows — through the route's existing {ok,message}/400.
+    const check = verifyLicenseKey(key, LICENSE_PUBLIC_KEY_PEM, REVOKED_KEY_IDS, getMachineId());
     if (!check.valid) return NextResponse.json({ ok: false, message: check.reason ?? "Invalid key." }, { status: 400 });
     // Stored encrypted at rest (v2.99.80). encryptSecret THROWS on a broken
     // vault — surfaced as an error rather than silently storing plaintext,

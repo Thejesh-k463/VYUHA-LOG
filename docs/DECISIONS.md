@@ -2867,6 +2867,8 @@ exceeded at pairLegs (pair-legs.ts:302:39)` at ~123k positions on one symbol (19
 **Governor.** Owner's usage at session start: weekly all-models 76% used, Fable 85% used, reset Mon
 19:30. Owner ruling: run everything (build, wiring, finders) on Opus and finish the build; rule (c)
 still applies if the all-models limit trips.
+**SUPERSEDED 2026-09-05:** credit limits reset, no governor exists — model choice per
+`~/.claude/CLAUDE.md` is an accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
 
 **A7 `/cash` load case is machine-noise sensitive, not a W1 regression (measured 2026-09-04).**
 The W1 gate's load run failed `a7-cash-ledger` at 7.3× (ceiling 6×). Suspect was 0061's trigram
@@ -3111,3 +3113,174 @@ fixing only the CSS leaves the next timing-sensitive assertion exposed.
 The rule this is an instance of is already in AGENTS.md ("Assert client-restored state with
 `expect.poll`, never once after `networkidle`"). The spec's own header comment states it too, and
 line 118 was the single assertion in that file that broke it.
+
+## 2026-09-05 — "100% local & offline" is retired as positioning: Vyuha is sold as "Desktop or Web"
+
+Owner directive: Vyuha is sold as **"Desktop or Web: the trader chooses"** — one platform for a
+trader, from trading to journaling. Vyuha Desktop stays a full product; a web platform is in
+development. Every positioning line ("fully local", "100% local", "zero cloud", "never sends a
+single trade", "offline-first", "local-first", "LOCAL · OFFLINE", "offline by design") is removed
+or rewritten across README, `docs/sales`, `docs/client`, `docs/index.html`, `src-tauri`, `app/`,
+`components/`, `lib/domain` and `scripts/` — 27 files, 64 replacements as built (the proposal
+inventoried 58 P rows).
+
+Technical FACTS survive, reworded neutrally and scoped to the desktop build: an Ed25519 licence
+verified with no server call, the 7-day trial with no signup and no card, the download-only launch
+check that carries no identifier, PRIVACY's four kinds of egress, DPAPI/vault, and the journal in
+one SQLite file on the user's PC. They are stated as facts about Vyuha Desktop, never as a brand
+promise about the product.
+
+`docs/client/PRIVACY.md` keeps the four-kinds list as a **DESKTOP-ONLY** statement (option A):
+`:35` "Exactly four kinds, and only one of them is automatic:" is unchanged verbatim, the heading
+becomes "The network requests Vyuha **Desktop** makes", and the closing line becomes "That is the
+complete list for Vyuha Desktop. There is no fifth thing."
+**Rejected: option B, deleting the four-kinds list** — it would strip the one verifiable privacy
+claim in the buyer pack and orphan three recorded constraints that cite that sentence
+(`:2318`, `:2560`, `:2958`), each of which would then need a fresh entry restating it.
+
+Buyer surfaces may say the web platform is **"in development"** — that phrasing only, never a date
+and never "coming soon", so nothing published is false (owner, Q10).
+**Rejected: silence until the web platform ships** — it would force the desktop copy to keep
+implying the desktop is the only surface there will ever be.
+
+Owner/marketing assets (`docs/owner/pitch-deck`, `ZERODHA_PROPOSAL`, `CREATOR_OUTREACH`,
+`MONETIZATION_PLAN`, `RAINMATTER_APPLICATION`, `VIDEO_SCRIPT`, the demo-video scripts,
+`DEMO_RUNBOOK`) are **deferred** (owner, Q9), with one exception applied now:
+`docs/owner/CREATOR_KIT.md:80`'s "❌ Syncs to cloud / mobile app — local-first is the point; there
+is neither" contradicted the roadmap and is rewritten. **Rejected: rewriting all thirteen owner
+assets in this release** — none of them is shipped to a buyer by the build, and the tagline is
+still open (Q11: the owner rejected both proposed taglines and wants one line, not a set).
+
+`docs/DECISIONS.md:2138-2141` (the 2026-09-01 rescind entry) and `VYUHA-STATE.md` §8.6 are left as
+history; §8.6's closing paragraph is rewritten and marked "Positioning superseded 2026-09-05".
+Guard: `tests/positioning-copy.test.ts` reads every buyer-facing SOURCE file and fails on any of
+the nine struck phrases; history files (CHANGELOG, this file, `docs/prompts/**`, the build plans)
+are deliberately NOT scanned, because they record what was once true.
+
+## 2026-09-05 — `xlsx` moves to the SheetJS CDN build 0.20.3, vendored as a tarball in the repo
+
+`xlsx@0.18.5` from the npm registry is the abandoned copy: SheetJS stopped publishing to npm and
+CVE-2023-30533 (prototype pollution in `sheet_add_aoa`) is fixed only in the CDN line. The API is
+unchanged, which matters: 13 parsers plus `lib/export.ts`, `lib/import/parse-guard.ts` and
+`lib/import/types.ts` call `XLSX.*`.
+
+**Chosen: keep the SheetJS API, vendor `vendor/xlsx-0.20.3.tgz` (2.3 MB) from
+`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`, and pin `package.json` to
+`"xlsx": "file:vendor/xlsx-0.20.3.tgz"`**, so `npm ci` is reproducible and CI never dials
+`cdn.sheetjs.com`. Licence Apache-2.0.
+**Rejected: `exceljs`** — a different API, so it rewrites all 13 parsers with no fixtures for the
+swap; that is a rewrite of the import engine wearing a security patch's clothes.
+**Rejected: depending on the CDN URL directly** (`"xlsx": "https://cdn.sheetjs.com/…"`) — it puts
+a network fetch of a third party's host inside every `npm ci`, including CI's.
+
+Lockfile path (owner ruling, Q7): `npm install ./vendor/xlsx-0.20.3.tgz --ignore-scripts`, keep the
+result **only if the diff is xlsx-only**, otherwise hand-edit per `AGENTS.md` § "Adding a
+dependency"; prove it with `npm ci` in a throwaway worktree. This is a deliberate, owner-approved
+narrowing of "never let npm rewrite `package-lock.json`" — the rule exists because a plain
+`npm install` prunes vitest's nested `esbuild@0.28.x` and its 26 `@esbuild/*` entries and makes
+`npm ci` fail on every platform, so the acceptance test is the diff and `npm ci`, not the command.
+
+**Trap 0.20.3 introduces, and the two tests it broke.** The CDN build ships an `exports` map and
+does **not** bind Node's `fs` for you the way the registry build did. Any test or script that
+hands SheetJS a path instead of a buffer must call `XLSX.set_fs(fs)` first, or it fails with
+SheetJS's own "please pass a Buffer"-class error rather than anything that names `fs`. Applied in
+`tests/private-reconciliation.test.ts:12` and `tests/zerodha-taxpnl.test.ts:13`.
+
+## 2026-09-05 — The import route caps at 32 MB before it reads, and the parse guard checks magic bytes
+
+`app/api/import/route.ts` had no size limit and no `maxDuration`, and `lib/import/parse-guard.ts`
+used a full `XLSX.read` of the untrusted buffer as its *readability* check. On the desktop that is
+not an exposure — one trusted user, their own files — but it is a live remote DoS on any hosted
+surface, and the web platform is in development, so the fix lands before the surface exists rather
+than after.
+
+- `export const maxDuration = 60;` beside `export const runtime = "nodejs";` (route `:21`).
+- `const MAX_IMPORT_BYTES = 32 * 1024 * 1024;` (`:18`), checked from `file.size` AFTER the
+  `file instanceof File` guard and BEFORE `await file.arrayBuffer()` (`:53`), returning
+  `{ error: "…" }` with **status 413**. The route's real error shape is `{ error: string }` — the
+  `{ ok, message }` shape belongs to the *licence* route, and returning that here would have been
+  a silently wrong body that still looked fine in the browser.
+- Magic-byte pre-check in `guardReadable(filename, bytes)` before `XLSX.read`:
+  `SIG_ZIP = [0x50,0x4b,0x03,0x04]` (xlsx/xlsm/ods),
+  `SIG_CFB = [0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]` (legacy .xls),
+  `SIG_PDF = [0x25,0x50,0x44,0x46]`. Anything else must be text-like (no `0x00` in the first 512
+  bytes, decodable). Extension/byte mismatch returns the guard's existing reason shape and existing
+  copy constants. Signatures are written as numeric arrays, never as string escapes — escapes
+  written through a shell heredoc land as control characters and a dead check then sits under a
+  green gate.
+- **`guardReadable` still short-circuits `.csv` and `.pdf` at `:75` — by design, and kept.** CSV
+  goes to the text parser and PDFs to `pdf-parse`, so probing either with SheetJS would refuse
+  files the pipeline handles fine. `bookSheets: true` is kept for the same reason.
+- The module's stated design rule survives: junk bytes SheetJS can open at all still pass through
+  to the generic column-mapper. **Rejected: turning `guardReadable` into a format whitelist** — it
+  would refuse real broker exports whose extension lies, which is the case the generic mapper
+  exists to serve.
+
+## 2026-09-05 — Licence activation now checks the machine binding; documenting it was not enough
+
+`app/api/license/route.ts` called `verifyLicenseKey(key)` with the 4th parameter
+`currentMachineId` omitted, so a key bound to another computer **activated**, and only the read
+path (`lib/queries/license.ts:57`) refused it afterwards. The route now imports `getMachineId` from
+`@/lib/machine-id.server` and calls
+`verifyLicenseKey(key, LICENSE_PUBLIC_KEY_PEM, REVOKED_KEY_IDS, getMachineId())` (`:31`).
+
+**Rejected: document the gap instead of fixing it** (it was proposed as a hosted-design note, since
+the read path does refuse the key) — an activation that succeeds and then silently yields a
+locked-down app is a worse experience than a refusal at the moment the key is pasted, and the
+hosted entitlement design would have inherited the same hole.
+
+The refusal message is REUSED, not written: `lib/license.ts:130-133` already returns "This key is
+locked to a different computer. Send your Machine ID (…) to support to have it re-issued." Two
+messages for one condition drift apart.
+
+**Unbound keys must keep activating forever** — `lib/license.ts:130` guards with
+`if (currentMachineId && !machineMatches(...))`, so a key with no `machine` in its signed payload
+is unaffected. That is the compatibility promise for every key sold before binding existed, and it
+is pinned by its own test case, not left to the guard's shape.
+
+`tests/license-activation-binding.test.ts` mints with the ephemeral test keypair pattern from
+`tests/license.test.ts:10-23` and covers three cases: bound key + foreign machine → refused; bound
+key + own machine → activates; unbound key + any machine → activates. Evidence from W3: 103 licence
+tests green, red-on-revert **"expected 200 to be 400"**.
+
+## 2026-09-05 — Owner rulings that set the v3.9.1 → v4.2 shape (recorded from 06-ANSWERS)
+
+- **Deadline: Monday 2026-09-07 for everything up to v4.2** — "push till Monday; use your full
+  capabilities" (Q1). This overrides the earlier two-Sunday plan. **Rejected: the two-Sunday
+  schedule** (v4.0 by one Sunday, the web platform after the next).
+- **Order: v3.9.1 is tagged first, then v4.0** (Q2), and the rest ships as a ladder of back-to-back
+  tags — **4.0 core → 4.1 OpenAlgo → 4.2 broker feeds** (Q4). **Rejected: one large v4.0** carrying
+  every feed, which would make the whole release hostage to the broker APIs.
+- **Cut order if not green by Monday: Atlas → broker feeds → Lab extras → attribution** (Q3), with
+  the owner's own condition: *"store and record perfectly what is left to build and upgrade, so we
+  won't redo what is already done."* That is why
+  `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md` exists and is updated at
+  every wave boundary; a wave's row states DONE / IN PROGRESS / LEFT plus the evidence that
+  justifies it. **Rejected: cutting by whatever happens to be unfinished at the deadline** — it
+  loses the record of what was already proven.
+- **Feeds are phased, not simultaneous: EOD-only marks in v4.0, OpenAlgo opt-in in v4.1, broker
+  APIs in v4.2** (Q20), all attempted by Monday. **Rejected: live broker quotes in v4.0** — it
+  would put the release behind a third party's API keys and data-fee pages.
+- **v3.9.1's scope is exactly four items** (Q5): copy strike-out, import hardening, the licence
+  activation machine-id FIX (Q8), the keyframe fix `28d6655`. Nothing more.
+- **The one-pop-up-per-task cap is OVERRULED** (Q69a): *ask ALL questions via pop-ups BEFORE
+  building; groups of ≤10; be dynamic.* The cap in `~/.claude/CLAUDE.md` was written to stop
+  mid-build interruptions; the owner's correction is that the questions are not the problem, the
+  *timing* is. **Rejected: keeping the single-pop-up cap** — it forced the model to guess at
+  product choices it had no basis to decide, then log the guess.
+
+## 2026-09-05 — The credit governor is gone: model choice is an accuracy rule, not a spend rule
+
+Credit limits reset 2026-09-05. The "Governor" paragraph in the 2026-09-04 v3.9 entry above
+(weekly all-models 76% / Fable 85%) and the matching line in `VYUHA-STATE.md` §2 are marked
+**SUPERSEDED 2026-09-05** in place — the originals stay, because they explain why v3.9's wave plan
+looks the way it does. The live governor text in `docs/prompts/NEXT_SESSION_V390_V400.md`
+§ "Budget governor (non-negotiable)" is **deleted**, because unlike the other two it is an
+instruction a future session would obey.
+
+What replaces it: model choice per `~/.claude/CLAUDE.md` — Opus builds, Fable orchestrates — is an
+**accuracy** rule. Waves are sized by disjoint file ownership and by what one agent can hold in
+context, never by a remaining budget.
+**Rejected: leaving the governor in place as a conservative default** — a rule that no longer
+describes reality gets cited as a blocker, and stopping a half-audited release mid-flight is the
+failure mode it was written to prevent in the first place.

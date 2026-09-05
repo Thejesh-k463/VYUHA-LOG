@@ -1,5 +1,9 @@
 # NEXT SESSION PROMPT — v3.9.1 patch → v4.0 "Live Desk" (desktop) → Vyuha Web Platform
 
+> **STATUS 2026-09-05:** research pack delivered at `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/`
+> — see `00-INDEX.md` (map), `08-BUILD-PROMPTS/V391-BUILD-PROMPT.md`, `06-ANSWERS.md` (owner rulings),
+> `09-BUILD-LEDGER.md` (done vs left). **v3.9.1 built** on `main`, uncommitted — not yet gated or tagged.
+
 Written 2026-09-05 (Saturday) from the owner's dictated brief. Paste this whole file as the first
 message of the next **VYUHA-TRADE JOURNAL** session (repo: `T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1`).
 Owner's instruction to the session: **"Explore, Analyze, Orchestrate, and then code."**

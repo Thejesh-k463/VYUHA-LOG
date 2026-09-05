@@ -101,7 +101,7 @@ export function ShareCard({ stats, capital, period }: { stats: ShareStats; capit
     ctx.fillStyle = mut;
     ctx.font = "10px Inter, system-ui, sans-serif";
     ctx.fillText(SHARE_WATERMARK, 28, H - 34);
-    ctx.fillText("Local-first · offline · github.com/Thejesh-k463/VYUHA-LOG", 28, H - 20);
+    ctx.fillText("Vyuha · desktop or web · github.com/Thejesh-k463/VYUHA-LOG", 28, H - 20);
 
     canvas.toBlob((blob) => {
       if (!blob) return;
