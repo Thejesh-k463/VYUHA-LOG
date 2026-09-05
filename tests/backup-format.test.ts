@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { getTableName, is } from "drizzle-orm";
-import { SQLiteTable } from "drizzle-orm/sqlite-core";
+import { SQLiteTable, getTableConfig } from "drizzle-orm/sqlite-core";
 import * as schema from "@/lib/db/schema";
-import { validateBackup, BACKUP_VERSION, BACKUP_TABLES, isEncryptedBackup } from "@/lib/backup-format";
+import { validateBackup, BACKUP_VERSION, BACKUP_TABLES, SETTINGS_MACHINE_COLUMNS, isEncryptedBackup } from "@/lib/backup-format";
 
 describe("validateBackup", () => {
   it("accepts a well-formed envelope", () => {
@@ -62,6 +62,26 @@ describe("validateBackup", () => {
 
     const expected = allTables.filter((n) => !EXCLUDED.includes(n)).sort();
     expect([...BACKUP_TABLES].sort()).toEqual(expected);
+  });
+
+  it("keeps every JOB-BOOKKEEPING stamp on the machine that earned it", () => {
+    // A "last done on" stamp describes THIS installation's jobs. Restored from
+    // someone else's file — or from your own, taken later the same IST day — it
+    // suppresses a run that has not happened here. `last_live_mark_date` is the
+    // "exactly one persisted mark per position per day" guard (migration 0067,
+    // whose header names this list by name); without it here, a restore hands
+    // the desk a stamp for today and persist-mark.ts refuses today's mark.
+    for (const col of ["lastTelegramSentDate", "lastAutoPullDate", "lastLiveMarkDate"]) {
+      expect(SETTINGS_MACHINE_COLUMNS as readonly string[], col).toContain(col);
+    }
+    // …and every one of them is a real settings column, not a typo that would
+    // silently redact nothing.
+    const declared = getTableConfig(schema.settings).columns.map((c) => c.name);
+    const byProp = new Set(Object.keys(schema.settings));
+    for (const col of SETTINGS_MACHINE_COLUMNS) {
+      expect(byProp, `${col} is not a column on settings`).toContain(col);
+    }
+    expect(declared.length).toBeGreaterThan(0);
   });
 
   it("recognises the encrypted envelope without treating arbitrary JSON as encrypted", () => {

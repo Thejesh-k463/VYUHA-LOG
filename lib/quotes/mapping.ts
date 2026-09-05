@@ -8,7 +8,35 @@
  * always an argument.
  */
 import { toIst } from "@/lib/domain/trading-day";
-import { toPaise, type Quote, type QuoteKey } from "./types";
+import { toPaise, type Exchange, type Quote, type QuoteKey } from "./types";
+
+/** The two CASH segments. Everything else on `Exchange` is a derivative. */
+export const CASH_EXCHANGES: readonly Exchange[] = ["NSE", "BSE"];
+
+/**
+ * Is this key a cash-market scrip — the only thing a bhavcopy prices?
+ *
+ * TWO tests, because either alone is porous: the exchange must be a cash
+ * segment (NFO/BFO/MCX/CDS never are), AND the traded contract must be the
+ * bare symbol. An option carries `symbol: "RELIANCE"` with
+ * `tradingsymbol: "RELIANCE26SEP3000CE"`, so a lookup by `symbol` alone marks
+ * the contract at the UNDERLYING's cash close — ₹2,850 for a contract worth a
+ * fraction of it, and silently wrong everywhere the position is read.
+ * `lib/import/mtm-bhavcopy.ts` has skipped derivatives for the same reason
+ * since it was written; this is that rule, shared.
+ *
+ * The error direction is deliberate: a key we cannot classify with certainty
+ * gets NO quote and the desk shows its no-mark state (invariant 6). A cash row
+ * whose broker writes a decorated tradingsymbol ("RELIANCE-EQ") therefore
+ * loses its EOD mark rather than risking a contract priced as a share — the
+ * tracker only sets `tradingsymbol` when it differs from `symbol`, so this
+ * costs nothing on any book Vyuha writes itself.
+ */
+export function isCashKey(key: QuoteKey): boolean {
+  if (!CASH_EXCHANGES.includes(key.exchange)) return false;
+  const contract = (key.tradingsymbol ?? "").trim().toUpperCase();
+  return contract === "" || contract === key.symbol.trim().toUpperCase();
+}
 
 /** A stored EOD bar, in the shape `lib/queries/price-history.ts` returns it. */
 export interface StoredBar {
@@ -43,8 +71,13 @@ export function sessionCloseIso(isoDate: string): string {
  *
  * `prevClose` is `null` under two stored sessions: the day-change column must
  * render "—", never a 0 % that looks like a flat day.
+ *
+ * A DERIVATIVE KEY GETS NOTHING (`isCashKey`), whatever bars it is handed: a
+ * bhavcopy row is a cash close, and the caller's bars were fetched by the
+ * underlying's symbol.
  */
 export function eodQuoteFromBars(key: QuoteKey, bars: readonly StoredBar[]): Quote | null {
+  if (!isCashKey(key)) return null;
   if (bars.length === 0) return null;
   const last = bars[bars.length - 1];
   const prev = bars.length >= 2 ? bars[bars.length - 2] : null;

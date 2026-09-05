@@ -40,8 +40,12 @@ describe("the two footer lines (Q58/Q59)", () => {
   });
 
   it("hands both lines to the panel, which prints them", () => {
-    const view = { provenanceLine: q.NO_CHARTINK_LINE, notAdviceLine: q.NOT_ADVICE_LINE };
+    // The loader's own output, not a literal restated here: the previous
+    // version built `view` from the same two constants and then asserted them
+    // against themselves, which was true of any code at all.
+    const view = q.getAtlasPageData().view!;
     expect(view.provenanceLine).toBe(q.NO_CHARTINK_LINE);
+    expect(view.notAdviceLine).toBe(q.NOT_ADVICE_LINE);
     const panel = read("components/atlas/atlas-panel.tsx");
     expect(panel).toContain("view.provenanceLine");
     expect(panel).toContain("view.notAdviceLine");
@@ -77,6 +81,40 @@ describe("my names is dark until the cohort is real (Q52)", () => {
   it("is enabled once the sessions are there", () => {
     const view = q.getMyNames([], { groups: new Map(), unmapped: [] } as never, 21);
     expect(view.enabled).toBe(true);
+  });
+});
+
+describe("every figure prints its formula (build prompt Q-5)", () => {
+  const panel = read("components/atlas/atlas-panel.tsx");
+
+  it("hands a formula= to EVERY MetricTile, not just the two that had one", () => {
+    // Q-5: every non-IP Atlas figure prints its plain public definition on
+    // screen. Seven of the nine tiles shipped without one — advancing,
+    // declining, unchanged, both regime inputs and both new-high/low counts —
+    // so the screen asserted a breadth number and said nowhere what it meant
+    // by "advancing". Counting is the guard that a NEW tile cannot ship bare.
+    const tiles = (panel.match(/<MetricTile[\s>]/g) ?? []).length;
+    const formulas = (panel.match(/[\s]formula=/g) ?? []).length;
+    expect(tiles).toBeGreaterThan(0);
+    expect(formulas, `${tiles} MetricTile(s) but only ${formulas} formula= prop(s)`).toBe(tiles);
+  });
+
+  it("defines the rotation table's own two figures on the tab that prints them", () => {
+    // Move and Breadth are columns, not tiles, so they carry no formula= — the
+    // definition sits under the table instead. Both are equal-weighted and the
+    // copy has to say so: a reader who assumes cap-weighting reads a different
+    // number from the one computed.
+    expect(panel).toMatch(/equal-weighted mean of each measurable/i);
+    expect(panel).toMatch(/share of the/i);
+    expect(panel).toMatch(/measurable members whose last close was above/i);
+  });
+
+  it("says what it does NOT do, without describing a feed that does not exist (Q-12)", () => {
+    expect(panel).not.toMatch(/separate, signed, opt-in feed/);
+    expect(panel).toMatch(/no feed/i);
+    const page = read("app/atlas/page.tsx");
+    expect(page).not.toMatch(/separate signed feed/i);
+    expect(page).toMatch(/no such feed/i);
   });
 });
 

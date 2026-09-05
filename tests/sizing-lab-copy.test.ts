@@ -152,6 +152,36 @@ describe("the write-back is an explicit route handler, never a server action", (
   });
 });
 
+/**
+ * Build prompt §0.2 Q-1: the two pre-trade screens are cross-linked, BOTH ways.
+ * They answer adjacent questions — how many shares my rule allows, and what the
+ * round trip costs — and a trader who lands on one has no way to discover the
+ * other from the sidebar alone. The link is factual: it names what the other
+ * screen computes, and neither tells the reader to go there.
+ */
+describe("the Lab and the calculator each name the other (U5)", () => {
+  const CALC_PAGE = "app/calculator/page.tsx";
+
+  it("the Lab links to the calculator, and says what it computes", () => {
+    const src = read(CLIENT);
+    expect(src, "no link from the Lab to /calculator").toMatch(/href="\/calculator"/);
+    expect(src).toContain("Charges and break-even for a trade");
+  });
+
+  it("the calculator links to the Lab, and says what it computes", () => {
+    const src = read(CALC_PAGE);
+    expect(src, "no link from /calculator to the Lab").toMatch(/href="\/sizing-lab"/);
+    expect(src).toContain("Position size from a risk budget");
+  });
+
+  it("neither cross-link instructs the reader", () => {
+    for (const f of [CLIENT, CALC_PAGE]) {
+      const src = stripComments(read(f));
+      expect(src, f).not.toMatch(PRESCRIPTIVE_LANGUAGE);
+    }
+  });
+});
+
 describe("money is formatted by the repo formatter, never inline", () => {
   it.each(FILES)("%s does not hand-roll a locale or a rupee sign", (file) => {
     const src = stripComments(read(file));

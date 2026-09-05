@@ -45,6 +45,61 @@ describe("help covers the app, exactly", () => {
 });
 
 /**
+ * The help desk describes v4.0 AS SHIPPED. Three entries had drifted from the
+ * code they describe, and every one of them reads as a feature the buyer does
+ * not have:
+ *   - /sizing-lab listed a "heat ceiling" among the write-back fields; the
+ *     dialog writes five fields and that is not one of them;
+ *   - /atlas described the owner's widgets as "a separate, opt-in feed", in the
+ *     present tense — v4.0 has no such feed (Q-12);
+ *   - /live advertised "alerts" as Pro; no alert code exists in lib/live or
+ *     components/live (Telegram alerts are v4.1).
+ */
+describe("help describes the app that shipped, not the one that is planned", () => {
+  const body = (href: string) => HELP_ENTRIES.find((e) => e.href === href)!.body.join(" ");
+
+  /** The five fields, in the words the help uses for them. */
+  const WRITE_BACK_PROSE: Record<string, string> = {
+    riskPctPpm: "risk percentage",
+    deployCapPpm: "deploy cap",
+    stopMethod: "stop method",
+    stopAtrLen: "ATR length",
+    stopAtrMultPermille: "ATR multiple",
+  };
+
+  it("/sizing-lab names exactly the fields the write-back dialog writes", () => {
+    // The dialog's own payload type is the source of truth: a sixth field added
+    // there without a word here reddens this immediately.
+    const dialog = fs.readFileSync(
+      path.join(process.cwd(), "components/sizing/write-back-dialog.tsx"),
+      "utf8",
+    );
+    const block = /export interface WriteBackValues \{([\s\S]*?)\n\}/.exec(dialog);
+    expect(block, "WriteBackValues is no longer declared as an interface").not.toBeNull();
+    const fields = [...block![1].matchAll(/^\s*(\w+)\s*:/gm)].map((m) => m[1]).sort();
+    expect(fields).toEqual(Object.keys(WRITE_BACK_PROSE).sort());
+
+    const text = body("/sizing-lab");
+    for (const [field, prose] of Object.entries(WRITE_BACK_PROSE)) {
+      expect(text.toLowerCase(), `${field} is written but the help does not name it`).toContain(
+        prose.toLowerCase(),
+      );
+    }
+    expect(text.toLowerCase(), "the write-back does not touch the heat ceiling").not.toContain("heat ceiling");
+  });
+
+  it("/atlas does not describe a widget feed that does not exist", () => {
+    const text = body("/atlas");
+    expect(text).not.toMatch(/opt-in feed/i);
+    expect(text).toContain("are not computed in Vyuha");
+  });
+
+  it("/live advertises no alerts — there is no alert code in v4.0", () => {
+    expect(body("/live")).not.toMatch(/\balerts?\b/i);
+  });
+});
+
+/**
  * Keyword drift guard (v3.8 Wave 3). The command palette used to carry its
  * own hand-written keyword map, which duplicated this registry and drifted
  * from it (27 entries against 43, several stale). Palette keywords are now

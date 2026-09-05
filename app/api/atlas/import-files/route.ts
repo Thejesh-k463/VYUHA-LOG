@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { applyBhavcopyMtm } from "@/lib/import/mtm-bhavcopy";
 import { guardReadable } from "@/lib/import/parse-guard";
 import { unzipSingleCsv } from "@/lib/jobs/auto-mtm";
+import { getEntitlement } from "@/lib/queries/license";
 import { CROSS_ORIGIN_MESSAGE, isSameOrigin } from "../origin";
 
 /**
@@ -58,8 +59,25 @@ function textFrom(name: string, bytes: Buffer): { text: string } | { error: stri
   return { text: bytes.toString("utf8") };
 }
 
+/**
+ * <ProGate>'s ONE blocking branch, copied verbatim from
+ * `app/api/tax-itr/route.ts`. The drop needs no NETWORK consent — it makes no
+ * request — but it fills the window the Pro screen reads, and Atlas is Pro
+ * (Q55), so it is gated like the rest of the feature rather than left as the
+ * one handler that answers a copy the page itself refuses.
+ */
+function proRefusal(): NextResponse | null {
+  const ent = getEntitlement();
+  if (!(ent.state === "licensed" || ent.pro || ent.enforcement === "banner")) {
+    return NextResponse.json({ ok: false, message: "Vyuha Pro required." }, { status: 403 });
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) return NextResponse.json({ error: CROSS_ORIGIN_MESSAGE }, { status: 403 });
+  const refused = proRefusal();
+  if (refused) return refused;
 
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Expected multipart form data." }, { status: 400 });

@@ -63,6 +63,42 @@ describe("the /live table is windowed beyond the threshold", () => {
   });
 });
 
+/**
+ * U2 — the keyboard is useless if the row it focuses is off screen.
+ *
+ * The table lives in a `max-h-[60vh] overflow-auto` box and windows past 40
+ * rows, so `j`/`k` moving an INDEX moves nothing the user can see: on the
+ * windowed path the focused row is not even mounted. Both paths need their own
+ * scroll call, and a refactor that keeps one and drops the other looks fine on
+ * a 10-row book and is broken on a 100-row one — which is the budget size.
+ */
+describe("j / k bring the focused row into view on both paths", () => {
+  it("the windowed path asks the virtualiser to scroll to the index", () => {
+    const src = read(TRACKER);
+    expect(src, "a focused row that is not mounted cannot be scrolled to by the DOM").toMatch(
+      /virtualizer\.scrollToIndex\(/,
+    );
+  });
+
+  it("the plain path scrolls the row element itself, nearest-edge", () => {
+    const src = read(TRACKER);
+    expect(src).toMatch(/scrollIntoView\(\{\s*block:\s*"nearest"/);
+  });
+
+  it("both live on the row-move action, not on a click handler", () => {
+    const src = read(TRACKER);
+    const move = src.slice(src.indexOf('action === "row-down"'), src.indexOf('action === "focus-filter"'));
+    expect(move, "the scroll must happen where j/k are handled").toContain("scrollToIndex");
+    expect(move).toContain("scrollIntoView");
+  });
+
+  it("the guard can fire: a handler that only moves the index fails it", () => {
+    const reverted = 'if (action === "row-down" || action === "row-up") { setFocusIdx((i) => nextIndex(i, n, 1)); }';
+    expect(/virtualizer\.scrollToIndex\(/.test(reverted)).toBe(false);
+    expect(/scrollIntoView\(\{\s*block:\s*"nearest"/.test(reverted)).toBe(false);
+  });
+});
+
 describe("nothing on the route maps over every position unbounded", () => {
   it("the server page hands the payload over whole — it does not render a row", () => {
     const src = read(PAGE);

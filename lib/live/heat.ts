@@ -15,7 +15,15 @@
  * is deliberate and it is not the same number: flooring per row can only
  * understate heat, so the ceiling tick is never crossed by a rounding artefact.
  * All arithmetic is BigInt inside `ppmFloor` — `riskP × 1e6` leaves IEEE-754
- * integer range at a ~₹90 lakh risk figure.
+ * integer range at a ~₹9.0 crore risk figure (9.007e15 / 1e6 = 9.007e9 paise =
+ * ₹9,00,70,000).
+ *
+ * A STOP BEYOND ENTRY IS NOT NEGATIVE RISK. Once a trail has crossed entry the
+ * row's `riskAtStopP` goes negative — that is LOCKED-IN PROFIT, and summing it
+ * into heat would let one winner cancel another position's real risk and print
+ * a portfolio as cooler than it is. Each row contributes `max(riskAtStopP, 0)`;
+ * the profit half is published separately as `lockedInProfitP` so it is stated
+ * rather than discarded. `position-chart-panel.tsx` already clamps the same way.
  *
  * VYUHA ASSERTS NO CEILING. `heat_ceiling_ppm` ships NULL and stays NULL until
  * the user sets it; the familiar "6% portfolio heat" figure is trading lore,
@@ -38,10 +46,18 @@ export interface HeatRow {
 }
 
 export interface HeatView {
-  /** Σ floor(riskP_i / capitalP). null when capital is unconfigured. */
+  /** Σ floor(max(riskP_i, 0) / capitalP). null when capital is unconfigured. */
   heatPpm: Ppm | null;
-  /** Σ riskAtStopP over the rows that HAVE a stop. Always a fact, never null. */
+  /** Σ max(riskAtStopP, 0) over the rows that HAVE a stop. Never null. */
   openRiskP: Paise;
+  /**
+   * Σ max(−riskAtStopP, 0): the rows whose stop already sits beyond entry.
+   *
+   * Published rather than netted off. It is money the book gives back if every
+   * stop fills, not a reduction in what the other rows can lose, and the two
+   * belong on opposite sides of the strip.
+   */
+  lockedInProfitP: Paise;
   /** Σ investedP over every row. */
   exposureP: Paise;
   /** exposureP / capitalP. null when capital is unconfigured. */
@@ -71,6 +87,7 @@ export function portfolioHeat(rows: readonly HeatRow[], capitalP: Paise | null, 
   const capital = capitalP !== null && capitalP > 0 ? capitalP : null;
 
   let openRiskP = 0;
+  let lockedInProfitP = 0;
   let exposureP = 0;
   let rowsWithoutStop = 0;
   let heatPpm: Ppm | null = capital === null ? null : 0;
@@ -81,10 +98,15 @@ export function portfolioHeat(rows: readonly HeatRow[], capitalP: Paise | null, 
       rowsWithoutStop += 1;
       continue;
     }
-    openRiskP += r.riskAtStopP;
+    // A stop beyond entry is locked-in profit, NOT negative risk. See the
+    // header: netting it into the sum lets one winner cancel another row's
+    // real exposure and prints a book as cooler than it is.
+    const riskP = Math.max(r.riskAtStopP, 0);
+    lockedInProfitP += Math.max(-r.riskAtStopP, 0);
+    openRiskP += riskP;
     if (capital !== null && heatPpm !== null) {
       // Floor PER ROW, per spec §2.3, then sum. See the header note.
-      heatPpm += ppmFloor(r.riskAtStopP, capital) ?? 0;
+      heatPpm += ppmFloor(riskP, capital) ?? 0;
     }
   }
 
@@ -93,6 +115,7 @@ export function portfolioHeat(rows: readonly HeatRow[], capitalP: Paise | null, 
   return {
     heatPpm,
     openRiskP,
+    lockedInProfitP,
     exposureP,
     exposure,
     capitalP: capital,

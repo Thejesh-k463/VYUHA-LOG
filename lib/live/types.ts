@@ -90,7 +90,25 @@ export interface LivePosition {
   side: Side;
   /** Net open quantity, always positive; `side` carries the direction. */
   qty: number;
+  /**
+   * The weighted-average entry as a per-unit LEVEL, for display.
+   *
+   * Per-unit prices stay REAL in the journal (invariant 1) precisely because
+   * rounding them corrupts `qty × price`. Rounding one to paise HERE and then
+   * multiplying re-introduces that corruption, so `investedP` below carries the
+   * product and every money figure is built from it, not from this field.
+   */
   avgEntryP: Paise;
+  /**
+   * `round(qty × avgPrice × 100)` — the product rounded ONCE, from the REAL
+   * average, exactly as `lib/analytics/positions.ts` does it.
+   *
+   * Optional: absent ⇒ `qty × avgEntryP`, which is right whenever the average
+   * lands on a whole paisa and a few paise out when it does not. The caller
+   * that has the real average (`load-desk.ts`) always supplies it, so the desk
+   * and the journal print the same unrealised P&L.
+   */
+  investedP?: Paise;
   /** ISO date of the first entry, for holding days. */
   entryDate: string | null;
   slPlannedP: Paise | null;
@@ -165,8 +183,15 @@ export interface TrackerRow {
   /** `vol[t] / mean(vol[t−20..t−1])`, current bar EXCLUDED. null with < 21. */
   rvol: Ratio;
   highDistance: HighDistance;
-  /** `qty × (avgEntryP − stopP)`, mirrored. null when there is no stop. */
+  /** `investedP − qty × stopP`, mirrored. null when there is no stop. */
   riskAtStopP: Paise | null;
+  /**
+   * R FROZEN AT FIRST ENTRY (invariant 4), carried onto the row so the expanded
+   * panel can state R and the R ladder from the SAME number the row's `openRPpm`
+   * used. Without it the panel re-derives R from today's stop, and the two
+   * surfaces print different Rs for one position the moment a trail moves.
+   */
+  riskAmountP: Paise | null;
   /** `unrealisedP / riskAmountP` in ppm. null when `riskAmountP` is null. */
   openRPpm: Ppm | null;
   /** `riskAtStopP / capitalP`. null when capital is unconfigured. */

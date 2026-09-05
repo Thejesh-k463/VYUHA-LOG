@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { asc, desc, eq, gte } from "drizzle-orm";
+import { asc, desc, eq, gt, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { atlasDaily, atlasMetric, atlasStaleness, priceHistory } from "@/lib/db/schema";
 import {
@@ -164,6 +164,37 @@ export function getStoredSnapshot(): StoredSnapshot | null {
   };
 }
 
+export interface VerifiedSnapshot {
+  /** The stored snapshot ONLY when its checksum still matches the stored bars. */
+  snapshot: StoredSnapshot | null;
+  /** True when a snapshot exists but describes bars this database no longer has. */
+  stale: boolean;
+}
+
+/**
+ * The stored snapshot, CHECKED against the bars actually in the database.
+ *
+ * Migration 0065's header is the rule: "on a mismatch the snapshot is stale
+ * EVIDENCE — something that was true of inputs we no longer have — and never
+ * re-served as data". `getStoredSnapshot()` is the raw row and cannot know
+ * that; every reader that PUBLISHES a figure goes through this instead.
+ *
+ * It hashes the bars and compares — it does not recompute. A read must never
+ * be able to start a 2,000-symbol recompute (that is what POST /api/atlas is
+ * for), so a mismatch reports itself as stale rather than quietly fixing it.
+ */
+export function getVerifiedSnapshot(): VerifiedSnapshot {
+  const stored = getStoredSnapshot();
+  if (!stored) return { snapshot: null, stale: false };
+  const bars = readUniverseBars();
+  if (bars.length === 0) return { snapshot: null, stale: true };
+  const checksum = sha256(checksumInput(bars));
+  if (stored.inputChecksum !== checksum || stored.specVersion !== SPEC_VERSION) {
+    return { snapshot: null, stale: true };
+  }
+  return { snapshot: stored, stale: false };
+}
+
 // ---------------------------------------------------------------------------
 // Compute + persist
 // ---------------------------------------------------------------------------
@@ -212,6 +243,17 @@ export function refreshAtlasSnapshot(opts: { force?: boolean; now?: Date } = {})
   const daily = result.daily;
 
   db.transaction((tx) => {
+    // ANYTHING NEWER THAN THIS ANCHOR IS GONE. The anchor can move BACKWARDS —
+    // restoring an older backup replaces `price_history` wholesale — and
+    // `getStoredSnapshot()` reads max(as_of), so a surviving later row would be
+    // served forever in place of the one just computed, recomputing on every
+    // render and never winning. A row for a session the current bars cannot
+    // produce is stale evidence (0065's header), so it is deleted rather than
+    // left to out-rank today's answer.
+    tx.delete(atlasStaleness).where(gt(atlasStaleness.asOf, daily.as_of)).run();
+    tx.delete(atlasMetric).where(gt(atlasMetric.asOf, daily.as_of)).run();
+    tx.delete(atlasDaily).where(gt(atlasDaily.asOf, daily.as_of)).run();
+
     tx.insert(atlasDaily)
       .values({
         asOf: daily.as_of,

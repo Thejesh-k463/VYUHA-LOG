@@ -8,6 +8,7 @@ import { openAlgoGate, OPENALGO_DISCLOSURE_VERSION, isAckCurrent } from "@/lib/d
 import { clampRefreshSeconds, type OpenAlgoHealth } from "@/lib/quotes/openalgo";
 import { createProvider, getLiveFeedProvider, resolveLiveFeed, SHIPPED_PROVIDER_IDS } from "@/lib/quotes/registry";
 import { openPositionKeys, persistDailyMarks } from "@/lib/quotes/persist-mark";
+import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * `/api/live/feed` — the Live Desk's feed settings and its health line.
@@ -55,8 +56,17 @@ function isSameOrigin(req: Request): boolean {
   }
 }
 
-/** The three a user may pick. `mock` is an e2e/dev pin, never a choice. */
-const PICKABLE = ["manual", "eod", "openalgo"] as const;
+/**
+ * What a user may pick. `mock` is an e2e/dev pin, never a choice, and
+ * `openalgo` is a v4.1 feature (owner ruling) held behind the ONE constant
+ * `OPENALGO_FEED_ENABLED`: with it false the id is not in the zod enum at all,
+ * so a hand-rolled POST asking for it is a 400 and stores nothing.
+ */
+const ALL_PICKABLE = ["manual", "eod", "openalgo"] as const;
+type Pickable = (typeof ALL_PICKABLE)[number];
+const PICKABLE: readonly [Pickable, ...Pickable[]] = OPENALGO_FEED_ENABLED
+  ? ALL_PICKABLE
+  : ["manual", "eod"];
 
 const ActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("provider"), provider: z.enum(PICKABLE) }),

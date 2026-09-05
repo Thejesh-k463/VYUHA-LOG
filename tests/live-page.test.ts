@@ -114,7 +114,7 @@ afterAll(() => t?.cleanup());
 describe("/live loader — which rows the desk is allowed to show", () => {
   it("aggregates every account when the selection is 0, and excludes closed trades", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.rows).toHaveLength(3);
     expect(data.rows.map((r) => r.symbol).sort()).toEqual(["INFY", "RELIANCE", "TCS"]);
     expect(data.rows.some((r) => r.symbol === "WIPRO"), "a closed trade reached the desk").toBe(false);
@@ -123,7 +123,7 @@ describe("/live loader — which rows the desk is allowed to show", () => {
 
   it("carries the account id on EVERY row (invariant 8, owner ruling Q19)", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     for (const r of data.rows) expect(r.accountId, `${r.symbol} has no account`).toBeGreaterThan(0);
     expect(new Set(data.rows.map((r) => r.accountId))).toEqual(new Set([PRIMARY, SWING]));
     expect(data.rows.find((r) => r.symbol === "RELIANCE")!.accountId).toBe(SWING);
@@ -132,7 +132,7 @@ describe("/live loader — which rows the desk is allowed to show", () => {
 
   it("scopes down to one account when one is selected — the other direction", async () => {
     selectAccount(SWING);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.rows.map((r) => r.symbol)).toEqual(["RELIANCE"]);
     expect(data.selectedAccountId).toBe(SWING);
     selectAccount(0);
@@ -142,7 +142,7 @@ describe("/live loader — which rows the desk is allowed to show", () => {
 describe("/live loader — units and null discipline", () => {
   it("hands the client integer paise, never runtime rupees (invariant 1)", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     const tcs = data.rows.find((r) => r.symbol === "TCS")!;
     expect(tcs.avgEntryP).toBe(300_000);
     expect(Number.isInteger(tcs.avgEntryP)).toBe(true);
@@ -160,7 +160,7 @@ describe("/live loader — units and null discipline", () => {
 
   it("a position with no stored history gets nulls and a session count, never zeros", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     const infy = data.rows.find((r) => r.symbol === "INFY")!;
     expect(infy.markP).toBe(null);
     expect(infy.dayChangePpm).toBe(null);
@@ -173,7 +173,7 @@ describe("/live loader — units and null discipline", () => {
 
   it("open R is null when no risk was recorded at entry (invariant 4)", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.rows.find((r) => r.symbol === "INFY")!.openRPpm).toBe(null);
   });
 });
@@ -181,14 +181,14 @@ describe("/live loader — units and null discipline", () => {
 describe("/live loader — the risk-not-set banner (owner ruling Q33)", () => {
   it("is raised while risk_pct_ppm is unset, and the stop tree says so too", async () => {
     setRiskPpm(null);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.riskNotSet).toBe(true);
     expect(data.rows.every((r) => r.stop.kind === "risk-not-set")).toBe(true);
   });
 
   it("drops the moment the user records a risk percentage", async () => {
     setRiskPpm(2500); // owner ruling Q38b: 0.25% of capital
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.riskNotSet).toBe(false);
     expect(data.rows.find((r) => r.symbol === "TCS")!.stop.kind).not.toBe("risk-not-set");
     setRiskPpm(null);
@@ -198,7 +198,7 @@ describe("/live loader — the risk-not-set banner (owner ruling Q33)", () => {
 describe("/live loader — the chart payload states its cap", () => {
   it("ships paise OHLC bars per symbol, ascending, with a stated cap", async () => {
     selectAccount(0);
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     const bars = data.barsBySymbol["TCS"];
     expect(bars).toHaveLength(3);
     // The chart panel's `Bar` shape verbatim (`lib/live/types.ts`), not a
@@ -219,7 +219,7 @@ describe("/live loader — the chart payload states its cap", () => {
   });
 
   it("names the provider it printed the marks from", async () => {
-    const data = await live.loadLiveDesk();
+    const data = await live.loadLiveDesk({ pro: true });
     expect(data.feed.providerId).toBe("eod");
     expect(data.feed.streaming).toBe(false);
     expect(data.feed.staleness).toBe("eod");
@@ -246,5 +246,62 @@ describe("the v4.0 routes are reachable", () => {
       expect(SCREEN_DOMAIN[href], `${href} was given a workspace domain — it would hide from the other book`).toBeUndefined();
       for (const ws of WORKSPACES) expect(screenVisible(href, ws), `${href} hidden in ${ws}`).toBe(true);
     }
+  });
+});
+
+/**
+ * G2 — the Pro half of a PARTIAL gate must not reach the browser at all.
+ *
+ * `/live` is `partial: true` in `PRO_FEATURES` (invariant 7 — the journal is
+ * never gated), so the page is not wrapped in <ProGate> and the client hides
+ * the Pro cells behind <ProLock>. Hiding is not gating: every locked number was
+ * still computed on the server and shipped inside the RSC payload, where View
+ * Source reads it. `lib/domain/lens-edge.ts` settled the shape of the answer —
+ * `edge: null` means NOT ENTITLED, and the read site is forced to branch.
+ *
+ * The entitlement is a REQUIRED argument, not an option with a default: a
+ * default of `pro: true` is a leak the next call site inherits by forgetting.
+ */
+describe("/live loader — the Pro fields are absent for a free user (G2)", () => {
+  it("nulls R, risk at stop and % of capital on every row", async () => {
+    selectAccount(0);
+    const data = await live.loadLiveDesk({ pro: false });
+    expect(data.rows.length).toBeGreaterThan(0);
+    for (const r of data.rows) {
+      expect(r.riskAtStopP, `${r.symbol} shipped risk at stop`).toBeNull();
+      expect(r.openRPpm, `${r.symbol} shipped open R`).toBeNull();
+      expect(r.pctOfCapital.ppm, `${r.symbol} shipped % of capital`).toBeNull();
+      expect(r.pctOfCapital.denominator, `${r.symbol} shipped the capital base`).toBeNull();
+      expect(r.riskAmountP, `${r.symbol} shipped the frozen risk R is derived from`).toBeNull();
+    }
+    expect(data.heat, "the heat strip's numbers rode along in the payload").toBeNull();
+    expect(data.concentration, "the sector table's numbers rode along in the payload").toBeNull();
+  });
+
+  it("leaves every FREE field intact — the journal is never gated (invariant 7)", async () => {
+    selectAccount(0);
+    const free = await live.loadLiveDesk({ pro: false });
+    const tcs = free.rows.find((r) => r.symbol === "TCS")!;
+    expect(tcs.qty).toBe(10);
+    expect(tcs.avgEntryP).toBe(300_000);
+    expect(tcs.investedP).toBe(3_000_000);
+    expect(tcs.markP).toBe(310_000);
+    expect(tcs.staleness).toBe("eod");
+    expect(tcs.unrealisedP).toBe(100_000);
+    expect(tcs.unrealisedPctPpm).not.toBeNull();
+    expect(tcs.effectiveStopP).toBe(280_000);
+    expect(tcs.spark.length).toBe(3);
+    expect(free.rows).toHaveLength(3);
+  });
+
+  it("…and the same call with pro:true still carries them, so the gate is the flag", async () => {
+    selectAccount(0);
+    const pro = await live.loadLiveDesk({ pro: true });
+    const tcs = pro.rows.find((r) => r.symbol === "TCS")!;
+    expect(tcs.riskAtStopP).toBe(200_000);
+    expect(tcs.openRPpm).toBe(500_000);
+    expect(tcs.riskAmountP).toBe(200_000);
+    expect(pro.heat).not.toBeNull();
+    expect(pro.concentration).not.toBeNull();
   });
 });

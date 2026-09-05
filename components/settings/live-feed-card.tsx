@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
+import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import type { Settings } from "@/lib/db/schema";
 
 /** Mirrors lib/quotes/openalgo.ts (owner answer Q25). Pinned by the copy test. */
@@ -28,22 +29,31 @@ export const REFRESH_MAX = 5;
 
 export const LIVE_FEED_COPY = {
   /**
-   * VERIFY-CIRCULAR — the exact SEBI/exchange circular behind this sentence is
-   * not cited in the tree. The release claims audit must attach the circular
-   * (or soften the sentence) before this ships. It is written NEUTRALLY on
-   * purpose: it states the rule and Vyuha's own limit, blames nobody, and
-   * names no broker — every broker in India is in the same position, and a
-   * sentence that sounded like an accusation would age into a claim we cannot
-   * support. Do not rewrite it into "your broker forces you to…".
+   * ATTRIBUTABLE, and deliberately NOT a regulatory claim (owner ruling, this
+   * wave). The earlier wording said exchanges and SEBI require the daily
+   * re-authentication and carried an unverified-claim marker, because no
+   * circular saying so is cited anywhere in the tree — an unverified claim
+   * about what a regulator requires is the kind of sentence that ships as
+   * fact. What we CAN state is what the user's own broker does: the API
+   * session dies daily and has to be signed in again. It still names no
+   * broker (every broker in India behaves this way) and still blames nobody.
    */
   dailyReauth:
-    "Exchanges and SEBI require broker sessions to be re-authenticated daily; Vyuha cannot extend a session.",
+    "Your broker's API session expires every day and has to be signed in again; that is the broker's rule, not Vyuha's.",
   /** The once-a-day prompt (owner answer Q24). Twenty seconds is the honest
    *  measure of the OpenAlgo flow: open the bridge, sign in, come back. */
   connect: "Connect your feed — 20 seconds",
-  /** Said next to the picker, because a mark from a poll is not a tick. */
+  /**
+   * Said next to the picker, because a mark from a poll is not a tick — and
+   * it describes what `lib/quotes/persist-mark.ts` actually does. It writes at
+   * most one row per position per IST day, and "Save today's mark" waives the
+   * 15:30 clock but never the once-a-day rule: a mark taken mid-session is the
+   * mark for that day, and the close is then no longer written. Saying only
+   * "from the last price of the session" would describe a write that never
+   * happens on any day the button was pressed.
+   */
   staleness:
-    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved from the last price of the session.",
+    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first.",
   /** Only true while the host is loopback; the card says the other case too. */
   local:
     "Requests go to the OpenAlgo bridge on your own machine. Vyuha adds no new internet host for prices.",
@@ -53,7 +63,7 @@ export const LIVE_FEED_COPY = {
 
 type ProviderId = "manual" | "eod" | "openalgo";
 
-const PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
+const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
   {
     id: "manual",
     label: "My typed marks",
@@ -70,6 +80,16 @@ const PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
     blurb: "Live prices from the OpenAlgo instance you run and connect to your own broker.",
   },
 ];
+
+/**
+ * What this release actually offers. OpenAlgo is a v4.1 feature (owner
+ * ruling), so v4.0 renders two radios; `OPENALGO_FEED_ENABLED` in
+ * `lib/quotes/types.ts` is the one line that brings the third back, and the
+ * route's pickable set and the provider registry read the same constant. The
+ * `openalgo` BRANCHES below stay — they are the card v4.1 needs, and a stored
+ * value the picker no longer offers still falls back to `eod` on its own.
+ */
+const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "openalgo" || OPENALGO_FEED_ENABLED);
 
 interface FeedResponse {
   ok: boolean;
@@ -194,7 +214,7 @@ export function LiveFeedCard({ current }: { current: Settings }) {
             step={1}
             value={seconds}
             onChange={(e) => void saveSeconds(Number(e.target.value))}
-            className="w-full accent-[var(--primary)]"
+            className="w-full accent-[var(--color-primary)]"
             data-testid="live-feed-seconds"
           />
         </div>

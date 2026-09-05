@@ -115,6 +115,25 @@ export const SETTINGS_MACHINE_COLUMNS = [
   // someone else's backup must not hide the wizard from a new install, and
   // restoring your own must not re-show it on a machine that finished it.
   "onboardingCompletedAt",
+  // Bhavcopy history backfill (v4.0, migration 0066) — the same two machine
+  // kinds already listed above, applied to one feature. The ack is CONSENT and
+  // gets `openalgoAckVersion`'s exact treatment: blanked to null on dump, and
+  // on restore replaced by whatever THIS machine had, so a restored backup can
+  // neither grant nor revoke the agreement to download 252 files from NSE. The
+  // progress is JOB BOOKKEEPING like `lastAutoPullDate`: it describes this
+  // installation's own downloads, and inheriting a donor's "252 of 252 done"
+  // would tell the user their window is filled when their price_history is
+  // whatever the envelope carried.
+  "bhavcopyBackfillAck",
+  "bhavcopyBackfillProgress",
+  // Live Desk feed (v4.0, migration 0067). The provider and the refresh
+  // interval TRAVEL — they are preferences, and selecting "openalgo" is not
+  // consent (registry.ts re-applies the gate above). `last_live_mark_date` does
+  // not: the 0067 header calls it out by name. It is the "exactly one persisted
+  // mark per position per day" stamp, so a restored stamp from the same IST day
+  // suppresses today's live mark on this machine — job bookkeeping, like
+  // last_telegram_sent_date and last_auto_pull_date.
+  "lastLiveMarkDate",
 ] as const;
 
 /**

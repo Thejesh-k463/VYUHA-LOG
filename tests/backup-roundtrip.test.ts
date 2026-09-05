@@ -687,3 +687,69 @@ describe("the restore message counts the tables the ENVELOPE carried", () => {
     expect(res.message).not.toContain(`across ${fmt.BACKUP_TABLES.length} tables`);
   });
 });
+
+describe("the Atlas cache is DERIVED, so a restore drops it", () => {
+  it("clears atlas_daily / atlas_metric / atlas_staleness inside the restore transaction", () => {
+    // The three tables are outside BACKUP_TABLES because every row is
+    // reproducible from `price_history` — and `price_history` is exactly what
+    // the restore just replaced. Migration 0065: a snapshot is bound to its
+    // inputs by `input_checksum`, so once the bars change it is "stale
+    // EVIDENCE — something that was true of inputs we no longer have — and
+    // never re-served as data". Left behind, a snapshot from a LATER anchor
+    // than the restored bars can produce out-ranks every recompute
+    // (getStoredSnapshot reads max(as_of)) and is served forever.
+    t.sqlite.prepare(
+      "INSERT INTO atlas_daily (as_of, generated_at, spec_version, source_mode, input_checksum, universe_included, universe_excluded, anchor_coverage, payload_json) VALUES (?,?,?,?,?,?,?,?,?)",
+    ).run("2099-01-01", "2099-01-01T00:00:00Z", "1.0.0", "bhavcopy_local", "deadbeef", 2, 0, 2, "{}");
+    t.sqlite.prepare(
+      "INSERT INTO atlas_metric (as_of, metric, group_kind, group_name, numerator, denominator) VALUES (?,?,?,?,?,?)",
+    ).run("2099-01-01", "A1", "market", "*", 1, 2);
+    t.sqlite.prepare(
+      "INSERT INTO atlas_staleness (as_of, symbol, reason) VALUES (?,?,?)",
+    ).run("2099-01-01", "TCS", "no_bar_on_anchor");
+
+    const dump = backup.dumpDatabase(false);
+    // The envelope never carried them, and must not start now.
+    expect(dump.tables.atlas_daily).toBeUndefined();
+
+    const res = backup.restoreDatabase(dump);
+    expect(res.ok).toBe(true);
+
+    for (const table of ["atlas_daily", "atlas_metric", "atlas_staleness"]) {
+      const n = (t.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+      expect(n, `${table} still holds a snapshot of bars this database no longer has`).toBe(0);
+    }
+  });
+
+  it("keeps THIS machine's backfill consent and progress, whatever the envelope says", () => {
+    // Same rule as the OpenAlgo pair: consent is a statement a PERSON made on a
+    // MACHINE, and the progress describes THIS installation's downloads. Before
+    // migration 0066's columns joined SETTINGS_MACHINE_COLUMNS a restore wiped
+    // both — the consent to download 252 files was re-asked and the record of
+    // what had already been fetched was lost.
+    t.db.update(t.schema.settings).set({
+      bhavcopyBackfillAck: "2026-09-06T04:00:00.000Z",
+      bhavcopyBackfillProgress: '{"v":1,"status":"done","applied":252}',
+      lastLiveMarkDate: "2026-09-06",
+    }).run();
+
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    // Redacted on dump: a shared file must not carry someone's consent, their
+    // download history, or a stamp that suppresses the reader's own live mark.
+    expect(dumped.bhavcopyBackfillAck).toBeNull();
+    expect(dumped.bhavcopyBackfillProgress).toBeNull();
+    expect(dumped.lastLiveMarkDate).toBeNull();
+
+    // Now forge an envelope that claims all three.
+    dumped.bhavcopyBackfillAck = "2020-01-01T00:00:00.000Z";
+    dumped.bhavcopyBackfillProgress = '{"v":1,"status":"idle"}';
+    dumped.lastLiveMarkDate = "2020-01-01";
+
+    expect(backup.restoreDatabase(dump).ok).toBe(true);
+    const after = t.db.select().from(t.schema.settings).all()[0];
+    expect(after.bhavcopyBackfillAck).toBe("2026-09-06T04:00:00.000Z");
+    expect(after.bhavcopyBackfillProgress).toBe('{"v":1,"status":"done","applied":252}');
+    expect(after.lastLiveMarkDate).toBe("2026-09-06");
+  });
+});

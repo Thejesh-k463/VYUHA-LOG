@@ -40,22 +40,31 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const stripComments = (src: string) =>
   src.replace(/(?<![\w,*])\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-/** Quoted strings + JSX text, comment-free — identifiers are not copy. */
-function copyOf(rel: string): string[] {
-  const src = stripComments(read(rel));
-  const out: string[] = [];
-  for (const m of src.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g)) out.push(m[1] ?? m[2] ?? m[3] ?? "");
-  for (const m of src.matchAll(/>([^<>{}]+)</g)) out.push(m[1]);
-  return out.map((s) => s.trim()).filter((s) => s.length > 2);
-}
-
 /** The same vocabulary the Live Desk guard bans, for the same reason. */
 const BANNED =
   /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|consider(s|ed|ing)?|buy|sell now|target price|opportunit|guaranteed)\b/i;
 
+/**
+ * The scan runs over the WHOLE comment-stripped source, exactly as
+ * `tests/sizing-lab-copy.test.ts` and `tests/position-chart-copy.test.ts` do.
+ *
+ * It used to extract quoted strings plus JSX text matched by `>([^<>{}]+)<`,
+ * and that character class is a hole big enough to drive the failure through:
+ * ANY text node containing an interpolation — the shape most real JSX copy has
+ * ("…OpenAlgo does. {health?.reason}") — was invisible to the guard, so a
+ * banned verb sitting beside an expression was never seen. Scanning the source
+ * costs a little precision (an identifier could in principle trip it) and buys
+ * the property that actually matters: no copy on this screen is exempt.
+ */
+const offendersIn = (rel: string): string[] => [
+  ...new Set(
+    [...stripComments(read(rel)).matchAll(new RegExp(BANNED.source, "gi"))].map((m) => m[0]),
+  ),
+];
+
 describe("the Live feed card never prompts a transaction", () => {
   it.each(SOURCES)("%s carries no banned vocabulary", (rel) => {
-    const offenders = copyOf(rel).filter((s) => BANNED.test(s));
+    const offenders = offendersIn(rel);
     expect(offenders, `${rel}: ${offenders.join(" | ")}`).toEqual([]);
   });
 
@@ -76,29 +85,33 @@ describe("the Live feed card never prompts a transaction", () => {
 });
 
 describe("the daily re-authentication note (owner answer Q24)", () => {
-  it("is pinned VERBATIM — a sentence about what a regulator requires cannot drift silently", () => {
+  it("is pinned VERBATIM — the sentence a user reads about their broker cannot drift silently", () => {
     expect(LIVE_FEED_COPY.dailyReauth).toBe(
-      "Exchanges and SEBI require broker sessions to be re-authenticated daily; Vyuha cannot extend a session.",
+      "Your broker's API session expires every day and has to be signed in again; that is the broker's rule, not Vyuha's.",
     );
   });
 
-  it("states the rule and Vyuha's own limit, and blames nobody", () => {
-    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/SEBI/);
-    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/re-authenticated daily/);
-    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/Vyuha cannot extend a session/);
-    // Not an accusation, and not a claim about one broker: every broker in
+  it("states an ATTRIBUTABLE fact and attributes it to nobody it cannot", () => {
+    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/expires every day/);
+    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/signed in again/);
+    expect(LIVE_FEED_COPY.dailyReauth).toMatch(/the broker's rule, not Vyuha's/);
+    // No regulator is invoked. The earlier wording said exchanges and SEBI
+    // REQUIRE the daily re-authentication, and no circular saying so is cited
+    // anywhere in this tree — an unverified claim about a regulator is exactly
+    // the kind of sentence that ships as fact and cannot be defended.
+    expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/\b(SEBI|exchange|exchanges|circular|regulat\w*)\b/i);
+    // Still not an accusation, and still not about one broker: every broker in
     // India is in the same position.
     expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/your broker (forces|makes|refuses)/i);
     expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/\b(Zerodha|Dhan|Groww|Angel One|Upstox|Kite)\b/);
   });
 
-  it("carries the VERIFY-CIRCULAR marker, so an unverified claim cannot ship as fact", () => {
-    // The exact circular is not cited anywhere in the tree. Until the release
-    // claims audit attaches it (or softens the sentence), the obligation stays
-    // visible in the file that renders the sentence.
+  it("has NO VERIFY-CIRCULAR marker left, because there is no longer a claim to verify", () => {
+    // The marker existed to stop an unverified regulatory claim shipping as
+    // fact. The claim is gone, so the marker must be gone too — a marker kept
+    // beside a sentence it no longer describes is worse than none.
     const src = read("components/settings/live-feed-card.tsx");
-    expect(src).toContain("VERIFY-CIRCULAR");
-    expect(src).toMatch(/circular[\s\S]{0,200}before this ships/i);
+    expect(src).not.toContain("VERIFY-CIRCULAR");
   });
 
   it("reaches the screen at all — the card is mounted in Settings", () => {
@@ -126,6 +139,36 @@ describe("the daily re-authentication note (owner answer Q24)", () => {
   it("tells the truth about what is written: ticks are not, one mark a day is", () => {
     expect(LIVE_FEED_COPY.staleness).toMatch(/never written to your journal/i);
     expect(LIVE_FEED_COPY.staleness).toMatch(/one mark per position per day/i);
+  });
+
+  it("describes the mark the code actually writes — the button's price counts as the day's mark", () => {
+    // `persistDailyMarks()` waives the 15:30 clock for "Save today's mark" but
+    // never the once-a-day rule, so a mid-session press IS that day's mark and
+    // the close is then not written. Copy that promised "the last price of the
+    // session" described a write that never happens on such a day.
+    expect(LIVE_FEED_COPY.staleness).toMatch(/last price of the session/i);
+    expect(LIVE_FEED_COPY.staleness).toMatch(/Save today's mark/);
+    expect(LIVE_FEED_COPY.staleness).toMatch(/whichever comes first/i);
+  });
+});
+
+describe("the card's CSS custom properties are tokens that exist", () => {
+  /** Every `--name:` declared in the stylesheet, layered or not. */
+  const declared = new Set(
+    [...read("app/globals.css").matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1].toLowerCase()),
+  );
+
+  it.each(SOURCES.filter((s) => s.endsWith(".tsx")))("%s names only tokens app/globals.css defines", (rel) => {
+    // `accent-[var(--primary)]` rendered a browser-default slider: an
+    // unresolved custom property is not an error anywhere — no console
+    // warning, no build failure, just the wrong colour on one control. Only
+    // `--color-primary` was ever defined.
+    const used = [...new Set([...read(rel).matchAll(/var\(\s*(--[a-z0-9-]+)/gi)].map((m) => m[1].toLowerCase()))];
+    const missing = used.filter((token) => !declared.has(token));
+    expect(missing, `${rel} names undefined token(s): ${missing.join(", ")}`).toEqual([]);
+    expect(declared.size, "app/globals.css declared no custom properties — the scan is not reading it").toBeGreaterThan(
+      20,
+    );
   });
 });
 

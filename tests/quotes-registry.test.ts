@@ -8,8 +8,9 @@ import {
   createProvider,
   getQuoteProvider,
   resolveProviderId,
+  selectProviderId,
 } from "@/lib/quotes/registry";
-import { NotEnabledError } from "@/lib/quotes/types";
+import { NotEnabledError, OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * The registry: which provider runs, and what happens to the ones v4.0
@@ -36,6 +37,26 @@ describe("selection", () => {
     expect(resolveProviderId("kite")).toBe("kite");
     expect(resolveProviderId("chartink")).toBe("eod");
     expect(resolveProviderId(undefined)).toBe("eod");
+  });
+
+  it("resolves a stored 'openalgo' to end-of-day while the feed is a v4.1 feature", () => {
+    // The picker column can carry "openalgo" — from a v4.1 machine's backup,
+    // or from a hand-edited database. v4.0 does not ship the feed
+    // (OPENALGO_FEED_ENABLED), so the value is not a known selectable id and
+    // falls back to the default, exactly like any other unknown string.
+    expect(OPENALGO_FEED_ENABLED).toBe(false);
+    expect(resolveProviderId("openalgo")).toBe("eod");
+    expect(selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: true, openalgoAckVersion: "1" })).toBe(
+      "eod",
+    );
+  });
+
+  it("keeps the adapter and its consent gate intact for v4.1 — nothing was deleted", () => {
+    // The provider still BUILDS, and its capability block is still policed by
+    // the egress guard; only its selectability is withheld. A v4.1 flip of one
+    // constant must not need any of this written again.
+    expect(createProvider("openalgo").id).toBe("openalgo");
+    expect(allProviderCapabilities().some((c) => c.id === "openalgo")).toBe(true);
   });
 
   it("lets the environment pin the mock, over any stored value — that is how e2e runs offline", () => {
@@ -97,7 +118,13 @@ describe("the providers v4.0 did NOT build", () => {
 describe("the capability catalogue", () => {
   it("carries exactly one block per known provider id", () => {
     const ids = allProviderCapabilities().map((c) => c.id).sort();
-    expect(ids).toEqual([...SHIPPED_PROVIDER_IDS, ...PLANNED_PROVIDER_IDS].sort());
+    // Every shipped id, every planned id — and `openalgo`, which is BUILT but
+    // not selectable in v4.0. Its block stays listed on purpose: the egress
+    // guard reads this catalogue, and a declared host must keep being held to
+    // the privacy sheet whether or not the feature is switched on.
+    const expected = [...SHIPPED_PROVIDER_IDS, ...PLANNED_PROVIDER_IDS];
+    if (!OPENALGO_FEED_ENABLED) expected.push("openalgo");
+    expect(ids).toEqual(expected.sort());
     expect(new Set(ids).size).toBe(ids.length);
   });
 });

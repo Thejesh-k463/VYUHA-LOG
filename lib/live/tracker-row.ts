@@ -8,9 +8,9 @@
  *    ever fed into another formula — that is how a paise-native product grows a
  *    ₹0.03 discrepancy between the row and the report.
  *  * Every ratio goes through `ppmTrunc`/`ppmFloor`, which do the arithmetic in
- *    BigInt. `pnlP × 1e6` overflows IEEE-754 integers at a ~₹90 lakh position
- *    (9.007e15 / 1e6 = 9.007e9 paise), which is an ordinary holding, not an
- *    exotic one. Number arithmetic here would be silently wrong for real users.
+ *    BigInt. `pnlP × 1e6` overflows IEEE-754 integers at a ~₹9.0 crore position
+ *    (9.007e15 / 1e6 = 9.007e9 paise = ₹9,00,70,000), which is a large holding
+ *    but not an exotic one. Number arithmetic here would be silently wrong.
  *  * SIGNED ratios (day change, unrealised %, distances, 52w) TRUNCATE toward
  *    zero. Truncation never overstates the magnitude of a move in either
  *    direction; `Math.floor` would round a −1.5% loss to −1.6% and a +1.5% gain
@@ -223,8 +223,9 @@ export function holdingDays(entryDate: string | null, today: string): number | n
 }
 
 /** Signed P&L in paise, mirrored for shorts. `qty × (mark − entry)` for a long. */
-function unrealised(side: Side, qty: number, entryP: Paise, markP: Paise): Paise {
-  return side === "short" ? qty * (entryP - markP) : qty * (markP - entryP);
+function unrealised(side: Side, qty: number, investedP: Paise, markP: Paise): Paise {
+  const valueP = qty * markP;
+  return side === "short" ? investedP - valueP : valueP - investedP;
 }
 
 /**
@@ -249,9 +250,14 @@ export function computeTrackerRow(position: LivePosition, mark: Mark, ctx: Track
   const atrLength = ctx.atrLength ?? DEFAULT_ATR_LENGTH;
   const { side, qty, avgEntryP } = position;
 
-  const investedP = qty * avgEntryP;
+  // MULTIPLY THE REAL AVERAGE, ROUND ONCE (invariant 1). `avgEntryP` is a
+  // per-unit level that has already been rounded to paise for display, so
+  // `qty × avgEntryP` re-rounds it before multiplying and drifts from the
+  // journal (`lib/analytics/positions.ts` rounds the product). The caller
+  // supplies the product; the fallback is exact whenever the average is whole.
+  const investedP = position.investedP ?? qty * avgEntryP;
   const markP = mark.markP;
-  const unrealisedP = markP === null ? null : unrealised(side, qty, avgEntryP, markP);
+  const unrealisedP = markP === null ? null : unrealised(side, qty, investedP, markP);
   // Denominator is INVESTED VALUE, never capital (spec §2.1). Using capital
   // here would make two positions of different size look identically good.
   const unrealisedPctPpm = ppmTrunc(unrealisedP, investedP === 0 ? null : investedP);
@@ -277,7 +283,10 @@ export function computeTrackerRow(position: LivePosition, mark: Mark, ctx: Track
 
   // Risk at stop is a property of the LEVEL, not of the mark: it is what the
   // position loses if the stop fills, and it exists before the first quote.
-  const riskAtStopP = effectiveStopP === null ? null : qty * (side === "short" ? effectiveStopP - avgEntryP : avgEntryP - effectiveStopP);
+  // Measured from `investedP` for the same reason as the P&L above: the entry
+  // side of this subtraction is the same entry value the row reports.
+  const riskAtStopP =
+    effectiveStopP === null ? null : side === "short" ? qty * effectiveStopP - investedP : investedP - qty * effectiveStopP;
 
   // R is frozen at first entry (invariant 4). If `riskAmount` was never
   // recorded, open-R is NULL — it cannot be re-derived from today's stop
@@ -318,6 +327,7 @@ export function computeTrackerRow(position: LivePosition, mark: Mark, ctx: Track
     rvol: rvolRatio(bars, ctx.rvolLookback ?? DEFAULT_RVOL_LOOKBACK),
     highDistance: highDistance(bars),
     riskAtStopP,
+    riskAmountP: position.riskAmountP,
     openRPpm,
     pctOfCapital,
     sector: position.sector,

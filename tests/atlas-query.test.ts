@@ -35,11 +35,11 @@ const UNIVERSE: { symbol: string; isin: string | null; base: number; drift: numb
   { symbol: "NOTLISTED", isin: null, base: 50, drift: 1 },
 ];
 
-function seedBars(sessions: number) {
+function seedBars(sessions: number, from = 0) {
   const insert = t.sqlite.prepare(
     "INSERT INTO price_history (symbol, date, open, high, low, close, volume, source) VALUES (?,?,?,?,?,?,?,'bhavcopy')",
   );
-  for (const date of SESSION_DATES.slice(0, sessions)) {
+  for (const date of SESSION_DATES.slice(from, sessions)) {
     const i = SESSION_DATES.indexOf(date);
     for (const u of UNIVERSE) {
       const close = u.base + u.drift * i;
@@ -114,6 +114,63 @@ describe("refreshAtlasSnapshot — checksum in, cache tables out", () => {
     expect(after.snapshot!.inputChecksum).not.toBe(before);
     t.sqlite.prepare("DELETE FROM price_history WHERE date = '2026-08-05'").run();
     q.refreshAtlasSnapshot();
+  });
+});
+
+describe("the anchor can move BACKWARDS, and a later snapshot must not survive it", () => {
+  /**
+   * The restore case. `getStoredSnapshot()` reads max(as_of), so a snapshot for
+   * a session the CURRENT bars cannot produce out-ranks the one just computed:
+   * `/atlas` recomputed on every render and served the older market forever.
+   * Migration 0065 already ruled on it — a snapshot whose inputs are gone is
+   * stale EVIDENCE and is never re-served as data.
+   */
+  it("serves the snapshot it just recomputed, not a newer row about bars that are gone", () => {
+    q.refreshAtlasSnapshot({ force: true });
+    const wide = q.getStoredSnapshot()!;
+    expect(wide.asOf).toBe(SESSION_DATES[29]);
+
+    // The bars go BACK to session 20 — what restoring an older backup does.
+    const cutoff = SESSION_DATES[19];
+    t.sqlite.prepare("DELETE FROM price_history WHERE date > ?").run(cutoff);
+
+    const after = q.refreshAtlasSnapshot();
+    expect(after.recomputed).toBe(true);
+    expect(after.snapshot!.asOf).toBe(cutoff);
+    // The served row and the recomputed row are the same row.
+    expect(q.getStoredSnapshot()!.asOf).toBe(cutoff);
+    expect(q.getAtlasView().snapshot!.asOf).toBe(cutoff);
+    // …and the orphaned long-form rows went with it, or the Coverage tab would
+    // read a denominator from a session the market no longer has.
+    const newer = t.sqlite
+      .prepare("SELECT (SELECT COUNT(*) FROM atlas_daily WHERE as_of > ?) AS d, (SELECT COUNT(*) FROM atlas_metric WHERE as_of > ?) AS m, (SELECT COUNT(*) FROM atlas_staleness WHERE as_of > ?) AS s")
+      .get(cutoff, cutoff, cutoff) as { d: number; m: number; s: number };
+    expect(newer).toEqual({ d: 0, m: 0, s: 0 });
+  });
+
+  it("getVerifiedSnapshot refuses to publish a row whose checksum no longer matches", () => {
+    expect(q.getVerifiedSnapshot().stale).toBe(false);
+    expect(q.getVerifiedSnapshot().snapshot).not.toBeNull();
+
+    // Change the bars WITHOUT recomputing — exactly the window a read sits in.
+    t.sqlite
+      .prepare("INSERT INTO price_history (symbol, date, close, source) VALUES ('ZZNEWCO','2026-07-19',1234,'bhavcopy')")
+      .run();
+    const v = q.getVerifiedSnapshot();
+    expect(v.stale).toBe(true);
+    expect(v.snapshot).toBeNull();
+    // The raw row is still there — this is a refusal to SERVE, not a delete.
+    expect(q.getStoredSnapshot()).not.toBeNull();
+
+    t.sqlite.prepare("DELETE FROM price_history WHERE symbol = 'ZZNEWCO'").run();
+    expect(q.getVerifiedSnapshot().stale).toBe(false);
+  });
+
+  it("restores the 30-session universe for the tests below", () => {
+    seedBars(30, 20); // only the ten sessions the test above deleted
+    q.refreshAtlasSnapshot({ force: true });
+    expect(q.storedSessionCount()).toBe(30);
+    expect(q.getStoredSnapshot()!.asOf).toBe(SESSION_DATES[29]);
   });
 });
 

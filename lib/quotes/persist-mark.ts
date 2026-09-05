@@ -1,5 +1,6 @@
 import "server-only";
 import { todayIstIso, toIst } from "@/lib/domain/trading-day";
+import { isCashKey } from "./mapping";
 import { fromPaise, quoteKeyId, type Exchange, type Quote, type QuoteKey } from "./types";
 
 /**
@@ -179,7 +180,15 @@ export async function persistDailyMarks(
   // One row per POSITION per day: keyed on (symbol, as_of_date), delete then
   // insert. A price of zero or less is refused rather than stored — a mark of
   // zero would print a -100 % position (invariant 6).
-  const usable = [...quotes].filter((q) => q.ltp > 0);
+  //
+  // DERIVATIVES ARE SKIPPED, not written under the underlying (`isCashKey()`,
+  // the same rule the EOD provider applies): the write below is keyed on
+  // `q.key.symbol` and `getMtmMap()` reads `mtm[symbol]` FIRST, so a contract
+  // mark would price the cash position at the option's price — and its
+  // delete-then-insert would take the cash mark of the day with it. A feed
+  // that can quote NFO (v4.1) therefore leaves the journal alone until a mark
+  // store keyed on the traded contract exists.
+  const usable = [...quotes].filter((q) => q.ltp > 0 && isCashKey(q.key));
   if (usable.length === 0) {
     return { written: false, marked: 0, reason: "The feed had no usable price to save.", date };
   }

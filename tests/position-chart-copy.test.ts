@@ -32,6 +32,8 @@ const read = (p: string) => readFileSync(path.join(root, p), "utf8");
 const CHART = "components/charts/lw/position-chart.tsx";
 const PANEL = "components/live/position-chart-panel.tsx";
 const ZONE = "components/charts/lw/position-zone-primitive.ts";
+/** Scanned for what it PASSES to the panel, not for its own copy. */
+const TRACKER = "components/live/tracker-client.tsx";
 const FILES = [CHART, PANEL, ZONE];
 
 /** Same stripper as the discipline guard: a MIME wildcard opens a comment too. */
@@ -180,5 +182,47 @@ describe("the stop line names where its number came from (ruling Q31(b), Q33)", 
     expect(trailLineTitle(274200, "chandelier, 22 bars × 3 ATR")).toBe(
       "Trailing stop 2,742.00 — chandelier, 22 bars × 3 ATR",
     );
+  });
+});
+
+/**
+ * M2 / M3 — the panel is HANDED the position's facts; it infers none of them.
+ *
+ * `deriveSide()` read the direction off the stop and the target, so a short
+ * with the stop tree at `risk-not-set` and no target recorded rendered as a
+ * long: unrealised, Open R, the structure stop and the chandelier all flipped
+ * sign, on screen, with nothing to indicate it. The row already knows the side.
+ *
+ * The same class of inference produced M3: Open R and the R ladder were built
+ * on `computed.riskPerShareP`, the distance to whatever stop the method chose,
+ * rather than on the R FROZEN AT FIRST ENTRY (invariant 4). Only the stop LINE
+ * may follow the method control; every R on the screen is the frozen one.
+ */
+describe("the panel infers neither side nor R (M2, M3)", () => {
+  it("takes `side` as a prop and derives it from nothing", () => {
+    const src = stripComments(read(PANEL));
+    expect(src, "deriveSide() rendered a stop-less, target-less short as a long").not.toContain("deriveSide");
+    expect(src, "side must be part of the props contract").toMatch(/side:\s*Side;/);
+    expect(src).toMatch(/const\s*\{[^}]*\bside\b[^}]*\}\s*=\s*props;/);
+  });
+
+  it("the tracker passes the row's own side and its frozen risk down", () => {
+    const src = stripComments(read(TRACKER));
+    expect(src).toContain("side={row.side}");
+    expect(src).toContain("riskAmountP={row.riskAmountP}");
+  });
+
+  it("Open R and the ladder read the frozen risk, through the pure helper", () => {
+    const src = stripComments(read(PANEL));
+    expect(src).toContain("frozenRiskPerShareP(riskAmountP, qty)");
+    expect(src, "the ladder must not be built on today's stop distance").toMatch(/riskPerShareP:\s*frozenRpsP/);
+    expect(src).toMatch(/panelStats\(\{/);
+    expect(src, "the panel does its own P&L arithmetic again").not.toMatch(/qty\s*\*\s*dirn\s*\*\s*\(markP/);
+  });
+
+  it("…while the stop LINE still follows the method control", () => {
+    const src = stripComments(read(PANEL));
+    expect(src).toMatch(/stopP=\{stopP\}/);
+    expect(src).toContain("computed.kind");
   });
 });

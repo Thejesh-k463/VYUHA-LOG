@@ -1,5 +1,5 @@
 import "server-only";
-import { eodQuoteFromBars, type StoredBar } from "./mapping";
+import { eodQuoteFromBars, isCashKey, type StoredBar } from "./mapping";
 import {
   quoteKeyId,
   type ProviderCapabilities,
@@ -74,8 +74,13 @@ export function createEodBhavcopyProvider(
       if (keys.length === 0) return out;
       // The bhavcopy is the CASH market: derivatives have no row and are simply
       // absent from the map, which is what the desk's "no mark" state is for.
-      const bars = await readBars(keys.map((k) => k.symbol.trim().toUpperCase()));
-      for (const key of keys) {
+      // `isCashKey()` is the rule, shared with `persist-mark.ts` — bars are
+      // looked up by the UNDERLYING's symbol, so an option key would otherwise
+      // be quoted at the underlying's close.
+      const cashKeys = keys.filter(isCashKey);
+      if (cashKeys.length === 0) return out;
+      const bars = await readBars(cashKeys.map((k) => k.symbol.trim().toUpperCase()));
+      for (const key of cashKeys) {
         const series = bars.get(key.symbol.trim().toUpperCase());
         if (!series || series.length === 0) continue;
         const quote = eodQuoteFromBars(key, series);

@@ -737,6 +737,12 @@ export interface ChargesAdjustedRiskInput {
   entryP: Paise;
   /** Where the position is exited for this figure — usually the stop. */
   stopP: Paise;
+  /**
+   * Which leg is the sale. A long is bought at entry and sold at the stop; a
+   * short is the other way round. It matters because STT/CTT and stamp duty
+   * are charged per SIDE, not on turnover — defaults to `long`.
+   */
+  direction?: "long" | "short";
   capitalP?: Paise | null;
   buyOrderCount?: number;
   sellOrderCount?: number;
@@ -769,8 +775,9 @@ export function chargesAdjustedRisk(
   i: ChargesAdjustedRiskInput,
   rates: ChargeRates,
 ): ChargesAdjustedRiskResult {
-  const buyValue = i.qty * i.entryP;
-  const sellValue = i.qty * i.stopP;
+  const short = i.direction === "short";
+  const buyValue = i.qty * (short ? i.stopP : i.entryP);
+  const sellValue = i.qty * (short ? i.entryP : i.stopP);
   const breakdownP = computeChargesPaise(
     {
       segment: i.segment,

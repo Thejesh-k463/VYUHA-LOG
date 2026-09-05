@@ -90,8 +90,14 @@ export interface DeskAccount {
 /** Everything `app/live/page.tsx` loads and hands to the client, in one shape. */
 export interface LiveDeskData {
   rows: DeskRow[];
-  heat: HeatView;
-  concentration: ConcentrationRow[];
+  /**
+   * PRO (Q55). `null` means NOT ENTITLED — the same shape `lib/domain/lens-edge.ts`
+   * uses for `edge`. It is never an empty `HeatView`: a zeroed strip would read
+   * as "no risk on this book", which is the opposite of "you cannot see this".
+   */
+  heat: HeatView | null;
+  /** PRO (Q55). `null` = not entitled; `[]` = an empty book. Two facts, two values. */
+  concentration: ConcentrationRow[] | null;
   accounts: DeskAccount[];
   /** `getSelectedAccountId()`; 0 is the aggregate VIEW, never a write target. */
   selectedAccountId: number;

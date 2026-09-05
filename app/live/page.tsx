@@ -11,12 +11,15 @@ import { getEntitlement } from "@/lib/queries/license";
  * is, and a cached open-position table is a wrong number on screen.
  *
  * NOT WRAPPED IN A WHOLE-PAGE GATE, deliberately (invariant 7, owner ruling
- * Q55). The tracker's own record — positions, mark, P&L — is free; R, risk at stop,
- * heat, the chart overlay and alerts are the Pro capability, and they are
- * gated INSIDE the client by the `pro` flag read here. `PRO_FEATURES` carries
- * `/live` as a `partial: true` row, and `tests/pro-gating.test.ts` enforces
- * both halves of that: the partial entry must read `getEntitlement`, and it
- * must not carry a page gate.
+ * Q55). The tracker's own record — positions, mark, P&L — is free; R, risk at
+ * stop, heat and the chart overlay are the Pro capability. `PRO_FEATURES`
+ * carries `/live` as a `partial: true` row, and `tests/pro-gating.test.ts`
+ * enforces both halves of that: the partial entry must read `getEntitlement`,
+ * and it must not carry a page gate.
+ *
+ * THE ENTITLEMENT GOES TO THE LOADER, not just to the client. Passing it only
+ * as a prop leaves every Pro figure computed on the server and shipped in the
+ * RSC payload, where a locked chip on screen hides nothing at all.
  *
  * The loader lives in `components/live/load-desk.ts` — see its header for why
  * it is not (yet) in `lib/queries/`.
@@ -24,8 +27,8 @@ import { getEntitlement } from "@/lib/queries/license";
 export const dynamic = "force-dynamic";
 
 export default async function LiveDeskPage() {
-  const data = await loadLiveDesk();
   const pro = getEntitlement().pro;
+  const data = await loadLiveDesk({ pro });
 
   return (
     <>

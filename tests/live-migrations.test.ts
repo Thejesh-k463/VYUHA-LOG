@@ -193,6 +193,59 @@ describe("0065 — the Atlas cache", () => {
   });
 });
 
+describe("0066 / 0067 — the settings columns, declared as well as migrated", () => {
+  // A migrated column that `lib/db/schema.ts` never declares is invisible to
+  // drizzle: `lib/jobs/bhavcopy-backfill.ts` had to reach past the table object
+  // with raw SQL to touch the two 0066 columns, and — the part that actually
+  // cost the user something — a column the schema does not name cannot be
+  // reasoned about by SETTINGS_MACHINE_COLUMNS either, so a restore wiped the
+  // consent and the progress. This is the both-directions check that 0064
+  // already had for `risk_config`, applied to `settings`.
+  it("adds the 0066 backfill pair and the 0067 live-feed trio to the database", () => {
+    expect(colNames("settings")).toEqual(
+      expect.arrayContaining([
+        "bhavcopy_backfill_ack",
+        "bhavcopy_backfill_progress",
+        "live_feed_provider",
+        "live_feed_refresh_seconds",
+        "last_live_mark_date",
+      ]),
+    );
+  });
+
+  it("the drizzle schema names the same columns the database has", async () => {
+    const { getTableConfig } = await import("drizzle-orm/sqlite-core");
+    const declared = getTableConfig(t.schema.settings).columns.map((c) => c.name);
+    for (const name of [
+      "bhavcopy_backfill_ack",
+      "bhavcopy_backfill_progress",
+      "live_feed_provider",
+      "live_feed_refresh_seconds",
+      "last_live_mark_date",
+    ]) {
+      expect(declared, `schema.ts is missing ${name}`).toContain(name);
+    }
+    // A schema describing columns the DB lacks typechecks and dies at runtime.
+    for (const name of declared) expect(colNames("settings"), `the DB is missing ${name}`).toContain(name);
+  });
+
+  it("the machine-state columns among them are redacted on dump and preserved on restore", async () => {
+    const { SETTINGS_MACHINE_COLUMNS } = await import("@/lib/backup-format");
+    const machine = SETTINGS_MACHINE_COLUMNS as readonly string[];
+    // Consent and job bookkeeping: a restored backup must not grant the
+    // agreement to download 252 files, inherit someone else's progress, or
+    // carry a same-day mark stamp that suppresses today's live mark (0067
+    // header names last_live_mark_date explicitly).
+    expect(machine).toContain("bhavcopyBackfillAck");
+    expect(machine).toContain("bhavcopyBackfillProgress");
+    expect(machine).toContain("lastLiveMarkDate");
+    // The two preferences beside them TRAVEL: selecting a provider is not
+    // consent, and the refresh interval is a screen preference.
+    expect(machine).not.toContain("liveFeedProvider");
+    expect(machine).not.toContain("liveFeedRefreshSeconds");
+  });
+});
+
 describe("the down path", () => {
   it("drops cleanly and loses no journal data, because nothing in v3.9.1 read it", () => {
     const tradesBefore = (t.sqlite.prepare("SELECT count(*) AS n FROM trades").get() as { n: number }).n;

@@ -879,6 +879,15 @@ export const settings = sqliteTable("settings", {
   // here nor hides it because the backup's author finished it there. The
   // migration backfilled it wherever trades already exist.
   onboardingCompletedAt: text("onboarding_completed_at"),
+  // Bhavcopy history backfill (v4.0, migration 0066) — the explicit
+  // acknowledgement (an ISO timestamp: WHEN the person on THIS machine agreed
+  // to up to 252 archive downloads) and the persisted run state (a versioned
+  // JSON envelope, {v:1,…}, discarded rather than half-read when the shape is
+  // alien). MACHINE STATE, both of them, and both in SETTINGS_MACHINE_COLUMNS:
+  // a consent is a statement a person made on a machine, and a restored
+  // "progress" describes downloads that happened somewhere else.
+  bhavcopyBackfillAck: text("bhavcopy_backfill_ack"),
+  bhavcopyBackfillProgress: text("bhavcopy_backfill_progress"),
   // Live Desk feed (v4.1, migration 0067) — which quote provider runs, how
   // fast the desk refreshes on screen, and the once-a-day guard for the
   // persisted mark. Default 'eod' keeps an upgraded install exactly where v4.0

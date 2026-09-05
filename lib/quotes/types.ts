@@ -35,6 +35,26 @@ export type ProviderId =
   | "dhan"
   | "angelone";
 
+/**
+ * THE ONE SWITCH THAT SHIPS OR WITHHOLDS THE OPENALGO FEED (owner ruling,
+ * v4.0). OpenAlgo is a v4.1 feature: in 4.0 it is not in the shipped provider
+ * list, not in the route's pickable set, and not a radio in Settings, and a
+ * stored `live_feed_provider = 'openalgo'` resolves to the end-of-day default
+ * (`resolveProviderId()`).
+ *
+ * EVERYTHING ELSE STAYS: the adapter (`lib/quotes/openalgo.ts`), its tests,
+ * its capability block, its consent sheet and migration 0067 are all intact,
+ * so v4.1 is this one line flipped to `true` — nothing else.
+ *
+ * It lives in the PURE types module on purpose: `registry.ts` is
+ * `server-only`, and the Settings card is a client component that has to read
+ * the same fact.
+ *
+ * Typed `boolean` rather than left as the literal `false` so that the code
+ * guarded by it stays type-checked instead of narrowing to dead branches.
+ */
+export const OPENALGO_FEED_ENABLED: boolean = false;
+
 /** How stale the caller MUST assume a price is. Never a guess, never upgraded. */
 export type Staleness = "tick" | "delayed" | "eod" | "manual";
 

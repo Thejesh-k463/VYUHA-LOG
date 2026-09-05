@@ -45,6 +45,37 @@ describe("portfolioHeat", () => {
     expect(h.exposureP).toBe(25_000_000);
   });
 
+  it("a stop beyond entry is locked-in profit — it never offsets another row's risk", () => {
+    // M4. One row risking ₹10,000 and one whose trail has crossed entry by
+    // ₹10,000. Summing the second as negative risk prints heat 0% on a book
+    // that has ₹10,000 at risk — the desk claiming a flat exposure it does not
+    // have. Each row contributes max(riskAtStopP, 0) instead.
+    const rows = [row({ id: 1, riskAtStopP: 1_000_000 }), row({ id: 2, riskAtStopP: -1_000_000 })];
+    const h = portfolioHeat(rows, CAPITAL);
+    expect(h.heatPpm, "a locked-in winner cancelled a real risk").toBe(10_000);
+    expect(h.openRiskP, "open risk must be the risk, not the net of risk and profit").toBe(1_000_000);
+    // The profit half is stated, not discarded.
+    expect(h.lockedInProfitP).toBe(1_000_000);
+    // Both rows still have a stop, so neither is excluded.
+    expect(h.rowsWithoutStop).toBe(0);
+  });
+
+  it("publishes zero locked-in profit when every stop is still behind entry", () => {
+    const h = portfolioHeat([row({ id: 1 }), row({ id: 2 })], CAPITAL);
+    expect(h.lockedInProfitP).toBe(0);
+    expect(h.openRiskP).toBe(2_000_000);
+  });
+
+  it("states the overflow ceiling its BigInt arithmetic exists for (~₹9.0 crore)", () => {
+    // M7: the header comments said ~₹90 lakh. `riskP × 1e6` leaves IEEE-754
+    // integer range at 9.007e15 / 1e6 paise, which is ₹9,00,70,000 — a crore
+    // figure, not a lakh one. Pinning the arithmetic keeps the prose honest.
+    const overflowPaise = Number.MAX_SAFE_INTEGER / 1_000_000;
+    const overflowRupees = overflowPaise / 100;
+    expect(overflowRupees).toBeGreaterThan(9_00_00_000);
+    expect(overflowRupees).toBeLessThan(9_10_00_000);
+  });
+
   it("treats a capital of 0 as unconfigured rather than as a zero base", () => {
     expect(portfolioHeat([row()], 0).heatPpm).toBeNull();
   });

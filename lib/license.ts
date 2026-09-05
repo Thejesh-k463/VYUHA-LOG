@@ -263,7 +263,7 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // (invariant 7). What is sold is the forward-looking arithmetic on top of
   // it, so `/live` is `partial` and its page must never grow a <ProGate>; the
   // Pro columns render as locked chips beside a free row.
-  { href: "/live", label: "Live Desk — R, risk at stop, portfolio heat, chart overlay and alerts (positions, marks and P&L stay free)", partial: true },
+  { href: "/live", label: "Live Desk — R, risk at stop, portfolio heat and the chart overlay (positions, marks and P&L stay free)", partial: true },
   // The Lab and the Atlas are whole Pro screens, not capabilities inside a
   // free one: neither shows the user their own record.
   { href: "/sizing-lab", label: "Sizing Lab — position size by seven methods, with the formula printed beside every number" },

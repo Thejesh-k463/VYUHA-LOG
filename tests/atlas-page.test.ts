@@ -121,10 +121,37 @@ describe("the page file itself", () => {
     expect(page).toMatch(/export const dynamic = "force-dynamic"/);
   });
 
-  it("wraps the body in <ProGate> and falls back to the static preview", () => {
+  it("wraps the real panel in <ProGate> and still renders the static preview", () => {
     expect(page).toContain("<ProGate>");
     expect(page).toContain("<AtlasPreview />");
-    expect(page).toMatch(/data\.view \? <AtlasPanel/);
+    expect(page).toContain("<AtlasPanel view={data.view!} />");
+  });
+
+  it("renders the preview OUTSIDE the gate — inside it, the block branch eats it", () => {
+    // <ProGate>'s "block" branch returns the upsell panel INSTEAD of its
+    // children, and LICENSE_ENFORCEMENT is "block", so <AtlasPreview /> nested
+    // inside the gate was unreachable in every shipped state — Q57 says the
+    // Atlas tab is LOCKED WITH A STATIC PREVIEW, never hidden. This reads the
+    // real file: anything the gate wraps is a child, and the preview must not
+    // be one.
+    // Comments first: this file's own header explains the rule in prose and
+    // names <ProGate> while doing it, and a scanner that reads prose as code
+    // would fail on the explanation rather than on the code.
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const inside = [...code.matchAll(/<ProGate>([\s\S]*?)<\/ProGate>/g)].map((m) => m[1]);
+    expect(inside.length, "the gate must still be on this page").toBeGreaterThan(0);
+    for (const body of inside) {
+      expect(body, "AtlasPreview is a ProGate child and cannot render under 'block'").not.toContain("AtlasPreview");
+    }
+    // …and the preview really is on the page, just beside the gate.
+    expect(code.replace(/<ProGate>[\s\S]*?<\/ProGate>/g, "")).toContain("<AtlasPreview />");
+  });
+
+  it("takes the preview branch from the LOADER's decision, not a second licence read", () => {
+    // The loader already resolved entitlement (`preview`); a page that asked
+    // again could disagree with the answer it was handed.
+    expect(page).toMatch(/if \(data\.preview\)/);
+    expect(page).not.toContain("getEntitlement");
   });
 
   it("makes exactly one loader call", () => {

@@ -4,6 +4,23 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 /**
+ * The entitlement is the INPUT to the paywall assertions, so it is mocked the
+ * way tests/atlas-page.test.ts mocks it; everything below it is the real query
+ * module against a temp database. Default: a licensed copy, so every other test
+ * in this file exercises the handler and not the gate.
+ */
+const ent = vi.hoisted(() => ({
+  value: { pro: true, state: "licensed", enforcement: "block" } as {
+    pro: boolean;
+    state: string;
+    enforcement: string;
+  },
+}));
+vi.mock("@/lib/queries/license", () => ({ getEntitlement: () => ent.value }));
+const LICENSED = { pro: true, state: "licensed", enforcement: "block" };
+const BLOCKED = { pro: false, state: "unlicensed", enforcement: "block" };
+
+/**
  * The three `/api/atlas` routes.
  *
  * What is worth pinning here is not the JSON but the REFUSALS, because each of
@@ -53,7 +70,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => t?.cleanup());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  ent.value = { ...LICENSED };
+});
 
 describe("the same-origin guard, on all three routes", () => {
   const hostile = { origin: "https://not-vyuha.example", host: "localhost:3011" };
@@ -78,6 +98,47 @@ describe("the same-origin guard, on all three routes", () => {
     expect((await atlas.GET(get("/api/atlas"))).status).toBe(200);
     expect((await atlas.GET(get("/api/atlas", { origin: "http://tauri.localhost" }))).status).toBe(200);
     expect((await atlas.GET(get("/api/atlas", { "sec-fetch-site": "same-origin" }))).status).toBe(200);
+  });
+});
+
+describe("the Pro gate, on all four handlers", () => {
+  // Atlas is Pro (Q55) and /atlas is wrapped in <ProGate>. Without this the
+  // endpoints were the side door: a blocked copy could not open the page but
+  // could read the snapshot, force a 2,000-symbol recompute and start a
+  // 252-file download from the URL bar. The predicate is the one
+  // app/api/tax-itr/route.ts uses — <ProGate>'s only blocking branch.
+  it("refuses a blocked copy on every handler, with the same sentence", async () => {
+    ent.value = { ...BLOCKED };
+    const responses = [
+      await atlas.GET(get("/api/atlas")),
+      await atlas.POST(post("/api/atlas", {})),
+      await backfill.GET(get("/api/atlas/backfill")),
+      await backfill.POST(post("/api/atlas/backfill", { action: "start" })),
+      await importFiles.POST(
+        new Request(url("/api/atlas/import-files"), { method: "POST", body: new FormData() }),
+      ),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBe(403);
+      expect((await res.json()).message).toBe("Vyuha Pro required.");
+    }
+  });
+
+  it("does not record an ack, start a run or touch price_history while blocked", async () => {
+    ent.value = { ...BLOCKED };
+    await backfill.POST(post("/api/atlas/backfill", { action: "ack" }));
+    ent.value = { ...LICENSED };
+    expect(job.readBackfillProgress().status).toBe("idle");
+    expect(
+      (t.sqlite.prepare("SELECT bhavcopy_backfill_ack AS a FROM settings ORDER BY id LIMIT 1").get() as { a: string | null }).a,
+    ).toBeNull();
+  });
+
+  it("lets a trial and a 'banner' enforcement through — the gate's own non-blocking states", async () => {
+    ent.value = { pro: true, state: "trial", enforcement: "block" };
+    expect((await atlas.GET(get("/api/atlas"))).status).toBe(200);
+    ent.value = { pro: false, state: "unlicensed", enforcement: "banner" };
+    expect((await atlas.GET(get("/api/atlas"))).status).toBe(200);
   });
 });
 
@@ -119,6 +180,30 @@ describe("POST /api/atlas — the explicit recompute", () => {
     const forced = await (await atlas.POST(post("/api/atlas", { force: true }))).json();
     expect(forced.recomputed).toBe(true);
     expect(forced.reason).toBe("forced");
+  });
+});
+
+describe("GET /api/atlas — a snapshot whose inputs are gone is not served", () => {
+  it("reports stale rather than publishing a figure about bars this database no longer has", async () => {
+    // The restore case, reproduced: a stored snapshot, then the bars change
+    // under it. Migration 0065: "on a mismatch the snapshot is stale EVIDENCE
+    // ... and never re-served as data". The GET must not hand back the row.
+    const before = await (await atlas.GET(get("/api/atlas"))).json();
+    expect(before.computed).toBe(true);
+    expect(before.stale).toBe(false);
+
+    t.sqlite
+      .prepare("INSERT INTO price_history (symbol, date, open, high, low, close, volume) VALUES (?,?,?,?,?,?,?)")
+      .run("WIPRO", "2026-08-02", 400, 405, 399, 402, 700);
+
+    const after = await (await atlas.GET(get("/api/atlas"))).json();
+    expect(after.stale).toBe(true);
+    expect(after.snapshot).toBeNull();
+    expect(after.computed).toBe(false);
+    // …and it did not silently recompute to make itself right.
+    expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM atlas_daily").get() as { n: number }).n).toBe(1);
+
+    await atlas.POST(post("/api/atlas", {})); // put the cache back for later tests
   });
 });
 

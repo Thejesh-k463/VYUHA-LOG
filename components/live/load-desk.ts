@@ -44,6 +44,16 @@ import type { BarsCap, DeskBar, DeskRow, FeedInfo, LiveDeskData } from "./desk-t
  * NULL IS A VALUE (invariant 6). No capital → `capitalP: null` → heat, % of
  * capital and every capital-relative figure come back null and the desk prints
  * a dash with the reason. There is no fallback capital figure anywhere here.
+ *
+ * ENTITLEMENT (owner ruling Q55, invariant 7). `/live` is a PARTIAL feature:
+ * the journal's own record is free and R, risk at stop, heat, concentration and
+ * the chart overlay are Pro. The client renders locked chips over those cells —
+ * but hiding is not gating. Every one of those numbers used to be computed here
+ * and shipped inside the RSC payload, where View Source reads it. So the
+ * entitlement is a REQUIRED argument (a default is a leak the next call site
+ * inherits by forgetting) and the Pro fields leave as `null`, the way
+ * `lib/domain/lens-edge.ts` returns `edge: null` — null means NOT ENTITLED, and
+ * every read site is forced to branch on it.
  */
 
 /** Sessions of history fetched per symbol — enough for a 252-session 52w window. */
@@ -64,6 +74,16 @@ const CASH_TICK_PAISE = 5;
 const toPaise = (rupees: number): Paise => Math.round(rupees * 100);
 const toPaiseOrNull = (v: number | null | undefined): Paise | null =>
   v === null || v === undefined ? null : Math.round(v * 100);
+
+/**
+ * `qty × avgPrice`, converted to paise and rounded ONCE (invariant 1).
+ *
+ * `avgPrice` is a per-unit LEVEL and stays REAL in the journal because rounding
+ * it corrupts `qty × price`. `toPaise(avgPrice)` first and multiply after is
+ * exactly that corruption: 1,000 shares at ₹123.456 come out ₹4 short of the
+ * journal's own figure (`lib/analytics/positions.ts` rounds the product).
+ */
+const investedPaise = (qty: number, avgPrice: number): Paise => Math.round(qty * avgPrice * 100);
 
 /** DB exchange text → the quote key's exchange. Unknown text stays NSE-shaped. */
 function asExchange(raw: string): Exchange {
@@ -140,7 +160,7 @@ function toDeskBars(bars: readonly Bar[]): DeskBar[] {
  * ships in v4.0 does no network I/O at all, and the same call site serves a
  * streaming provider in v4.1 without changing shape.
  */
-export async function loadLiveDesk(): Promise<LiveDeskData> {
+export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveDeskData> {
   const today = todayIstIso();
   const trades = getTrades();
   const mtm = getMtmMap();
@@ -201,7 +221,10 @@ export async function loadLiveDesk(): Promise<LiveDeskData> {
       instrumentType: t?.instrumentType ?? null,
       side: isShort ? "short" : "long",
       qty: p.qty,
+      // A LEVEL, for display only. Every money figure is built from
+      // `investedP` below, which multiplies the REAL average.
       avgEntryP: toPaise(p.avgPrice),
+      investedP: investedPaise(p.qty, p.avgPrice),
       entryDate: (isShort ? t?.sellDate : t?.buyDate) ?? null,
       slPlannedP: toPaiseOrNull(t?.slPlanned),
       trailingSlP: toPaiseOrNull(t?.trailingSl),
@@ -222,7 +245,13 @@ export async function loadLiveDesk(): Promise<LiveDeskData> {
     const mark: Mark = quoted
       ? { markP: quoted.ltp, staleness: quoted.staleness, asOf: quoted.asOf }
       : storedMark !== null
-        ? { markP: toPaise(storedMark), staleness: "manual", asOf: null }
+        ? // `mtm_prices` has NO source column, and `persist-mark.ts` writes feed
+          // marks into the same table the manual MTM editor writes to. The
+          // provenance of this row is therefore UNKNOWN, so the badge says
+          // "Stored mark" (`desk-copy.ts` `stalenessLabel`) and not "Manual
+          // mark" — the staleness key stays "manual" because that is the
+          // `Staleness` union's name for it in `lib/quotes/types.ts`.
+          { markP: toPaise(storedMark), staleness: "manual", asOf: null }
         : t?.closingPrice != null
           ? { markP: toPaise(t.closingPrice), staleness: "eod", asOf: null }
           : { markP: null, staleness: null, asOf: null };
@@ -254,8 +283,22 @@ export async function loadLiveDesk(): Promise<LiveDeskData> {
       },
     );
 
+    // The paywall boundary is HERE, on the way onto the wire, and it is a
+    // whole-field null rather than a 0 or an omitted key: `desk-format.ts`
+    // renders null as the em dash and the client renders <ProLock> instead,
+    // so the two states stay distinguishable in the type as well as on screen.
+    const gated = entitlement.pro
+      ? row
+      : {
+          ...row,
+          riskAtStopP: null,
+          riskAmountP: null,
+          openRPpm: null,
+          pctOfCapital: { ppm: null, denominator: null },
+        };
+
     rows.push({
-      ...row,
+      ...gated,
       accountName: accountNames.get(position.accountId) ?? null,
       bucket: p.bucket,
       broker: p.broker,
@@ -284,8 +327,10 @@ export async function loadLiveDesk(): Promise<LiveDeskData> {
     sector: r.sector,
     sectorTier: r.sectorTier,
   }));
-  const heat = portfolioHeat(heatRows, totalCapitalP, risk?.heatCeilingPpm ?? null);
-  const concentration = sectorConcentration(heatRows);
+  // Both are Pro (Q55), so an unlicensed payload carries neither — not an
+  // empty decoy, which would read as "your book has no exposure".
+  const heat = entitlement.pro ? portfolioHeat(heatRows, totalCapitalP, risk?.heatCeilingPpm ?? null) : null;
+  const concentration = entitlement.pro ? sectorConcentration(heatRows) : null;
 
   // ── Chart payload, capped and stated ─────────────────────────────────────
   const chartSymbols = [...new Set(rows.map((r) => r.symbol.toUpperCase()))];

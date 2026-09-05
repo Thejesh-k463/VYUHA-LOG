@@ -3524,3 +3524,93 @@ the same interface the EOD, manual, mock and OpenAlgo providers already implemen
 Angel One, in that order, and Dhan is not in v4.2. **Also rejected: NSE `quote-equity` and Yahoo at
 any version** (Q22) — no ToS grant, and either would force a fifth PRIVACY item.
 
+
+
+## 2026-09-06 — v4.0.0 pre-tag audit: 33 findings confirmed, 32 fixed in one wave, the rest ruled
+
+Six single-dimension adversarial auditors (money, schema-migrations, security-gating-consent,
+ui-regressions, test-integrity, docs-claims) ran over the merge `e839502..98eaa63`, then a skeptic
+re-tested every survivor: 33 in → 32 CONFIRMED, 1 UNVERIFIABLE (the SEBI re-authentication
+sentence, whose marker was real), 0 REFUTED. Four Opus builders with disjoint file sets fixed them
+in one wave; every fix landed with a test proven red by reverting the fix. The ones that changed a
+number or a rule, with the alternative rejected:
+
+- **Derivatives get NO quote from the cash-bar EOD provider.** `isCashKey()` in
+  `lib/quotes/mapping.ts` requires a cash exchange AND `tradingsymbol === symbol`; `eod-bhavcopy.ts`
+  and `persist-mark.ts` share it. An option was being marked at the underlying's close (a ₹45 premium
+  showed ₹14 lakh unrealised, badge "eod"). *Rejected:* an exchange-only test — an option mis-tagged
+  NSE in an imported book would still be mispriced. Accepted cost: a broker that decorates cash
+  tradingsymbols (`RELIANCE-EQ`) loses its EOD mark rather than risking a wrong one.
+- **The chart panel takes `side` from the row; `deriveSide()` is deleted.** A stop-less,
+  target-less short rendered as a long. *Rejected:* inferring side from levels that may not exist.
+- **Panel Open R and the R ladder use R FROZEN at first entry (`riskAmountP / qty`)**, null when
+  risk is unset; only the stop LINE follows the chosen stop method (`lib/live/panel-math.ts`, pure).
+  *Rejected:* the current stop's distance — the row and the panel printed two R definitions for one
+  position, and switching the method re-priced the ladder.
+- **Portfolio heat adds `max(riskAtStopP, 0)` per row**; locked-in profit is published separately
+  as `lockedInProfitP` (computed, not yet rendered). *Rejected:* netting — a well-trailed winner
+  cancelled another row's real risk and the ceiling could never be crossed.
+- **The desk multiplies the REAL average once (`investedP = round(qty × avgPrice)`)** and builds
+  unrealised, risk-at-stop and the panel's figures from it; `avgEntryP` is display only. *Rejected:*
+  rounding the level first — journal ₹6,544 vs desk ₹6,540 on a three-tranche average (invariant 1).
+- **`chargesAdjustedRisk` takes `direction`** (default long); a short's entry is the sell leg.
+- **Pro is enforced server-side.** `/api/atlas` (GET/POST/backfill/import-files) and
+  `/api/risk/live-desk` return 403 "Vyuha Pro required." with the `tax-itr` predicate;
+  `loadLiveDesk({pro})` is REQUIRED (no default) and nulls `riskAtStopP`, `riskAmountP`, `openRPpm`,
+  `pctOfCapital`, `heat`, `concentration` for a free copy, the `lens-edge.ts` `edge: null` shape.
+  *Rejected:* `{pro = true}` — a default that leaks by omission; a nullable `pro` sub-object — a
+  wire-shape refactor for the same observable. `riskAmountP` is Pro because it is the sole input to R.
+- **OpenAlgo quote polling is withheld from 4.0.0 behind ONE constant, `OPENALGO_FEED_ENABLED`
+  in `lib/quotes/types.ts`** (pure, so `registry.ts` (server-only) and the Settings card read the same
+  fact). Adapter, tests, capability block, consent sheet and migration 0067 all stay; a stored
+  `live_feed_provider='openalgo'` resolves to `eod` by falling out of the known-id list; a POST with
+  that id is a 400. Owner ruling Q20 (OpenAlgo is v4.1) and the audit fact that disclosure v1
+  ("nothing runs on a schedule", "reads your executed trades and nothing else") was being reused to
+  authorise a 1–5 s poll carrying the API key and every held symbol. v4.1 re-enables it WITH
+  disclosure v2 (cadence, symbols sent, the `/funds` probe) and a PRIVACY #3 amendment. *Rejected:*
+  writing disclosure v2 now (collapses 4.0 and 4.1); deleting the adapter (makes 4.1 a rewrite).
+- **The daily re-authentication sentence is a broker-attributable fact and the `VERIFY-CIRCULAR`
+  marker is deleted; `tests/live-feed-copy.test.ts` asserts the marker is GONE.** SUPERSEDES the
+  2026-09-06 entry "The daily broker re-authentication sentence carries a VERIFY-CIRCULAR marker…"
+  (owner ruling in the fix-wave pop-up: "soften now"). If the owner supplies the circular, v4.1
+  may restore the attribution.
+- **"alerts" leaves every Pro label** (`lib/license.ts` /live label, `desk-copy.ts` proColumns,
+  help-content /live) until Telegram stop/target alerts ship in 4.1. No alert code exists in
+  `lib/live` or `components/live`. *Rejected:* keeping the word — a paid capability advertised in the
+  upsell chip that does not exist.
+- **Atlas preview renders as a SIBLING of `<ProGate>`**, not a child: `<ProGate>{null}</ProGate>`
+  above `<AtlasPreview/>`. Under `LICENSE_ENFORCEMENT="block"` the gate renders the upsell INSTEAD of
+  children, so the preview nested inside was unreachable — the inverse of Q57. *Rejected:* dropping
+  the gate in the preview branch (loses the only buy surface; breaks `pro-gating.test.ts`).
+- **A stale Atlas snapshot is refused on read, never deleted or recomputed by a GET**
+  (`getVerifiedSnapshot()` → `{snapshot:null, stale:true}`); `refreshAtlasSnapshot()` deletes rows
+  newer than the anchor before upserting; restore purges the three Atlas cache tables inside the
+  restore transaction (derived from `price_history`, outside `BACKUP_TABLES` for that reason).
+  *Rejected:* recompute-on-read (a read must not start a 2,000-symbol job).
+- **The two 0066 settings columns are declared in `schema.ts` and, with `lastLiveMarkDate`, join
+  `SETTINGS_MACHINE_COLUMNS`** with `openalgo_ack_version`'s treatment (nullable: blanked on dump,
+  this machine's value re-applied on restore). `live_feed_provider` / `live_feed_refresh_seconds`
+  stay OUT — preferences, and selecting a provider is not consent. `lastAutoMtmDate` has the same
+  pre-existing gap and was NOT touched (not in the findings; auto-MTM's owner).
+- **Sizing Lab prefill is all-or-nothing** (`seedFromParams`: symbol + entry + stop, else the
+  sample), clears the sample's ATR, derives direction from which side the stop sits on. *Rejected:*
+  partial prefill — one real level beside one unrelated level prints a computed quantity from a
+  fiction.
+- **Copy guards scan the whole comment-stripped source** (`live-tracker-copy`, `live-feed-copy`);
+  the JSX text-node extractor `/>([^<>{}]+)</` skipped every node containing an interpolation, so
+  "You should … {expr}" passed green. Proven red by planting one.
+- **Other copy made true:** THIRD-PARTY-NOTICES §1 no longer says "runs offline and sends nothing
+  anywhere" ("runs offline" added to the positioning guard's STRUCK list, the notices file to its
+  SURFACES); help /sizing-lab names the five write-back fields (no heat ceiling); help /atlas and
+  the atlas comments no longer describe a widget feed in the present tense; every MetricTile prints
+  its formula and rotation Move/Breadth get an on-screen definition; a stored mark is labelled
+  "Stored mark", not "Manual mark"; the Settings card says the day's mark is the session's last
+  price OR the price when "Save today's mark" is pressed, whichever comes first; `accent-[var(--
+  color-primary)]` (`--primary` never existed); `/calculator` ↔ `/sizing-lab` cross-linked; `j`/`k`
+  scroll the focused row into view (`scrollToIndex` on the windowed path).
+- **Still open, recorded not hidden:** Q52's sha256 half (only `asOf` is shown); `lockedInProfitP`
+  not rendered; `lastAutoMtmDate` restore gap; the SEBI circular; a `/live` e2e spec and the 1,500 ms
+  render timing at 20/50/100 positions (the windowing is enforced by source, the timing is not
+  measured); C8's regulatory fact.
+
+The fix wave's own diff gets its own six-dimension audit before the tag (skill step 4).

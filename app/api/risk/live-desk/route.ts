@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
 import { recordAudit } from "@/lib/audit";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { getEntitlement } from "@/lib/queries/license";
 import { LIVE_DESK_RANGES, STOP_METHODS } from "@/components/sizing/lab-config";
 
 export const runtime = "nodejs";
@@ -127,6 +128,21 @@ function snapshot(row: Record<string, unknown> | undefined | null): StoredShape 
   return Object.fromEntries(LIVE_DESK_FIELDS.map((k) => [k, row[k] ?? null])) as StoredShape;
 }
 
+/**
+ * <ProGate>'s ONE blocking branch, copied verbatim from
+ * `app/api/tax-itr/route.ts`. The Sizing Lab is a whole Pro screen, so the
+ * write-back behind it must refuse the same copies the page refuses —
+ * otherwise the gate is decoration and a blocked install can still store the
+ * migration-0064 risk rule that every size on /live is multiplied by.
+ */
+function proRefusal(): NextResponse | null {
+  const ent = getEntitlement();
+  if (!(ent.state === "licensed" || ent.pro || ent.enforcement === "banner")) {
+    return NextResponse.json({ ok: false, message: "Vyuha Pro required." }, { status: 403 });
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) {
     return NextResponse.json(
@@ -134,6 +150,8 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+  const refused = proRefusal();
+  if (refused) return refused;
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") {

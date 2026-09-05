@@ -111,6 +111,15 @@ export async function GET(req: Request): Promise<Response> {
   let flushTimer: ReturnType<typeof setInterval> | undefined;
   let beatTimer: ReturnType<typeof setInterval> | undefined;
   const pending = new Map<string, Quote>();
+  /**
+   * The teardown, hoisted out of `start()` so `cancel()` can run the SAME one.
+   * `cancel()` used to mirror it by hand and drifted: it never removed the
+   * abort listener, so a cancelled body left a listener on a signal that
+   * outlives the stream.
+   */
+  let shutdown: () => void = () => {
+    closed = true;
+  };
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -124,7 +133,7 @@ export async function GET(req: Request): Promise<Response> {
       };
       const send = (event: string, data: unknown) => write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
-      function shutdown() {
+      shutdown = () => {
         if (closed) return;
         closed = true;
         if (flushTimer) clearInterval(flushTimer);
@@ -140,7 +149,7 @@ export async function GET(req: Request): Promise<Response> {
         } catch {
           /* already closed by the platform */
         }
-      }
+      };
 
       if (req.signal.aborted) return shutdown();
       req.signal.addEventListener("abort", shutdown);
@@ -148,7 +157,14 @@ export async function GET(req: Request): Promise<Response> {
       // Jittered reconnect hint, never a fixed 1 s (spec §4.2).
       write(`retry: ${2000 + Math.floor(Math.random() * 1500)}\n\n`);
 
+      // EVERY `await` below is a place the client can go away: the abort runs
+      // shutdown() on another turn, and the continuation resumes into a closed
+      // controller. So `closed` is re-checked after each one, BEFORE anything
+      // that creates a timer or subscribes a provider — that check is the only
+      // thing standing between an aborted connect and two intervals that
+      // nothing will ever clear.
       const health = await provider.health(); // never throws, by contract
+      if (closed) return;
       const marketOpen = isWithinLiveWindow(new Date());
 
       let quotes: Quote[] = [];
@@ -163,6 +179,7 @@ export async function GET(req: Request): Promise<Response> {
           health.reason = e instanceof Error ? e.message : "The quote provider could not be read.";
         }
       }
+      if (closed) return;
 
       send("snapshot", {
         accountId,
@@ -200,16 +217,10 @@ export async function GET(req: Request): Promise<Response> {
     },
 
     cancel() {
-      // The consumer dropped the stream: stop the provider and the timers. The
-      // start() closure owns them, so mirror the teardown here.
-      closed = true;
-      if (flushTimer) clearInterval(flushTimer);
-      if (beatTimer) clearInterval(beatTimer);
-      try {
-        unsubscribe();
-      } catch {
-        /* nothing to do on the way out */
-      }
+      // The consumer dropped the stream: run the SAME teardown the abort path
+      // runs — provider, both timers, and the abort listener — rather than a
+      // second copy of it that can drift.
+      shutdown();
     },
   });
 

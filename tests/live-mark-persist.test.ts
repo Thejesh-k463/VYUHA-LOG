@@ -200,6 +200,36 @@ describe("persistDailyMarks — rupees, once a day, never mid-session", () => {
     expect(stamp()).toBe(null);
   });
 
+  it("never writes a derivative's price under the underlying's symbol (M1)", async () => {
+    clearStamp();
+    // `mtm_prices` is keyed on the SYMBOL, and `getMtmMap()` reads
+    // mtm[symbol] first — so a contract mark written here would price the
+    // cash position at the option's ₹285. The cash quote in the same batch is
+    // written; the contract is skipped, and the row it would have clobbered
+    // still holds the cash close.
+    const option = quote("RELIANCE", 285, {
+      key: { symbol: "RELIANCE", exchange: "NFO", tradingsymbol: "RELIANCE26SEP3000CE" },
+    });
+    const r = await persist.persistDailyMarks([quote("RELIANCE", 2850), option], { now: AFTER_CLOSE });
+    expect(r.marked).toBe(1);
+    const rows = marks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].symbol).toBe("RELIANCE");
+    expect(rows[0].price).toBe(2850);
+  });
+
+  it("writes nothing at all when every quote is a derivative", async () => {
+    clearStamp();
+    const option = quote("RELIANCE", 285, {
+      key: { symbol: "RELIANCE", exchange: "NFO", tradingsymbol: "RELIANCE26SEP3000CE" },
+    });
+    const r = await persist.persistDailyMarks([option], { now: AFTER_CLOSE });
+    expect(r.written).toBe(false);
+    expect(marks()).toHaveLength(0);
+    // A day that wrote nothing must not be stamped, or tomorrow is blocked too.
+    expect(stamp()).toBe(null);
+  });
+
   it("marks every usable position in one transaction and leaves an audit line", async () => {
     clearStamp();
     const r = await persist.persistDailyMarks([quote("TCS", 3025.75), quote("INFY", 1499.9)], { now: AFTER_CLOSE });

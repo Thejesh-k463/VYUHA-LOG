@@ -309,6 +309,23 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
           tx.update(schema.settings).set(keep as any).run();
         }
       }
+      // The Atlas cache is DERIVED from `price_history`, and `price_history`
+      // was just replaced. Migration 0065's header states the rule: a snapshot
+      // is bound to its inputs by `input_checksum`, so once the bars change it
+      // is "stale EVIDENCE — something that was true of inputs we no longer
+      // have — and never re-served as data". The three tables are outside
+      // BACKUP_TABLES precisely because they are reproducible, which is also
+      // why they can be dropped here without asking: the next read recomputes
+      // them from the restored bars. Restoring an OLDER backup was the case
+      // that made this necessary — the surviving rows carried a LATER `as_of`
+      // than anything the restored bars can produce, and `getStoredSnapshot()`
+      // reads max(as_of), so the desk served a snapshot of a market it no
+      // longer had. Inside the transaction, so invariant 10 holds: a restore
+      // that rolls back leaves the cache exactly as it was.
+      tx.delete(schema.atlasStaleness).run();
+      tx.delete(schema.atlasMetric).run();
+      tx.delete(schema.atlasDaily).run();
+
       // The rows above are the DONOR's, keyed however its release keyed them;
       // this database's data-fix markers say nothing about them. Forget the
       // markers and re-run the fixes on the restored rows, inside this same

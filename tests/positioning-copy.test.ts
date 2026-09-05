@@ -42,6 +42,10 @@ const STRUCK = [
   "offline by design",
   "LOCAL · OFFLINE",
   "local & offline",
+  // "the app runs offline" is the retired brand promise in a verb. It is not
+  // the same claim as "the licence check works offline", which is a fact about
+  // one code path and stays sayable.
+  "runs offline",
 ] as const;
 
 /** Buyer-facing surfaces. Every one of these is read by someone deciding whether to buy. */
@@ -56,6 +60,8 @@ const SURFACES = [
   "docs/client/TERMS.md",
   "docs/client/REFUND_POLICY.md",
   "docs/client/GETTING_STARTED_DECK.html",
+  // Ships in the installer AND in the client ZIP, so a buyer reads it.
+  "docs/client/THIRD-PARTY-NOTICES.txt",
   "docs/client/OPENALGO_SETUP_GUIDE.html",
   "src-tauri/tauri.conf.json",
   "src-tauri/loading/index.html",

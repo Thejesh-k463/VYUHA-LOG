@@ -35,10 +35,12 @@ a package publishes no NOTICE file, this file says so rather than inventing one.
      <https://www.tradingview.com/> to the page of your website or mobile
      application that is available to your users."
 
-  Vyuha runs offline and sends nothing anywhere, so the chart's built-in
-  `attributionLogo` option - which paints an outbound link onto the canvas - is
-  turned off. This file, shipped with the application, is where TradingView is
-  named as the creator and where the link above is published.
+  In Vyuha, no outbound link is painted on the chart canvas: the library's
+  built-in `attributionLogo` option - which would paint one - is turned off, so
+  that a chart of the user's own trades carries no clickable destination. This
+  file, shipped with the application inside the installer and in the client
+  documentation package, is where TradingView is named as the creator and where
+  the link above is published.
 
 --- Recharts ------------------------------------------------------------------
 

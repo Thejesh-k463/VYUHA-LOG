@@ -9,6 +9,7 @@ import {
   requestBackfillAbort,
   runBhavcopyBackfill,
 } from "@/lib/jobs/bhavcopy-backfill";
+import { getEntitlement } from "@/lib/queries/license";
 import { CROSS_ORIGIN_MESSAGE, isSameOrigin } from "../origin";
 
 /**
@@ -29,8 +30,24 @@ import { CROSS_ORIGIN_MESSAGE, isSameOrigin } from "../origin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * <ProGate>'s ONE blocking branch, copied verbatim from
+ * `app/api/tax-itr/route.ts`: Atlas is Pro (Q55) and its page is gated, so a
+ * handler that answered regardless would be the side door around the gate.
+ * Every entitlement state that renders the screen answers here too.
+ */
+function proRefusal(): NextResponse | null {
+  const ent = getEntitlement();
+  if (!(ent.state === "licensed" || ent.pro || ent.enforcement === "banner")) {
+    return NextResponse.json({ ok: false, message: "Vyuha Pro required." }, { status: 403 });
+  }
+  return null;
+}
+
 export async function GET(req: Request) {
   if (!isSameOrigin(req)) return NextResponse.json({ error: CROSS_ORIGIN_MESSAGE }, { status: 403 });
+  const refused = proRefusal();
+  if (refused) return refused;
   return NextResponse.json({
     ok: true,
     consented: hasBackfillConsent(),
@@ -43,6 +60,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!isSameOrigin(req)) return NextResponse.json({ error: CROSS_ORIGIN_MESSAGE }, { status: 403 });
+  const refused = proRefusal();
+  if (refused) return refused;
   const body = (await req.json().catch(() => ({}))) as { action?: string; days?: number };
   const action = body.action ?? "start";
 

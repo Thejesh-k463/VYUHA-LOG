@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { TradeCalculator } from "@/components/calculator/trade-calculator";
@@ -39,6 +40,14 @@ export default function CalculatorPage() {
         actions={<Badge variant="secondary">pre-trade</Badge>}
       />
       <div className="p-6">
+        {/* Q-1: the two pre-trade screens name each other. */}
+        <p className="pb-4 text-xs text-muted-foreground">
+          Position size from a risk budget:{" "}
+          <Link href="/sizing-lab" className="underline underline-offset-2 hover:text-foreground">
+            Sizing Lab
+          </Link>
+          .
+        </p>
         <TradeCalculator rates={rates} mtfMarginByBroker={mtfMarginByBroker} marginRates={marginRates} indexLots={indexLots} />
       </div>
     </>

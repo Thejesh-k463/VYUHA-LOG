@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { LIVE_DESK_RANGES } from "@/components/sizing/lab-config";
 
@@ -22,6 +22,22 @@ import { LIVE_DESK_RANGES } from "@/components/sizing/lab-config";
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
+/**
+ * Property 4 (v4.0): the Sizing Lab is a whole Pro screen, so its write-back
+ * refuses the copies <ProGate> refuses. The entitlement is the input, so it is
+ * mocked the way tests/atlas-page.test.ts mocks it and defaults to licensed —
+ * every other test here is about the handler, not the gate.
+ */
+const ent = vi.hoisted(() => ({
+  value: { pro: true, state: "licensed", enforcement: "block" } as {
+    pro: boolean;
+    state: string;
+    enforcement: string;
+  },
+}));
+vi.mock("@/lib/queries/license", () => ({ getEntitlement: () => ent.value }));
+const LICENSED = { pro: true, state: "licensed", enforcement: "block" };
 
 let t: TempDb;
 let route: typeof import("@/app/api/risk/live-desk/route");
@@ -60,6 +76,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => t?.cleanup());
+afterEach(() => {
+  ent.value = { ...LICENSED };
+});
+
 
 describe("the write actually lands", () => {
   it("seeds with risk_pct_ppm null — the column means 'not chosen' (migration 0064)", () => {
@@ -179,5 +199,25 @@ describe("the origin guard", () => {
     const res = await post({ ...VALID, riskPctPpm: 3500 }, { origin: "http://tauri.localhost" });
     expect(res.status).toBe(200);
     expect(globalRow().riskPctPpm).toBe(3500);
+  });
+});
+
+describe("the Pro gate", () => {
+  it("403s a blocked copy with the shared sentence, and writes nothing", async () => {
+    const before = { ...globalRow() };
+    ent.value = { pro: false, state: "unlicensed", enforcement: "block" };
+    const res = await post({ ...VALID, riskPctPpm: 9_999 });
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toBe("Vyuha Pro required.");
+    // The risk % is multiplied into every size on /live; a blocked install
+    // storing one is the gate being decoration.
+    expect(globalRow().riskPctPpm).toBe(before.riskPctPpm);
+  });
+
+  it("lets a trial and a 'banner' enforcement through — <ProGate>'s non-blocking states", async () => {
+    ent.value = { pro: true, state: "trial", enforcement: "block" };
+    expect((await post({ ...VALID, riskPctPpm: 2_600 })).status).toBe(200);
+    ent.value = { pro: false, state: "unlicensed", enforcement: "banner" };
+    expect((await post({ ...VALID, riskPctPpm: 2_700 })).status).toBe(200);
   });
 });

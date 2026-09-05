@@ -14,9 +14,11 @@ import type { AtlasView } from "@/lib/queries/atlas";
  * WHAT THIS SHIPS AND WHAT IT DOES NOT (research answers Q42/Q42b): the
  * TRANSPARENT daily core only. Every figure here is a published definition
  * computed from the user's own stored bhavcopy bars, and every one of them
- * renders with its denominator. There is no proprietary score, no hidden
- * filter, no Chartink data and no parity claim — the owner's own widgets are a
- * separate, signed, opt-in feed and are not computed on this machine.
+ * renders with its denominator, and every one of them prints its plain public
+ * formula on screen (build prompt Q-5). There is no proprietary score, no
+ * hidden filter, no Chartink data and no parity claim: the owner's own widgets
+ * are not computed on this machine, and v4.0 ships no feed that would deliver
+ * them (Q-12).
  *
  * The panel is a CLIENT component only because five tabs need a selected tab;
  * every number arrives already computed from the server page.
@@ -142,6 +144,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                   denominator={pulse.moving_average_breadth[50]?.metric.denominator}
                   coveragePpm={pulse.moving_average_breadth[50]?.metric.coverage_ppm}
                   shortfall={shortfallFor("above_sma50_pct_ppm")}
+                  formula="Close strictly above the mean of the last 50 closes, over the symbols with 50 closes."
                 />
                 <MetricTile
                   label="Net new high − new low"
@@ -149,6 +152,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                   denominator={pulse.new_high_low.netHighLow.denominator}
                   coveragePpm={pulse.new_high_low.netHighLow.coverage_ppm}
                   shortfall={shortfallFor("new_high_pct_ppm")}
+                  formula={`New ${pulse.new_high_low.label} highs minus new ${pulse.new_high_low.label} lows, over the same denominator. A count, not a ratio.`}
                 />
               </div>
             </CardContent>
@@ -165,6 +169,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 numerator={pulse.breadth.counts.advancing}
                 denominator={pulse.breadth.advancing.denominator}
                 coveragePpm={pulse.breadth.advancing.coverage_ppm}
+                formula="Today's close above yesterday's close. Denominator: symbols with two closes at the anchor."
               >
                 <div className="mt-2">
                   <Sparkline label="advancing %" values={history.map((h) => h.advance_pct_ppm)} />
@@ -176,6 +181,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 numerator={pulse.breadth.counts.declining}
                 denominator={pulse.breadth.declining.denominator}
                 coveragePpm={pulse.breadth.declining.coverage_ppm}
+                formula="Today's close below yesterday's close. Same denominator as advancing."
               />
               <MetricTile
                 label="Unchanged"
@@ -183,6 +189,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 numerator={pulse.breadth.counts.unchanged}
                 denominator={pulse.breadth.unchanged.denominator}
                 coveragePpm={pulse.breadth.unchanged.coverage_ppm}
+                formula="Today's close exactly equal to yesterday's. A symbol with only one close is counted nowhere, never here."
               />
               {[20, 50, 200].map((period) => {
                 const sma = pulse.moving_average_breadth[period];
@@ -209,6 +216,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 denominator={pulse.new_high_low.newHighs.denominator}
                 coveragePpm={pulse.new_high_low.newHighs.coverage_ppm}
                 shortfall={shortfallFor("new_high_pct_ppm")}
+                formula={`Today's high at or above the highest high of the last ${pulse.new_high_low.windowSessions} sessions, today included. Needs 20 sessions to have an opinion at all.`}
               >
                 <div className="mt-2">
                   <Sparkline label="net high-low" values={history.map((h) => h.net_high_low)} />
@@ -220,6 +228,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 denominator={pulse.new_high_low.newLows.denominator}
                 coveragePpm={pulse.new_high_low.newLows.coverage_ppm}
                 shortfall={shortfallFor("new_high_pct_ppm")}
+                formula={`Today's low at or below the lowest low of the last ${pulse.new_high_low.windowSessions} sessions, today included. Same window and denominator as the highs.`}
               />
               <MetricTile
                 label="Median volume expansion"
@@ -305,6 +314,20 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                   </tbody>
                 </table>
               </div>
+              {/* Q-5: the two columns above are figures, so their plain public
+                  definitions belong on the screen beside them and not in a
+                  spec nobody opens. Both come straight out of lib/atlas/groups
+                  (A8 / A9) and neither is weighted by anything — no market cap,
+                  no free float, no hidden rank. */}
+              <p className="text-muted-foreground">
+                <span className="text-foreground">Move</span> is the equal-weighted mean of each measurable
+                member&rsquo;s own {payload.rotation.window.key} return (close ÷ close {payload.rotation.window.sessions}{" "}
+                session{payload.rotation.window.sessions === 1 ? "" : "s"} ago − 1); every member counts once,
+                whatever its size. <span className="text-foreground">Breadth</span> is the share of the
+                group&rsquo;s measurable members whose last close was above the one before it. A name with too
+                little history — or held out for an unreconciled price gap — is counted in neither, which is
+                what the Measured column states.
+              </p>
               <p className="text-muted-foreground">
                 {n(payload.classification.groups)} groups · classification coverage{" "}
                 {ppmToPct(payload.classification.classified.value_ppm, 1)} (

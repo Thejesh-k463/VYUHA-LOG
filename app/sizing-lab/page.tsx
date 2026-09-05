@@ -15,6 +15,7 @@ import {
   LAB_PRODUCT_SEGMENT,
   compareAll_forSample,
   resolveLiveDeskRisk,
+  type LabQuery,
   type ResolvedLiveDeskRisk,
 } from "@/components/sizing/lab-config";
 import { LabClient, type LabSchedule } from "@/components/sizing/lab-client";
@@ -180,8 +181,16 @@ export function loadSizingLab(onDate = todayIstIso()): SizingLabData {
 /** The seven `compareAll` rows for the lab's own sample setup, at a given risk. */
 export { compareAll_forSample as sampleCompare };
 
-export default function SizingLabPage() {
+/**
+ * The Live Desk opens a row here with
+ * `?from=live&symbol=…&entry=<paise>&stop=<paise>` (U1). `searchParams` is a
+ * promise in this version of Next, and it is handed to the client untouched —
+ * the validation and the paise→rupees conversion are one pure function in
+ * `lab-config.ts`, testable without rendering anything.
+ */
+export default async function SizingLabPage({ searchParams }: { searchParams: Promise<LabQuery> }) {
   const data = loadSizingLab();
+  const query = await searchParams;
   return (
     <ProGate>
       <LabClient
@@ -190,6 +199,7 @@ export default function SizingLabPage() {
         brokers={data.brokers}
         schedules={data.schedules}
         ratesAsOf={data.ratesAsOf}
+        query={query}
       />
     </ProGate>
   );

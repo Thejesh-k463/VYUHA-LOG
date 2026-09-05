@@ -212,6 +212,19 @@ describe("EodBhavcopyProvider — the default, and it fetches nothing", () => {
     expect((await eod.snapshot(KEYS)).get("NSE:INFY")!.prevClose).toBeNull();
   });
 
+  it("gives a derivative key NO quote — a cash bar is not a contract price (M1)", async () => {
+    // An option on TCS must come back absent, so the desk shows its "no mark"
+    // state; marking it at TCS's ₹3,025.75 close is a silent wrong number on
+    // every figure the position touches.
+    const snap = await eod.snapshot([
+      { symbol: "TCS", exchange: "NFO", tradingsymbol: "TCS26SEP3000CE" },
+      { symbol: "TCS", exchange: "NSE" },
+    ]);
+    expect(snap.has("NFO:TCS26SEP3000CE")).toBe(false);
+    // …and the cash key of the same underlying is unaffected.
+    expect(snap.get("NSE:TCS")!.ltp).toBe(302575);
+  });
+
   it("declares itself non-streaming, so the UI can never claim 'live'", () => {
     expect(eod.capabilities.streaming).toBe(false);
     expect(eod.capabilities.staleness).toBe("eod");

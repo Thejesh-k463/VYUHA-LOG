@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
+import type { ProviderCapabilities, QuoteMap, QuoteProvider } from "@/lib/quotes/types";
 
 /**
  * `GET /api/live/stream` — the Live Desk's SSE channel.
@@ -18,6 +19,22 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
 let t: TempDb;
 let route: typeof import("@/app/api/live/stream/route");
+
+/**
+ * One test needs a provider whose `snapshot()` is still pending when the
+ * request aborts — a real provider resolves too fast to ever hit that window.
+ * The stub is opt-in: while `stub.provider` is null every other test in the
+ * file gets the real registry, untouched.
+ */
+const stub = vi.hoisted(() => ({ provider: null as QuoteProvider | null }));
+
+vi.mock("@/lib/quotes/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/quotes/registry")>();
+  return {
+    ...actual,
+    getQuoteProvider: (stored?: string | null) => stub.provider ?? actual.getQuoteProvider(stored),
+  };
+});
 
 const SWING = 2;
 const LONG_TERM = 3;
@@ -268,6 +285,58 @@ describe("teardown", () => {
     expect(stream.done).toBe(true);
     // Not one byte more: the provider was unsubscribed and both intervals cleared.
     expect(stream.text.length).toBe(before);
+  });
+
+  it("creates no timer when the request aborts while the first snapshot is still in flight", async () => {
+    // The leak this pins: `start()` checked `closed` once, before the awaits.
+    // An abort during `snapshot()` ran the shutdown, and then the resumed
+    // continuation subscribed the provider and created BOTH intervals on a
+    // controller that was already closed — two timers per aborted connect,
+    // never cleared, for the life of the process.
+    vi.useFakeTimers();
+    vi.setSystemTime(MARKET_HOURS);
+    selectAccount(SWING);
+
+    let release: (q: QuoteMap) => void = () => {};
+    let subscribes = 0;
+    const capabilities: ProviderCapabilities = {
+      id: "mock",
+      label: "deferred snapshot",
+      streaming: true,
+      maxSubscriptions: 10,
+      minSnapshotIntervalMs: 0,
+      depth: 0,
+      segments: ["NSE"],
+      staleness: "tick",
+      requiresDailyAuth: false,
+      egressDescription: "None. A test double.",
+    };
+    stub.provider = {
+      id: "mock",
+      capabilities,
+      snapshot: () => new Promise<QuoteMap>((resolve) => (release = resolve)),
+      subscribe: () => {
+        subscribes++;
+        return () => {};
+      },
+      health: async () => ({ ok: true }),
+    };
+
+    try {
+      const ctrl = new AbortController();
+      const stream = reading(await get({ signal: ctrl.signal }));
+      await vi.advanceTimersByTimeAsync(10); // health() resolved; snapshot pending
+
+      ctrl.abort();
+      release(new Map());
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(vi.getTimerCount(), "an aborted connect must leave no interval behind").toBe(0);
+      expect(subscribes, "a closed stream must not subscribe a provider").toBe(0);
+      expect(stream.text).not.toContain("event: snapshot");
+    } finally {
+      stub.provider = null;
+    }
   });
 
   it("stops the provider when the consumer cancels the body instead", async () => {

@@ -7,13 +7,14 @@ import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
  * decides whether "openalgo" in a settings column may ever become a request.
  *
  * WHAT THIS FILE HOLDS TO ACCOUNT
- *   1. THE GATE IS SERVER-SIDE. Hiding a radio button is not a control. Asking
- *      for `openalgo` without a current acknowledgement is 403 AND stores
- *      nothing — the same precedent `app/api/import/broker/route.ts` set.
- *   2. A STORED PICK IS NOT CONSENT. Consent revoked (or restored from another
- *      machine, where the consent columns are machine state and do not travel)
- *      leaves the pick visible but the EFFECTIVE provider on `eod`, with a
- *      reason. A restore can never open a feed nobody here agreed to.
+ *   1. THE GATE IS SERVER-SIDE. Hiding a radio button is not a control. In
+ *      v4.0 the OpenAlgo feed is not shipped at all (`OPENALGO_FEED_ENABLED`,
+ *      owner ruling), so asking for it is a 400 that stores nothing even with
+ *      a current acknowledgement; the consent gate underneath it
+ *      (`selectProviderId`, `tests/quotes-registry.test.ts`) is what v4.1
+ *      re-exposes — the same precedent `app/api/import/broker/route.ts` set.
+ *   2. A STORED PICK IS NOT CONSENT, and in v4.0 not even a pick: a column
+ *      carrying "openalgo" (a v4.1 machine's backup) resolves to `eod`.
  *   3. IT IS A ROUTE HANDLER, not a server action (AGENTS.md) — the card posts
  *      and calls `router.refresh()`, so no sibling Settings card is remounted.
  *   4. THE MARK COMES FROM THE SERVER'S PROVIDER, once a day, and a price the
@@ -100,9 +101,9 @@ describe("GET — what the Settings card renders", () => {
     expect(body.feed.refreshSeconds).toBe(3);
   });
 
-  it("offers exactly the three a user may pick — `mock` is a test pin, never a choice", async () => {
+  it("offers exactly the two v4.0 ships — `mock` is a test pin and `openalgo` is v4.1", async () => {
     const body = await (await get()).json();
-    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual(["eod", "manual", "openalgo"]);
+    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual(["eod", "manual"]);
     for (const p of body.providers) {
       // The picker's label and its egress sentence come from the registry's
       // capability block, not from the JSX — and the id it is keyed by is the
@@ -120,49 +121,44 @@ describe("GET — what the Settings card renders", () => {
   });
 });
 
-describe("POST provider — the consent gate lives on the server", () => {
-  it("refuses openalgo with 403 and stores NOTHING when the disclosure was never accepted", async () => {
-    const res = await post({ action: "provider", provider: "openalgo" });
-    expect(res.status).toBe(403);
-    expect((await res.json()).message).toMatch(/openalgo/i);
-    expect(settingsRow()?.liveFeedProvider).toBe("eod");
-  });
-
-  it("refuses it again when the integration is on but the acknowledgement is an OLD version", async () => {
-    setConsent(true, "0");
-    const res = await post({ action: "provider", provider: "openalgo" });
-    expect(res.status).toBe(403);
-    expect(settingsRow()?.liveFeedProvider).toBe("eod");
-  });
-
-  it("stores it once both halves are in place", async () => {
+describe("POST provider — openalgo is a v4.1 feature and v4.0 will not store it", () => {
+  it("refuses openalgo even with BOTH halves of the consent in place, and stores nothing", async () => {
+    // The release gate sits in front of the consent gate: with
+    // OPENALGO_FEED_ENABLED false the id is not in the route's enum at all, so
+    // the request never reaches the acknowledgement check. A full consent is
+    // set up here deliberately — this must fail for the release reason, not
+    // for a missing acknowledgement.
     setConsent(true, OPENALGO_DISCLOSURE_VERSION);
     const res = await post({ action: "provider", provider: "openalgo" });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.feed.effective).toBe("openalgo");
-    expect(settingsRow()?.liveFeedProvider).toBe("openalgo");
+    expect(res.status).toBe(400);
+    expect(settingsRow()?.liveFeedProvider).toBe("eod");
   });
 
-  it("falls back to end-of-day the moment consent goes away — the pick survives, the feed does not", async () => {
-    // This is the RESTORE case: a backup carries the picker column, but the
-    // two consent columns are machine state and do not travel.
-    setConsent(false, null);
+  it("resolves a stored 'openalgo' to end-of-day — a v4.1 column value cannot open a feed here", async () => {
+    // The RESTORE case, and the downgrade case: a backup (or a machine that
+    // ran v4.1) carries the picker column. v4.0 shows and runs end-of-day.
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "openalgo" }).run();
     const body = await (await get()).json();
-    expect(body.feed.stored).toBe("openalgo");
+    expect(body.feed.stored).toBe("eod");
     expect(body.feed.effective).toBe("eod");
-    expect(body.feed.blockedReason).toBeTruthy();
     expect(body.health.provider).toBe("eod");
-    setConsent(true, OPENALGO_DISCLOSURE_VERSION);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+  });
+
+  it("stores the two it does ship", async () => {
+    for (const provider of ["manual", "eod"]) {
+      const res = await post({ action: "provider", provider });
+      expect(res.status, provider).toBe(200);
+      expect(settingsRow()?.liveFeedProvider, provider).toBe(provider);
+    }
   });
 
   it("rejects a provider that is not pickable, and one that is not a provider at all", async () => {
-    for (const provider of ["mock", "kite", "yahoo"]) {
+    for (const provider of ["mock", "kite", "yahoo", "openalgo"]) {
       const res = await post({ action: "provider", provider });
       expect(res.status, provider).toBe(400);
     }
-    expect(settingsRow()?.liveFeedProvider).toBe("openalgo");
+    expect(settingsRow()?.liveFeedProvider).toBe("eod");
   });
 });
 

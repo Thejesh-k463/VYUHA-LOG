@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,10 +28,11 @@ import {
   LIVE_DESK_RANGES,
   buildSetup,
   methodByKey,
-  sampleInputs,
+  seedFromParams,
   stopIsOriented,
   type LabInputs,
   type LabProduct,
+  type LabQuery,
   type ResolvedLiveDeskRisk,
 } from "./lab-config";
 import { MethodRail } from "./method-rail";
@@ -72,6 +74,8 @@ export interface LabClientProps {
   schedules: LabSchedule[];
   /** As-of date the rate epochs were resolved for (YYYY-MM-DD). */
   ratesAsOf: string;
+  /** The URL the Lab was opened with — the Live Desk hand-off arrives here. */
+  query?: LabQuery;
 }
 
 const SOURCE_LABEL: Record<LabSchedule["source"], string> = {
@@ -87,15 +91,18 @@ function numberField(v: string, fallback: number): number {
 // ---------------------------------------------------------------------------
 
 export function LabClient(p: LabClientProps) {
-  const [inputs, setInputs] = React.useState<LabInputs>(() =>
-    sampleInputs({
-      capitalRupees: p.capitalRupees,
-      riskPctPpm: p.risk.riskPctPpm,
-      deployCapPpm: p.risk.deployCapPpm,
-      atrLen: p.risk.stopAtrLen,
-      nStopMultPermille: p.risk.stopAtrMultPermille,
-    }),
-  );
+  // The opening setup: the Live Desk's levels when it sent a usable set, the
+  // sample otherwise. Pure and cheap, so it is recomputed rather than mirrored
+  // into state by an effect — `seed.symbol` is the only thing read after mount
+  // and the URL cannot change without a remount.
+  const seed = seedFromParams(p.query ?? {}, {
+    capitalRupees: p.capitalRupees,
+    riskPctPpm: p.risk.riskPctPpm,
+    deployCapPpm: p.risk.deployCapPpm,
+    atrLen: p.risk.stopAtrLen,
+    nStopMultPermille: p.risk.stopAtrMultPermille,
+  });
+  const [inputs, setInputs] = React.useState<LabInputs>(seed.inputs);
   const [method, setMethod] = React.useState<SizingMethodId>("fixed-fractional");
   const [broker, setBroker] = React.useState<Broker>(p.brokers[0] ?? "zerodha");
 
@@ -132,6 +139,9 @@ export function LabClient(p: LabClientProps) {
         qty: active.qty,
         entryP: setup.entryP,
         stopP: setup.stopP,
+        // A short is SOLD at entry and bought back at the stop; STT and stamp
+        // duty are per-side, so the legs cannot be assumed (M6).
+        direction: inputs.direction,
         capitalP: setup.capitalP,
       },
       schedule.rates,
@@ -166,6 +176,14 @@ export function LabClient(p: LabClientProps) {
             the rail or the keys 1–7 — the formula shows your own figures substituted in, and the table below computes
             all seven at once.
           </p>
+          {/* Q-1: the two pre-trade screens name each other. */}
+          <p className="text-xs text-muted-foreground">
+            Charges and break-even for a trade:{" "}
+            <Link href="/calculator" className="underline underline-offset-2 hover:text-foreground">
+              Trade calculator
+            </Link>
+            .
+          </p>
         </div>
         <Badge variant={p.risk.riskSource === "stored" ? "accent" : "secondary"} size="chip">
           {p.risk.riskSource === "stored"
@@ -190,7 +208,9 @@ export function LabClient(p: LabClientProps) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Trade setup</CardTitle>
             <p className="text-[0.6875rem] text-muted-foreground">
-              Opens on a sample swing trade. Every field is yours to change; nothing here is stored.
+              {seed.symbol
+                ? `Opened on your ${seed.symbol} position from the Live Desk — its average entry and current stop. Every field is yours to change; nothing here is stored.`
+                : "Opens on a sample swing trade. Every field is yours to change; nothing here is stored."}
             </p>
           </CardHeader>
           <CardContent className="space-y-3">

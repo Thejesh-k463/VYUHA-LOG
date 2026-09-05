@@ -6,6 +6,7 @@ import { createMockProvider, MOCK_CAPABILITIES } from "./mock";
 import { clampRefreshSeconds, createOpenAlgoProvider, OPENALGO_CAPABILITIES } from "./openalgo";
 import {
   NotEnabledError,
+  OPENALGO_FEED_ENABLED,
   type ProviderCapabilities,
   type ProviderHealth,
   type ProviderId,
@@ -43,8 +44,19 @@ import {
 
 export const DEFAULT_PROVIDER_ID: ProviderId = "eod";
 
-/** Built and selectable. `openalgo` joined in v4.1 (owner answers Q20/Q21). */
-export const SHIPPED_PROVIDER_IDS = ["eod", "manual", "mock", "openalgo"] as const;
+/**
+ * Built AND selectable in this release.
+ *
+ * `openalgo` is built but NOT selectable in v4.0 (owner ruling): it is a v4.1
+ * feature, so it is absent from this list, from the route's pickable set and
+ * from the Settings radios, and `resolveProviderId()` — which validates a
+ * stored value against this list plus the planned ones — therefore resolves a
+ * stored `"openalgo"` to the end-of-day default. Flipping
+ * `OPENALGO_FEED_ENABLED` puts it back everywhere at once.
+ */
+export const SHIPPED_PROVIDER_IDS: readonly ProviderId[] = OPENALGO_FEED_ENABLED
+  ? ["eod", "manual", "mock", "openalgo"]
+  : ["eod", "manual", "mock"];
 
 /** Typed, listed, and deliberately not built — see `createPlannedProvider()`. */
 export const PLANNED_PROVIDER_IDS = ["kite", "upstox", "dhan", "angelone"] as const;
@@ -138,10 +150,12 @@ export interface LiveFeedSelection {
 /**
  * PURE. The stored picker value → the provider that may actually run.
  *
- * The ONLY way to reach `openalgo` is all three of: the column says so, the
- * integration is on, and the acknowledgement is current. Anything else falls
- * back to the default — silently, because a picker value is a preference and a
- * missing consent is not an error the user made.
+ * The ONLY way to reach `openalgo` is all FOUR of: the release ships it
+ * (`OPENALGO_FEED_ENABLED`, false in v4.0 — `resolveProviderId()` already
+ * collapses the stored value to the default without it), the column says so,
+ * the integration is on, and the acknowledgement is current. Anything else
+ * falls back to the default — silently, because a picker value is a preference
+ * and a missing consent is not an error the user made.
  */
 export function selectProviderId(sel: LiveFeedSelection): ProviderId {
   const id = resolveProviderId(sel.liveFeedProvider);
@@ -212,7 +226,15 @@ export function getQuoteProvider(stored?: string | null): QuoteProvider {
   return createProvider(resolveProviderId(env && env.trim() ? env : stored));
 }
 
-/** Every capability block in the registry — what the egress guard iterates. */
+/**
+ * Every capability block in the registry — what the egress guard iterates.
+ *
+ * OpenAlgo's block stays here even in v4.0, where the provider is not
+ * selectable: the adapter exists, so its declared egress must keep being held
+ * to the privacy sheet. A capability block that disappeared with the feature
+ * flag would be a guard that stops guarding exactly when the code is easiest
+ * to change.
+ */
 export function allProviderCapabilities(): ProviderCapabilities[] {
   return [
     EOD_CAPABILITIES,

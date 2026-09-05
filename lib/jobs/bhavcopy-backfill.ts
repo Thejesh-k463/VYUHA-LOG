@@ -1,5 +1,7 @@
 import "server-only";
-import { sqlite } from "@/lib/db";
+import { asc, eq } from "drizzle-orm";
+import { db, sqlite } from "@/lib/db";
+import { settings } from "@/lib/db/schema";
 import { applyBhavcopyMtm } from "@/lib/import/mtm-bhavcopy";
 import { latestBhavcopyDate, previousTradingDay } from "@/lib/domain/trading-day";
 import { fetchBhavcopyForDate, type BhavcopyFetch } from "@/lib/jobs/auto-mtm";
@@ -110,27 +112,35 @@ export const IDLE_PROGRESS: BackfillProgress = {
 // ---------------------------------------------------------------------------
 // Settings access.
 //
-// The two columns (migration 0066) are read and written with raw SQL rather
-// than through the drizzle table object: this wave owns the migration but not
-// `lib/db/schema.ts`, and a wave that edits a cross-cutting file another wave
-// also edits is how two agents clobber each other. The reads are defensive —
-// a database that has not run 0066 yet reports "idle" instead of throwing.
+// The two columns (migration 0066) are declared on `lib/db/schema.ts` and read
+// and written through the table object like every other setting. They were raw
+// SQL for one wave, because that wave owned the migration and not the schema
+// file; the workaround is gone now that both columns are declared, and with it
+// the drift that let a migrated column exist in SQLite and nowhere in TypeScript.
+// The read stays defensive — a database that has not run 0066 yet reports
+// "idle" instead of throwing.
 // ---------------------------------------------------------------------------
 
 interface SettingsConsentRow {
   id: number;
-  auto_mtm_enabled: number;
-  bhavcopy_backfill_ack: string | null;
-  bhavcopy_backfill_progress: string | null;
+  autoMtmEnabled: boolean;
+  bhavcopyBackfillAck: string | null;
+  bhavcopyBackfillProgress: string | null;
 }
 
 function settingsRow(): SettingsConsentRow | null {
   try {
-    const row = sqlite
-      .prepare(
-        "SELECT id, auto_mtm_enabled, bhavcopy_backfill_ack, bhavcopy_backfill_progress FROM settings ORDER BY id LIMIT 1",
-      )
-      .get() as SettingsConsentRow | undefined;
+    const row = db
+      .select({
+        id: settings.id,
+        autoMtmEnabled: settings.autoMtmEnabled,
+        bhavcopyBackfillAck: settings.bhavcopyBackfillAck,
+        bhavcopyBackfillProgress: settings.bhavcopyBackfillProgress,
+      })
+      .from(settings)
+      .orderBy(asc(settings.id))
+      .limit(1)
+      .all()[0];
     return row ?? null;
   } catch {
     return null; // migration 0066 not applied on this database
@@ -148,22 +158,22 @@ function settingsRow(): SettingsConsentRow | null {
 export function hasBackfillConsent(): boolean {
   const row = settingsRow();
   if (!row) return false;
-  return row.auto_mtm_enabled === 1 || !!row.bhavcopy_backfill_ack;
+  return row.autoMtmEnabled === true || !!row.bhavcopyBackfillAck;
 }
 
 /** Record the explicit acknowledgement. Stores WHEN, so it is auditable. */
 export function recordBackfillAck(at = new Date().toISOString()): void {
   const row = settingsRow();
   if (!row) return;
-  sqlite.prepare("UPDATE settings SET bhavcopy_backfill_ack = ? WHERE id = ?").run(at, row.id);
+  db.update(settings).set({ bhavcopyBackfillAck: at }).where(eq(settings.id, row.id)).run();
 }
 
 /** The persisted run state; `IDLE_PROGRESS` when there is none or it is alien. */
 export function readBackfillProgress(): BackfillProgress {
   const row = settingsRow();
-  if (!row?.bhavcopy_backfill_progress) return IDLE_PROGRESS;
+  if (!row?.bhavcopyBackfillProgress) return IDLE_PROGRESS;
   try {
-    const parsed = JSON.parse(row.bhavcopy_backfill_progress) as Partial<BackfillProgress>;
+    const parsed = JSON.parse(row.bhavcopyBackfillProgress) as Partial<BackfillProgress>;
     // A shape from a future version is DISCARDED, never half-read.
     if (parsed?.v !== 1) return IDLE_PROGRESS;
     return { ...IDLE_PROGRESS, ...parsed, v: 1 };
@@ -176,7 +186,7 @@ export function writeBackfillProgress(p: BackfillProgress): void {
   const row = settingsRow();
   if (!row) return;
   const json = JSON.stringify({ ...p, updatedAt: new Date().toISOString() });
-  sqlite.prepare("UPDATE settings SET bhavcopy_backfill_progress = ? WHERE id = ?").run(json, row.id);
+  db.update(settings).set({ bhavcopyBackfillProgress: json }).where(eq(settings.id, row.id)).run();
 }
 
 /** Ask a running backfill to stop after the file it is on. */

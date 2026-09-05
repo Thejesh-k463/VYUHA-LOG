@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   eodQuoteFromBars,
+  isCashKey,
   isWithinLiveWindow,
   manualQuoteFromMark,
   sessionCloseIso,
@@ -81,6 +82,43 @@ describe("eodQuoteFromBars", () => {
   it("keeps open/high/low/volume null when the projection does not carry them", () => {
     const q = eodQuoteFromBars(TCS, [bar({ date: "2026-09-03", close: 10 }), bar({ date: "2026-09-04", close: 11 })])!;
     expect([q.dayOpen, q.dayHigh, q.dayLow, q.volume]).toEqual([null, null, null, null]);
+  });
+});
+
+describe("isCashKey — the bhavcopy is the CASH market, and only the cash market", () => {
+  it("accepts a bare NSE or BSE key", () => {
+    expect(isCashKey({ symbol: "TCS", exchange: "NSE" })).toBe(true);
+    expect(isCashKey({ symbol: "TCS", exchange: "BSE" })).toBe(true);
+    // The tradingsymbol equal to the symbol is how the tracker writes a cash
+    // row; case and padding are noise, not a difference.
+    expect(isCashKey({ symbol: "TCS", exchange: "NSE", tradingsymbol: " tcs " })).toBe(true);
+  });
+
+  it("refuses every derivative exchange", () => {
+    for (const exchange of ["NFO", "BFO", "MCX", "CDS"] as const) {
+      expect(isCashKey({ symbol: "RELIANCE", exchange }), exchange).toBe(false);
+    }
+  });
+
+  it("refuses a contract tradingsymbol even when the exchange field says NSE", () => {
+    // A mis-tagged exchange is common in imported books; the traded contract
+    // is the fact that decides, not the column.
+    expect(isCashKey({ symbol: "RELIANCE", exchange: "NSE", tradingsymbol: "RELIANCE26SEP3000CE" })).toBe(false);
+  });
+});
+
+describe("eodQuoteFromBars refuses a derivative key (M1)", () => {
+  it("never prices an option at the underlying's cash close", () => {
+    // The bug this pins: the EOD provider looked bars up by key.symbol, so
+    // RELIANCE26SEP3000CE was marked at RELIANCE's ₹2,850 close — a ₹285,000
+    // paise LTP on a contract worth a fraction of it.
+    const key: QuoteKey = { symbol: "RELIANCE", exchange: "NFO", tradingsymbol: "RELIANCE26SEP3000CE" };
+    expect(eodQuoteFromBars(key, [bar({ date: "2026-09-04", close: 2850 })])).toBeNull();
+  });
+
+  it("still quotes the cash key of the same underlying", () => {
+    const key: QuoteKey = { symbol: "RELIANCE", exchange: "NSE" };
+    expect(eodQuoteFromBars(key, [bar({ date: "2026-09-04", close: 2850 })])!.ltp).toBe(285000);
   });
 });
 

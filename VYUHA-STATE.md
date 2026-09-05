@@ -55,7 +55,7 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 submitted. No open release actions. Verify baseline at that release: `npm run verify` EXIT=0,
 276 files / 5,243 tests (35 skipped), 2026-09-05. **Superseded as the baseline: v3.9.1 measured
 282 files / 5,269 tests passed / 35 skipped (EXIT 0, 2026-09-06) — that is the number a v4.0.0 run
-must not fall below. The 4.0.0 figure itself is PENDING; see `VERIFY: <pending>` below.**
+must not fall below. The 4.0.0 figure is 328 files / 6,025 passed / 35 skipped (EXIT 0); see `VERIFY:` below.**
 
 **Since the release — on `main`, UNRELEASED, ships with whatever version comes next:** `6abbc9a`
 state docs, `97b2d6d` the `.claude/` agent layer, `28d6655` the overlay entrance-keyframe fix.
@@ -238,13 +238,9 @@ the eight size indices in `lib/data/nse-index-map.json` (62 indices, 1,379 symbo
 deliberately and recorded in `docs/DECISIONS.md` 2026-09-06. The gate still runs, on the bumped
 tree, BEFORE the tag.
 
-**VERIFY: `<pending>`** — `npm run verify` has NOT been run on the bumped 4.0.0 tree. The
-orchestrator fills this line in with `EXIT=<n>`, the file count and the test count. **v3.9.1's
-282 files / 5,269 passed / 35 skipped is the floor.** No tag until this line is filled and green.
+**VERIFY: EXIT 0 — 328 files / 6,025 passed / 35 skipped, `next build` compiled (2026-09-06 ~03:25 IST, after the 30-finding fix wave).** Above the v3.9.1 floor of 282 files / 5,269 passed / 35 skipped. The first run on the merged tree (before the fix wave finished) was EXIT 1 on the README file-count pin only.
 
-**Also uncommitted in the tree while this was written** (other waves, not this one): the
-`docs/owner/**` ₹9,999 sweep with its `tests/price-surfaces.test.ts` surface list, and the
-THIRD-PARTY-NOTICES line in `scripts/build-client-package.mjs`.
+**Committed since:** 16b1ec1 (bump + docs waves) and the 30-finding audit fix wave (see `docs/DECISIONS.md` 2026-09-06 "v4.0.0 pre-tag audit"). The fix wave diff still owes its OWN six-dimension audit before the tag (audit skill step 4).
 
 **The ladder after 4.0.0** (owner Q4/Q20/Q21): **4.1 = the OpenAlgo live feed**, already built and
 merged, gated on `settings.live_feed_provider` and the existing disclosure consent; **4.2 = native
@@ -254,7 +250,7 @@ or Yahoo (Q22).
 **The cut list — recorded so nothing is rebuilt by mistake** (owner Q3: "record perfectly what is
 left"): Telegram stop/target alerts (Q18, consent + quiet hours + one per trade/kind/day); the
 signed proprietary-widget feed, wave `atlas-ip-feed` (Q42b); automated cohort analytics (Q51);
-Upstox + Angel One adapters (Q21); the SEBI daily re-auth `VERIFY-CIRCULAR` copy (Q24); the
+Upstox + Angel One adapters (Q21); the SEBI daily re-auth attribution (Q24 — sentence softened in the fix wave, marker removed; restore only with the circular); the
 `/calculator` → `/sizing-lab` cross-link; the Varsity switch inside the volatility tab (Q-6);
 journal-derived Kelly inputs at ≥ 30 closed trades; `results_date` on `instruments` (Q-9); the
 sha256 half of Q52 (the index map's digest beside its `asOf` in the UI); the 06a Atlas questions

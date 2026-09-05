@@ -197,3 +197,45 @@ describe("trailSuggestions — the R ladder", () => {
     expect(s.rLadder!.map((x) => x.priceP)).toEqual([9_000, 8_000, 7_000]);
   });
 });
+
+/**
+ * M3 — the ladder's R is the R FROZEN AT FIRST ENTRY (invariant 4), not the
+ * distance to whatever stop is in force today.
+ *
+ * The panel used to feed `computed.riskPerShareP` — the stop method's own
+ * distance — into the ladder, so the moment a trail moved the panel's ladder
+ * and the row's Open R described different Rs on the same position.
+ */
+describe("the R ladder is built on frozen R, never on today's stop", () => {
+  const ladderBars: Bar[] = Array.from({ length: 30 }, (_, i) => bar(i, 26_000));
+
+  it("entry ₹250, planned SL ₹240, trail at ₹255: the ladder is 260 / 270 / 280", async () => {
+    const { frozenRiskPerShareP } = await import("@/lib/live/panel-math");
+    // ₹1,000 of risk recorded at entry on 100 shares ⇒ 1R = ₹10 per share,
+    // which is exactly entry (₹250) − planned SL (₹240).
+    const frozen = frozenRiskPerShareP(100_000, 100);
+    expect(frozen).toBe(1_000);
+    const s = trailSuggestions({
+      side: "long",
+      entryP: 25_000,
+      bars: ladderBars,
+      currentStopP: 25_500,
+      riskPerShareP: frozen,
+      qty: 99,
+    });
+    expect(s.rLadder!.map((x) => x.priceP)).toEqual([26_000, 27_000, 28_000]);
+  });
+
+  it("…and the trailing stop's own distance would have produced 255 / 260 / 265", () => {
+    // The bug, stated as arithmetic: ₹255 − ₹250 = ₹5 per share of "R".
+    const s = trailSuggestions({
+      side: "long",
+      entryP: 25_000,
+      bars: ladderBars,
+      currentStopP: 25_500,
+      riskPerShareP: 500,
+      qty: 99,
+    });
+    expect(s.rLadder!.map((x) => x.priceP)).toEqual([25_500, 26_000, 26_500]);
+  });
+});

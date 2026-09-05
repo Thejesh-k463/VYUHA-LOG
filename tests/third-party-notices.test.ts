@@ -2,9 +2,9 @@
  * The one live compliance gap the chart research found (02 §9.5 / open decision
  * 4, owner ruling Q26): lightweight-charts is Apache-2.0 and requires TradingView
  * to be named as the creator, with a link, on a surface the user can reach. The
- * app deliberately turns OFF the library's `attributionLogo` — Vyuha is offline
- * and zero-telemetry, and an outbound link painted on a canvas is not acceptable
- * here — so the obligation is met by a file that ships inside the artifact.
+ * app deliberately turns OFF the library's `attributionLogo` — a chart of the
+ * user's own trades paints no outbound link — so the obligation is met by a
+ * file that ships inside the artifact instead.
  *
  * A mention in `docs/DECISIONS.md` is not a file in the installer. This test is
  * what makes the notices file part of the build rather than part of the intent:
@@ -50,6 +50,18 @@ describe("THIRD-PARTY-NOTICES.txt", () => {
     expect(text).toContain("https://www.tradingview.com/");
     // The reason the on-canvas link is switched off has to travel with the file.
     expect(text).toContain("attributionLogo");
+  });
+
+  it("gives the TRUE reason the on-canvas link is off, not the retired positioning", () => {
+    const text = readFileSync(noticesPath, "utf8");
+
+    // "Vyuha runs offline and sends nothing anywhere" was struck on 2026-09-05
+    // and contradicts PRIVACY's own four kinds of network request. The fact
+    // that survives is about the CANVAS, and it is the fact the licence cares
+    // about: the attribution is met by this file instead of by a painted link.
+    expect(text).not.toMatch(/runs offline/i);
+    expect(text).not.toMatch(/sends nothing anywhere/i);
+    expect(text).toContain("no outbound link is painted on the chart canvas");
   });
 
   it("carries the Apache-2.0 licence text itself, not just its name", () => {

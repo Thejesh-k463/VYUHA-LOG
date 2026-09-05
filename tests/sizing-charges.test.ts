@@ -92,6 +92,55 @@ describe("chargesAdjustedRisk - 03 §2.1, the delivery round trip stopped out", 
   });
 });
 
+/**
+ * A SHORT enters on the SELL leg and exits on the BUY leg, and intraday STT is
+ * charged on the sell side alone. Pricing a short as though entry were the
+ * purchase therefore taxes the wrong number: the stop is the larger figure on a
+ * short, so the charge came out too high and the effective risk with it. The
+ * price risk |entry - stop| is symmetric and must not move.
+ */
+describe("chargesAdjustedRisk knows which leg is the sale (M6)", () => {
+  const SHORT_ENTRY_P = 285_000; // Rs 2,850 - the SELL leg
+  const SHORT_STOP_P = 290_000; // Rs 2,900 - the BUY leg
+  const QTY = 80;
+  const rates = ratesOn("eq_intraday", "2026-09-05");
+  const trade = {
+    segment: "eq_intraday" as Segment,
+    qty: QTY,
+    entryP: SHORT_ENTRY_P,
+    stopP: SHORT_STOP_P,
+    capitalP: CAPITAL_P,
+  };
+
+  it("charges intraday STT on the Rs 2,28,000 entry value, because that is the sale", () => {
+    const short = chargesAdjustedRisk({ ...trade, direction: "short" }, rates);
+    expect(QTY * SHORT_ENTRY_P).toBe(22_800_000); // Rs 2,28,000, the sell leg
+    expect(short.breakdownP.sttCtt).toBe(5_700); // Rs 57.00 = 0.025% of Rs 2,28,000
+  });
+
+  it("prices the same two levels differently long, where the sale is the stop", () => {
+    const long = chargesAdjustedRisk({ ...trade, direction: "long" }, rates);
+    expect(long.breakdownP.sttCtt).toBe(5_800); // Rs 58.00 = 0.025% of Rs 2,32,000
+    const short = chargesAdjustedRisk({ ...trade, direction: "short" }, rates);
+    expect(long.chargesP - short.chargesP).toBe(100); // the whole difference is STT
+  });
+
+  it("leaves the price risk alone — |entry - stop| has no side", () => {
+    const short = chargesAdjustedRisk({ ...trade, direction: "short" }, rates);
+    const long = chargesAdjustedRisk({ ...trade, direction: "long" }, rates);
+    expect(short.riskAtStopP).toBe(400_000); // Rs 4,000
+    expect(long.riskAtStopP).toBe(short.riskAtStopP);
+    expect(short.effectiveRiskP).toBe(short.riskAtStopP + short.chargesP);
+  });
+
+  it("defaults to long, so every existing caller is priced exactly as before", () => {
+    const implicit = chargesAdjustedRisk(trade, rates);
+    const explicit = chargesAdjustedRisk({ ...trade, direction: "long" }, rates);
+    expect(implicit.chargesP).toBe(explicit.chargesP);
+    expect(implicit.breakdownP.sttCtt).toBe(explicit.breakdownP.sttCtt);
+  });
+});
+
 describe("the rate table is dated, because STT has moved three times", () => {
   it("a 2024-09-30 futures trade uses the old STT and a 2026-04-01 trade the new", () => {
     expect(ratesOn("future", "2024-09-30").sttPct).toBe(0.000125);

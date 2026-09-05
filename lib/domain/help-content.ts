@@ -39,7 +39,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Every open position with the levels you recorded and the arithmetic between them: mark, unrealised P&L, open R against the risk frozen at entry, risk at stop, and portfolio heat — the sum of that risk over your capital, printed with its denominator.",
       "Marks are end-of-day by default. Which source prices the desk — your own manual marks, the stored end-of-day bars, or an OpenAlgo feed — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
-      "A row with no stop recorded is left out of heat and says so, rather than being counted as risk-free. Positions, marks and P&L are free; R, risk at stop, heat, the chart overlay and alerts are Pro.",
+      "A row with no stop recorded is left out of heat and says so, rather than being counted as risk-free. Positions, marks and P&L are free; R, risk at stop, heat and the chart overlay are Pro.",
     ],
     keywords: ["live", "desk", "open positions", "mark", "heat", "risk at stop", "open r", "tracker", "quotes"],
     refusals: [
@@ -100,7 +100,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "What was the market doing around my trades — breadth, regime, sectors and cap bands?",
     body: [
       "Advance/decline breadth, a regime classification, sector rotation and cap-band behaviour, computed on this machine from the bhavcopy bars already stored in your journal. Every figure uses a published definition and renders with the denominator it was computed over.",
-      "No Chartink data is used. There is no proprietary score, no hidden filter and no parity claim — the owner's own widgets are a separate, opt-in feed and are not computed here.",
+      "No Chartink data is used. There is no proprietary score, no hidden filter and no parity claim — the owner's own widgets are not computed in Vyuha.",
       "A Coverage tab states how many sessions and symbols the read stands on, and a thin day prints an em dash instead of a number. Pro.",
     ],
     keywords: ["atlas", "breadth", "regime", "sectors", "rotation", "cap bands", "advance decline", "market context", "bhavcopy"],
@@ -143,7 +143,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "One setup, seven sizing methods computed side by side — fixed rupee amount, fixed fractional (% risk), volatility / Turtle unit (N), % volatility, Kelly and fractional Kelly, fixed ratio and equal weight — each with the formula printed beside the size it produced, and a typed reason instead of a number when an input is missing.",
       "The stop comes from the method you pick (manual, structure, ATR or percent), a deploy cap bounds what one idea can occupy, and round-trip charges are folded into the risk when the charges toggle is on. Lot sizes are respected, so an F&O size is a whole number of lots.",
-      "Nothing here changes your Live Desk defaults on its own: the risk percentage, deploy cap, stop method and heat ceiling are written to Settings only when you press the write-back button, and the dialog shows the stored value next to the new one first.",
+      "Nothing here changes your Live Desk defaults on its own: the risk percentage, deploy cap, stop method, ATR length and ATR multiple are written to Settings only when you press the write-back button, and the dialog shows the stored value next to the new one first.",
     ],
     keywords: ["sizing", "position size", "quantity", "kelly", "turtle", "atr stop", "deploy cap", "risk per trade", "lab", "lot size"],
     refusals: [

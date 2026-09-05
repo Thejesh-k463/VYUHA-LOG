@@ -22,10 +22,11 @@ import type { DeskRow, LiveDeskData } from "./desk-types";
  * (invariant 8) is still literally true.
  *
  * FREE / PRO is the owner's Q55 ruling: the tracker's own record — positions,
- * mark, P&L — is FREE, and R, risk at stop, heat, the chart overlay and alerts
- * are Pro. The page is NOT wrapped in <ProGate> (invariant 7); the Pro cells
- * render as locked chips, which read as neither a number nor the dash that
- * means "cannot be computed".
+ * mark, P&L — is FREE, and R, risk at stop, heat and the chart overlay are Pro.
+ * The page is NOT wrapped in <ProGate> (invariant 7); the Pro cells render as
+ * locked chips, which read as neither a number nor the dash that means "cannot
+ * be computed". The SERVER strips the Pro figures too (`load-desk.ts`) — a
+ * locked chip over a number that shipped in the payload is not a paywall.
  *
  * WHY THE DETAIL PANE IS NOT AN INLINE ROW: rows are virtualised, and a
  * variable-height row inside a windowed list re-measures on every expand. One
@@ -250,7 +251,20 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
       }
       if (action === "row-down" || action === "row-up") {
         e.preventDefault();
-        setFocusIdx((i) => nextIndex(i, visible.length, action === "row-down" ? 1 : -1));
+        const next = nextIndex(focusIdx, visible.length, action === "row-down" ? 1 : -1);
+        setFocusIdx(next);
+        // Moving an index moves nothing the user can see: the table is a
+        // `max-h-[60vh] overflow-auto` box, and past VIRTUAL_THRESHOLD the
+        // focused row is not even mounted. Each path needs its own call —
+        // the virtualiser can scroll to a row the DOM does not have.
+        if (next >= 0) {
+          if (windowed) {
+            virtualizer.scrollToIndex(next, { align: "auto" });
+          } else {
+            const el = scrollRef.current?.querySelector<HTMLElement>(`[data-row-index="${next}"]`);
+            el?.scrollIntoView({ block: "nearest" });
+          }
+        }
         return;
       }
       if (action === "focus-filter") {
@@ -270,7 +284,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, focusIdx, openLab]);
+  }, [visible, focusIdx, openLab, windowed, virtualizer]);
 
   const marketOpen = now === null ? null : isMarketOpenIst(now);
 
@@ -343,7 +357,10 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.heatTitle}</p>
-          {!pro ? (
+          {/* `heat === null` and `!pro` are the same state by construction —
+              the loader strips it — but the null is what the type forces us to
+              branch on, so the lock cannot be bypassed by a stale payload. */}
+          {!pro || heat === null ? (
             <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <ProLock /> {DESK_COPY.proColumns}
             </p>
@@ -365,7 +382,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
 
         <div className="rounded-[var(--radius-card)] border border-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DESK_COPY.concentrationTitle}</p>
-          {!pro ? (
+          {!pro || concentration === null ? (
             <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <ProLock /> {DESK_COPY.proColumns}
             </p>
@@ -456,6 +473,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
                 <Row
                   key={r.id}
                   row={r}
+                  index={idx}
                   pro={pro}
                   focused={focused?.id === r.id}
                   expanded={expandedId === r.id}
@@ -512,6 +530,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
 
 function Row({
   row,
+  index,
   pro,
   focused,
   expanded,
@@ -520,6 +539,8 @@ function Row({
   onToggle,
 }: {
   row: DeskRow;
+  /** Its position in `visible`, so j/k can scroll the un-windowed table to it. */
+  index: number;
   pro: boolean;
   focused: boolean;
   expanded: boolean;
@@ -532,6 +553,7 @@ function Row({
       className={`border-t border-rule ${focused ? "bg-card-hover" : ""}`}
       aria-selected={focused}
       data-account-id={row.accountId}
+      data-row-index={index}
     >
       <td className="px-2 py-1.5">
         <button type="button" onClick={onToggle} aria-expanded={expanded} className="text-left font-medium">
@@ -707,7 +729,12 @@ function DetailPane({
             <PositionChartPanel
               symbol={row.symbol}
               isin={row.isin}
+              // The row already knows both. The panel inferring either one is
+              // how a short rendered as a long and how R drifted (M2, M3).
+              side={row.side}
+              riskAmountP={row.riskAmountP}
               entryP={row.avgEntryP}
+              investedP={row.investedP}
               targetP={row.targetP}
               qty={row.qty}
               accountId={row.accountId}

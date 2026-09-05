@@ -23,12 +23,16 @@
  * VYUHA_DB_PATH — a static import would bind lib/db to the real file first.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { eq } from "drizzle-orm";
 import {
   DEFAULT_DEPLOY_CAP_PPM,
   DEFAULT_RISK_PCT_PPM,
   LAB_METHODS,
+  sampleInputs,
+  seedFromParams,
 } from "@/components/sizing/lab-config";
 
 let t: TempDb;
@@ -141,5 +145,101 @@ describe("charge rates are resolved by the engine, and their source is named", (
     const data = page.loadSizingLab("2025-06-02");
     expect(Number.isInteger(data.accountId)).toBe(true);
     expect(data.capitalRupees).toBeGreaterThanOrEqual(0);
+  });
+});
+
+/**
+ * The Live Desk hand-off (U1). `components/live/tracker-client.tsx` pushes
+ * `/sizing-lab?from=live&symbol=<sym>&entry=<paise>&stop=<paise>` — its levels
+ * are integer PAISE and the Lab's fields are RUPEES, so the one thing that can
+ * go silently wrong here is a factor of a hundred. Everything else is refusal:
+ * a query the Lab cannot fully trust opens the sample setup instead of mixing
+ * one real level with one invented one.
+ */
+describe("seedFromParams — the Live Desk hand-off", () => {
+  const SAMPLE = sampleInputs();
+
+  it("converts the tracker's paise into the Lab's rupees and names the position", () => {
+    const seed = seedFromParams({ from: "live", symbol: "RELIANCE", entry: "285000", stop: "260000" });
+    expect(seed.symbol).toBe("RELIANCE");
+    expect(seed.inputs.entryRupees).toBe(2850);
+    expect(seed.inputs.stopRupees).toBe(2600);
+    expect(seed.inputs.direction).toBe("long");
+  });
+
+  it("keeps the paise exactly — a level with paise on it survives the round trip", () => {
+    const seed = seedFromParams({ from: "live", symbol: "TCS", entry: "123456", stop: "120000" });
+    expect(seed.inputs.entryRupees).toBe(1234.56);
+    expect(seed.symbol).toBe("TCS");
+  });
+
+  it("reads a stop ABOVE entry as a short, because that is the only side it can be", () => {
+    const seed = seedFromParams({ from: "live", symbol: "INFY", entry: "285000", stop: "290000" });
+    expect(seed.inputs.direction).toBe("short");
+    expect(seed.inputs.entryRupees).toBe(2850);
+    expect(seed.inputs.stopRupees).toBe(2900);
+  });
+
+  it("carries the caller's own defaults through — capital and stored risk are the server's", () => {
+    const seed = seedFromParams(
+      { from: "live", symbol: "SBIN", entry: "80000", stop: "76000" },
+      { capitalRupees: 25_00_000, riskPctPpm: 7_500 },
+    );
+    expect(seed.inputs.capitalRupees).toBe(25_00_000);
+    expect(seed.inputs.riskPctPpm).toBe(7_500);
+  });
+
+  it("leaves ATR unset on a prefill rather than pricing a real symbol off the sample's volatility", () => {
+    // The desk sends no ATR. Keeping the sample's Rs 85 would compute an N-unit
+    // size for a real position from a number belonging to a different stock —
+    // the methods report a typed reason for a missing input instead.
+    expect(SAMPLE.atrRupees).toBe(85);
+    expect(seedFromParams({ from: "live", symbol: "SBIN", entry: "80000", stop: "76000" }).inputs.atrRupees).toBe(0);
+  });
+
+  it.each([
+    ["no query at all", {}],
+    ["a query from somewhere else", { from: "menu", symbol: "SBIN", entry: "80000", stop: "76000" }],
+    ["a rupee figure where paise were promised", { from: "live", symbol: "SBIN", entry: "800.00", stop: "760.00" }],
+    ["a negative level", { from: "live", symbol: "SBIN", entry: "-80000", stop: "76000" }],
+    ["a zero level", { from: "live", symbol: "SBIN", entry: "0", stop: "76000" }],
+    ["a word", { from: "live", symbol: "SBIN", entry: "NaN", stop: "76000" }],
+    ["an unsafe integer", { from: "live", symbol: "SBIN", entry: "99999999999999999999", stop: "76000" }],
+    ["no stop — the desk omits it when the row has none", { from: "live", symbol: "SBIN", entry: "80000" }],
+    ["a stop equal to entry, which is no risk per share", { from: "live", symbol: "SBIN", entry: "80000", stop: "80000" }],
+    ["a symbol that is not a symbol", { from: "live", symbol: "<script>", entry: "80000", stop: "76000" }],
+    ["no symbol", { from: "live", entry: "80000", stop: "76000" }],
+  ])("opens the sample setup on %s", (_why, q) => {
+    const seed = seedFromParams(q);
+    expect(seed.symbol).toBeNull();
+    expect(seed.inputs).toEqual(SAMPLE);
+  });
+
+  it("takes the first value when a param is repeated, and never an array", () => {
+    const seed = seedFromParams({ from: ["live"], symbol: ["ITC"], entry: ["30000"], stop: ["28000"] });
+    expect(seed.symbol).toBe("ITC");
+    expect(seed.inputs.entryRupees).toBe(300);
+  });
+});
+
+/**
+ * The helper existing is not the same as the page using it. These pin the two
+ * wires the prefill runs through: the page has to READ searchParams (Next 16
+ * hands them over as a promise) and the client has to seed its one piece of
+ * state from them.
+ */
+describe("the prefill is actually wired up", () => {
+  const src = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
+
+  it("the page awaits searchParams and passes them to the client", () => {
+    const s = src("app/sizing-lab/page.tsx");
+    expect(s).toMatch(/await\s+searchParams/);
+    expect(s).toMatch(/query=\{/);
+  });
+
+  it("the client seeds its setup through seedFromParams, with no effect syncing state", () => {
+    const s = src("components/sizing/lab-client.tsx");
+    expect(s).toContain("seedFromParams(");
+    expect(s).not.toMatch(/useEffect\([^)]*setInputs/);
   });
 });

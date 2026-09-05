@@ -243,6 +243,82 @@ export function sampleInputs(over: Partial<LabInputs> = {}): LabInputs {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The Live Desk hand-off
+// ---------------------------------------------------------------------------
+
+/**
+ * The query `components/live/tracker-client.tsx` pushes when a row is opened
+ * in the Lab: `/sizing-lab?from=live&symbol=<sym>&entry=<paise>&stop=<paise>`.
+ * Shaped like Next's `searchParams`, so a repeated key arrives as an array.
+ */
+export interface LabQuery {
+  from?: string | string[];
+  symbol?: string | string[];
+  entry?: string | string[];
+  stop?: string | string[];
+}
+
+export interface LabSeed {
+  inputs: LabInputs;
+  /** The position the levels came from, or null when the Lab opened on its sample. */
+  symbol: string | null;
+}
+
+const firstParam = (v: string | string[] | undefined): string | null =>
+  typeof v === "string" ? v : Array.isArray(v) ? (v[0] ?? null) : null;
+
+/** A whole number of PAISE, as the desk writes it. Anything else is refused. */
+function paiseParam(v: string | string[] | undefined): number | null {
+  const s = firstParam(v)?.trim();
+  if (!s || !/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/** A ticker, and nothing that could be markup or a sentence. */
+function symbolParam(v: string | string[] | undefined): string | null {
+  const s = firstParam(v)?.trim();
+  return s && /^[A-Za-z0-9&._-]{1,32}$/.test(s) ? s : null;
+}
+
+/**
+ * The tracker's query → the Lab's opening setup.
+ *
+ * Levels cross as integer paise and the Lab's fields are rupees, so the
+ * conversion happens here, once. The refusal rule is deliberate: a prefill
+ * needs the symbol AND both levels, because seeding one leg from a real
+ * position and leaving the other at the sample's would print a computed
+ * quantity from two unrelated numbers. Anything short of that opens the
+ * sample setup, which says on screen that it is a sample.
+ *
+ * The ATR field is cleared on a prefill for the same reason — the desk sends
+ * no volatility, and the sample's Rs 85 belongs to a different stock. The
+ * ATR methods report a typed missing-input reason instead of a number.
+ */
+export function seedFromParams(q: LabQuery, over: Partial<LabInputs> = {}): LabSeed {
+  const sample = sampleInputs(over);
+  if (firstParam(q.from) !== "live") return { inputs: sample, symbol: null };
+
+  const symbol = symbolParam(q.symbol);
+  const entryP = paiseParam(q.entry);
+  const stopP = paiseParam(q.stop);
+  if (symbol === null || entryP === null || stopP === null || entryP === stopP) {
+    return { inputs: sample, symbol: null };
+  }
+
+  return {
+    inputs: {
+      ...sample,
+      entryRupees: entryP / 100,
+      stopRupees: stopP / 100,
+      direction: stopP > entryP ? "short" : "long",
+      atrRupees: 0,
+    },
+    symbol,
+  };
+}
+
 /** ATR in rupees → the paise × 1000 carry `lib/risk` computes in. */
 export function atrToP3(atrRupees: number): number {
   return Math.round(atrRupees * 100_000);

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
+import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * THE REGISTRY RULE, MECHANISED (03D §1.2, spec §4.1).
@@ -100,7 +101,12 @@ describe("v4.0 adds no host at all", () => {
   });
 
   it("leaves 'there is no fifth thing' literally true", () => {
-    expect(flat).toContain("That is the complete list. There is no fifth thing.");
+    // Pinned to the sentence PRIVACY.md actually carries (owner ruling Q6; the
+    // file scopes the claim to the desktop app, 892b9ab). The pin is verbatim
+    // rather than a /no fifth thing/ regex because the SCOPE is the load-
+    // bearing half: "for Vyuha Desktop" is what keeps the sentence true when
+    // the hosted product exists.
+    expect(flat).toContain("That is the complete list for Vyuha Desktop. There is no fifth thing.");
   });
 });
 
@@ -110,12 +116,21 @@ describe("v4.0 adds no host at all", () => {
  * server the user installed on their own machine, reached over loopback (or a
  * machine on their own network, which the card says out loud). This block is
  * what stops "the feed is local" from being a claim in a comment.
+ *
+ * The adapter is BUILT in v4.0 and simply not selectable
+ * (`OPENALGO_FEED_ENABLED`, owner ruling), so every assertion below still runs
+ * — a capability block that stopped being policed the moment the feature flag
+ * went false would be a guard that sleeps exactly while the code is easiest to
+ * change.
  */
 describe("v4.1's live feed adds no remote host either", () => {
   const openalgo = () => allProviderCapabilities().find((c) => c.id === "openalgo")!;
 
-  it("ships openalgo as a selectable provider", () => {
-    expect(SHIPPED_PROVIDER_IDS as readonly string[]).toContain("openalgo");
+  it("is built and described, but not selectable until v4.1", () => {
+    expect(OPENALGO_FEED_ENABLED, "v4.0 does not ship the OpenAlgo feed").toBe(false);
+    expect(SHIPPED_PROVIDER_IDS as readonly string[]).not.toContain("openalgo");
+    // …and it is NOT one of the "planned" placeholders either: the adapter is
+    // real, which is why its declared egress still has to hold up.
     expect(openalgo().label).not.toMatch(/not enabled/i);
   });
 

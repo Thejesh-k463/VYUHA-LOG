@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DESK_COPY, EM_DASH, needsSessions, stopLabel } from "@/components/live/desk-copy";
+import { DESK_COPY, EM_DASH, needsSessions, stalenessLabel, stopLabel } from "@/components/live/desk-copy";
 
 /**
  * The Live Desk copy guard (owner rulings Q31 / Q32).
@@ -12,12 +12,11 @@ import { DESK_COPY, EM_DASH, needsSessions, stopLabel } from "@/components/live/
  * a SOURCE guard over every user-facing string in `components/live/` and
  * `app/live/`, in the family of `tests/tax-levers.test.ts:175`.
  *
- * ── It scans STRINGS, not identifiers ───────────────────────────────────────
+ * ── It scans the WHOLE comment-stripped source ──────────────────────────────
  * `buyQty`, `avgBuyPrice`, `sellDate` and `isShort` are the journal's own
- * vocabulary and are not copy. Matching raw source would either fail on them
- * or force the banned list to be so narrow it stops catching prose. So the
- * scan extracts quoted strings and JSX text nodes from comment-stripped
- * source, and tests those.
+ * vocabulary and are not copy — but every banned token is `\b`-anchored, so
+ * none of them can match, and scanning everything is what closes the hole an
+ * extractor leaves (see `copyOf` below, audit T1).
  *
  * ── The disclaimer is exempt, and only the disclaimer ───────────────────────
  * "Nothing here is investment advice or a recommendation" contains two banned
@@ -53,16 +52,26 @@ function files(): string[] {
  */
 const EXEMPT = [DESK_COPY.disclaimer, DESK_COPY.disclaimerShort, DESK_COPY.fillsCaveat];
 
-/** Quoted strings + JSX text, comment-free, with the disclaimer removed. */
-function copyOf(file: string): string[] {
+/**
+ * The comment-stripped source, with the three negated sentences removed.
+ *
+ * WHY THE WHOLE SOURCE, NOT EXTRACTED STRINGS (audit T1). The old extractor
+ * pulled quoted literals plus JSX text matched by `/>([^<>{}]+)</` — a text node
+ * containing ANY interpolation fails that character class, so a banned verb
+ * standing next to `{fmt.pct(…)}` was invisible to the guard.
+ * `tracker-client.tsx` and `position-chart-panel.tsx` both have text nodes of
+ * exactly that shape, so the hole was over live copy, not a hypothetical.
+ *
+ * `tests/sizing-lab-copy.test.ts` scans the whole comment-stripped source
+ * instead, and that is what this now does. The journal's own identifiers
+ * survive it because every banned token is `\b`-anchored: `buyQty`, `buyDate`,
+ * `sellQty` and `avgSellPrice` all continue into another word character, so
+ * `\bbuy\b` and `\bsell now\b` cannot match them.
+ */
+function copyOf(file: string): string {
   let src = stripComments(fs.readFileSync(file, "utf8"));
   for (const e of EXEMPT) src = src.split(e).join(" ");
-  const out: string[] = [];
-  for (const m of src.matchAll(/"([^"\\\n]*)"|'([^'\\\n]*)'|`([^`\\]*)`/g)) {
-    out.push(m[1] ?? m[2] ?? m[3] ?? "");
-  }
-  for (const m of src.matchAll(/>([^<>{}]+)</g)) out.push(m[1]);
-  return out.map((s) => s.trim()).filter((s) => s.length > 2);
+  return src;
 }
 
 /**
@@ -82,8 +91,18 @@ const BANNED =
 
 describe("Live Desk copy never prompts a transaction", () => {
   it.each(files().map((f) => path.relative(ROOT, f).replace(/\\/g, "/")))("%s carries no banned vocabulary", (rel) => {
-    const offenders = copyOf(path.join(ROOT, rel)).filter((s) => BANNED.test(s));
+    const src = copyOf(path.join(ROOT, rel));
+    const offenders = [...src.matchAll(new RegExp(BANNED.source, "gi"))].map((m) => m[0]);
     expect(offenders, `${rel}: ${offenders.join(" | ")}`).toEqual([]);
+  });
+
+  it("the scan sees a banned verb in a text node that carries an interpolation (T1)", () => {
+    // The exact shape the old extractor was blind to. A guard with a hole over
+    // live copy is worse than no guard, because it reports green.
+    const planted = "return (<p>You should trim {fmt.pct(row.openRPpm)} here</p>);";
+    expect(BANNED.test(planted), "the whole-source scan must catch it").toBe(true);
+    const oldExtractor = [...planted.matchAll(/>([^<>{}]+)</g)].map((m) => m[1]);
+    expect(oldExtractor.some((s) => BANNED.test(s)), "the old JSX-text extractor could not").toBe(false);
   });
 
   it("the scan really can fire — a prescriptive sentence is caught", () => {
@@ -167,5 +186,51 @@ describe("empty states state a shortfall — never a zero (invariant 6)", () => 
   it("the dash is an EM dash — a hyphen beside a signed figure reads as a minus", () => {
     expect(EM_DASH).toBe("—");
     expect(needsSessions(21, 0).startsWith(EM_DASH)).toBe(true);
+  });
+});
+
+/**
+ * C2 — "alerts" is advertised nowhere on /live until Telegram alerts ship.
+ *
+ * No alert code exists under `lib/live` or `components/live`; the feature is
+ * v4.1. A paywall label naming a capability the build does not have is an
+ * upsell for something the buyer cannot get, which is the one claim a Pro chip
+ * must never make. The word leaves EVERY Pro label until the feature ships.
+ */
+describe("the Pro label names only what v4.0 actually computes", () => {
+  it("no file on the Live Desk advertises alerts", () => {
+    const offenders = files()
+      .filter((f) => /\balerts?\b/i.test(stripComments(fs.readFileSync(f, "utf8"))))
+      .map((f) => path.relative(ROOT, f).split(path.sep).join("/"));
+    expect(offenders, `these still advertise alerts: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  it("the Pro chip lists R, risk at stop, heat and the chart overlay — and stops there", () => {
+    expect(DESK_COPY.proColumns).not.toMatch(/\balerts?\b/i);
+    expect(DESK_COPY.proColumns).toContain("risk at stop");
+    expect(DESK_COPY.proColumns).toContain("chart overlay");
+  });
+});
+
+/**
+ * C9 — a mark read back from `mtm_prices` has UNKNOWN provenance.
+ *
+ * `persist-mark.ts` writes feed marks into the same table the manual MTM editor
+ * writes to, and the table carries no source column. Calling every row "Manual
+ * mark" tells the user they typed a number the feed may well have written.
+ * "Stored mark" states what is actually known: it came from the store.
+ */
+describe("a stored mark is labelled by what is known about it", () => {
+  it("names the store, not the user, since mtm_prices has no source column", () => {
+    expect(stalenessLabel("manual", null)).toBe("Stored mark");
+    expect(stalenessLabel("manual", "04 Sep")).toBe("Stored mark · 04 Sep");
+    expect(stalenessLabel("manual", null)).not.toContain("Manual");
+  });
+
+  it("the other three provenances are unchanged", () => {
+    expect(stalenessLabel("eod", null)).toBe("End of day");
+    expect(stalenessLabel("delayed", null)).toBe("Delayed");
+    expect(stalenessLabel("tick", null)).toBe("Last traded");
+    expect(stalenessLabel(null, null)).toBe(DESK_COPY.noMark);
   });
 });

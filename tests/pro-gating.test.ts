@@ -93,6 +93,20 @@ describe("Pro gating — the registry and the real gates agree", () => {
     }
   });
 
+  it("the Live Desk label sells only what v4.0 ships — no alerts (owner ruling, 4.1)", () => {
+    // The upsell card is a promise: /live advertised "…chart overlay and
+    // alerts" while no alert code exists anywhere in lib/live or
+    // components/live — Telegram alerts are v4.1. A buyer paying for the Live
+    // Desk on the strength of that line gets four of five things.
+    const live = PRO_FEATURES.find((f) => f.href === "/live")!;
+    expect(live.label).not.toMatch(/alert/i);
+    // The things it DOES ship stay on the label, so this cannot be satisfied
+    // by deleting the sentence.
+    expect(live.label).toMatch(/risk at stop/i);
+    expect(live.label).toMatch(/portfolio heat/i);
+    expect(live.label).toMatch(/chart overlay/i);
+  });
+
   it("PRO_FEATURES labels are unique — two entries with one label is a copy bug", () => {
     const labels = PRO_FEATURES.map((f) => f.label);
     expect(new Set(labels).size).toBe(labels.length);

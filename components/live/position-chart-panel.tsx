@@ -19,10 +19,15 @@
  *    reproduces that budget exactly. Capital is not a prop and this file will
  *    not guess one (invariant 6). With no server stop there is no budget, and
  *    the screen shows the risk-not-set state instead of a number;
- *  * `side` is read off the server stop (a stop below entry is a long) and only
- *    falls back to the target's direction when there is no stop at all;
  *  * the flat-percentage branch has no stored setting behind it, so its
  *    percentage is stated on screen as the chart's own, never as the user's.
+ *
+ * WHAT IT NO LONGER INFERS. `side` and R are PROPS off the row, and the reasons
+ * are in `lib/live/panel-math.ts`: a derived side rendered a stop-less,
+ * target-less short as a long, and an R re-derived from today's stop made the
+ * panel's Open R and R ladder disagree with the row's. The method control moves
+ * the stop LINE and nothing else — every R on this screen is the R frozen at
+ * first entry (invariant 4).
  *
  * NO SERVER ACTION, NO `setState` IN AN EFFECT. The two controls are plain
  * `useState` driven by clicks; everything else is `useMemo` over props and
@@ -34,6 +39,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { inr, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { directionOf, frozenRiskPerShareP, panelStats } from "@/lib/live/panel-math";
 import { computeStop, type StopResult, type StopSource } from "@/lib/live/stop";
 import { wilderAtrSeriesP3 } from "@/lib/live/tracker-row";
 import { trailSuggestions } from "@/lib/live/trail";
@@ -73,13 +79,6 @@ const METHODS: { id: StopSource; label: string }[] = [
   { id: "percent", label: "Percent" },
   { id: "manual", label: "Manual" },
 ];
-
-/** A stop below entry is a long. Only consulted when there is no stop at all. */
-function deriveSide(entryP: Paise, targetP: Paise | null, stop: StopResult | null): Side {
-  if (stop !== null && (stop.kind === "ok" || stop.kind === "zero")) return stop.stopP < entryP ? "long" : "short";
-  if (targetP !== null && targetP < entryP) return "short";
-  return "long";
-}
 
 /** Lowest low (long) / highest high (short) of the last `n` sessions. */
 function structureLevelP(bars: Bar[], side: Side, n: number): Paise | null {
@@ -121,20 +120,28 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 export function PositionChartPanel(props: {
   symbol: string;
   isin: string | null;
+  /** The position's own direction, off the row. This screen infers no side. */
+  side: Side;
   entryP: number;
+  /** `qty × the REAL average`, rounded once, so this strip agrees with the row. */
+  investedP: number;
   targetP: number | null;
   qty: number;
+  /** R FROZEN AT FIRST ENTRY (invariant 4). null ⇒ no Open R and no ladder. */
+  riskAmountP: number | null;
   accountId: number;
   stop: StopResult | null;
   bars: Bar[];
 }): JSX.Element {
-  const { symbol, isin, entryP, targetP, qty, accountId, stop, bars } = props;
+  const { symbol, isin, side, entryP, investedP, targetP, qty, riskAmountP, accountId, stop, bars } = props;
 
   const serverSource = stop !== null && (stop.kind === "ok" || stop.kind === "zero") ? stop.source : null;
   const [method, setMethod] = useState<StopSource>(serverSource ?? "atr");
   const [atrLength, setAtrLength] = useState<number>(DEFAULT_ATR_LENGTH);
 
-  const side = useMemo(() => deriveSide(entryP, targetP, stop), [entryP, targetP, stop]);
+  // 1R per share, frozen at first entry. The ladder and the "One R is ₹X"
+  // sentence read THIS; the method control never changes what an R is.
+  const frozenRpsP = frozenRiskPerShareP(riskAmountP, qty);
 
   // The budget the server already computed. null ⇒ risk-not-set, never a guess.
   const riskBudgetP = stop !== null && (stop.kind === "ok" || stop.kind === "zero") ? stop.riskBudgetP : null;
@@ -163,13 +170,15 @@ export function PositionChartPanel(props: {
   const riskNotSet = computed.kind === "risk-not-set";
   const stopP = computed.kind === "ok" || computed.kind === "zero" ? computed.stopP : null;
   const stopSource = computed.kind === "ok" || computed.kind === "zero" ? computed.source : null;
-  const riskPerShareP = computed.kind === "ok" || computed.kind === "zero" ? computed.riskPerShareP : null;
+  // `computed.riskPerShareP` is deliberately NOT read: it is the distance to
+  // the stop this method produced, which is a sizing input, not an R. Every R
+  // on this screen comes from `frozenRpsP` above (invariant 4).
 
   const markP = bars.length > 0 ? bars[bars.length - 1].closeP : null;
-  const dirn = side === "short" ? -1 : 1;
-  const unrealisedP = markP === null ? null : qty * dirn * (markP - entryP);
-  const openR = markP === null || riskPerShareP === null || riskPerShareP <= 0 ? null : (dirn * (markP - entryP)) / riskPerShareP;
-  const atRiskP = markP === null || stopP === null ? null : qty * Math.max(dirn * (markP - stopP), 0);
+  const dirn = directionOf(side);
+  // The summary strip, in one pure call (`lib/live/panel-math.ts`). Open R is
+  // the FROZEN R; only `atRiskP` follows the stop the method control produced.
+  const { unrealisedP, openR, atRiskP } = panelStats({ side, qty, entryP, investedP, markP, riskAmountP, stopP });
 
   const trail = useMemo(
     () =>
@@ -178,11 +187,13 @@ export function PositionChartPanel(props: {
         entryP,
         bars,
         currentStopP: stopP,
-        riskPerShareP,
+        // The ladder's rungs are 1R / 2R / 3R from entry, and an R is what it
+        // was at entry — not the distance to today's stop.
+        riskPerShareP: frozenRpsP,
         qty,
         atrLength,
       }),
-    [side, entryP, bars, stopP, riskPerShareP, qty, atrLength],
+    [side, entryP, bars, stopP, frozenRpsP, qty, atrLength],
   );
 
   const trailLabel = trail.chandelier.levelP === null ? null : `chandelier, ${trail.chandelier.params.bars} bars × ${trail.chandelier.params.atrMultPermille / 1000} ATR`;
@@ -208,9 +219,9 @@ export function PositionChartPanel(props: {
   })();
 
   const ladderBookedP =
-    trail.rLadder === null || riskPerShareP === null
+    trail.rLadder === null || frozenRpsP === null
       ? null
-      : trail.rLadder.reduce((sum, step) => sum + (step.reached ? step.qty * step.r * riskPerShareP : 0), 0);
+      : trail.rLadder.reduce((sum, step) => sum + (step.reached ? step.qty * step.r * frozenRpsP : 0), 0);
 
   return (
     <section className="flex flex-col gap-4" data-testid="position-chart-panel" data-account-id={accountId}>
@@ -364,9 +375,9 @@ export function PositionChartPanel(props: {
                     </em>
                   </div>
                   <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                    {riskPerShareP === null
-                      ? "One R needs a stop; without one there is no ladder."
-                      : `One R is ${inr(rupees(riskPerShareP))} per share. Vyuha never applies a step on its own.`}
+                    {frozenRpsP === null
+                      ? "One R is the risk you recorded at entry; without it there is no ladder."
+                      : `One R is ${inr(rupees(frozenRpsP))} per share, frozen at your first entry. Vyuha never applies a step on its own.`}
                   </p>
                   {trail.rLadder === null ? null : (
                     <>

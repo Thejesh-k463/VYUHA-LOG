@@ -55,7 +55,13 @@ export const DESK_COPY = {
 
   keyboardHelp: "j / k move · Enter expands · L opens the Sizing Lab · / filters · Esc returns to the table",
 
-  proColumns: "Pro — R, risk at stop, portfolio heat, chart overlay and alerts.",
+  /**
+   * Q55, and nothing beyond it. The word "alerts" is deliberately ABSENT: no
+   * alert code exists under `lib/live` or `components/live` and Telegram alerts
+   * are v4.1. A Pro label naming a capability this build does not have sells
+   * something the buyer cannot receive.
+   */
+  proColumns: "Pro — R, risk at stop, portfolio heat and the chart overlay.",
 } as const;
 
 /** "— needs 21 sessions. You have 8." The shortfall is always stated. */
@@ -79,12 +85,21 @@ export function riskAtStopSentence(level: string, loss: string, ofCapital: strin
   return `If the stop is hit at ${level}, the computed loss is ${loss}${tail}, before charges.`;
 }
 
-/** The staleness pill. `asOf` is when the price was TRUE AT THE SOURCE. */
+/**
+ * The staleness pill. `asOf` is when the price was TRUE AT THE SOURCE.
+ *
+ * "manual" reads "Stored mark", not "Manual mark". The mark came out of
+ * `mtm_prices`, which has no source column, and `persist-mark.ts` writes FEED
+ * marks into the same table the manual MTM editor writes to. Calling every one
+ * of them manual tells the user they typed a number the feed may have written —
+ * a claim about provenance the desk cannot support (invariant 6 in spirit: say
+ * what is known, which is that it came from the store).
+ */
 export function stalenessLabel(staleness: string | null, asOf: string | null): string {
   if (staleness === null) return DESK_COPY.noMark;
   const when = asOf ? ` · ${asOf}` : "";
   if (staleness === "eod") return `End of day${when}`;
-  if (staleness === "manual") return `Manual mark${when}`;
+  if (staleness === "manual") return `Stored mark${when}`;
   if (staleness === "delayed") return `Delayed${when}`;
   return `Last traded${when}`;
 }
