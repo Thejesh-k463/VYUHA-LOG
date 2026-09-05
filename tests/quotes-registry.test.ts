@@ -61,14 +61,17 @@ describe("the providers v4.0 did NOT build", () => {
     await expect(kite.snapshot([])).rejects.toThrow(/not enabled in v4\.0/i);
     expect(() => kite.subscribe([], () => {})).toThrow(NotEnabledError);
 
-    const openalgo = createPlannedProvider("openalgo");
-    await expect(openalgo.snapshot([])).rejects.toThrow(/v4\.1/);
+    // `openalgo` was the example here until v4.1 built it; a broker feed is
+    // the remaining planned shape, and its note names the version that would
+    // ship it (v4.2+), not the one that shipped OpenAlgo.
+    const upstox = createPlannedProvider("upstox");
+    await expect(upstox.snapshot([])).rejects.toThrow(/v4\.2/);
     try {
-      await openalgo.snapshot([]);
+      await upstox.snapshot([]);
       expect.unreachable("a disabled provider must refuse");
     } catch (e) {
       expect((e as NotEnabledError).code).toBe("PROVIDER_NOT_ENABLED");
-      expect((e as NotEnabledError).providerId).toBe("openalgo");
+      expect((e as NotEnabledError).providerId).toBe("upstox");
     }
   });
 

@@ -60,7 +60,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../desktop-dist": "server"
+      "../desktop-dist": "server",
+      "../docs/client/THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     }
   }
 }

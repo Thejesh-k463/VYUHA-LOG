@@ -1,0 +1,39 @@
+-- v4.1 "Live feed" — which quote provider the Live Desk runs, how fast it
+-- refreshes on screen, and the once-a-day guard for the persisted mark.
+--
+-- THREE COLUMNS, ONE ROW. `settings` is a fixed-column single row, so a new
+-- preference is a column here rather than a key/value row — the same shape as
+-- auto_mtm_enabled / last_auto_mtm_date, which this trio deliberately mirrors.
+--
+--   live_feed_provider         eod | manual | mock | openalgo. The DEFAULT
+--                              stays 'eod', so an upgrade changes no
+--                              behaviour and adds no egress: v4.0's ruling
+--                              ("EOD-first, zero new hosts") survives the
+--                              migration untouched.
+--   live_feed_refresh_seconds  1..5, default 3 (owner answer Q25). It is an
+--                              ON-SCREEN refresh interval only. Ticks live in
+--                              memory; nothing on this path writes a tick.
+--   last_live_mark_date        IST yyyy-mm-dd of the last PERSISTED mark.
+--                              "Exactly one persisted mark per position per
+--                              day" (Q25) is enforced twice over: this stamp,
+--                              and the (symbol, as_of_date) delete+insert into
+--                              mtm_prices that lib/quotes/persist-mark.ts does
+--                              — so even a lost stamp cannot produce two rows
+--                              for one position on one day.
+--
+-- SELECTING 'openalgo' IS NOT CONSENT. lib/quotes/registry.ts re-applies
+-- openAlgoGate() (openalgo_enabled AND a current openalgo_ack_version) on
+-- every selection and falls back to 'eod' when it fails, so this column can
+-- never be the thing that opens a feed. That is also why it is safe for the
+-- column to travel in a backup: the two columns that carry the consent are
+-- machine state and are blanked on restore, so a restored 'openalgo' resolves
+-- to 'eod' until the person at THIS machine accepts the disclosure.
+--
+-- FOLLOW-UP FOR WHOEVER OWNS lib/backup-format.ts: `last_live_mark_date`
+-- belongs in SETTINGS_MACHINE_COLUMNS with last_auto_mtm_date and
+-- last_telegram_sent_date — it is job bookkeeping, and a restored stamp from
+-- the same IST day would suppress today's live mark on this machine. It is not
+-- added here because that file is outside this wave's file set.
+ALTER TABLE `settings` ADD COLUMN `live_feed_provider` text DEFAULT 'eod' NOT NULL;--> statement-breakpoint
+ALTER TABLE `settings` ADD COLUMN `live_feed_refresh_seconds` integer DEFAULT 3 NOT NULL;--> statement-breakpoint
+ALTER TABLE `settings` ADD COLUMN `last_live_mark_date` text;

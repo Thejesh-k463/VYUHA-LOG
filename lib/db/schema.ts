@@ -879,6 +879,19 @@ export const settings = sqliteTable("settings", {
   // here nor hides it because the backup's author finished it there. The
   // migration backfilled it wherever trades already exist.
   onboardingCompletedAt: text("onboarding_completed_at"),
+  // Live Desk feed (v4.1, migration 0067) — which quote provider runs, how
+  // fast the desk refreshes on screen, and the once-a-day guard for the
+  // persisted mark. Default 'eod' keeps an upgraded install exactly where v4.0
+  // left it: no new host until the user picks one. Selecting "openalgo" here
+  // is NOT consent — lib/quotes/registry.ts re-applies openAlgoGate() (the two
+  // machine-state consent columns above) on every selection and falls back to
+  // 'eod', which is why these three may travel in a backup while the consent
+  // may not. Refresh seconds is an ON-SCREEN interval (1–5, owner answer Q25);
+  // ticks are never persisted, and last_live_mark_date is the "exactly one
+  // persisted mark per position per day" stamp.
+  liveFeedProvider: text("live_feed_provider").notNull().default("eod"),
+  liveFeedRefreshSeconds: integer("live_feed_refresh_seconds").notNull().default(3),
+  lastLiveMarkDate: text("last_live_mark_date"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });

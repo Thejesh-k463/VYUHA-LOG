@@ -30,6 +30,7 @@ import {
   openAlgoGate,
 } from "@/lib/domain/openalgo-disclosure";
 import { OpenAlgoDialog } from "@/components/system/openalgo-dialog";
+import { LiveFeedCard } from "@/components/settings/live-feed-card";
 import { TintControl } from "@/components/settings/appearance/tint-control";
 import { PanelStyleSelect } from "@/components/settings/appearance/panel-style-select";
 import { CustomThemeBuilder } from "@/components/settings/appearance/custom-theme-builder";
@@ -466,6 +467,8 @@ export function SettingsForm({ current }: { current: Settings }) {
           </div>
         </CardContent>
       </Card>
+
+      <LiveFeedCard current={current} />
 
       <Card>
         <CardHeader>

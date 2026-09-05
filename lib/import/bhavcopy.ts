@@ -21,6 +21,17 @@ export interface BhavcopyResult {
   date: string | null; // ISO trade date if derivable
   prices: Record<string, number>; // SYMBOL (upper) → close
   bars: Record<string, BhavcopyBar>; // SYMBOL (upper) → OHLC + volume (P1.3 price_history)
+  /**
+   * SYMBOL (upper) → deliverable quantity, and EMPTY for any file that does not
+   * carry the column. v4.0 made UDiFF the primary download (auto-mtm.ts) and
+   * UDiFF has no delivery column at all, while the legacy `sec_bhavdata_full`
+   * fallback does — so the legacy file's one extra fact is kept here rather
+   * than silently lost in the switch. It is deliberately NOT written to
+   * `price_history`: that table has no column for it, and inventing one is a
+   * migration this wave does not need. Consumers must treat "absent" as
+   * "this file did not say", never as zero.
+   */
+  delivery: Record<string, number>;
   count: number;
   warnings: string[];
 }
@@ -32,6 +43,8 @@ const HIGH_KEYS = ["HIGH", "HGHPRIC", "HIGH_PRICE", "HIGHPRICE"];
 const LOW_KEYS = ["LOW", "LWPRIC", "LOW_PRICE", "LOWPRICE"];
 const VOL_KEYS = ["TOTTRDQTY", "TTL_TRD_QNTY", "TTLTRADGVOL", "VOLUME", "NO_OF_SHRS", "TRADED_QTY", "TTLTRFVAL"];
 const SERIES_KEYS = ["SERIES", "SCTYSRS"];
+// Legacy `sec_bhavdata_full` only. UDiFF publishes no deliverable column.
+const DELIV_KEYS = ["DELIV_QTY", "DELIVQTY", "DELIVERABLE_QTY", "DELIV QTY"];
 const DATE_KEYS = ["TIMESTAMP", "TRADDT", "TRAD_DT", "DATE", "DATE1", "TDATDATE"];
 
 const toNum = (v: unknown): number => {
@@ -66,7 +79,7 @@ function toIsoDate(raw: string | undefined): string | null {
 
 export function parseBhavcopy(text: string): BhavcopyResult {
   const warnings: string[] = [];
-  if (!text || !text.trim()) return { format: "generic", date: null, prices: {}, bars: {}, count: 0, warnings: ["Empty file."] };
+  if (!text || !text.trim()) return { format: "generic", date: null, prices: {}, bars: {}, delivery: {}, count: 0, warnings: ["Empty file."] };
 
   const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
@@ -74,7 +87,7 @@ export function parseBhavcopy(text: string): BhavcopyResult {
     transformHeader: (h) => h.replace(/^﻿/, "").trim().toUpperCase(),
   });
   const rows = parsed.data ?? [];
-  if (rows.length === 0) return { format: "generic", date: null, prices: {}, bars: {}, count: 0, warnings: ["No data rows."] };
+  if (rows.length === 0) return { format: "generic", date: null, prices: {}, bars: {}, delivery: {}, count: 0, warnings: ["No data rows."] };
 
   const headers = Object.keys(rows[0]);
   const symKey = pick(headers, SYMBOL_KEYS);
@@ -85,6 +98,7 @@ export function parseBhavcopy(text: string): BhavcopyResult {
       date: null,
       prices: {},
       bars: {},
+      delivery: {},
       count: 0,
       warnings: [`Could not find symbol/close columns. Saw: ${headers.slice(0, 12).join(", ")}`],
     };
@@ -95,6 +109,7 @@ export function parseBhavcopy(text: string): BhavcopyResult {
   const highKey = pick(headers, HIGH_KEYS);
   const lowKey = pick(headers, LOW_KEYS);
   const volKey = pick(headers, VOL_KEYS);
+  const delivKey = pick(headers, DELIV_KEYS);
   const hasFinTp = headers.includes("FININSTRMTP");
 
   const format: BhavcopyFormat = headers.includes("TCKRSYMB")
@@ -107,6 +122,7 @@ export function parseBhavcopy(text: string): BhavcopyResult {
 
   const prices: Record<string, number> = {};
   const bars: Record<string, BhavcopyBar> = {};
+  const delivery: Record<string, number> = {};
   const eqSyms = new Set<string>();
   let date: string | null = null;
 
@@ -134,13 +150,17 @@ export function parseBhavcopy(text: string): BhavcopyResult {
     };
 
     const isEq = series === "EQ" || finTp === "STK" || finTp === "IDX" || (!series && !finTp);
+    const deliv = delivKey ? optNum(r[delivKey]) : null;
+
     if (isEq) {
       prices[sym] = close;
       bars[sym] = bar;
+      if (deliv !== null) delivery[sym] = deliv;
       eqSyms.add(sym);
     } else if (!(sym in prices) && !eqSyms.has(sym)) {
       prices[sym] = close;
       bars[sym] = bar;
+      if (deliv !== null) delivery[sym] = deliv;
     }
 
     if (!date && dateKey) date = toIsoDate(r[dateKey]);
@@ -148,5 +168,5 @@ export function parseBhavcopy(text: string): BhavcopyResult {
 
   const count = Object.keys(prices).length;
   if (count === 0) warnings.push("Parsed the file but found no usable cash close prices.");
-  return { format, date, prices, bars, count, warnings };
+  return { format, date, prices, bars, delivery, count, warnings };
 }

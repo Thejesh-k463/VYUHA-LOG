@@ -1,7 +1,9 @@
 import "server-only";
+import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import { createEodBhavcopyProvider, EOD_CAPABILITIES } from "./eod-bhavcopy";
 import { createManualProvider, MANUAL_CAPABILITIES } from "./manual";
 import { createMockProvider, MOCK_CAPABILITIES } from "./mock";
+import { clampRefreshSeconds, createOpenAlgoProvider, OPENALGO_CAPABILITIES } from "./openalgo";
 import {
   NotEnabledError,
   type ProviderCapabilities,
@@ -19,27 +21,35 @@ import {
  * `docs/client/PRIVACY.md`. `tests/quotes-egress-guard.test.ts` reads that file
  * and enforces it over EVERY entry below, shipped and planned.
  *
- * SELECTION SOURCE: v4.0 has no settings column for the provider — `settings`
- * is a fixed-column single row and `lib/db/schema.ts` belongs to W0, whose
- * migration `0064` extends `risk_config` only. So the stored value is an
- * ARGUMENT here (`getQuoteProvider(stored)`), with `VYUHA_QUOTE_PROVIDER` as
- * the dev/e2e override, and the default is `eod`. When a settings column
- * lands, one call site changes and nothing else.
+ * SELECTION SOURCE (v4.1, migration 0067): `settings.live_feed_provider`,
+ * read by the ASYNC `resolveLiveFeedProviderId()` below. The sync
+ * `getQuoteProvider(stored)` keeps taking the stored value as an ARGUMENT,
+ * with `VYUHA_QUOTE_PROVIDER` as the dev/e2e override and `eod` as the
+ * default: this module must not import `@/lib/db` statically, or importing the
+ * registry would bind the SQLite connection ahead of
+ * `tests/helpers/temp-db.ts` for every test that touches it.
  *
- * SERVER-ONLY: two of the three shipped providers read the journal database.
- * Client components import `@/lib/quotes/types` (pure), never this file.
+ * CONSENT IS RE-CHECKED AT SELECTION, not trusted from the stored string
+ * (`selectProviderId()`): "openalgo" resolves to `openalgo` only when the
+ * integration is on AND the acknowledgement covers the disclosure as it reads
+ * today. A restored backup carries the picker value but not the consent (the
+ * consent columns are machine state), so a restore falls back to `eod` instead
+ * of opening a feed nobody on THIS machine agreed to.
+ *
+ * SERVER-ONLY: three of the four shipped providers read the journal database
+ * or the network. Client components import `@/lib/quotes/types` (pure), never
+ * this file.
  */
 
 export const DEFAULT_PROVIDER_ID: ProviderId = "eod";
 
-/** Built and selectable in v4.0. */
-export const SHIPPED_PROVIDER_IDS = ["eod", "manual", "mock"] as const;
+/** Built and selectable. `openalgo` joined in v4.1 (owner answers Q20/Q21). */
+export const SHIPPED_PROVIDER_IDS = ["eod", "manual", "mock", "openalgo"] as const;
 
 /** Typed, listed, and deliberately not built — see `createPlannedProvider()`. */
-export const PLANNED_PROVIDER_IDS = ["openalgo", "kite", "upstox", "dhan", "angelone"] as const;
+export const PLANNED_PROVIDER_IDS = ["kite", "upstox", "dhan", "angelone"] as const;
 
 const PLANNED_NOTES: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
-  openalgo: "v4.1 ships it against the bridge you already run on 127.0.0.1, behind the existing OpenAlgo disclosure.",
   kite: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
   upstox: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
   dhan: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
@@ -47,7 +57,6 @@ const PLANNED_NOTES: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
 };
 
 const PLANNED_LABELS: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
-  openalgo: "OpenAlgo bridge (not enabled in v4.0)",
   kite: "Zerodha Kite Connect (not enabled in v4.0)",
   upstox: "Upstox (not enabled in v4.0)",
   dhan: "Dhan (not enabled in v4.0)",
@@ -109,11 +118,88 @@ export function resolveProviderId(raw: string | null | undefined): ProviderId {
   return (ALL_IDS as readonly string[]).includes(v) ? (v as ProviderId) : DEFAULT_PROVIDER_ID;
 }
 
-export function createProvider(id: ProviderId): QuoteProvider {
+export function createProvider(id: ProviderId, refreshSeconds?: number): QuoteProvider {
   if (isPlanned(id)) return createPlannedProvider(id);
   if (id === "mock") return createMockProvider();
   if (id === "manual") return createManualProvider();
+  // The OpenAlgo provider gates ITSELF on every call (consent, then a saved
+  // key/host), so building one is never the same as being allowed to use one.
+  if (id === "openalgo") return createOpenAlgoProvider({ refreshSeconds: clampRefreshSeconds(refreshSeconds) });
   return createEodBhavcopyProvider();
+}
+
+/** The two settings columns and the consent pair that decide the feed. */
+export interface LiveFeedSelection {
+  liveFeedProvider: string | null | undefined;
+  openalgoEnabled: boolean;
+  openalgoAckVersion: string | null | undefined;
+}
+
+/**
+ * PURE. The stored picker value → the provider that may actually run.
+ *
+ * The ONLY way to reach `openalgo` is all three of: the column says so, the
+ * integration is on, and the acknowledgement is current. Anything else falls
+ * back to the default — silently, because a picker value is a preference and a
+ * missing consent is not an error the user made.
+ */
+export function selectProviderId(sel: LiveFeedSelection): ProviderId {
+  const id = resolveProviderId(sel.liveFeedProvider);
+  if (id !== "openalgo") return id;
+  const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
+  return gate.allowed ? "openalgo" : DEFAULT_PROVIDER_ID;
+}
+
+/** The stored feed settings, as `resolveLiveFeed()` returns them. */
+export interface LiveFeedState {
+  /** What the user picked, verbatim — the Settings card renders this. */
+  stored: ProviderId;
+  /** What will actually run once consent is applied. */
+  effective: ProviderId;
+  refreshSeconds: number;
+  /** Set when `stored` and `effective` differ, in the user's words. */
+  blockedReason?: string;
+}
+
+/**
+ * Read the feed settings. ASYNC because `@/lib/db` is imported lazily — see
+ * the module header; a static import here breaks every temp-database test.
+ */
+export async function resolveLiveFeed(): Promise<LiveFeedState> {
+  const { db } = await import("@/lib/db");
+  const { settings } = await import("@/lib/db/schema");
+  const row = db
+    .select({
+      liveFeedProvider: settings.liveFeedProvider,
+      liveFeedRefreshSeconds: settings.liveFeedRefreshSeconds,
+      openalgoEnabled: settings.openalgoEnabled,
+      openalgoAckVersion: settings.openalgoAckVersion,
+    })
+    .from(settings)
+    .limit(1)
+    .all()[0];
+  const sel: LiveFeedSelection = {
+    liveFeedProvider: row?.liveFeedProvider ?? DEFAULT_PROVIDER_ID,
+    openalgoEnabled: row?.openalgoEnabled ?? false,
+    openalgoAckVersion: row?.openalgoAckVersion ?? null,
+  };
+  const stored = resolveProviderId(sel.liveFeedProvider);
+  const effective = selectProviderId(sel);
+  const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
+  return {
+    stored,
+    effective,
+    refreshSeconds: clampRefreshSeconds(row?.liveFeedRefreshSeconds ?? undefined),
+    ...(stored !== effective ? { blockedReason: gate.reason } : {}),
+  };
+}
+
+/** The provider the stored settings actually allow, built and ready. */
+export async function getLiveFeedProvider(): Promise<QuoteProvider> {
+  const feed = await resolveLiveFeed();
+  const env = process.env.VYUHA_QUOTE_PROVIDER;
+  if (env && env.trim()) return createProvider(resolveProviderId(env), feed.refreshSeconds);
+  return createProvider(feed.effective, feed.refreshSeconds);
 }
 
 /**
@@ -132,6 +218,7 @@ export function allProviderCapabilities(): ProviderCapabilities[] {
     EOD_CAPABILITIES,
     MANUAL_CAPABILITIES,
     MOCK_CAPABILITIES,
+    OPENALGO_CAPABILITIES,
     ...PLANNED_PROVIDER_IDS.map(plannedCapabilities),
   ];
 }

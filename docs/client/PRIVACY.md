@@ -41,7 +41,18 @@ Exactly four kinds, and only one of them is automatic:
    public files are served to everyone, and we cannot tell who fetched them. If
    you are offline it fails silently and the app carries on.
 2. **End-of-day market data — only if you switch it on.** Downloads the free
-   NSE/BSE bhavcopy to value open positions. Off by default.
+   NSE/BSE bhavcopy to value open positions, and to compute the Market Atlas
+   from bars kept on this machine. Off by default. Two shapes, one public
+   archive (`nsearchives.nseindia.com`), and nothing is uploaded:
+   *the daily file* — one download per trading day, only while end-of-day
+   auto-MTM is on; and *the history backfill* — up to 252 past daily files,
+   one every 1.5 seconds, and only when you press the button and confirm it.
+   The backfill is never automatic, it can be stopped at any point, and
+   whatever it has already saved is kept. These files are the same public
+   market data served to everyone: they carry no account, no identifier and
+   nothing about you or your trades. If you would rather download nothing at
+   all, you can drop bhavcopy files you already have straight into Atlas
+   instead — that path makes no network request whatsoever.
 3. **Broker API pulls — only when you start one, or when you have switched on
    the once-a-day auto-pull of your saved brokers at launch.** If you connect a
    broker (Zerodha, Dhan, Angel One or Upstox — or another broker through the
