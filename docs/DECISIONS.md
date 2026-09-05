@@ -3055,3 +3055,59 @@ Draft published, installer from the client ZIP installed and working on a non-bu
 submitted. Owner directive the same day: before v4.0, research and build a website + web app so
 users choose local or web; v4.0's plan is rebuilt after the owner supplies investor-requested
 features. Research pack: `T:/Thejesh/CLAUDE-CODE/VYUHA-WEB-PLATFORM-RESEARCH/`.
+
+## 2026-09-05 — The overlay entrance keyframe must not set a transform end state
+
+`@keyframes dialog-in` ended at `transform: translate(-50%, -50%) scale(1)` — the centring idiom,
+written when the only consumer was the centred dialog. By 3.9 it was on four surfaces via
+`animate-dialog-in`: `ui/dialog.tsx`, `system/command-palette.tsx`, `ui/popover.tsx`,
+`ui/tooltip.tsx`.
+
+**Tailwind v4 does not use `transform` for translate utilities.** `-translate-x-1/2` compiles to
+`--tw-translate-x: calc(calc(1 / 2 * 100%) * -1); translate: var(--tw-translate-x) var(--tw-translate-y)`
+— the standalone `translate` property. Individual `translate` **composes with** `transform`
+(translate, then rotate, then scale, then transform) instead of being replaced by it. So the
+keyframe never restated the centring; it stacked a second half-size offset on top of whatever
+position the element already had, for the full 220ms, and snapped back when the animation dropped
+(the utility sets no fill mode).
+
+Measured effect, per surface, during the animation only:
+
+- `ui/popover.tsx` and `ui/tooltip.tsx` — no translate utilities, Radix anchors them. Offset by a
+  full (-50%, -50%) of their own size. For the search panel that is `PANEL_SIZE.w 380 / 2 = 190px`
+  left, minus ~6.6px early on from `scale(0.965)`.
+- `system/command-palette.tsx` — `-translate-x-1/2` with `top-[12vh]`. Offset a further -50% in X
+  and -48% in Y.
+- `ui/dialog.tsx` — centred in both axes, so it was displaced to (-100%, -98%) and snapped to
+  (-50%, -50%). This is why the bug survived: on the dialog the snap reads as part of the pop, and
+  the dialog was the only surface anyone watched.
+
+**Found by CI, not by eye.** `e2e/z-search-panel.spec.ts:53` failed on `ubuntu-latest` in runs
+33914442158 and 33919288828 with `expect(Math.abs(afterNav.x - moved.x)).toBeLessThanOrEqual(2)`
+receiving **189** — inside the computed 183–190px window. `macos-14` passed both times and the next
+run went green with no panel code touched between them, so it presented as flake. It was not: the
+defect is deterministic for 220ms and only the sampling was racy. `playwright.config.ts` sets
+`retries` nowhere (so 0) and `workers: 1`, which is why a frame-timing miss reds the whole build
+rather than annotating a flaky test.
+
+**Fix, both halves — one alone is not enough.** Fixing only the spec hides a user-visible bug;
+fixing only the CSS leaves the next timing-sensitive assertion exposed.
+
+1. `dialog-in` now runs `transform: translateY(6px) scale(0.965)` → `translateY(0) scale(1)`. The
+   end state is IDENTITY, so it only ever composes a temporary offset onto the position the
+   surface already has, and it cannot be misapplied to an anchored surface again. The rise is a
+   flat 6px instead of 2% of height. No component classes changed.
+
+   **A first attempt used the standalone `scale:` property** to sidestep the composition entirely.
+   Do not repeat it: **Lightning CSS drops `scale:` from a keyframe silently.** The built CSS came
+   back as `0%{opacity:0;transform:translateY(6px)}` — the pop simply gone, no warning, no error,
+   while `badge-pop`'s `transform: scale(.7)` in the same file survived. Same failure family as the
+   unlayered custom-property drop already in AGENTS.md. Scale inside `transform` about the default
+   centre origin moves nothing, so it is both safe and durable. Verified by grepping the built
+   chunk, not by reading the source.
+2. `e2e/z-search-panel.spec.ts` gained the settle poll the reload block 20 lines above already had.
+   `count() === 1` proves the panel is mounted, never that it is in position.
+
+The rule this is an instance of is already in AGENTS.md ("Assert client-restored state with
+`expect.poll`, never once after `networkidle`"). The spec's own header comment states it too, and
+line 118 was the single assertion in that file that broke it.

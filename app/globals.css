@@ -788,9 +788,35 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* The entrance for EVERY overlay surface — dialog, command palette, popover,
+   tooltip. It must never carry a translate/transform END state.
+
+   Tailwind v4 positions these with the STANDALONE `translate` property
+   (`-translate-x-1/2` compiles to `translate: var(--tw-translate-x) …`), and an
+   individual `translate` COMPOSES with `transform` rather than being replaced by
+   it. So a keyframe ending at `translate(-50%, -50%)` does not restate the
+   centring — it stacks a SECOND half-size offset on top of the element's own
+   position for the whole 220ms, then snaps back when the animation drops (there
+   is no fill mode). It read as correct on `dialog.tsx` only because a dialog is
+   centred anyway and the snap was mistaken for the pop.
+
+   What it actually did: the anchored search panel entered 190px left of its
+   anchor — exactly half of `PANEL_SIZE.w` — and reddened the ubuntu e2e runner,
+   which measured the box inside the animation window (DECISIONS.md 2026-09-05).
+
+   The rule: `transform` here must END AT IDENTITY, so it only ever composes a
+   temporary offset onto whatever position the surface already has. Nothing in
+   this keyframe may reference where the surface sits.
+
+   Do NOT reach for the standalone `scale:` / `translate:` properties to dodge
+   the composition — Lightning CSS DROPS them from a keyframe silently (verified
+   2026-09-05: `scale: 0.965` vanished from the built CSS while `badge-pop`'s
+   `transform: scale(.7)` survived), and the animation ships with that half
+   missing and no error anywhere. Scale about the default centre origin moves
+   nothing, so it is safe inside `transform`. */
 @keyframes dialog-in {
-  from { opacity: 0; transform: translate(-50%, -48%) scale(0.965); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  from { opacity: 0; transform: translateY(6px) scale(0.965); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }

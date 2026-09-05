@@ -114,6 +114,12 @@ test.describe("floating search panel", () => {
 
     await gotoHydrated(page, "/trades");
     await expect.poll(async () => panelOf(page).count(), { timeout: 20_000 }).toBe(1);
+    // `count() === 1` proves the panel is MOUNTED, not that it is in position —
+    // the entrance animation runs for 220ms and the box moves under it. Settle
+    // it the same way the reload above does; asserting once here is the exact
+    // thing AGENTS.md forbids, and it read as broken persistence on the slower
+    // ubuntu runner while macOS passed (DECISIONS.md 2026-09-05).
+    await expect.poll(async () => (await boxOf(page)).x, { timeout: 20_000 }).toBeGreaterThan(moved.x - 3);
     const afterNav = await boxOf(page);
     expect(Math.abs(afterNav.x - moved.x)).toBeLessThanOrEqual(2);
     expect(Math.abs(afterNav.y - moved.y)).toBeLessThanOrEqual(2);
