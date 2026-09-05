@@ -7,6 +7,7 @@ import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { findRates } from "@/lib/engine/rates";
 import { BROKERS, type Broker, type Exchange, type Segment } from "@/lib/domain/constants";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import type { ChargeRates } from "@/lib/engine/types";
 import defaultsJson from "@/lib/data/charge-rates-defaults.json";
 import {
@@ -47,12 +48,6 @@ const EXCHANGE_FOR: Record<Segment, Exchange> = {
   commodity_future: "MCX",
   commodity_option: "MCX",
 };
-
-/** Today, as the local calendar date — the epoch a rate is resolved against. */
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 interface DefaultEpoch {
   segment: string;
@@ -124,7 +119,7 @@ export interface SizingLabData {
  * be asserted directly against a temp database — a page whose data resolution
  * only exists inside a React component cannot be tested without rendering one.
  */
-export function loadSizingLab(onDate = todayIso()): SizingLabData {
+export function loadSizingLab(onDate = todayIstIso()): SizingLabData {
   const capital = getBucketCapital();
 
   const storedRow = db
