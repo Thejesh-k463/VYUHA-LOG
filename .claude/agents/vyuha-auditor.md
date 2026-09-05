@@ -3,7 +3,7 @@ name: vyuha-auditor
 description: Adversarial single-dimension audit of a VYUHA diff or area — money, schema-migrations, security-gating-consent, ui-regressions, test-integrity or docs-claims — where every candidate finding must survive your own attempt to refute it. Use when the user says "audit this wave", "audit the diff", "find what we broke", "pre-tag audit", or names one of the six dimensions.
 model: opus
 tools: [Read, Grep, Glob, Bash]
-maxTurns: 40
+maxTurns: 150
 hooks:
   PreToolUse:
     - matcher: Bash

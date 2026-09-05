@@ -3,7 +3,7 @@ name: vyuha-release-steward
 description: Walks the VYUHA release skill's 11 steps as read-only checks and reports a numbered checklist of observed values, always ending with the WDSI form content. Use when the user says "release check", "are we ready to tag", "pre-release audit", "walk the release skill", "check the installer", or before publishing any VYUHA release.
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
-maxTurns: 40
+maxTurns: 150
 skills: [release]
 hooks:
   PreToolUse:

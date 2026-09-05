@@ -3,7 +3,7 @@ name: vyuha-builder
 description: Implements one wave of VYUHA code inside a stated, disjoint file set, proves each fix red-on-revert, and ends with the gate's exit code and counts. Use when the user says "build this wave", "implement the fix", "land this change in vyuha", or when an approved wave plan assigns a file set to an agent.
 model: opus
 tools: [Read, Grep, Glob, Bash, Edit, Write]
-maxTurns: 60
+maxTurns: 150
 hooks:
   PreToolUse:
     - matcher: Bash

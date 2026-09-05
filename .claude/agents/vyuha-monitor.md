@@ -3,7 +3,7 @@ name: vyuha-monitor
 description: One-screen status of VYUHA's shipped release — CI runs, newest tag, the updater endpoint, the revocation-list prerelease flag, and renewals due. Use when the user says "vyuha status", "is CI green", "is the updater alive", "did the release land", "any renewals", or at the start of a release-day session.
 model: haiku
 tools: [Read, Bash]
-maxTurns: 15
+maxTurns: 150
 hooks:
   PreToolUse:
     - matcher: Bash

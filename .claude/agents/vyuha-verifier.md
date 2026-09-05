@@ -3,7 +3,7 @@ name: vyuha-verifier
 description: Runs the VYUHA gate (npm run verify) and reports exit code plus vitest counts against VYUHA-STATE.md. Use when the user says "run verify", "is the gate green", "check the tests", "did the suite shrink", "verify before I tag", or when a wave of edits has just landed and needs its gate.
 model: sonnet
 tools: [Read, Grep, Glob, Bash]
-maxTurns: 30
+maxTurns: 150
 hooks:
   PreToolUse:
     - matcher: Bash
