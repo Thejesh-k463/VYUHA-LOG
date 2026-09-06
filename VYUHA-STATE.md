@@ -27,9 +27,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.0.0 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v3.9.1 draft ALSO still waiting on the owner (tag `0e18b1d`)
+## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 
-> **v4.0.0 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner (2026-09-06 ~13:45 IST).**
+> **v4.0.0 is PUBLISHED (2026-09-06 13:46 IST, `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v4.0.0`), installed on a non-build machine (owner-confirmed working), WDSI submitted. Nothing is owed on this release.**
 > Tag `v4.0.0` = `4d4aec3` (main: merge `98eaa63` → bump `16b1ec1` → audit fix wave `5938aa6` →
 > re-audit fix wave `aba43f5` → wave 3 `4158f6c` → docs `4d4aec3`). Gate on the tagged tree: EXIT 0,
 > 328 files / 6,057 passed / 35 skipped, `next build` compiled. CI run `34018506732` on `4d4aec3`:
@@ -48,14 +48,13 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > `4F2FF71514A17FA3B2DE52EBC990DF7647678E05E04E7C31E45F10B1DF4AFA05` (35,492,819 B) — the winget
 > sha; manifests at `release-packages/winget/4.0.0/` (three YAMLs). Revocation list: NOT run (no
 > keys revoked; a non-prerelease would steal `releases/latest`).
-> **Owner still owes:** publish the draft (URL becomes
-> `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v4.0.0`), install on a non-build
-> machine, submit WDSI (form handed over in the session report), and the same three for v3.9.1.
+> **Owner actions DONE 2026-09-06:** both drafts published (v3.9.1 13:45 IST, v4.0.0 13:46 IST),
+> each installed off the build machine and working, WDSI submitted for both.
 > **Audit trail:** three audits + three skeptic passes over the three fix waves — 33 → 17 → 6 → 3
 > findings, every survivor fixed with a red-on-revert test; see `docs/DECISIONS.md` 2026-09-06.
 
 
-> **v3.9.1 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner.** Tag `v3.9.1` = `0e18b1d`
+> **v3.9.1 is PUBLISHED (2026-09-06 13:45 IST), installed off the build machine, WDSI submitted — owner-confirmed.** Tag `v3.9.1` = `0e18b1d`
 > pushed 2026-09-06; CI run `33986790273` 6/6; release run `33987227426` 3/3 (after one re-run of
 > the macOS Apple-silicon DMG job); `npm run release:verify v3.9.1 -- --deep` 3/3 over the
 > PUBLISHED bytes, key id `4FF85F3BBE1DA21D`; client ZIP and winget manifests built; WDSI details
