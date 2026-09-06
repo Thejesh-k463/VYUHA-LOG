@@ -166,7 +166,7 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
       privacy,
       "PRIVACY.md no longer states the Live Desk price poll's cadence and where the user sets it",
     ).toContain(
-      "while the Live Desk is open, Vyuha asks it once every 1–5 seconds, at the interval you set in Settings → Live feed",
+      "while the Live Desk is open and in the foreground, Vyuha asks it once every 1–5 seconds, at the interval you set in Settings → Live feed",
     );
     // …and what it may carry, which is the half a buyer actually worries about.
     expect(privacy, "PRIVACY.md no longer says what the poll does NOT send").toContain(

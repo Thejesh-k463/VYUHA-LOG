@@ -63,7 +63,7 @@ Exactly four kinds, and only one of them is automatic:
    connect-once PIN+TOTP mode makes one extra sign-in call, and it goes only to
    Dhan's own endpoint (`auth.dhan.co`) — never anywhere else.
    That same bridge can also price your open positions: while the Live Desk is
-   open, Vyuha asks it once every 1–5 seconds, at the interval you set in
+   open and in the foreground, Vyuha asks it once every 1–5 seconds, at the interval you set in
    Settings → Live feed, and each request carries the trading symbols and
    exchanges of the positions you have open and nothing else about them — no
    quantity, no entry price, no P&L, no account — plus one `/funds` request

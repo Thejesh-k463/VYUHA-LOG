@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  CONNECT_PROMPT_COPY,
   DESK_COPY,
   EM_DASH,
+  LIVE_STREAM_COPY,
   lockedInAtStop,
   needsSessions,
   resultsChip,
@@ -326,5 +328,99 @@ describe("locked-in profit at stop is stated, not netted and not promised", () =
     expect(line).toBeGreaterThan(lock);
     // …and it must not be folded into the heat figure itself.
     expect(src).not.toContain("heat.openRiskP - heat.lockedInProfitP");
+  });
+});
+
+/**
+ * FW-1 — the stream's connection line, and the once-a-day connect prompt.
+ *
+ * TWO OBLIGATIONS a screenshot cannot prove:
+ *
+ *   1. THE STRIP DESCRIBES THE PIPE, NEVER THE PRICES. "Live" is a claim about
+ *      the CONNECTION; each mark keeps stating its own staleness per row
+ *      through `stalenessLabel()`, so a polled LTP still reads "Delayed" while
+ *      the strip reads "Live". A strip that upgraded a delayed print into a
+ *      tick would be the desk asserting a provenance it does not have.
+ *   2. THE PROMPT'S TWO SENTENCES ARE SINGLE-SOURCED. `LIVE_FEED_COPY.connect`
+ *      and `LIVE_FEED_COPY.dailyReauth` are pinned verbatim by
+ *      `tests/live-feed-copy.test.ts` — including the owner's ruling that the
+ *      daily re-sign-in is attributed to the user's BROKER and names no
+ *      regulator. A second copy of either on the desk is a second thing to
+ *      drift, and the drift would be a regulatory claim.
+ */
+describe("the live stream's connection line says what it can support", () => {
+  it("states the connection, the provider and the age of the last frame", () => {
+    expect(LIVE_STREAM_COPY.live("openalgo", 3)).toBe("Live · openalgo · 3 s");
+    expect(LIVE_STREAM_COPY.reconnecting).toBe("Reconnecting…");
+    expect(LIVE_STREAM_COPY.stopped("the bridge is not answering.")).toBe(
+      "Feed stopped — the bridge is not answering.",
+    );
+  });
+
+  it("never upgrades a delayed print into a tick, and never names a price", () => {
+    const lines = [
+      LIVE_STREAM_COPY.live("openalgo", 3),
+      LIVE_STREAM_COPY.connecting,
+      LIVE_STREAM_COPY.reconnecting,
+      LIVE_STREAM_COPY.paused,
+      LIVE_STREAM_COPY.stopped(LIVE_STREAM_COPY.stoppedNoReason),
+    ];
+    for (const line of lines) {
+      expect(BANNED.test(line), line).toBe(false);
+      // "real-time", "tick" and "live price" are all claims about the DATA.
+      // The only "Live" that ships is about the connection, and it is followed
+      // by the provider's own id — never by a price or a staleness word.
+      expect(/real[- ]?time|\btick\b|live price/i.test(line), line).toBe(false);
+    }
+  });
+
+  it("says WHY a background tab stopped updating, rather than looking broken", () => {
+    expect(LIVE_STREAM_COPY.paused).toMatch(/background/i);
+  });
+
+  it("the strip renders it only for a streaming provider", () => {
+    const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+    expect(src).toMatch(/const linkLabel = !streaming\s*\?\s*null/);
+    expect(src).toContain('data-testid="live-stream-state"');
+  });
+});
+
+describe("the connect prompt borrows its sentences and restates neither", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+
+  it("renders the imported constants, not literals", () => {
+    expect(src).toContain("{LIVE_FEED_COPY.connect}");
+    expect(src).toContain("{LIVE_FEED_COPY.dailyReauth}");
+  });
+
+  it("carries no second copy of either sentence anywhere under components/live", () => {
+    // A copied sentence is a sentence that drifts, and `dailyReauth` is the one
+    // the owner already had to soften once (it used to name a regulator).
+    for (const file of files()) {
+      // Comment-stripped, like every other guard here: a comment quoting the
+      // sentence is documentation, and only a STRING is copy.
+      const raw = stripComments(fs.readFileSync(file, "utf8"));
+      expect(raw, `${path.relative(ROOT, file)} restates the connect prompt`).not.toContain(
+        "Connect your feed — 20 seconds",
+      );
+      expect(raw, `${path.relative(ROOT, file)} restates the re-authentication sentence`).not.toContain(
+        "expires every day and has to be signed in again",
+      );
+    }
+  });
+
+  it("its own chrome names no regulator and prompts no transaction", () => {
+    for (const line of Object.values(CONNECT_PROMPT_COPY)) {
+      expect(BANNED.test(line), line).toBe(false);
+      expect(/\b(SEBI|exchange|exchanges|circular|regulat\w*)\b/i.test(line), line).toBe(false);
+    }
+    // It says who holds the credential, because that is the one thing a user
+    // hands to a bridge and the one thing Vyuha must never hold.
+    expect(CONNECT_PROMPT_COPY.body).toContain("Vyuha never holds the broker credential");
+  });
+
+  it("is dismissible for the DAY, and says so on the control", () => {
+    expect(CONNECT_PROMPT_COPY.dismissTitle).toMatch(/until tomorrow/i);
+    expect(src).toContain("writeStored(promptKey, connectPromptDismissal())");
   });
 });

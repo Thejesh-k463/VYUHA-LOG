@@ -54,7 +54,7 @@ describe("help covers the app, exactly", () => {
  *   - /atlas described the owner's widgets as "a separate, opt-in feed", in the
  *     present tense — v4.0 has no such feed (Q-12);
  *   - /live advertised "alerts" as Pro; no alert code exists in lib/live or
- *     components/live (Telegram alerts are v4.1).
+ *     components/live (Telegram alerts are after v4.2 — Q18, 2026-09-06).
  */
 describe("help describes the app that shipped, not the one that is planned", () => {
   const body = (href: string) => HELP_ENTRIES.find((e) => e.href === href)!.body.join(" ");
@@ -121,10 +121,19 @@ describe("help describes the app that shipped, not the one that is planned", () 
    * The consent path, in the words help is allowed to use for it. A price
    * claim about the bridge that names none of these is a claim that the desk
    * is priced by a broker with no mention that the user has to switch it on —
-   * exactly what `openAlgoGate()` (lib/quotes/openalgo.ts:150-156) refuses to
-   * do, so it would also be false.
+   * exactly what `openAlgoGate()` refuses to do (lib/quotes/openalgo.ts:161,
+   * `const gate = openAlgoGate({…})` inside `readGateFromDb()`), so it would
+   * also be false.
+   *
+   * THE BARE WORD `Settings` IS NOT CONSENT (fix wave, 2026-09-06). Every help
+   * string that describes any screen names Settings sooner or later — "chosen
+   * in Settings → Live feed" says WHERE the control lives, not that the user
+   * had to accept anything to be offered it, and it let the /live sentence
+   * pair the bridge with a price while naming no consent at all. What is left
+   * is the vocabulary that actually asserts consent: opt-in, the disclosure,
+   * or the user doing the switching/picking.
    */
-  const CONSENT_NAMED = /opt-in|disclosure|Settings|you (?:switch|turn|pick|chose|choose)/i;
+  const CONSENT_NAMED = /opt-in|disclosure|you (?:switch|turn|pick|chose|choose)/i;
 
   it("every help sentence that pairs OpenAlgo or a broker with a price also names the consent path", () => {
     const strings = HELP_ENTRIES.flatMap((e) => [e.title, e.answers, ...e.body, ...(e.refusals ?? [])]);
@@ -153,6 +162,26 @@ describe("help describes the app that shipped, not the one that is planned", () 
     // …and the loopback default, so "prices from a broker" never reads as an
     // upload (lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST).
     expect(text).toMatch(/127\.0\.0\.1/);
+  });
+
+  it("/settings names all THREE sources too, with the conditions in the bridge's own sentence", () => {
+    // CHANGELOG and VYUHA-STATE both said "Help for /live and for Settings
+    // names the three sources"; the Settings entry named only the bridge, so
+    // the claim was true of one screen out of two. The conditions have to sit
+    // in the SAME sentence as the bridge — a reader who stops at the first full
+    // stop must not have read a price claim with no consent attached to it.
+    const text = body("/settings");
+    expect(text).toMatch(/end-of-day bhavcopy/i);
+    expect(text).toMatch(/a mark you type/i);
+    expect(text).toMatch(/openalgo/i);
+
+    const bridgeSentence = text
+      .split(/(?<=[.!?])\s+/)
+      .find((s) => /openalgo bridge/i.test(s) && /price/i.test(s));
+    expect(bridgeSentence, "no /settings sentence pairs the bridge with pricing the desk").toBeDefined();
+    expect(bridgeSentence!).toMatch(/opt-in/i);
+    expect(bridgeSentence!).toMatch(/disclosure/i);
+    expect(bridgeSentence!).toMatch(/127\.0\.0\.1/);
   });
 
   it("the pairing scan really can fire, and spares the shipped v3.1 import sentences", () => {

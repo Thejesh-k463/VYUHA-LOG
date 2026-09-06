@@ -13,7 +13,7 @@
 
 import type { ConcentrationRow, HeatView } from "@/lib/live/heat";
 import type { StopResult } from "@/lib/live/stop";
-import type { ProviderId, Staleness } from "@/lib/quotes/types";
+import type { Exchange, ProviderId, Staleness } from "@/lib/quotes/types";
 import type { Bar, TrackerRow } from "@/lib/live/types";
 
 /**
@@ -47,6 +47,18 @@ export interface DeskRow extends TrackerRow {
   accountName: string | null;
   bucket: string;
   broker: string;
+  /**
+   * The exchange this position's quotes are keyed on — the same value
+   * `load-desk.ts` puts in the `QuoteKey` it asks the provider for.
+   *
+   * It rides on the row because the LIVE stream is keyed on
+   * `quoteKeyId()` = `exchange:tradingsymbol`, and the client has to match a
+   * tick frame to a row without re-deriving an exchange it was never told.
+   * Guessing "NSE" would price a BSE-only holding — and two contracts of one
+   * underlying — from the wrong book. It is NOT on `TrackerRow`: the row
+   * engine does no arithmetic with it, exactly like `isin` and `accountName`.
+   */
+  exchange: Exchange;
   isin: string | null;
   /** ISO date of the first entry — the chart's left anchor. */
   entryDate: string | null;
@@ -73,6 +85,15 @@ export interface DeskRow extends TrackerRow {
   spark: number[];
 }
 
+/**
+ * Why the feed cannot run, as a value rather than as a sentence.
+ *
+ * Mirrors `OpenAlgoHealth["state"]` (`lib/quotes/openalgo.ts`) and the same
+ * field `/api/live/feed` publishes. A provider that reports no state gets the
+ * `ok`/`disabled` fallback the feed route already applies.
+ */
+export type FeedHealthState = "ok" | "no-key" | "unreachable" | "disabled";
+
 /** What the desk knows about the feed it printed its marks from. */
 export interface FeedInfo {
   providerId: ProviderId;
@@ -80,6 +101,13 @@ export interface FeedInfo {
   streaming: boolean;
   staleness: Staleness;
   ok: boolean;
+  /**
+   * WHICH failure, so the desk can act on it. `reason` below is the sentence
+   * the user reads; this is what the once-a-day connect prompt (owner answer
+   * Q24) branches on — it shows for `no-key` and `unreachable`, the two states
+   * a reconnection actually fixes, and never for `disabled`.
+   */
+  healthState: FeedHealthState;
   reason: string | null;
   /** Newest `asOf` across every mark on the desk; null when nothing is marked. */
   asOf: string | null;

@@ -231,6 +231,8 @@ function expireTrial(): void {
 test.afterEach(async () => {
   restoreTrial?.();
   restoreTrial = null;
+  restoreFeed?.();
+  restoreFeed = null;
   const undoBook = restoreBook;
   restoreBook = null;
   if (undoBook) await undoBook();
@@ -542,15 +544,15 @@ async function seedWindowedBook(page: Page): Promise<void> {
 }
 
 /**
- * The half of the windowed path that WORKS, kept running so it cannot rot
- * while the geometry below is fixme'd.
+ * The mounting half of the windowed path, kept as its own test beside the
+ * geometry test below (both run; the geometry one was fixme'd until the
+ * virtualiser fix landed the same day).
  *
  * Past VIRTUAL_THRESHOLD the row j is moving to is not in the DOM, so the
  * component has to call `virtualizer.scrollToIndex` — delete that branch and
  * the focused row is never mounted at all, which is what this asserts. It also
  * keeps the seeding machinery (scratch account → real import → purge) exercised
- * on every run, so the day the geometry is fixed, un-fixme'ing the test below
- * is the only change needed.
+ * on every run.
  */
 test("a windowed desk mounts the row j moves to, and k brings it back", async ({ page }) => {
   await seedWindowedBook(page);
@@ -645,4 +647,186 @@ test("j and k clear the sticky header on the WINDOWED path too", async ({ page }
   }
   await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
   await expectFocusedRowFullyVisible(page, "after k back to the first row of a windowed desk");
+});
+
+// ---------------------------------------------------------------------------
+/**
+ * FW-1 — the desk really CONSUMES `GET /api/live/stream`.
+ *
+ * v4.1 shipped that route with no consumer at all: `tracker-client.tsx` held no
+ * `EventSource`, so with a streaming provider selected the desk's prices moved
+ * only on a server render — while the OpenAlgo disclosure (items 2 and 5),
+ * PRIVACY item 3, the help page and the Settings slider all described a 1–5 s
+ * refresh "while the Live Desk is open". A unit test can pin the wiring; only a
+ * browser can prove that a frame on the wire reaches the cell.
+ *
+ * HOW IT IS STAGED, and why each half:
+ *
+ *   • THE SERVER must hand the desk a STREAMING provider, or the client
+ *     correctly refuses to open the stream at all. `settings.live_feed_provider`
+ *     is set to `mock` directly in the database the harness serves from — the
+ *     same door `expireTrial()` above uses, for the same reason: no route
+ *     handler can select it (`/api/live/feed` offers manual/eod/openalgo), and
+ *     `openalgo` needs a consent pair and a vaulted key that a spec has no
+ *     business forging. `mock` is a shipped id whose whole purpose is this.
+ *     It is put back in `afterEach`, read back, unconditionally.
+ *   • THE STREAM is served by `page.route` from a HAND-WRITTEN SSE body in the
+ *     route's own frame shape, so what is under test is the client's parsing
+ *     and not the mock provider's arithmetic. The price is one no seeded walk
+ *     can produce.
+ *   • NOTHING IS PERSISTED by any of it: `catchUpDailyMark()` refuses the mock
+ *     provider outright (a generated price is not a mark), so this test cannot
+ *     move the book the other 28 specs assert against.
+ *
+ * Constants are hardcoded copies of `components/live/desk-copy.ts` and
+ * `lib/quotes/mock.ts`, following the header rule: no spec pulls app modules
+ * through Playwright's transform.
+ */
+
+/** Set by `pinStreamingProvider()`, run by the `afterEach` above. */
+let restoreFeed: (() => void) | null = null;
+
+/** A price no seeded mock walk and no fixture Closing Price can produce. */
+const TICK_PAISE = 432_155;
+/** `fmt.level(TICK_PAISE)` — a per-unit LEVEL keeps its two decimals. */
+const TICK_LEVEL = "₹4,321.55";
+
+/** `MOCK_CAPABILITIES.id` in `lib/quotes/mock.ts`. */
+const STREAMING_PROVIDER = "mock";
+
+/**
+ * Point the server's feed at a provider whose `capabilities.streaming` is true,
+ * and register the undo BEFORE the write is visible to anybody.
+ */
+function pinStreamingProvider(): void {
+  const conn = new Database(E2E_DB_PATH);
+  try {
+    conn.pragma("busy_timeout = 10000");
+    const row = conn.prepare("select id, live_feed_provider as provider from settings limit 1").get() as
+      | { id: number; provider: string | null }
+      | undefined;
+    expect(row, "the e2e database has no settings row").toBeTruthy();
+    const { id, provider } = row!;
+    restoreFeed = () => {
+      const back = new Database(E2E_DB_PATH);
+      try {
+        back.pragma("busy_timeout = 10000");
+        back.prepare("update settings set live_feed_provider = ? where id = ?").run(provider, id);
+        // Read it BACK: a restore that silently did not happen would leave
+        // every later spec on a generated price feed, and the first symptom
+        // would be a mark assertion failing three spec files away.
+        const after = back.prepare("select live_feed_provider as p from settings where id = ?").get(id) as { p: string | null };
+        expect(after.p, "the feed provider was NOT restored").toBe(provider);
+      } finally {
+        back.close();
+      }
+    };
+    conn.prepare("update settings set live_feed_provider = ? where id = ?").run(STREAMING_PROVIDER, id);
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * The quote key the desk holds this row under — `quoteKeyId()` is
+ * `exchange:tradingsymbol`, and for the fixture's OPTION positions the traded
+ * contract is NOT the symbol on screen. Keying the frame on the underlying is
+ * exactly the miss that would price two strikes of one symbol as one position,
+ * so the spec reads both fields from the database the server is serving from.
+ * `asExchange()` in `load-desk.ts` is the fallback rule mirrored here.
+ */
+function quoteKeyOf(symbol: string): { tradingsymbol: string; exchange: string } {
+  const conn = new Database(E2E_DB_PATH);
+  try {
+    conn.pragma("busy_timeout = 10000");
+    const row = conn
+      .prepare("select tradingsymbol, exchange from trades where upper(symbol) = ? and is_open = 1 limit 1")
+      .get(symbol.toUpperCase()) as { tradingsymbol: string | null; exchange: string | null } | undefined;
+    expect(row, `no open trade in the database for ${symbol}`).toBeTruthy();
+    const raw = (row?.exchange ?? "").trim().toUpperCase();
+    return {
+      tradingsymbol: (row?.tradingsymbol ?? symbol).trim().toUpperCase(),
+      exchange: ["BSE", "NFO", "BFO", "MCX", "CDS"].includes(raw) ? raw : "NSE",
+    };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * One `snapshot` frame in the shape `app/api/live/stream/route.ts` sends it.
+ *
+ * The route's own opening `retry:` field is included because the browser
+ * reconnects the moment this (finite) body ends — a fulfilled response is not a
+ * held-open stream — and 3 s keeps that from becoming a tight loop.
+ */
+function sseBody(symbol: string, key: { tradingsymbol: string; exchange: string }): string {
+  const quote = {
+    key: { symbol, exchange: key.exchange, tradingsymbol: key.tradingsymbol },
+    ltp: TICK_PAISE,
+    prevClose: TICK_PAISE - 5_000,
+    dayOpen: null,
+    dayHigh: null,
+    dayLow: null,
+    volume: null,
+    asOf: new Date().toISOString(),
+    // "delayed" is what a POLLED LTP is (OPENALGO_CAPABILITIES.staleness), and
+    // the chip must say so rather than calling it a traded tick.
+    staleness: "delayed",
+    source: STREAMING_PROVIDER,
+  };
+  return [
+    "retry: 3000\n\n",
+    `event: snapshot\ndata: ${JSON.stringify({
+      accountId: 0,
+      provider: STREAMING_PROVIDER,
+      capabilities: { id: STREAMING_PROVIDER, streaming: true, staleness: "delayed" },
+      health: { ok: true },
+      marketOpen: true,
+      symbols: 1,
+      quotes: [quote],
+    })}\n\n`,
+    `event: tick\ndata: ${JSON.stringify({ provider: STREAMING_PROVIDER, quotes: [quote] })}\n\n`,
+  ].join("");
+}
+
+test("a tick on the wire reaches the mark cell, and the strip says the pipe is live", async ({ page }) => {
+  await gotoDesk(page);
+
+  // Whatever the run has imported by now, the first row is a real open
+  // position — read its symbol from the screen rather than assuming one.
+  const symbol = ((await page.locator(ROWS).first().locator("td").first().locator("button").textContent()) ?? "").trim();
+  expect(symbol, "no open position to tick").not.toBe("");
+  const key = quoteKeyOf(symbol);
+
+  await page.route("**/api/live/stream**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store" },
+      body: sseBody(symbol, key),
+    });
+  });
+
+  pinStreamingProvider();
+  await gotoHydrated(page, "/live");
+  await filterTo(page, symbol);
+
+  const markCell = page.locator(ROWS).first().locator("td").nth(4);
+  // The PRICE, from the frame — not the server render's, and not the seeded
+  // walk's. This is the whole assertion the missing consumer made impossible.
+  await expect(markCell.locator("span").first()).toHaveText(TICK_LEVEL);
+
+  // …and the provenance travels with it: a polled LTP reads "Delayed", never
+  // "Last traded". `textContent`, not `innerText`: the chip is CSS-uppercased.
+  const chip = markCell.locator("span.inline-flex > div").first();
+  expect(((await chip.textContent()) ?? "").trim()).toMatch(/^Delayed/);
+
+  // The strip states the CONNECTION. `desk-copy.ts` `LIVE_STREAM_COPY.live`.
+  // A plain string, not a template literal: `\d` inside a template literal is
+  // an unknown escape and collapses to a bare `d`, which matches nothing.
+  await expect(page.getByTestId("live-stream-state")).toHaveText(
+    new RegExp("^Live · " + STREAMING_PROVIDER + " · \\d+ s$"),
+  );
+
+  await page.unroute("**/api/live/stream**");
 });

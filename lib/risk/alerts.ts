@@ -1,9 +1,15 @@
 // SL/TSL/target breach detector (PURE, no DB/React). Compares each open
 // position's latest mark against its own recorded stop/trailing-stop/target.
 //
-// Honest framing (repeated in the UI): marks here are EOD or manually entered —
-// NOT live quotes. A breach is a prompt to review the exit plan against a live
-// price at your broker, never an instruction to act. The user stays in control.
+// Honest framing (repeated in the UI): the marks are end-of-day, typed, or one
+// dated mark a day from your own feed — NEVER a live tick. The third kind
+// arrived in v4.1: with the bridge on, `lib/quotes/persist-mark.ts` writes at
+// most one row per position per IST day into `mtm_prices`, so a bridge user's
+// mark is feed-derived and still a day-stamped figure, not a quote. The older
+// framing was therefore wrong twice over for them — about where the number came
+// from, and about what the caveat is. A breach is a
+// prompt to check a live quote and review the exit plan before acting, never an
+// instruction to act. The user stays in control.
 
 export interface AlertPositionInput {
   id: number;
@@ -11,7 +17,7 @@ export interface AlertPositionInput {
   side: "long" | "short";
   qty: number;
   entry: number;
-  mtm: number; // latest mark (EOD/manual)
+  mtm: number; // latest mark (end-of-day, typed, or the day's feed-derived mark)
   slPlanned: number | null;
   trailingSl: number | null;
   targetPlanned: number | null;

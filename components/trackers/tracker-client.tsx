@@ -227,7 +227,7 @@ export function TrackerClient({
           valueClassName={pnl(unrealised)}
           detail={{
             title: "Unrealised P&L — paper money",
-            summary: "Marked against your latest MTM prices, not live quotes.",
+            summary: "Marked against your latest stored marks — end-of-day, typed, or one dated mark a day from your own feed — never a live tick.",
             rows: [
               { label: "Unrealised P&L", value: inr(unrealised, { decimals: 0 }), tone: unrealised >= 0 ? "profit" : "loss" },
               { label: "On invested", value: deployed ? `${((unrealised / deployed) * 100).toFixed(2)}%` : "—" },

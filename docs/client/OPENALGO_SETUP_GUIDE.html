@@ -306,18 +306,45 @@ ZMQ_PORT=5556</code></pre></li>
 </ul>
 
 <!--
-  LIVE PRICES (v4.1). Every claim below cites the code that performs it:
-    • 1–5 s, clamped          lib/quotes/openalgo.ts:59-71, poll at :413,
-                              stopped with the desk's stream at :414-421
-    • 10 req/s ceiling         lib/quotes/openalgo.ts:64, createRateGuard() :284-294
-    • request body            :319 (apikey + symbols), :351-355 (symbol+exchange only);
+  LIVE PRICES (v4.1). Every claim below cites the code that performs it. The
+  line numbers were re-derived against lib/quotes/openalgo.ts as it stands in
+  the fix wave (2026-09-06) — the earlier set was six lines low throughout — and
+  each one now names the identifier it points at, so a future shift is visible
+  by grep rather than only by counting:
+    • 1–5 s, clamped          lib/quotes/openalgo.ts:59-71 (REFRESH_SECONDS_MIN/
+                              MAX/DEFAULT + clampRefreshSeconds()); the poll is
+                              the setInterval at :419 (`const timer =
+                              setInterval(() => void poll(), periodMs)`),
+                              stopped with the desk's stream at :420-427
+                              (`const stop: Unsubscribe` → clearInterval(timer)
+                              on the signal abort)
+    • 10 req/s ceiling        :64 (RATE_LIMIT_PER_SECOND = 10), enforced by
+                              createRateGuard() :290-300, whose take(now)
+                              returns false past the limit
+    • request body            :325 (post(): JSON.stringify({ apikey:
+                              creds.apiKey, ...extra })), :357-361 (snapshot():
+                              keys.slice(0, …).map((k) => ({ symbol, exchange }))
+                              through post(…, "multiquotes", { symbols })) —
+                              symbol + exchange and nothing else;
                               key list = open positions of the selected account,
-                              app/api/live/stream/route.ts:74-93, capped at 500
-    • /funds once             :444, answer discarded :453-454
-    • loopback default        lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST
-    • opt-in, gated           openAlgoGate()/isAckCurrent(), applied at :150-156
-    • no ticks written        :386-422 writes nothing; lib/quotes/persist-mark.ts
-                              writes one row per position per IST day
+                              app/api/live/stream/route.ts, openPositionKeys(),
+                              capped at MAX_KEYS = 500
+    • /funds once             :450 (health(): await post(gate.creds, "funds", {}))
+                              and the answer discarded at :459-460 — only the
+                              round trip in ms is kept
+    • loopback default        lib/domain/openalgo-disclosure.ts
+                              OPENALGO_DEFAULT_HOST; the poll's only host is
+                              normalizeHost(creds.host) at :317
+    • opt-in, gated           openAlgoGate()/isAckCurrent(), applied inside
+                              readGateFromDb() at :156-162 — the settings select
+                              through `const gate = openAlgoGate({…})` /
+                              `if (!gate.allowed) return { state: "disabled", … }`
+    • no ticks written        subscribe() :392-428 writes nothing anywhere;
+                              lib/quotes/persist-mark.ts writes one row per
+                              position per IST day
+  The stream route's own line numbers are deliberately not cited: that file is
+  being changed in the same wave, and an identifier survives what a number does
+  not.
   Disclosure version is "2" (lib/domain/openalgo-disclosure.ts), so an install
   that accepted v1 re-reads before either path runs.
 -->
@@ -339,11 +366,18 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
   <li><b>Where it goes.</b> <code>http://127.0.0.1:5000</code> by default — your own machine talking
     to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to
     that machine every few seconds while the desk is open.</li>
+  <li><b>What you see change.</b> The marks on the desk refresh at your interval for as long as the
+    screen is in front of you. The desk opens the connection when you arrive and closes it when you
+    leave or switch to another tab, so nothing polls behind your back.</li>
   <li><b>What is stored.</b> Prices refresh on screen only. Ticks are never written to your journal;
-    one mark per position per day is saved.</li>
+    <b>one mark per position per day</b> is saved — written once by itself after the close, or when
+    you press <b>Save today's mark</b>, whichever comes first. On a day the market did not trade
+    nothing is written at all, and the button does not override that.</li>
   <li><b>The daily login still applies</b> (<a href="#daily">section 6</a>): the broker session
     behind OpenAlgo expires every day and has to be signed in again — that is the broker's rule, not
-    Vyuha's. Until it is, prices stop arriving and the desk keeps the last mark it had.</li>
+    Vyuha's. Until it is, prices stop arriving and the desk keeps the last mark it had. When the
+    bridge cannot be reached or has no key, the desk shows a short reminder to reconnect —
+    <b>once a day</b>, not on every visit.</li>
   <li><b>The consent.</b> The in-app disclosure was re-issued for this, so an acceptance of the
     earlier version does not cover the feed: every install reads and accepts it again before either
     path runs.</li>
@@ -462,9 +496,11 @@ built around.</p>
      section 9 put a live quote feed on the page. Whether a broker attaches a market-data
      entitlement to the quotes OpenAlgo relays has not been verified here for any of the seven, so
      the sentence now claims only what the pull was checked against. -->
-<p>Section 9's live prices come from whatever market data your broker's own API gives your OpenAlgo
-instance. Whether that carries a market-data charge is between you and that broker — it has not been
-verified here for any of the seven, and Vyuha adds no data subscription of its own.</p>
+<p>Section 9's live prices — opt-in, offered only behind the disclosure, and answered by your own
+instance on <span class="mono">http://127.0.0.1:5000</span> unless you point Vyuha at another
+address — come from whatever market data your broker's own API gives that instance. Whether that
+carries a market-data charge is between you and that broker — it has not been verified here for any
+of the seven, and Vyuha adds no data subscription of its own.</p>
 
 <h2 id="trouble">12 · Troubleshooting</h2>
 <p>Each of these was hit in real testing.</p>

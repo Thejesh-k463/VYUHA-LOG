@@ -38,11 +38,31 @@ no dependency changes — `package-lock.json` is untouched.*
   long it took. Polling starts with the desk and stops with it. **No new
   network host is added by this release.**
 
+- **The desk consumes the stream, so the marks on screen actually move.** When
+  the source you picked is one that streams, `/live` opens `/api/live/stream`
+  and refreshes each position's mark as the answers arrive, at the **1–5 second**
+  interval the slider sets. It closes the connection when you leave the screen
+  or switch to another tab, and reopens it when you come back — so the slider is
+  a control over something observable, and nothing polls behind your back.
+
 - **Ticks are still never written.** The feed refreshes the screen; **one mark
   per position per IST day** is what reaches your journal — the last price of
   the session, or the price when you press *Save today's mark*, whichever comes
-  first. A failed poll leaves the last mark in place, labelled with the date it
-  belongs to, rather than blanking or guessing.
+  first. The close-of-session mark is now written **by the app itself**, once,
+  after 15:30 IST: it used to have no caller at all, so the only mark that ever
+  reached the journal was one you pressed the button for. And *Save today's
+  mark* **no longer overrides the refusal to write on a non-trading day** — it
+  waives the clock, which is what it is for, and nothing else; a Saturday press
+  used to stamp Friday's price under Saturday's date. A failed poll leaves the
+  last mark in place, labelled with the date it belongs to, rather than blanking
+  or guessing.
+
+- **One reminder a day when the bridge is not answering.** If you have picked
+  the bridge and it is unreachable or has no key, `/live` shows a short
+  **"Connect your feed — 20 seconds"** prompt — **once per IST day**, keyed to
+  the day rather than to the visit, so returning to the desk five times does not
+  produce five of them. It states the problem and where to fix it, and nothing
+  else.
 
 - **Disclosure v2 — every install re-acknowledges before anything pulls or
   polls.** `OPENALGO_DISCLOSURE_VERSION` moves from `"1"` to `"2"`, and because
@@ -78,12 +98,16 @@ no dependency changes — `package-lock.json` is untouched.*
   together.
 
 - **Market Atlas → Sectors says which map it grouped by.** Beside each bundled
-  classification file's as-of date sits the **sha256 of the bytes the app
-  actually loaded** — `lib/data/sector-map.json` and
-  `lib/data/nse-index-map.json` — first twelve hex on screen, the full 64 in the
-  title attribute. The maps are refreshed by hand once per minor release, so the
-  date alone cannot tell two builds of the same dated snapshot apart. Hashed
-  once per process, server-side.
+  classification map's as-of date sits the **sha256 of that map's canonical
+  JSON, as the app loaded it — not of the file on disk** —
+  `lib/data/sector-map.json` and `lib/data/nse-index-map.json`, first twelve hex
+  on screen and the full 64 in the title attribute, which says which of the two
+  it is. The distinction is not pedantry: the file carries its own formatting,
+  so `sha256sum lib/data/sector-map.json` returns a different 64 hex from the
+  one on screen, and a buyer who did not know that would read a tampered build.
+  The maps are refreshed by hand once per minor release, so the date alone
+  cannot tell two builds of the same dated snapshot apart. Hashed once per
+  process, server-side.
 
 - **An instrument can carry the date its company reports.** `/instruments` gains
   a **Results dates** card: rows that already have a date are listed, a search
@@ -105,12 +129,31 @@ no dependency changes — `package-lock.json` is untouched.*
   money those trailed stops would hand back was falling off the screen. It is
   stated on its own line and never netted into heat.
 
+- **The Live Desk's virtualiser measures its rows.** Past 40 open positions the
+  desk windows the table, and the window was sized from a `ROW_HEIGHT` of 44 px
+  while a windowed row actually renders at about 66.6 px — the Mark cell is two
+  block lines. Nothing measured, so `j`/`k` scrolled to a position that drifted
+  further off every row: **628 px below the fold by row 18**. Rows are now
+  measured as they render, 66 px is only the first guess, and the scroll padding
+  accounts for the 2 px between the viewport's border box and its client box.
+  Under 40 positions nothing changed — which is why three earlier scroll fixes
+  all passed while this was broken.
+
 - **Two `/live` browser tests that could not fire before.** The free-licence
   payload assertion now runs on a **seeded free context** (an expired trial)
   instead of skipping, so the wire really is checked for the Pro fields it must
   not carry; and the `j`/`k` scroll-geometry test is repeated on the
   **windowed** path, above the 40-row virtualisation threshold, which the
-  six-row case never reached.
+  six-row case never reached. A third, test-only change: the mark-label
+  assertion in the desk spec now accepts every label the desk can legitimately
+  produce and requires at least one undated "End of day" row, instead of pinning
+  the one label a solo run happened to show. The e2e suite shares a database, so
+  that row read "End of day" alone or "No mark stored" depending on which specs
+  ran before it — a red that was never about the desk.
+
+- **"Not enabled in v4.0" is now "not enabled in this release"** — the planned
+  providers' labels, the error they throw and their health reason. A version
+  number baked into a string is a string that lies one release later.
 
 - **One migration, 0068**, additive: `instruments.results_date`, nullable TEXT,
   ISO `YYYY-MM-DD`, validated on every write. It is reference data, not

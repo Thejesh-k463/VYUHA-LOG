@@ -3917,3 +3917,39 @@ then a seam pass, a docs wave and three follow-ups. Rulings taken inside the wav
 - **Builder-agent hooks:** `nocommit-guard.mjs` denies `taskkill`/`Stop-Process` to every build agent (written
   for the Sentinel supervisor), while the coord hook's own denial text tells the agent to kill a stray :3100
   server. The orchestrator kills; a `/fleet-tune` entry should scope the rule to the Sentinel port.
+
+## 2026-09-06 — v4.1.0 wave audit (`6631d21..66aa319`, CI 6/6 on 66aa319): 16 confirmed → 15 after the skeptic
+
+Six Fable auditors (money 0 + one pre-existing note, schema 0, security 3, ui 0, test-integrity 4, docs-claims 9)
+and one skeptic (15 CONFIRMED, 1 REFUTED — the Lab comment that "points at a retraction" agrees with the header
+at the stated 2%/1% pair; two sub-claims corrected without changing a verdict). Two owner pop-ups followed.
+
+- **The headline finding: nothing consumed the price stream.** `app/api/live/stream/route.ts` had no client —
+  `git log -S EventSource` shows the route's own commit and nothing else; the desk's only timer is the 30 s
+  wall clock; with the bridge selected the only price fetch was one `snapshot()` per server render. The
+  consent sheet, PRIVACY item 3, help, README and CHANGELOG all described a 1–5 s poll "while the Live Desk is
+  open" that never ran, and the refresh slider affected nothing observable. Its twin: `persistDailyMarks()`
+  had one caller, the "Save today's mark" button, so the promised automatic close-of-session mark never
+  happened. **Owner ruling: BUILD it in the fix wave** — the desk opens the stream when the effective provider
+  streams, ticks refresh marks in memory (never persisted), one catch-up write after 15:30 IST through the
+  existing `shouldPersistMark()`, and the Q24 once-a-day connect reminder on /live. *Rejected: rewording the
+  disclosure to the render-time snapshot* — 4.1's headline feature would not refresh and the slider would go
+  back behind the flag. Lesson for the ledger: the seam pass tests values that CROSS a boundary; it cannot
+  see a producer with no consumer. The next wave plan names, for every new route, the file that calls it.
+- **Q60 stands (owner ruling).** The 4.1 README block named OpenAlgo beside live pricing; the guard scanned by
+  LINE and a hard-wrapped README evaded it. README now describes "a bridge you run yourself" without the name
+  near a price claim, and the guard is sentence-based. *Rejected: relaxing Q60 for the README* — the landing
+  page and brochure were already clean, and the setup guide, help and consent sheet keep the name.
+- **"Save today's mark" waived the weekend refusal** (`ignoreClock` skipped the whole `shouldPersistMark`
+  result, not only the clock): a Saturday press stamped Friday's price under Saturday's date. Number right,
+  date wrong; fixed in the same wave, pre-existing since 4.0.
+- **Cosmetic, all fixed in the wave:** the privacy-feed guard tested its two conditions per file instead of
+  per sentence; the digest test's "one changed byte" case never called the module; the help consent regex
+  accepted the bare word "Settings"; nine setup-guide citations and one help citation were six lines low
+  (the re-derivation had covered the disclosure and PRIVACY only); the Atlas digest was described as a file
+  hash when it is the sha256 of the map's canonical JSON as loaded (file 24ce536bd3db… vs canonical
+  8fcde8d7ba6b… for sector-map.json); the Settings help named one source, not three; CHANGELOG omitted the
+  virtualiser fix; three comments still dated Telegram alerts to 4.1; one import-route comment still called
+  the daily session expiry SEBI-mandated; the breach banner's "not live quotes" predates the feed mark.
+- **Left as an operator call:** the `react-hooks/incompatible-library` warning on `useVirtualizer`;
+  `data-table.tsx` silences it with `"use no memo"`, which changes React Compiler behaviour for the component.

@@ -15,17 +15,33 @@ import {
  *
  *   1. it is OPT-IN, behind a disclosure the user accepts — `openAlgoGate()`
  *      plus `isAckCurrent()` refuse every request until then
- *      (lib/quotes/openalgo.ts:150-156), so a surface that omits it is not
+ *      (lib/quotes/openalgo.ts:156-162, inside `readGateFromDb()`: the settings
+ *      select through `if (!gate.allowed) return { state: "disabled", … }`), so
+ *      a surface that omits it is not
  *      merely quiet, it is wrong about what the app does;
  *   2. it goes to the user's OWN machine by default — `OPENALGO_DEFAULT_HOST`
  *      is loopback, and the poll's only host is `normalizeHost(creds.host)`
- *      (lib/quotes/openalgo.ts:311-314). "Live prices from your broker" with
+ *      (lib/quotes/openalgo.ts:317, `const base = normalizeHost(creds.host)` in
+ *      `post()`). "Live prices from your broker" with
  *      no loopback beside it reads as an upload of the book.
  *
- * The check is per SURFACE, not per line: these files are hard-wrapped, so the
- * clause that carries the condition routinely sits on a different line from the
- * claim. Naming the feed anywhere in a file therefore obliges the file to state
- * both conditions somewhere in it.
+ * The check is per PARAGRAPH (fix wave, 2026-09-06), not per line and no longer
+ * per file. Not per line because these files are hard-wrapped at ~78 columns and
+ * marked up, so the clause carrying a condition routinely sits on a different
+ * line from the claim. No longer per file because a whole-file scan is satisfied
+ * by any occurrence of "disclosure" or "127.0.0.1" anywhere in a nine-hundred
+ * line document: appending
+ *
+ *   "Live prices from your broker stream into the Live Desk through the
+ *    OpenAlgo bridge."
+ *
+ * to `docs/client/PRIVACY.md` passed the per-file form, because item 1 of that
+ * file says "opt-in" and item 3 says "127.0.0.1" — a condition forty screens
+ * away is not beside the claim. The paragraph is the unit a reader reads at
+ * once: a blank-line-separated block of prose, a `<p>`, a `<ul>`, or — in the
+ * two TypeScript copy modules, whose string literals carry no blank lines — the
+ * whole entry/item list, which is precisely what one help card and one consent
+ * sheet render together.
  *
  * `tests/no-indicators-in-client-docs.test.ts` holds the tighter, per-line
  * version of the same rule over the client README; this one is the wide net
@@ -43,7 +59,23 @@ const ROOT = path.resolve(__dirname, "..");
  * `https://` is guarded the same way `tests/live-feed-copy.test.ts` guards it.
  */
 function visible(src: string): string {
-  return src.replace(/<!--[\s\S]*?-->/g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  return (
+    src
+      .replace(/<!--[\s\S]*?-->/g, "")
+      // A COMMENT-ONLY LINE IS DELETED WHOLE, newline included. Blanking it in
+      // place leaves a whitespace-only line, and the paragraph splitter below
+      // would read that as a paragraph break — fragmenting `OPENALGO_FEED_ITEMS`
+      // and `HELP_ENTRIES`, whose items are separated by nothing but the
+      // citation comments above each string, into "paragraphs" no reader sees.
+      .replace(/^[ \t]*\/\/[^\n]*\r?\n/gm, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+      // An in-page anchor is NAVIGATION, not a claim. The setup guide's table of
+      // contents lists "The OpenAlgo API key" and "Live prices on the Live Desk"
+      // as two `<li>`s of one `<ol>`; judged as a paragraph that is a bridge and
+      // a feed claim with no conditions, which is a guard reading a menu. Each
+      // heading is judged where the section it names actually lives.
+      .replace(/<a href="#[^"]*">[\s\S]*?<\/a>/g, " ")
+  );
 }
 
 const read = (rel: string) => visible(fs.readFileSync(path.join(ROOT, rel), "utf8"));
@@ -57,6 +89,10 @@ const SURFACES = [
   "docs/client/INSTALLATION_GUIDE.md",
   "lib/domain/help-content.ts",
   "lib/domain/openalgo-disclosure.ts",
+  // Added in the fix wave. The repository README is the first thing a buyer
+  // reads and it describes the feed in its "New in 4.1" block; it was outside
+  // this net purely because the net was built from the client pack.
+  "README.md",
 ] as const;
 
 /** The document is about the bridge at all. */
@@ -79,6 +115,19 @@ const OPT_IN = /opt-in|disclosure|until you (?:pick|turn|switch)|only after you|
 const LOOPBACK = /127\.0\.0\.1|loopback/i;
 
 /**
+ * The paragraphs of a surface: blank-line-separated blocks, markup flattened.
+ *
+ * This is the unit both halves of the guard now work in — the claim is found in
+ * a paragraph and the conditions are required in THAT paragraph.
+ */
+function paragraphs(text: string): string[] {
+  return text
+    .split(/\n[ \t]*\n/)
+    .map((p) => p.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+/**
  * Every SENTENCE that says the bridge produces a live price.
  *
  * By sentence, not by line and not by document. Not by line because these files
@@ -98,13 +147,22 @@ function namesTheFeed(text: string): string[] {
     .map((sentence) => sentence.trim().slice(0, 160));
 }
 
-/** The conditions this text is missing, given that it names the feed. */
+/**
+ * The conditions this text is missing — checked PER PARAGRAPH.
+ *
+ * Each returned string names the paragraph and what it left out, so the failure
+ * message points at the copy to edit rather than at the file.
+ */
 function missingConditions(text: string): string[] {
-  if (namesTheFeed(text).length === 0) return [];
-  const missing: string[] = [];
-  if (!OPT_IN.test(text)) missing.push("opt-in / behind the disclosure");
-  if (!LOOPBACK.test(text)) missing.push("the loopback default");
-  return missing;
+  const out: string[] = [];
+  for (const para of paragraphs(text)) {
+    if (namesTheFeed(para).length === 0) continue;
+    const missing: string[] = [];
+    if (!OPT_IN.test(para)) missing.push("opt-in / behind the disclosure");
+    if (!LOOPBACK.test(para)) missing.push("the loopback default");
+    if (missing.length > 0) out.push(`${missing.join(" + ")} — «${para.slice(0, 140)}»`);
+  }
+  return out;
 }
 
 describe("every surface that names the live price feed also states its conditions", () => {
@@ -122,7 +180,8 @@ describe("every surface that names the live price feed also states its condition
     // Verbatim the sentence this whole file exists to stop shipping:
     const PLANTED = "Live prices from your broker stream into the Live Desk through the OpenAlgo bridge.";
     expect(namesTheFeed(PLANTED), "the planted claim must be recognised as a feed claim").toHaveLength(1);
-    expect(missingConditions(PLANTED)).toEqual(["opt-in / behind the disclosure", "the loopback default"]);
+    expect(missingConditions(PLANTED)).toHaveLength(1);
+    expect(missingConditions(PLANTED)[0]).toContain("opt-in / behind the disclosure + the loopback default");
 
     // The same claim, said the way v4.1 is allowed to say it.
     const ALLOWED =
@@ -132,6 +191,28 @@ describe("every surface that names the live price feed also states its condition
 
     // A surface that never mentions the feed is not obliged to explain it.
     expect(missingConditions("Vyuha reads your broker's tradebook from a file you export.")).toEqual([]);
+  });
+
+  it("…and fires INSIDE a real surface, which the per-file form could not", () => {
+    // The regression this change exists for. `docs/client/PRIVACY.md` says
+    // "opt-in" in item 1 and "127.0.0.1" in item 3, so the per-file scan was
+    // satisfied no matter what was appended to it. Dropped in as its own
+    // paragraph — exactly how a copy edit would land — the plant must be caught.
+    const PLANTED = "Live prices from your broker stream into the Live Desk through the OpenAlgo bridge.";
+    const privacy = read("docs/client/PRIVACY.md");
+    expect(missingConditions(privacy), "the shipped file is clean").toEqual([]);
+
+    const doped = `${privacy}\n\n${PLANTED}\n`;
+    const caught = missingConditions(doped);
+    expect(caught, "a naked claim appended to PRIVACY.md must be caught").toHaveLength(1);
+    expect(caught[0]).toBe(
+      `opt-in / behind the disclosure + the loopback default — «${PLANTED}»`,
+    );
+
+    // …and the per-FILE form it replaces would have passed the same text, which
+    // is what makes this change a fix rather than a rewording.
+    const perFile = OPT_IN.test(doped) && LOOPBACK.test(doped);
+    expect(perFile, "the old whole-file check passed the doped document").toBe(true);
   });
 
   it("at least one shipped surface actually describes the feed — an empty net proves nothing", () => {

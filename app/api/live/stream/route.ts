@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { isWithinLiveWindow } from "@/lib/quotes/mapping";
+import { catchUpDailyMark } from "@/lib/quotes/persist-mark";
 import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type Quote, type QuoteKey, type Unsubscribe } from "@/lib/quotes/types";
 
@@ -184,6 +185,21 @@ export async function GET(req: Request): Promise<Response> {
           health.reason = e instanceof Error ? e.message : "The quote provider could not be read.";
         }
       }
+      if (closed) return;
+
+      // ── THE AUTOMATIC DAY MARK (owner answer Q25) ────────────────────────
+      // `persistDailyMarks()` shipped with ONE caller — the "Save today's
+      // mark" button — so the promised "one mark per position per day, from
+      // the last price of the session" only happened when somebody pressed a
+      // button on the Settings card. Connecting the desk is the moment the app
+      // holds a fresh snapshot of exactly the open positions, so the catch-up
+      // runs HERE, on the snapshot already in hand: no second network call,
+      // and the machine that had the feed open at 15:30 is the one that
+      // writes. `catchUpDailyMark()` is a no-op for a non-streaming (or mock)
+      // provider, before 15:30 IST, on a weekend, and on a day already
+      // stamped, and it never throws — a failed mark must not cost the desk
+      // its stream.
+      await catchUpDailyMark(provider.capabilities, quotes);
       if (closed) return;
 
       send("snapshot", {

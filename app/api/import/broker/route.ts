@@ -708,7 +708,7 @@ export async function POST(req: Request) {
         // logs in via their Kite Connect URL, pastes the request_token, and
         // Vyuha does checksum + /session/token. Honest framing: one browser
         // click + one paste per day — better than pasting a raw token, not
-        // unattended (SEBI-mandated ~6 AM IST session invalidation).
+        // unattended (the broker's ~6 AM IST session invalidation).
         let apiSecret: string | undefined;
         let storedKiteUserId: string | undefined;
         // Same rule as Dhan: a stored api_secret blob that cannot be read is

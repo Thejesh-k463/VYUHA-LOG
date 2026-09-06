@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
 
@@ -174,6 +174,17 @@ describe("POST refresh-seconds — clamped to 1–5 (owner answer Q25)", () => {
 });
 
 describe("POST mark — one persisted mark per position per day, priced by the server", () => {
+  // The button waives the 15:30 clock but NOT the weekend refusal (fix wave
+  // 2026-09-06, M1). Against the real clock this block is red every Saturday
+  // and Sunday, so it is pinned to a Friday, 16:00 IST.
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-04T10:30:00Z"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
   it("saves today's mark from the provider's own snapshot", async () => {
     // Pinned to the mock provider: the route must take its prices from the
     // server's provider, never from anything a caller sent.

@@ -49,6 +49,14 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 >   ceilinged at 10 req/s; starts and stops with the desk. **No new network host.** Ticks are never
 >   written — `lib/quotes/persist-mark.ts` writes **one mark per position per IST day** into
 >   `mtm_prices`, idempotent twice over.
+> - **The desk CONSUMES the stream (fix wave).** `/live` opens `/api/live/stream` when the effective
+>   provider streams and refreshes the on-screen marks at the 1–5 s interval, closing on unmount and
+>   on a hidden tab. Until this wave the route had no client at all and the slider changed nothing
+>   observable. The close-of-session mark is now written automatically once after 15:30 IST through
+>   the existing `shouldPersistMark()`; **"Save today's mark" waives the CLOCK only** — it no longer
+>   waives the non-trading-day refusal, which used to stamp Friday's price under Saturday's date.
+>   When the bridge is selected but unreachable or keyless, `/live` shows the Q24 **"Connect your
+>   feed — 20 seconds"** prompt **once per IST day**, keyed to the day and not to the visit.
 > - **Disclosure v2.** `OPENALGO_DISCLOSURE_VERSION = "2"` + `OPENALGO_FEED_ITEMS`
 >   (`lib/domain/openalgo-disclosure.ts`), rendered under its own heading by
 >   `components/system/openalgo-dialog.tsx`; `isAckCurrent()` compares with `===`, so **every install
@@ -63,9 +71,13 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 >   said Varsity returns the LARGER quantity ("around twice"), which is false at the Lab's own
 >   opening sample (0.25% against a 1% unit → a **quarter**); both now state the true ratio
 >   `riskPpm ÷ unitRiskPpm`, pinned by `tests/sizing-lab-copy.test.ts`.
-> - **Market Atlas → Sectors:** the **sha256 of each bundled classification map** beside its as-of
->   date (Q52) — `sector-map.json` and `nse-index-map.json`, hashed server-side once per process,
->   12 hex on screen and the full 64 in the title.
+> - **Market Atlas → Sectors:** beside each bundled classification map's as-of date, the **sha256 of
+>   that map's canonical JSON, as the app loaded it — NOT of the file on disk** (Q52).
+>   `digestMap()` in `lib/queries/atlas.ts` hashes `JSON.stringify(json)` over the imported object;
+>   the file's own bytes hash differently (sector-map.json: canonical `8fcde8d7ba6b…` vs file
+>   `24ce536bd3db…`), so a buyer running `sha256sum` on the file reads a different figure and must
+>   not read that as tamper. `sector-map.json` and `nse-index-map.json`, hashed server-side once per
+>   process, 12 hex on screen and the full 64 in the title, which states the distinction.
 > - **`results_date` (Q-9, migration 0068):** a **Results dates** editor card on `/instruments`
 >   (rows that already carry a date, a search box for the rest, 100 rendered at a time with the
 >   shortfall stated); a **free** "Results in N days / today / tomorrow" chip on the `/live` row and
@@ -82,7 +94,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > after 4.2, and "alerts" stays out of Pro copy; no `openalgo-charts` pilot; no journal-derived
 > Kelly; no size-index lists; **Upstox and Angel One price feeds are 4.2**.
 >
-> **VERIFY (2026-09-06, wave gate on the uncommitted 4.1 tree): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 334 files / 6,177 passed / 35 skipped (6,212), `next build` compiled. Playwright on the settled tree: 91 passed / 0 failed (one conditional skip), the windowed-scroll fix proven red-on-revert at −628 px. README counts set to 6177 / 334 / 91 flows in 29 specs.**
+> **VERIFY (2026-09-06, FIX-WAVE gate, the tree committed after `66aa319`): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 337 files / 6,273 passed / 35 skipped (6,308), `next build` compiled. Playwright on the fix-wave tree: `e2e/z-live-desk.spec.ts` 8 passed incl. the stream-consumer test (server-render price before, tick price after) and the windowed j/k geometry (−628 px before the fix). Wave gate before the fix wave (`66aa319`, CI 6/6): 334 / 6,177 / 35. README counts 6273 / 337 / 91 flows in 29 specs.**
 
 ## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 
@@ -1540,6 +1552,19 @@ release matrix, `docs/owner/*`. Before re-adding, check notarisation in
 why selling stopped.
 
 ## 8. Open work and future upgrades
+
+### 8.00 Open Positions card redesign for `/live` (owner-driven, 2026-09-06; NOT built — awaiting the owner's design confirmation)
+
+Owner liked all four round-1 directions and asked for a blend on A's base (editorial ledger): the row gains
+quantity, the stop VALUE and its SOURCE chip (manual / ATR 21 × 2 / trail), and a state chip (at entry / at risk /
+locked in); the header bars show absolute ₹ beside the percentage; C (position card with the stop–entry–mark–target
+zone) becomes a per-position POP-UP; further additions were offered as numbered ideas (row strip, feed state, account
+chips, keyboard hints, results/corporate-action chips, a near-stop tint, a Sizing Lab hand-off for no-stop rows; and a
+collapsible Risk lens above the table). Canvas: `https://claude.ai/code/artifact/712bcb4e-4c97-4d22-8d1b-02bae8a79b0f`
+(page "Blend (round 2)"). Plan, constraints and open questions: `VYUHA-LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md`
+Step 1b. Ships as its own desk release after 4.2 unless pulled forward; the free/Pro map, SEBI copy rules and the
+`/live` e2e harness apply unchanged. **Placement (owner): charts stay the Live Desk's main view; `/live` gains a
+"Charts" (default) / "Positions" (card) tab pair — nothing is replaced.**
 
 Sections 8.1–8.5 were **recovered from the two build-session transcripts** (2026-08-05 → 08-13)
 and exist nowhere else in the repo. Claims marked *(verified)* were re-checked against the code

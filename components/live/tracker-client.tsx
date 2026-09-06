@@ -6,12 +6,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/badge";
+import { useStoredValue, writeStored } from "@/components/layout/use-stored-value";
 import { ProLock } from "@/components/system/pro-lock";
+// The ONE source of both prompt sentences (`tests/live-feed-copy.test.ts` pins
+// them verbatim, including the ruling that the daily re-sign-in is the
+// BROKER's rule and names no regulator). Imported, never restated.
+import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
+import { applyTicks, mergeTicks, parseTickFrame, type TickMap, type TickQuote } from "@/lib/live/apply-ticks";
+import { connectPromptDismissal, connectPromptKey, showConnectPrompt } from "@/lib/live/connect-prompt";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
 import { daysToResults } from "@/lib/live/results-date";
 import {
+  CONNECT_PROMPT_COPY,
   DESK_COPY,
   EM_DASH,
+  LIVE_STREAM_COPY,
   lockedInAtStop,
   needsData,
   needsSessions,
@@ -77,6 +86,53 @@ const ROW_HEIGHT = 66;
  * is only what the first keystroke before layout would use.
  */
 const THEAD_HEIGHT_FALLBACK = 40;
+
+/**
+ * First reconnect delay, in ms, doubling to `RECONNECT_STEPS`.
+ *
+ * Only for a stream the browser has GIVEN UP on (`readyState === CLOSED`).
+ * While it is still CONNECTING the browser is retrying on the route's own
+ * jittered `retry:` hint (2000–3500 ms, deliberately not a fixed 1 s so a
+ * sidecar restart does not bring every desk back on one boundary), and a second
+ * timer racing it would double the reconnect rate against a bridge that is
+ * already struggling.
+ */
+const RECONNECT_BASE_MS = 2_000;
+/** 2 s, 4 s, 8 s, 16 s, then 16 s for ever. */
+const RECONNECT_STEPS = 4;
+
+/**
+ * How long a frame keeps the strip reading "Live" across a routine re-establish,
+ * in ms. It is `HEARTBEAT_MS` in `app/api/live/stream/route.ts`.
+ *
+ * An SSE connection is re-established all the time — a proxy drops an idle
+ * stream, a sidecar restarts — and the browser does it silently on the route's
+ * own `retry:` hint. Flashing "Reconnecting…" on each of those would make a
+ * healthy desk look broken. The route promises a heartbeat every 25 s, so while
+ * the last frame is YOUNGER than that the pipe has proved itself inside its own
+ * contract; past it, nothing has, and the strip says so.
+ */
+const LIVE_GRACE_MS = 25_000;
+
+/**
+ * A STABLE empty tick map, so `applyTicks(rows, ticks)` returns the server's
+ * own array by identity until the first frame lands. A fresh `new Map()` per
+ * render would make the memo below re-run on every commit.
+ */
+const NO_TICKS: TickMap = new Map();
+
+/** What the desk knows about the SSE pipe. Never a claim about the prices. */
+type LinkPhase = "idle" | "live" | "reconnecting" | "paused" | "stopped";
+
+interface LinkState {
+  phase: LinkPhase;
+  /** The provider's own sentence, when it sent one. */
+  reason: string | null;
+  /** `Date.now()` of the last frame. null when nothing has arrived. */
+  at: number | null;
+}
+
+const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null };
 
 const PositionChartPanel = dynamic(
   // W2's real panel. `ssr:false` because it measures its own box and reads a
@@ -217,7 +273,7 @@ function StalenessChip({ row, newestDay }: { row: DeskRow; newestDay: string | n
 
 export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean }) {
   const router = useRouter();
-  const { rows, heat, concentration, feed, barsBySymbol, barsCap, atrLength } = data;
+  const { rows: wireRows, heat, concentration, feed, barsBySymbol, barsCap, atrLength } = data;
 
   const [accountFilter, setAccountFilter] = React.useState<number | null>(null);
   const [query, setQuery] = React.useState("");
@@ -260,6 +316,167 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     return () => clearInterval(id);
   }, []);
 
+  // ── The live stream ──────────────────────────────────────────────────────
+  // Ticks live HERE and nowhere else (owner answer Q25: "ticks in memory only,
+  // exactly one persisted mark per position per day"). Nothing below writes.
+  const [ticks, setTicks] = React.useState<TickMap>(NO_TICKS);
+  const [link, setLink] = React.useState<LinkState>(LINK_IDLE);
+
+  const streaming = feed.streaming;
+
+  /**
+   * ONE `EventSource`, and only for a provider that really streams.
+   *
+   * `GET /api/live/stream` has existed since v4.0 with no consumer at all, so
+   * with the OpenAlgo bridge selected the desk's prices moved only on a server
+   * render — while the disclosure (items 2 and 5), PRIVACY item 3, the help
+   * page and the Settings slider all describe a 1–5 s refresh "while the Live
+   * Desk is open". This effect is that sentence, made true.
+   *
+   * NOT OPENED FOR `eod` OR `manual`. The route already refuses to subscribe a
+   * non-streaming provider, but opening the pipe anyway would hold a request
+   * open for a desk that can never receive a tick — and would let the strip say
+   * "Live" over an end-of-day print.
+   *
+   * NO setState IN THIS EFFECT'S BODY. Every write below happens inside an
+   * `EventSource` handler, a `visibilitychange` handler or a timer — never
+   * synchronously on a render keyed on other state (AGENTS.md; that pattern
+   * broke the Trades filter outright under the React Compiler).
+   *
+   * Its dependency is the streaming FLAG, not `feed`: re-running on a new
+   * object identity would tear down and re-open the stream on every server
+   * render.
+   */
+  React.useEffect(() => {
+    if (!streaming) return;
+    if (typeof EventSource === "undefined") return; // SSR, and any shell without it
+
+    let es: EventSource | null = null;
+    let retry = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
+    let unmounted = false;
+    /** Quotes waiting for the next paint. The route already coalesces to 250 ms. */
+    const pending: TickQuote[] = [];
+
+    const flush = () => {
+      frame = 0;
+      if (pending.length === 0) return;
+      const batch = pending.splice(0, pending.length);
+      setTicks((prev) => mergeTicks(prev, batch));
+    };
+    /** One React commit per animation frame, however many frames arrived in it. */
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(flush);
+    };
+
+    const onFrame = (ev: Event) => {
+      const data = (ev as MessageEvent<string>).data;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(data);
+      } catch {
+        return; // one unreadable frame costs one frame, never the stream
+      }
+      const quotes = parseTickFrame(raw);
+      if (quotes.length > 0) {
+        pending.push(...quotes);
+        schedule();
+      }
+      retry = 0;
+      setLink({ phase: "live", reason: null, at: Date.now() });
+    };
+
+    const close = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (frame !== 0) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      es?.close();
+      es = null;
+    };
+
+    const open = () => {
+      if (unmounted || document.visibilityState === "hidden") return;
+      close();
+      es = new EventSource("/api/live/stream");
+      es.addEventListener("snapshot", onFrame);
+      es.addEventListener("tick", onFrame);
+      es.addEventListener("heartbeat", onFrame);
+      es.addEventListener("error", onError);
+    };
+
+    function onError(ev: Event) {
+      // TWO DIFFERENT EVENTS ARRIVE HERE, and telling them apart is the whole
+      // of this handler. The route sends a NAMED `error` frame when a provider
+      // refuses to subscribe, and the EventSource spec dispatches a
+      // server-named "error" event on the object itself — indistinguishable
+      // from the connection failure except that one carries `data`.
+      if (typeof (ev as MessageEvent<string>).data === "string") {
+        let reason: string | null = null;
+        try {
+          const body = JSON.parse((ev as MessageEvent<string>).data) as { message?: unknown };
+          reason = typeof body.message === "string" ? body.message : null;
+        } catch {
+          reason = null;
+        }
+        setLink({ phase: "stopped", reason, at: Date.now() });
+        return;
+      }
+      if (es !== null && es.readyState === EventSource.CONNECTING) {
+        // The browser is already retrying, on the route's own jittered `retry:`
+        // hint. Say so; do not race it with a second timer — and do not say it
+        // at all for a routine re-establish inside the heartbeat window (see
+        // LIVE_GRACE_MS).
+        setLink((prev) =>
+          prev.at !== null && Date.now() - prev.at < LIVE_GRACE_MS
+            ? prev
+            : { phase: "reconnecting", reason: null, at: prev.at },
+        );
+        return;
+      }
+      close();
+      retry = Math.min(retry + 1, RECONNECT_STEPS);
+      setLink((prev) => ({ phase: "reconnecting", reason: null, at: prev.at }));
+      timer = setTimeout(open, RECONNECT_BASE_MS * 2 ** (retry - 1));
+    }
+
+    /**
+     * A hidden tab holds no stream. The disclosure promises the feed stops when
+     * the desk closes; stopping it when the tab goes to the background is
+     * stricter than that promise and costs a background tab nothing.
+     */
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        close();
+        setLink({ phase: "paused", reason: null, at: null });
+      } else {
+        setLink(LINK_IDLE);
+        open();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    open();
+
+    return () => {
+      unmounted = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      close();
+    };
+  }, [streaming]);
+
+  /**
+   * The rows as the desk shows them: the server's own wire, with whatever has
+   * ticked since folded in. PURE and DERIVED — never a `setState` that copies
+   * `data.rows` into local state, which is how a payload and a screen drift.
+   */
+  const rows = React.useMemo(() => applyTicks(wireRows, ticks), [wireRows, ticks]);
+
   const accountIds = React.useMemo(() => [...new Set(rows.map((r) => r.accountId))], [rows]);
 
   const visible = React.useMemo(() => {
@@ -276,8 +493,49 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   // list resolves here rather than in an effect that writes state back.
   const focused = focusIdx >= 0 && focusIdx < visible.length ? visible[focusIdx] : null;
   const expanded = React.useMemo(() => visible.find((r) => r.id === expandedId) ?? null, [visible, expandedId]);
-  const newestDay = fmt.dayOf(feed.asOf);
+  /**
+   * The newest mark day ON SCREEN, not just the newest the SERVER printed.
+   *
+   * `feed.asOf` is a snapshot of the payload; once ticks land, a ticked row is
+   * newer than it and every un-ticked row is genuinely behind. Reading only
+   * `feed.asOf` would leave the "Stale" badge off exactly the rows that had
+   * stopped updating.
+   */
+  const newestDay = React.useMemo(() => {
+    let newest = fmt.dayOf(feed.asOf);
+    for (const r of rows) {
+      const d = fmt.dayOf(r.markAsOf);
+      if (d !== null && (newest === null || d > newest)) newest = d;
+    }
+    return newest;
+  }, [rows, feed.asOf]);
   const windowed = visible.length > VIRTUAL_THRESHOLD;
+
+  // ── The feed strip's connection line, DERIVED ────────────────────────────
+  // The age refreshes on the desk's existing 30 s clock rather than on a timer
+  // of its own; clamped at 0 because `now` can be up to 30 s older than the
+  // frame that just arrived.
+  const frameAgeS = link.at === null || now === null ? null : Math.max(0, Math.round((now.getTime() - link.at) / 1000));
+  const linkLabel = !streaming
+    ? null
+    : link.phase === "live" && frameAgeS !== null
+      ? LIVE_STREAM_COPY.live(feed.providerId, frameAgeS)
+      : link.phase === "reconnecting"
+        ? LIVE_STREAM_COPY.reconnecting
+        : link.phase === "paused"
+          ? LIVE_STREAM_COPY.paused
+          : link.phase === "stopped"
+            ? LIVE_STREAM_COPY.stopped(link.reason ?? feed.reason ?? LIVE_STREAM_COPY.stoppedNoReason)
+            : LIVE_STREAM_COPY.connecting;
+
+  // ── The once-a-day connect prompt (owner answer Q24) ─────────────────────
+  // The day key comes from the payload's own IST `today`, so the banner cannot
+  // disagree with the desk about which day it is and no client clock is read
+  // during render. `useStoredValue` returns null for the server snapshot, so
+  // the default (shown) renders on both sides and hydration is clean.
+  const promptKey = connectPromptKey(data.today);
+  const promptStored = useStoredValue(promptKey);
+  const promptOpen = showConnectPrompt({ providerId: feed.providerId, healthState: feed.healthState }, promptStored);
 
   const virtualizer = useVirtualizer({
     count: visible.length,
@@ -401,6 +659,17 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           </Badge>
           <span>{feed.label}</span>
           <span className="font-mono tabular-nums">{feed.asOf ? fmt.shortDate(feed.asOf) : EM_DASH}</span>
+          {/* The CONNECTION, never the prices: each mark keeps saying its own
+              staleness per row (`stalenessLabel`), and nothing here upgrades a
+              delayed print into a tick. */}
+          {linkLabel !== null && (
+            <span
+              data-testid="live-stream-state"
+              className={link.phase === "live" ? "text-profit" : link.phase === "stopped" ? "text-warning" : undefined}
+            >
+              {linkLabel}
+            </span>
+          )}
         </span>
 
         {accountIds.length > 1 && (
@@ -436,6 +705,34 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           className="ml-auto h-7 w-48 rounded-[var(--radius)] border border-border bg-input px-2 text-xs"
         />
       </div>
+
+      {/* ── "Connect your feed — 20 seconds", once per IST day (Q24) ───────── */}
+      {promptOpen && (
+        <div
+          role="region"
+          aria-label={CONNECT_PROMPT_COPY.label}
+          data-testid="live-connect-prompt"
+          className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-border bg-card-hover/40 px-3 py-2 text-xs"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{LIVE_FEED_COPY.connect}</p>
+            <p className="mt-1 text-muted-foreground">{CONNECT_PROMPT_COPY.body}</p>
+            {/* The re-sign-in is the BROKER's rule, in the broker's own terms —
+                the sentence is imported from its one source and names no
+                regulator (owner ruling; tests/live-feed-copy.test.ts). */}
+            <p className="mt-1 text-muted-foreground">{LIVE_FEED_COPY.dailyReauth}</p>
+            {feed.reason && <p className="mt-1 text-muted-foreground">{feed.reason}</p>}
+          </div>
+          <button
+            type="button"
+            title={CONNECT_PROMPT_COPY.dismissTitle}
+            onClick={() => writeStored(promptKey, connectPromptDismissal())}
+            className="ml-auto rounded-[var(--radius)] border border-border px-2 py-1"
+          >
+            {CONNECT_PROMPT_COPY.dismiss}
+          </button>
+        </div>
+      )}
 
       {/* ── "Risk not set" → the Sizing Lab (Q33) ──────────────────────────── */}
       {data.riskNotSet && (

@@ -1,7 +1,7 @@
 import "server-only";
 import { todayIstIso, toIst } from "@/lib/domain/trading-day";
 import { isCashKey } from "./mapping";
-import { fromPaise, quoteKeyId, type Exchange, type Quote, type QuoteKey } from "./types";
+import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type QuoteKey } from "./types";
 
 /**
  * The ONE number the live feed is allowed to write (owner answer Q25:
@@ -82,12 +82,23 @@ export const MARK_AFTER_IST_MIN = 15 * 60 + 30;
  */
 export const alreadyMarkedReason = (date: string) => `Today's mark is already saved (${date}).`;
 
+/**
+ * WHICH rule refused, as a stable value rather than as a sentence.
+ *
+ * `persistDailyMarks()` has to waive exactly one of these for the "Save today's
+ * mark" button, and matching on `reason` would tie that waiver to copy. The
+ * code is what a caller branches on; the sentence stays the user's.
+ */
+export type PersistMarkRefusal = "weekend" | "before-close" | "already-marked";
+
 export interface PersistMarkDecision {
   ok: boolean;
   /** Why it will not run, in the user's words. Empty when it will. */
   reason: string;
   /** The IST day the mark belongs to. */
   date: string;
+  /** The rule that refused. null when `ok`. */
+  code: PersistMarkRefusal | null;
 }
 
 /**
@@ -104,7 +115,7 @@ export function shouldPersistMark(now: Date, lastMarkDate: string | null | undef
   const ist = toIst(now); // IST wall-clock lands in the UTC fields
   const day = ist.getUTCDay();
   if (day === 0 || day === 6) {
-    return { ok: false, reason: "It is the weekend — there is no session to close.", date };
+    return { ok: false, reason: "It is the weekend — there is no session to close.", date, code: "weekend" };
   }
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   if (minutes < MARK_AFTER_IST_MIN) {
@@ -112,12 +123,13 @@ export function shouldPersistMark(now: Date, lastMarkDate: string | null | undef
       ok: false,
       reason: "The session has not closed yet. The live mark is written once, from the last price of the day.",
       date,
+      code: "before-close",
     };
   }
   if (lastMarkDate === date) {
-    return { ok: false, reason: alreadyMarkedReason(date), date };
+    return { ok: false, reason: alreadyMarkedReason(date), date, code: "already-marked" };
   }
-  return { ok: true, reason: "", date };
+  return { ok: true, reason: "", date, code: null };
 }
 
 export interface PersistMarkResult {
@@ -164,7 +176,8 @@ export async function persistDailyMarks(
   const decision = shouldPersistMark(now, row.lastLiveMarkDate);
   const date = decision.date;
   if (!decision.ok) {
-    // The once-a-day rule is never waived; the clock is, on request.
+    // The once-a-day rule is never waived; the CLOCK is, on request, and
+    // nothing else (M1).
     //
     // ORDER MATTERS IN THE ANSWER, not just in the outcome: shouldPersistMark()
     // reports the clock first, so a second press of "Save today's mark" at
@@ -174,7 +187,13 @@ export async function persistDailyMarks(
     if (row.lastLiveMarkDate === date) {
       return { written: false, marked: 0, reason: alreadyMarkedReason(date), date };
     }
-    if (!opts.ignoreClock) return { written: false, marked: 0, reason: decision.reason, date };
+    // `ignoreClock` used to be a blanket fall-through, which waived the WEEKEND
+    // refusal too — `shouldPersistMark()` reports it through the same
+    // `ok: false`. A Saturday press then wrote a mark dated Saturday, and every
+    // "yesterday's close" read through `getMtmMap()` resolved to a day the
+    // market never traded. The waiver is now named: only `before-close`.
+    const waived = opts.ignoreClock === true && decision.code === "before-close";
+    if (!waived) return { written: false, marked: 0, reason: decision.reason, date };
   }
 
   // One row per POSITION per day: keyed on (symbol, as_of_date), delete then
@@ -220,4 +239,61 @@ export async function persistDailyMarks(
   });
 
   return { written: true, marked, reason: `Saved ${marked} mark${marked === 1 ? "" : "s"} for ${date}.`, date };
+}
+
+/* ─────────────────────── the AUTOMATIC half of the mark ─────────────────── */
+
+/**
+ * PURE. May this provider's prints become the day's persisted mark?
+ *
+ * TWO CONDITIONS, and the second is not obvious:
+ *
+ *   1. THE PROVIDER STREAMS. The end-of-day and typed-marks providers have no
+ *      "last price of the session" to catch: the bhavcopy IS yesterday's close
+ *      and a typed mark is already in `mtm_prices`. Marking from either would
+ *      copy a row onto itself under today's date.
+ *   2. IT IS NOT THE MOCK. `mock` is a deterministic seeded walk — the provider
+ *      vitest and e2e pin through `VYUHA_QUOTE_PROVIDER` and
+ *      `settings.live_feed_provider`. Its capability block says `streaming:
+ *      true` because `subscribe()` really emits, so condition 1 alone would let
+ *      a fixture price be written into the user's journal by any run that
+ *      happened to fall after 15:30 IST on a weekday. A generated number is not
+ *      a mark (invariant 6), and a test run must not move the book it asserts
+ *      against.
+ */
+export function providerMayAutoMark(capabilities: { id: ProviderId; streaming: boolean }): boolean {
+  return capabilities.streaming && capabilities.id !== "mock";
+}
+
+/**
+ * Persist the day's mark from a snapshot the caller ALREADY has — the automatic
+ * half of owner answer Q25, which had no caller at all before this wave.
+ *
+ * `persistDailyMarks()` shipped in v4.1 with exactly one caller: the "Save
+ * today's mark" button. So the promised "one mark per position per day, from
+ * the last price of the session" only ever happened when a user pressed a
+ * button on the Settings card — the Settings copy, the disclosure and PRIVACY
+ * all describe it as automatic.
+ *
+ * TWO CALL SITES, ONE OUTCOME. The SSE route calls this on connect and
+ * `components/live/load-desk.ts` calls it on the desk's server render;
+ * whichever runs first writes, and `settings.last_live_mark_date` makes the
+ * other a no-op the same day. Neither passes `ignoreClock`: the automatic path
+ * IS the 15:30 rule.
+ *
+ * NEVER THROWS. It is called on the path that renders the desk and on the path
+ * that opens the stream; a failed write must cost the mark, never the screen.
+ * `null` means "not attempted".
+ */
+export async function catchUpDailyMark(
+  capabilities: { id: ProviderId; streaming: boolean },
+  quotes: Iterable<Quote>,
+  opts: { now?: Date } = {},
+): Promise<PersistMarkResult | null> {
+  if (!providerMayAutoMark(capabilities)) return null;
+  try {
+    return await persistDailyMarks(quotes, opts.now ? { now: opts.now } : {});
+  } catch {
+    return null;
+  }
 }

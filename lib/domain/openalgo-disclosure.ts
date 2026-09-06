@@ -124,7 +124,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `signal` abort). Ceiling: RATE_LIMIT_PER_SECOND = 10 (:64), enforced
       // by `createRateGuard()` (:290-300, whose `take(now)` returns false past
       // the limit), which REFUSES rather than queues.
-      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The requests start when the Live Desk opens and stop when it closes — nothing polls in the background — and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says.",
+      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The requests start when the Live Desk opens and stop when it closes or when its tab goes to the background — nothing polls in the background — and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says.",
   },
   {
     title: "Each request carries your symbols, and nothing about your book",
@@ -176,7 +176,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // components/settings/live-feed-card.tsx:55-56, which is pinned by
       // tests/live-feed-copy.test.ts — two statements of one behaviour must not
       // drift, so tests/openalgo-disclosure.test.ts holds them together.
-      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Every figure derived from that mark is dated to the day it belongs to.",
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. On a weekend the button refuses — there is no session to close. Every figure derived from that mark is dated to the day it belongs to.",
   },
   {
     title: "Your broker's API session expires every day",

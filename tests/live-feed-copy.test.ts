@@ -191,7 +191,28 @@ describe("the card's CSS custom properties are tokens that exist", () => {
 describe("OpenAlgo is named where consent is given, and never in marketing (owner answer Q60)", () => {
   const MARKETING = ["README.md", "docs/sales/landing-page.html", "docs/sales/brochure.html"];
   /** A live-price claim. "pull live" (same-day IMPORT) is not one. */
-  const FEED_CLAIM = /live (feed|price|prices|quote|quotes|tick|ticks)|real[- ]?time|streaming|tick stream/i;
+  const FEED_CLAIM =
+    /live (feed|price|prices|quote|quotes|tick|ticks)|price poll|prices the desk|priced by|real[- ]?time|streaming|tick stream/i;
+
+  /**
+   * BY SENTENCE, NOT BY LINE (fix wave, 2026-09-06).
+   *
+   * The pairing scan used to filter `read(rel).split(/\r?\n/)`, and README.md is
+   * hard-wrapped at ~78 columns: the 4.1 block said "**Settings → Live feed**
+   * now offers three sources:" on one line and "or **your own OpenAlgo
+   * instance**" two lines later, so the name and the claim never shared a line
+   * and the guard passed on exactly the pairing Q60 forbids. Joining the wrap
+   * and splitting on sentence terminators is what makes the unit the unit a
+   * reader actually reads.
+   *
+   * Markup is stripped first for the same reason — `<b>OpenAlgo</b>` in the
+   * sales HTML must not hide the name from the scan.
+   */
+  const sentencesOf = (text: string): string[] =>
+    text
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .split(/(?<=[.!?])\s+/);
 
   it("is named in the Settings card and in the consent sheet — that is where it belongs", () => {
     expect(read("components/settings/live-feed-card.tsx")).toContain("OpenAlgo");
@@ -199,10 +220,8 @@ describe("OpenAlgo is named where consent is given, and never in marketing (owne
   });
 
   it.each(MARKETING)("%s never pairs OpenAlgo with a live-price claim", (rel) => {
-    const offenders = read(rel)
-      .split(/\r?\n/)
-      .filter((line) => /openalgo/i.test(line) && FEED_CLAIM.test(line));
-    expect(offenders, `${rel}: ${offenders.join(" | ")}`).toEqual([]);
+    const offenders = sentencesOf(read(rel)).filter((s) => /openalgo/i.test(s) && FEED_CLAIM.test(s));
+    expect(offenders, `${rel}: ${offenders.map((s) => s.slice(0, 200)).join(" | ")}`).toEqual([]);
   });
 
   it.each(MARKETING)("%s carries none of the feed card's copy", (rel) => {
@@ -213,10 +232,90 @@ describe("OpenAlgo is named where consent is given, and never in marketing (owne
   it("the pairing scan really can fire, and does not fire on the import sentence that is already there", () => {
     expect(FEED_CLAIM.test("Live prices through OpenAlgo, free"), "a feed claim").toBe(true);
     expect(FEED_CLAIM.test("real-time OpenAlgo quotes"), "a feed claim").toBe(true);
+    // Widened in the fix wave: every shape the 4.1 copy actually used to say it.
+    expect(FEED_CLAIM.test("the Live Desk's price poll to the OpenAlgo bridge you run"), "a feed claim").toBe(true);
+    expect(FEED_CLAIM.test("which source prices the desk"), "a feed claim").toBe(true);
+    expect(FEED_CLAIM.test("The Live Desk can be priced by a bridge you already run"), "a feed claim").toBe(true);
+    expect(FEED_CLAIM.test("streaming quotes from OpenAlgo"), "a feed claim").toBe(true);
     expect(
       FEED_CLAIM.test("Brokers with no API of their own can pull live through OpenAlgo"),
       "the shipped v3.1 IMPORT sentence, which stays",
     ).toBe(false);
+  });
+
+  it("the SENTENCE unit is what catches a hard-wrapped pairing a line scan misses", () => {
+    // Verbatim the shape README.md shipped: the claim and the name are three
+    // wrapped lines apart inside one sentence.
+    const wrapped =
+      "> **Settings → Live feed** now offers three sources:\n> the end-of-day bhavcopy already on this machine (still the default), a mark\n> you type, or **your own OpenAlgo instance**.";
+    const byLine = wrapped.split(/\r?\n/).filter((l) => /openalgo/i.test(l) && FEED_CLAIM.test(l));
+    const bySentence = sentencesOf(wrapped).filter((s) => /openalgo/i.test(s) && FEED_CLAIM.test(s));
+    expect(byLine, "the old per-line scan saw nothing — that is the hole").toEqual([]);
+    expect(bySentence, "the sentence scan sees the pairing").toHaveLength(1);
+  });
+});
+
+/**
+ * K-1 — the breach surfaces describe the mark THIS release can produce.
+ *
+ * `components/risk/breach-banner.tsx` and the header of `lib/risk/alerts.ts`
+ * both said the marks are "EOD or manually entered — not live quotes". That was
+ * exhaustive until v4.1: with the bridge selected, `lib/quotes/persist-mark.ts`
+ * writes one feed-derived, day-stamped row per position per IST day into
+ * `mtm_prices`, so a bridge user's mark is neither end-of-day nor typed — and
+ * the caveat they need is not "not live quotes" but "never a live TICK", which
+ * is the property that survives the feed. A breach shown against a mark whose
+ * provenance the copy denies is a wrong description of the number on screen.
+ *
+ * No test pinned that sentence before this wave, which is why it drifted for a
+ * whole release; it is pinned here because the third kind of mark is a fact
+ * about the live feed. The scan is scoped to those two files by name — the
+ * sibling summaries in `components/risk/risk-cockpit-client.tsx` and
+ * `components/trackers/tracker-client.tsx` say the same thing about the same
+ * marks and belong to another owner's set; see this wave's report.
+ */
+describe("the breach surfaces name the third kind of mark (K-1)", () => {
+  const BREACH_SURFACES = [
+    "components/risk/breach-banner.tsx",
+    "lib/risk/alerts.ts",
+    // The two sibling summaries were reworded in the same fix wave (2026-09-06).
+    "components/risk/risk-cockpit-client.tsx",
+    "components/trackers/tracker-client.tsx",
+  ];
+
+  /**
+   * Comment leaders dropped and the wrap joined: the sentence lives in a `//`
+   * block in one file and in JSX text in the other, and in both it is hard
+   * wrapped. A raw source scan would miss "one\n// dated mark a day…" and pass
+   * on copy that says nothing of the sort.
+   */
+  const flat = (rel: string) =>
+    read(rel)
+      .replace(/^[ \t]*(?:\/\/|\*)[ \t]?/gm, "")
+      .replace(/\s+/g, " ");
+
+  it.each(BREACH_SURFACES)("%s no longer claims the marks are only EOD or manual", (rel) => {
+    const src = flat(rel);
+    expect(src, `${rel} still says the marks are EOD or manual`).not.toMatch(
+      /EOD[ /]?(?:or|\/)[ ]?manual|end-of-day or manual(?:ly)?/i,
+    );
+    expect(src, `${rel} still says "not live quotes"`).not.toMatch(/not live quotes/i);
+  });
+
+  it.each(BREACH_SURFACES)("%s names all three, and refuses the tick rather than the quote", (rel) => {
+    const src = flat(rel);
+    expect(src, `${rel} does not name the feed-derived dated mark`).toMatch(
+      /one dated mark a day from your own feed/i,
+    );
+    expect(src, `${rel} no longer says the mark is never a live tick`).toMatch(/never a live tick/i);
+  });
+
+  it("the banner still tells the reader to check a live quote before acting — on screen AND in the notification", () => {
+    const src = flat("components/risk/breach-banner.tsx");
+    const occurrences = src.split(/check a live quote before acting/gi).length - 1;
+    expect(occurrences, "the instruction is missing from the banner or from the OS notification").toBe(2);
+    // …and it is still not advice about a trade.
+    expect(src).toMatch(/never places or closes anything/);
   });
 });
 

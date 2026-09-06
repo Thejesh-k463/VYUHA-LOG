@@ -2,8 +2,9 @@
 
 // T3.9 — SL/TSL/target breach banner. Server pages compute breaches off the
 // freshest marks and pass them down; this stays a dumb, honest display:
-// marks are EOD/manual, so every line is a prompt to REVIEW against a live
-// quote — never an instruction to exit. Desktop notifications are strictly
+// marks are end-of-day, typed, or one dated mark a day from your own feed —
+// never a live tick — so every line is a prompt to REVIEW against a live
+// quote, never an instruction to exit. Desktop notifications are strictly
 // opt-in (button below), and the opt-in lives on this device only.
 
 import * as React from "react";
@@ -44,7 +45,7 @@ export function BreachBanner({ breaches }: { breaches: Breach[] }) {
       new Notification("Vyuha — positions need review", {
         body: `${stops ? `${stops} stop${stops === 1 ? "" : "s"} breached` : ""}${stops && targets ? ", " : ""}${
           targets ? `${targets} target${targets === 1 ? "" : "s"} reached` : ""
-        } (EOD/manual marks — verify live before acting)`,
+        } (end-of-day, typed, or one dated mark a day from your own feed — never a live tick; check a live quote before acting)`,
       });
     } catch {
       /* notification blocked — banner below still shows everything */
@@ -102,9 +103,9 @@ export function BreachBanner({ breaches }: { breaches: Breach[] }) {
         )}
       </ul>
       <p className="mt-2 text-[0.6875rem] text-muted-foreground">
-        Marks here are EOD or manually entered — <span className="text-foreground">not live quotes</span>.
-        Check a live price with your broker and act on YOUR plan, in your own time. This banner never
-        places or closes anything.
+        Marks here are end-of-day, typed, or one dated mark a day from your own feed —{" "}
+        <span className="text-foreground">never a live tick</span>. Check a live quote before acting,
+        and act on YOUR plan, in your own time. This banner never places or closes anything.
       </p>
     </div>
   );

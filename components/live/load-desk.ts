@@ -8,8 +8,9 @@ import { portfolioHeat, sectorConcentration, type HeatRow } from "@/lib/live/hea
 import { computeStop, gateStop } from "@/lib/live/stop";
 import { computeTrackerRow, DEFAULT_ATR_LENGTH } from "@/lib/live/tracker-row";
 import type { Bar, LivePosition, Mark, Paise } from "@/lib/live/types";
+import { catchUpDailyMark } from "@/lib/quotes/persist-mark";
 import { getLiveFeedProvider } from "@/lib/quotes/registry";
-import { quoteKeyId, type Exchange, type QuoteKey } from "@/lib/quotes/types";
+import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
 import { getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
@@ -204,15 +205,35 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     tradingsymbol: p.tradingsymbol,
   }));
   let quotes = new Map<string, { ltp: number; staleness: Mark["staleness"]; asOf: string }>();
-  let health: { ok: boolean; reason?: string } = { ok: true };
+  /** The snapshot as the provider gave it — what the day's mark is written from. */
+  let rawQuotes: Quote[] = [];
+  // `state` is OpenAlgo's extra health field (`OpenAlgoHealth`), read the same
+  // way `app/api/live/feed/route.ts` reads it. A provider without one falls
+  // back to ok/disabled below.
+  let health: ProviderHealth & { state?: string } = { ok: true };
   try {
     const snap = await provider.snapshot(keys);
+    rawQuotes = [...snap.values()];
     quotes = new Map([...snap].map(([k, q]) => [k, { ltp: q.ltp, staleness: q.staleness, asOf: q.asOf }]));
     health = await provider.health();
   } catch (e) {
     // A provider that throws must not take the journal's own record with it.
     health = { ok: false, reason: e instanceof Error ? e.message : "The quote provider could not be read." };
   }
+
+  // ── The automatic day mark, SECOND door (owner answer Q25) ────────────────
+  // The first is `app/api/live/stream/route.ts`, on connect. This one covers
+  // the desk that renders after 15:30 without a stream ever opening — a
+  // reload, a browser that dropped the EventSource, a tab opened at 16:10.
+  // Whichever runs first writes; `settings.last_live_mark_date` makes the
+  // other a no-op the same IST day, and `catchUpDailyMark()` is a no-op for a
+  // non-streaming (or mock) provider, before the close and on a weekend. It
+  // never throws: a failed mark must cost the mark, never the desk.
+  //
+  // It is deliberately AFTER `getMtmMap()` above. The prices it writes are the
+  // very snapshot this render is already printing, so re-reading the store to
+  // pick them up would change nothing and cost a query.
+  await catchUpDailyMark(provider.capabilities, rawQuotes);
 
   const rows: DeskRow[] = [];
   let newestAsOf: string | null = null;
@@ -313,6 +334,12 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       accountName: accountNames.get(position.accountId) ?? null,
       bucket: p.bucket,
       broker: p.broker,
+      // `keys[i]` is THIS position's quote key (the two arrays are built from
+      // `positions` in one order and never filtered apart), so the row and the
+      // subscription agree on the exchange by construction. The live stream is
+      // keyed on `exchange:tradingsymbol`; without this the client would have
+      // to guess one to match a tick to a row.
+      exchange: keys[i].exchange,
       isin: t?.isin ?? null,
       entryDate: position.entryDate,
       lotSize: position.lotSize,
@@ -370,6 +397,14 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     streaming: provider.capabilities.streaming,
     staleness: provider.capabilities.staleness,
     ok: health.ok,
+    // The SAME fallback `app/api/live/feed/route.ts` applies, so the desk and
+    // the Settings card can never disagree about why a feed is not running.
+    healthState:
+      health.state === "ok" || health.state === "no-key" || health.state === "unreachable" || health.state === "disabled"
+        ? health.state
+        : health.ok
+          ? "ok"
+          : "disabled",
     reason: health.reason ?? null,
     asOf: newestAsOf,
   };

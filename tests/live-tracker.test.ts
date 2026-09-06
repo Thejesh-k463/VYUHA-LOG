@@ -488,3 +488,122 @@ describe("keyboard navigation clears the sticky header (U-1)", () => {
     );
   });
 });
+
+/**
+ * FW-1 — the desk really holds the stream `GET /api/live/stream` serves.
+ *
+ * v4.1 shipped the route with NO consumer: `tracker-client.tsx` contained no
+ * `EventSource` at all, so with the OpenAlgo bridge selected the desk's prices
+ * moved only on a server render — while the disclosure (items 2 and 5),
+ * PRIVACY item 3, the help page and the Settings slider all described a 1–5 s
+ * refresh "while the Live Desk is open".
+ *
+ * A SOURCE guard, in the family of the block above and of
+ * `tests/live-pro-gate.test.ts`: what is under test is a browser API inside a
+ * client component with no jsdom in this suite, so what can be held to account
+ * here is the WIRING — opened only for a streaming provider, torn down on
+ * unmount, released while the tab is hidden, and folding ticks in through the
+ * pure helper rather than through a second copy of the arithmetic. The
+ * behavioural half is `e2e/z-live-desk.spec.ts`, which serves a real SSE body
+ * to a real browser.
+ */
+describe("the Live Desk consumes the SSE stream (FW-1)", () => {
+  const stripComments = (raw: string) =>
+    raw.replace(/(?<![\w,*])\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const src = stripComments(
+    readFileSync(path.resolve(__dirname, "..", "components/live/tracker-client.tsx"), "utf8"),
+  );
+
+  it("opens ONE EventSource, on the route the server serves", () => {
+    expect(src.match(/new EventSource\(/g) ?? [], "one desk, one stream").toHaveLength(1);
+    expect(src).toMatch(/new EventSource\("\/api\/live\/stream"\)/);
+  });
+
+  it("opens it ONLY when the effective provider streams", () => {
+    // `eod` and `manual` report `streaming: false` and the route never starts
+    // them, so a stream opened for either holds a request open that can never
+    // carry a tick — and would let the strip say "Live" over a stored close.
+    expect(src).toMatch(/const streaming = feed\.streaming;/);
+    expect(src, "the effect runs before checking that the provider streams").toMatch(
+      /if \(!streaming\) return;/,
+    );
+    expect(src, "the effect must not re-run on every new `feed` object identity").toMatch(
+      /\}, \[streaming\]\);/,
+    );
+  });
+
+  it("closes on unmount, and closes the object it opened", () => {
+    expect(src).toMatch(/es\?\.close\(\)/);
+    expect(src, "the effect returns no cleanup").toMatch(/return \(\) => \{[\s\S]*?close\(\);[\s\S]*?\};/);
+  });
+
+  it("releases the stream while the tab is hidden, and takes the listener with it", () => {
+    // The disclosure promises the feed stops when the desk closes; a hidden
+    // tab holding an open request is stricter than that promise, and costs a
+    // background tab nothing.
+    expect(src).toMatch(/document\.visibilityState === "hidden"/);
+    expect(src).toMatch(/document\.addEventListener\("visibilitychange", onVisibility\)/);
+    expect(src).toMatch(/document\.removeEventListener\("visibilitychange", onVisibility\)/);
+  });
+
+  it("backs off rather than hammering a bridge that has gone away", () => {
+    expect(src).toMatch(/RECONNECT_BASE_MS \* 2 \*\* \(retry - 1\)/);
+    // A browser that is still CONNECTING is already retrying on the route's own
+    // jittered `retry:` hint; a second timer would double the rate.
+    expect(src).toMatch(/es\.readyState === EventSource\.CONNECTING/);
+  });
+
+  it("folds ticks in through the PURE helper, and holds them in memory only", () => {
+    expect(src).toMatch(/applyTicks\(wireRows, ticks\)/);
+    expect(src).toMatch(/mergeTicks\(prev, batch\)/);
+    expect(src).toMatch(/parseTickFrame\(raw\)/);
+    // Owner answer Q25: ticks never reach the journal from the client. The one
+    // persisted mark per day is written SERVER-side (`persist-mark.ts`).
+    expect(src, "the desk must not POST a tick anywhere").not.toMatch(/fetch\(/);
+  });
+
+  it("batches to one commit per animation frame", () => {
+    expect(src).toMatch(/requestAnimationFrame\(flush\)/);
+    expect(src).toMatch(/cancelAnimationFrame\(frame\)/);
+  });
+
+  it("keeps the desk's rows DERIVED — no tick is copied into state as a row", () => {
+    // A `setState` that copies `data.rows` is how a payload and a screen drift,
+    // and a `setState` in an effect keyed on other state is what broke the
+    // Trades filter outright under the React Compiler (AGENTS.md).
+    expect(src).toMatch(/const rows = React\.useMemo\(\(\) => applyTicks\(wireRows, ticks\), \[wireRows, ticks\]\);/);
+    expect(src, "rows must not be held in local state").not.toMatch(/useState.*\bwireRows\b/);
+  });
+});
+
+/**
+ * FW-1 — the once-a-day connect prompt (owner answer Q24).
+ *
+ * Q24 asked for it ON THE DESK, once a day. `LIVE_FEED_COPY.connect` existed
+ * but rendered only on the Settings card, every time the feed was unhealthy,
+ * with no day-keyed state at all.
+ */
+describe("the connect prompt is day-keyed and lives on the desk (FW-1)", () => {
+  const stripComments = (raw: string) =>
+    raw.replace(/(?<![\w,*])\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const src = stripComments(
+    readFileSync(path.resolve(__dirname, "..", "components/live/tracker-client.tsx"), "utf8"),
+  );
+
+  it("keys the dismissal on the payload's own IST day, not on a client clock", () => {
+    expect(src).toMatch(/connectPromptKey\(data\.today\)/);
+    expect(src, "a client `new Date()` here is a hydration mismatch and a wrong day at 00:05 IST").not.toMatch(
+      /connectPromptKey\(new Date/,
+    );
+  });
+
+  it("reads and writes the dismissal through the project's storage helpers", () => {
+    expect(src).toMatch(/useStoredValue\(promptKey\)/);
+    expect(src).toMatch(/writeStored\(promptKey, connectPromptDismissal\(\)\)/);
+    expect(src, "localStorage must not be touched directly (hydration)").not.toMatch(/localStorage\./);
+  });
+
+  it("shows only for the states a reconnection fixes", () => {
+    expect(src).toMatch(/showConnectPrompt\(\{ providerId: feed\.providerId, healthState: feed\.healthState \}/);
+  });
+});

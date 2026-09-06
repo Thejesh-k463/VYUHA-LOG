@@ -88,6 +88,14 @@ beforeAll(async () => {
   // first streaming test wait on a loader it cannot tick.
   await import("@/lib/queries/price-history");
   await import("@/lib/db/schema");
+  // Same reason, for the connect-time mark: `persistDailyMarks()` reaches the
+  // database, the schema, drizzle and the audit log through LAZY imports (so
+  // that importing it never binds SQLite ahead of `openTempDb`). A first-time
+  // module load needs real event-loop turns, which `advanceTimersByTimeAsync`
+  // cannot supply — unwarmed, the snapshot frame lands after the assertion.
+  await import("@/lib/quotes/persist-mark");
+  await import("@/lib/audit");
+  await import("drizzle-orm");
 
   t.db.insert(t.schema.accounts).values([{ id: SWING, name: "Swing" }, { id: LONG_TERM, name: "Long term" }]).run();
   t.db
@@ -399,5 +407,169 @@ describe("the stored feed provider is the one that streams (S-X)", () => {
     const [snap] = frames(stream.text, "snapshot");
     expect(snap.provider).toBe("eod");
     expect(snap.quotes.map((q: { key: { symbol: string } }) => q.key.symbol)).toEqual(["TCS"]);
+  });
+});
+
+/**
+ * FW-1 — the AUTOMATIC half of the once-a-day mark (owner answer Q25).
+ *
+ * `persistDailyMarks()` shipped in v4.1 with exactly one caller: the "Save
+ * today's mark" button on the Settings card. So the "last price of the
+ * session" mark that the Settings copy, the OpenAlgo disclosure and PRIVACY
+ * all describe as automatic never happened on its own. Connecting the desk is
+ * the moment the server holds a fresh snapshot of exactly the open positions,
+ * so the catch-up runs there — on the snapshot already in hand, with no second
+ * network call.
+ *
+ * Friday 2026-09-04 15:35 IST: after the 15:30 close AND still inside the
+ * 09:00–15:40 live window, which is the only clock at which both halves of
+ * this feature are live at once.
+ */
+describe("the day's mark is caught up on connect", () => {
+  /** Friday 2026-09-04, 15:35 IST. */
+  const AFTER_CLOSE = new Date("2026-09-04T10:05:00Z");
+
+  function marks() {
+    return t.db.select().from(t.schema.mtmPrices).all();
+  }
+  function stamp(): string | null {
+    return t.db.select().from(t.schema.settings).limit(1).all()[0]?.lastLiveMarkDate ?? null;
+  }
+  function clearMarks() {
+    t.db.update(t.schema.settings).set({ lastLiveMarkDate: null }).run();
+    t.sqlite.prepare("DELETE FROM mtm_prices").run();
+  }
+
+  /** A streaming provider that is NOT the mock — the mock is a fixture, never a mark. */
+  function liveProvider(ltp: number): QuoteProvider {
+    const capabilities: ProviderCapabilities = {
+      id: "openalgo",
+      label: "bridge double",
+      streaming: true,
+      maxSubscriptions: 500,
+      minSnapshotIntervalMs: 1000,
+      depth: 0,
+      segments: ["NSE"],
+      staleness: "delayed",
+      requiresDailyAuth: true,
+      egressDescription: "None. A test double.",
+    };
+    return {
+      id: "openalgo",
+      capabilities,
+      snapshot: async () =>
+        new Map([
+          [
+            "NSE:TCS",
+            {
+              key: { symbol: "TCS", exchange: "NSE" as const },
+              ltp,
+              prevClose: null,
+              dayOpen: null,
+              dayHigh: null,
+              dayLow: null,
+              volume: null,
+              asOf: AFTER_CLOSE.toISOString(),
+              staleness: "delayed" as const,
+              source: "openalgo" as const,
+            },
+          ],
+        ]),
+      subscribe: () => () => {},
+      health: async () => ({ ok: true }),
+    };
+  }
+
+  it("writes exactly one mark per position on the first connect of the day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(AFTER_CLOSE);
+    selectAccount(SWING);
+    clearMarks();
+    stub.provider = liveProvider(302_575);
+    try {
+      const stream = reading(await get());
+      await vi.advanceTimersByTimeAsync(10);
+      // The frame still ships — the mark is a side effect of connecting, never
+      // a gate on it.
+      expect(frames(stream.text, "snapshot")).toHaveLength(1);
+      expect(marks().map((m) => [m.symbol, m.price])).toEqual([["TCS", 3025.75]]);
+      expect(stamp()).toBe("2026-09-04");
+    } finally {
+      stub.provider = null;
+    }
+  });
+
+  it("does nothing at all on the second connect — the stamp is the once-a-day rule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(AFTER_CLOSE);
+    selectAccount(SWING);
+    // The stamp from the test above still stands; a reconnect (or a second
+    // window) must not overwrite the mark with a later price.
+    stub.provider = liveProvider(999_900);
+    try {
+      const stream = reading(await get());
+      await vi.advanceTimersByTimeAsync(10);
+      expect(frames(stream.text, "snapshot")).toHaveLength(1);
+      expect(marks().map((m) => m.price), "a second connect rewrote the day's mark").toEqual([3025.75]);
+    } finally {
+      stub.provider = null;
+    }
+  });
+
+  it("never marks from an end-of-day or typed-marks provider", async () => {
+    for (const provider of ["eod", "manual"]) {
+      vi.useFakeTimers();
+      vi.setSystemTime(AFTER_CLOSE);
+      selectAccount(SWING);
+      clearMarks();
+      t.db.update(t.schema.settings).set({ liveFeedProvider: provider }).run();
+
+      const stream = reading(await get());
+      await vi.advanceTimersByTimeAsync(10);
+      expect(frames(stream.text, "snapshot")[0].provider, provider).toBe(provider);
+      // Neither has a "last price of the session" to catch: the bhavcopy IS
+      // yesterday's close and a typed mark is already in `mtm_prices`.
+      expect(marks(), `${provider} wrote a mark`).toHaveLength(0);
+      expect(stamp(), `${provider} stamped the day`).toBe(null);
+      vi.useRealTimers();
+    }
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+  });
+
+  it("never marks from the MOCK provider — a generated price is not a mark", async () => {
+    // `mock` reports `streaming: true` because `subscribe()` really emits, so
+    // the streaming flag alone would let a seeded walk be written into the
+    // user's journal by any e2e run that fell after 15:30 IST on a weekday.
+    process.env.VYUHA_QUOTE_PROVIDER = "mock";
+    vi.useFakeTimers();
+    vi.setSystemTime(AFTER_CLOSE);
+    selectAccount(SWING);
+    clearMarks();
+
+    const stream = reading(await get());
+    await vi.advanceTimersByTimeAsync(10);
+    expect(frames(stream.text, "snapshot")[0].provider).toBe("mock");
+    expect(marks()).toHaveLength(0);
+    expect(stamp()).toBe(null);
+  });
+
+  it("does not mark before the close, however live the feed is", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MARKET_HOURS); // 10:30 IST
+    selectAccount(SWING);
+    clearMarks();
+    stub.provider = liveProvider(302_575);
+    try {
+      const stream = reading(await get());
+      await vi.advanceTimersByTimeAsync(10);
+      expect(frames(stream.text, "snapshot")).toHaveLength(1);
+      // 10:30's price is not the day's close, and persisting one would make
+      // every "yesterday's close" in the app mean mid-session.
+      expect(marks()).toHaveLength(0);
+      expect(stamp()).toBe(null);
+    } finally {
+      stub.provider = null;
+      clearMarks();
+    }
   });
 });

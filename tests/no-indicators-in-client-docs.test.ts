@@ -113,7 +113,7 @@ describe("client-facing docs never mention the invite-only indicators", () => {
  *    4.1 truth instead, and reads no flag: a line in the ZIP may pair the
  *    bridge with a price claim ONLY while it also says the feed is opt-in /
  *    behind the disclosure / on the loopback default. That is what
- *    `openAlgoGate()` (lib/quotes/openalgo.ts:150-156) enforces in code and
+ *    `openAlgoGate()` (lib/quotes/openalgo.ts:156-162, inside readGateFromDb()) enforces in code and
  *    what `docs/client/PRIVACY.md` item 3 states, so a line without it is not
  *    just marketing — it is false. The v3.1 IMPORT sentences are untouched:
  *    marketing may always say the bridge imports trades.

@@ -72,10 +72,65 @@ export const DESK_COPY = {
   /**
    * Q55, and nothing beyond it. The word "alerts" is deliberately ABSENT: no
    * alert code exists under `lib/live` or `components/live` and Telegram alerts
-   * are v4.1. A Pro label naming a capability this build does not have sells
+   * ship after v4.2 (Q18, 2026-09-06). A Pro label naming a capability this build does not have sells
    * something the buyer cannot receive.
    */
   proColumns: "Pro — R, risk at stop, portfolio heat and the chart overlay.",
+} as const;
+
+/**
+ * The live stream's connection state, in the feed strip (FW-1).
+ *
+ * WHY IT IS SAID AT ALL. `GET /api/live/stream` shipped in v4.0 and nothing
+ * consumed it, so the desk's prices moved only on a server render while the
+ * disclosure, PRIVACY and the Settings slider all described a 1–5 s refresh
+ * "while the Live Desk is open". Now that the desk really holds the stream, the
+ * user has to be able to see whether it is holding it — a price that stopped
+ * moving and a market that stopped moving look identical.
+ *
+ * Every string states the pipe, never the prices: "Live" is a claim about the
+ * CONNECTION, and the staleness of each mark keeps being said per row by
+ * `stalenessLabel()` ("Delayed" for a polled LTP, "Last traded" for a push).
+ * Nothing here upgrades a delayed print into a tick.
+ */
+export const LIVE_STREAM_COPY = {
+  /** `<provider> · 3 s` — the age of the last frame, on the 30 s desk clock. */
+  live: (provider: string, seconds: number) => `Live · ${provider} · ${seconds} s`,
+  connecting: "Connecting…",
+  reconnecting: "Reconnecting…",
+  /** The provider's own sentence follows; it is never rewritten here. */
+  stopped: (reason: string) => `Feed stopped — ${reason}`,
+  /** Used when the pipe closed without the provider saying why. */
+  stoppedNoReason: "the connection closed.",
+  /**
+   * A hidden tab holds no stream. The disclosure promises the feed stops when
+   * the desk closes; stopping when the tab goes to the background is stricter
+   * than that promise, and saying so is what stops it reading as a fault.
+   */
+  paused: "Feed paused while this tab is in the background.",
+} as const;
+
+/**
+ * The once-a-day connect prompt on the desk (owner answer Q24).
+ *
+ * THE TWO SENTENCES ARE NOT HERE. `LIVE_FEED_COPY.connect` and
+ * `LIVE_FEED_COPY.dailyReauth` are imported by `tracker-client.tsx` from
+ * `components/settings/live-feed-card.tsx`, which is their ONE source and where
+ * `tests/live-feed-copy.test.ts` pins them verbatim — including the ruling that
+ * the daily re-sign-in is attributed to the user's broker and names no
+ * regulator. Restating either one here would be a second copy to drift.
+ *
+ * What lives here is the banner's own chrome, which the Settings card has no
+ * equivalent of.
+ */
+export const CONNECT_PROMPT_COPY = {
+  /** Said under the headline, before the provider's own reason. */
+  body: "Start your OpenAlgo instance, sign in to your broker there, then come back. Vyuha never holds the broker credential — OpenAlgo does.",
+  dismiss: "Not now",
+  /** Screen-reader name for the region; the headline is the visible title. */
+  label: "Connect your price feed",
+  /** Stated on the button, because the dismissal really is only for today. */
+  dismissTitle: "Hide this until tomorrow",
 } as const;
 
 /** "— needs 21 sessions. You have 8." The shortfall is always stated. */

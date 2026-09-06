@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { NAV_DEFAULT_VISIBLE, NAV_ITEMS } from "@/components/layout/nav-config";
 import { SCREEN_DOMAIN, WORKSPACES, screenVisible } from "@/lib/domain/workspace";
+import type { ProviderCapabilities, QuoteProvider } from "@/lib/quotes/types";
 
 /**
  * `/live` — the server loader, against a real (temp) database.
@@ -25,6 +26,23 @@ import { SCREEN_DOMAIN, WORKSPACES, screenVisible } from "@/lib/domain/workspace
 
 let t: TempDb;
 let live: typeof import("@/components/live/load-desk");
+
+/**
+ * Opt-in provider double (FW-1). While `stub.provider` is null every test in
+ * this file gets the real registry, untouched — the same shape
+ * `tests/live-stream-route.test.ts` uses, and for the same reason: the loader
+ * has to be watched with a STREAMING provider, and no shipped one can be made
+ * to stream from a temp database.
+ */
+const stub = vi.hoisted(() => ({ provider: null as QuoteProvider | null }));
+
+vi.mock("@/lib/quotes/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/quotes/registry")>();
+  return {
+    ...actual,
+    getLiveFeedProvider: async () => stub.provider ?? (await actual.getLiveFeedProvider()),
+  };
+});
 
 const PRIMARY = 1;
 const SWING = 2;
@@ -410,5 +428,130 @@ describe("/live loader — the results date rides on the row", () => {
     // would answer with the user's machine calendar instead.
     const data = await live.loadLiveDesk({ pro: true });
     expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+/**
+ * FW-1 — what the desk has to know to consume the live stream, and the
+ * automatic day mark it takes on the way past.
+ */
+describe("/live loader — the wire the SSE consumer needs", () => {
+  it("carries the EXCHANGE each position is quoted on, on every row", async () => {
+    selectAccount(0);
+    const data = await live.loadLiveDesk({ pro: true });
+    // The stream is keyed on `quoteKeyId()` = `exchange:tradingsymbol`. Without
+    // the exchange on the row the client has to guess one to match a tick, and
+    // a BSE-only holding is then priced from the wrong book.
+    expect(data.rows.length).toBeGreaterThan(0);
+    for (const r of data.rows) expect(r.exchange, `${r.symbol} has no exchange`).toBe("NSE");
+  });
+
+  it("publishes WHICH failure the feed reported, not only its sentence", async () => {
+    selectAccount(0);
+    const data = await live.loadLiveDesk({ pro: true });
+    // The end-of-day provider is healthy against this database, so the state is
+    // `ok` — the point is that the field exists and is a value the once-a-day
+    // connect prompt (Q24) can branch on, never a string it has to parse.
+    expect(data.feed.healthState).toBe("ok");
+    expect(data.feed.ok).toBe(true);
+  });
+});
+
+describe("/live loader — the automatic day mark (owner answer Q25)", () => {
+  /** Friday 2026-09-04, 16:00 IST — after the close, on a session day. */
+  const AFTER_CLOSE = new Date("2026-09-04T10:30:00Z");
+
+  const marks = () => t.db.select().from(t.schema.mtmPrices).all();
+  const stamp = () => t.db.select().from(t.schema.settings).limit(1).all()[0]?.lastLiveMarkDate ?? null;
+  function clearMarks() {
+    t.db.update(t.schema.settings).set({ lastLiveMarkDate: null }).run();
+    t.sqlite.prepare("DELETE FROM mtm_prices").run();
+  }
+
+  /** A streaming provider that is not the mock — the mock is a fixture, never a mark. */
+  function liveProvider(): QuoteProvider {
+    const capabilities: ProviderCapabilities = {
+      id: "openalgo",
+      label: "bridge double",
+      streaming: true,
+      maxSubscriptions: 500,
+      minSnapshotIntervalMs: 1000,
+      depth: 0,
+      segments: ["NSE"],
+      staleness: "delayed",
+      requiresDailyAuth: true,
+      egressDescription: "None. A test double.",
+    };
+    return {
+      id: "openalgo",
+      capabilities,
+      snapshot: async () =>
+        new Map([
+          [
+            "NSE:TCS",
+            {
+              key: { symbol: "TCS", exchange: "NSE" as const, tradingsymbol: "TCS" },
+              ltp: 312_000,
+              prevClose: 310_000,
+              dayOpen: null,
+              dayHigh: null,
+              dayLow: null,
+              volume: null,
+              asOf: AFTER_CLOSE.toISOString(),
+              staleness: "delayed" as const,
+              source: "openalgo" as const,
+            },
+          ],
+        ]),
+      subscribe: () => () => {},
+      health: async () => ({ ok: true, state: "ok" }),
+    };
+  }
+
+  /**
+   * Only `Date` is faked. `loadLiveDesk` awaits real dynamic imports on the way
+   * to the database, and a fully faked timer set stalls the module loader.
+   */
+  function atClose(when: Date) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(when);
+  }
+
+  it("writes the day's mark on the server render, once, when the feed is a live one", async () => {
+    selectAccount(0);
+    clearMarks();
+    stub.provider = liveProvider();
+    atClose(AFTER_CLOSE);
+    try {
+      await live.loadLiveDesk({ pro: true });
+      // ₹3,120.00 — RUPEES in `mtm_prices` (invariant 1's documented exception),
+      // converted from the quote's paise exactly once at the write edge.
+      expect(marks().map((m) => [m.symbol, m.price])).toEqual([["TCS", 3120]]);
+      expect(stamp()).toBe("2026-09-04");
+
+      // A second render the same day changes nothing at all.
+      await live.loadLiveDesk({ pro: true });
+      expect(marks()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      stub.provider = null;
+      clearMarks();
+    }
+  });
+
+  it("writes nothing from the end-of-day provider, however late in the day it is", async () => {
+    selectAccount(0);
+    clearMarks();
+    atClose(AFTER_CLOSE);
+    try {
+      await live.loadLiveDesk({ pro: true });
+      // The bhavcopy IS yesterday's close; marking from it would copy a row
+      // onto itself under today's date.
+      expect(marks()).toHaveLength(0);
+      expect(stamp()).toBe(null);
+    } finally {
+      vi.useRealTimers();
+      clearMarks();
+    }
   });
 });

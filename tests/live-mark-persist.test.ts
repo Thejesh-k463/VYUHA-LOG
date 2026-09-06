@@ -119,6 +119,21 @@ describe("shouldPersistMark — PURE, and refuses three cases for three reasons"
     expect(d.reason).toBe("");
     expect(d.date).toBe("2026-09-04");
   });
+
+  /**
+   * The refusals are NAMED, not only worded (FW-1).
+   *
+   * `persistDailyMarks()` has to waive exactly one of them for the button and
+   * no other, and matching on the sentence would make the waiver depend on
+   * copy. The code is what the caller branches on; the sentence stays the
+   * user's.
+   */
+  it("names which rule refused, so a caller can waive one and only one", () => {
+    expect(shouldPersistMark(WEEKEND, null).code).toBe("weekend");
+    expect(shouldPersistMark(MID_SESSION, null).code).toBe("before-close");
+    expect(shouldPersistMark(AFTER_CLOSE, "2026-09-04").code).toBe("already-marked");
+    expect(shouldPersistMark(AFTER_CLOSE, null).code).toBeNull();
+  });
 });
 
 describe("openPositionKeys — the SELECTED account's open positions, once each", () => {
@@ -187,6 +202,28 @@ describe("persistDailyMarks — rupees, once a day, never mid-session", () => {
     expect(again.written).toBe(false);
     expect(again.reason).toContain("already saved");
     expect(marks().map((m) => m.price)).toEqual([3000]);
+  });
+
+  /**
+   * M1 — `ignoreClock` waived MORE than the clock.
+   *
+   * Its own contract (`PersistMarkOptions.ignoreClock`) says "skip the clock
+   * half of the guard (never the once-a-day half)", and the code checked the
+   * day rule by hand and then fell through on `!opts.ignoreClock` — which
+   * waived the WEEKEND refusal as well, because `shouldPersistMark()` reports
+   * it through the same `ok:false`. A Saturday press of "Save today's mark"
+   * therefore wrote a mark dated Saturday into `mtm_prices`, and every
+   * "yesterday's close" read through `getMtmMap()` then resolved to a day the
+   * market never traded.
+   */
+  it("refuses the WEEKEND even when the user asks — ignoreClock waives the clock, nothing else", async () => {
+    clearStamp();
+    const asked = await persist.persistDailyMarks([quote("TCS", 3025.75)], { now: WEEKEND, ignoreClock: true });
+    expect(asked.written, "a Saturday press must refuse").toBe(false);
+    expect(asked.reason).toMatch(/weekend/i);
+    expect(marks(), "no mark may be dated to a day with no session").toHaveLength(0);
+    // And the refusal must not stamp the day either, or Monday is blocked too.
+    expect(stamp()).toBe(null);
   });
 
   it("never persists a zero or negative price — a mark of zero prints -100 %", async () => {

@@ -168,7 +168,7 @@ export function RiskCockpitClient({
             valueCls={e.unrealised >= 0 ? "text-profit" : "text-loss"}
             detail={{
               title: "Open P&L — unrealised, on paper",
-              summary: "Marked against your latest MTM prices, not live quotes.",
+              summary: "Marked against your latest stored marks — end-of-day, typed, or one dated mark a day from your own feed — never a live tick.",
               rows: [
                 { label: "Unrealised P&L", value: inrCompact(e.unrealised), tone: e.unrealised >= 0 ? "profit" : "loss" },
                 capitalKnown

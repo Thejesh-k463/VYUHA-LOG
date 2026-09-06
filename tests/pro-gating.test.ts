@@ -96,7 +96,8 @@ describe("Pro gating — the registry and the real gates agree", () => {
   it("the Live Desk label sells only what v4.0 ships — no alerts (owner ruling, 4.1)", () => {
     // The upsell card is a promise: /live advertised "…chart overlay and
     // alerts" while no alert code exists anywhere in lib/live or
-    // components/live — Telegram alerts are v4.1. A buyer paying for the Live
+    // components/live — Telegram alerts are after v4.2 (Q18, 2026-09-06). A
+    // buyer paying for the Live
     // Desk on the strength of that line gets four of five things.
     const live = PRO_FEATURES.find((f) => f.href === "/live")!;
     expect(live.label).not.toMatch(/alert/i);

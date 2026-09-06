@@ -534,12 +534,21 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
  * The strings arrive already computed — `lib/queries/atlas.ts` hashes them
  * server-side, because `node:crypto` has no business in a client component.
  */
+// The title says WHAT was hashed, not only the hex. The digest is taken over the
+// map's CANONICAL JSON as the app loaded it — `digestMap()` in
+// lib/queries/atlas.ts hashes `JSON.stringify(json)` — and never over the file on
+// disk, whose bytes carry the source formatting and do not match. Without that
+// clause a buyer runs `sha256sum lib/data/sector-map.json`, reads a different 64
+// hex, and reports a tampered build.
 function MapProvenance({ digests }: { digests: AtlasView["mapDigests"] }) {
   if (digests.length === 0) return null;
   return (
     <p className="tabular-nums text-muted-foreground">
       {digests.map((d, i) => (
-        <span key={d.file} title={`${d.file} · sha256 ${d.sha256}`}>
+        <span
+          key={d.file}
+          title={`${d.file} · sha256 ${d.sha256} — of the map's canonical JSON, as the app loaded it, not of the file on disk`}
+        >
           {i > 0 ? " · " : ""}
           {d.label} sha256 {d.sha256.slice(0, 12)} · as of {d.asOf ?? "—"}
         </span>
