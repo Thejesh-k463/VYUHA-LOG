@@ -585,7 +585,11 @@ function RiskEditDialog({ p, onSaved }: { p: ExposurePosition; onSaved: () => vo
       });
       const json = await res.json();
       if (json.ok) {
-        toast.success("Risk inputs saved.");
+        // The route says when it kept the stops but not the price (a premium
+        // typed on an option/future is not stored under the underlying); that
+        // sentence must reach the screen, not just the HTTP body.
+        const msg = typeof json.message === "string" && json.message !== "Saved." ? json.message : "Risk inputs saved.";
+        toast.success(msg);
         onSaved();
       } else {
         toast.error(json.message ?? "Failed");

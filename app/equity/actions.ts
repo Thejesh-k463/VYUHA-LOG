@@ -59,6 +59,7 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   let priceCount = 0;
   let stopCount = 0;
   let zeroed = 0;
+  let ambiguous = 0;
   const now = sql`(datetime('now'))`;
 
   for (const rawLine of lines) {
@@ -74,6 +75,14 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
     // form's own placeholder ("…, 724.35, 705, 715, 760"); found by audit.
     const ungrouped = rawLine.replace(/(\d),(?=(?:\d{2},)*\d{3}(?!\d))/g, "$1");
     const line = ungrouped !== rawLine && (rawLine.includes(", ") || !ungrouped.includes(",")) ? ungrouped : rawLine;
+    if (ungrouped !== rawLine && line === rawLine) {
+      // A tight line that ALSO has a grouping-shaped comma ("NIFTY,23,450",
+      // "X,5,500") is ambiguous: price 23 with a 450 stop, or 23,450? Neither
+      // reading is safe now that the write replaces the day's mark — refused
+      // and named, with the two unambiguous spellings.
+      ambiguous++;
+      continue;
+    }
     let symbol = "";
     let price: number | null = null, sl: number | null = null, tsl: number | null = null, target: number | null = null;
 
@@ -143,6 +152,7 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   if (stopCount) parts.push(`${stopCount} stop/target update${stopCount === 1 ? "" : "s"}`);
   const notes: string[] = [];
   if (zeroed) notes.push(`${zeroed} line${zeroed === 1 ? "" : "s"} with a price of 0 or less: no mark stored.`);
+  if (ambiguous) notes.push(`${ambiguous} line${ambiguous === 1 ? "" : "s"} skipped — commas are ambiguous there; write "NIFTY, 23,450" or "NIFTY 23450".`);
   const skippedNote = notes.length ? " " + notes.join(" ") : "";
   return {
     ok: priceCount > 0 || stopCount > 0,

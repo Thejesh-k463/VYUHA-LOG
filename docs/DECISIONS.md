@@ -4062,8 +4062,9 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   on option positions too — so a typed premium landed under RELIANCE and, with fix wave 3's replace-the-day's-
   row rule, deleted the 15:31 cash mark every RELIANCE share position reads (before the rule it merely sat behind
   the cash row and won only on days with no cash mark). The live door already refuses this write
-  (`isCashKey()`). **Ruling: refuse it at every door that can name a contract** — the risk dialog answers 400
-  "Marks for options and futures are not stored in this version." to a mark-only request, the trade form's
+  (`isCashKey()`). **Ruling: refuse it at every door that can name a contract** — the risk ROUTE answers 400
+  "Marks for options and futures are not stored in this version." to a price-only request (the dialog itself
+  always sends its five fields, so it saves the stops and shows "the current price was not stored"), the trade form's
   edit skips it and says so, and the create form no longer shows the field for an F&O trade. The bulk paste is
   deliberately NOT one of them (corrected by the 3b audit after a first cut refused derivatives-only books):
   its line names the UNDERLYING, so "NIFTY 23450" is an index level by construction and the options analytics'
@@ -4082,9 +4083,10 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
 - **Two more typed doors.** The trade form's create and edit "Current price" still bare-inserted behind the
   automatic row; both now go through `writeTypedMark`, so the ruling's "the typed writers" is four, not two.
 - **The paste parser read "3,100.50" as ₹3** ("RELIANCE, 3,100.50" → cells "3" and "100.50"), and the new rule
-  made that ₹3 the day's mark with a ₹100.50 stop. A comma-form line is now refused when a 1–3-digit cell is
-  followed by a 3-digit cell (or the symbol cell ends in a 1–3-digit number before such a cell), counted, and
-  named in the result ("write prices without thousands separators"). The as-of date must be a real
+  made that ₹3 the day's mark with a ₹100.50 stop. 3b REFUSED any comma-form line with a 1–3-digit cell before
+  a 3-digit cell — which refused the form's own placeholder (superseded in 3c, see the first bullet: the
+  grouped number is now READ; only a tight line whose commas are genuinely ambiguous, "NIFTY,23,450", is
+  refused, with the two safe spellings named). The as-of date must be a real
   `YYYY-MM-DD` — free text sorted above every real day and became the permanent "latest" mark. A 0-price line
   is named too, not dropped silently. **Measured trap:** `Date.parse` returns NaN under vitest's faked clock, so
   the check is a range regex, not a parse.

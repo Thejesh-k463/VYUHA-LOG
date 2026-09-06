@@ -308,6 +308,21 @@ describe("the bulk paste refuses what it cannot read rather than storing a wrong
     expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([123456]);
   });
 
+  it("a tight line with a grouping-shaped comma is ambiguous and refused, with the two safe spellings named", async () => {
+    await liveDoor(3120);
+    const form = new FormData();
+    form.set("prices", "TCS,3,120.50");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(rowsFor("TCS").map((r) => r.price), "'TCS,3,120.50' was read as ₹3 with a ₹120.50 stop").toEqual([3120]);
+    expect(res.message).toContain("ambiguous");
+    const spaced = new FormData();
+    spaced.set("prices", "TCS, 3,120.50");
+    spaced.set("asOf", DAY);
+    await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, spaced);
+    expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120.5]);
+  });
+
   it("the form's own placeholder lines and 3-digit prices with 3-digit stops are read (an earlier guard refused them)", async () => {
     const form = new FormData();
     form.set("prices", "TCS, 724.35, 705, 715, 760\nRELIANCE, 800, 790\nNIFTY,234");

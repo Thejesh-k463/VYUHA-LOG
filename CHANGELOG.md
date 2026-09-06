@@ -116,10 +116,10 @@ no dependency changes — `package-lock.json` is untouched.*
 - **Fix wave 3 — what a typed mark cannot be.** A mark typed on an **option or
   future** is refused: such a trade carries its underlying as its symbol, so the
   premium would be stored under RELIANCE and, with the rule above, erase the
-  cash mark every RELIANCE share position reads. The risk dialog answers
-  "Marks for options and futures are not stored in this version." when only a
-  price is sent, saves the stops beside it and says the price was not stored
-  when it is a full save, the edit form says the same, the create form no
+  cash mark every RELIANCE share position reads. The risk route answers
+  "Marks for options and futures are not stored in this version." to a request
+  that carries only a price; the risk dialog, which always sends its stops
+  too, saves them and says the price was not stored; the edit form says the same, the create form no
   longer shows the field for an F&O trade, and the unmarked-holdings panel no
   longer lists derivatives. The bulk paste is different: its line names the
   underlying, so "NIFTY 23450" is an index level and is stored as one. A typed
@@ -127,7 +127,9 @@ no dependency changes — `package-lock.json` is untouched.*
   stops beside it had been saved), a pasted 0 line is named in the result, a
   paste dated to a future day is refused (a year typo would have outranked
   every real day), and a thousands-grouped price ("3,100.50", "1,23,456.00")
-  is read as one number instead of as a ₹3 price with a ₹100.50 stop.
+  is read as one number instead of as a ₹3 price with a ₹100.50 stop, and a
+  tight line whose commas are genuinely ambiguous ("NIFTY,23,450") is refused
+  with the two safe spellings named.
 - **Fix wave 3 — the strip says what the link is doing, per connection.** A link
   that has carried no live quotes now reads **connected but not streaming**
   rather than "no prices yet": after hours the rows really do carry end-of-day

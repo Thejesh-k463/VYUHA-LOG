@@ -280,7 +280,11 @@ export function ManualTradeForm({
   // rising price showing as a "loss" because the preview only ever showed realized
   // gross, which is always ₹0 before any exit leg exists).
   const entryPriceNum = Number(avgBuyPrice) || 0;
-  const currentPriceNum = Number(currentPrice) || 0;
+  // The Current price field is not offered for an F&O trade (its mark would
+  // sit under the underlying), so a value typed under Equity must not keep
+  // driving the "at current price" preview after the switch — derived, not
+  // reset in an effect.
+  const currentPriceNum = kind === "fno" ? 0 : Number(currentPrice) || 0;
   const openQty = Number(buyQty) || 0;
   const openSide = kind === "fno" && direction === "sell" ? -1 : 1; // short gains when price falls
   const unrealizedPnl =
