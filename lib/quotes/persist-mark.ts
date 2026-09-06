@@ -231,7 +231,7 @@ export async function persistDailyMarks(
   // delete-then-insert and replace one. So a mark typed BEFORE the close
   // survives the automatic write, and a mark typed AFTER it wins — which is
   // what "a typed mark is always the day's mark" means. Neither door needs a
-  // reader-side tiebreak, and none was added: `getMtmMap()` and the other ten
+  // reader-side tiebreak, and none was added: `getMtmMap()` and every other
   // readers still take the first row of the newest `as_of_date`, which is now
   // the only row for it.
   let marked = 0;

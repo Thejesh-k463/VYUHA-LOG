@@ -1,12 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { isDerivativeInstrument, writeTypedMark } from "@/lib/queries/mtm";
 import {
   trades as tradesTable,
   importBatches,
   classificationOverrides,
   riskConfig,
   settings as settingsTable,
-  mtmPrices,
   tradeLegs,
   accounts as accountsTable,
   brokerReference,
@@ -1405,15 +1405,18 @@ export function commitManualTrade(
   });
 
   // Store the current MTM so an open position shows a live mark on the trackers.
-  if (fields.currentPrice != null && fields.currentPrice > 0) {
-    db.insert(mtmPrices)
-      .values({
-        symbol: cls.symbol.toUpperCase(),
-        tradingsymbol: t.tradingsymbol,
-        price: fields.currentPrice,
-        asOfDate: todayIstIso(),
-      })
-      .run();
+  if (fields.currentPrice != null && fields.currentPrice > 0 && !isDerivativeInstrument(cls)) {
+    // (Derivatives skipped: the premium would land under the underlying's
+    // symbol and erase its cash mark — owner ruling, fix wave 3 audit.)
+    // A typed door like the risk dialog and the paste: the number the user
+    // typed is the day's mark, so it REPLACES the day's row (a bare insert
+    // left it behind the automatic 15:31 row, unread — fix wave 3 audit).
+    writeTypedMark({
+      symbol: cls.symbol,
+      tradingsymbol: t.tradingsymbol,
+      price: fields.currentPrice,
+      asOfDate: todayIstIso(),
+    });
   }
 
   return { id: row!.id, duplicate: false };
@@ -1680,10 +1683,16 @@ export function updateManualTrade(
     .where(eq(tradesTable.id, tradeId))
     .run();
 
+  let markNote = "";
   if (fields.currentPrice != null && fields.currentPrice > 0) {
-    db.insert(mtmPrices)
-      .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: fields.currentPrice, asOfDate: todayIstIso() })
-      .run();
+    if (isDerivativeInstrument(t)) {
+      // The premium would land under the underlying's symbol and erase its
+      // cash mark (owner ruling, fix wave 3 audit) — say so instead.
+      markNote = " The current price was not stored: marks for options and futures are not stored in this version.";
+    } else {
+      // Same typed-door rule as the create path above: replace the day's row.
+      writeTypedMark({ symbol: t.symbol, tradingsymbol: t.tradingsymbol, price: fields.currentPrice, asOfDate: todayIstIso() });
+    }
   }
 
   recordAudit({
@@ -1695,7 +1704,7 @@ export function updateManualTrade(
     after: { buyQty, avgBuyPrice, sellQty, avgSellPrice, netPnl, isOpen },
   });
 
-  return { ok: true, message: "Trade updated." };
+  return { ok: true, message: "Trade updated." + markNote };
 }
 
 /**

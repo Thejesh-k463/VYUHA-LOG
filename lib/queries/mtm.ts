@@ -48,7 +48,7 @@ export const getSpotMap = cache((): Map<string, number> => {
  * reads, for ever: a mark typed into the risk dialog AFTER the automatic
  * 15:31 write was stored and then silently ignored by every figure on screen.
  * A reader-side tiebreak would not fix it either — it would only move the
- * question to eleven call sites instead of the two writers.
+ * question to every reader instead of the typed writers.
  *
  * The shape is the one `lib/quotes/persist-mark.ts` and
  * `lib/import/mtm-bhavcopy.ts` already use, in ONE transaction so no reader
@@ -59,6 +59,20 @@ export const getSpotMap = cache((): Map<string, number> => {
  * MONEY: `price` is REAL RUPEES — a per-unit price, invariant 1's documented
  * exception. Nothing here converts.
  */
+/**
+ * Why a typed mark on an option or future is REFUSED (owner ruling, fix wave 3
+ * audit): a derivative trade carries its UNDERLYING as `symbol`, and
+ * `mtm_prices` is keyed on symbol, so a typed premium would sit under
+ * RELIANCE and — now that a typed mark replaces the day's row — delete the
+ * cash mark every RELIANCE share position reads. The live door refuses the
+ * same write (`isCashKey()` in persist-mark). Until a mark store keyed on the
+ * traded contract exists, a derivative position shows the close or a dash.
+ */
+export const DERIVATIVE_MARK_MESSAGE = "Marks for options and futures are not stored in this version.";
+export function isDerivativeInstrument(t: { instrumentType: string }): boolean {
+  return t.instrumentType !== "equity";
+}
+
 export function writeTypedMark(mark: {
   symbol: string;
   tradingsymbol?: string | null;

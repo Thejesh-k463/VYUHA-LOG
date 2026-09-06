@@ -96,7 +96,7 @@ const DAY = "2026-09-04";
 
 /** The sentence builder Y put on seven surfaces, verbatim (ASCII apostrophe). */
 const SENTENCE =
-  "A price you type yourself is that day's mark: the app does not overwrite it at the close, and typing after the close replaces the automatic one.";
+  "A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.";
 
 let tcsId = 0;
 let infyId = 0;
@@ -495,11 +495,11 @@ describe("SEAM 1 · what the user typed is what every reader of mtm_prices print
 /* ═══ SEAM 2 (Y→X) · the sentence's two clauses, beside the two behaviours ══ */
 
 describe("SEAM 2 · Y's sentence says what X's two doors do", () => {
-  it('S2a: "the app does not overwrite it at the close" — disclosure item 6, and the live door skipping the held row', async () => {
+  it('S2a: "the automatic close-of-session mark does not overwrite it" — disclosure item 6, and the live door skipping the held row', async () => {
     // Y'S HALF: the clause, verbatim, in the disclosure the install re-reads.
     expect(feedItem6().title).toBe("Prices refresh on screen only — ticks are never written");
     expect(flat(feedItem6().body), "disclosure item 6 no longer carries the typed-mark sentence").toContain(SENTENCE);
-    expect(SENTENCE).toContain("the app does not overwrite it at the close");
+    expect(SENTENCE).toContain("the automatic close-of-session mark does not overwrite it");
 
     // X'S HALF: the real automatic door, over a row the user typed first.
     clearMarks();

@@ -4024,7 +4024,7 @@ preceded it (`tests/seams-v41-fix2.test.ts`, 12 crossings) had already found and
 snapshot promoting the strip to Live. One owner pop-up.
 
 - **A mark typed AFTER the automatic 15:31 row was silently discarded.** The risk dialog and the equity page
-  INSERT into `mtm_prices` with no DELETE; every reader (`getMtmMap`, `getSpotMap`, `indexMarks` — eleven call
+  INSERT into `mtm_prices` with no DELETE; every reader (`getMtmMap`, `getSpotMap`, `indexMarks` — thirteen call
   sites) orders by `as_of_date DESC` with no tiebreak and takes the first row per symbol, which SQLite returns
   in rowid order (replayed: 2,300 rows, `SCAN mtm_prices | USE TEMP B-TREE FOR ORDER BY`, the live row wins).
   The mechanism predates 4.1; fix wave 2's 15:31 reconnect made the live row exist on every open-desk day, so
@@ -4032,9 +4032,9 @@ snapshot promoting the strip to Live. One owner pop-up.
   **Ruling: a typed mark is ALWAYS the day's mark** — the typed writers delete-then-insert for (symbol, IST day)
   exactly as the live door and the bhavcopy job do; typed before the close, the live door keeps skipping the held
   row; typed after, it replaces the automatic row; one row per symbol per day stays the table's contract, and
-  the six user surfaces gain one sentence saying so (they promised "whichever comes first" and never mentioned a
+  the seven user surfaces gain one sentence saying so (they promised "whichever comes first" and never mentioned a
   typed mark at all). *Rejected: a reader-side `ORDER BY id DESC` tiebreak* (two rows per day would remain and
-  eleven readers would each carry the rule) and *docs-only* (a silent wrong number behind a documented gap).
+  thirteen readers would each carry the rule) and *docs-only* (a silent wrong number behind a documented gap).
 - **Cosmetic, fixed in fix wave 3:** the strip kept the DESTROYED link's phase across an account switch until the
   new connection's first frame (the React state was not keyed to the connection it described — now derived
   from `{key, state}` at render, no setState in the effect); "Connected · openalgo · no prices yet" was printed

@@ -41,6 +41,7 @@ let persist: typeof import("@/lib/quotes/persist-mark");
 let riskRoute: typeof import("@/app/api/positions/risk/route");
 let equity: typeof import("@/app/equity/actions");
 let mtm: typeof import("@/lib/queries/mtm");
+let commit: typeof import("@/lib/import/commit");
 
 const ACCOUNT = 1;
 /** Friday 2026-09-04, 16:00 IST — after the 15:30 close, so the feed may mark. */
@@ -109,6 +110,7 @@ beforeAll(async () => {
   riskRoute = await import("@/app/api/positions/risk/route");
   equity = await import("@/app/equity/actions");
   mtm = await import("@/lib/queries/mtm");
+  commit = await import("@/lib/import/commit");
 
   t.db.update(t.schema.settings).set({ selectedAccountId: ACCOUNT }).run();
   t.db
@@ -220,10 +222,14 @@ describe("a typed mark must be a PRICE — the seam pass for fix wave 3 typed a 
       new Request("http://local/api/positions/risk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tradeId, mtmPrice: 0 }),
+        body: JSON.stringify({ tradeId, mtmPrice: 0, originalSl: 2950 }),
       }),
     );
     expect(res.status, "a typed 0 is not a mark and must not replace the day's row").toBe(400);
+    // A 400 means NOTHING was saved: the stop sent beside the 0 must not have
+    // landed, or the dialog's "failed" toast sits over a half-persisted form.
+    const trade = t.db.select().from(t.schema.trades).all().find((r) => r.id === tradeId);
+    expect(trade?.slPlanned ?? null, "the 400 was returned after the stops were written").toBeNull();
     expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120]);
     expect(mtm.getMtmMap().get("TCS")).toBe(3120);
   });
@@ -247,5 +253,142 @@ describe("a typed mark must be a PRICE — the seam pass for fix wave 3 typed a 
     const rows = rowsFor("TCS");
     expect(rows.map((r) => r.price)).toEqual([3100]);
     expect(rows[0]?.tradingsymbol, "the replacement row blanked the feed's tradingsymbol").toBe("TCS");
+  });
+});
+
+describe("each layer of the tradingsymbol carry reds on its own (fix wave 3 audit, T1)", () => {
+  it("the helper carries the held row's tradingsymbol when the caller does not know it", () => {
+    mtm.writeTypedMark({ symbol: "TCS", tradingsymbol: "TCS-EQ", price: 3120, asOfDate: DAY });
+    mtm.writeTypedMark({ symbol: "TCS", price: 3100, asOfDate: DAY }); // no tradingsymbol key at all
+    const rows = rowsFor("TCS");
+    expect(rows.map((r) => r.price)).toEqual([3100]);
+    expect(rows[0]?.tradingsymbol, "the helper blanked (or replaced with the symbol) the feed's tradingsymbol").toBe("TCS-EQ");
+  });
+
+  it("the paste hands over the open trade's tradingsymbol rather than leaning on the carry", async () => {
+    mtm.writeTypedMark({ symbol: "TCS", tradingsymbol: "TCS-EQ", price: 3120, asOfDate: DAY });
+    await typedViaBulkPaste(3100);
+    const rows = rowsFor("TCS");
+    expect(rows.map((r) => r.price)).toEqual([3100]);
+    // The seeded trade's tradingsymbol is "TCS"; a paste that passed nothing
+    // would have carried "TCS-EQ" from the held row instead.
+    expect(rows[0]?.tradingsymbol, "the paste did not pass the trade's tradingsymbol").toBe("TCS");
+  });
+});
+
+describe("the trade form's own mark writers follow the same rule (fix wave 3 audit, M2)", () => {
+  it("editing a trade's Current price after the automatic mark replaces the day's row", async () => {
+    await liveDoor(3120);
+    expect(commit.updateManualTrade(tradeId, { currentPrice: 3100 }).ok).toBe(true);
+    expect(rowsFor("TCS").map((r) => r.price), "the edit door queued its mark behind the automatic row").toEqual([3100]);
+    expect(mtm.getMtmMap().get("TCS")).toBe(3100);
+  });
+});
+
+describe("the bulk paste refuses what it cannot read rather than storing a wrong mark (fix wave 3 audit, M3)", () => {
+  it("a thousands-grouped price in the comma form is skipped and reported, and the real mark survives", async () => {
+    await liveDoor(3120);
+    const form = new FormData();
+    form.set("prices", "TCS, 3,100.50");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(rowsFor("TCS").map((r) => r.price), "'3,100.50' was read as a ₹3 mark and replaced the real one").toEqual([3120]);
+    expect(res.message).toContain("1 line skipped");
+    expect(res.ok).toBe(false);
+  });
+
+  it("the space form with a grouped price is skipped the same way", async () => {
+    await liveDoor(3120);
+    const form = new FormData();
+    form.set("prices", "TCS 3,100.50");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120]);
+    expect(rowsFor("TCS 3")).toEqual([]);
+    expect(res.message).toContain("skipped");
+  });
+
+  it("a plain comma-separated line with 4-digit prices is still read", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS,3120,3000,2950");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(res.ok).toBe(true);
+    expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120]);
+  });
+
+  it("an as-of date that is not YYYY-MM-DD is refused before anything is written", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS 3100");
+    form.set("asOf", "07-09-2026");
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("YYYY-MM-DD");
+    expect(t.sqlite.prepare("SELECT count(*) AS n FROM mtm_prices").get()).toEqual({ n: 0 });
+  });
+});
+
+describe("a typed mark on an option or future is refused at every door (owner ruling, fix wave 3 audit, M1)", () => {
+  let optionId = 0;
+  beforeAll(() => {
+    t.db
+      .insert(t.schema.trades)
+      .values(
+        tradeRow({
+          accountId: ACCOUNT,
+          symbol: "RELIANCE",
+          tradingsymbol: "RELIANCE25SEP3000CE",
+          instrumentType: "option",
+          segment: "stock_option",
+          bucket: "active",
+          exchange: "NSE",
+          isOpen: true,
+          buyQty: 250,
+          avgBuyPrice: 40,
+        }),
+      )
+      .run();
+    optionId = t.db.select().from(t.schema.trades).all().find((r) => r.symbol === "RELIANCE")!.id;
+  });
+
+  it("the risk dialog answers 400 and the underlying's cash mark survives", async () => {
+    mtm.writeTypedMark({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: 3120, asOfDate: DAY });
+    const res = await riskRoute.POST(
+      new Request("http://local/api/positions/risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId: optionId, mtmPrice: 42.5 }),
+      }),
+    );
+    expect(res.status, "the option premium replaced RELIANCE's cash mark").toBe(400);
+    expect(((await res.json()) as { message: string }).message).toBe(mtm.DERIVATIVE_MARK_MESSAGE);
+    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([3120]);
+  });
+
+  it("the paste skips a symbol whose only open positions are derivatives, and says so", async () => {
+    mtm.writeTypedMark({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: 3120, asOfDate: DAY });
+    const form = new FormData();
+    form.set("prices", "RELIANCE 42.5");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([3120]);
+    expect(res.message.toLowerCase()).toContain("options and futures");
+  });
+
+  it("the edit form keeps the trade but does not store the premium, and says so", () => {
+    mtm.writeTypedMark({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: 3120, asOfDate: DAY });
+    const r = commit.updateManualTrade(optionId, { currentPrice: 42.5 });
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain("not stored");
+    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([3120]);
+  });
+
+  it("a pasted 0 line is named in the message, not silently dropped", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS 0 2950");
+    form.set("asOf", DAY);
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(res.message).toContain("price of 0");
+    expect(rowsFor("TCS")).toEqual([]);
   });
 });

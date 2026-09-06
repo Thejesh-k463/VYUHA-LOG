@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
-import { writeTypedMark } from "@/lib/queries/mtm";
+import { DERIVATIVE_MARK_MESSAGE, isDerivativeInstrument, writeTypedMark } from "@/lib/queries/mtm";
 import { eq, sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
@@ -34,6 +34,19 @@ export async function POST(req: Request) {
   const has = (k: string) => k in (body as Record<string, unknown>);
   const originalSl = has("originalSl") ? numOrNull(body.originalSl) : t.slPlanned;
   const mtmPrice = numOrNull(body.mtmPrice);
+  // Refused BEFORE any write: a typed 0 used to sit unread in a second row;
+  // now that a typed mark replaces the day's row it would erase the real one.
+  // It sits above the trades update on purpose — a 400 must mean NOTHING was
+  // saved, or the dialog's "failed" toast lies over half-persisted stops
+  // (fix wave 3 audit, ui F1).
+  if (mtmPrice != null && !(mtmPrice > 0)) {
+    return NextResponse.json({ ok: false, message: "A mark is a price above zero." }, { status: 400 });
+  }
+  // Same place, same reason: a premium typed on an option/future would be
+  // stored under the underlying and erase its cash mark (see writeTypedMark).
+  if (mtmPrice != null && isDerivativeInstrument(t)) {
+    return NextResponse.json({ ok: false, message: DERIVATIVE_MARK_MESSAGE }, { status: 400 });
+  }
 
   // Short (sell-to-open) has its entry on the sell leg — avgBuyPrice is unset until covered.
   const isShort = t.sellQty > t.buyQty;
@@ -59,11 +72,6 @@ export async function POST(req: Request) {
     .where(eq(trades.id, id))
     .run();
 
-  if (mtmPrice != null && !(mtmPrice > 0)) {
-    // Refused: a typed 0 used to sit unread in a second row; now that a typed
-    // mark replaces the day's row it would erase the real one.
-    return NextResponse.json({ ok: false, message: "A mark is a price above zero." }, { status: 400 });
-  }
   if (mtmPrice != null) {
     // DELETE-THEN-INSERT for (symbol, IST day), not a bare insert: the number
     // the user just typed is the day's mark, and a plain insert made it the

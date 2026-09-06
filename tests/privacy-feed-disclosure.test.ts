@@ -505,10 +505,9 @@ describe("the corrected /funds sentence is pinned per surface, not merely un-cau
     const shape1 =
       "While the Live Desk is open Vyuha asks your bridge every 1 to 5 seconds, and the polling starts when the desk opens and stops when it closes. " +
       "Checking the connection calls OpenAlgo's `/funds` endpoint once.";
-    expect(
-      overstatedFundsClaims(shape1),
-      "the window scan is fooled: 'the desk opens' is about the poll, not about /funds",
-    ).toEqual([]);
+    // As of this wave the window scan is fooled here ('the desk opens' is about
+    // the poll, not about /funds). That is NOT asserted: a sharper scan that
+    // catches this shape is an improvement, not a regression.
     // The pin is not: this is not the sentence any surface is allowed to ship.
     expect(flatten(shape1)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
 
@@ -516,10 +515,8 @@ describe("the corrected /funds sentence is pinned per surface, not merely un-cau
     const filler = "the cheapest call there is, proving both the address you typed and the API key behind it are right";
     expect(filler.length).toBeGreaterThan(WINDOW);
     const shape2 = `Vyuha asks your bridge for your balance exactly once — ${filler} — by posting /funds.`;
-    expect(
-      overstatedFundsClaims(shape2),
-      "the window scan is blind: the count word is more than 90 characters from the path",
-    ).toEqual([]);
+    // Likewise not asserted: the scan is blind when the count word sits more
+    // than WINDOW characters from the path; only the pin must catch it.
     expect(flatten(shape2)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
   });
 

@@ -104,8 +104,8 @@ no dependency changes — `package-lock.json` is untouched.*
   15:31 reconnect made the automatic row exist on every day the desk was open,
   so the correction you typed at 16:00 was discarded and the dialog echoed the
   bridge's price back at you. **A price you type yourself is that day's mark:
-  the app does not overwrite it at the close, and typing after the close
-  replaces the automatic one.** The typed writers now replace the day's row for
+  the automatic close-of-session mark does not overwrite it, and typing after the close
+  replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.** The typed writers now replace the day's row for
   that symbol, exactly as the live door and the bhavcopy job already did, so
   **one row per symbol per IST day** is still the whole contract — and that
   sentence now appears on all seven surfaces that describe the mark, where none

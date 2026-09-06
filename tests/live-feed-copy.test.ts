@@ -458,8 +458,9 @@ describe("the broker-feed controls are gated on the release flag (D-7)", () => {
  */
 describe("the typed-mark rule is said, in the same words, on every surface that describes the mark (G2)", () => {
   const SENTENCE =
-    "A price you type yourself is that day's mark: the app does not overwrite it at the close, " +
-    "and typing after the close replaces the automatic one.";
+    "A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, " +
+    "and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, " +
+    "replaces it with the exchange close after 7 pm IST.";
 
   /**
    * What a READER sees, with the wrapping and the markup taken out.
@@ -502,12 +503,12 @@ describe("the typed-mark rule is said, in the same words, on every surface that 
   it("the flattener really reads a wrapped, quoted, marked-up copy of the sentence", () => {
     // Every shape the seven surfaces actually store it in, and the shape that
     // must NOT pass: a paraphrase.
-    const wrapped = "> yourself is that day's mark: the app does not\n> overwrite it at the close, and typing";
-    expect(flatten(`> A price you type\n${wrapped} after the close replaces the automatic one.`)).toContain(SENTENCE);
+    const wrapped = "> yourself is that day's mark: the automatic close-of-session mark does not\n> overwrite it, and typing";
+    expect(flatten(`> A price you type\n${wrapped} after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.`)).toContain(SENTENCE);
     expect(
-      flatten("<li>A price you type yourself is that day's mark: the app does not\n    overwrite it at the close, and typing after the close replaces the automatic one.</li>"),
+      flatten("<li>A price you type yourself is that day's mark: the automatic close-of-session mark does not\n    overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.</li>"),
     ).toContain(SENTENCE);
-    expect(flatten("<!-- A price you type yourself is that day's mark: the app does not overwrite it at the close, and typing after the close replaces the automatic one. -->"))
+    expect(flatten("<!-- A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST. -->"))
       .not.toContain(SENTENCE);
     expect(flatten("Your typed price wins over the automatic one.")).not.toContain(SENTENCE);
   });
