@@ -27,7 +27,33 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.9.1 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v3.9.1` = `0e18b1d`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v4.0.0 IN RELEASE (merge `98eaa63`, bumped, **verify EXIT 0 on `5938aa6` — 328 files / 6,025 passed / 35 skipped**; CI red, fix wave in flight)
+## 2. Current state — v4.0.0 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v3.9.1 draft ALSO still waiting on the owner (tag `0e18b1d`)
+
+> **v4.0.0 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner (2026-09-06 ~13:45 IST).**
+> Tag `v4.0.0` = `4d4aec3` (main: merge `98eaa63` → bump `16b1ec1` → audit fix wave `5938aa6` →
+> re-audit fix wave `aba43f5` → wave 3 `4158f6c` → docs `4d4aec3`). Gate on the tagged tree: EXIT 0,
+> 328 files / 6,057 passed / 35 skipped, `next build` compiled. CI run `34018506732` on `4d4aec3`:
+> **6/6** (check, windows-gate, e2e ubuntu + macOS, desktop-bundle-macos, load). Release run
+> `34018887649`: **3/3 first attempt** (Windows x64, macOS Intel, macOS Apple silicon); draft holds
+> 9 assets incl. `latest.json`. `npm run release:verify v4.0.0 -- --deep`: **EXIT 0, 3 signatures
+> verified over the published bytes, key id `4FF85F3BBE1DA21D`, "Safe to publish"**. Local build:
+> `BUILD_ID` mtime 12:43:51 IST (this build), bundle contains "Sizing Lab"; installer `.sig` decodes
+> to alg ED / key id `4FF85F3BBE1DA21D`. Lockfile: `npm ci` clean, `npm ls esbuild` no problems,
+> `git diff --numstat e839502 -- package-lock.json` = `2 2`.
+> **Client ZIP:** `release-packages/Vyuha_4.0.0_Client_Package.zip` (36,629,527 B, 13 entries incl.
+> `THIRD-PARTY-NOTICES.txt` with the TradingView notice; also in the installer payload —
+> `nsis/x64/installer.nsi:6693`). Installer SHA-256 (the **WDSI** one):
+> `CF5E2D533D29D79B11A1C1D610FA4AEA789E1CE97EEDB171BDED890420033BA4` (35,513,081 B).
+> **Published asset** `Vyuha_4.0.0_x64-setup.exe`: SHA-256
+> `4F2FF71514A17FA3B2DE52EBC990DF7647678E05E04E7C31E45F10B1DF4AFA05` (35,492,819 B) — the winget
+> sha; manifests at `release-packages/winget/4.0.0/` (three YAMLs). Revocation list: NOT run (no
+> keys revoked; a non-prerelease would steal `releases/latest`).
+> **Owner still owes:** publish the draft (URL becomes
+> `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v4.0.0`), install on a non-build
+> machine, submit WDSI (form handed over in the session report), and the same three for v3.9.1.
+> **Audit trail:** three audits + three skeptic passes over the three fix waves — 33 → 17 → 6 → 3
+> findings, every survivor fixed with a red-on-revert test; see `docs/DECISIONS.md` 2026-09-06.
+
 
 > **v3.9.1 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner.** Tag `v3.9.1` = `0e18b1d`
 > pushed 2026-09-06; CI run `33986790273` 6/6; release run `33987227426` 3/3 (after one re-run of

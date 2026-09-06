@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0.0 — unreleased
+## v4.0.0 — 2026-09-06
 
 *The release where the journal starts looking at the positions you still hold.
 A Live Desk that prices them and says what each one is risking, a chart that
