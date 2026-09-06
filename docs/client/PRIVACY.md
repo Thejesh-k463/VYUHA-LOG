@@ -67,11 +67,16 @@ Exactly four kinds, and only one of them is automatic:
    Settings → Live feed, and each request carries the trading symbols and
    exchanges of the positions you have open and nothing else about them — no
    quantity, no entry price, no P&L, no account — plus one `/funds` request
-   when the connection is checked. It is off until you switch the integration
-   on, accept the disclosure and pick that source, it goes to your own machine
+   each time you check the connection and each time the desk opens or its price
+   stream reconnects, to the same bridge with the same key, keeping nothing from
+   the answer but that it replied and how long it took. It is off until you
+   switch the integration on, accept the disclosure and pick that source, it
+   goes to your own machine
    (`http://127.0.0.1:5000`) unless you enter another address, and the prices
    it shows are never written to your journal as ticks: one mark per position
-   per day is saved. Your credentials are encrypted at rest, bound to your
+   per day is saved — written by the app itself once the desk reconnects at
+   15:31 IST while it is open, or the next time you open it that day, and never
+   at the weekend. Your credentials are encrypted at rest, bound to your
    machine, and sent nowhere except the broker itself. We never see them.
 4. **The Telegram end-of-day digest — only if you switch it on, and this one
    is an upload.** It sends a summary of your own recorded numbers to a
@@ -93,12 +98,20 @@ Exactly four kinds, and only one of them is automatic:
                                   lib/quotes/openalgo.ts:357-361 (snapshot()'s
                                   `symbols` array → post(…, "multiquotes", { symbols })),
                                   :325 (the whole body: `JSON.stringify({ apikey:
-                                  creds.apiKey, ...extra })`), app/api/live/stream/route.ts:74-93
-                                  (openPositionKeys(): open positions of the selected
-                                  account, capped at MAX_KEYS = 500)
-    • one /funds on connect       lib/quotes/openalgo.ts:450 (health()'s
+                                  creds.apiKey, ...extra })`), openPositionKeys() in
+                                  app/api/live/stream/route.ts (open positions of the
+                                  selected account, capped at MAX_KEYS = 500 in that same
+                                  file — identifiers, not line numbers, they move)
+    • /funds on a check AND on    lib/quotes/openalgo.ts:450 (health()'s
                                   `await post(gate.creds, "funds", {})`), answer discarded
-                                  :459-460 (`Math.max(0, now() - started)` and nothing else)
+                                  :459-460 (`Math.max(0, now() - started)` and nothing else);
+      every desk/stream connect   called by provider.health() in app/api/live/feed/route.ts
+                                  and by provider.health() in app/api/live/stream/route.ts
+                                  and in components/live/load-desk.ts (every desk render)
+    • the close-of-session mark   app/api/live/stream/route.ts writes it through
+                                  shouldPersistMark()/persistDailyMarks() when the desk's stream
+                                  connects at or after 15:30 IST; the desk reconnects once
+                                  at 15:31 IST. Already-marked is per symbol per IST day.
     • loopback default            lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST,
                                   isLocalOpenAlgoHost(); the poll's only host is
                                   normalizeHost(creds.host), lib/quotes/openalgo.ts:317-320

@@ -12,10 +12,15 @@ import { ProLock } from "@/components/system/pro-lock";
 // them verbatim, including the ruling that the daily re-sign-in is the
 // BROKER's rule and names no regulator). Imported, never restated.
 import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
-import { applyTicks, mergeTicks, parseTickFrame, type TickMap, type TickQuote } from "@/lib/live/apply-ticks";
+import { applyTicks, mergeTicks, type TickMap } from "@/lib/live/apply-ticks";
 import { connectPromptDismissal, connectPromptKey, showConnectPrompt } from "@/lib/live/connect-prompt";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
 import { daysToResults } from "@/lib/live/results-date";
+// The link's whole lifecycle — backoff, the hidden-tab release, the phase
+// rules and the close-of-session reconnect — with its browser edges injected
+// from here, so `tests/live-stream-link.test.ts` can DRIVE it in node instead
+// of grepping this file for the lines that would have done it.
+import { LINK_IDLE, createStreamLink, streamKeyOf, type LinkState } from "@/lib/live/stream-link";
 import {
   CONNECT_PROMPT_COPY,
   DESK_COPY,
@@ -88,51 +93,11 @@ const ROW_HEIGHT = 66;
 const THEAD_HEIGHT_FALLBACK = 40;
 
 /**
- * First reconnect delay, in ms, doubling to `RECONNECT_STEPS`.
- *
- * Only for a stream the browser has GIVEN UP on (`readyState === CLOSED`).
- * While it is still CONNECTING the browser is retrying on the route's own
- * jittered `retry:` hint (2000–3500 ms, deliberately not a fixed 1 s so a
- * sidecar restart does not bring every desk back on one boundary), and a second
- * timer racing it would double the reconnect rate against a bridge that is
- * already struggling.
- */
-const RECONNECT_BASE_MS = 2_000;
-/** 2 s, 4 s, 8 s, 16 s, then 16 s for ever. */
-const RECONNECT_STEPS = 4;
-
-/**
- * How long a frame keeps the strip reading "Live" across a routine re-establish,
- * in ms. It is `HEARTBEAT_MS` in `app/api/live/stream/route.ts`.
- *
- * An SSE connection is re-established all the time — a proxy drops an idle
- * stream, a sidecar restarts — and the browser does it silently on the route's
- * own `retry:` hint. Flashing "Reconnecting…" on each of those would make a
- * healthy desk look broken. The route promises a heartbeat every 25 s, so while
- * the last frame is YOUNGER than that the pipe has proved itself inside its own
- * contract; past it, nothing has, and the strip says so.
- */
-const LIVE_GRACE_MS = 25_000;
-
-/**
  * A STABLE empty tick map, so `applyTicks(rows, ticks)` returns the server's
  * own array by identity until the first frame lands. A fresh `new Map()` per
  * render would make the memo below re-run on every commit.
  */
 const NO_TICKS: TickMap = new Map();
-
-/** What the desk knows about the SSE pipe. Never a claim about the prices. */
-type LinkPhase = "idle" | "live" | "reconnecting" | "paused" | "stopped";
-
-interface LinkState {
-  phase: LinkPhase;
-  /** The provider's own sentence, when it sent one. */
-  reason: string | null;
-  /** `Date.now()` of the last frame. null when nothing has arrived. */
-  at: number | null;
-}
-
-const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null };
 
 const PositionChartPanel = dynamic(
   // W2's real panel. `ssr:false` because it measures its own box and reads a
@@ -142,7 +107,7 @@ const PositionChartPanel = dynamic(
   { ssr: false, loading: () => <div className="min-h-40 rounded-[var(--radius)] border border-dashed border-border" /> },
 );
 
-type SortKey =
+export type SortKey =
   | "symbol"
   | "product"
   | "qty"
@@ -203,6 +168,40 @@ function compareRows(a: DeskRow, b: DeskRow, key: SortKey, dir: 1 | -1): number 
   if (y === null) return -1;
   if (typeof x === "string" || typeof y === "string") return String(x).localeCompare(String(y)) * dir;
   return (x - y) * dir;
+}
+
+/**
+ * The rows the desk shows, in the order it shows them: the account chip, the
+ * text filter, then the column sort.
+ *
+ * PURE and EXPORTED so the one interaction that cost the desk a correct
+ * keystroke can be tested without a browser (F5): the default sort is
+ * `unrealisedP` DESC and `applyTicks` rewrites `unrealisedP` on every tick, so
+ * this list REORDERS while the user is looking at it.
+ */
+export function visibleRows(
+  rows: readonly DeskRow[],
+  view: { accountFilter: number | null; query: string; sort: { key: SortKey; dir: 1 | -1 } },
+): DeskRow[] {
+  const q = view.query.trim().toUpperCase();
+  const out = rows.filter(
+    (r) =>
+      (view.accountFilter === null || r.accountId === view.accountFilter) &&
+      (q === "" || r.symbol.toUpperCase().includes(q) || r.tradingsymbol.toUpperCase().includes(q)),
+  );
+  return out.sort((a, b) => compareRows(a, b, view.sort.key, view.sort.dir));
+}
+
+/**
+ * Where the focused ROW sits now — resolved from its id on every render, never
+ * remembered as a position (F5).
+ *
+ * -1 covers both "nothing focused" and "the focused row is not in this list any
+ * more", which is what a filter does to it; `nextIndex()` reads -1 as "start
+ * from the top", so j/k stay usable without any state being written back.
+ */
+export function focusedIndex(visible: readonly DeskRow[], focusId: number | null): number {
+  return focusId === null ? -1 : visible.findIndex((r) => r.id === focusId);
 }
 
 /** A level the mark has passed, as a TEXT chip — never a colour on its own. */
@@ -278,7 +277,18 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const [accountFilter, setAccountFilter] = React.useState<number | null>(null);
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState<{ key: SortKey; dir: 1 | -1 }>({ key: "unrealisedP", dir: -1 });
-  const [focusIdx, setFocusIdx] = React.useState(-1);
+  /**
+   * The focused row's IDENTITY, never its position (F5).
+   *
+   * An index into `visible` is a promise the list does not keep: `visible`
+   * re-sorts on every rows change, the default sort is `unrealisedP` DESC and
+   * `applyTicks` rewrites `unrealisedP` on every tick — so two rows whose P&L
+   * order flipped swapped the highlight under the user's hands, and Enter / `l`
+   * then acted on whatever row the index now pointed at. The Sizing Lab got the
+   * wrong position from a keystroke aimed at the right one. Same shape as
+   * `expandedId` below, and for the same reason.
+   */
+  const [focusId, setFocusId] = React.useState<number | null>(null);
   const [expandedId, setExpandedId] = React.useState<number | null>(null);
   // The clock starts null and is set once on mount: rendering an IST time on
   // the server and again in the browser is a hydration mismatch by construction.
@@ -325,6 +335,23 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const streaming = feed.streaming;
 
   /**
+   * WHICH stream this desk should be holding (F4).
+   *
+   * `GET /api/live/stream` resolves `getSelectedAccountId()` and captures its
+   * quote-key set ONCE per request, and the sidebar account switcher only calls
+   * `router.refresh()` — this component stays MOUNTED across a switch, on
+   * purpose (a `key` on `<TrackerClient>` would drop every in-memory tick and
+   * the keyboard focus every time the user changed account). So the effect has
+   * to notice by itself, and this string is what it notices with: the selected
+   * account and the exact key set, because the id alone cannot see a position
+   * opened in another account while the aggregate view (0) is selected.
+   */
+  const streamKey = React.useMemo(
+    () => streamKeyOf(data.selectedAccountId, wireRows),
+    [data.selectedAccountId, wireRows],
+  );
+
+  /**
    * ONE `EventSource`, and only for a provider that really streams.
    *
    * `GET /api/live/stream` has existed since v4.0 with no consumer at all, so
@@ -338,112 +365,42 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
    * open for a desk that can never receive a tick — and would let the strip say
    * "Live" over an end-of-day print.
    *
-   * NO setState IN THIS EFFECT'S BODY. Every write below happens inside an
-   * `EventSource` handler, a `visibilitychange` handler or a timer — never
-   * synchronously on a render keyed on other state (AGENTS.md; that pattern
-   * broke the Trades filter outright under the React Compiler).
+   * THE LIFECYCLE ITSELF IS NOT HERE. `createStreamLink` (lib/live/stream-link.ts)
+   * owns the backoff, the phase rules and the close-of-session reconnect, with
+   * every browser edge — `EventSource`, `document.visibilityState`, the timers,
+   * `requestAnimationFrame`, the clock — injected from this file. That is what
+   * makes those rules testable at all: this suite runs in node with no DOM, so
+   * inside the effect they could only ever be asserted as source text.
    *
-   * Its dependency is the streaming FLAG, not `feed`: re-running on a new
-   * object identity would tear down and re-open the stream on every server
-   * render.
+   * NO setState IN THIS EFFECT'S BODY. Every write below happens inside a link
+   * callback, a `visibilitychange` handler or a timer — never synchronously on
+   * a render keyed on other state (AGENTS.md; that pattern broke the Trades
+   * filter outright under the React Compiler).
+   *
+   * Its dependencies are the streaming FLAG and the stream KEY, not `feed` or
+   * `data`: re-running on a new object identity would tear down and re-open the
+   * stream on every server render.
    */
   React.useEffect(() => {
     if (!streaming) return;
     if (typeof EventSource === "undefined") return; // SSR, and any shell without it
 
-    let es: EventSource | null = null;
-    let retry = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let frame = 0;
-    let unmounted = false;
-    /** Quotes waiting for the next paint. The route already coalesces to 250 ms. */
-    const pending: TickQuote[] = [];
-
-    const flush = () => {
-      frame = 0;
-      if (pending.length === 0) return;
-      const batch = pending.splice(0, pending.length);
-      setTicks((prev) => mergeTicks(prev, batch));
-    };
-    /** One React commit per animation frame, however many frames arrived in it. */
-    const schedule = () => {
-      if (frame === 0) frame = requestAnimationFrame(flush);
-    };
-
-    const onFrame = (ev: Event) => {
-      const data = (ev as MessageEvent<string>).data;
-      let raw: unknown;
-      try {
-        raw = JSON.parse(data);
-      } catch {
-        return; // one unreadable frame costs one frame, never the stream
-      }
-      const quotes = parseTickFrame(raw);
-      if (quotes.length > 0) {
-        pending.push(...quotes);
-        schedule();
-      }
-      retry = 0;
-      setLink({ phase: "live", reason: null, at: Date.now() });
-    };
-
-    const close = () => {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      if (frame !== 0) {
-        cancelAnimationFrame(frame);
-        frame = 0;
-      }
-      es?.close();
-      es = null;
-    };
-
-    const open = () => {
-      if (unmounted || document.visibilityState === "hidden") return;
-      close();
-      es = new EventSource("/api/live/stream");
-      es.addEventListener("snapshot", onFrame);
-      es.addEventListener("tick", onFrame);
-      es.addEventListener("heartbeat", onFrame);
-      es.addEventListener("error", onError);
-    };
-
-    function onError(ev: Event) {
-      // TWO DIFFERENT EVENTS ARRIVE HERE, and telling them apart is the whole
-      // of this handler. The route sends a NAMED `error` frame when a provider
-      // refuses to subscribe, and the EventSource spec dispatches a
-      // server-named "error" event on the object itself — indistinguishable
-      // from the connection failure except that one carries `data`.
-      if (typeof (ev as MessageEvent<string>).data === "string") {
-        let reason: string | null = null;
-        try {
-          const body = JSON.parse((ev as MessageEvent<string>).data) as { message?: unknown };
-          reason = typeof body.message === "string" ? body.message : null;
-        } catch {
-          reason = null;
-        }
-        setLink({ phase: "stopped", reason, at: Date.now() });
-        return;
-      }
-      if (es !== null && es.readyState === EventSource.CONNECTING) {
-        // The browser is already retrying, on the route's own jittered `retry:`
-        // hint. Say so; do not race it with a second timer — and do not say it
-        // at all for a routine re-establish inside the heartbeat window (see
-        // LIVE_GRACE_MS).
-        setLink((prev) =>
-          prev.at !== null && Date.now() - prev.at < LIVE_GRACE_MS
-            ? prev
-            : { phase: "reconnecting", reason: null, at: prev.at },
-        );
-        return;
-      }
-      close();
-      retry = Math.min(retry + 1, RECONNECT_STEPS);
-      setLink((prev) => ({ phase: "reconnecting", reason: null, at: prev.at }));
-      timer = setTimeout(open, RECONNECT_BASE_MS * 2 ** (retry - 1));
-    }
+    const link = createStreamLink({
+      createSource: () => new EventSource("/api/live/stream"),
+      isHidden: () => document.visibilityState === "hidden",
+      now: () => Date.now(),
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (id) => clearTimeout(id),
+      schedulePaint: (fn) => requestAnimationFrame(fn),
+      cancelPaint: (id) => cancelAnimationFrame(id),
+      random: () => Math.random(),
+      onState: setLink,
+      // Ticks live HERE and nowhere else (owner answer Q25: "ticks in memory
+      // only, exactly one persisted mark per position per day"). Nothing on
+      // this path writes to the journal.
+      onQuotes: (batch) => setTicks((prev) => mergeTicks(prev, batch)),
+    });
+    const close = () => link.close();
 
     /**
      * A hidden tab holds no stream. The disclosure promises the feed stops when
@@ -453,22 +410,21 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
         close();
-        setLink({ phase: "paused", reason: null, at: null });
+        link.pause();
       } else {
-        setLink(LINK_IDLE);
-        open();
+        link.open();
       }
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    open();
+    link.open();
 
     return () => {
-      unmounted = true;
       document.removeEventListener("visibilitychange", onVisibility);
       close();
+      link.destroy();
     };
-  }, [streaming]);
+  }, [streaming, streamKey]);
 
   /**
    * The rows as the desk shows them: the server's own wire, with whatever has
@@ -479,19 +435,18 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
 
   const accountIds = React.useMemo(() => [...new Set(rows.map((r) => r.accountId))], [rows]);
 
-  const visible = React.useMemo(() => {
-    const q = query.trim().toUpperCase();
-    const out = rows.filter(
-      (r) =>
-        (accountFilter === null || r.accountId === accountFilter) &&
-        (q === "" || r.symbol.toUpperCase().includes(q) || r.tradingsymbol.toUpperCase().includes(q)),
-    );
-    return out.sort((a, b) => compareRows(a, b, sort.key, sort.dir));
-  }, [rows, accountFilter, query, sort]);
+  const visible = React.useMemo(
+    () => visibleRows(rows, { accountFilter, query, sort }),
+    [rows, accountFilter, query, sort],
+  );
 
-  // Derived, never stored: a focus index past the end of a freshly filtered
-  // list resolves here rather than in an effect that writes state back.
-  const focused = focusIdx >= 0 && focusIdx < visible.length ? visible[focusIdx] : null;
+  // Derived, never stored: the focused row's POSITION is recomputed from its id
+  // on every render, so a re-sort moves the index and leaves the highlight on
+  // the same position. A focused row that a filter has just excluded resolves
+  // to -1 here — and j/k start again from the top — rather than in an effect
+  // that writes state back (AGENTS.md).
+  const focusIdx = focusedIndex(visible, focusId);
+  const focused = focusIdx >= 0 ? visible[focusIdx] : null;
   const expanded = React.useMemo(() => visible.find((r) => r.id === expandedId) ?? null, [visible, expandedId]);
   /**
    * The newest mark day ON SCREEN, not just the newest the SERVER printed.
@@ -520,13 +475,21 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     ? null
     : link.phase === "live" && frameAgeS !== null
       ? LIVE_STREAM_COPY.live(feed.providerId, frameAgeS)
-      : link.phase === "reconnecting"
-        ? LIVE_STREAM_COPY.reconnecting
-        : link.phase === "paused"
-          ? LIVE_STREAM_COPY.paused
-          : link.phase === "stopped"
-            ? LIVE_STREAM_COPY.stopped(link.reason ?? feed.reason ?? LIVE_STREAM_COPY.stoppedNoReason)
-            : LIVE_STREAM_COPY.connecting;
+      : link.phase === "connected"
+        ? LIVE_STREAM_COPY.connected(feed.providerId)
+        : link.phase === "reconnecting"
+          ? LIVE_STREAM_COPY.reconnecting
+          : link.phase === "paused"
+            ? LIVE_STREAM_COPY.paused
+            : link.phase === "stopped"
+              ? LIVE_STREAM_COPY.stopped(link.reason ?? feed.reason ?? LIVE_STREAM_COPY.stoppedNoReason)
+              : LIVE_STREAM_COPY.connecting;
+  // ONE polite region for the whole desk (F7), and it announces the LINK — not
+  // a price and not the frame age. `aria-live` used to sit on every Mark cell,
+  // which with the stream really connected queues one announcement per row per
+  // tick and makes a screen reader unusable. This changes only when the phase
+  // does, so what is read out is the transition.
+  const linkAnnouncement = !streaming ? "" : LIVE_STREAM_COPY.announce[link.phase];
 
   // ── The once-a-day connect prompt (owner answer Q24) ─────────────────────
   // The day key comes from the payload's own IST `today`, so the banner cannot
@@ -594,7 +557,9 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
       if (action === "row-down" || action === "row-up") {
         e.preventDefault();
         const next = nextIndex(focusIdx, visible.length, action === "row-down" ? 1 : -1);
-        setFocusIdx(next);
+        // The index is `desk-keys.ts`'s answer, unchanged; what is STORED is
+        // the row it lands on, so the next tick's re-sort cannot move it.
+        setFocusId(next >= 0 ? (visible[next]?.id ?? null) : null);
         // Moving an index moves nothing the user can see: the table is a
         // `max-h-[60vh] overflow-auto` box, and past VIRTUAL_THRESHOLD the
         // focused row is not even mounted. Each path needs its own call —
@@ -624,7 +589,9 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
         filterRef.current?.focus();
         return;
       }
-      const row = focusIdx >= 0 && focusIdx < visible.length ? visible[focusIdx] : null;
+      // The SAME row the highlight is on — both come from `focusId`, so Enter
+      // and `l` can never act on a row a tick re-sorted under the index.
+      const row = focused;
       if (row === null) return;
       if (action === "expand") {
         e.preventDefault();
@@ -636,7 +603,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, focusIdx, openLab, windowed, virtualizer, theadHeight]);
+  }, [visible, focusIdx, focused, openLab, windowed, virtualizer, theadHeight]);
 
   const marketOpen = now === null ? null : isMarketOpenIst(now);
 
@@ -663,12 +630,20 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
               staleness per row (`stalenessLabel`), and nothing here upgrades a
               delayed print into a tick. */}
           {linkLabel !== null && (
-            <span
-              data-testid="live-stream-state"
-              className={link.phase === "live" ? "text-profit" : link.phase === "stopped" ? "text-warning" : undefined}
-            >
-              {linkLabel}
-            </span>
+            <>
+              <span
+                data-testid="live-stream-state"
+                className={link.phase === "live" ? "text-profit" : link.phase === "stopped" ? "text-warning" : undefined}
+              >
+                {linkLabel}
+              </span>
+              {/* The desk's ONE live region. It carries no number at all, so a
+                  30 s clock tick cannot re-announce a state that has not
+                  changed. */}
+              <span className="sr-only" aria-live="polite" data-testid="live-stream-announce">
+                {linkAnnouncement}
+              </span>
+            </>
           )}
         </span>
 
@@ -892,7 +867,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
                   newestDay={newestDay}
                   today={data.today}
                   onToggle={() => {
-                    setFocusIdx(idx);
+                    setFocusId(r.id);
                     setExpandedId((id) => (id === r.id ? null : r.id));
                   }}
                 />
@@ -1008,7 +983,11 @@ function Row({
       </td>
       <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt.qty(row.qty)}</td>
       <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt.level(row.avgEntryP)}</td>
-      <td className="px-2 py-1.5 text-right font-mono tabular-nums" aria-live="polite">
+      {/* NO `aria-live` HERE (F7). A polite region per Mark cell was one
+          announcement per row per tick once the desk really held the stream —
+          40 rows × a 1 s poll is a screen reader that never stops talking. The
+          desk announces the LINK, once, from the strip. */}
+      <td className="px-2 py-1.5 text-right font-mono tabular-nums">
         <span className="block">{fmt.level(row.markP)}</span>
         <StalenessChip row={row} newestDay={newestDay} />
       </td>

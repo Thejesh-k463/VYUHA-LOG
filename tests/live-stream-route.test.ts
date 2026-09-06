@@ -262,6 +262,70 @@ describe("ticks are coalesced, and only a streaming provider produces them", () 
   });
 });
 
+/**
+ * A REFUSED SUBSCRIBE (fix wave 2026-09-06).
+ *
+ * `subscribe()` throwing is not hypothetical: the OpenAlgo bridge refuses when
+ * the day's broker login has expired. The route caught it, sent one `error`
+ * frame — and then started the flush interval anyway, for a subscription that
+ * never happened. Nothing can ever reach `pending`, so that timer woke four
+ * times a second for the life of the connection with nothing to send.
+ *
+ * The heartbeat DOES stay: ending the stream here would drop the client onto
+ * the `retry:` hint and reconnect it into the same refusal every 2–3 s. The
+ * client (`components/live/tracker-client.tsx`) treats the error as terminal
+ * and closes the EventSource, and that close aborts the request and tears the
+ * heartbeat down with it.
+ */
+describe("a provider that refuses to subscribe", () => {
+  it("sends one error frame, starts NO flush timer, and does not end the stream", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MARKET_HOURS);
+    selectAccount(SWING);
+
+    const capabilities: ProviderCapabilities = {
+      id: "mock",
+      label: "a bridge that is not logged in",
+      streaming: true,
+      maxSubscriptions: 10,
+      minSnapshotIntervalMs: 0,
+      depth: 0,
+      segments: ["NSE"],
+      staleness: "tick",
+      requiresDailyAuth: true,
+      egressDescription: "None. A test double.",
+    };
+    stub.provider = {
+      id: "mock",
+      capabilities,
+      snapshot: async () => new Map(),
+      subscribe: () => {
+        throw new Error("The bridge is not logged in for today.");
+      },
+      health: async () => ({ ok: true }),
+    };
+
+    try {
+      const stream = reading(await get());
+      await vi.advanceTimersByTimeAsync(10);
+
+      const errors = frames(stream.text, "error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain("not logged in");
+
+      // ONE interval, and it is the heartbeat.
+      expect(vi.getTimerCount(), "a refused subscribe must not start the flush timer").toBe(1);
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(frames(stream.text, "heartbeat"), "the pipe must still prove it is open").toHaveLength(1);
+      expect(frames(stream.text, "tick")).toHaveLength(0);
+      expect(stream.done, "the stream must not end into a reconnect loop").toBe(false);
+    } finally {
+      stub.provider = null;
+    }
+  });
+});
+
 describe("the heartbeat", () => {
   it("beats every 25 s on an idle end-of-day desk, and not before", async () => {
     vi.useFakeTimers();
@@ -499,12 +563,14 @@ describe("the day's mark is caught up on connect", () => {
     }
   });
 
-  it("does nothing at all on the second connect — the stamp is the once-a-day rule", async () => {
+  it("does nothing at all on the second connect — today's ROW is the once-a-day rule", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(AFTER_CLOSE);
     selectAccount(SWING);
-    // The stamp from the test above still stands; a reconnect (or a second
-    // window) must not overwrite the mark with a later price.
+    // TCS's row for today, written by the test above, still stands; a reconnect
+    // (or a second window) must not overwrite the mark with a later price. The
+    // rule is the ROW and not `settings.last_live_mark_date`, which is one
+    // stamp for a file that holds many account-scoped books (N1).
     stub.provider = liveProvider(999_900);
     try {
       const stream = reading(await get());

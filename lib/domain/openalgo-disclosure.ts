@@ -135,23 +135,35 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // `post(gate.creds, "multiquotes", { symbols }, signal)`) and serialised
       // at :325 (`post()` body: `JSON.stringify({ apikey: creds.apiKey,
       // ...extra })`). The key list is the OPEN positions of the selected
-      // account and nothing else (app/api/live/stream/route.ts:74-93,
-      // `openPositionKeys()`, `if (!t.isOpen) continue` — the `is_open`
-      // predicate — capped at `MAX_KEYS = 500`, that file's :40). No quantity,
+      // account and nothing else — `openPositionKeys()` in
+      // app/api/live/stream/route.ts, whose `if (!t.isOpen) continue` is the
+      // `is_open` predicate, capped at `MAX_KEYS` (500) in that same file.
+      // Identifiers, not line numbers: both moved in this wave. No quantity,
       // no average price, no stop, no P&L, no account id is in the body —
       // those columns are never read on this path.
       "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. Your quantities, entry prices, stops, P&L and account names are not in it: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
   },
   {
-    title: "One /funds request when the feed is checked",
+    title: "A /funds request when the feed is checked, and when the desk connects",
     body:
-      // `health()` posts to `/funds` once — lib/quotes/openalgo.ts:450
+      // `health()` posts to `/funds` once per call — lib/quotes/openalgo.ts:450
       // (`await post(gate.creds, "funds", {})`) — and reads nothing out of the
       // answer except that it arrived, plus the round-trip in ms (:459-460,
       // `const latencyMs = Math.max(0, now() - started)` and the `{ ok: true,
       // state: "ok", latencyMs, … }` it returns). The same probe the import
       // path's save step uses.
-      "Checking the connection calls OpenAlgo's /funds endpoint once. It is the cheapest call that proves both the address and the API key are right. Vyuha keeps nothing from the answer — no balance is stored or shown — only that the bridge replied, and how many milliseconds it took.",
+      //
+      // It is called from THREE places, not one: the connection check
+      // (`provider.health()` in app/api/live/feed/route.ts) and the desk's
+      // stream door (`provider.health()` in app/api/live/stream/route.ts, run
+      // on every open and every reconnect) and the desk's server render
+      // (`provider.health()` in components/live/load-desk.ts). The earlier wording said "once when
+      // the feed is checked", which read as once per install.
+      //
+      // OPENALGO_DISCLOSURE_VERSION stays "2": same host, same key, nothing new
+      // sent and nothing new kept — a wider statement of WHEN an already-
+      // disclosed request is made is not a new risk (see the rule above :25-28).
+      "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects. It is the cheapest call that proves both the address and the API key are right. It is the same bridge and the same key the prices come from, and nothing further is sent. Vyuha keeps nothing from the answer — no balance is stored or shown — only that the bridge replied, and how many milliseconds it took.",
   },
   {
     title: "The address is this computer unless you change it",
@@ -176,7 +188,7 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // components/settings/live-feed-card.tsx:55-56, which is pinned by
       // tests/live-feed-copy.test.ts — two statements of one behaviour must not
       // drift, so tests/openalgo-disclosure.test.ts holds them together.
-      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. On a weekend the button refuses — there is no session to close. Every figure derived from that mark is dated to the day it belongs to.",
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; exchange holidays are not modelled in this version. Every figure derived from that mark is dated to the day it belongs to.",
   },
   {
     title: "Your broker's API session expires every day",
@@ -192,8 +204,8 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // (:412-414, the bare `} catch {` in `poll()` whose only content is the
       // comment "one failed poll is not the end of the subscription", closing
       // into `} finally {`), so the last price stays, labelled with its
-      // own date by `stalenessLabel()` (components/live/tracker-client.tsx:207,
-      // the `<Badge>` inside `StalenessChip` — grep the name, that file moves).
+      // own date by `stalenessLabel()` (the `<Badge>` inside `StalenessChip`,
+      // components/live/tracker-client.tsx — grep the name, that file moves).
       "The broker session behind OpenAlgo expires every day and has to be signed in again at OpenAlgo's own screen; that is the broker's rule, not Vyuha's. Until it is, prices stop arriving — the desk keeps the last mark it had, labelled with the date it belongs to, rather than blanking or guessing.",
   },
 ];

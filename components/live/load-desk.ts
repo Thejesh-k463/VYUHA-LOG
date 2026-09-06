@@ -225,8 +225,8 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   // The first is `app/api/live/stream/route.ts`, on connect. This one covers
   // the desk that renders after 15:30 without a stream ever opening — a
   // reload, a browser that dropped the EventSource, a tab opened at 16:10.
-  // Whichever runs first writes; `settings.last_live_mark_date` makes the
-  // other a no-op the same IST day, and `catchUpDailyMark()` is a no-op for a
+  // Whichever runs first writes; the per-(symbol, IST day) row in mtm_prices
+  // makes the other a no-op the same day (the stamp is display-only), and `catchUpDailyMark()` is a no-op for a
   // non-streaming (or mock) provider, before the close and on a weekend. It
   // never throws: a failed mark must cost the mark, never the desk.
   //

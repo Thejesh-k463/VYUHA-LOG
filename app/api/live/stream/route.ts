@@ -218,18 +218,27 @@ export async function GET(req: Request): Promise<Response> {
       if (provider.capabilities.streaming && marketOpen && keys.length > 0) {
         try {
           unsubscribe = provider.subscribe(keys, (q) => pending.set(quoteKeyId(q.key), q), req.signal);
+          // INSIDE the try, because a flush timer without a subscription is a
+          // timer that can never have anything to flush: `pending` is filled
+          // only by the callback above, so a refused subscribe used to leave an
+          // interval waking 4× a second for the life of the connection.
+          flushTimer = setInterval(() => {
+            if (pending.size === 0) return;
+            const batch = [...pending.values()];
+            pending.clear();
+            send("tick", { provider: provider.id, quotes: batch });
+          }, COALESCE_MS);
         } catch (e) {
+          // The stream is NOT ended here. Ending it would drop the client onto
+          // the `retry:` hint and reconnect it into the same refusal every 2–3
+          // seconds; the heartbeat below keeps the pipe honest instead, and the
+          // client treats the error as terminal and closes the EventSource —
+          // which aborts the request and tears the heartbeat down with it.
           send("error", {
             provider: provider.id,
             message: e instanceof Error ? e.message : "The quote provider refused to subscribe.",
           });
         }
-        flushTimer = setInterval(() => {
-          if (pending.size === 0) return;
-          const batch = [...pending.values()];
-          pending.clear();
-          send("tick", { provider: provider.id, quotes: batch });
-        }, COALESCE_MS);
       }
 
       beatTimer = setInterval(() => {

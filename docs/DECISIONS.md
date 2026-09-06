@@ -3953,3 +3953,65 @@ at the stated 2%/1% pair; two sub-claims corrected without changing a verdict). 
   the daily session expiry SEBI-mandated; the breach banner's "not live quotes" predates the feed mark.
 - **Left as an operator call:** the `react-hooks/incompatible-library` warning on `useVirtualizer`;
   `data-table.tsx` silences it with `"use no memo"`, which changes React Compiler behaviour for the component.
+
+## 2026-09-06 — v4.1.0 fix-wave re-audit (`66aa319..4b55620`, CI SUCCESS on 4b55620): 12 confirmed → 12 after the skeptic → fix wave 2
+
+Five Fable auditors, not four: the hand-off said money had no surface, but `lib/live/apply-ticks.ts` re-computes
+`openRPpm`, `unrealisedP` and the stop distances on every tick, which is the money dimension by definition, so it
+ran (22 candidates, 1 confirmed — every recomputed figure matches its server-side origin in `tracker-row.ts`
+expression for expression). Schema-migrations truly had no surface (no drizzle file in the range) and was not run.
+Totals: 100 candidates → 14 confirmed (money 1, security 1, ui 4, test-integrity 2, docs 6); the holiday
+overclaim was found independently by three dimensions and counted once → 12; the skeptic kept all 12 (0 refuted),
+correcting two details (the source-regex tests sit at `live-tracker.test.ts:535-554`, not `:449-468`; the e2e count
+was 92 declared, not 93). Three owner pop-ups, all the recommended option:
+
+- **"Never on a day the market did not trade" was a weekend-only guard.** `shouldPersistMark()` refuses Saturday,
+  Sunday, before-15:30 and already-marked; no exchange-holiday model exists anywhere in the app. On a weekday
+  holiday after 15:30 both automatic doors would write the bridge's carried-forward LTP under the holiday's date —
+  the same "number right, date wrong" class fixed for Saturdays one wave earlier, on a Tuesday. **Ruling: the docs
+  narrow to "weekend"** on all five surfaces (README, client README, setup guide §9, CHANGELOG, STATE); disclosure
+  item 6 and PRIVACY already said weekend. *Rejected: bundling an NSE holiday calendar* — a dated file that goes
+  stale every year and needs its own refresh rule; it is a 4.2 candidate beside the broker adapters. Recorded as
+  known-open: a holiday mark is written with the prior close's price; the value is right, the date is not.
+- **The "automatic close-of-session mark" fired only on a render or a stream connect after 15:30.** A desk opened at
+  10:00 and left visible through the close wrote nothing, and the next morning `before-close` refused the new date,
+  so that day's mark never existed. **Ruling: the desk reconnects its stream once at 15:31 IST while it is open**
+  (`lib/live/stream-link.ts` `msUntilCloseReopen()`, jittered 0–5 s, once per IST day, never armed for tomorrow) so
+  the existing connect door writes the mark through `shouldPersistMark()` unchanged. *Rejected: rewording the
+  docs to "the next time the desk opens"* — a desk left open all day is the common case for the feature's user.
+- **`settings.last_live_mark_date` was one global stamp gating account-scoped writes.** With two accounts the first
+  door after 15:30 stamped the day and the other account's open positions got no automatic mark. **Ruling: the
+  already-marked decision is per (symbol, IST date) row in `mtm_prices`**; the stamp is written forward-only as the
+  banner's display value and is never consulted as a gate. Consequence, deliberate: a symbol that already holds a
+  row for today from another writer (a typed mark) keeps it — first writer wins, the live print does not overwrite.
+  *Rejected: recording it for 4.2* — the fix wave had just made the write automatic, which turned a stale button
+  into a silent per-account gap.
+- **Fixed without a ruling:** the stream effect keyed on `[streaming]` only, so an account switch (`router.refresh()`
+  keeps `TrackerClient` mounted — `app/layout.tsx` keys the palette on `selectedAccountId` for exactly this hazard)
+  left the EventSource on the old account's key set under a "Live" label — now keyed on `streamKeyOf()` (account +
+  key-set digest, so the aggregate view gaining a position re-opens too); keyboard focus was an INDEX into a list
+  the default `unrealisedP` sort re-orders on every tick, so Enter and `l` acted on the row now under the index —
+  focus is by row id like `expandedId`; every frame including `heartbeat` set the link phase to `live`, so "Feed
+  stopped — …" was overwritten within 25 s and a heartbeat-only stream outside 09:00–15:40 read "Live" — `stopped`
+  is terminal and a link with no quotes yet reads "Connected · openalgo · no prices yet" (it states the connection
+  and the absence, not a reason: the desk models the clock, not holidays); `aria-live="polite"` on every Mark cell
+  fired N announcements per 250 ms frame — one region on the strip announces link transitions only; the backoff,
+  hidden-tab and unmount rules were asserted as source regexes — the lifecycle moved into a pure module with every
+  browser edge injected and is driven by a fake source (2 s / 4 s / 8 s spacing, close counts, zero sources while
+  hidden, zero timers after destroy); the route-level "button waives the clock" contract had no test (every
+  `action:"mark"` post ran at Friday 16:00 or on a Saturday, so deleting `ignoreClock` left 33 tests green) — one
+  post at Friday 12:00 now reds without it; the refused-subscribe path started a flush interval over a map nothing
+  could fill — timer only after a successful subscribe, heartbeat kept so the client's terminal `stopped` closes
+  the pipe instead of reconnecting into the same refusal every 2–3 s.
+- **Consent copy:** "one `/funds` request when the connection is checked" was literally false — `health()` posts
+  `/funds` uncached from every desk render, every stream (re)connect and the connection check. Reworded on every
+  surface to "when the feed is checked, and when the desk connects"; `OPENALGO_DISCLOSURE_VERSION` stays "2" under
+  the rule at `openalgo-disclosure.ts:25-28` (same host, same key, nothing new sent or kept — a wider statement of
+  WHEN an already-disclosed request happens is not a new risk). The privacy-feed guard now reds on an unqualified
+  count beside `/funds`; its first draft passed with the fix reverted because `visible()` collapses the whole
+  `OPENALGO_FEED_ITEMS` list into one "paragraph" and item 2's "when the Live Desk opens" excused a sentence four
+  items away — the window is now 200 characters around the path, and the reason is in the test's header.
+- **Counts and citations:** e2e flows 91 → 93 in 29 specs (the README was already one behind at 4b55620; fix wave
+  2 adds the error-frame case); the STATE §2 header still described an uncommitted tree; three comment citations
+  had shifted by this range's own import line — identifiers only from here on; `egressDescription` still pointed
+  at "Import → OpenAlgo" while every 4.1 surface says Settings → Integrations.

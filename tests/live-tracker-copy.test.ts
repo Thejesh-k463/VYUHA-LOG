@@ -357,13 +357,44 @@ describe("the live stream's connection line says what it can support", () => {
     );
   });
 
+  it("says CONNECTED, not Live, for a pipe that has carried no prices", () => {
+    // The route heartbeats every 25 s whether or not it ever subscribed, and
+    // outside 09:00–15:40 it never subscribes at all — so a heartbeat counted
+    // as a live frame printed `Live · openalgo · 3 s` at 21:00 with no poll
+    // running behind it. `tests/live-stream-link.test.ts` drives which frame
+    // earns which phase; this is what the earned phase SAYS.
+    expect(LIVE_STREAM_COPY.connected("openalgo")).toBe("Connected · openalgo · no prices yet");
+    expect(LIVE_STREAM_COPY.connected("openalgo")).not.toContain("Live");
+    // It claims nothing about WHY there are no prices: the desk ships no
+    // exchange calendar, so "outside market hours" is not a fact it holds.
+    expect(LIVE_STREAM_COPY.connected("openalgo")).not.toMatch(/market hours|holiday|closed/i);
+  });
+
+  it("announces the LINK's transitions, with no number and no price (F7)", () => {
+    // One polite region on the strip replaced `aria-live` on every Mark cell.
+    // Every string here is constant per phase, so a 30 s clock tick cannot
+    // re-announce a state that has not changed.
+    expect(LIVE_STREAM_COPY.announce.idle, "the state a page mounts in is not an event").toBe("");
+    expect(LIVE_STREAM_COPY.announce.connected).toBe("Feed connected.");
+    expect(LIVE_STREAM_COPY.announce.live).toBe("Feed connected.");
+    expect(LIVE_STREAM_COPY.announce.reconnecting).toBe("Feed reconnecting.");
+    expect(LIVE_STREAM_COPY.announce.paused).toBe("Feed paused.");
+    expect(LIVE_STREAM_COPY.announce.stopped).toBe("Feed stopped.");
+    for (const line of Object.values(LIVE_STREAM_COPY.announce)) {
+      expect(/\d/.test(line), `${line} carries a number, so it re-announces`).toBe(false);
+      expect(BANNED.test(line), line).toBe(false);
+    }
+  });
+
   it("never upgrades a delayed print into a tick, and never names a price", () => {
     const lines = [
       LIVE_STREAM_COPY.live("openalgo", 3),
+      LIVE_STREAM_COPY.connected("openalgo"),
       LIVE_STREAM_COPY.connecting,
       LIVE_STREAM_COPY.reconnecting,
       LIVE_STREAM_COPY.paused,
       LIVE_STREAM_COPY.stopped(LIVE_STREAM_COPY.stoppedNoReason),
+      ...Object.values(LIVE_STREAM_COPY.announce),
     ];
     for (const line of lines) {
       expect(BANNED.test(line), line).toBe(false);
@@ -382,6 +413,9 @@ describe("the live stream's connection line says what it can support", () => {
     const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
     expect(src).toMatch(/const linkLabel = !streaming\s*\?\s*null/);
     expect(src).toContain('data-testid="live-stream-state"');
+    // …and the `connected` line is really reachable from the strip, or the
+    // heartbeat-only state falls through to "Connecting…" for ever.
+    expect(src).toContain("LIVE_STREAM_COPY.connected(feed.providerId)");
   });
 });
 

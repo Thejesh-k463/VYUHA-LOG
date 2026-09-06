@@ -830,3 +830,50 @@ test("a tick on the wire reaches the mark cell, and the strip says the pipe is l
 
   await page.unroute("**/api/live/stream**");
 });
+
+/**
+ * F6 — a stopped feed stays stopped, however long the route keeps heartbeating.
+ *
+ * `app/api/live/stream/route.ts` keeps its 25 s heartbeat running AFTER it has
+ * sent a named `error` frame (a provider that refused to subscribe), and the
+ * first consumer set `phase: "live"` on every frame it received — so "Feed
+ * stopped — <the provider's own reason>" was overwritten by "Live · mock · 0 s"
+ * on the very next beat, and the desk claimed a pipe it did not have.
+ *
+ * The body below is that exact sequence on one connection: `error`, then a
+ * heartbeat. `retry: 60000` keeps the browser from re-establishing inside the
+ * test — a NEW connection is allowed to clear the verdict, and would make this
+ * assertion flap rather than fail.
+ */
+test("a heartbeat after an error frame does not un-stop the feed", async ({ page }) => {
+  await gotoDesk(page);
+
+  const REASON = "OpenAlgo is not signed in to your broker.";
+  await page.route("**/api/live/stream**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store" },
+      body: [
+        "retry: 60000\n\n",
+        `event: error\ndata: ${JSON.stringify({ provider: STREAMING_PROVIDER, message: REASON })}\n\n`,
+        `event: heartbeat\ndata: ${JSON.stringify({ provider: STREAMING_PROVIDER, t: Date.now() })}\n\n`,
+      ].join(""),
+    });
+  });
+
+  pinStreamingProvider();
+  await gotoHydrated(page, "/live");
+
+  const strip = page.getByTestId("live-stream-state");
+  await expect(strip).toHaveText(`Feed stopped — ${REASON}`);
+  // Hold it: the heartbeat is already in the same body, and nothing that
+  // arrives on this connection may upgrade the phase.
+  await page.waitForTimeout(1_000);
+  await expect(strip).toHaveText(`Feed stopped — ${REASON}`);
+  await expect(strip).not.toContainText("Live");
+
+  // The desk's ONE live region says the same thing, once, with no number in it.
+  await expect(page.getByTestId("live-stream-announce")).toHaveText("Feed stopped.");
+
+  await page.unroute("**/api/live/stream**");
+});

@@ -34,8 +34,10 @@ no dependency changes — `package-lock.json` is untouched.*
   request body is your API key and the **trading symbols and exchanges of your
   open positions, at most 500 of them, and nothing else**: no quantity, no
   entry price, no stop, no P&L, no account. Checking the connection calls
-  `/funds` once and keeps nothing from the answer but that it arrived and how
-  long it took. Polling starts with the desk and stops with it. **No new
+  `/funds` once, and so does the desk each time it opens and each time its
+  price stream reconnects — same host, same key, nothing further sent — and
+  Vyuha keeps nothing from the answer but that it arrived and how long it took.
+  Polling starts with the desk and stops with it. **No new
   network host is added by this release.**
 
 - **The desk consumes the stream, so the marks on screen actually move.** When
@@ -49,11 +51,15 @@ no dependency changes — `package-lock.json` is untouched.*
   per position per IST day** is what reaches your journal — the last price of
   the session, or the price when you press *Save today's mark*, whichever comes
   first. The close-of-session mark is now written **by the app itself**, once,
-  after 15:30 IST: it used to have no caller at all, so the only mark that ever
+  after 15:30 IST: the desk reconnects its stream once at 15:31 IST while it is
+  open and the connect door writes it, or it is written the next time the desk
+  opens that day. It used to have no caller at all, so the only mark that ever
   reached the journal was one you pressed the button for. And *Save today's
-  mark* **no longer overrides the refusal to write on a non-trading day** — it
+  mark* **no longer overrides the refusal to write at the weekend** — it
   waives the clock, which is what it is for, and nothing else; a Saturday press
-  used to stamp Friday's price under Saturday's date. A failed poll leaves the
+  used to stamp Friday's price under Saturday's date. Whether a mark already
+  exists is decided **per symbol per IST day**, so a second account's open
+  positions get their own mark on the same day. A failed poll leaves the
   last mark in place, labelled with the date it belongs to, rather than blanking
   or guessing.
 
@@ -64,13 +70,36 @@ no dependency changes — `package-lock.json` is untouched.*
   produce five of them. It states the problem and where to fix it, and nothing
   else.
 
+- **Fix wave 2 — what the desk does, and what the docs said it did.** The
+  stream now follows the account switch instead of pricing the book you left;
+  keyboard focus follows the ROW rather than its index, so `j`/`k` stay on the
+  position you were on when the list reorders; a stopped feed stays reported as
+  stopped instead of reading as connected; and a screen reader hears **one
+  announcement per link change** instead of one per price. The strip reads
+  **Live** only while quotes are arriving — a heartbeat-only link outside
+  09:00–15:40, or one left after a refused subscribe, is no longer labelled
+  Live. The close-of-session mark gains a trigger you can observe: the desk
+  **reconnects its stream once at 15:31 IST** while it is open, and the connect
+  door writes the mark — so "written by the app itself" holds whether or not you
+  press anything, and if the desk is shut at 15:31 the mark is written the next
+  time you open it that day. Already-marked is decided **per symbol per IST
+  day**, so a second account's open positions get their own mark on the same
+  day. Two copy corrections ride with it. The write refusal is a **weekend**,
+  and the docs said "on a non-trading day": there is no exchange-holiday
+  calendar in this version, so the narrower word is the true one and a holiday
+  calendar is a 4.2 candidate. And `/funds` is posted on **every** connection
+  check and on **every** desk open or stream reconnect, where the docs said
+  "once" — the same host with the same key, nothing further sent and nothing
+  further kept, which is why `OPENALGO_DISCLOSURE_VERSION` stays `"2"`.
+
 - **Disclosure v2 — every install re-acknowledges before anything pulls or
   polls.** `OPENALGO_DISCLOSURE_VERSION` moves from `"1"` to `"2"`, and because
   the check compares with `===`, a stored `"1"` is refused with no extra code.
   The dialog gains its own **"What the live price feed does"** section
   (`OPENALGO_FEED_ITEMS`, `lib/domain/openalgo-disclosure.ts`): the feed is a
   second switch and not part of the pull, the cadence and where you set it, what
-  each request carries and what it does not, the single `/funds` probe, the
+  each request carries and what it does not, the `/funds` probe and when it is
+  sent, the
   loopback default, that ticks are never written, and the daily broker
   re-sign-in. `docs/client/PRIVACY.md` **item 3 is widened rather than joined by
   a fifth** — the poll goes to the same broker bridge, only once you switch it

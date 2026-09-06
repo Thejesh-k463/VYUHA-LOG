@@ -23,12 +23,15 @@ import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type
  * that same precedence — an import-time column, not a per-day mark store — so
  * writing it would be both narrower and destructive of import data.)
  *
- * IDEMPOTENCE, TWICE OVER:
- *   1. `settings.last_live_mark_date` (migration 0067) — a second call on the
- *      same IST day does nothing at all;
- *   2. the write itself is a DELETE of (symbol, as_of_date) then one INSERT,
- *      so even with the stamp lost or restored from another machine, one
- *      position can hold at most one live mark per day.
+ * IDEMPOTENCE IS THE ROW, NOT A STAMP (N1). The "already marked" question is
+ * asked per (symbol, IST date) row of `mtm_prices` — the exact key the write is
+ * made on — and the write itself is a DELETE of (symbol, as_of_date) then one
+ * INSERT. `settings.last_live_mark_date` (migration 0067) is kept as the
+ * BANNER value (the newest day this machine wrote) and is never a gate:
+ * both doors mark only the SELECTED account's open positions
+ * (`openPositionKeys()`, invariant 8), so one global stamp meant the first door
+ * after 15:30 stamped the day for the whole file and every OTHER account's open
+ * positions were told "already saved" and got no mark at all that day.
  *
  * MONEY: `mtm_prices.price` is REAL RUPEES — a per-unit price, the documented
  * exception in invariant 1. Quotes carry paise, so `fromPaise()` converts
@@ -109,6 +112,13 @@ export interface PersistMarkDecision {
  * persisting one would make "yesterday's close" mean 11:04), and a day that
  * already has its mark. Exchange holidays are not modelled anywhere in this
  * app; on a holiday the feed has nothing to persist, so nothing is written.
+ *
+ * `lastMarkDate` IS THE CALLER'S OWN FACT, and the signature keeps it because
+ * it is still worth asking (the Settings card holds the banner date, and a
+ * caller that already knows a set is marked can refuse without touching the
+ * database). `persistDailyMarks()` no longer passes the global stamp here: it
+ * asks the same question per (symbol, IST date) ROW, because the stamp is one
+ * value for a file that holds many accounts (N1).
  */
 export function shouldPersistMark(now: Date, lastMarkDate: string | null | undefined): PersistMarkDecision {
   const date = todayIstIso(now);
@@ -138,6 +148,8 @@ export interface PersistMarkResult {
   marked: number;
   reason: string;
   date: string;
+  /** The rule that refused, when one did — the same names `shouldPersistMark()` uses. */
+  code?: PersistMarkRefusal | null;
 }
 
 export interface PersistMarkOptions {
@@ -173,27 +185,21 @@ export async function persistDailyMarks(
     .all()[0];
   if (!row) return { written: false, marked: 0, reason: "No settings row.", date: todayIstIso(now) };
 
-  const decision = shouldPersistMark(now, row.lastLiveMarkDate);
+  // `null`, not the stamp: the day guard is the ROW, decided per symbol below
+  // (N1). What is asked here is the pure half — the weekend and the clock.
+  const decision = shouldPersistMark(now, null);
   const date = decision.date;
   if (!decision.ok) {
     // The once-a-day rule is never waived; the CLOCK is, on request, and
     // nothing else (M1).
     //
-    // ORDER MATTERS IN THE ANSWER, not just in the outcome: shouldPersistMark()
-    // reports the clock first, so a second press of "Save today's mark" at
-    // 11:04 would be told "the session has not closed yet" — true, and not the
-    // reason it was refused. The day guard is therefore checked here on its
-    // own, so the message the user reads is the rule that actually stopped it.
-    if (row.lastLiveMarkDate === date) {
-      return { written: false, marked: 0, reason: alreadyMarkedReason(date), date };
-    }
     // `ignoreClock` used to be a blanket fall-through, which waived the WEEKEND
     // refusal too — `shouldPersistMark()` reports it through the same
     // `ok: false`. A Saturday press then wrote a mark dated Saturday, and every
     // "yesterday's close" read through `getMtmMap()` resolved to a day the
     // market never traded. The waiver is now named: only `before-close`.
     const waived = opts.ignoreClock === true && decision.code === "before-close";
-    if (!waived) return { written: false, marked: 0, reason: decision.reason, date };
+    if (!waived) return { written: false, marked: 0, reason: decision.reason, date, code: decision.code };
   }
 
   // One row per POSITION per day: keyed on (symbol, as_of_date), delete then
@@ -212,10 +218,27 @@ export async function persistDailyMarks(
     return { written: false, marked: 0, reason: "The feed had no usable price to save.", date };
   }
 
+  // THE ONCE-A-DAY RULE, ASKED PER ROW (N1). A symbol that already holds
+  // today's mark is skipped — a second connect, a second window and a second
+  // press all change nothing — and the symbols that do NOT are written, which
+  // is what makes the second account of the day get its mark at all. It is
+  // also what stops a live print from overwriting a mark the user typed into
+  // the risk dialog today: whoever wrote the row first, keeps it.
   let marked = 0;
   db.transaction((tx) => {
     for (const q of usable) {
       const symbol = q.key.symbol.trim().toUpperCase();
+      const held = tx
+        .select({ id: mtmPrices.id })
+        .from(mtmPrices)
+        .where(and(eq(mtmPrices.symbol, symbol), eq(mtmPrices.asOfDate, date)))
+        .limit(1)
+        .all()[0];
+      if (held) continue;
+      // Delete-then-insert stays even though the SELECT above says there is
+      // nothing to delete: it costs nothing, and it is what keeps "one row per
+      // symbol per day" true if a duplicate pair ever reached this table by
+      // another road (the SELECT would only ever see one of them).
       tx.delete(mtmPrices).where(and(eq(mtmPrices.symbol, symbol), eq(mtmPrices.asOfDate, date))).run();
       tx.insert(mtmPrices)
         .values({
@@ -227,8 +250,16 @@ export async function persistDailyMarks(
         .run();
       marked++;
     }
-    tx.update(settings).set({ lastLiveMarkDate: date }).where(eq(settings.id, row.id)).run();
+    // The BANNER value, and only that: the newest day this file has written.
+    // Never moved backwards, and never written on a day that wrote no row.
+    if (marked > 0 && (!row.lastLiveMarkDate || row.lastLiveMarkDate < date)) {
+      tx.update(settings).set({ lastLiveMarkDate: date }).where(eq(settings.id, row.id)).run();
+    }
   });
+
+  if (marked === 0) {
+    return { written: false, marked: 0, reason: alreadyMarkedReason(date), date, code: "already-marked" };
+  }
 
   const { recordAudit } = await import("@/lib/audit");
   recordAudit({
@@ -277,8 +308,9 @@ export function providerMayAutoMark(capabilities: { id: ProviderId; streaming: b
  *
  * TWO CALL SITES, ONE OUTCOME. The SSE route calls this on connect and
  * `components/live/load-desk.ts` calls it on the desk's server render;
- * whichever runs first writes, and `settings.last_live_mark_date` makes the
- * other a no-op the same day. Neither passes `ignoreClock`: the automatic path
+ * whichever runs first writes each open symbol's row for the IST day, and that
+ * per-(symbol, day) row makes the other a no-op the same day (the stamp is
+ * display-only, never the gate). Neither passes `ignoreClock`: the automatic path
  * IS the 15:30 rule.
  *
  * NEVER THROWS. It is called on the path that renders the desk and on the path

@@ -176,15 +176,21 @@ describe("persistDailyMarks — rupees, once a day, never mid-session", () => {
     expect(marks().map((m) => m.price)).toEqual([3025.75]);
   });
 
-  it("holds ONE row per (symbol, day) even with the stamp lost — delete, then insert", async () => {
-    // The second guard on its own: a restored or blanked stamp must not be
-    // able to leave two marks for one position on one day.
+  it("holds ONE row per (symbol, day) even with the stamp lost — the ROW is the guard (N1)", async () => {
+    // The stamp is a BANNER value, not the rule: a blanked or restored stamp
+    // (another machine's backup, a fresh install reading the same journal)
+    // must not be able to leave two marks for one position on one day, nor
+    // overwrite the price already written for it.
+    //
+    // Until N1 this same call answered `written: true` and rewrote the row,
+    // because the stamp was the gate and the stamp was gone.
     t.db.update(t.schema.settings).set({ lastLiveMarkDate: null }).run();
     const r = await persist.persistDailyMarks([quote("TCS", 3040.5)], { now: AFTER_CLOSE });
-    expect(r.written).toBe(true);
+    expect(r.written).toBe(false);
+    expect(r.code).toBe("already-marked");
     const rows = marks().filter((m) => m.symbol === "TCS" && m.asOfDate === "2026-09-04");
     expect(rows).toHaveLength(1);
-    expect(rows[0].price).toBe(3040.5);
+    expect(rows[0].price).toBe(3025.75);
   });
 
   it("refuses mid-session unless the user asked — and then still only once a day", async () => {
@@ -277,5 +283,67 @@ describe("persistDailyMarks — rupees, once a day, never mid-session", () => {
       .get() as { summary: string; source: string } | undefined;
     expect(audit?.summary).toContain("2 positions marked");
     expect(audit?.source).toBe("openalgo");
+  });
+});
+
+/**
+ * N1 — TWO ACCOUNTS, ONE DAY.
+ *
+ * `settings.last_live_mark_date` is ONE global stamp, while both doors mark
+ * only the SELECTED account's open positions (`openPositionKeys()` is scoped by
+ * `getSelectedAccountId()`, invariant 8). So the first door to run after 15:30
+ * stamped the day for the whole file, and every OTHER account's open positions
+ * were then told "already saved" and got no automatic mark at all that day —
+ * silently, and for as long as the two books were used on the same machine.
+ *
+ * The rule is per (symbol, IST date) ROW in `mtm_prices`, which is the thing
+ * the write is actually keyed on. The stamp survives as the banner's "last
+ * saved mark" value (the newest day written), never as a gate.
+ */
+describe("two accounts on one day — the ROW is the once-a-day rule, not one global stamp (N1)", () => {
+  const doorFor = async (accountId: number, price: number) => {
+    t.db.update(t.schema.settings).set({ selectedAccountId: accountId }).run();
+    const keys = await persist.openPositionKeys();
+    return { keys, result: await persist.persistDailyMarks(keys.map((k) => quote(k.symbol, price)), { now: AFTER_CLOSE }) };
+  };
+
+  it("marks the second account too, after the first account has been marked the same day", async () => {
+    clearStamp();
+
+    const a = await doorFor(SWING, 3025.75);
+    expect(a.keys.map((k) => k.symbol)).toEqual(["TCS"]);
+    expect(a.result.written).toBe(true);
+    expect(stamp()).toBe("2026-09-04");
+
+    // The account switch, and the door runs again. Under the global stamp this
+    // came back `written: false` — "Today's mark is already saved" — and the
+    // Long term book carried no mark for the day at all.
+    const b = await doorFor(LONG_TERM, 1499.9);
+    expect(b.keys.map((k) => k.symbol)).toEqual(["INFY"]);
+    expect(b.result.written, "the other account's open positions got no mark for the day").toBe(true);
+    expect(b.result.marked).toBe(1);
+
+    expect(marks().map((m) => [m.symbol, m.price]).sort()).toEqual([
+      ["INFY", 1499.9],
+      ["TCS", 3025.75],
+    ]);
+  });
+
+  it("and running BOTH doors a second time writes nothing more — one row per symbol per day", async () => {
+    const a = await doorFor(SWING, 9999);
+    expect(a.result.written).toBe(false);
+    expect(a.result.reason).toContain("already saved");
+    const b = await doorFor(LONG_TERM, 8888);
+    expect(b.result.written).toBe(false);
+    expect(b.result.reason).toContain("already saved");
+
+    // The stale prices never reached the journal, and there is still exactly
+    // one row per symbol for the day.
+    expect(marks().map((m) => [m.symbol, m.price]).sort()).toEqual([
+      ["INFY", 1499.9],
+      ["TCS", 3025.75],
+    ]);
+    expect(stamp()).toBe("2026-09-04");
+    t.db.update(t.schema.settings).set({ selectedAccountId: SWING }).run();
   });
 });

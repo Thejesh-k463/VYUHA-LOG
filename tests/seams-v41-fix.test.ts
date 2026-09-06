@@ -847,7 +847,7 @@ describe("SEAM 7 · the docs describe the code that shipped", () => {
     expect(read("docs", "client", "README.md")).toContain("The close-of-session mark is written by the app itself");
     // …and the non-trading-day refusal both docs claim is the `weekend` code.
     expect(log).toContain("non-trading day");
-    expect(read("docs", "client", "README.md")).toContain("neither of them writes anything on a day the market did not trade");
+    expect(read("docs", "client", "README.md")).toContain("neither of them writes anything at the weekend");
     expect(persist.shouldPersistMark(SATURDAY, null).code).toBe("weekend");
 
     // The help entry says the same thing to the user, in its own words.

@@ -329,9 +329,22 @@ ZMQ_PORT=5556</code></pre></li>
                               key list = open positions of the selected account,
                               app/api/live/stream/route.ts, openPositionKeys(),
                               capped at MAX_KEYS = 500
-    • /funds once             :450 (health(): await post(gate.creds, "funds", {}))
-                              and the answer discarded at :459-460 — only the
-                              round trip in ms is kept
+    • /funds on a check AND   :450 (health(): await post(gate.creds, "funds", {}))
+      on every desk/stream    and the answer discarded at :459-460 — only the
+      connect                 round trip in ms is kept. Three callers, not one:
+                              provider.health() in app/api/live/feed/route.ts
+                              (the connection check) and provider.health() in
+                              app/api/live/stream/route.ts (every open and
+                              every reconnect) and provider.health() in
+                              components/live/load-desk.ts (every desk
+                              render). Same host, same key, nothing
+                              further sent — which is why the disclosure
+                              version does not move.
+    • the close-of-session    app/api/live/stream/route.ts writes it through
+      mark                    shouldPersistMark()/persistDailyMarks() on a connect at
+                              or after 15:30 IST; the desk reconnects once at
+                              15:31 IST while it is open. Already-marked is
+                              decided per symbol per IST day.
     • loopback default        lib/domain/openalgo-disclosure.ts
                               OPENALGO_DEFAULT_HOST; the poll's only host is
                               normalizeHost(creds.host) at :317
@@ -362,7 +375,9 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
   <li><b>What is sent.</b> Your OpenAlgo API key and the trading symbols and exchanges of the
     positions you have open — at most 500 of them. Quantity, entry price, stop, P&amp;L and account
     name are not in the request. Checking the connection calls <code>/api/v1/funds</code> once, and
-    Vyuha keeps nothing from that answer except that it arrived.</li>
+    the desk calls it again each time it opens and each time its price stream reconnects — the same
+    host and the same key, nothing further sent. Vyuha keeps nothing from that answer except that
+    it arrived and how long it took.</li>
   <li><b>Where it goes.</b> <code>http://127.0.0.1:5000</code> by default — your own machine talking
     to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to
     that machine every few seconds while the desk is open.</li>
@@ -371,8 +386,13 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     leave or switch to another tab, so nothing polls behind your back.</li>
   <li><b>What is stored.</b> Prices refresh on screen only. Ticks are never written to your journal;
     <b>one mark per position per day</b> is saved — written once by itself after the close, or when
-    you press <b>Save today's mark</b>, whichever comes first. On a day the market did not trade
-    nothing is written at all, and the button does not override that.</li>
+    you press <b>Save today's mark</b>, whichever comes first. The desk writes the close-of-session
+    one by reconnecting its price stream once at <b>15:31 IST</b> while it is open, or the next time
+    you open the desk that day. Whether a mark already exists is decided per symbol per IST day, so
+    a second account's open positions get their own mark on the same day. <b>On a Saturday or a
+    Sunday nothing is written at all, and the button does not override that.</b> The refusal is the
+    weekend and only the weekend: <b>exchange holidays are not modelled in this version</b>, so on a
+    weekday the exchange is shut the mark is written from the last price the bridge gave.</li>
   <li><b>The daily login still applies</b> (<a href="#daily">section 6</a>): the broker session
     behind OpenAlgo expires every day and has to be signed in again — that is the broker's rule, not
     Vyuha's. Until it is, prices stop arriving and the desk keeps the last mark it had. When the

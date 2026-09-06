@@ -254,10 +254,155 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
     expect(sheet).toMatch(/one mark per position per day/i);
   });
 
+  it("both say the /funds probe is not a one-off", () => {
+    expect(privacy).toMatch(/each time the desk opens or its price stream reconnects/);
+    expect(sheet).toMatch(/each time it opens and each time its price stream reconnects/);
+  });
+
   it("the disclosure version the privacy copy describes is the one on file", () => {
     // A privacy sheet describing a poll, beside a consent version that never
     // mentioned one, is how an install ends up polling on an acceptance of a
     // different statement. "2" is what re-prompts every v1 install.
     expect(OPENALGO_DISCLOSURE_VERSION).toBe("2");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   "/funds ONCE" IS A CLAIM ABOUT A COUNT, AND IT WAS WRONG (fix wave 2)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every surface said some version of "one /funds request when the connection
+   is checked". `health()` does post `/funds` exactly once per call — that part
+   was true — but it has TWO callers, not one: `provider.health()` in
+   app/api/live/feed/route.ts (the connection check the user presses) and
+   `provider.health()` in app/api/live/stream/route.ts, which runs on every
+   desk open and every stream reconnect. A user who reads "once when the
+   connection is checked" and then watches their bridge's access log sees a
+   request they were told would not happen, and a privacy sheet that is wrong
+   about a request is worse than one that never mentioned it.
+
+   Nothing new is SENT — same host, same key, nothing kept but that it replied
+   and how long it took — so `OPENALGO_DISCLOSURE_VERSION` stays "2" (the rule
+   at lib/domain/openalgo-disclosure.ts:25-28: bump on a material RISK change).
+   The fix is therefore entirely a copy fix, and a copy fix needs a guard or it
+   reverts the first time someone tightens a sentence.
+
+   The rule: wherever a surface puts a COUNT WORD beside `/funds`, the same
+   paragraph must also say that the desk connecting is one of the times it is
+   sent. A window is used rather than a sentence because the count word and the
+   path routinely sit in different clauses of a hard-wrapped line.
+*/
+
+/** The path, in every form the surfaces write it (`/funds`, `/api/v1/funds`). */
+const FUNDS_PATH = /\/funds\b/gi;
+
+/** A claim about HOW MANY. "one", "once", "a single" — the words that were wrong. */
+const COUNT_WORD = /\b(?:once|one|single)\b/i;
+
+/**
+ * …and the fact that makes a count claim honest: the desk's own connect is one
+ * of the times. Any of these phrasings satisfies it; what may not happen is a
+ * count claim with none of them anywhere near it.
+ */
+const ALSO_ON_CONNECT = /\breconnect(?:s|ed|ing)?\b|\bdesk opens?\b|\bdesk connects?\b|\bdesk\/stream connect\b/i;
+
+/** Characters either side of `/funds` that count as "beside" it. */
+const WINDOW = 90;
+
+/**
+ * How far the correction may sit from the count claim. Deliberately NOT the
+ * whole paragraph: the two TypeScript copy modules carry no blank lines, so a
+ * paragraph there is the ENTIRE item list — and `OPENALGO_FEED_ITEMS`' cadence
+ * item already says "when the Live Desk opens" about the POLL, which would
+ * have excused the `/funds` sentence four items away. Measured: with a
+ * paragraph-wide check, reverting the disclosure fix left this guard green.
+ */
+const QUALIFIER_WINDOW = 200;
+
+/**
+ * Every place a surface claims a COUNT beside `/funds` without saying that the
+ * desk connecting is one of the occasions. Returned as quotable strings.
+ */
+function overstatedFundsClaims(text: string): string[] {
+  const out: string[] = [];
+  for (const para of paragraphs(text)) {
+    for (const m of [...para.matchAll(FUNDS_PATH)]) {
+      const at = m.index ?? 0;
+      const near = para.slice(Math.max(0, at - WINDOW), at + WINDOW);
+      if (!COUNT_WORD.test(near)) continue;
+      const wide = para.slice(Math.max(0, at - QUALIFIER_WINDOW), at + QUALIFIER_WINDOW);
+      if (ALSO_ON_CONNECT.test(wide)) continue;
+      out.push(`«${near.trim()}»`);
+    }
+  }
+  return out;
+}
+
+/** The v4.1.0 block of a release-notes file, so history is never judged by today's code. */
+function currentSection(rel: string, heading: string): string {
+  const all = read(rel);
+  const start = all.indexOf(heading);
+  expect(start, `${rel} no longer has a section starting «${heading}»`).toBeGreaterThan(-1);
+  const next = all.indexOf("\n## ", start + 1);
+  return next === -1 ? all.slice(start) : all.slice(start, next);
+}
+
+describe("no surface says /funds is sent once, because the desk sends it on every connect", () => {
+  it.each(SURFACES)("%s", (rel) => {
+    const hits = overstatedFundsClaims(read(rel));
+    expect(hits, `${rel} states a /funds count without the desk's connect:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("CHANGELOG.md — the v4.1.0 section only (older releases are history and are not rewritten)", () => {
+    const hits = overstatedFundsClaims(currentSection("CHANGELOG.md", "## v4.1.0"));
+    expect(hits, `the v4.1.0 changelog states a /funds count without the desk's connect:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("VYUHA-STATE.md — the v4.1.0 state block only", () => {
+    const hits = overstatedFundsClaims(currentSection("VYUHA-STATE.md", "## 2. Current state — v4.1.0"));
+    expect(hits, `VYUHA-STATE §2 states a /funds count without the desk's connect:\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  it("the guard really can fire — the sentence every surface shipped before this wave", () => {
+    // VERBATIM the copy this block exists to stop coming back.
+    const PLANTED = "Checking the connection calls OpenAlgo's /funds endpoint once. It is the cheapest call that proves both the address and the API key are right.";
+    const caught = overstatedFundsClaims(PLANTED);
+    expect(caught, "the planted 'once' must be caught").toHaveLength(1);
+    expect(caught[0]).toContain("/funds endpoint once");
+
+    // The three other shapes it shipped in, each of them equally wrong.
+    expect(overstatedFundsClaims("plus one `/funds` request when the connection is checked.")).toHaveLength(1);
+    expect(overstatedFundsClaims("covering the cadence, the single `/funds` probe, and the address.")).toHaveLength(1);
+    expect(overstatedFundsClaims("`/funds` once when the connection is checked; interval clamped 1–5 s.")).toHaveLength(1);
+
+    // …and the way v4.1 is allowed to say it.
+    expect(
+      overstatedFundsClaims(
+        "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects.",
+      ),
+      "the qualified sentence is what the release is allowed to say",
+    ).toEqual([]);
+
+    // A surface that never names the path is not obliged to explain it.
+    expect(overstatedFundsClaims("Vyuha reads your broker's tradebook from a file you export.")).toEqual([]);
+  });
+
+  it("…and fires INSIDE a real surface — the plant lands as its own paragraph, as a copy edit would", () => {
+    const PLANTED = "Checking the connection calls OpenAlgo's /funds endpoint once.";
+    const privacy = read("docs/client/PRIVACY.md");
+    expect(overstatedFundsClaims(privacy), "the shipped privacy sheet is clean").toEqual([]);
+
+    const caught = overstatedFundsClaims(`${privacy}\n\n${PLANTED}\n`);
+    expect(caught, "a naked /funds count appended to PRIVACY.md must be caught").toHaveLength(1);
+    expect(caught[0]).toContain("once");
+  });
+
+  it("at least one shipped surface still names /funds — an empty net proves nothing", () => {
+    // Deliberately NOT `FUNDS_PATH` — it carries /g, and `.test()` on a global
+    // regex advances `lastIndex`, so the second file would be scanned from an
+    // offset and the filter would silently lie.
+    const naming = SURFACES.filter((rel) => /\/funds\b/i.test(read(rel)));
+    expect(naming, "the privacy sheet must still disclose the probe").toContain("docs/client/PRIVACY.md");
+    expect(naming, "the consent sheet must still disclose the probe").toContain("lib/domain/openalgo-disclosure.ts");
   });
 });

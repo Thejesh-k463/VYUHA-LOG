@@ -14,6 +14,13 @@ import {
   wilderAtrSeriesP3,
 } from "@/lib/live/tracker-row";
 import type { Bar, LivePosition, Mark, TrackerContext } from "@/lib/live/types";
+// The desk's own pure halves, so the keyboard/sort interaction (F5) is driven
+// rather than described: `visibleRows` IS the list the screen renders, and
+// `applyTicks` IS the fold a frame goes through.
+import { focusedIndex, visibleRows } from "@/components/live/tracker-client";
+import { nextIndex } from "@/components/live/desk-keys";
+import type { DeskRow } from "@/components/live/desk-types";
+import { applyTicks, mergeTicks } from "@/lib/live/apply-ticks";
 
 /**
  * Live Desk tracker row — spec §2.1–2.3.
@@ -498,14 +505,16 @@ describe("keyboard navigation clears the sticky header (U-1)", () => {
  * PRIVACY item 3, the help page and the Settings slider all described a 1–5 s
  * refresh "while the Live Desk is open".
  *
- * A SOURCE guard, in the family of the block above and of
- * `tests/live-pro-gate.test.ts`: what is under test is a browser API inside a
- * client component with no jsdom in this suite, so what can be held to account
- * here is the WIRING — opened only for a streaming provider, torn down on
- * unmount, released while the tab is hidden, and folding ticks in through the
- * pure helper rather than through a second copy of the arithmetic. The
- * behavioural half is `e2e/z-live-desk.spec.ts`, which serves a real SSE body
- * to a real browser.
+ * WHAT IS ASSERTED WHERE, since fix wave 2. The LIFECYCLE — backoff spacing,
+ * the hidden-tab release, the unmount teardown, "stopped is terminal for this
+ * connection", the close-of-session reconnect — moved to
+ * `lib/live/stream-link.ts` and is DRIVEN, with a fake EventSource and fake
+ * timers, in `tests/live-stream-link.test.ts`. It had to: a source regex is
+ * satisfied by a line that is never reached, and three of the six findings
+ * this wave fixes were live underneath these guards while they reported green.
+ * What is left here is the wiring only this file can be wrong about — which
+ * route is opened, for which provider, on which DEPENDENCIES, and that nothing
+ * the stream carries becomes state of its own.
  */
 describe("the Live Desk consumes the SSE stream (FW-1)", () => {
   const stripComments = (raw: string) =>
@@ -513,6 +522,7 @@ describe("the Live Desk consumes the SSE stream (FW-1)", () => {
   const src = stripComments(
     readFileSync(path.resolve(__dirname, "..", "components/live/tracker-client.tsx"), "utf8"),
   );
+  const linkSrc = stripComments(readFileSync(path.resolve(__dirname, "..", "lib/live/stream-link.ts"), "utf8"));
 
   it("opens ONE EventSource, on the route the server serves", () => {
     expect(src.match(/new EventSource\(/g) ?? [], "one desk, one stream").toHaveLength(1);
@@ -527,44 +537,77 @@ describe("the Live Desk consumes the SSE stream (FW-1)", () => {
     expect(src, "the effect runs before checking that the provider streams").toMatch(
       /if \(!streaming\) return;/,
     );
-    expect(src, "the effect must not re-run on every new `feed` object identity").toMatch(
-      /\}, \[streaming\]\);/,
+  });
+
+  it("re-opens on an account switch, and on nothing that is merely a new object (F4)", () => {
+    // The route resolves `getSelectedAccountId()` and captures its key set ONCE
+    // per request, and `account-switcher.tsx` only calls `router.refresh()` —
+    // this component stays MOUNTED, deliberately (a `key` on <TrackerClient>
+    // would drop every in-memory tick and the focus on every switch). So the
+    // effect has to notice by itself. The KEY's own behaviour is
+    // `tests/live-stream-link.test.ts`; what only this file can show is that
+    // the effect really depends on it.
+    expect(src, "the stream stays on the OLD account's symbols after a switch").toMatch(
+      /\}, \[streaming, streamKey\]\);/,
+    );
+    expect(src).toMatch(/streamKeyOf\(data\.selectedAccountId, wireRows\)/);
+    expect(src, "a `feed` or `data` dependency re-opens the stream on every server render").not.toMatch(
+      /\}, \[streaming, (feed|data)\]\);/,
     );
   });
 
+  it("hands the lifecycle to the link, and gives it the browser's own edges", () => {
+    expect(src).toMatch(/createStreamLink\(\{/);
+    for (const edge of [
+      /createSource: \(\) => new EventSource\("\/api\/live\/stream"\)/,
+      /isHidden: \(\) => document\.visibilityState === "hidden"/,
+      /setTimer: \(fn, ms\) => setTimeout\(fn, ms\)/,
+      /clearTimer: \(id\) => clearTimeout\(id\)/,
+    ]) {
+      expect(src, `an injected edge is missing: ${edge}`).toMatch(edge);
+    }
+  });
+
   it("closes on unmount, and closes the object it opened", () => {
-    expect(src).toMatch(/es\?\.close\(\)/);
-    expect(src, "the effect returns no cleanup").toMatch(/return \(\) => \{[\s\S]*?close\(\);[\s\S]*?\};/);
+    expect(src, "the effect returns no cleanup").toMatch(
+      /return \(\) => \{[\s\S]*?close\(\);[\s\S]*?link\.destroy\(\);[\s\S]*?\};/,
+    );
+    expect(linkSrc, "the link must close the source it created").toMatch(/source\?\.close\(\)/);
   });
 
   it("releases the stream while the tab is hidden, and takes the listener with it", () => {
     // The disclosure promises the feed stops when the desk closes; a hidden
     // tab holding an open request is stricter than that promise, and costs a
-    // background tab nothing.
+    // background tab nothing. `tests/seams-v41-fix.test.ts` S5a pins the same
+    // two lines against the disclosure's own words.
     expect(src).toMatch(/document\.visibilityState === "hidden"/);
     expect(src).toMatch(/document\.addEventListener\("visibilitychange", onVisibility\)/);
     expect(src).toMatch(/document\.removeEventListener\("visibilitychange", onVisibility\)/);
   });
 
   it("backs off rather than hammering a bridge that has gone away", () => {
-    expect(src).toMatch(/RECONNECT_BASE_MS \* 2 \*\* \(retry - 1\)/);
+    // The SPACING is driven in tests/live-stream-link.test.ts; this is only
+    // that the one implementation of it is where the desk gets it from.
+    expect(linkSrc).toMatch(/RECONNECT_BASE_MS \* 2 \*\* \(retry - 1\)/);
     // A browser that is still CONNECTING is already retrying on the route's own
     // jittered `retry:` hint; a second timer would double the rate.
-    expect(src).toMatch(/es\.readyState === EventSource\.CONNECTING/);
+    expect(linkSrc).toMatch(/source\.readyState === SOURCE_CONNECTING/);
   });
 
   it("folds ticks in through the PURE helper, and holds them in memory only", () => {
     expect(src).toMatch(/applyTicks\(wireRows, ticks\)/);
     expect(src).toMatch(/mergeTicks\(prev, batch\)/);
-    expect(src).toMatch(/parseTickFrame\(raw\)/);
+    expect(linkSrc).toMatch(/parseTickFrame\(raw\)/);
     // Owner answer Q25: ticks never reach the journal from the client. The one
     // persisted mark per day is written SERVER-side (`persist-mark.ts`).
     expect(src, "the desk must not POST a tick anywhere").not.toMatch(/fetch\(/);
+    expect(linkSrc, "the link must not POST a tick anywhere").not.toMatch(/fetch\(/);
   });
 
   it("batches to one commit per animation frame", () => {
-    expect(src).toMatch(/requestAnimationFrame\(flush\)/);
-    expect(src).toMatch(/cancelAnimationFrame\(frame\)/);
+    expect(src).toMatch(/requestAnimationFrame\(fn\)/);
+    expect(src).toMatch(/cancelAnimationFrame\(id\)/);
+    expect(linkSrc).toMatch(/env\.schedulePaint\(flush\)/);
   });
 
   it("keeps the desk's rows DERIVED — no tick is copied into state as a row", () => {
@@ -573,6 +616,115 @@ describe("the Live Desk consumes the SSE stream (FW-1)", () => {
     // Trades filter outright under the React Compiler (AGENTS.md).
     expect(src).toMatch(/const rows = React\.useMemo\(\(\) => applyTicks\(wireRows, ticks\), \[wireRows, ticks\]\);/);
     expect(src, "rows must not be held in local state").not.toMatch(/useState.*\bwireRows\b/);
+  });
+
+  it("announces the LINK once, and never a price per row (F7)", () => {
+    // `aria-live="polite"` sat on every Mark <td>. With the stream really
+    // connected that is one announcement per row per tick — a 40-row desk is a
+    // screen reader that never stops talking. One region, on the strip, whose
+    // text changes only when the PHASE does.
+    expect([...src.matchAll(/aria-live=/g)], "more than one live region on the desk").toHaveLength(1);
+    expect(src).toMatch(/<span className="sr-only" aria-live="polite" data-testid="live-stream-announce">/);
+    expect(src, "the Mark cell is a live region again").not.toMatch(/tabular-nums" aria-live/);
+    expect(src, "the announcement must not carry the frame age or a price").toMatch(
+      /LIVE_STREAM_COPY\.announce\[link\.phase\]/,
+    );
+  });
+});
+
+/**
+ * F5 — the keyboard focus is an IDENTITY, and the list under it moves.
+ *
+ * `visible` re-sorts on every rows change, the default sort is `unrealisedP`
+ * DESC, and `applyTicks` rewrites `unrealisedP` on every tick — so with focus
+ * held as an INDEX, a tick that flipped two rows' P&L order moved the highlight
+ * to the other row, and Enter / `l` then acted on it. The Sizing Lab was handed
+ * the wrong position from a keystroke aimed at the right one.
+ *
+ * Driven through the desk's OWN pure halves — `visibleRows` (its filter and its
+ * sort) and `applyTicks` (the real tick fold) — because the component itself
+ * cannot be rendered here: this suite is `environment: "node"` and the project
+ * ships no jsdom.
+ */
+describe("a tick that re-sorts the desk does not move the focused row (F5)", () => {
+  const deskRow = (id: number, symbol: string, markP: number): DeskRow =>
+    ({
+      id,
+      accountId: 1,
+      accountName: "Main",
+      symbol,
+      tradingsymbol: symbol,
+      exchange: "NSE",
+      side: "long",
+      qty: 100,
+      avgEntryP: 100_000,
+      investedP: 10_000_000,
+      markP,
+      staleness: "delayed",
+      markAsOf: "2026-09-07T09:59:00.000Z",
+      dayChangePpm: null,
+      // The field the sort reads, and the field applyTicks rewrites.
+      unrealisedP: 100 * markP - 10_000_000,
+      unrealisedPctPpm: null,
+      effectiveStopP: null,
+      targetP: null,
+      distanceToStopP: null,
+      distanceToStopPpm: null,
+      distanceToTargetP: null,
+      distanceToTargetPpm: null,
+      distanceToStopAtrX100: null,
+      atrP3: null,
+      riskAmountP: null,
+      openRPpm: null,
+    }) as unknown as DeskRow;
+
+  /** One quote on the wire, in the map the desk holds its ticks in. */
+  const tickTo = (symbol: string, ltp: number) =>
+    mergeTicks(new Map(), [
+      {
+        key: { symbol, exchange: "NSE" as const, tradingsymbol: symbol },
+        ltp,
+        prevClose: null,
+        asOf: "2026-09-07T10:00:00.000Z",
+        staleness: "delayed" as const,
+      },
+    ]);
+
+  const SORT = { key: "unrealisedP", dir: -1 } as const;
+  const view = { accountFilter: null, query: "", sort: SORT };
+
+  it("the list really does reorder under a tick — the premise, first", () => {
+    const rows = [deskRow(1, "AAA", 101_000), deskRow(2, "BBB", 120_000)];
+    const before = visibleRows(rows, view);
+    expect(before.map((r) => r.id), "BBB is ahead on P&L").toEqual([2, 1]);
+
+    const ticked = applyTicks(rows, tickTo("AAA", 900_000));
+    const after = visibleRows(ticked, view);
+    expect(after.map((r) => r.id), "the tick did not change the order — the test proves nothing").toEqual([1, 2]);
+  });
+
+  it("focus keyed on the ROW stays on that row across the re-sort", () => {
+    const rows = [deskRow(1, "AAA", 101_000), deskRow(2, "BBB", 120_000)];
+    const before = visibleRows(rows, view);
+    const focusId = before[0].id; // the user pressed j once: BBB
+    expect(focusedIndex(before, focusId), "a stored POSITION is not the focused row").toBe(0);
+
+    const after = visibleRows(applyTicks(rows, tickTo("AAA", 900_000)), view);
+    const idx = focusedIndex(after, focusId);
+    expect(idx, "the row moved down the list").toBe(1);
+    expect(after[idx].id, "Enter and `l` act on the row the user focused").toBe(focusId);
+    expect(after[idx].symbol).toBe("BBB");
+    // The bug, stated: the index the old model kept now points at the OTHER row.
+    expect(after[0].id).not.toBe(focusId);
+  });
+
+  it("a filter that excludes the focused row reports -1, which j reads as 'from the top'", () => {
+    const rows = [deskRow(1, "AAA", 101_000), deskRow(2, "BBB", 120_000)];
+    const filtered = visibleRows(rows, { ...view, query: "aaa" });
+    expect(filtered.map((r) => r.id)).toEqual([1]);
+    expect(focusedIndex(filtered, 2), "a focused row that is filtered away is nowhere").toBe(-1);
+    expect(nextIndex(focusedIndex(filtered, 2), filtered.length, 1)).toBe(0);
+    expect(focusedIndex(filtered, null)).toBe(-1);
   });
 });
 

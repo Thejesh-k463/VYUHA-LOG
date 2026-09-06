@@ -216,6 +216,63 @@ describe("POST mark — one persisted mark per position per day, priced by the s
 });
 
 /**
+ * F8 — THE BUTTON WAIVES THE CLOCK, AT THE ROUTE.
+ *
+ * `route.ts` passes `ignoreClock: true` to `persistDailyMarks()` — the whole
+ * contract of "Save today's mark": the user asking is a better reason than
+ * 15:30, and the once-a-day rule still holds. Nothing tested it. Every other
+ * `action: "mark"` POST in this file runs at Friday 16:00 IST (and the seam
+ * suite's runs at a Saturday), so the waiver could be deleted from the route
+ * and all of them stayed green — the clock was already past the close.
+ *
+ * This block is the missing pin: 12:00 IST, mid-session, on a Friday. Without
+ * the waiver the route answers "The session has not closed yet."
+ */
+describe("POST mark — mid-session, the button waives the CLOCK (F8)", () => {
+  /** Friday 2026-09-04, 12:00 IST — inside the session, hours before the close. */
+  beforeAll(() => {
+    // `toFake: ["Date"]` only: the route awaits real dynamic imports on its way
+    // to the provider and the database, and a fully faked timer set stalls the
+    // module loader.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-04T06:30:00Z"));
+    process.env.VYUHA_QUOTE_PROVIDER = "mock";
+    // The block above closed every trade and left the day's rows behind; this
+    // one needs an open cash position and a clean day (the mark is once per
+    // (symbol, IST date) row).
+    t.sqlite.prepare("UPDATE trades SET is_open = 1").run();
+    t.sqlite.prepare("DELETE FROM mtm_prices").run();
+    t.db.update(t.schema.settings).set({ lastLiveMarkDate: null }).run();
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+    delete process.env.VYUHA_QUOTE_PROVIDER;
+  });
+
+  it("writes at 12:00 IST — one row per open cash symbol, dated today", async () => {
+    const res = await post({ action: "mark" });
+    const body = await res.json();
+    expect(body.ok, "the button must waive the 15:30 clock: " + body.message).toBe(true);
+    expect(body.date).toBe("2026-09-04");
+
+    const rows = t.db.select().from(t.schema.mtmPrices).all();
+    expect(rows.map((r) => r.symbol)).toEqual(["TCS"]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].asOfDate).toBe("2026-09-04");
+    expect(rows[0].price).toBeGreaterThan(0);
+    expect(body.marked).toBe(1);
+  });
+
+  it("…and still only once: a second press mid-session changes nothing", async () => {
+    const before = t.db.select().from(t.schema.mtmPrices).all();
+    const body = await (await post({ action: "mark" })).json();
+    expect(body.ok).toBe(false);
+    expect(body.message).toContain("already saved");
+    expect(t.db.select().from(t.schema.mtmPrices).all().map((r) => r.price)).toEqual(before.map((r) => r.price));
+  });
+});
+
+/**
  * THE CONSENT GATE, EXERCISED AGAINST THE ROUTE THIS RELEASE SHIPS.
  *
  * `route.ts` has always carried the gate (`openAlgoGate(…)` → 403), but while

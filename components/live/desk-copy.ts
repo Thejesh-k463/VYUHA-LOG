@@ -96,6 +96,21 @@ export const DESK_COPY = {
 export const LIVE_STREAM_COPY = {
   /** `<provider> · 3 s` — the age of the last frame, on the 30 s desk clock. */
   live: (provider: string, seconds: number) => `Live · ${provider} · ${seconds} s`,
+  /**
+   * The pipe is OPEN and has carried no prices — the state "Live" used to be
+   * printed over.
+   *
+   * `GET /api/live/stream` heartbeats every 25 s whether or not it ever
+   * subscribed, and outside 09:00–15:40 it never subscribes at all, so a
+   * heartbeat counted as a live frame printed `Live · openalgo · 3 s` at 21:00
+   * with no poll running behind it. This says the one thing the desk knows.
+   *
+   * WHY NOT "outside market hours": the desk cannot tell that from "subscribed
+   * and silent" without asserting an exchange calendar it does not ship
+   * (`lib/live/market-hours.ts` models the clock, not holidays). It states the
+   * connection and the absence, and claims nothing about why.
+   */
+  connected: (provider: string) => `Connected · ${provider} · no prices yet`,
   connecting: "Connecting…",
   reconnecting: "Reconnecting…",
   /** The provider's own sentence follows; it is never rewritten here. */
@@ -108,6 +123,27 @@ export const LIVE_STREAM_COPY = {
    * than that promise, and saying so is what stops it reading as a fault.
    */
   paused: "Feed paused while this tab is in the background.",
+  /**
+   * What the desk's ONE polite live region says, per link phase.
+   *
+   * It exists because `aria-live` used to sit on every Mark `<td>`: with the
+   * stream really connected that is one announcement per row per tick, and a
+   * 40-row desk becomes a screen reader that never stops talking. The
+   * transitions of the CONNECTION are the events worth interrupting for, so
+   * these carry no price, no provider and no number — nothing that changes
+   * while the state has not.
+   *
+   * `idle` is deliberately empty: "Connecting…" is already on screen, and an
+   * announcement for the state a page mounts in is noise on every navigation.
+   */
+  announce: {
+    idle: "",
+    connected: "Feed connected.",
+    live: "Feed connected.",
+    reconnecting: "Feed reconnecting.",
+    paused: "Feed paused.",
+    stopped: "Feed stopped.",
+  },
 } as const;
 
 /**

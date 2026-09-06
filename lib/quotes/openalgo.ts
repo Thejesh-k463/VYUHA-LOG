@@ -92,7 +92,7 @@ export const OPENALGO_CAPABILITIES: ProviderCapabilities = {
   // matching it. The desk says it once a day (Q24).
   requiresDailyAuth: true,
   egressDescription:
-    "None beyond your own machine by default: requests go to your own OpenAlgo bridge on 127.0.0.1 (or the host you configured in Import → OpenAlgo, which is your choice and may be another machine on your network).",
+    "None beyond your own machine by default: requests go to your own OpenAlgo bridge on 127.0.0.1 (or the host you configured in Settings → Integrations, which is your choice and may be another machine on your network).",
 };
 
 /** What the provider needs before it may make a single request. */
