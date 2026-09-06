@@ -439,7 +439,7 @@ export function ManualTradeForm({
             <Field label={open ? "Entry price" : "Avg buy price"}><Input name="avgBuyPrice" type="number" step="any" value={avgBuyPrice} onChange={(e) => setBuyPrice(e.target.value)} /></Field>
           </>
         )}
-        {open ? (
+        {open && kind !== "fno" ? (
           <Field label="Current price (MTM)"><Input name="currentPrice" type="number" step="any" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} /></Field>
         ) : kind === "equity" ? (
           <>

@@ -78,7 +78,7 @@ Exactly four kinds, and only one of them is automatic:
    15:31 IST while it is open, or the next time you open it that day, and never
    at the weekend. A price you type yourself is that day's mark: the automatic close-of-session mark does
    not overwrite it, and typing after the close replaces the
-   automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST. Your credentials are encrypted at rest, bound to your
+   automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close. Your credentials are encrypted at rest, bound to your
    machine, and sent nowhere except the broker itself. We never see them.
 4. **The Telegram end-of-day digest — only if you switch it on, and this one
    is an upload.** It sends a summary of your own recorded numbers to a

@@ -286,26 +286,39 @@ describe("the trade form's own mark writers follow the same rule (fix wave 3 aud
 });
 
 describe("the bulk paste refuses what it cannot read rather than storing a wrong mark (fix wave 3 audit, M3)", () => {
-  it("a thousands-grouped price in the comma form is skipped and reported, and the real mark survives", async () => {
+  it("a thousands-grouped price in the comma form is read as one number, not as ₹3 with a ₹100.50 stop", async () => {
     await liveDoor(3120);
     const form = new FormData();
     form.set("prices", "TCS, 3,100.50");
     form.set("asOf", DAY);
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
-    expect(rowsFor("TCS").map((r) => r.price), "'3,100.50' was read as a ₹3 mark and replaced the real one").toEqual([3120]);
-    expect(res.message).toContain("1 line skipped");
-    expect(res.ok).toBe(false);
+    expect(rowsFor("TCS").map((r) => r.price), "'3,100.50' was read as a ₹3 mark").toEqual([3100.5]);
+    expect(res.ok).toBe(true);
+    const trade = t.db.select().from(t.schema.trades).all().find((r) => r.id === tradeId);
+    expect(trade?.slPlanned ?? null, "'100.50' was read as a stop").toBeNull();
   });
 
-  it("the space form with a grouped price is skipped the same way", async () => {
-    await liveDoor(3120);
+  it("the space form with a grouped price reads the same way, and a lakh grouping too", async () => {
     const form = new FormData();
-    form.set("prices", "TCS 3,100.50");
+    form.set("prices", "TCS 3,100.50\nRELIANCE 1,23,456.00");
+    form.set("asOf", DAY);
+    await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(rowsFor("TCS").map((r) => r.price)).toEqual([3100.5]);
+    expect(rowsFor("TCS 3")).toEqual([]);
+    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([123456]);
+  });
+
+  it("the form's own placeholder lines and 3-digit prices with 3-digit stops are read (an earlier guard refused them)", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS, 724.35, 705, 715, 760\nRELIANCE, 800, 790\nNIFTY,234");
     form.set("asOf", DAY);
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
-    expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120]);
-    expect(rowsFor("TCS 3")).toEqual([]);
-    expect(res.message).toContain("skipped");
+    expect(res.ok).toBe(true);
+    expect(rowsFor("TCS").map((r) => r.price)).toEqual([724.35]);
+    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([800]);
+    expect(rowsFor("NIFTY").map((r) => r.price)).toEqual([234]);
+    const trade = t.db.select().from(t.schema.trades).all().find((r) => r.id === tradeId);
+    expect(trade?.slPlanned).toBe(705);
   });
 
   it("a plain comma-separated line with 4-digit prices is still read", async () => {
@@ -315,6 +328,25 @@ describe("the bulk paste refuses what it cannot read rather than storing a wrong
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
     expect(res.ok).toBe(true);
     expect(rowsFor("TCS").map((r) => r.price)).toEqual([3120]);
+  });
+
+  it("a future as-of date is refused — it would outrank every real day for decades", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS 3100");
+    form.set("asOf", "2062-09-04");
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("future");
+    expect(t.sqlite.prepare("SELECT count(*) AS n FROM mtm_prices").get()).toEqual({ n: 0 });
+  });
+
+  it("a well-shaped but impossible date (month 13) is refused too — the ranges in the regex are load-bearing", async () => {
+    const form = new FormData();
+    form.set("prices", "TCS 3100");
+    form.set("asOf", "2026-13-45");
+    const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
+    expect(res.ok).toBe(false);
+    expect(t.sqlite.prepare("SELECT count(*) AS n FROM mtm_prices").get()).toEqual({ n: 0 });
   });
 
   it("an as-of date that is not YYYY-MM-DD is refused before anything is written", async () => {
@@ -365,14 +397,33 @@ describe("a typed mark on an option or future is refused at every door (owner ru
     expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([3120]);
   });
 
-  it("the paste skips a symbol whose only open positions are derivatives, and says so", async () => {
+  it("the risk dialog's full save on an option still lands the stops — only the mark is refused", async () => {
     mtm.writeTypedMark({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: 3120, asOfDate: DAY });
+    const res = await riskRoute.POST(
+      new Request("http://local/api/positions/risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // The dialog's real shape: it pre-fills and sends a price on EVERY save.
+        body: JSON.stringify({ tradeId: optionId, mtmPrice: 42.5, originalSl: 30, target: 60 }),
+      }),
+    );
+    expect(res.status, "refusing the mark must not refuse the stops beside it").toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("not stored");
+    const trade = t.db.select().from(t.schema.trades).all().find((r) => r.id === optionId);
+    expect(trade?.slPlanned).toBe(30);
+    expect(trade?.targetPlanned).toBe(60);
+    expect(rowsFor("RELIANCE").map((r) => r.price), "the premium still landed under the underlying").toEqual([3120]);
+  });
+
+  it("the paste is NOT a derivative door: its line names the underlying, so an index level is stored even for a derivatives-only book", async () => {
     const form = new FormData();
-    form.set("prices", "RELIANCE 42.5");
+    form.set("prices", "RELIANCE 3125");
     form.set("asOf", DAY);
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
-    expect(rowsFor("RELIANCE").map((r) => r.price)).toEqual([3120]);
-    expect(res.message.toLowerCase()).toContain("options and futures");
+    expect(res.ok).toBe(true);
+    expect(rowsFor("RELIANCE").map((r) => r.price), "the options book lost its only typed spot source").toEqual([3125]);
   });
 
   it("the edit form keeps the trade but does not store the premium, and says so", () => {
@@ -390,5 +441,44 @@ describe("a typed mark on an option or future is refused at every door (owner ru
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
     expect(res.message).toContain("price of 0");
     expect(rowsFor("TCS")).toEqual([]);
+  });
+});
+
+describe("the create door and the bhavcopy job, the two writers no earlier test drove (fix wave 3b audit, T1/T4)", () => {
+  const NL = String.fromCharCode(10);
+  const manual = (tradingsymbol: string, qty: number, price: number) => ({
+    broker: "zerodha" as const,
+    tradingsymbol,
+    isin: null,
+    buyQty: qty, avgBuyPrice: price, buyValue: qty * price,
+    sellQty: 0, avgSellPrice: 0, sellValue: 0,
+    closingPrice: null, grossPnl: 0, unrealisedPnl: 0,
+    buyDate: null, sellDate: null, productHint: null, exchangeHint: null, sourceFile: "manual",
+  });
+
+  it("a Current price typed on the create form replaces the automatic row (the door bare-inserted before)", async () => {
+    await liveDoor(3120);
+    const res = commit.commitManualTrade(manual("TCS", 5, 2990), { currentPrice: 3100 });
+    expect(res.id).toBeTruthy();
+    expect(rowsFor("TCS").map((r) => r.price), "the create door queued its mark behind the automatic row").toEqual([3100]);
+  });
+
+  it("a Current price on an F&O create is not stored under the underlying", () => {
+    mtm.writeTypedMark({ symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: 3120, asOfDate: DAY });
+    const res = commit.commitManualTrade(manual("OPT RELIANCE 30 Sep 2026 3000 CE", 250, 40), { currentPrice: 42.5 });
+    expect(res.id).toBeTruthy();
+    expect(rowsFor("RELIANCE").map((r) => r.price), "the premium replaced the underlying's cash mark").toEqual([3120]);
+  });
+
+  it("the Auto-MTM bhavcopy job replaces a typed mark with the exchange close — the sentence's third clause", async () => {
+    await typedViaRiskDialog(3100);
+    const bhav = await import("@/lib/import/mtm-bhavcopy");
+    const text = [
+      "TradDt,BizDt,Sgmt,Src,FinInstrmTp,ISIN,TckrSymb,SctySrs,OpnPric,HghPric,LwPric,ClsPric,TtlTradgVol",
+      "2026-09-04,2026-09-04,CM,NSE,STK,INE467B01029,TCS,EQ,3000,3040,2990,3010,45000",
+    ].join(NL);
+    const r = bhav.applyBhavcopyMtm(text);
+    expect(r.ok).toBe(true);
+    expect(rowsFor("TCS").map((x) => x.price), "the docs say the bhavcopy job replaces a typed mark; it did not").toEqual([3010]);
   });
 });

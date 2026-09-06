@@ -96,7 +96,7 @@ const DAY = "2026-09-04";
 
 /** The sentence builder Y put on seven surfaces, verbatim (ASCII apostrophe). */
 const SENTENCE =
-  "A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.";
+  "A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.";
 
 let tcsId = 0;
 let infyId = 0;

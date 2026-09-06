@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
-import { DERIVATIVE_MARK_MESSAGE, isDerivativeInstrument, writeTypedMark } from "@/lib/queries/mtm";
+import { writeTypedMark } from "@/lib/queries/mtm";
 
 export type MtmState = { ok: boolean; message: string; updated: number };
 
@@ -35,6 +35,12 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   if (!/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/.test(asOf)) {
     return { ok: false, message: "The as-of date must be YYYY-MM-DD.", updated: 0 };
   }
+  // A future day (one keystroke from 2026 to 2062) would outrank every real
+  // day for decades, and nothing writes that day to displace it. ISO strings
+  // compare as dates.
+  if (asOf > todayIstIso()) {
+    return { ok: false, message: "The as-of date cannot be in the future.", updated: 0 };
+  }
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   // Index open trades by upper-cased symbol for SL/TSL/target matching.
@@ -52,31 +58,27 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
 
   let priceCount = 0;
   let stopCount = 0;
-  let skipped = 0;
   let zeroed = 0;
-  let derivatives = 0;
   const now = sql`(datetime('now'))`;
 
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    // A THOUSANDS SEPARATOR is a comma between a digit and exactly three
+    // digits with no digit after ("3,100.50"; lakh groups "1,23,456.00" have
+    // two-digit groups before the final three). It is read as
+    // part of the number — never as a field break — when the line also uses
+    // comma-space as its field separator ("RELIANCE, 3,100.50") or has no
+    // other comma at all ("TCS 3,100.50"). A tight CSV line ("TCS,3120,2950")
+    // has no such comma (four digits follow), and "NIFTY,234" has a letter
+    // before its comma, so both split as before. An earlier version refused
+    // any comma line with two adjacent 3-digit cells — which refused the
+    // form's own placeholder ("…, 724.35, 705, 715, 760"); found by audit.
+    const ungrouped = rawLine.replace(/(\d),(?=(?:\d{2},)*\d{3}(?!\d))/g, "$1");
+    const line = ungrouped !== rawLine && (rawLine.includes(", ") || !ungrouped.includes(",")) ? ungrouped : rawLine;
     let symbol = "";
     let price: number | null = null, sl: number | null = null, tsl: number | null = null, target: number | null = null;
 
     if (line.includes(",")) {
       const c = line.split(",").map((s) => s.trim());
-      // "RELIANCE, 3,100.50" splits into "3" and "100.50" — a thousands
-      // separator, not a ₹3 price with a ₹100.50 stop. Since this write now
-      // REPLACES the day's mark, an ambiguous line is refused rather than
-      // read wrongly (invariant 6: no mark beats a wrong one). The same
-      // grouping in the space form lands the digits in the symbol cell
-      // ("RELIANCE 3" + "100.50"); refused the same way.
-      const cells = c.slice(1);
-      const grouped =
-        cells.some((cell, i) => /^\d{1,3}$/.test(cell) && /^\d{3}(?:\.\d+)?$/.test(cells[i + 1] ?? "")) ||
-        (/\s\d{1,3}$/.test(c[0] ?? "") && /^\d{3}(?:\.\d+)?$/.test(cells[0] ?? ""));
-      if (grouped) {
-        skipped++;
-        continue;
-      }
       symbol = c[0] ?? "";
       price = numOrNull(c[1]); sl = numOrNull(c[2]); tsl = numOrNull(c[3]); target = numOrNull(c[4]);
     } else {
@@ -88,17 +90,15 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
     if (!symbol) continue;
     const key = symbol.toUpperCase();
 
-    const book = bySymbol.get(key) ?? [];
-    const onlyDerivatives = book.length > 0 && book.every((t) => isDerivativeInstrument(t));
     if (price != null && !(price > 0)) {
       // A pasted 0 is not a mark, and since this write replaces the day's row
       // it would erase the real one — the mark is skipped (stops still apply).
       zeroed++;
-    } else if (price != null && onlyDerivatives) {
-      // The premium would land under the underlying's symbol and erase its
-      // cash mark (owner ruling, fix wave 3 audit) — skipped, and said so.
-      derivatives++;
     } else if (price != null) {
+      // No derivative refusal HERE, unlike the risk dialog and the trade form:
+      // a paste line names the UNDERLYING ("NIFTY 23450"), so it is a spot
+      // level by construction and the options analytics' only typed spot
+      // source — it cannot express a contract premium (fix wave 3b audit).
       // DELETE-THEN-INSERT for (symbol, as-of day) — the same one transaction
       // the feed and the bhavcopy apply use. A bare insert left a SECOND row
       // for a day that already had one, and every reader takes the first row
@@ -142,9 +142,7 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   if (priceCount) parts.push(`${priceCount} price${priceCount === 1 ? "" : "s"}`);
   if (stopCount) parts.push(`${stopCount} stop/target update${stopCount === 1 ? "" : "s"}`);
   const notes: string[] = [];
-  if (skipped) notes.push(`${skipped} line${skipped === 1 ? "" : "s"} skipped — write prices without thousands separators (3100.50, not 3,100.50).`);
   if (zeroed) notes.push(`${zeroed} line${zeroed === 1 ? "" : "s"} with a price of 0 or less: no mark stored.`);
-  if (derivatives) notes.push(`${derivatives} line${derivatives === 1 ? "" : "s"} skipped — ${DERIVATIVE_MARK_MESSAGE.toLowerCase()}`);
   const skippedNote = notes.length ? " " + notes.join(" ") : "";
   return {
     ok: priceCount > 0 || stopCount > 0,

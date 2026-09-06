@@ -4049,3 +4049,56 @@ snapshot promoting the strip to Live. One owner pop-up.
   left open polls the bridge at the slider cadence all evening — inside the disclosure's "while the Live Desk is
   open"; and a desk opened after 15:40 polls nothing while the same sentence says it asks every 1–5 s (an
   upper bound, over-claim in the safe direction; refuted as such in the wave audit).
+
+## 2026-09-07 — v4.1.0 fix wave 3 audit (`65dd329..1ec6de1`, CI SUCCESS): 10 confirmed → fix wave 3b; a typed mark on a derivative is REFUSED
+
+Five Fable auditors (money 3/15, security 0/13, ui 1/15, test-integrity 2/14, docs 4/24) plus the seam pass
+that preceded the commit (two defects found by probe, fixed before the gate). Every finding was reproduced by
+its auditor with a read or an in-memory replay, so no skeptic pass was run over this union; the fixes landed in
+one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
+
+- **A typed mark on an option or future erased the underlying's cash mark.** A derivative trade carries the
+  UNDERLYING as `symbol` (`lib/engine/classify.ts`), `mtm_prices` is keyed on symbol, and the risk dialog opens
+  on option positions too — so a typed premium landed under RELIANCE and, with fix wave 3's replace-the-day's-
+  row rule, deleted the 15:31 cash mark every RELIANCE share position reads (before the rule it merely sat behind
+  the cash row and won only on days with no cash mark). The live door already refuses this write
+  (`isCashKey()`). **Ruling: refuse it at every door that can name a contract** — the risk dialog answers 400
+  "Marks for options and futures are not stored in this version." to a mark-only request, the trade form's
+  edit skips it and says so, and the create form no longer shows the field for an F&O trade. The bulk paste is
+  deliberately NOT one of them (corrected by the 3b audit after a first cut refused derivatives-only books):
+  its line names the UNDERLYING, so "NIFTY 23450" is an index level by construction and the options analytics'
+  only typed spot source — a paste cannot express a premium. A derivative position shows the close or a
+  dash, never a wrong number. **Two regressions the 3b audit caught in the first cut of this ruling, fixed in
+  3c:** the risk dialog pre-fills and sends a price on EVERY save, so refusing the whole request made
+  SL/TSL/target/IV un-editable on every derivative position — the route now refuses only a mark-ONLY request
+  (the unmarked-holdings panel, which no longer lists derivatives) and otherwise saves the stops and says the
+  price was not stored; and the first thousands-grouping guard refused any comma line with two adjacent
+  3-digit cells, i.e. the paste form's own placeholder ("…, 724.35, 705, 715, 760") and every ₹100–₹999 stock
+  with whole-rupee stops — replaced by a rule that READS the grouped number: a comma between a digit and
+  exactly three digits with no digit after (with optional two-digit lakh groups) is part of the number when the
+  line's field separator is comma-space or no other comma remains. A future as-of date is refused too (a
+  year typo would outrank every real day for decades). *Rejected: storing derivative marks under the contract* (a reader-side change
+  across thirteen call sites plus a schema decision — 4.2 with the broker adapters) and *documenting the hazard*.
+- **Two more typed doors.** The trade form's create and edit "Current price" still bare-inserted behind the
+  automatic row; both now go through `writeTypedMark`, so the ruling's "the typed writers" is four, not two.
+- **The paste parser read "3,100.50" as ₹3** ("RELIANCE, 3,100.50" → cells "3" and "100.50"), and the new rule
+  made that ₹3 the day's mark with a ₹100.50 stop. A comma-form line is now refused when a 1–3-digit cell is
+  followed by a 3-digit cell (or the symbol cell ends in a 1–3-digit number before such a cell), counted, and
+  named in the result ("write prices without thousands separators"). The as-of date must be a real
+  `YYYY-MM-DD` — free text sorted above every real day and became the permanent "latest" mark. A 0-price line
+  is named too, not dropped silently. **Measured trap:** `Date.parse` returns NaN under vitest's faked clock, so
+  the check is a range regex, not a parse.
+- **The typed-0 refusal was returned AFTER the stops were written** and before `revalidatePath`, so the dialog
+  toasted "failed" over half-persisted stops with a stale screen. Both 400s now sit above any write; the test
+  sends a stop beside the 0 and asserts it did not land.
+- **"The app does not overwrite it at the close" was false with Auto-MTM on:** `applyBhavcopyMtm` delete-then-
+  inserts the day's row after 19:00 IST with no typed-row skip, and the Settings card says "Overwrites the MTM
+  price for symbols found in the file". The seven-surface sentence now names the automatic close-of-session
+  mark as the thing that yields, and carves out the bhavcopy job. The first reword said "the live feed does not
+  overwrite it", which the client-docs consent guard refused — a feed named without its opt-in conditions is a
+  consent claim, and the guard was right.
+- **Test-integrity:** the tradingsymbol-carry test passed with either of its two layers reverted (the seed
+  trade's tradingsymbol equalled the held row's) — per-layer tests with a distinct "TCS-EQ"; the `/funds` guard
+  test asserted its own blind spot as a positive fact (removed: a sharper scan is an improvement).
+- **Recorded, not changed:** the equity paste writes a row for a symbol with no open position (pre-existing);
+  `mtm_prices` carries no account, so a mark is an instrument fact shared across books (the table's contract).

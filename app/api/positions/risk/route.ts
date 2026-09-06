@@ -42,9 +42,16 @@ export async function POST(req: Request) {
   if (mtmPrice != null && !(mtmPrice > 0)) {
     return NextResponse.json({ ok: false, message: "A mark is a price above zero." }, { status: 400 });
   }
-  // Same place, same reason: a premium typed on an option/future would be
-  // stored under the underlying and erase its cash mark (see writeTypedMark).
-  if (mtmPrice != null && isDerivativeInstrument(t)) {
+  // A premium typed on an option/future would be stored under the underlying
+  // and erase its cash mark (see writeTypedMark), so the MARK is refused — but
+  // never the stops beside it: the dialog pre-fills and sends a price on every
+  // save, so refusing the whole request made SL/TSL/target/IV un-editable on
+  // every derivative position (fix wave 3b audit). A request that carries
+  // ONLY a price (the unmarked-holdings panel) is a mark request and gets the
+  // 400; one that carries stops saves them and says the price was not stored.
+  const marksOnly = !has("originalSl") && !has("trailingSl") && !has("target") && !has("impliedVol");
+  const derivativeMark = mtmPrice != null && isDerivativeInstrument(t);
+  if (derivativeMark && marksOnly) {
     return NextResponse.json({ ok: false, message: DERIVATIVE_MARK_MESSAGE }, { status: 400 });
   }
 
@@ -72,7 +79,7 @@ export async function POST(req: Request) {
     .where(eq(trades.id, id))
     .run();
 
-  if (mtmPrice != null) {
+  if (mtmPrice != null && !derivativeMark) {
     // DELETE-THEN-INSERT for (symbol, IST day), not a bare insert: the number
     // the user just typed is the day's mark, and a plain insert made it the
     // row nobody reads. Every reader takes the FIRST row of the newest
@@ -89,5 +96,8 @@ export async function POST(req: Request) {
   }
 
   for (const p of ["/risk", "/equity", "/active", "/", "/trades"]) revalidatePath(p);
-  return NextResponse.json({ ok: true, message: "Saved." });
+  return NextResponse.json({
+    ok: true,
+    message: derivativeMark ? `Saved. The current price was not stored: ${DERIVATIVE_MARK_MESSAGE.charAt(0).toLowerCase()}${DERIVATIVE_MARK_MESSAGE.slice(1)}` : "Saved.",
+  });
 }

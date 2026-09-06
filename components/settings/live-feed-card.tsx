@@ -60,7 +60,7 @@ export const LIVE_FEED_COPY = {
    * surfaces without any of them reproducing a whole card string.
    */
   staleness:
-    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.",
+    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.",
   /** Only true while the host is loopback; the card says the other case too. */
   local:
     "Requests go to the OpenAlgo bridge on your own machine. Vyuha adds no new internet host for prices.",

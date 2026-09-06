@@ -95,7 +95,9 @@ export default async function TradesPage({
   // as a buy.
   const ipoLinks = getIpoTradeLinks();
   const unmarked: UnmarkedHolding[] = trades
-    .filter((t) => t.isOpen && !isMarked(t))
+    // Derivatives are left out: a mark typed on one is refused (it would be
+    // stored under the underlying's symbol), so the panel must not ask.
+    .filter((t) => t.isOpen && !isMarked(t) && t.instrumentType === "equity")
     .map((t) => ({
       id: t.id, symbol: t.symbol, buyQty: t.buyQty, buyValue: t.buyValue,
       buyDate: t.buyDate, acquisition: t.acquisition,

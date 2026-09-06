@@ -389,7 +389,7 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     you press <b>Save today's mark</b>, whichever comes first. The desk writes the close-of-session
     one by reconnecting its price stream once at <b>15:31 IST</b> while it is open, or the next time
     you open the desk that day. A price you type yourself is that day's mark: the automatic close-of-session mark does not
-    overwrite it, and typing after the close replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.
+    overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.
     Whether a mark already exists is decided per symbol per IST day, so
     a second account's open positions get their own mark on the same day. <b>On a Saturday or a
     Sunday nothing is written at all, and the button does not override that.</b> The refusal is the

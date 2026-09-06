@@ -105,7 +105,7 @@ no dependency changes — `package-lock.json` is untouched.*
   so the correction you typed at 16:00 was discarded and the dialog echoed the
   bridge's price back at you. **A price you type yourself is that day's mark:
   the automatic close-of-session mark does not overwrite it, and typing after the close
-  replaces the automatic one; only the Auto-MTM bhavcopy job, if you keep it on, replaces it with the exchange close after 7 pm IST.** The typed writers now replace the day's row for
+  replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.** The typed writers now replace the day's row for
   that symbol, exactly as the live door and the bhavcopy job already did, so
   **one row per symbol per IST day** is still the whole contract — and that
   sentence now appears on all seven surfaces that describe the mark, where none
@@ -113,6 +113,21 @@ no dependency changes — `package-lock.json` is untouched.*
   `"2"`: this is a rule about which row of your own table wins, on your own
   machine — no new host, nothing new sent and nothing new kept.
 
+- **Fix wave 3 — what a typed mark cannot be.** A mark typed on an **option or
+  future** is refused: such a trade carries its underlying as its symbol, so the
+  premium would be stored under RELIANCE and, with the rule above, erase the
+  cash mark every RELIANCE share position reads. The risk dialog answers
+  "Marks for options and futures are not stored in this version." when only a
+  price is sent, saves the stops beside it and says the price was not stored
+  when it is a full save, the edit form says the same, the create form no
+  longer shows the field for an F&O trade, and the unmarked-holdings panel no
+  longer lists derivatives. The bulk paste is different: its line names the
+  underlying, so "NIFTY 23450" is an index level and is stored as one. A typed
+  **0** is refused before anything is written (it used to be refused after the
+  stops beside it had been saved), a pasted 0 line is named in the result, a
+  paste dated to a future day is refused (a year typo would have outranked
+  every real day), and a thousands-grouped price ("3,100.50", "1,23,456.00")
+  is read as one number instead of as a ₹3 price with a ₹100.50 stop.
 - **Fix wave 3 — the strip says what the link is doing, per connection.** A link
   that has carried no live quotes now reads **connected but not streaming**
   rather than "no prices yet": after hours the rows really do carry end-of-day
