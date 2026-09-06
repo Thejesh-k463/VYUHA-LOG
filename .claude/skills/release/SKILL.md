@@ -151,6 +151,9 @@ stored little-endian.
   backup or pairing hot path, not noise; do not tag around it.
 - CI refuses to bless an incomplete release. If it refuses, it is right — do not
   hand-publish around it.
+- **The MERGE commit gets its own CI run before the audit starts** (2026-09-06): merge, push,
+  wait for `gh run list --commit <sha>`, then audit. v4.0.0 pushed merge + bump + fix wave
+  together and two test-drift reds surfaced a day late. Audit reds on CI are findings, not noise.
 
 ---
 

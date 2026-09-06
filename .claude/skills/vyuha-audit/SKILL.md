@@ -13,6 +13,23 @@ arguments:
 You are the ORCHESTRATOR for this audit. Do not audit anything yourself — you fan out, then
 you gate. This skill does not fork; it runs in your context so you can hold the plan.
 
+## 0. Before the fan-out — three rules learned on v4.0.0 (2026-09-06)
+
+1. **The target commit is pushed and its CI run exists before step 1 starts.** Merge, push,
+   wait for `gh run list --commit <sha>`, THEN audit. v4.0.0 batched merge + bump + fix wave into
+   one push, so two test-drift reds (a local-vs-IST date, a sidebar fold that had grown to six
+   screens) surfaced a day late. Any red CI job on the target counts as a finding in the union.
+2. **Seam pass first for any multi-builder target.** Launch `vyuha-seam-tester` on the wave's
+   file-ownership map before the six auditors; its seam DEFECTS enter the union as confirmed
+   findings and its tests land with the fix wave. Seven of v4.0.0's first-pass money findings were
+   values handed between files owned by different builders (`side`, frozen R, `avgEntryP`
+   rounding); nobody had run the two halves together.
+3. **The orchestrator edits docs with the Edit tool, never with an append script.** A `use utf8`
+   string concatenated onto a raw slurp double-encoded every non-ASCII character in
+   `docs/DECISIONS.md` twice on 2026-09-06 (~1,080 lines, rebuilt from `4158f6c`). That file is
+   CRLF; when a script is unavoidable, append UTF-8 BYTES (`cat` a file, or `Encode::encode`)
+   and verify a mojibake scan (the byte pairs for a-circumflex + euro sign, A-tilde, A-circumflex) returns 0 and there are zero LF-only lines before committing.
+
 ## 1. Fan out — six auditors, in parallel, one message
 
 Launch six `vyuha-auditor` agents in a SINGLE message so they run concurrently. Each gets

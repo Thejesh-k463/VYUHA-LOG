@@ -3795,3 +3795,35 @@ heading/sentence corrections + the entries above, appended as UTF-8 bytes with C
 file from now on: append bytes (`Encode::encode` or `cat` a UTF-8 file), never a `use utf8` string
 onto a `:raw` slurp. *Rejected: `git revert` of the two commits* — they also carry STATE, CHANGELOG
 and client-README lines that are correct and shipped.
+
+### 2026-09-06 — v4.0.0 retrospective: why 33 → 17 → 6 → 3, and the three rules it produced
+
+The owner asked whether the number of consecutive fixes on v4.0.0 meant something had gone wrong.
+Measured: v4.0.0 added 29,446 code lines (v3.9.0: 13,930; v3.8.0: 18,998), the largest release;
+59 findings over four audits, about 25 behaviour and 34 docs/test-honesty; v3.9.0's ladder was
+6 → 3 → 1 on Opus finders, v4.0 used Fable finders and audited each fix wave recursively for the
+first time. Detection got stricter on a release twice the size; the converging ladder is the
+healthy shape. Two things were genuinely new: (1) seven first-pass money findings were values
+crossing builder-wave ownership boundaries (`side`, frozen R, `avgEntryP` rounding) — disjoint
+file sets prevent conflicts and guarantee nobody ran both halves together; (2) about a fifth of
+the follow-up findings were introduced by fixes, mostly UI geometry fixed blind because `/live`
+had no browser test, plus two scripted doc edits. And one process miss: the merge commit was never
+CI'd on its own, so two test-drift reds surfaced a day late.
+
+Rules, all in-repo so a fresh session finds them without memory:
+- **`vyuha-seam-tester`** (`.claude/agents/`) runs on the wave's file-ownership map before the six
+  auditors; seam defects enter the union as confirmed; `tests/seams-<wave>.test.ts` lands with the
+  fix wave. *Rejected: a single integration builder for the whole wave* — it recreates the edit
+  conflicts the disjoint sets exist to avoid; testing the seam is cheaper than owning it.
+- **`e2e/z-live-desk.spec.ts`** — rows + real mark label, `j`/`k` geometry under the sticky thead
+  by `boundingBox()`, Pro figures for an entitled desk, Lab hand-off carries `side`. Caveats
+  recorded, not hidden: the free-licence payload-leak test SKIPS on the e2e DB (day-1 trial ⇒ Pro)
+  and has never run green — v4.1 seeds a free context for it; the geometry test exercises the
+  un-windowed path only (6 seeded rows, `VIRTUAL_THRESHOLD` 40) — v4.1 seeds ≥ 40 positions.
+  *Rejected: source-guard regexes as the only harness* — they were green while the scroll fix was
+  wrong twice.
+- **Push the merge, get its CI run, then audit** (release skill §6, audit skill §0). *Rejected:
+  running e2e locally before the merge* — it is serialised and slow; CI is the cheaper, complete
+  signal and it is free.
+- **Orchestrator doc edits through the Edit tool** (audit skill §0); this file is CRLF and was
+  rebuilt once today after a byte/Unicode mix.
