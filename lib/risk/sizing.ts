@@ -399,9 +399,19 @@ export interface PctVolatilityInput {
 
 /**
  * Percentage-volatility sizing (Varsity): the whole risk budget divided by one
- * ATR, rather than the Turtle unit fraction. At the same inputs this returns a
- * quantity around twice the Turtle unit, which is why the tab states which
- * variant produced the number.
+ * ATR, rather than the Turtle unit fraction.
+ *
+ * THE RELATION TO THE TURTLE UNIT IS A RATIO, NOT A DIRECTION. Both methods
+ * run `floor(budget x 1000 / atrP3)` over the same ATR and differ only in the
+ * budget, so at identical inputs this returns `riskPpm / unitRiskPpm` times
+ * the Turtle unit — larger only when the per-trade risk % exceeds the Turtle
+ * unit risk %, and smaller when it does not. At the Lab's own opening sample
+ * (`DEFAULT_RISK_PCT_PPM` 2,500 = 0.25% against `unitRiskPpm` 10,000 = 1%)
+ * that factor is 0.25, so the Varsity variant returns a QUARTER of the Turtle
+ * unit there. An earlier version of this comment said "around twice", which is
+ * true only at the classical 2%/1% pair and false on the screen a reader
+ * opens — which is exactly why the tab states which variant produced each
+ * number.
  *
  * `qty = floor(floor(riskBudget x 1000 / atrP3) / lotSize) x lotSize`
  */

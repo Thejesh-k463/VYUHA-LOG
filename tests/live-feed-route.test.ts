@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
 
@@ -7,14 +7,15 @@ import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
  * decides whether "openalgo" in a settings column may ever become a request.
  *
  * WHAT THIS FILE HOLDS TO ACCOUNT
- *   1. THE GATE IS SERVER-SIDE. Hiding a radio button is not a control. In
- *      v4.0 the OpenAlgo feed is not shipped at all (`OPENALGO_FEED_ENABLED`,
- *      owner ruling), so asking for it is a 400 that stores nothing even with
- *      a current acknowledgement; the consent gate underneath it
- *      (`selectProviderId`, `tests/quotes-registry.test.ts`) is what v4.1
- *      re-exposes — the same precedent `app/api/import/broker/route.ts` set.
- *   2. A STORED PICK IS NOT CONSENT, and in v4.0 not even a pick: a column
- *      carrying "openalgo" (a v4.1 machine's backup) resolves to `eod`.
+ *   1. THE GATE IS SERVER-SIDE. Hiding a radio button is not a control. v4.0
+ *      answered 400 because `OPENALGO_FEED_ENABLED` kept the id out of the zod
+ *      enum entirely; v4.1 ships the feed, so the request parses and the
+ *      CONSENT gate underneath (`selectProviderId`,
+ *      `tests/quotes-registry.test.ts`) is what refuses it — 403, storing
+ *      nothing, the same precedent `app/api/import/broker/route.ts` set.
+ *   2. A STORED PICK IS NOT CONSENT. A column carrying "openalgo" (a restored
+ *      backup) is shown as the pick and still runs `eod`, because the two
+ *      consent columns are machine state and do not travel with a backup.
  *   3. IT IS A ROUTE HANDLER, not a server action (AGENTS.md) — the card posts
  *      and calls `router.refresh()`, so no sibling Settings card is remounted.
  *   4. THE MARK COMES FROM THE SERVER'S PROVIDER, once a day, and a price the
@@ -24,6 +25,13 @@ import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
  * The route is imported DYNAMICALLY after `openTempDb()` because it imports
  * `@/lib/db` statically — a top-level import here would bind the connection
  * before the helper sets `VYUHA_DB_PATH`.
+ *
+ * NO MODULE-GRAPH SCAFFOLDING ANY MORE. The consent-gate block at the bottom
+ * used to re-import the route under `vi.resetModules()` + a `vi.doMock` of
+ * `@/lib/quotes/types` with `OPENALGO_FEED_ENABLED: true`, because the branch
+ * was unreachable while the flag was false. v4.1 flipped the flag, so the
+ * block runs against the SAME normally-imported route as everything above it —
+ * a mocked constant proves the branch compiles, the real one proves it ships.
  */
 
 let t: TempDb;
@@ -101,9 +109,12 @@ describe("GET — what the Settings card renders", () => {
     expect(body.feed.refreshSeconds).toBe(3);
   });
 
-  it("offers exactly the two v4.0 ships — `mock` is a test pin and `openalgo` is v4.1", async () => {
+  it("offers exactly the three v4.1 ships — `mock` is a test pin, never a choice", async () => {
     const body = await (await get()).json();
-    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual(["eod", "manual"]);
+    // `mock` is shipped-but-not-pickable: it is in SHIPPED_PROVIDER_IDS so e2e
+    // can pin it through VYUHA_QUOTE_PROVIDER, and the route's PICKABLE filter
+    // is what keeps it out of the picker.
+    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual(["eod", "manual", "openalgo"]);
     for (const p of body.providers) {
       // The picker's label and its egress sentence come from the registry's
       // capability block, not from the JSX — and the id it is keyed by is the
@@ -121,31 +132,8 @@ describe("GET — what the Settings card renders", () => {
   });
 });
 
-describe("POST provider — openalgo is a v4.1 feature and v4.0 will not store it", () => {
-  it("refuses openalgo even with BOTH halves of the consent in place, and stores nothing", async () => {
-    // The release gate sits in front of the consent gate: with
-    // OPENALGO_FEED_ENABLED false the id is not in the route's enum at all, so
-    // the request never reaches the acknowledgement check. A full consent is
-    // set up here deliberately — this must fail for the release reason, not
-    // for a missing acknowledgement.
-    setConsent(true, OPENALGO_DISCLOSURE_VERSION);
-    const res = await post({ action: "provider", provider: "openalgo" });
-    expect(res.status).toBe(400);
-    expect(settingsRow()?.liveFeedProvider).toBe("eod");
-  });
-
-  it("resolves a stored 'openalgo' to end-of-day — a v4.1 column value cannot open a feed here", async () => {
-    // The RESTORE case, and the downgrade case: a backup (or a machine that
-    // ran v4.1) carries the picker column. v4.0 shows and runs end-of-day.
-    t.db.update(t.schema.settings).set({ liveFeedProvider: "openalgo" }).run();
-    const body = await (await get()).json();
-    expect(body.feed.stored).toBe("eod");
-    expect(body.feed.effective).toBe("eod");
-    expect(body.health.provider).toBe("eod");
-    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
-  });
-
-  it("stores the two it does ship", async () => {
+describe("POST provider — what the picker may store", () => {
+  it("stores the two that ask nothing of the user", async () => {
     for (const provider of ["manual", "eod"]) {
       const res = await post({ action: "provider", provider });
       expect(res.status, provider).toBe(200);
@@ -154,10 +142,19 @@ describe("POST provider — openalgo is a v4.1 feature and v4.0 will not store i
   });
 
   it("rejects a provider that is not pickable, and one that is not a provider at all", async () => {
-    for (const provider of ["mock", "kite", "yahoo", "openalgo"]) {
+    for (const provider of ["mock", "kite", "yahoo"]) {
       const res = await post({ action: "provider", provider });
       expect(res.status, provider).toBe(400);
     }
+    // openalgo is NOT in that list any more. v4.0 answered 400 for it because
+    // OPENALGO_FEED_ENABLED kept the id out of the zod enum; v4.1 ships it, so
+    // the body parses and the CONSENT gate answers instead. The two statuses
+    // say different things on purpose — 400 is "no such option", 403 is "not
+    // until the disclosure is acknowledged" — and the gate's four cases are
+    // exercised in full at the bottom of this file.
+    setConsent(false, null);
+    const res = await post({ action: "provider", provider: "openalgo" });
+    expect(res.status, "openalgo is refused by consent now, not by the enum").toBe(403);
     expect(settingsRow()?.liveFeedProvider).toBe("eod");
   });
 });
@@ -208,68 +205,41 @@ describe("POST mark — one persisted mark per position per day, priced by the s
 });
 
 /**
- * T-3 — THE 403 BRANCH, EXERCISED TODAY.
+ * THE CONSENT GATE, EXERCISED AGAINST THE ROUTE THIS RELEASE SHIPS.
  *
- * `route.ts` still carries the consent gate (`openAlgoGate(…)` → 403), but
- * with `OPENALGO_FEED_ENABLED` false the id is not in the zod enum, so every
- * request for it stops one line earlier at the 400 above and the gate is never
- * reached. A branch nobody runs is a branch nobody knows still works: these
- * four cases were live at 16b1ec1 and are restored here against a route
- * MODULE-LOADED with the flag true.
- *
- * WHY A MODULE RE-IMPORT RATHER THAN A PLAIN `vi.mock`: the constant is read at
- * module-evaluation time in two places (`PICKABLE` here, `SHIPPED_PROVIDER_IDS`
- * in `lib/quotes/registry.ts`), so the mock only bites on a fresh module graph.
- * `vi.resetModules()` + `vi.doMock(… importOriginal …)` + a second dynamic
- * import gives one, and re-importing `@/lib/db` is safe: it caches its
- * connection on `globalThis`, so this is still ONE temp database for the file
- * (AGENTS.md) — the same file `t.db` is reading.
+ * `route.ts` has always carried the gate (`openAlgoGate(…)` → 403), but while
+ * `OPENALGO_FEED_ENABLED` was false the id was not in the zod enum, so every
+ * request for it stopped one line earlier at a 400 and the gate was never
+ * reached. These four cases therefore ran against a route re-imported under
+ * `vi.resetModules()` + a `vi.doMock` of the constant — scaffolding that is
+ * now DELETED, because v4.1 ships the feed and the branch is live in the same
+ * module every other block here uses. A mocked constant only ever proved the
+ * branch compiled.
  *
  * It runs LAST and puts the settings row back, because it is the only block
- * here that stores a value v4.0 does not ship.
+ * here that stores `openalgo` — the state the blocks above assert against is
+ * `eod` with no consent.
  */
-describe("POST provider — the consent gate the v4.1 flag re-exposes (T-3)", () => {
-  let gated: typeof import("@/app/api/live/feed/route");
-
-  const gget = () =>
-    gated.GET(new Request("http://127.0.0.1:3011/api/live/feed", { headers: { host: "127.0.0.1:3011" } }));
-
-  const gpost = (body: unknown) =>
-    gated.POST(
-      new Request("http://127.0.0.1:3011/api/live/feed", {
-        method: "POST",
-        headers: { host: "127.0.0.1:3011", "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-    );
-
-  beforeAll(async () => {
-    vi.resetModules();
-    vi.doMock("@/lib/quotes/types", async (importOriginal) => ({
-      ...(await importOriginal<typeof import("@/lib/quotes/types")>()),
-      OPENALGO_FEED_ENABLED: true,
-    }));
-    gated = await import("@/app/api/live/feed/route");
+describe("POST provider — the consent gate, on the shipped route", () => {
+  beforeAll(() => {
     setConsent(false, null);
     t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
   });
 
   afterAll(() => {
-    vi.doUnmock("@/lib/quotes/types");
-    vi.resetModules();
     setConsent(false, null);
     t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
   });
 
-  it("the flag really is flipped for this module — openalgo is pickable here", async () => {
-    // Without this the four cases below could all be passing for the v4.0
-    // reason (a 400) rather than exercising the gate at all.
-    const ids = (await (await gget()).json()).providers.map((p: { id: string }) => p.id).sort();
+  it("openalgo really is pickable in this release — the four cases below are the GATE, not the enum", async () => {
+    // Without this they could all be passing for the v4.0 reason (a 400 from
+    // the zod enum) rather than exercising the acknowledgement check at all.
+    const ids = (await (await get()).json()).providers.map((p: { id: string }) => p.id).sort();
     expect(ids).toEqual(["eod", "manual", "openalgo"]);
   });
 
   it("refuses openalgo with 403 and stores NOTHING when the disclosure was never accepted", async () => {
-    const res = await gpost({ action: "provider", provider: "openalgo" });
+    const res = await post({ action: "provider", provider: "openalgo" });
     expect(res.status).toBe(403);
     expect((await res.json()).message).toMatch(/openalgo/i);
     expect(settingsRow()?.liveFeedProvider).toBe("eod");
@@ -277,14 +247,14 @@ describe("POST provider — the consent gate the v4.1 flag re-exposes (T-3)", ()
 
   it("refuses it again when the integration is on but the acknowledgement is an OLD version", async () => {
     setConsent(true, "0");
-    const res = await gpost({ action: "provider", provider: "openalgo" });
+    const res = await post({ action: "provider", provider: "openalgo" });
     expect(res.status).toBe(403);
     expect(settingsRow()?.liveFeedProvider).toBe("eod");
   });
 
   it("stores it once both halves are in place", async () => {
     setConsent(true, OPENALGO_DISCLOSURE_VERSION);
-    const res = await gpost({ action: "provider", provider: "openalgo" });
+    const res = await post({ action: "provider", provider: "openalgo" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
@@ -296,7 +266,7 @@ describe("POST provider — the consent gate the v4.1 flag re-exposes (T-3)", ()
     // The RESTORE case: a backup carries the picker column, but the two consent
     // columns are machine state and do not travel.
     setConsent(false, null);
-    const body = await (await gget()).json();
+    const body = await (await get()).json();
     expect(body.feed.stored).toBe("openalgo");
     expect(body.feed.effective).toBe("eod");
     expect(body.feed.blockedReason).toBeTruthy();

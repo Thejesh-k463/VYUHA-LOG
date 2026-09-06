@@ -14,11 +14,13 @@ import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
  *      `tests/live-tracker-copy.test.ts` — quoted strings and JSX text of the
  *      Settings card and its route, comment-stripped, scanned for the words
  *      that would turn a settings screen into advice.
- *   2. THE DAILY RE-AUTH SENTENCE IS SAID, HIGHLIGHTED, AND NEUTRAL (Q24). It
- *      is also NOT YET VERIFIED against a named circular, and the file must
- *      keep saying so: a claim about what a regulator requires is a claim, and
- *      an unverified one that loses its marker ships as fact. The
- *      VERIFY-CIRCULAR marker is therefore asserted to still be there.
+ *   2. THE DAILY RE-AUTH SENTENCE IS SAID, HIGHLIGHTED, AND NEUTRAL (Q24), and
+ *      it NAMES NO REGULATOR (owner ruling). The earlier wording said exchanges
+ *      and SEBI require the daily re-authentication and carried a
+ *      VERIFY-CIRCULAR marker; no circular saying so is cited anywhere in this
+ *      tree, so the claim was softened to what the user's own broker does and
+ *      the marker was removed with it. Both halves are asserted below — the
+ *      sentence verbatim, and the absence of the marker it no longer needs.
  *   3. OPENALGO IS NAMED IN SETTINGS AND IN THE CONSENT SHEET, AND NOWHERE
  *      MARKETING SPEAKS (Q60). The live feed is a bridge the user chooses to
  *      run, not a feature Vyuha sells.
@@ -105,6 +107,19 @@ describe("the daily re-authentication note (owner answer Q24)", () => {
     // India is in the same position.
     expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/your broker (forces|makes|refuses)/i);
     expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/\b(Zerodha|Dhan|Groww|Angel One|Upstox|Kite)\b/);
+  });
+
+  it("names no regulator in the ADAPTER's comments either — an auditor greps comments too", () => {
+    // The capability block that sets `requiresDailyAuth` used to explain it as
+    // "an exchange/SEBI rule". A comment is not on screen, but a docs-claims
+    // audit reads the tree, and a claim about a regulator sitting one file away
+    // from the softened copy is the same unverifiable claim in a quieter place.
+    const adapter = read("lib/quotes/openalgo.ts");
+    expect(adapter, "the adapter still names a regulator").not.toMatch(/\bSEBI\b/);
+    expect(adapter).toMatch(/requiresDailyAuth: true/);
+    expect(adapter, "the adapter no longer attributes the daily expiry to the broker").toMatch(
+      /the BROKER's rule, not Vyuha's and not OpenAlgo's/,
+    );
   });
 
   it("has NO VERIFY-CIRCULAR marker left, because there is no longer a claim to verify", () => {
@@ -209,11 +224,17 @@ describe("OpenAlgo is named where consent is given, and never in marketing (owne
  * D-7 — the card may not render a control that belongs to a feed this release
  * does not ship.
  *
- * v4.0 offers two providers: the stored end-of-day bhavcopy and marks the user
+ * v4.0 offered two providers: the stored end-of-day bhavcopy and marks the user
  * types (`OPENALGO_FEED_ENABLED` false, `lib/quotes/types.ts`). Two blocks in
  * the card were rendered unconditionally anyway — the 1–5 s on-screen refresh
  * slider and the daily re-authentication note — and both describe a broker API
  * session. Together they told the user a live feed exists here.
+ *
+ * v4.1 flipped the flag and both blocks now render, WITH NO EDIT TO THE JSX:
+ * that is the property this block still exists to hold. The gate must stay a
+ * gate — `BROKER_FEED_OFFERED` derived from the provider list, each block
+ * inside exactly one `{BROKER_FEED_OFFERED && (…)}` subtree — so that flipping
+ * the constant back withdraws them just as completely.
  *
  * The environment is `node` (vitest.config.ts) with no DOM, so the proof is
  * structural rather than a render: both blocks must sit inside a
@@ -274,12 +295,34 @@ describe("the broker-feed controls are gated on the release flag (D-7)", () => {
     expect(occurrences("LIVE_FEED_COPY.dailyReauth"), "a second, ungated copy of the sentence").toBe(1);
   });
 
-  // Relaxes itself the moment v4.1 flips the flag: then both blocks are copy
-  // about a feature that ships, and the gate simply lets them through.
-  it.skipIf(OPENALGO_FEED_ENABLED)("so with the flag false neither reaches the screen — and the sentence still exists for v4.1", () => {
-    // The copy is NOT deleted: v4.1 flips one constant and the block returns
-    // verbatim, which is why the pinning tests above still hold it to the word.
-    expect(BROKER_FEED_OFFERED, "v4.0 offers no broker-backed feed").toBe(false);
-    expect(LIVE_FEED_COPY.dailyReauth.length).toBeGreaterThan(40);
+  /**
+   * v4.1: THE GATE IS OPEN, AND BOTH BLOCKS REACH THE SCREEN.
+   *
+   * This used to be `it.skipIf(OPENALGO_FEED_ENABLED)(…)` asserting the v4.0
+   * truth (`BROKER_FEED_OFFERED === false`). A guard that relaxes ITSELF the
+   * moment the flag flips is a guard that silently stops running exactly when
+   * the behaviour it describes changes — so it is replaced, not skipped, by
+   * the assertion for the release that actually ships.
+   */
+  it("with the flag TRUE both blocks reach the screen, and the sentence is the softened one", () => {
+    expect(BROKER_FEED_OFFERED, "v4.1 offers a broker-backed feed").toBe(true);
+
+    // Both gated regions exist and are non-empty — the same two subtrees the
+    // two tests above located, now on the rendering side of the gate.
+    const slider = regions.filter((r) => r.includes('data-testid="live-feed-seconds"'));
+    const reauth = regions.filter((r) => r.includes("LIVE_FEED_COPY.dailyReauth"));
+    expect(slider, "the refresh-seconds control").toHaveLength(1);
+    expect(reauth, "the re-auth sentence").toHaveLength(1);
+    expect(slider[0]).toMatch(/type="range"[\s\S]*min=\{1\}[\s\S]*max=\{5\}/);
+    expect(reauth[0]).toContain('data-testid="live-feed-reauth"');
+
+    // The sentence itself is EXACTLY the softened copy (owner ruling, this
+    // wave): no SEBI circular exists to cite, so no regulatory attribution
+    // ships. Pinned verbatim here as well as above, because this is the test
+    // that proves it is on screen rather than merely defined.
+    expect(LIVE_FEED_COPY.dailyReauth).toBe(
+      "Your broker's API session expires every day and has to be signed in again; that is the broker's rule, not Vyuha's.",
+    );
+    expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/\b(SEBI|exchange|exchanges|circular|regulat\w*)\b/i);
   });
 });

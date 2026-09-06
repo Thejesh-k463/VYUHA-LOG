@@ -282,6 +282,7 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
                 {view.rotationCaveat} The sector map has a single as-of date and no per-row effective date, so
                 these groupings are today&rsquo;s and are not backdated.
               </p>
+              <MapProvenance digests={view.mapDigests} />
               <div className="overflow-x-auto">
                 <table className="w-full text-left tabular-nums">
                   <thead className="text-muted-foreground">
@@ -521,6 +522,32 @@ export function AtlasPanel({ view }: { view: AtlasView }) {
  * recommendation would be built on, so the page that prints them states, on
  * the page, that it is not making one.
  */
+/**
+ * Q52 — WHICH copy of the classification maps produced the groupings above.
+ *
+ * The maps are refreshed by hand, once per minor release, so the as-of date
+ * alone cannot tell two builds of the same dated snapshot apart. The digest
+ * can: twelve hex on screen is enough to compare two machines at a glance, and
+ * the full 64 sits in the title attribute for anyone who wants to check it
+ * against the file.
+ *
+ * The strings arrive already computed — `lib/queries/atlas.ts` hashes them
+ * server-side, because `node:crypto` has no business in a client component.
+ */
+function MapProvenance({ digests }: { digests: AtlasView["mapDigests"] }) {
+  if (digests.length === 0) return null;
+  return (
+    <p className="tabular-nums text-muted-foreground">
+      {digests.map((d, i) => (
+        <span key={d.file} title={`${d.file} · sha256 ${d.sha256}`}>
+          {i > 0 ? " · " : ""}
+          {d.label} sha256 {d.sha256.slice(0, 12)} · as of {d.asOf ?? "—"}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function AtlasFooter({ view }: { view: AtlasView }) {
   return (
     <p className="px-1 pb-2 text-[0.6875rem] leading-relaxed text-muted-foreground">

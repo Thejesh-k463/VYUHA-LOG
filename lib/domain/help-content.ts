@@ -38,7 +38,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "Where do my open positions stand, and what is at risk if every stop is hit?",
     body: [
       "Every open position with the levels you recorded and the arithmetic between them: mark, unrealised P&L, open R against the risk frozen at entry, risk at stop, and portfolio heat — the sum of that risk over your capital, printed with its denominator.",
-      "Marks are end-of-day by default. Which source prices the desk — the stored end-of-day bhavcopy, or a mark you type — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
+      // THREE sources in v4.1, and the third is the one that needs its
+      // consent named in the same breath: `OPENALGO_FEED_ENABLED`
+      // (lib/quotes/types.ts:61) puts the OpenAlgo provider in the registry,
+      // and `readGateFromDb()` (lib/quotes/openalgo.ts:156-162 — the settings
+      // select through `if (!gate.allowed) return { state: "disabled" … }`)
+      // refuses every request until the disclosure is accepted and the switch
+      // is on. The refresh range is clamped to 1-5 s
+      // (lib/quotes/openalgo.ts:59-71, `clampRefreshSeconds()`) and
+      // nothing is persisted per tick (lib/quotes/persist-mark.ts header).
+      "Marks are end-of-day by default. Which source prices the desk — the stored end-of-day bhavcopy, a mark you type, or the OpenAlgo bridge you run on your own machine — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
+      "The OpenAlgo bridge is opt-in: it appears as a source only after you switch the integration on and accept the disclosure in Settings → Integrations, it asks your own bridge at 127.0.0.1 every 1 to 5 seconds while this screen is open, and its prices refresh on screen only — one mark per position per day is what reaches your journal.",
       "A row with no stop recorded is left out of heat and says so, rather than being counted as risk-free. Positions, marks and P&L are free; R, risk at stop, heat and the chart overlay are Pro.",
     ],
     keywords: ["live", "desk", "open positions", "mark", "heat", "risk at stop", "open r", "tracker", "quotes"],
@@ -448,10 +458,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
     body: [
       "Capital buckets, risk and charge/margin rate tables (every statutory rate is editable — nothing is hard-coded), theme, accent skins, colorblind-safe mode and licence activation.",
       "Your first configuration is kept as My Default Settings; change anything freely and one click brings the whole configuration back to your baseline. Trades and journal data are never part of that restore.",
+      // The same consent covers both uses of the instance from v4.1: the
+      // trade pull, and the Live Desk price poll. `openAlgoGate()` is the one
+      // gate both paths call (lib/quotes/openalgo.ts:155, and the import
+      // route), so a single acceptance is the truthful description.
       "Integrations (advanced) is where the OpenAlgo connection is switched on. It is off on every install, the switch opens a disclosure you have to accept, and the acceptance is written to the Audit Log with the version of the risks you read. Turning it off hides it again and leaves every trade already imported exactly where it is.",
+      "That same acceptance is what lets the Live Desk price your open positions from your own OpenAlgo bridge, chosen in Settings → Live feed. It is opt-in, it goes to 127.0.0.1 unless you enter another address, it sends the trading symbols of your open positions and nothing else about them, and its prices refresh on screen only.",
       "HOW YOUR CREDENTIALS ARE HELD. Broker API keys, secrets and access tokens are never stored as readable text: each one is encrypted with AES-256-GCM before it touches the database, under a key held by your operating system's own credential store. If an older install ever wrote one in the clear, Vyuha rewrites it as ciphertext on the next launch rather than leaving it there. Nothing in this app describes itself as encrypted unless it is.",
       "WHERE YOUR DATA LIVES. On Vyuha Desktop your journal is one SQLite file on your own machine. There is no account to create and no copy of your trades anywhere else — not a synced folder, not a cloud drive, not a database anyone else operates. Deleting the file deletes the data. A web platform is in development; it will state its own storage terms before you can use it.",
-      "WHAT LEAVES THE MACHINE. Vyuha ships no analytics, no crash reporter and no session recorder, so there is no third-party code in it that could see your screen or your book. The only outbound call it makes without your say-so is the update and licence-revocation check at launch. Everything else is something you switched on: an end-of-day price download, a broker pull you trigger — or, if you enabled them, the once-a-day auto-pull of your saved brokers at launch and the end-of-day Telegram digest, which sends your own recorded numbers to Telegram's servers. OpenAlgo is shaped so your broker credentials go into YOUR OpenAlgo instance and never into Vyuha.",
+      "WHAT LEAVES THE MACHINE. Vyuha ships no analytics, no crash reporter and no session recorder, so there is no third-party code in it that could see your screen or your book. The only outbound call it makes without your say-so is the update and licence-revocation check at launch. Everything else is something you switched on: an end-of-day price download, a broker pull you trigger, the Live Desk price poll to your own OpenAlgo bridge if you chose it as the desk's source — or, if you enabled them, the once-a-day auto-pull of your saved brokers at launch and the end-of-day Telegram digest, which sends your own recorded numbers to Telegram's servers. OpenAlgo is shaped so your broker credentials go into YOUR OpenAlgo instance and never into Vyuha.",
       "THE v3.6 CARDS. Alerts — Telegram EOD digest sends the day's numbers from your own journal to a Telegram bot you create yourself: off by default, behind a disclosure that says plainly the content transits Telegram's servers. Expected capital goals records a ₹ or % target per capital bucket and measures progress against your own realised record — never a projection. Auto-pull saved brokers on launch (under Integrations) is a once-a-day opt-in that runs the same pull you would start by hand — anything the manual flow would stop and ask about still stops and asks.",
     ],
     keywords: ["settings", "capital", "rates", "theme", "default", "restore defaults", "licence", "integrations", "openalgo", "privacy", "security", "encryption", "credentials", "api key", "vault", "telemetry", "offline", "telegram", "alerts", "goals", "auto-pull"],

@@ -26,14 +26,19 @@ import {
   LAB_PRODUCT_LABELS,
   LAB_PRODUCT_SEGMENT,
   LIVE_DESK_RANGES,
+  VOLATILITY_SIZE_CAPTION,
+  VOLATILITY_SWITCH_LABEL,
+  VOLATILITY_VARIANTS,
   buildSetup,
   methodByKey,
   seedFromParams,
   stopIsOriented,
+  volatilityVariants,
   type LabInputs,
   type LabProduct,
   type LabQuery,
   type ResolvedLiveDeskRisk,
+  type VolatilityVariantId,
 } from "./lab-config";
 import { MethodRail } from "./method-rail";
 import { FormulaBlock } from "./formula-block";
@@ -105,6 +110,11 @@ export function LabClient(p: LabClientProps) {
   const [inputs, setInputs] = React.useState<LabInputs>(seed.inputs);
   const [method, setMethod] = React.useState<SizingMethodId>("fixed-fractional");
   const [broker, setBroker] = React.useState<Broker>(p.brokers[0] ?? "zerodha");
+  // Which volatility variant the Turtle tab's switch holds in the primary
+  // position (Q-6). It is a presentation choice INSIDE one tab: it never
+  // touches `method`, so the rail, the compare highlight and the `?method=`
+  // deep links are exactly what they were.
+  const [volPrimary, setVolPrimary] = React.useState<VolatilityVariantId>("volatility-unit");
 
   const set = <K extends keyof LabInputs>(k: K, v: LabInputs[K]) => setInputs((s) => ({ ...s, [k]: v }));
 
@@ -411,7 +421,16 @@ export function LabClient(p: LabClientProps) {
             <CardContent className="space-y-3">
               <MethodExtras id={active.method} inputs={inputs} set={set} />
 
-              <FormulaBlock result={active} />
+              {active.method === "volatility-unit" ? (
+                <VolatilityPair
+                  rows={rows}
+                  primary={volPrimary}
+                  onPrimary={setVolPrimary}
+                  tabLabel={activeMeta.label}
+                />
+              ) : (
+                <FormulaBlock result={active} />
+              )}
 
               <ResultTiles
                 result={active}
@@ -566,6 +585,87 @@ function MethodExtras({
 
   if (fields.length === 0) return null;
   return <div className="grid gap-2 sm:grid-cols-3">{fields}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// The volatility tab's two-position variant switch (owner Q-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Inside the Turtle tab, and only there: a labelled two-position switch that
+ * puts the two volatility variants side by side, each panel headed by the
+ * variant that produced the number under it.
+ *
+ * The rows are the ones already computed for the rail and the compare table —
+ * `volatilityVariants` selects, it does not re-derive — so the pair, the tab
+ * and the table are one arithmetic. The switch chooses which variant leads;
+ * it does NOT change the tab, because both tabs and both `?method=` deep links
+ * stay exactly as they are.
+ */
+function VolatilityPair({
+  rows,
+  primary,
+  onPrimary,
+  tabLabel,
+}: {
+  rows: SizeResult[];
+  primary: VolatilityVariantId;
+  onPrimary: (id: VolatilityVariantId) => void;
+  tabLabel: string;
+}) {
+  const pair = volatilityVariants(rows, primary);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span id="lab-vol-switch" className="text-[0.6875rem] uppercase tracking-[0.08em] text-muted-foreground">
+          {VOLATILITY_SWITCH_LABEL}
+        </span>
+        <div role="radiogroup" aria-labelledby="lab-vol-switch" className="flex gap-0.5 rounded-md border border-border p-0.5">
+          {VOLATILITY_VARIANTS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              role="radio"
+              aria-checked={v.id === primary}
+              onClick={() => onPrimary(v.id)}
+              className={`rounded-sm px-2 py-1 text-[0.6875rem] transition-colors ${
+                v.id === primary
+                  ? "bg-primary/[0.12] text-foreground"
+                  : "text-muted-foreground hover:bg-card-hover"
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-2 lg:grid-cols-2">
+        {pair.map((v) => (
+          <div key={v.id} className="space-y-1 rounded-md border border-border p-2">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-xs font-medium text-foreground">{v.label}</span>
+              <span className="text-[0.6875rem] uppercase tracking-[0.08em] text-muted-foreground">
+                {v.primary ? "primary" : "sibling variant"}
+              </span>
+            </div>
+            <div className="select-text text-sm tabular-nums">
+              {v.result.ok ? `${num(v.result.qty, 0)} shares` : "—"}{" "}
+              <span className="text-[0.6875rem] font-normal tabular-nums text-muted-foreground">
+                · {VOLATILITY_SIZE_CAPTION}
+              </span>
+            </div>
+            <FormulaBlock result={v.result} />
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[0.6875rem] text-muted-foreground">
+        Both panels read the same setup and each states the variant that produced its figure. The result tiles and
+        flags below are computed from {tabLabel}, the tab this switch sits in.
+      </p>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

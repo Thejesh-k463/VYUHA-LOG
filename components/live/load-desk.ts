@@ -12,7 +12,7 @@ import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
-import { getSectorResolution } from "@/lib/queries/instruments";
+import { getResultsDateMap, getSectorResolution } from "@/lib/queries/instruments";
 import { getMtfMarginByBroker } from "@/lib/queries/margin";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { getTrades } from "@/lib/queries/trades";
@@ -169,6 +169,10 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   const byId = new Map(trades.map((t) => [t.id, t]));
   const accountNames = new Map(getAccounts().map((a) => [a.id, a.name]));
   const sectors = getSectorResolution();
+  // Q-9. One read for the whole desk, keyed on the upper-cased symbol — the
+  // same shape as `sectors` above, and for the same reason: 40+ rows must not
+  // each go back to `instruments`.
+  const resultsDates = getResultsDateMap();
   const capital = getBucketCapital();
   const equityCapitalP = capital.equityCapital > 0 ? toPaise(capital.equityCapital) : null;
   const activeCapitalP = capital.activeCapital > 0 ? toPaise(capital.activeCapital) : null;
@@ -312,6 +316,11 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       isin: t?.isin ?? null,
       entryDate: position.entryDate,
       lotSize: position.lotSize,
+      // FREE, deliberately — a results date is a fact about the company, the
+      // same kind of thing as the symbol itself, so it does not pass through
+      // the `gated` boundary above (owner ruling Q-9, and invariant 7's spirit:
+      // the user's own record is never held hostage).
+      resultsDate: resultsDates.get(p.symbol.toUpperCase()) ?? null,
       mtf: p.isMtf
         ? {
             fundedP: toPaise(p.fundedAmount),

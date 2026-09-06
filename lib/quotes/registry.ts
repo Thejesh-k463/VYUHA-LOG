@@ -47,12 +47,13 @@ export const DEFAULT_PROVIDER_ID: ProviderId = "eod";
 /**
  * Built AND selectable in this release.
  *
- * `openalgo` is built but NOT selectable in v4.0 (owner ruling): it is a v4.1
- * feature, so it is absent from this list, from the route's pickable set and
- * from the Settings radios, and `resolveProviderId()` — which validates a
- * stored value against this list plus the planned ones — therefore resolves a
- * stored `"openalgo"` to the end-of-day default. Flipping
- * `OPENALGO_FEED_ENABLED` puts it back everywhere at once.
+ * `openalgo` joined this list in v4.1 (owner ruling, `OPENALGO_FEED_ENABLED`).
+ * It was built in v4.0 and withheld from here, from the route's pickable set
+ * and from the Settings radios, so `resolveProviderId()` — which validates a
+ * stored value against this list plus the planned ones — collapsed a stored
+ * `"openalgo"` to the end-of-day default. Being listed here is SELECTABILITY,
+ * never permission: `selectProviderId()` below still re-checks the consent
+ * pair, and flipping the constant back removes it everywhere at once.
  */
 export const SHIPPED_PROVIDER_IDS: readonly ProviderId[] = OPENALGO_FEED_ENABLED
   ? ["eod", "manual", "mock", "openalgo"]
@@ -69,10 +70,10 @@ const PLANNED_NOTES: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
 };
 
 const PLANNED_LABELS: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
-  kite: "Zerodha Kite Connect (not enabled in v4.0)",
-  upstox: "Upstox (not enabled in v4.0)",
-  dhan: "Dhan (not enabled in v4.0)",
-  angelone: "Angel One SmartAPI (not enabled in v4.0)",
+  kite: "Zerodha Kite Connect (not enabled in this release)",
+  upstox: "Upstox (not enabled in this release)",
+  dhan: "Dhan (not enabled in this release)",
+  angelone: "Angel One SmartAPI (not enabled in this release)",
 };
 
 /**
@@ -80,7 +81,7 @@ const PLANNED_LABELS: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
  *
  * `egressDescription` names NO host on purpose: a provider that cannot run
  * makes no request, and writing its future host here would put a claim in the
- * privacy surface that v4.0 does not honour. The host arrives in the same
+ * privacy surface that the current release does not honour. The host arrives in the same
  * release as the consent sheet and the PRIVACY line — not before.
  */
 export function plannedCapabilities(id: (typeof PLANNED_PROVIDER_IDS)[number]): ProviderCapabilities {
@@ -94,7 +95,7 @@ export function plannedCapabilities(id: (typeof PLANNED_PROVIDER_IDS)[number]): 
     segments: [],
     staleness: "delayed",
     requiresDailyAuth: false,
-    egressDescription: "None. This provider is disabled in v4.0 and makes no request.",
+    egressDescription: "None. This provider is disabled in this release and makes no request.",
   };
 }
 
@@ -113,7 +114,7 @@ export function createPlannedProvider(id: (typeof PLANNED_PROVIDER_IDS)[number])
     // health() never throws — that is the contract, and it is exactly how the
     // desk learns to show "not enabled" instead of a blank pill.
     async health(): Promise<ProviderHealth> {
-      return { ok: false, reason: `Not enabled in v4.0 — ${note}` };
+      return { ok: false, reason: `Not enabled in this release — ${note}` };
     },
   };
 }
@@ -151,8 +152,8 @@ export interface LiveFeedSelection {
  * PURE. The stored picker value → the provider that may actually run.
  *
  * The ONLY way to reach `openalgo` is all FOUR of: the release ships it
- * (`OPENALGO_FEED_ENABLED`, false in v4.0 — `resolveProviderId()` already
- * collapses the stored value to the default without it), the column says so,
+ * (`OPENALGO_FEED_ENABLED`, true since v4.1 — without it `resolveProviderId()`
+ * already collapses the stored value to the default), the column says so,
  * the integration is on, and the acknowledgement is current. Anything else
  * falls back to the default — silently, because a picker value is a preference
  * and a missing consent is not an error the user made.
@@ -229,11 +230,12 @@ export function getQuoteProvider(stored?: string | null): QuoteProvider {
 /**
  * Every capability block in the registry — what the egress guard iterates.
  *
- * OpenAlgo's block stays here even in v4.0, where the provider is not
- * selectable: the adapter exists, so its declared egress must keep being held
- * to the privacy sheet. A capability block that disappeared with the feature
- * flag would be a guard that stops guarding exactly when the code is easiest
- * to change.
+ * OpenAlgo's block is listed UNCONDITIONALLY, as it already was in v4.0 where
+ * the provider was built but not selectable: the adapter exists, so its
+ * declared egress must keep being held to the privacy sheet whichever way
+ * `OPENALGO_FEED_ENABLED` points. A capability block that disappeared with the
+ * feature flag would be a guard that stops guarding exactly when the code is
+ * easiest to change.
  */
 export function allProviderCapabilities(): ProviderCapabilities[] {
   return [

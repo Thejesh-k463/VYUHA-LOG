@@ -7,8 +7,8 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-6057%20passing-2ea44f)](tests)
-[![E2E](https://img.shields.io/badge/e2e-84%20flows-2ea44f)](e2e)
+[![Tests](https://img.shields.io/badge/tests-6177%20passing-2ea44f)](tests)
+[![E2E](https://img.shields.io/badge/e2e-91%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
 [![Where](https://img.shields.io/badge/where-desktop%20or%20web-black)](#-your-data-your-choice-of-home)
@@ -29,6 +29,31 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 Most journals tell you your P&L. **Vyuha tells you why.**
 
 > **Now: v4.0.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+>
+> **New in 4.1 — in build, not yet released.** The Live Desk can be priced by a
+> bridge you already run. The OpenAlgo feed that shipped **switched off** in
+> v4.0.0 is switched on, and **Settings → Live feed** now offers three sources:
+> the end-of-day bhavcopy already on this machine (still the default), a mark
+> you type, or **your own OpenAlgo instance**. It is opt-in and stays behind a
+> disclosure every install re-accepts; while the desk is open Vyuha asks *your*
+> bridge — `127.0.0.1` unless you enter another address — at the interval you
+> set on a 1–5 second slider, and the request carries the trading symbols and
+> exchanges of your open positions and **nothing else about them**: no quantity,
+> no entry price, no P&L, no account. **No new network host** is added, and
+> **ticks are never written** — one mark per position per day reaches the
+> journal. Your broker's API session expires daily and has to be signed in again
+> at OpenAlgo's own screen; that is the broker's rule, and the desk says so once
+> a day. Beside it: the Sizing Lab's volatility tab shows **both** of its
+> variants — Turtle unit (N) and Varsity (% volatility) — side by side with each
+> panel naming the variant that produced its number, and the seven tabs are
+> unchanged; the Market Atlas prints the **sha256** of each bundled
+> classification map beside its as-of date; an instrument can carry the date its
+> company reports, shown on the desk as a free **"Results in N days"** chip and
+> typed by you, since nothing fetches it; and the portfolio-heat tile also
+> prints what your trailed stops have **locked in at stop**. One migration,
+> 0068, and no dependency changes. Telegram stop/target alerts are **not** in
+> it — they become their own release after v4.2 — and native Upstox and Angel
+> One feeds are v4.2.
 >
 > **v4.0.0 — the Live Desk.** Open positions get a screen of their own: what
 > you still hold, the mark Vyuha has for each name, the P&L that follows from
@@ -456,8 +481,8 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **6057** | **46** | **0** |
-| tests, 84 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
+| **6177** | **46** | **0** |
+| tests, 91 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
 
@@ -495,7 +520,7 @@ embeds the price you saw.
 | Workspace mode, sidebar layout, appearance (skins, tint, panels, custom theme, wallpaper), multi-account | PDF reports — monthly, and any hand-picked selection of trades |
 | **Lenses grouping** — by month/broker/type/file, with delete | **Lenses edge** — per-group win rate, profit factor, expectancy |
 | **Recoverable delete** — every delete snapshots first, restorable | |
-| **Live Desk** — open positions, their marks, their P&L and how old each price is | **Live Desk Pro columns** — R, risk if the stop is hit, portfolio heat, the chart overlay · **Sizing Lab** — seven sizing methods with their formulas · **Market Atlas** — breadth, sectors and cap bands from your own stored bars |
+| **Live Desk** — open positions, their marks, their P&L and how old each price is · the results date you recorded, as a "Results in N days" chip | **Live Desk Pro columns** — R, risk if the stop is hit, portfolio heat (with what your trailed stops have locked in at stop), the chart overlay · **Sizing Lab** — seven sizing methods with their formulas · **Market Atlas** — breadth, sectors and cap bands from your own stored bars |
 
 Every fresh install of Vyuha Desktop starts a **7-day full-Pro trial** — no signup, no card, no server call. When it ends,
 **every trade you have already recorded stays readable, editable and exportable without a key,
@@ -764,7 +789,7 @@ License.
 ## 🔒 Your data, your choice of home
 
 Vyuha Desktop needs no login and ships no telemetry and no analytics SDKs. A web platform is in development; when it ships, this section will state what each surface sends.
-On the desktop app: Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. Unprompted, the desktop app talks to `127.0.0.1` and makes exactly one download-only call: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off. Every other network path exists only if you enable it: the EOD bhavcopy fetch (off by default), broker-API pulls that talk only to your own broker (Dhan's PIN+TOTP sign-in goes only to `auth.dhan.co`, and the opt-in launch auto-pull just runs those same pulls once a day), and the opt-in Telegram EOD digest — the one path that uploads anything, and what it uploads is your own recorded numbers, to Telegram's servers, behind an explicit disclosure. On the desktop app, nothing about you or your trades leaves the machine by any path you didn't switch on.
+On the desktop app: Everything lives in **one SQLite file on your disk** — copy it and you've backed up your entire trading life. Unprompted, the desktop app talks to `127.0.0.1` and makes exactly one download-only call: at launch it asks GitHub for the latest signed release and the licence-revocation list — sending no account, no identifier and no data, and **not** something you can switch off. Every other network path exists only if you enable it: the EOD bhavcopy fetch (off by default), broker-API pulls that talk only to your own broker (Dhan's PIN+TOTP sign-in goes only to `auth.dhan.co`, and the opt-in launch auto-pull just runs those same pulls once a day), the Live Desk's price poll to the OpenAlgo bridge **you** run — off until you switch the integration on, accept the disclosure and pick that source, answering on `127.0.0.1` unless you enter another address, and carrying the trading symbols of your open positions and nothing else about them — and the opt-in Telegram EOD digest — the one path that uploads anything, and what it uploads is your own recorded numbers, to Telegram's servers, behind an explicit disclosure. On the desktop app, nothing about you or your trades leaves the machine by any path you didn't switch on.
 
 ---
 
@@ -809,8 +834,8 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       6057 unit + integration tests across 328 files (+ tests/load: 16 load cases, run separately)
-e2e/         84 Playwright flows through the real app, in 28 specs
+tests/       6177 unit + integration tests across 334 files (+ tests/load: 16 load cases, run separately)
+e2e/         91 Playwright flows through the real app, in 29 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
   owner/     VENDOR ONLY — licensing, release, monetization, indicators
@@ -830,7 +855,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **6057 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **6177 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -846,8 +871,8 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (6057 tests) |
-| `npm run test:e2e` | Playwright e2e — 84 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
+| `npm test` | Vitest unit + integration suite (6177 tests) |
+| `npm run test:e2e` | Playwright e2e — 91 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
 | `npm run typecheck` / `npm run lint` | `tsc --noEmit` / ESLint |
@@ -916,7 +941,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 6057 Vitest unit + integration tests (+ tests/load)
+  tests/          # 6177 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

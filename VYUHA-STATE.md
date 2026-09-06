@@ -27,6 +27,63 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
+## 2. Current state — v4.1.0 IN BUILD on `main` (uncommitted working tree over `6631d21`; version strings still 4.0.0) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+
+> **v4.1.0 IS IN BUILD.** Base commit `6631d21`; the wave is an UNCOMMITTED working tree on `main`.
+> `package.json` is still **4.0.0** — the bump happens after the audit, and no version field, Cargo
+> file or sidebar footer has been touched. `package-lock.json` is unmodified: **4.1 adds, removes and
+> upgrades no dependency.** One migration, **0068** (`instruments.results_date`, nullable TEXT,
+> hand-written with a `drizzle/meta/_journal.json` entry).
+>
+> **What 4.1.0 ships, and the file that makes each true:**
+> - **The OpenAlgo live price feed is ON.** `OPENALGO_FEED_ENABLED = true` (`lib/quotes/types.ts`) —
+>   the one release switch; the adapter, capability block, tests and migration 0067 all shipped in
+>   4.0 and were only withheld. Settings → Live feed offers **three** sources (end-of-day bhavcopy,
+>   a typed mark, the OpenAlgo bridge on the user's own machine) with the 1–5 s refresh slider and
+>   the daily re-sign-in note — attributed to **the broker**, no regulator named
+>   (`LIVE_FEED_COPY.dailyReauth`, `components/settings/live-feed-card.tsx`). Selectability is not
+>   consent: `selectProviderId()` re-checks the acknowledgement and `/api/live/feed` answers 403.
+> - **The poll:** `/api/v1/multiquotes` on the user's own bridge (`127.0.0.1:5000` by default), body =
+>   API key + the trading symbols and exchanges of the OPEN positions of the selected account, capped
+>   at 500, and nothing else; `/funds` once when the connection is checked; interval clamped 1–5 s and
+>   ceilinged at 10 req/s; starts and stops with the desk. **No new network host.** Ticks are never
+>   written — `lib/quotes/persist-mark.ts` writes **one mark per position per IST day** into
+>   `mtm_prices`, idempotent twice over.
+> - **Disclosure v2.** `OPENALGO_DISCLOSURE_VERSION = "2"` + `OPENALGO_FEED_ITEMS`
+>   (`lib/domain/openalgo-disclosure.ts`), rendered under its own heading by
+>   `components/system/openalgo-dialog.tsx`; `isAckCurrent()` compares with `===`, so **every install
+>   re-acknowledges** before the pull or the feed runs. `docs/client/PRIVACY.md` item 3 is **widened,
+>   not joined by a fifth** — same host, wider purpose — so "Exactly four kinds" and "There is no
+>   fifth thing" stay literally true (pinned by `tests/positioning-copy.test.ts`). Help for /live and
+>   for Settings names the three sources.
+> - **Sizing Lab:** a **Turtle unit (N) ⇄ Varsity (% volatility)** switch INSIDE the Volatility ·
+>   Turtle unit tab prints the sibling variant's size and formula beside the primary, each panel
+>   labelled by variant. **Seven tabs and every `?method=` deep link unchanged.** The copy defect is
+>   fixed in the same wave: the `pct-volatility` description and the `sizePctVolatility` header both
+>   said Varsity returns the LARGER quantity ("around twice"), which is false at the Lab's own
+>   opening sample (0.25% against a 1% unit → a **quarter**); both now state the true ratio
+>   `riskPpm ÷ unitRiskPpm`, pinned by `tests/sizing-lab-copy.test.ts`.
+> - **Market Atlas → Sectors:** the **sha256 of each bundled classification map** beside its as-of
+>   date (Q52) — `sector-map.json` and `nse-index-map.json`, hashed server-side once per process,
+>   12 hex on screen and the full 64 in the title.
+> - **`results_date` (Q-9, migration 0068):** a **Results dates** editor card on `/instruments`
+>   (rows that already carry a date, a search box for the rest, 100 rendered at a time with the
+>   shortfall stated); a **free** "Results in N days / today / tomorrow" chip on the `/live` row and
+>   in the detail pane; past dates render nothing on the row. **User-entered — no calendar is
+>   bundled and no host is contacted.**
+> - **Portfolio heat (Pro) also prints "Locked in at stop ₹X"** — `lockedInProfitP`, computed in
+>   `lib/live/heat.ts` since 4.0 and rendered nowhere until now. Stated on its own line, never netted
+>   into heat.
+> - **`/live` browser harness:** the free-licence payload test runs on a **seeded free context** (an
+>   expired trial) instead of skipping, and `j`/`k` geometry is covered on the **windowed** path
+>   (≥ 40 rows) as well as the short one.
+>
+> **NOT in 4.1, and the docs say so:** Telegram stop/target alerts are **cut** — their own release
+> after 4.2, and "alerts" stays out of Pro copy; no `openalgo-charts` pilot; no journal-derived
+> Kelly; no size-index lists; **Upstox and Angel One price feeds are 4.2**.
+>
+> **VERIFY (2026-09-06, wave gate on the uncommitted 4.1 tree): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 334 files / 6,177 passed / 35 skipped (6,212), `next build` compiled. Playwright on the settled tree: 91 passed / 0 failed (one conditional skip), the windowed-scroll fix proven red-on-revert at −628 px. README counts set to 6177 / 334 / 91 flows in 29 specs.**
+
 ## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 
 > **v4.0.0 is PUBLISHED (2026-09-06 13:46 IST, `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v4.0.0`), installed on a non-build machine (owner-confirmed working), WDSI submitted. Nothing is owed on this release.**

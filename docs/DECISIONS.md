@@ -3827,3 +3827,93 @@ Rules, all in-repo so a fresh session finds them without memory:
   signal and it is free.
 - **Orchestrator doc edits through the Edit tool** (audit skill §0); this file is CRLF and was
   rebuilt once today after a byte/Unicode mix.
+
+## 2026-09-06 — v4.1.0 pre-build rulings (owner pop-ups, two groups of four, before any code)
+
+Asked after reading STATE §2, the ledger's 2026-09-06 sections, 06-ANSWERS and the v4.0 prompt §0.2/§10;
+nothing already answered there was re-asked. Each line names the rejected alternative.
+
+- **Q18 Telegram stop/target alerts are CUT from 4.1** and become their own release after 4.2.
+  "alerts" stays out of every Pro label (the `help-content` guard "/live advertises no alerts" stays).
+  *Rejected: shipping them in 4.1* — a consent toggle, quiet hours, a sent-alert table (migration), a job
+  and a Settings card is a second security-gating surface on the same day 4.2 is due.
+- **Q24 re-auth attribution: no circular link exists**, so the softened sentence ships in 4.1 unchanged
+  (`LIVE_FEED_COPY.dailyReauth`: the broker's rule, no regulator named). *Rejected: restoring the SEBI
+  attribution* — an unverified regulatory claim is the kind of sentence that ships as fact.
+- **Q66 `VYUHA_KEY_ARCHIVE_DIR` still unset**; nothing in 4.1/4.2 reads it. Stays owner-owed.
+- **4.2 smoke: the owner tests Upstox + Angel One with his own keys after installing 4.2**; the session
+  never receives a key (they are entered in Settings). *Rejected: fixtures-only* — the live path must be
+  observed on a real account once before the release is called done.
+- **Q-6 Varsity: keep the 7-tab rail; a Turtle N ⇄ Varsity % switch INSIDE the Volatility tab** shows the
+  sibling variant's size and formula beside the primary, labelled by variant; deep links unchanged.
+  *Rejected: merging into one 6-tab Volatility tab* — the rail the 4.0 users saw would change and
+  `method=pct-volatility` links would need a redirect.
+- **Q-9 `results_date`: nullable column on `instruments` (migration 0068), edited on /instruments, shown as a
+  "Results in N days" chip on the /live row and detail pane; past dates render nothing; FREE (a date fact
+  about the company, like the symbol); no network source.** *Rejected: inline edit from the /live row* — a
+  second write path on a free row.
+- **Q30 no `openalgo-charts` pilot in 4.1**; `lightweight-charts` stays at 5.2.0 and 4.1 changes no
+  dependency. *Rejected: a flagged pilot* — the first dependency since 3.9 plus a lockfile hand-merge for a
+  package without a sustained 2.x line. A layer-by-layer teardown of the repo was commissioned the same
+  afternoon (`VYUHA-LIVE-DESK-RESEARCH/11-OPENALGO-CHARTS-TEARDOWN.md`) to inform the post-4.2 decision.
+- **4.1 extras: only the small in-repo §10 items ride** — render `lockedInProfitP` (computed in
+  `lib/live/heat.ts`, never rendered), the Q52 sha256 digest beside the index map's `asOf`, and the two
+  `/live` e2e gap seeds (a free context; ≥ 40 positions). *Rejected: journal-derived Kelly and the five
+  size-index lists in 4.1* — two more builders and a build-time niftyindices fetch on the owner's machine.
+- **CI on the base commit `6631d21` was red** (readme-claims e2e spec count 28 vs 29; z-live-desk "row 5
+  mark chip carries a date" on the Linux/macOS full-suite runs). Both test-only; both enter the 4.1 wave as
+  item zero rather than a separate fix commit. *Rejected: tagging around it* — the release skill §6 forbids it.
+
+## 2026-09-06 — v4.1.0 build wave: what the builders decided, and what the seam pass and the harness found
+
+Five disjoint Opus builders (feed flag, consent copy, results_date + locked-in, Varsity switch + digest, e2e),
+then a seam pass, a docs wave and three follow-ups. Rulings taken inside the wave, each with its alternative:
+
+- **The live-feed disclosure is v2 with seven feed items; every factual sentence carries a code citation in a
+  comment, never in the user-facing text**, and each citation names the identifier at that line ("grep the
+  name, the number drifts"). Builder A's 6-line comment insertion in `lib/quotes/openalgo.ts` moved every
+  citation below it; the seam pass caught it and Builder G re-derived all of them. *Rejected: a regex test
+  over citations* — a source-text assertion is the kind the test-integrity auditor deletes.
+- **The OpenAlgo poll is the SAME privacy kind as the broker pull** (a request to the user's own bridge, only
+  when switched on), so PRIVACY item 3 widened and "Exactly four kinds … There is no fifth thing." stays
+  byte-identical and true. A new guard (`tests/privacy-feed-disclosure.test.ts`) refuses any surface that
+  pairs the bridge with a price claim without stating opt-in AND the loopback default in the same sentence.
+- **"Not enabled in v4.0" became "not enabled in this release"** in `PLANNED_LABELS`, `NotEnabledError`, the
+  planned provider's health reason and its egress line, so the strings never lag a release again.
+- **`results_date` is edited on its own card on /instruments** (`components/instruments/results-date-editor.tsx`),
+  rendering at most 100 matching rows with the shortfall stated, because `addAll` puts ~1,379 instruments in
+  the master and a second un-virtualised full table would double that page's DOM. It should fold into the
+  instrument manager's table in a wave that owns both files. The column travels in backups with zero code
+  change (`lib/backup.ts` dumps and restores whole rows; no instrument column list exists anywhere — a guard
+  now pins that). *Rejected: inline edit on the /live row* (owner ruling above).
+- **The Atlas digest is the sha256 of the canonical JSON of each bundled map as the runtime loaded it**
+  (`lib/data/sector-map.json`, `lib/data/nse-index-map.json`), memoised per process. It is deliberately NOT
+  `sector-map.json`'s own `provenance.sha256`, which digests the SOURCE CSV.
+- **The Varsity switch does not re-point the tab's result tiles**; they stay bound to the Turtle unit and the
+  closing line says so. Re-pointing them would desync the rail and compare-table highlight from `?method=`.
+  Also fixed: the `% volatility` description claimed a larger quantity than the Turtle unit "at identical
+  inputs" — false at the Lab's own sample (risk 0.25% vs unit risk 1% makes the Turtle unit 4× larger). The
+  true relation (Varsity = Turtle × riskPpm ÷ unitRiskPpm) is now stated and pinned.
+- **The desk virtualiser measured rows for the first time.** `ROW_HEIGHT` said 44 px; windowed rows render at
+  ~66.6 px (the Mark cell is two block lines), and nothing passed `measureElement`, so past 40 positions the
+  focused row drifted (66.6 − 44) × index below the fold — 628 px by row 18. The new windowed j/k e2e test
+  (45 seeded positions through the real /import path) found it; the fix is `measureElement` + `data-index`
+  per windowed row, `ROW_HEIGHT` 66 as the initial guess, plus `scrollPaddingEnd = offsetHeight − clientHeight`
+  (virtual-core sizes the viewport from the border box, 252, and scrolls in client coordinates, 250, so
+  `align:"end"` overshot by 1.5 px). v4.0's three scroll fixes were all on the un-windowed path.
+- **CI-B root cause:** the e2e suite shares one database; `z-dhan-gtr.spec.ts` imports a 79-row tradebook with
+  no closing price and `staged-position.spec.ts` closes one P&L position, so row 5 of `/live` reads "No mark
+  stored" in the full suite and "End of day" alone. The assertion now accepts every label the desk can
+  produce, forbids any dated chip, and requires at least one bare "End of day" row.
+- **The free-licence e2e context backdates `trial_started_at` in the shared e2e DB and restores it in
+  `afterEach`, reading it back** — one reload is the whole mechanism because the entitlement is cached per
+  request. *Rejected: a second Playwright project* — a second Next server for the whole run to assert one
+  payload.
+- **The landing page's "New in v4.1.0" chip was reverted before the push**: GitHub Pages serves `main`, so a
+  chip pushed before the tag advertises a build nobody can download. It returns in the bump commit.
+- **Known drift for the fix wave, not fixed here:** `components/risk/breach-banner.tsx:47,105` and
+  `lib/risk/alerts.ts:4` still say the marks are "not live quotes"; with the bridge on, `mtm_prices` holds one
+  feed-derived dated mark a day, so the sentence is imprecise for a bridge user.
+- **Builder-agent hooks:** `nocommit-guard.mjs` denies `taskkill`/`Stop-Process` to every build agent (written
+  for the Sentinel supervisor), while the coord hook's own denial text tells the agent to kill a stray :3100
+  server. The orchestrator kills; a `/fleet-tune` entry should scope the rule to the Sentinel port.

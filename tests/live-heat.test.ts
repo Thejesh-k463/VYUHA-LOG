@@ -170,3 +170,56 @@ describe("sectorConcentration", () => {
     expect(c[0].share.denominator).toBeNull();
   });
 });
+
+/**
+ * v4.1 — the figure the strip now PRINTS.
+ *
+ * `lockedInProfitP` has been computed since v4.0 and rendered nowhere, so its
+ * value had never been read by a human. `tracker-client.tsx` prints it beside
+ * the heat percentage, which makes the exact rupee figure a user-visible
+ * number for the first time — this fixture is the one the copy test's
+ * "Locked in at stop ₹X" line is describing.
+ *
+ * `riskAtStopP` is ALREADY side-mirrored by `computeTrackerRow` (a short's stop
+ * below entry produces the same negative number a long's stop above entry
+ * does), so a fixture states the sign and not the side: negative IS "the stop
+ * sits beyond entry".
+ */
+describe("the locked-in figure the heat strip prints", () => {
+  it("sums only the rows whose stop is beyond entry, and leaves heat alone", () => {
+    // One long ₹12,000 above its stop (real risk) and one long whose trail has
+    // crossed entry by ₹4,500 (locked in). ₹10,00,000 capital.
+    const rows = [
+      row({ id: 1, riskAtStopP: 1_200_000 }),
+      row({ id: 2, riskAtStopP: -450_000 }),
+    ];
+    const h = portfolioHeat(rows, CAPITAL);
+    expect(h.lockedInProfitP, "the printed figure").toBe(450_000);
+    expect(h.openRiskP, "the locked-in row must not shrink open risk").toBe(1_200_000);
+    expect(h.heatPpm, "1.2% — 12,000 / 10,00,000, the winner netted nothing off it").toBe(12_000);
+    // The two are opposite sides of the strip and are never one number.
+    expect(h.openRiskP - h.lockedInProfitP).not.toBe(h.openRiskP);
+  });
+
+  it("adds up across several locked-in rows and ignores rows with no stop", () => {
+    const rows = [
+      row({ id: 1, riskAtStopP: -100_000 }),
+      row({ id: 2, riskAtStopP: -250_000 }),
+      row({ id: 3, riskAtStopP: 800_000 }),
+      row({ id: 4, riskAtStopP: null }),
+    ];
+    const h = portfolioHeat(rows, CAPITAL);
+    expect(h.lockedInProfitP).toBe(350_000);
+    expect(h.openRiskP).toBe(800_000);
+    expect(h.rowsWithoutStop, "a row with no stop contributes to neither side").toBe(1);
+  });
+
+  it("is 0 — a true sum — when no stop has crossed entry, and capital is irrelevant to it", () => {
+    // Unlike heat, this has no denominator, so 0 is a fact and not a
+    // fabricated one (invariant 6 is about denominators, not about sums).
+    const rows = [row({ id: 1 }), row({ id: 2 })];
+    expect(portfolioHeat(rows, CAPITAL).lockedInProfitP).toBe(0);
+    expect(portfolioHeat(rows, null).lockedInProfitP).toBe(0);
+    expect(portfolioHeat([row({ id: 1, riskAtStopP: -700_000 })], null).lockedInProfitP).toBe(700_000);
+  });
+});

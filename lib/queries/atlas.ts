@@ -22,6 +22,8 @@ import {
   type Series,
 } from "@/lib/atlas";
 import { getCapBandMap, getSectorResolution, getSymbolsByIsin, type CapBand } from "@/lib/queries/instruments";
+import nseIndexMapJson from "@/lib/data/nse-index-map.json";
+import sectorMapJson from "@/lib/data/sector-map.json";
 import { getEntitlement } from "@/lib/queries/license";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import {
@@ -80,6 +82,73 @@ export const NO_CHARTINK_LINE =
 export const NOT_ADVICE_LINE = "Vyuha computes; it does not advise.";
 
 const sha256 = (input: string): string => createHash("sha256").update(input, "utf8").digest("hex");
+
+// ---------------------------------------------------------------------------
+// The bundled classification maps, digested (Q52)
+// ---------------------------------------------------------------------------
+
+/**
+ * Q52: the sector/index maps are refreshed manually, once per minor release,
+ * so the screen has to say WHICH copy it grouped by — `asOf` alone cannot
+ * distinguish two builds of the same dated snapshot, and a hand-edited map
+ * carries the same date as the one it was edited from.
+ *
+ * The digest is taken here, SERVER-SIDE, because `node:crypto` may not reach a
+ * client component; `AtlasPanel` receives finished strings as props. It is
+ * taken over the CANONICAL JSON BYTES of the object the runtime actually
+ * loaded (`JSON.stringify` of the imported module), not over a re-read of the
+ * file from disk — a packaged build may not have the source tree beside it,
+ * and the bytes the code grouped by are the only ones worth pinning.
+ */
+export interface MapDigest {
+  /** The bundled file the digest covers, repo-relative. */
+  file: string;
+  label: string;
+  /** Full sha256, 64 hex, over the file's canonical JSON bytes. */
+  sha256: string;
+  /** The map's own single clock, or null when the file carries none. */
+  asOf: string | null;
+}
+
+/**
+ * BOTH bundled files, because the sector chain in `getSectorResolution()`
+ * reads both: the ISIN taxonomy classifies what it covers and NSE's index map
+ * classifies the rest (and defines the cap bands). A digest of one of them
+ * would pin half of what the Sectors and Cap bands tabs print.
+ */
+const MAP_SOURCES: readonly { file: string; label: string; json: unknown }[] = [
+  { file: "lib/data/sector-map.json", label: "Sector map", json: sectorMapJson },
+  { file: "lib/data/nse-index-map.json", label: "NSE index map", json: nseIndexMapJson },
+];
+
+/** sha256 over one map's canonical JSON bytes. Exported so a test can recompute it. */
+export function digestMap(json: unknown): string {
+  return sha256(JSON.stringify(json));
+}
+
+let mapDigestCache: MapDigest[] | null = null;
+
+/**
+ * Digested ONCE per process and memoised — the two files are ~470 KB of JSON
+ * and neither can change without a new build, so hashing them on every request
+ * would buy nothing.
+ */
+export function getMapDigests(): MapDigest[] {
+  if (mapDigestCache === null) {
+    mapDigestCache = MAP_SOURCES.map((m) => {
+      const asOf = (m.json as { asOf?: unknown }).asOf;
+      return {
+        file: m.file,
+        label: m.label,
+        sha256: digestMap(m.json),
+        asOf: typeof asOf === "string" && asOf.length > 0 ? asOf : null,
+      };
+    });
+  }
+  // A fresh array of fresh objects: a caller that mutates the result cannot
+  // poison the memo for the rest of the process.
+  return mapDigestCache.map((d) => ({ ...d }));
+}
 
 /**
  * Index and index-like rows are not equities and must not sit in a breadth
@@ -605,6 +674,8 @@ export interface AtlasView {
   backfillDefaultDays: number;
   backfillRateLimitMs: number;
   rotationCaveat: string;
+  /** Q52 — the bundled classification maps, each with its digest and its clock. */
+  mapDigests: MapDigest[];
   provenanceLine: string;
   notAdviceLine: string;
   specVersion: string;
@@ -636,6 +707,7 @@ export function getAtlasView(): AtlasView {
     backfillDefaultDays: BACKFILL_DEFAULT_DAYS,
     backfillRateLimitMs: BACKFILL_RATE_LIMIT_MS,
     rotationCaveat: ROTATION_CAVEAT,
+    mapDigests: getMapDigests(),
     provenanceLine: NO_CHARTINK_LINE,
     notAdviceLine: NOT_ADVICE_LINE,
     specVersion: SPEC_VERSION,

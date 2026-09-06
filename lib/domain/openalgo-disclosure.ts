@@ -26,8 +26,14 @@
  * Bump ONLY when the risk statement materially changes — a typo fix is not a
  * new disclosure, a new risk is. Bumping re-prompts every install that had
  * accepted an older version, and until they accept, the gate is closed.
+ *
+ * "1" → "2" (v4.1): the same instance the user consented to for IMPORTING
+ * trades now also PRICES the Live Desk — a repeating request every 1–5 s
+ * instead of one the user presses. That is a materially different statement
+ * about what runs and when, so every install re-acknowledges. `isAckCurrent()`
+ * compares with `===`, so a stored "1" is refused with no extra code.
  */
-export const OPENALGO_DISCLOSURE_VERSION = "1";
+export const OPENALGO_DISCLOSURE_VERSION = "2";
 
 /** Where the user gets OpenAlgo. Shown as text, never auto-opened. */
 export const OPENALGO_SITE = "https://openalgo.in";
@@ -79,6 +85,116 @@ export const OPENALGO_WHAT_IT_DOES: DisclosureItem[] = [
     title: "Vyuha stores only the OpenAlgo key and host",
     body:
       "Both are encrypted at rest with a key bound to this machine, and both are revocable from OpenAlgo's own settings without touching your broker account. Vyuha never holds a broker token for these pulls.",
+  },
+];
+
+/**
+ * THE LIVE PRICE FEED (disclosure v2, v4.1). Kept as its own array rather than
+ * folded into WHAT_IT_DOES because it is a second, separately-switched use of
+ * the SAME instance: the pull is one request the user presses, this one repeats
+ * every few seconds on its own while a screen is open. The dialog renders it
+ * under its own heading for that reason.
+ *
+ * Every sentence below is checked against the code that performs it, and the
+ * line is cited beside it. Nothing here may describe behaviour the adapter does
+ * not have — that is the same rule the pull items were written under.
+ */
+export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
+  {
+    title: "Live prices are a second switch, not part of the pull",
+    body:
+      // The desk's source is chosen in Settings → Live feed; the OpenAlgo
+      // option exists there only once THIS disclosure is accepted and the
+      // integration is on — `readGateFromDb()` applies `openAlgoGate` before a
+      // single request (lib/quotes/openalgo.ts:156-162, inside
+      // `readGateFromDb()`: the `settings` select through
+      // `const gate = openAlgoGate({...})` / `if (!gate.allowed) return
+      // { state: "disabled", ... }`).
+      "The Live Desk prices your open positions from the end-of-day bhavcopy, or from marks you type, until you pick the OpenAlgo bridge as its source in Settings → Live feed. That choice is yours and reversible, and it is offered only while this disclosure is accepted and the integration is on.",
+  },
+  {
+    title: "It asks every 1 to 5 seconds, while the Live Desk is open",
+    body:
+      // Interval: `clampRefreshSeconds()` lib/quotes/openalgo.ts:59-71
+      // (REFRESH_SECONDS_MIN/MAX/DEFAULT + `clampRefreshSeconds()`; 1–5 s,
+      // default 3); the poll is a `setInterval` started by `subscribe()`
+      // (lib/quotes/openalgo.ts:419, `const timer = setInterval(() => void
+      // poll(), periodMs)`) and cleared when the desk's stream closes
+      // (:420-427, `const stop: Unsubscribe` → `clearInterval(timer)` on the
+      // `signal` abort). Ceiling: RATE_LIMIT_PER_SECOND = 10 (:64), enforced
+      // by `createRateGuard()` (:290-300, whose `take(now)` returns false past
+      // the limit), which REFUSES rather than queues.
+      "You set the interval on the slider in Settings → Live feed; anything outside 1 to 5 seconds is clamped to it in code. The requests start when the Live Desk opens and stop when it closes — nothing polls in the background — and Vyuha refuses more than 10 requests a second to your bridge whatever the slider says.",
+  },
+  {
+    title: "Each request carries your symbols, and nothing about your book",
+    body:
+      // The body is exactly `{ apikey, symbols: [{ symbol, exchange }] }` —
+      // built at lib/quotes/openalgo.ts:357-361 (`snapshot()`: the
+      // `keys.slice(0, …).map((k) => ({ symbol, exchange }))` through
+      // `post(gate.creds, "multiquotes", { symbols }, signal)`) and serialised
+      // at :325 (`post()` body: `JSON.stringify({ apikey: creds.apiKey,
+      // ...extra })`). The key list is the OPEN positions of the selected
+      // account and nothing else (app/api/live/stream/route.ts:74-93,
+      // `openPositionKeys()`, `if (!t.isOpen) continue` — the `is_open`
+      // predicate — capped at `MAX_KEYS = 500`, that file's :40). No quantity,
+      // no average price, no stop, no P&L, no account id is in the body —
+      // those columns are never read on this path.
+      "One request holds your OpenAlgo API key and a list of the trading symbols and exchanges of the positions your book has open — at most 500 of them. Your quantities, entry prices, stops, P&L and account names are not in it: the bridge is told which scrips to price, never how much of them you hold or what you paid.",
+  },
+  {
+    title: "One /funds request when the feed is checked",
+    body:
+      // `health()` posts to `/funds` once — lib/quotes/openalgo.ts:450
+      // (`await post(gate.creds, "funds", {})`) — and reads nothing out of the
+      // answer except that it arrived, plus the round-trip in ms (:459-460,
+      // `const latencyMs = Math.max(0, now() - started)` and the `{ ok: true,
+      // state: "ok", latencyMs, … }` it returns). The same probe the import
+      // path's save step uses.
+      "Checking the connection calls OpenAlgo's /funds endpoint once. It is the cheapest call that proves both the address and the API key are right. Vyuha keeps nothing from the answer — no balance is stored or shown — only that the bridge replied, and how many milliseconds it took.",
+  },
+  {
+    title: "The address is this computer unless you change it",
+    body:
+      // Default host OPENALGO_DEFAULT_HOST above; locality decided by
+      // `isLocalOpenAlgoHost()` (this file), and the poll goes to
+      // `normalizeHost(creds.host)` — lib/quotes/openalgo.ts:317-320
+      // (`post()`: `const base = normalizeHost(creds.host)` and the single
+      // `doFetch(`${base}/api/v1/${path}`, …)` it feeds). No other host is
+      // reachable from that file.
+      "By default the feed talks to your own OpenAlgo at http://127.0.0.1:5000 — this machine talking to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to that machine every few seconds while the desk is open. Vyuha adds no other host for prices, and no market-data provider of its own.",
+  },
+  {
+    title: "Prices refresh on screen only — ticks are never written",
+    body:
+      // `subscribe()` writes nothing anywhere (lib/quotes/openalgo.ts:392-428,
+      // `subscribe(keys, onTick, signal)` — its `poll()` only calls `onTick`);
+      // the single write is `lib/quotes/persist-mark.ts`, one row per position
+      // per IST day into `mtm_prices`, idempotent twice over (its header, and
+      // `settings.last_live_mark_date`, migration 0067). Wording deliberately
+      // agrees with LIVE_FEED_COPY.staleness in
+      // components/settings/live-feed-card.tsx:55-56, which is pinned by
+      // tests/live-feed-copy.test.ts — two statements of one behaviour must not
+      // drift, so tests/openalgo-disclosure.test.ts holds them together.
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Every figure derived from that mark is dated to the day it belongs to.",
+  },
+  {
+    title: "Your broker's API session expires every day",
+    body:
+      // Softened, ATTRIBUTABLE wording only (owner ruling 2026-09-06): no
+      // circular naming a regulator exists in this tree, so the claim is about
+      // the broker and nothing else — the same sentence
+      // components/settings/live-feed-card.tsx:41-42 (`LIVE_FEED_COPY
+      // .dailyReauth`) carries, and tests/live-feed-copy.test.ts:105 (the
+      // `not.toMatch` regulator ban on `dailyReauth`) keeps out of it.
+      // `capabilities.requiresDailyAuth` (lib/quotes/openalgo.ts:93, in
+      // OPENALGO_CAPABILITIES) is the flag; a failed poll is swallowed
+      // (:412-414, the bare `} catch {` in `poll()` whose only content is the
+      // comment "one failed poll is not the end of the subscription", closing
+      // into `} finally {`), so the last price stays, labelled with its
+      // own date by `stalenessLabel()` (components/live/tracker-client.tsx:207,
+      // the `<Badge>` inside `StalenessChip` — grep the name, that file moves).
+      "The broker session behind OpenAlgo expires every day and has to be signed in again at OpenAlgo's own screen; that is the broker's rule, not Vyuha's. Until it is, prices stop arriving — the desk keeps the last mark it had, labelled with the date it belongs to, rather than blanking or guessing.",
   },
 ];
 

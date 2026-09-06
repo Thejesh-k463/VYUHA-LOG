@@ -20,6 +20,8 @@ export interface InstrumentDisplay {
   sector: string | null;
   lotSize: number | null;
   isin: string | null;
+  /** ISO `YYYY-MM-DD` the user recorded, or null. Migration 0068, ruling Q-9. */
+  resultsDate: string | null;
 }
 
 export function getInstruments(): InstrumentDisplay[] {
@@ -28,7 +30,37 @@ export function getInstruments(): InstrumentDisplay[] {
     .from(instruments)
     .orderBy(asc(instruments.symbol))
     .all()
-    .map((r) => ({ id: r.id, symbol: r.symbol, name: r.name, sector: r.sector, lotSize: r.lotSize, isin: r.isin }));
+    .map((r) => ({
+      id: r.id,
+      symbol: r.symbol,
+      name: r.name,
+      sector: r.sector,
+      lotSize: r.lotSize,
+      isin: r.isin,
+      resultsDate: r.resultsDate,
+    }));
+}
+
+/**
+ * symbol (upper) → the results date the user recorded. Reference data, not
+ * account data: a company reports on one date whoever holds it, so this is not
+ * account-scoped for the same reason `getIndexMembershipMap` is not
+ * (invariants 8/9 have nothing to own here).
+ *
+ * Symbols with no date recorded are OMITTED rather than mapped to null — an
+ * absent key says "not recorded", which is the only thing Vyuha knows: nothing
+ * fetches a results calendar and none is bundled.
+ */
+export function getResultsDateMap(): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const r of db
+    .select({ symbol: instruments.symbol, resultsDate: instruments.resultsDate })
+    .from(instruments)
+    .all()) {
+    const date = r.resultsDate?.trim();
+    if (date) out.set(r.symbol.trim().toUpperCase(), date);
+  }
+  return out;
 }
 
 /**

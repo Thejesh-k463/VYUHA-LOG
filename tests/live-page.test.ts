@@ -362,3 +362,53 @@ describe("/live loader — the stored feed provider is the one that runs (S-X)",
     expect(data.feed.staleness).toBe("eod");
   });
 });
+
+/**
+ * v4.1 — `instruments.results_date` reaches the row (owner ruling Q-9,
+ * migration 0068).
+ *
+ * The seam this pins is the one a wire field always breaks at: the column is
+ * written on /instruments and read on /live, and the two halves are joined by
+ * nothing but the upper-cased SYMBOL. A row that quietly ships `null` looks
+ * exactly like an instrument the user never dated, so nothing on screen looks
+ * broken — the same failure mode invariant 8's account test exists for.
+ *
+ * It is also FREE on purpose: a results date is a fact about the COMPANY, like
+ * the symbol, and the Pro boundary in `load-desk.ts` must not touch it.
+ */
+describe("/live loader — the results date rides on the row", () => {
+  it("threads the date the user recorded onto the matching symbol only", async () => {
+    selectAccount(0);
+    t.db.insert(t.schema.instruments).values([
+      { symbol: "TCS", resultsDate: "2026-10-14" },
+      { symbol: "INFY" },
+    ]).run();
+
+    const data = await live.loadLiveDesk({ pro: true });
+    expect(data.rows.find((r) => r.symbol === "TCS")!.resultsDate).toBe("2026-10-14");
+    // An instrument row with no date, and a symbol with no instrument row at
+    // all, are both "not recorded" — null, never an invented date.
+    expect(data.rows.find((r) => r.symbol === "INFY")!.resultsDate).toBeNull();
+    expect(data.rows.find((r) => r.symbol === "RELIANCE")!.resultsDate).toBeNull();
+  });
+
+  it("is FREE — the Pro boundary strips R and risk at stop, never the date", async () => {
+    selectAccount(0);
+    const data = await live.loadLiveDesk({ pro: false });
+    const tcs = data.rows.find((r) => r.symbol === "TCS")!;
+    expect(tcs.resultsDate, "a fact about the company was put behind the paywall").toBe("2026-10-14");
+    // The Pro fields on the same row are still stripped, so this is a
+    // statement about the boundary and not about a missing boundary.
+    expect(tcs.riskAtStopP).toBeNull();
+    expect(tcs.openRPpm).toBeNull();
+    expect(data.heat).toBeNull();
+  });
+
+  it("`today` travels with the payload, so the chip is computed from IST", async () => {
+    // `daysToResults(row.resultsDate, data.today)` is the whole render path.
+    // `today` is `todayIstIso()` in the loader; a client-side `new Date()`
+    // would answer with the user's machine calendar instead.
+    const data = await live.loadLiveDesk({ pro: true });
+    expect(data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});

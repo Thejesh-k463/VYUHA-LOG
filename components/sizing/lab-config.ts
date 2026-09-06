@@ -139,7 +139,7 @@ export const LAB_METHODS: readonly LabMethod[] = [
     label: "% volatility",
     keyHint: "4",
     description:
-      "The same risk budget, divided by the ATR instead of the stop distance. At identical inputs it returns a larger quantity than the Turtle unit.",
+      "The same risk budget, divided by the ATR instead of the stop distance. At identical inputs it returns the Turtle unit's quantity times your per-trade risk % divided by the Turtle unit risk % — larger only when the first of those is the bigger one, and a quarter of it at this Lab's opening 0.25% and 1%. The tab prints which variant produced each number.",
   },
   {
     id: "kelly",
@@ -166,6 +166,63 @@ export const LAB_METHODS: readonly LabMethod[] = [
 
 export function methodByKey(key: string): LabMethod | null {
   return LAB_METHODS.find((m) => m.keyHint === key) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// The volatility tab's two variants (owner Q-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Owner ruling Q-6, shape ruled 2026-09-06: the seven-tab rail STAYS, both
+ * volatility tabs stay, and the switch lives INSIDE the Turtle tab — it prints
+ * the sibling variant's size and formula beside the primary one. Nothing about
+ * the rail, the keyboard hints or the `?method=` deep links changes.
+ *
+ * The labelling is the point. `sizePctVolatility` divides the WHOLE risk
+ * budget by one ATR while `sizeVolatilityUnit` divides one unit's fraction by
+ * it, so at the Turtle's own numbers (2% budget, 1% unit) the Varsity variant
+ * returns about twice the quantity — see the header of `sizePctVolatility` in
+ * lib/risk/sizing.ts. A screen that printed one of those numbers without
+ * naming the variant behind it would be ambiguous by exactly that factor, so
+ * every panel carries the name of the variant that produced it.
+ */
+export const VOLATILITY_VARIANTS = [
+  { id: "volatility-unit", label: "Turtle unit (N)" },
+  { id: "pct-volatility", label: "Varsity (% volatility)" },
+] as const;
+
+export type VolatilityVariantId = (typeof VOLATILITY_VARIANTS)[number]["id"];
+
+/** The two-position switch's own label, pinned by tests/sizing-lab-variants. */
+export const VOLATILITY_SWITCH_LABEL = "Turtle unit (N) ⇄ Varsity (% volatility)";
+
+/** What each panel says about the number above it. Never a ranking. */
+export const VOLATILITY_SIZE_CAPTION = "the size this method produces, computed from your inputs";
+
+export interface VolatilityVariantRow {
+  id: VolatilityVariantId;
+  label: string;
+  result: SizeResult;
+  /** True for the variant the switch currently holds in the primary position. */
+  primary: boolean;
+}
+
+/**
+ * The two volatility rows, taken from the `compareAll` output the Lab ALREADY
+ * has and ordered primary-first. It re-reads rather than re-computes for the
+ * same reason the compare table does (03 §6.1): one computation feeds the tab,
+ * this pair and the table, so none of the three can disagree with the others.
+ */
+export function volatilityVariants(
+  rows: readonly SizeResult[],
+  primary: VolatilityVariantId,
+): VolatilityVariantRow[] {
+  const pair: VolatilityVariantRow[] = [];
+  for (const v of VOLATILITY_VARIANTS) {
+    const result = rows.find((r) => r.method === v.id);
+    if (result) pair.push({ id: v.id, label: v.label, result, primary: v.id === primary });
+  }
+  return pair.sort((a, b) => Number(b.primary) - Number(a.primary));
 }
 
 // ---------------------------------------------------------------------------

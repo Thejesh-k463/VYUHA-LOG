@@ -1,5 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
-import { ensureTrades, gotoHydrated } from "./helpers";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { E2E_DB_PATH, ensureTrades, gotoHydrated, gotoImportReady } from "./helpers";
 
 /**
  * `/live` — the Live Desk in a real browser (v4.0 shipped with none).
@@ -18,19 +22,39 @@ import { ensureTrades, gotoHydrated } from "./helpers";
  * charge and risk config and ONE account — no trades at all. The book comes
  * from `ensureTrades()` (the Dhan P&L fixture, shared across the run and
  * de-duplicated), whose 122 rows include exactly SIX open positions, all
- * options, each with a non-zero Closing Price and no stored MTM row. So every
- * desk row's mark is the journal's own close — `staleness: "eod"` with a null
- * `asOf` — and the chip reads "End of day" with NO date after it. Constants
- * below are hardcoded copies of `components/live/desk-copy.ts`, following
- * `z-sidebar-fold.spec.ts`: no spec pulls app modules through Playwright's
- * transform.
+ * options, each with a non-zero Closing Price and no stored MTM row — so their
+ * mark is the journal's own close, `staleness: "eod"` with a null `asOf`, and
+ * the chip reads "End of day" with NO date after it.
+ *
+ * WHAT THE REST OF THE SUITE ADDS. The run shares ONE database and this file
+ * sorts 20th of 29, so the book it sees is not the book it seeded:
+ * `z-dhan-gtr.spec.ts` commits a 79-row Global Transaction Report — a
+ * TRADEBOOK, which has no Closing Price column — and `staged-position.spec.ts`
+ * books exits that close one of the six P&L positions. The desk therefore
+ * carries open positions with no mark at all (`markP: null`, `staleness:
+ * null`), which sort LAST under the default `unrealisedP` DESC order.
+ * Asserting `toBe("End of day")` on every row was true only when this file ran
+ * ALONE; in the full suite row 5 reads "No mark stored for this position yet."
+ * and CI was red on ubuntu and macOS for it (run 34023883519). What is asserted
+ * now is what holds however much anyone else has imported: every chip is
+ * something `stalenessLabel()` can return, NO chip carries a date — nothing
+ * this database can reach supplies an `asOf`, since the quote provider finds no
+ * bhavcopy and no spec writes `mtm_prices` — and at least one row still reads
+ * the bare "End of day", so the journal's-own-close path cannot quietly stop
+ * being exercised. Constants below are hardcoded copies of
+ * `components/live/desk-copy.ts`, following `z-sidebar-fold.spec.ts`: no spec
+ * pulls app modules through Playwright's transform.
  *
  * ENTITLEMENT. The e2e database is recreated by `e2e/prepare-db.ts` on every
  * run, so `trial_started_at` is NULL and `getEntitlement()` stamps it on its
- * first read — a day-1 TRIAL, i.e. `pro: true`. Tests 3 and 4 are the two
- * halves of that fork and each skips itself with a named reason when the other
- * one is the truth, so neither this file nor any other has to flip licence
- * state globally.
+ * first read — a day-1 TRIAL, i.e. `pro: true`. The FREE half of that fork is
+ * unreachable through the app on purpose: no route handler and no screen can
+ * expire a trial. So the free test backdates that one column in the e2e
+ * database, reloads, and puts it back in `afterEach` — `getEntitlement()` is
+ * `cache()`d per REQUEST and re-reads the column on every render, so one
+ * reload is the whole mechanism and one restore is the whole undo. Licence
+ * state is never flipped globally, and the Pro test above it keeps its
+ * `test.skip` guard as the second line of defence.
  *
  * `z-` prefix: this spec seeds via `ensureTrades` and so must sort after
  * `import-dashboard.spec.ts` (AGENTS.md).
@@ -46,6 +70,9 @@ const LOCK = '[title="Pro — unlock with a licence key"]';
 
 /** Every label `stalenessLabel()` can return, and nothing else. */
 const MARK_LABELS = /^(End of day|Stored mark|Delayed|Last traded|No mark stored for this position yet\.)/;
+
+/** The ` · <asOf>` half of `stalenessLabel()` — a claim of provenance. */
+const DATED_MARK = /·\s*\S/;
 
 /** Sub-pixel slack: layout boxes are fractional, the assertion is not about that. */
 const TOL = 1;
@@ -144,6 +171,71 @@ async function expectFocusedRowFullyVisible(page: Page, when: string): Promise<v
     .toBeGreaterThanOrEqual(-TOL);
 }
 
+/** `TRIAL_DAYS` in `lib/license.ts` — hardcoded copy, same rule as the copy above. */
+const TRIAL_DAYS = 7;
+
+/** Set by `expireTrial()`, run by the `afterEach` below, and only ever null otherwise. */
+let restoreTrial: (() => void) | null = null;
+
+/**
+ * Expire the Pro trial in the database the server is serving from.
+ *
+ * The free wire has no other door: `getEntitlement()` stamps `trial_started_at`
+ * on the first read of a fresh install and NOTHING in the product can move it
+ * — no route handler, no screen, deliberately (it is security state, and
+ * `settings-baseline.ts` even keeps it out of restore). A second Playwright
+ * project with its own database and its own dev server would cost a second
+ * Next server for the whole run to assert one payload; this costs one UPDATE
+ * and one reload, because the entitlement is `cache()`d per REQUEST and read
+ * fresh on every render.
+ *
+ * The undo is registered BEFORE the write is visible to anyone, so a test that
+ * throws mid-way still hands the next spec the trial it expects.
+ */
+function expireTrial(): void {
+  const conn = new Database(E2E_DB_PATH);
+  try {
+    conn.pragma("busy_timeout = 10000");
+    const row = conn.prepare("select id, trial_started_at as startedAt from settings limit 1").get() as
+      | { id: number; startedAt: string | null }
+      | undefined;
+    expect(row, "the e2e database has no settings row").toBeTruthy();
+    const { id, startedAt } = row!;
+    restoreTrial = () => {
+      const back = new Database(E2E_DB_PATH);
+      try {
+        back.pragma("busy_timeout = 10000");
+        back.prepare("update settings set trial_started_at = ? where id = ?").run(startedAt, id);
+        // Read it BACK. A restore that silently did not happen would leave every
+        // later spec on a free licence, and the first symptom would be a Pro
+        // assertion failing three spec files away.
+        const after = back.prepare("select trial_started_at as t from settings where id = ?").get(id) as { t: string | null };
+        expect(after.t, "the trial was NOT restored — later specs would run free").toBe(startedAt);
+      } finally {
+        back.close();
+      }
+    };
+    const expired = new Date(Date.now() - (TRIAL_DAYS + 3) * 24 * 60 * 60 * 1000).toISOString();
+    conn.prepare("update settings set trial_started_at = ? where id = ?").run(expired, id);
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * Both undos, unconditionally: a test that throws between a write and its
+ * assertions must not hand the NEXT spec file an expired trial or a journal
+ * pointed at a scratch account. `restoreBook` is declared beside the test that
+ * arms it, at the foot of this file.
+ */
+test.afterEach(async () => {
+  restoreTrial?.();
+  restoreTrial = null;
+  const undoBook = restoreBook;
+  restoreBook = null;
+  if (undoBook) await undoBook();
+});
+
 // ---------------------------------------------------------------------------
 
 test("the desk renders the open book, the market clock and a real mark label", async ({ page }) => {
@@ -182,6 +274,7 @@ test("the desk renders the open book, the market clock and a real mark label", a
 
   // The mark chip says one of the things `stalenessLabel()` can say — never an
   // invented word, never a bare number.
+  let fromTheJournalsClose = 0;
   for (let i = 0; i < n; i++) {
     // `textContent`, not `innerText`: the chip is a `Badge size="xs"`, which is
     // CSS-uppercased, and `innerText` returns "END OF DAY" — the transform, not
@@ -190,12 +283,18 @@ test("the desk renders the open book, the market clock and a real mark label", a
     await expect(chip, `row ${i} has no mark chip`).toBeVisible();
     const label = ((await chip.textContent()) ?? "").trim();
     expect(label, `row ${i} mark chip`).toMatch(MARK_LABELS);
-    // What this seed actually produces: the mark is the journal's own Closing
-    // Price (no `mtm_prices` row, no feed), i.e. staleness "eod" with a null
-    // `asOf` — so the label is bare. A date here would mean the chip started
-    // claiming a provenance the store cannot support.
-    expect(label, `row ${i} mark chip carries a date`).toBe("End of day");
+    // NOTHING in this database can supply an `asOf`: no spec writes
+    // `mtm_prices`, and the end-of-day provider finds no bhavcopy — so every
+    // mark is either the journal's own Closing Price (staleness "eod", null
+    // asOf) or absent. A date here would mean the chip started claiming a
+    // provenance the store cannot support. See the header for why this is
+    // NOT `toBe("End of day")` per row.
+    expect(label, `row ${i} mark chip carries a date`).not.toMatch(DATED_MARK);
+    if (label === "End of day") fromTheJournalsClose++;
   }
+  // …and the eod path is genuinely exercised, whatever else the suite imported:
+  // the six P&L positions carry a Closing Price and nothing removes it.
+  expect(fromTheJournalsClose, "no row's mark came from the journal's own close").toBeGreaterThan(0);
 });
 
 test("j and k keep the focused row clear of the sticky header and inside the box", async ({ page }) => {
@@ -246,19 +345,41 @@ test("an entitled desk prints the Pro figures instead of a lock", async ({ page 
 
 test("a free licence ships no Pro figures in the payload", async ({ page }) => {
   await gotoDesk(page);
-  test.skip(
-    !(await isFree(page)),
-    "the e2e database is recreated per run, so trial_started_at stamps on the first entitlement read and /live renders PRO; " +
-      "asserting the free wire would need an unlicensed database, and licence state is not flipped globally by a spec",
-  );
+  expect(await isFree(page), "the desk must start ENTITLED — see ENTITLEMENT in the header").toBe(false);
+
+  expireTrial();
+  await page.reload();
+  await expect(page.locator(ROWS).first()).toBeVisible();
+  expect(await isFree(page), "an expired trial must render the free wire").toBe(true);
 
   // Hiding is not gating: the SERVER must not compute the Pro figures at all,
   // so neither the sizing tree's numbers nor its "ok" shape may appear in what
   // the browser received.
-  const html = await page.content();
-  expect(html, "riskBudgetP reached the client on a free licence").not.toContain("riskBudgetP");
-  expect(html, "an ungated stop object reached the client").not.toContain('"kind":"ok"');
-  await expect(page.locator(ROWS).first().locator(LOCK).first()).toBeVisible();
+  //
+  // UNESCAPE FIRST. The RSC payload reaches the DOM inside
+  // `self.__next_f.push([1,"…"])` string literals, where every quote is
+  // backslash-escaped — so `toContain('"kind":"ok"')` against raw
+  // `page.content()` can never match and would pass on an ungated payload too.
+  const payload = (await page.content()).replace(/\\"/g, '"');
+  expect(payload, "riskBudgetP reached the client on a free licence").not.toContain("riskBudgetP");
+  expect(payload, "an ungated stop object reached the client").not.toContain('"kind":"ok"');
+  // …and the gated shape IS there, so the two assertions above are about a
+  // stop that was computed and withheld, not about a payload with no stops.
+  expect(payload, "no gated stop in the payload — the assertions above prove nothing").toContain('"kind":"gated"');
+
+  // The core journal is never gated (invariant 7): symbol, quantity and mark
+  // are the user's own record and stay on screen.
+  const row = page.locator(ROWS).first();
+  await expect(row.locator("td").nth(0), "symbol").toHaveText(/\S/);
+  await expect(row.locator("td").nth(2), "quantity").toHaveText(/\d/);
+  await expect(row.locator("td").nth(4), "mark").toHaveText(/\d/);
+  // The three Pro columns are locks, not figures — and never a 0 or an em dash,
+  // which mean "cannot be computed" rather than "not yours yet".
+  for (const [cell, label] of [[9, "Risk at stop"], [10, "Open R"], [11, "% of capital"]] as const) {
+    await expect(row.locator("td").nth(cell).locator(LOCK), `${label} must be locked`).toBeVisible();
+  }
+  // Portfolio heat is the panel-level half of the same entitlement.
+  await expect(page.getByText(/Pro — R, risk at stop/).first()).toBeVisible();
 });
 
 test("expanding a row and opening the Sizing Lab carries the side", async ({ page }) => {
@@ -290,4 +411,238 @@ test("expanding a row and opening the Sizing Lab carries the side", async ({ pag
   // And the Lab opened on the POSITION, not on its sample setup.
   await expect(page.getByText(`Opened on your ${symbol} position from the Live Desk`, { exact: false })).toBeVisible();
   await expect(page.getByText(/Opens on a sample swing trade/)).toHaveCount(0);
+});
+
+/**
+ * ── The WINDOWED half of the same geometry ──────────────────────────────────
+ *
+ * The test above runs the un-windowed path: six positions in a short viewport,
+ * where the focused row is always mounted and `scrollIntoView({block:"nearest"})`
+ * plus a by-hand header correction is what moves the box. Past
+ * VIRTUAL_THRESHOLD (40, `tracker-client.tsx`) the desk hands the job to
+ * `virtualizer.scrollToIndex` instead, and the row j is moving TO is not in the
+ * DOM at all — a completely different code path, with its own `scrollMargin` /
+ * `scrollPaddingStart` correction that the same two wrong fixes would have
+ * broken the same way. Nothing exercised it in a browser until now.
+ *
+ * SEEDING IS ACCOUNT-SCOPED AND UNDONE. The fixture has six open positions and
+ * the run shares one database, so this test makes its own book: a scratch
+ * ACCOUNT (created through `/api/accounts`), the desk pointed at it, 45 open
+ * positions imported through the real `/import` path — the same door
+ * `ensureTrades` uses, never SQL into `trades` — and then, in `afterEach`, the
+ * selection put back and the account PURGED, which is the app's own
+ * "everything this account owns" delete. Every later spec sees the book it saw
+ * before, and the desk this test drives holds nothing but its own 45 rows.
+ */
+
+/** > VIRTUAL_THRESHOLD (40) in `components/live/tracker-client.tsx`. */
+const WINDOW_ROWS = 45;
+const SCRATCH_ACCOUNT = "E2E Desk Window";
+
+/** Set by `seedWindowedBook`, run by the `afterEach` above. */
+let restoreBook: (() => Promise<void>) | null = null;
+
+/**
+ * A Dhan P&L export with `WINDOW_ROWS` OPEN positions, written to a temp dir.
+ *
+ * The shape is the fixture's: the `PnL report` title line, the twelve-column
+ * header and the `Net P&L` footer, which is what `detectDhanCsv` scores — the
+ * broker is named by the file's own title, not by its name, so this is
+ * detected exactly the way a real export is. Buy Qty > Sell Qty makes each row
+ * an open position, and a non-zero Closing Price gives each one an end-of-day
+ * mark, so the rows sort deterministically by unrealised P&L.
+ */
+function windowedCsv(dir: string): string {
+  const body = Array.from({ length: WINDOW_ROWS }, (_, i) => {
+    const qty = 100;
+    const buy = 100 + i;
+    // A DIFFERENT gain per row, so the default `unrealisedP` DESC sort has a
+    // total order and `data-row-index` means the same thing on every run.
+    const close = buy + 10 + i;
+    const unreal = (close - buy) * qty;
+    return `"E2EWIN${String(i + 1).padStart(2, "0")}","${qty}","${buy}.00","${(buy * qty).toFixed(2)}","0","0.00","0.00","${close}.00","0.00","0.00","${unreal.toFixed(2)}","10.00"`;
+  });
+  const file = path.join(dir, "dhan-desk-window-e2e.csv");
+  fs.writeFileSync(
+    file,
+    [
+      "PnL report,From 01-06-2026 to 17-06-2026",
+      "Name,REDACTED NAME",
+      "UCC,UCC0000000",
+      "Scrip Name,Buy Qty.,Avg. Buy Price,Buy Value,Sell Qty.,Avg. Sell Price,Sell Value,Closing Price,Realised P&L,Realised P&L %,Unrealised P&L,Unrealised P&L %",
+      ...body,
+      "",
+      "Net P&L,0.00,Brokerage,0.00,Gross P&L,0.00,Total Charges,0.00",
+      "",
+      "NOTE : This sheet was downloaded at 6/17/2026 01:16 AM",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  return file;
+}
+
+/**
+ * Everything a failed geometry poll needs to be diagnosable in one line.
+ *
+ * `expect.poll` reports only the number it was given, and "the row's bottom is
+ * 628px outside the box" does not say WHY — a box that never scrolled and a row
+ * measured against the wrong element look identical from there. The scroll
+ * offset, the focused index and the mounted range tell them apart.
+ */
+async function deskState(page: Page): Promise<string> {
+  const box = await page.locator(DESK).evaluate((el) => ({
+    scrollTop: Math.round(el.scrollTop),
+    clientHeight: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+  }));
+  const focusedIndex = await page.locator(FOCUSED).getAttribute("data-row-index");
+  const indices = await page.locator(ROWS).evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-row-index"))));
+  return `[focus ${focusedIndex}, mounted ${indices[0]}…${indices.at(-1)} of ${indices.length}, scrollTop ${box.scrollTop}, box ${box.clientHeight}/${box.scrollHeight}]`;
+}
+
+async function selectAccount(page: Page, id: number): Promise<void> {
+  const res = await page.request.post("/api/accounts", { data: { action: "select", id } });
+  expect(res.ok(), `selecting account ${id}`).toBeTruthy();
+}
+
+/** Create the scratch account, point the desk at it, fill it, and arm the undo. */
+async function seedWindowedBook(page: Page): Promise<void> {
+  await gotoHydrated(page, "/live");
+  const switcher = page.getByLabel("Portfolio account");
+  await expect(switcher, "the sidebar account switcher is how the selection is put back").toBeVisible();
+  const previous = Number(await switcher.inputValue());
+
+  const created = await page.request.post("/api/accounts", {
+    data: { action: "upsert", name: SCRATCH_ACCOUNT },
+  });
+  expect(created.ok(), "creating the scratch account").toBeTruthy();
+  const scratchId = ((await created.json()) as { id?: number }).id ?? 0;
+  expect(scratchId, "the accounts API returned no id").toBeGreaterThan(0);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vyuha-e2e-desk-"));
+  // Armed BEFORE the selection moves: from here on, any failure still puts the
+  // journal back where the rest of the suite expects it.
+  restoreBook = async () => {
+    await selectAccount(page, previous);
+    const purged = await page.request.post("/api/accounts", {
+      data: { action: "delete", id: scratchId, mode: "purge", connections: "delete" },
+    });
+    expect(purged.ok(), "purging the scratch account").toBeTruthy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  };
+
+  await selectAccount(page, scratchId);
+  await gotoImportReady(page);
+  await page.locator('input[type="file"]').setInputFiles(windowedCsv(dir));
+  const commit = page.getByRole("button", { name: /Commit\s+\d+\s+new trade/i });
+  await expect(commit, "the generated Dhan P&L was not detected").toBeEnabled({ timeout: 30_000 });
+  await commit.click();
+  await expect(page.getByText(/Imported\s+\d+\s+trade/i)).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * The half of the windowed path that WORKS, kept running so it cannot rot
+ * while the geometry below is fixme'd.
+ *
+ * Past VIRTUAL_THRESHOLD the row j is moving to is not in the DOM, so the
+ * component has to call `virtualizer.scrollToIndex` — delete that branch and
+ * the focused row is never mounted at all, which is what this asserts. It also
+ * keeps the seeding machinery (scratch account → real import → purge) exercised
+ * on every run, so the day the geometry is fixed, un-fixme'ing the test below
+ * is the only change needed.
+ */
+test("a windowed desk mounts the row j moves to, and k brings it back", async ({ page }) => {
+  await seedWindowedBook(page);
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await gotoHydrated(page, "/live");
+  await expect(page.locator(ROWS).first()).toBeVisible();
+
+  // This desk is the scratch account's and nobody else's…
+  await expect(page.getByText(`${WINDOW_ROWS} of ${WINDOW_ROWS} open positions`)).toBeVisible();
+  // …and it really is windowing, or this is the un-windowed test again.
+  await expect(page.getByText(/rows are windowed as you scroll/)).toBeVisible();
+  const mounted = await page.locator(ROWS).count();
+  expect(mounted, "every row is mounted — the windowed path was never taken").toBeLessThan(WINDOW_ROWS);
+
+  for (let i = 0; i < WINDOW_ROWS; i++) await page.keyboard.press("j");
+  // Clamped at the end, never wrapping (`nextIndex`), and MOUNTED: the last row
+  // of a 45-row desk is nowhere near the initial window.
+  await expect(page.locator(FOCUSED), `the last row was never mounted ${await deskState(page)}`).toHaveCount(1);
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", String(WINDOW_ROWS - 1));
+
+  for (let i = 0; i < WINDOW_ROWS - 1; i++) await page.keyboard.press("k");
+  await expect(page.locator(FOCUSED), `the first row was never re-mounted ${await deskState(page)}`).toHaveCount(1);
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+});
+
+/**
+ * The v4.0 scroll bug in its THIRD form — the one nobody could reach, because
+ * it needs more than VIRTUAL_THRESHOLD (40) open positions. Found by this
+ * harness, 2026-09-06, and kept here as the record of what it looked like.
+ *
+ * Measured on this exact seed (45 rows, 1280×420), at the first press that
+ * leaves the initially-mounted window:
+ *
+ *     after j crossed the window boundary
+ *     [focus 18, mounted 0…30 of 31, scrollTop 579, box 250/2998]:
+ *     the focused row's bottom must be inside the scroll box
+ *     expect(received).toBeGreaterThanOrEqual(expected)
+ *     Expected: >= -1     Received: -628.5
+ *
+ * The box DID scroll (scrollTop 579), to where the virtualiser believed row 18
+ * ends: `estimateSize: () => ROW_HEIGHT` said 44 px. The real rows are
+ * 2998/45 ≈ 66.6 px, because the Mark cell renders TWO block-level lines (the
+ * level, then `<StalenessChip>`) — structural, not a font metric, so it was 44
+ * vs ~66 on every platform. Nothing passed `virtualizer.measureElement` to a
+ * row, so the model was never corrected: every offset was short by
+ * (66.6 − 44) × index, and by row 18 the focused row sat 628 px BELOW the fold.
+ *
+ * Fixed in `components/live/tracker-client.tsx`: each windowed `<tr>` now
+ * carries `ref={virtualizer.measureElement}` + `data-index`, the tanstack
+ * answer for variable rows, and ROW_HEIGHT is the honest first guess (66) so
+ * the paint before measurement is close. That took the same assertion from
+ * −628.5 to −1.5, which exposed the SECOND half: virtual-core sizes the
+ * viewport from `offsetHeight` (252 here — the BORDER box) but scrolls in
+ * client-box coordinates (250), so `align:"end"` overshoots by the box's own
+ * borders and clips the row's last 2 px. `scrollPaddingEnd` is now the
+ * measured `offsetHeight − clientHeight`. The assertions below are unchanged
+ * from the failing version.
+ */
+test("j and k clear the sticky header on the WINDOWED path too", async ({ page }) => {
+  await seedWindowedBook(page);
+
+  // The same short viewport as the un-windowed test, so the only thing that
+  // differs between the two is which scroll path the component takes.
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await gotoHydrated(page, "/live");
+  const rows = page.locator(ROWS);
+  await expect(rows.first()).toBeVisible();
+
+  // This desk is the scratch account's and nobody else's.
+  await expect(page.getByText(`${WINDOW_ROWS} of ${WINDOW_ROWS} open positions`)).toBeVisible();
+  // …and it really is windowing, or this test is the un-windowed one again.
+  await expect(page.getByText(/rows are windowed as you scroll/)).toBeVisible();
+  const mounted = await rows.count();
+  expect(mounted, "every row is mounted — the windowed path was never taken").toBeLessThan(WINDOW_ROWS);
+
+  // Down through the boundary. The first press focuses row 0, so by press
+  // `mounted + 1` the focused row is one the page did NOT have in the DOM when
+  // it loaded — the case `scrollIntoView` cannot serve.
+  for (let i = 0; i < WINDOW_ROWS; i++) {
+    await page.keyboard.press("j");
+    if (i === mounted) await expectFocusedRowFullyVisible(page, `after j crossed the window boundary ${await deskState(page)}`);
+  }
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", String(WINDOW_ROWS - 1));
+  await expectFocusedRowFullyVisible(page, "after j to the last row of a windowed desk");
+
+  // …and back up, the direction that used to park the row under the header.
+  for (let i = 0; i < WINDOW_ROWS - 1; i++) {
+    await page.keyboard.press("k");
+    if (i === WINDOW_ROWS - mounted) {
+      await expectFocusedRowFullyVisible(page, "after k crossed the window boundary");
+    }
+  }
+  await expect(page.locator(FOCUSED)).toHaveAttribute("data-row-index", "0");
+  await expectFocusedRowFullyVisible(page, "after k back to the first row of a windowed desk");
 });

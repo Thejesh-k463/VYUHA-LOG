@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { instruments, instrumentIndices } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { isIsoDate } from "@/lib/live/results-date";
 import { parseInstrumentList } from "@/lib/analytics/instruments";
 import { parseInstrumentsFile, indexLabelFromFilename } from "@/lib/import/instruments-file";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
@@ -10,8 +12,25 @@ import nseIndexMap from "@/lib/data/nse-index-map.json";
 export const runtime = "nodejs";
 
 function revalidate() {
-  for (const p of ["/instruments", "/risk"]) revalidatePath(p);
+  // `/live` joined the list with migration 0068: the Live Desk reads
+  // `instruments.results_date` for its chip, so an edit here changes that page.
+  for (const p of ["/instruments", "/risk", "/live"]) revalidatePath(p);
 }
+
+/**
+ * The results-date edit (owner ruling Q-9, migration 0068).
+ *
+ * A real calendar day or nothing — `isIsoDate` (lib/live/results-date.ts) is
+ * the SAME guard the desk reads the column through, so the route cannot accept
+ * a string the chip would silently drop. `2026-02-30` matches `\d{4}-\d{2}-\d{2}`
+ * and is not a day, which is why the check is a refinement and not a regex.
+ * `null` is the clear, and it is an explicit value rather than an absent key:
+ * "clear this date" and "this request forgot the field" must not be one thing.
+ */
+const ResultsDateBody = z.object({
+  id: z.number().int().positive(),
+  resultsDate: z.string().refine(isIsoDate, "not a calendar date").nullable(),
+});
 
 type Fields = { name: string | null; sector: string | null; lotSize: number | null; isin: string | null };
 
@@ -41,6 +60,40 @@ export async function POST(req: Request) {
     db.delete(instruments).where(eq(instruments.id, id)).run();
     revalidate();
     return NextResponse.json({ ok: true, message: "Instrument deleted." });
+  }
+
+  if (body.action === "results-date") {
+    // An empty string is what a cleared <input type="date"> submits, and it
+    // means the same thing as `null` here — normalised BEFORE the schema so the
+    // schema stays a statement about the stored value, not about form quirks.
+    // ANYTHING ELSE non-string falls through to zod UNCHANGED and is refused:
+    // coercing it to null would turn a malformed payload into a silent CLEAR of
+    // a date the user had recorded, which is the one outcome a validation error
+    // must never become.
+    const raw = body.resultsDate;
+    const parsed = ResultsDateBody.safeParse({
+      id: typeof body.id === "number" ? body.id : Number(body.id),
+      resultsDate: typeof raw === "string" ? (raw.trim() === "" ? null : raw.trim()) : raw,
+    });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, message: "Results date must be a calendar date (YYYY-MM-DD), or empty to clear." },
+        { status: 400 },
+      );
+    }
+    const res = db
+      .update(instruments)
+      .set({ resultsDate: parsed.data.resultsDate, updatedAt: sql`(datetime('now'))` })
+      .where(eq(instruments.id, parsed.data.id))
+      .run();
+    if (res.changes === 0) {
+      return NextResponse.json({ ok: false, message: "No such instrument." }, { status: 404 });
+    }
+    revalidate();
+    return NextResponse.json({
+      ok: true,
+      message: parsed.data.resultsDate ? `Results date saved: ${parsed.data.resultsDate}.` : "Results date cleared.",
+    });
   }
 
   if (body.action === "add") {

@@ -140,6 +140,7 @@
     <li><a href="#daily">The daily broker login</a></li>
     <li><a href="#vyuha">Connecting it to Vyuha</a></li>
     <li><a href="#pull">Pulling trades</a></li>
+    <li><a href="#live">Live prices on the Live Desk</a></li>
     <li><a href="#brokers">Broker-by-broker: the exact deltas</a></li>
     <li><a href="#cost">What it costs</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
@@ -197,7 +198,7 @@ OpenAlgo, run two instances on different ports — Vyuha handles multiple instan
 cd openalgo</code></pre></li>
   <li><b>Create your <code>.env</code></b>: copy <code>.sample.env</code> to <code>.env</code> and
     fill in your broker's lines (<a href="#env">next section</a>, and the per-broker deltas in
-    <a href="#brokers">section 9</a>).</li>
+    <a href="#brokers">section 10</a>).</li>
   <li><b>Start it:</b>
     <pre class="env"><code>uv run app.py</code></pre>
     The <b>first run takes several minutes</b> — <code>uv</code> downloads and builds the whole
@@ -304,8 +305,52 @@ ZMQ_PORT=5556</code></pre></li>
     Older history still comes in by file.</li>
 </ul>
 
-<h2 id="brokers">9 · Broker-by-broker: the exact deltas</h2>
-<p>Sections 2–8 are the same for every broker. What differs is where the API key comes from and
+<!--
+  LIVE PRICES (v4.1). Every claim below cites the code that performs it:
+    • 1–5 s, clamped          lib/quotes/openalgo.ts:59-71, poll at :413,
+                              stopped with the desk's stream at :414-421
+    • 10 req/s ceiling         lib/quotes/openalgo.ts:64, createRateGuard() :284-294
+    • request body            :319 (apikey + symbols), :351-355 (symbol+exchange only);
+                              key list = open positions of the selected account,
+                              app/api/live/stream/route.ts:74-93, capped at 500
+    • /funds once             :444, answer discarded :453-454
+    • loopback default        lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST
+    • opt-in, gated           openAlgoGate()/isAckCurrent(), applied at :150-156
+    • no ticks written        :386-422 writes nothing; lib/quotes/persist-mark.ts
+                              writes one row per position per IST day
+  Disclosure version is "2" (lib/domain/openalgo-disclosure.ts), so an install
+  that accepted v1 re-reads before either path runs.
+-->
+<h2 id="live">9 · Live prices on the Live Desk</h2>
+<p>From v4.1 the same instance can also <b>price your open positions</b> while you watch them. It is a
+separate switch from the trade pull, and it is off until you turn it on.</p>
+<ul>
+  <li><b>What it does.</b> The Live Desk marks your open positions from the stored end-of-day
+    bhavcopy, or from prices you type, until you pick <b>OpenAlgo</b> as the source in
+    <b>Settings → Live feed</b>.</li>
+  <li><b>How often.</b> While the Live Desk is open, Vyuha asks the bridge once every
+    <b>1 to 5 seconds</b> — the interval is a slider in Settings → Live feed, and anything outside
+    that range is clamped to it in code. The requests stop when you leave the screen, and Vyuha
+    refuses more than 10 requests a second to your bridge whatever the slider says.</li>
+  <li><b>What is sent.</b> Your OpenAlgo API key and the trading symbols and exchanges of the
+    positions you have open — at most 500 of them. Quantity, entry price, stop, P&amp;L and account
+    name are not in the request. Checking the connection calls <code>/api/v1/funds</code> once, and
+    Vyuha keeps nothing from that answer except that it arrived.</li>
+  <li><b>Where it goes.</b> <code>http://127.0.0.1:5000</code> by default — your own machine talking
+    to itself, so no symbol leaves it. If you enter another address, that list of symbols travels to
+    that machine every few seconds while the desk is open.</li>
+  <li><b>What is stored.</b> Prices refresh on screen only. Ticks are never written to your journal;
+    one mark per position per day is saved.</li>
+  <li><b>The daily login still applies</b> (<a href="#daily">section 6</a>): the broker session
+    behind OpenAlgo expires every day and has to be signed in again — that is the broker's rule, not
+    Vyuha's. Until it is, prices stop arriving and the desk keeps the last mark it had.</li>
+  <li><b>The consent.</b> The in-app disclosure was re-issued for this, so an acceptance of the
+    earlier version does not cover the feed: every install reads and accepts it again before either
+    path runs.</li>
+</ul>
+
+<h2 id="brokers">10 · Broker-by-broker: the exact deltas</h2>
+<p>Sections 2–9 are the same for every broker. What differs is where the API key comes from and
 what the daily login asks for. Two labels below tell you how far each path has been exercised:</p>
 <p>
   <span class="chip live"><b>✓</b> Verified live with Vyuha — a real pull from a real account landed real trades (Aug 2026)</span><br />
@@ -407,13 +452,21 @@ REDIRECT_URL   = 'http://127.0.0.1:5000/angel/callback'</code></pre></li>
   </ul>
 </div>
 
-<h2 id="cost">10 · What it costs</h2>
+<h2 id="cost">11 · What it costs</h2>
 <p>As of Aug 2026: <b>read-only tradebook pulls are free on all seven brokers.</b> Creating the
 developer app or API key costs nothing at Dhan, Upstox, Groww, Paytm Money, Kotak Neo, Angel One or
 Zerodha, and the tradebook endpoint Vyuha reads is not a paid add-on anywhere. The paid tiers some
-brokers advertise cover live market-data streams — not required for anything on this page.</p>
+brokers advertise cover live market-data streams — not required for the read-only pull this guide is
+built around.</p>
+<!-- Narrowed in v4.1: this paragraph used to end "not required for anything on this page", and
+     section 9 put a live quote feed on the page. Whether a broker attaches a market-data
+     entitlement to the quotes OpenAlgo relays has not been verified here for any of the seven, so
+     the sentence now claims only what the pull was checked against. -->
+<p>Section 9's live prices come from whatever market data your broker's own API gives your OpenAlgo
+instance. Whether that carries a market-data charge is between you and that broker — it has not been
+verified here for any of the seven, and Vyuha adds no data subscription of its own.</p>
 
-<h2 id="trouble">11 · Troubleshooting</h2>
+<h2 id="trouble">12 · Troubleshooting</h2>
 <p>Each of these was hit in real testing.</p>
 <div class="table-wrap">
 <table>

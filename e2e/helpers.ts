@@ -5,6 +5,19 @@ const DHAN = path.join(process.cwd(), "tests", "fixtures", "dhan-pnl.csv");
 const ZERODHA = path.join(process.cwd(), "tests", "fixtures", "zerodha-tradebook.csv");
 
 /**
+ * The database the harness serves the app from — ONE definition.
+ *
+ * `playwright.config.ts` hands this to the dev server as `VYUHA_DB_PATH` and
+ * `e2e/prepare-db.ts` recreates it before the server starts. A spec that has to
+ * reach PAST the HTTP surface opens this same file: expiring the Pro trial is
+ * the one entitlement state no route handler and no screen can produce, by
+ * design, so `z-live-desk.spec.ts` backdates `settings.trial_started_at` here
+ * and restores it. Stating the path twice is how the test would end up
+ * asserting against a database the server is not using.
+ */
+export const E2E_DB_PATH = path.join(process.cwd(), "data", "e2e.sqlite");
+
+/**
  * Wait for the import page to be INTERACTIVE before handing it a file.
  *
  * `setInputFiles` on a not-yet-hydrated page silently does nothing: the file

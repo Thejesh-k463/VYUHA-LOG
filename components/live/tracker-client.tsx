@@ -8,7 +8,18 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/badge";
 import { ProLock } from "@/components/system/pro-lock";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
-import { DESK_COPY, EM_DASH, needsData, needsSessions, riskAtStopSentence, stalenessLabel, stopLabel } from "./desk-copy";
+import { daysToResults } from "@/lib/live/results-date";
+import {
+  DESK_COPY,
+  EM_DASH,
+  lockedInAtStop,
+  needsData,
+  needsSessions,
+  resultsChip,
+  riskAtStopSentence,
+  stalenessLabel,
+  stopLabel,
+} from "./desk-copy";
 import * as fmt from "./desk-format";
 import { deskAction, isTypingTarget, nextIndex } from "./desk-keys";
 import type { DeskRow, LiveDeskData } from "./desk-types";
@@ -41,8 +52,19 @@ import type { DeskRow, LiveDeskData } from "./desk-types";
 /** Beyond this many rows the list is windowed (spec §8: 50 and 100 positions). */
 export const VIRTUAL_THRESHOLD = 40;
 
-/** Row height the virtualiser estimates, in px. */
-const ROW_HEIGHT = 44;
+/**
+ * The virtualiser's INITIAL guess at a row's height, in px — never the last
+ * word on it. Every windowed <tr> carries `ref={virtualizer.measureElement}`
+ * and a `data-index`, so the real height replaces this one as the row mounts.
+ *
+ * It is 66 and not 44 because a row is not one line: the Mark cell renders the
+ * level and then `<StalenessChip>` as two block-level lines, which is
+ * structural, not a font metric. Measured 2026-09-06 in the browser harness
+ * (`e2e/z-live-desk.spec.ts`, 45 rows): 2998 px of tbody / 45 ≈ 66.6 px. With
+ * 44 here and nothing measuring, every offset was short by (66.6 − 44) × index
+ * and the row j had just focused sat 628 px below the fold.
+ */
+const ROW_HEIGHT = 66;
 
 /**
  * Header height assumed until the <thead> has been measured, in px.
@@ -217,6 +239,21 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     if (el) setTheadHeight(el.offsetHeight || THEAD_HEIGHT_FALLBACK);
   }, []);
 
+  // How much of the scroll box is NOT scrollable content area: its 1px top and
+  // bottom borders (plus a horizontal scrollbar, if one ever appears).
+  // virtual-core sizes the viewport from `offsetHeight` (`getRect`, the BORDER
+  // box) but scrolls in client-box coordinates, so `align:"end"` overshoots by
+  // exactly this much and clips the focused row's bottom. Measured 2026-09-06
+  // in the harness: offsetHeight 252, clientHeight 250 — the row's bottom sat
+  // 1.5 px past the box (`Expected: >= -1  Received: -1.5`). Same callback-ref
+  // pattern as the <thead> above, and for the same reason: no setState in an
+  // effect keyed on state.
+  const [boxChromeY, setBoxChromeY] = React.useState(0);
+  const scrollBoxRef = React.useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+    if (el) setBoxChromeY(Math.max(0, el.offsetHeight - el.clientHeight));
+  }, []);
+
   React.useEffect(() => {
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -245,6 +282,8 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const virtualizer = useVirtualizer({
     count: visible.length,
     getScrollElement: () => scrollRef.current,
+    // An ESTIMATE, corrected per row by `measureElement` below — a fixed size
+    // here is a promise about a row's height that this row does not keep.
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
     // The sticky <thead> lives inside this scroll element, so its top
@@ -265,6 +304,8 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     // while `getTotalSize()` stays content-relative.
     scrollMargin: theadHeight,
     scrollPaddingStart: theadHeight,
+    // The bottom half of the same frame — see `boxChromeY` above.
+    scrollPaddingEnd: boxChromeY,
   });
 
   const openLab = React.useCallback(
@@ -423,6 +464,14 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {heat.capitalP === null ? DESK_COPY.heatNoCapital : `Open risk ${fmt.money(heat.openRiskP)} of ${fmt.money(heat.capitalP)}.`}
               </p>
+              {/* `lockedInProfitP` has been computed since v4.0 and printed
+                  nowhere. It is the OTHER side of `max(riskAtStopP, 0)`: heat
+                  drops it so a winner cannot cancel another row's real risk,
+                  which is right, but dropping it off the SCREEN too lost a real
+                  figure. Stated on its own line, never netted into heat above.
+                  Pro, because the whole heat tile is (Q55) — this branch only
+                  runs inside `pro && heat !== null`. */}
+              <p className="text-[11px] text-muted-foreground">{lockedInAtStop(fmt.money(heat.lockedInProfitP))}</p>
               {heat.rowsWithoutStop > 0 && (
                 <p className="text-[11px] text-muted-foreground">{DESK_COPY.heatNoStop(heat.rowsWithoutStop)}</p>
               )}
@@ -468,7 +517,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
 
       {/* ── The tracker table ───────────────────────────────────────────────── */}
       <div
-        ref={scrollRef}
+        ref={scrollBoxRef}
         tabIndex={0}
         role="region"
         aria-label="Open positions"
@@ -532,11 +581,19 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
                   key={r.id}
                   row={r}
                   index={idx}
+                  // Windowed rows measure THEMSELVES (same pattern as
+                  // `components/ui/data-table.tsx`). Without this the model
+                  // keeps `estimateSize` for ever and drifts by
+                  // (real − estimate) × index; the un-windowed path scrolls
+                  // through the DOM and needs no measurement at all.
+                  virtualIndex={windowed ? idx : undefined}
+                  measureRef={windowed ? virtualizer.measureElement : undefined}
                   pro={pro}
                   focused={focused?.id === r.id}
                   expanded={expandedId === r.id}
                   breach={breach}
                   newestDay={newestDay}
+                  today={data.today}
                   onToggle={() => {
                     setFocusIdx(idx);
                     setExpandedId((id) => (id === r.id ? null : r.id));
@@ -574,6 +631,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           atrLength={atrLength}
           bars={barsBySymbol[expanded.symbol.toUpperCase()] ?? []}
           barsCapped={barsCap.trimmed}
+          today={data.today}
           onClose={() => setExpandedId(null)}
           onLab={() => openLab(expanded)}
         />
@@ -592,25 +650,41 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
 function Row({
   row,
   index,
+  virtualIndex,
+  measureRef,
   pro,
   focused,
   expanded,
   breach,
   newestDay,
+  today,
   onToggle,
 }: {
   row: DeskRow;
   /** Its position in `visible`, so j/k can scroll the un-windowed table to it. */
   index: number;
+  /** Windowed path only: the index `measureElement` reads back off the DOM. */
+  virtualIndex?: number;
+  /** Windowed path only: `virtualizer.measureElement`. Undefined = unmeasured. */
+  measureRef?: (node: HTMLTableRowElement | null) => void;
   pro: boolean;
   focused: boolean;
   expanded: boolean;
   breach: string | null;
   newestDay: string | null;
+  /** IST today (`LiveDeskData.today`) — the results chip's only other input. */
+  today: string;
   onToggle: () => void;
 }) {
+  // Q-9. Derived at render from one date and one `today`, so the chip cannot
+  // go stale in a cached payload and the row carries no extra number.
+  // `daysToResults` returns null for an absent OR past date, and null renders
+  // nothing at all — the date stays on the instrument either way.
+  const resultsIn = daysToResults(row.resultsDate, today);
   return (
     <tr
+      ref={measureRef}
+      data-index={virtualIndex}
       className={`border-t border-rule ${focused ? "bg-card-hover" : ""}`}
       aria-selected={focused}
       data-account-id={row.accountId}
@@ -624,6 +698,11 @@ function Row({
           {row.side === "short" ? "short" : "long"}
           {row.accountName ? ` · ${row.accountName}` : ` · account ${row.accountId}`}
         </span>
+        {resultsIn !== null && (
+          <Badge variant="secondary" size="xs" className="ml-1 align-middle">
+            {resultsChip(resultsIn)}
+          </Badge>
+        )}
       </td>
       <td className="px-2 py-1.5">
         <Badge variant="secondary" size="xs">
@@ -686,6 +765,7 @@ function DetailPane({
   atrLength,
   bars,
   barsCapped,
+  today,
   onClose,
   onLab,
 }: {
@@ -694,10 +774,13 @@ function DetailPane({
   atrLength: number;
   bars: LiveDeskData["barsBySymbol"][string];
   barsCapped: boolean;
+  /** IST today (`LiveDeskData.today`), for the results block. */
+  today: string;
   onClose: () => void;
   onLab: () => void;
 }) {
   const atrNeed = atrLength + 1;
+  const resultsIn = daysToResults(row.resultsDate, today);
   const rvolNeed = 21;
   // Which branch of the stop tree fired. `gated` is the free-licence wire
   // shape (`lib/live/stop.ts`): it keeps the provenance and drops every
@@ -767,6 +850,21 @@ function DetailPane({
             row.highDistance.ppm === null
               ? needsSessions(2, row.highDistance.sessions)
               : `Measured over ${row.highDistance.sessions} stored sessions.`
+          }
+        />
+        {/* Q-9. The DATE as recorded, and its distance as a note. A past date
+            is still shown here — it is on the user's own record — but
+            `daysToResults` returns null for it, so the note falls back to the
+            "not recorded" line rather than counting backwards. */}
+        <Block
+          title="Results date"
+          value={row.resultsDate ?? EM_DASH}
+          note={
+            row.resultsDate === null
+              ? DESK_COPY.resultsMissing
+              : resultsIn === null
+                ? DESK_COPY.resultsPast
+                : resultsChip(resultsIn)
           }
         />
         <Block

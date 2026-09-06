@@ -1061,6 +1061,14 @@ export const instruments = sqliteTable(
     sector: text("sector"), // GICS-ish sector / industry label
     lotSize: integer("lot_size"), // derivatives lot size
     expiry: text("expiry"), // ISO date (derivatives)
+    // results_date (0068) — the date this company reports, ISO `YYYY-MM-DD`.
+    // USER-ENTERED, and there is no network source for it: no results calendar
+    // is bundled and nothing fetches one. It is a DATE FACT about the company,
+    // like `expiry` above it — never an instruction, and nothing on the Live
+    // Desk is allowed to follow it with one. Nullable because "not recorded"
+    // is the honest state; an invented date would be a claim about a company
+    // Vyuha cannot make (invariant 6).
+    resultsDate: text("results_date"),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
   },

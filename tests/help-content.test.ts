@@ -100,33 +100,59 @@ describe("help describes the app that shipped, not the one that is planned", () 
   });
 
   /**
-   * D-2 — the same rule as the "alerts" guard above, for the feed.
+   * D-2, rewritten for v4.1 — the same rule as the "alerts" guard above, for
+   * the feed.
    *
-   * `/live` described three price sources, one of them "an OpenAlgo feed",
-   * while `OPENALGO_FEED_ENABLED` (lib/quotes/types.ts) is false: the registry
-   * omits the id, the Settings radios filter it and a POST asking for it is a
-   * 400. Help that names it is help for a release that did not ship.
+   * In 4.0 `OPENALGO_FEED_ENABLED` (lib/quotes/types.ts) was false and the two
+   * cases below were `it.skipIf(OPENALGO_FEED_ENABLED)`: help that named a
+   * broker-priced mark was help for a release that did not ship. 4.1 flips the
+   * constant, which would have made both cases SKIP — a guard that stops
+   * running the moment its subject becomes real. So they assert the 4.1 truth
+   * instead, and neither reads the flag: the feed SHIPS, and the obligation
+   * moves from "never say it" to "never say it without its consent".
    *
-   * The guard reads the flag, so v4.1 relaxes it by flipping that one
-   * constant. It is a PAIRING guard, not a word ban: OpenAlgo the IMPORT path
-   * shipped in v3.1 and is described on /import, /import-help and /settings —
-   * what may not be said is that it, or any broker, PRICES anything.
+   * It is still a PAIRING scan, not a word ban: OpenAlgo the IMPORT path
+   * shipped in v3.1 and is described on /import, /import-help and /settings.
    */
   const PRICE_CLAIM =
     /\bfeed\b|live (price|prices|quote|quotes|tick|ticks)|real[- ]?time|streaming|prices the desk|marks? (are|from)/i;
 
-  it.skipIf(OPENALGO_FEED_ENABLED)("no help entry pairs OpenAlgo or a broker with a price source", () => {
+  /**
+   * The consent path, in the words help is allowed to use for it. A price
+   * claim about the bridge that names none of these is a claim that the desk
+   * is priced by a broker with no mention that the user has to switch it on —
+   * exactly what `openAlgoGate()` (lib/quotes/openalgo.ts:150-156) refuses to
+   * do, so it would also be false.
+   */
+  const CONSENT_NAMED = /opt-in|disclosure|Settings|you (?:switch|turn|pick|chose|choose)/i;
+
+  it("every help sentence that pairs OpenAlgo or a broker with a price also names the consent path", () => {
     const strings = HELP_ENTRIES.flatMap((e) => [e.title, e.answers, ...e.body, ...(e.refusals ?? [])]);
-    const offenders = strings.filter((s) => /openalgo|broker(?:'s)? feed/i.test(s) && PRICE_CLAIM.test(s));
-    expect(offenders, `help sells a feed v4.0 does not ship: ${offenders.join(" | ")}`).toEqual([]);
+    const paired = strings.filter((s) => /openalgo|broker(?:'s)? feed/i.test(s) && PRICE_CLAIM.test(s));
+    // v4.1 SHIPS the feed, so the help desk must describe it: a scan with
+    // nothing to scan would pass on a registry that never mentions it.
+    expect(paired.length, "no help entry describes the feed at all").toBeGreaterThan(0);
+    const naked = paired.filter((s) => !CONSENT_NAMED.test(s));
+    expect(naked, `help prices the desk from a bridge without naming the consent: ${naked.join(" | ")}`).toEqual([]);
   });
 
-  it.skipIf(OPENALGO_FEED_ENABLED)("/live names only the two sources that exist, and names neither OpenAlgo nor a broker", () => {
+  it("/live names all three sources, and says the third is opt-in and on-screen only", () => {
+    // The one place the flag is still read: help may name the bridge as a
+    // price source only while the release actually offers it. If v4.1 were
+    // rolled back, this is the case that says the help desk went with it.
+    expect(OPENALGO_FEED_ENABLED, "help names a feed the release does not offer").toBe(true);
     const text = [HELP_ENTRIES.find((e) => e.href === "/live")!.answers, body("/live")].join(" ");
-    expect(text).not.toMatch(/openalgo/i);
-    expect(text).not.toMatch(/\bbroker/i);
     expect(text).toMatch(/end-of-day bhavcopy/i);
     expect(text).toMatch(/a mark you type/i);
+    expect(text).toMatch(/openalgo/i);
+    // The three properties that make naming it honest: it is chosen, it is
+    // gated on the disclosure, and it writes no tick (lib/quotes/persist-mark.ts).
+    expect(text).toMatch(/opt-in/i);
+    expect(text).toMatch(/disclosure/i);
+    expect(text).toMatch(/refresh on screen only/i);
+    // …and the loopback default, so "prices from a broker" never reads as an
+    // upload (lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST).
+    expect(text).toMatch(/127\.0\.0\.1/);
   });
 
   it("the pairing scan really can fire, and spares the shipped v3.1 import sentences", () => {

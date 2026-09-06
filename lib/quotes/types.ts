@@ -36,24 +36,29 @@ export type ProviderId =
   | "angelone";
 
 /**
- * THE ONE SWITCH THAT SHIPS OR WITHHOLDS THE OPENALGO FEED (owner ruling,
- * v4.0). OpenAlgo is a v4.1 feature: in 4.0 it is not in the shipped provider
- * list, not in the route's pickable set, and not a radio in Settings, and a
- * stored `live_feed_provider = 'openalgo'` resolves to the end-of-day default
- * (`resolveProviderId()`).
+ * THE ONE SWITCH THAT SHIPS OR WITHHOLDS THE OPENALGO FEED (owner ruling).
+ * v4.0 withheld it: it was absent from the shipped provider list, from the
+ * route's pickable set and from the Settings radios, and a stored
+ * `live_feed_provider = 'openalgo'` resolved to the end-of-day default
+ * (`resolveProviderId()`). **v4.1 SHIPS IT** — this line is `true`, and that
+ * was the whole of the change: the adapter (`lib/quotes/openalgo.ts`), its
+ * tests, its capability block, its consent sheet and migration 0067 were all
+ * built in 4.0 and only withheld.
  *
- * EVERYTHING ELSE STAYS: the adapter (`lib/quotes/openalgo.ts`), its tests,
- * its capability block, its consent sheet and migration 0067 are all intact,
- * so v4.1 is this one line flipped to `true` — nothing else.
+ * IT IS A RELEASE SWITCH, NOT A CONSENT. Being pickable is not permission to
+ * run: `selectProviderId()` re-checks BOTH halves of the acknowledgement at
+ * every selection, and `/api/live/feed` answers 403 and stores nothing until
+ * they hold. Flipping this back to `false` withdraws the feature from all
+ * four places at once, with no other edit.
  *
  * It lives in the PURE types module on purpose: `registry.ts` is
  * `server-only`, and the Settings card is a client component that has to read
  * the same fact.
  *
- * Typed `boolean` rather than left as the literal `false` so that the code
+ * Typed `boolean` rather than left as the literal `true` so that the code
  * guarded by it stays type-checked instead of narrowing to dead branches.
  */
-export const OPENALGO_FEED_ENABLED: boolean = false;
+export const OPENALGO_FEED_ENABLED: boolean = true;
 
 /** How stale the caller MUST assume a price is. Never a guess, never upgraded. */
 export type Staleness = "tick" | "delayed" | "eod" | "manual";
@@ -163,7 +168,7 @@ export function fromPaise(paise: Paise): number {
 export class NotEnabledError extends Error {
   readonly code = "PROVIDER_NOT_ENABLED" as const;
   constructor(readonly providerId: ProviderId, note: string) {
-    super(`The ${providerId} quote provider is not enabled in v4.0 — ${note}`);
+    super(`The ${providerId} quote provider is not enabled in this release — ${note}`);
     this.name = "NotEnabledError";
   }
 }

@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * The TradingView / Pine Script indicators are invite-only and NOT part of
@@ -102,19 +101,22 @@ describe("client-facing docs never mention the invite-only indicators", () => {
 });
 
 /**
- * The client README may not sell what 4.0.0 withholds (D-1/D-3/D-4 of the
- * 2026-09-06 re-audit).
+ * The client README may not sell what the release withholds — or state what it
+ * ships without its conditions (D-1/D-3/D-4 of the 2026-09-06 re-audit, and
+ * the v4.1 feed wave).
  *
- * 1. NO BROKER-PRICED MARKS WHILE THE FLAG IS OFF. `OPENALGO_FEED_ENABLED` in
- *    `lib/quotes/types.ts` is `false` in 4.0.0: the provider is out of the
- *    registry, the Settings radios do not offer it, and a POST asking for it
- *    is a 400. A buyer reading "live prices from your broker" in the ZIP would
- *    be reading about 4.1. The check is the PAIRING, exactly as
- *    `tests/live-feed-copy.test.ts` frames it — OpenAlgo has been in this file
- *    since v3.1 as the IMPORT bridge, and that is true and stays: marketing
- *    may say the bridge imports trades, and may not say it prices them. When
- *    the constant flips to `true` in 4.1 this case skips itself, because the
- *    claim stops being false.
+ * 1. A BROKER-PRICED MARK IS ONLY EVER DESCRIBED WITH ITS CONSENT. In 4.0.0
+ *    `OPENALGO_FEED_ENABLED` (`lib/quotes/types.ts`) was `false` and this case
+ *    banned the pairing outright, skipping itself when the constant flipped —
+ *    which is what 4.1 does, so the guard would have stopped running at the
+ *    exact moment a buyer could first read about the feed. It now asserts the
+ *    4.1 truth instead, and reads no flag: a line in the ZIP may pair the
+ *    bridge with a price claim ONLY while it also says the feed is opt-in /
+ *    behind the disclosure / on the loopback default. That is what
+ *    `openAlgoGate()` (lib/quotes/openalgo.ts:150-156) enforces in code and
+ *    what `docs/client/PRIVACY.md` item 3 states, so a line without it is not
+ *    just marketing — it is false. The v3.1 IMPORT sentences are untouched:
+ *    marketing may always say the bridge imports trades.
  *
  * 2. THE SIZING LAB WRITE-BACK IS NOT PER POSITION, EVER. It POSTs to
  *    `/api/risk/live-desk`, which writes the `scope:'global'` `risk_config`
@@ -135,6 +137,14 @@ const PRICING_CLAIM =
 /** The write-back claim, in any tense. */
 const PER_POSITION_WRITEBACK = /\bwrit(?:e|es|ten|ing)\s+back\s+to\s+(?:the\s+|a\s+|your\s+|any\s+)?position/i;
 
+/**
+ * The conditions that make a price-feed sentence true in 4.1: the user turns it
+ * on, behind the disclosure, and it goes to their own machine by default
+ * (`OPENALGO_DEFAULT_HOST`, lib/domain/openalgo-disclosure.ts).
+ */
+const FEED_CONDITIONS =
+  /opt-in|disclosure|127\.0\.0\.1|loopback|your own (?:machine|computer)|you (?:switch|turn|pick|choose|chose)/i;
+
 function offendingLines(re: RegExp, extra?: RegExp): string[] {
   return readFileSync(CLIENT_README, "utf8")
     .split("\n")
@@ -142,10 +152,44 @@ function offendingLines(re: RegExp, extra?: RegExp): string[] {
     .filter((x): x is string => x !== null);
 }
 
-describe("the client README does not sell what v4.0.0 withholds", () => {
-  it.skipIf(OPENALGO_FEED_ENABLED)("advertises no OpenAlgo / broker price feed while OPENALGO_FEED_ENABLED is false", () => {
-    const hits = offendingLines(BRIDGE_MENTION, PRICING_CLAIM);
-    expect(hits, `docs/client/README.md sells a broker feed that 4.0.0 withholds:\n${hits.join("\n")}`).toEqual([]);
+/** Lines that price the book from the bridge and state none of its conditions. */
+function nakedFeedLines(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line, i) =>
+      BRIDGE_MENTION.test(line) && PRICING_CLAIM.test(line) && !FEED_CONDITIONS.test(line)
+        ? `${i + 1}: ${line.trim().slice(0, 160)}`
+        : null,
+    )
+    .filter((x): x is string => x !== null);
+}
+
+describe("the client README states the v4.1 feed only with its conditions", () => {
+  it("names no OpenAlgo / broker price feed without opt-in, the disclosure or the loopback default", () => {
+    const hits = nakedFeedLines(readFileSync(CLIENT_README, "utf8"));
+    expect(hits, `docs/client/README.md prices the desk from a bridge with no consent stated:\n${hits.join("\n")}`).toEqual(
+      [],
+    );
+  });
+
+  it("the feed guard really can fire — and spares both the disclosed sentence and the v3.1 import one", () => {
+    // A guard that has never been shown to catch anything is a guard that
+    // passes on an empty file. The planted line is the sentence 4.0.0 banned
+    // outright and 4.1 still may not print bare.
+    expect(
+      nakedFeedLines("Live prices from your broker, streaming into the Live Desk."),
+      "the bare broker-price claim must be caught",
+    ).toHaveLength(1);
+    expect(
+      nakedFeedLines(
+        "Live prices are opt-in: pick your own OpenAlgo bridge in Settings after accepting the disclosure, and it answers on 127.0.0.1.",
+      ),
+      "the disclosed sentence is what the ZIP is allowed to say",
+    ).toEqual([]);
+    expect(
+      nakedFeedLines("Groww, Paytm Money and Kotak get a same-day pull through the OpenAlgo bridge."),
+      "the shipped v3.1 IMPORT sentence, which stays",
+    ).toEqual([]);
   });
 
   it("never says a size is written back to the position (the write-back is the global risk_config row)", () => {

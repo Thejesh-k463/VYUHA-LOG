@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { InstrumentManager } from "@/components/system/instrument-manager";
+import { ResultsDateEditor } from "@/components/instruments/results-date-editor";
 import { getInstruments } from "@/lib/queries/instruments";
 import { getPriceHistoryMeta } from "@/lib/queries/price-history";
 import nseIndexMap from "@/lib/data/nse-index-map.json";
@@ -28,6 +29,18 @@ export default function InstrumentsPage() {
           </CardHeader>
           <CardContent>
             <InstrumentManager rows={rows} nseMapAsOf={(nseIndexMap as { asOf: string }).asOf} />
+          </CardContent>
+        </Card>
+
+        {/* Q-9 / migration 0068. Its own card because the control belongs in
+            the manager's table above and that file was outside this wave's
+            file set — see the component header. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Results dates</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResultsDateEditor rows={rows} />
           </CardContent>
         </Card>
 

@@ -11,6 +11,7 @@ import {
   selectProviderId,
 } from "@/lib/quotes/registry";
 import { NotEnabledError, OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
 
 /**
  * The registry: which provider runs, and what happens to the ones v4.0
@@ -39,22 +40,38 @@ describe("selection", () => {
     expect(resolveProviderId(undefined)).toBe("eod");
   });
 
-  it("resolves a stored 'openalgo' to end-of-day while the feed is a v4.1 feature", () => {
-    // The picker column can carry "openalgo" — from a v4.1 machine's backup,
-    // or from a hand-edited database. v4.0 does not ship the feed
-    // (OPENALGO_FEED_ENABLED), so the value is not a known selectable id and
-    // falls back to the default, exactly like any other unknown string.
-    expect(OPENALGO_FEED_ENABLED).toBe(false);
-    expect(resolveProviderId("openalgo")).toBe("eod");
-    expect(selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: true, openalgoAckVersion: "1" })).toBe(
-      "eod",
-    );
+  it("resolves a stored 'openalgo' to itself now the release ships it — and CONSENT still decides", () => {
+    // v4.1 flipped the release switch, so "openalgo" is a known selectable id
+    // and no longer collapses to the default like an unknown string. What did
+    // NOT change is the gate: `selectProviderId` re-reads the consent pair on
+    // every selection, so a restored backup (picker column present, consent
+    // columns empty — they are machine state) still runs end-of-day.
+    expect(OPENALGO_FEED_ENABLED).toBe(true);
+    expect(resolveProviderId("openalgo")).toBe("openalgo");
+    const ACK = OPENALGO_DISCLOSURE_VERSION;
+    expect(
+      selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: true, openalgoAckVersion: ACK }),
+      "a current acknowledgement is the only thing that opens the feed",
+    ).toBe("openalgo");
+    expect(
+      selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: false, openalgoAckVersion: ACK }),
+      "integration off",
+    ).toBe("eod");
+    expect(
+      selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: true, openalgoAckVersion: null }),
+      "never acknowledged",
+    ).toBe("eod");
+    expect(
+      selectProviderId({ liveFeedProvider: "openalgo", openalgoEnabled: true, openalgoAckVersion: "0" }),
+      "acknowledged an older disclosure",
+    ).toBe("eod");
   });
 
-  it("keeps the adapter and its consent gate intact for v4.1 — nothing was deleted", () => {
-    // The provider still BUILDS, and its capability block is still policed by
-    // the egress guard; only its selectability is withheld. A v4.1 flip of one
-    // constant must not need any of this written again.
+  it("keeps the adapter and its consent gate intact — nothing was ever deleted to withhold it", () => {
+    // v4.0 withheld only the SELECTABILITY: the provider still built, and its
+    // capability block was still policed by the egress guard. v4.1 needed one
+    // constant flipped and none of this written again — which is why both
+    // assertions still read the same as they did then.
     expect(createProvider("openalgo").id).toBe("openalgo");
     expect(allProviderCapabilities().some((c) => c.id === "openalgo")).toBe(true);
   });
@@ -79,7 +96,7 @@ describe("the providers v4.0 did NOT build", () => {
   it("throws NotEnabledError with the version note from snapshot and subscribe", async () => {
     const kite = createProvider("kite");
     await expect(kite.snapshot([])).rejects.toBeInstanceOf(NotEnabledError);
-    await expect(kite.snapshot([])).rejects.toThrow(/not enabled in v4\.0/i);
+    await expect(kite.snapshot([])).rejects.toThrow(/not enabled in this release/i);
     expect(() => kite.subscribe([], () => {})).toThrow(NotEnabledError);
 
     // `openalgo` was the example here until v4.1 built it; a broker feed is
@@ -100,7 +117,7 @@ describe("the providers v4.0 did NOT build", () => {
     for (const id of PLANNED_PROVIDER_IDS) {
       const h = await createPlannedProvider(id).health();
       expect(h.ok).toBe(false);
-      expect(h.reason).toMatch(/not enabled in v4\.0/i);
+      expect(h.reason).toMatch(/not enabled in this release/i);
     }
   });
 
@@ -110,7 +127,7 @@ describe("the providers v4.0 did NOT build", () => {
       expect(c.streaming).toBe(false);
       expect(c.maxSubscriptions).toBe(0);
       expect(c.segments).toEqual([]);
-      expect(c.label).toMatch(/not enabled/i);
+      expect(c.label).toMatch(/not enabled in this release/i);
     }
   });
 });
@@ -118,10 +135,11 @@ describe("the providers v4.0 did NOT build", () => {
 describe("the capability catalogue", () => {
   it("carries exactly one block per known provider id", () => {
     const ids = allProviderCapabilities().map((c) => c.id).sort();
-    // Every shipped id, every planned id — and `openalgo`, which is BUILT but
-    // not selectable in v4.0. Its block stays listed on purpose: the egress
-    // guard reads this catalogue, and a declared host must keep being held to
-    // the privacy sheet whether or not the feature is switched on.
+    // Every shipped id and every planned id. `openalgo` is a shipped id since
+    // v4.1; the `push` below is what covered it while it was built-but-withheld,
+    // and it stays because the catalogue must list the block either way — the
+    // egress guard reads this catalogue, and a declared host must keep being
+    // held to the privacy sheet whether or not the feature is switched on.
     const expected = [...SHIPPED_PROVIDER_IDS, ...PLANNED_PROVIDER_IDS];
     if (!OPENALGO_FEED_ENABLED) expected.push("openalgo");
     expect(ids).toEqual(expected.sort());

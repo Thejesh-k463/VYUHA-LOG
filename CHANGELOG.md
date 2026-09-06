@@ -1,5 +1,145 @@
 # Changelog
 
+## v4.1.0 — unreleased
+
+*The release where the Live Desk can be priced by a bridge you already run. The
+OpenAlgo feed that shipped switched off in v4.0.0 is switched on — behind a
+disclosure every install re-accepts, at an interval you set, sending the trading
+symbols of your open positions and nothing else about them. Around it: the
+Sizing Lab's volatility tab now shows both of its variants side by side, the
+Market Atlas says which copy of its classification maps it grouped by, an
+instrument can carry the date its company reports, and the portfolio-heat tile
+prints the profit its trailed stops would hand back. One migration, 0068, and
+no dependency changes — `package-lock.json` is untouched.*
+
+- **The OpenAlgo live price feed is switched ON.** `OPENALGO_FEED_ENABLED` in
+  `lib/quotes/types.ts` is `true`, and that one line is the whole of the
+  release switch: the adapter, its capability block, its tests and migration
+  0067 all shipped in v4.0.0 and were only withheld. **Settings → Live feed now
+  offers three sources** — the end-of-day bhavcopy already on this machine
+  (still the default), a mark you type, and **the OpenAlgo bridge you run on
+  your own machine** — with the **1–5 second** on-screen refresh slider and the
+  note that your broker's API session expires every day and has to be signed in
+  again. That is stated as **the broker's rule**: no regulator is named,
+  because no circular saying otherwise is cited anywhere in this repository.
+  Being offered is not being allowed to run: `selectProviderId()` re-checks the
+  acknowledgement at every selection and `/api/live/feed` answers 403 until it
+  holds, so flipping the constant back withdraws the feature from the registry,
+  the route, the Settings radios and the resolver at once.
+
+- **What the feed asks, and of whom.** While the Live Desk is open, Vyuha polls
+  `/api/v1/multiquotes` on **your own bridge** — `http://127.0.0.1:5000` unless
+  you enter another address — at the interval you set, clamped to 1–5 seconds in
+  code, and refuses more than 10 requests a second whatever the slider says. The
+  request body is your API key and the **trading symbols and exchanges of your
+  open positions, at most 500 of them, and nothing else**: no quantity, no
+  entry price, no stop, no P&L, no account. Checking the connection calls
+  `/funds` once and keeps nothing from the answer but that it arrived and how
+  long it took. Polling starts with the desk and stops with it. **No new
+  network host is added by this release.**
+
+- **Ticks are still never written.** The feed refreshes the screen; **one mark
+  per position per IST day** is what reaches your journal — the last price of
+  the session, or the price when you press *Save today's mark*, whichever comes
+  first. A failed poll leaves the last mark in place, labelled with the date it
+  belongs to, rather than blanking or guessing.
+
+- **Disclosure v2 — every install re-acknowledges before anything pulls or
+  polls.** `OPENALGO_DISCLOSURE_VERSION` moves from `"1"` to `"2"`, and because
+  the check compares with `===`, a stored `"1"` is refused with no extra code.
+  The dialog gains its own **"What the live price feed does"** section
+  (`OPENALGO_FEED_ITEMS`, `lib/domain/openalgo-disclosure.ts`): the feed is a
+  second switch and not part of the pull, the cadence and where you set it, what
+  each request carries and what it does not, the single `/funds` probe, the
+  loopback default, that ticks are never written, and the daily broker
+  re-sign-in. `docs/client/PRIVACY.md` **item 3 is widened rather than joined by
+  a fifth** — the poll goes to the same broker bridge, only once you switch it
+  on — so "Exactly four kinds, and only one of them is automatic" and "There is
+  no fifth thing" are both still literally true. In-app Help for the Live Desk
+  and for Settings names all three sources and says the bridge is opt-in.
+
+- **Sizing Lab — the volatility tab shows both of its variants.** Inside the
+  **Volatility · Turtle unit (N)** tab, a two-position **Turtle unit (N) ⇄
+  Varsity (% volatility)** switch prints the sibling variant's size and formula
+  beside the primary one, each panel headed by the variant that produced its
+  number. **The seven-tab rail is unchanged** and so are the `?method=` deep
+  links: the switch is a presentation choice inside one tab, and both panels
+  read the same computation the compare table does, so the tab, the pair and
+  the table cannot disagree.
+
+- **The % volatility tab now states its true relation to the Turtle unit.** It
+  read "At identical inputs it returns a larger quantity than the Turtle unit",
+  which is false on the screen a reader opens: both methods divide a budget by
+  the same ATR and differ only in the budget, so Varsity returns the Turtle
+  unit's quantity **times the per-trade risk % divided by the Turtle unit risk
+  %** — and at the Lab's own opening sample (0.25% against 1%) that is a
+  **quarter**, not "larger". The engine comment that said "around twice" is
+  corrected the same way, and a test now pins the sentence and the arithmetic
+  together.
+
+- **Market Atlas → Sectors says which map it grouped by.** Beside each bundled
+  classification file's as-of date sits the **sha256 of the bytes the app
+  actually loaded** — `lib/data/sector-map.json` and
+  `lib/data/nse-index-map.json` — first twelve hex on screen, the full 64 in the
+  title attribute. The maps are refreshed by hand once per minor release, so the
+  date alone cannot tell two builds of the same dated snapshot apart. Hashed
+  once per process, server-side.
+
+- **An instrument can carry the date its company reports.** `/instruments` gains
+  a **Results dates** card: rows that already have a date are listed, a search
+  box reaches any other symbol, and up to 100 rows are rendered at a time with
+  the shortfall stated rather than silently trimmed. On `/live` the row and the
+  detail pane show a **"Results in N days" / "Results today" / "Results
+  tomorrow"** chip — **free**, because it is a date fact about the company, like
+  the symbol. A date that has gone by shows nothing on the row and "That date
+  has passed." in the pane; the date itself stays on your record. **Nothing
+  fetches it**: no results calendar is bundled and no host is contacted — it is
+  there because you typed it. The chip is a noun phrase and a number of days,
+  and no sentence follows it.
+
+- **Portfolio heat also prints what is locked in at stop (Pro).** The heat tile
+  adds **"Locked in at stop ₹X — computed from the rows whose stop already sits
+  beyond entry, if every stop is hit."** The figure has been computed since
+  v4.0.0 and printed nowhere: heat counts each row as `max(risk, 0)` so a
+  winner cannot cancel another position's real risk, which is right, but the
+  money those trailed stops would hand back was falling off the screen. It is
+  stated on its own line and never netted into heat.
+
+- **Two `/live` browser tests that could not fire before.** The free-licence
+  payload assertion now runs on a **seeded free context** (an expired trial)
+  instead of skipping, so the wire really is checked for the Pro fields it must
+  not carry; and the `j`/`k` scroll-geometry test is repeated on the
+  **windowed** path, above the 40-row virtualisation threshold, which the
+  six-row case never reached.
+
+- **One migration, 0068**, additive: `instruments.results_date`, nullable TEXT,
+  ISO `YYYY-MM-DD`, validated on every write. It is reference data, not
+  account-scoped, and it travels in a backup because `lib/backup.ts` dumps every
+  schema column.
+
+- **No dependency was added, removed or upgraded.** `package-lock.json` is
+  untouched and the only line this release changes in `package.json` is the
+  version number.
+
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+
+- **Not in this release, stated plainly:** Telegram alerts for a stop or target
+  are **cut** and become their own release after v4.2 — "alerts" stays out of
+  every Pro description until they exist. There is **no `openalgo-charts`
+  pilot**; `lightweight-charts` stays where it is. Kelly still takes the win
+  rate and payoff **you** supply — nothing is inferred from your journal yet.
+  The five NSE size-index lists are not built. **Native Upstox and Angel One
+  price feeds are v4.2**, and until then the planned providers refuse with the
+  reason rather than pretending. The v4.0.0 notes said a `results_date` on
+  instruments had not made that release; it is in this one.
+
 ## v4.0.0 — 2026-09-06
 
 *The release where the journal starts looking at the positions you still hold.

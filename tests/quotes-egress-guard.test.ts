@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { OPENALGO_DEFAULT_HOST } from "@/lib/domain/openalgo-disclosure";
+import { createOpenAlgoProvider, type FeedGateState } from "@/lib/quotes/openalgo";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
-import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import { OPENALGO_FEED_ENABLED, type QuoteKey } from "@/lib/quotes/types";
 
 /**
  * THE REGISTRY RULE, MECHANISED (03D §1.2, spec §4.1).
@@ -94,7 +96,7 @@ describe("every provider's declared egress is already in the privacy sheet", () 
   });
 });
 
-describe("v4.0 adds no host at all", () => {
+describe("the feed adds no host at all", () => {
   it("the only host any provider names is the bhavcopy archive the app already downloads", () => {
     const named = new Set(allProviderCapabilities().flatMap((c) => hostsIn(c.egressDescription)));
     expect([...named]).toEqual(["nsearchives.nseindia.com"]);
@@ -111,26 +113,26 @@ describe("v4.0 adds no host at all", () => {
 });
 
 /**
- * v4.1 adds the OpenAlgo live feed. It is the FIRST provider that makes a
+ * v4.1 SHIPS the OpenAlgo live feed. It is the FIRST provider that makes a
  * request while the app is open, and it still adds no host: the bridge is a
  * server the user installed on their own machine, reached over loopback (or a
  * machine on their own network, which the card says out loud). This block is
  * what stops "the feed is local" from being a claim in a comment.
  *
- * The adapter is BUILT in v4.0 and simply not selectable
- * (`OPENALGO_FEED_ENABLED`, owner ruling), so every assertion below still runs
- * — a capability block that stopped being policed the moment the feature flag
- * went false would be a guard that sleeps exactly while the code is easiest to
- * change.
+ * The adapter was BUILT in v4.0 and merely not selectable
+ * (`OPENALGO_FEED_ENABLED`, owner ruling), and every assertion below ran then
+ * too — a capability block that stopped being policed the moment the feature
+ * flag went false would be a guard that sleeps exactly while the code is
+ * easiest to change. Now that the flag is true they police a feed that runs.
  */
 describe("v4.1's live feed adds no remote host either", () => {
   const openalgo = () => allProviderCapabilities().find((c) => c.id === "openalgo")!;
 
-  it("is built and described, but not selectable until v4.1", () => {
-    expect(OPENALGO_FEED_ENABLED, "v4.0 does not ship the OpenAlgo feed").toBe(false);
-    expect(SHIPPED_PROVIDER_IDS as readonly string[]).not.toContain("openalgo");
-    // …and it is NOT one of the "planned" placeholders either: the adapter is
-    // real, which is why its declared egress still has to hold up.
+  it("is built, described AND selectable in this release", () => {
+    expect(OPENALGO_FEED_ENABLED, "v4.1 ships the OpenAlgo feed").toBe(true);
+    expect(SHIPPED_PROVIDER_IDS as readonly string[]).toContain("openalgo");
+    // …and it is NOT one of the "planned" placeholders: the adapter is real,
+    // which is why its declared egress has to hold up.
     expect(openalgo().label).not.toMatch(/not enabled/i);
   });
 
@@ -156,5 +158,92 @@ describe("v4.1's live feed adds no remote host either", () => {
     expect(openalgo().staleness).toBe("delayed");
     // …and about the one thing no engineering removes.
     expect(openalgo().requiresDailyAuth).toBe(true);
+  });
+});
+
+/**
+ * THE DECLARED EGRESS, MEASURED AGAINST THE CODE THAT MAKES THE REQUESTS.
+ *
+ * Everything above reads `capabilities.egressDescription` — a sentence. This
+ * block runs the provider with an injected gate and an injected `fetch`, and
+ * asserts the URLs it actually produces, because v4.1 is the release where
+ * that sentence stops being a promise about code nobody calls.
+ *
+ * TWO ENDPOINTS EXIST, and no third: `/api/v1/multiquotes` (every snapshot,
+ * and therefore every poll of `subscribe()`) and `/api/v1/funds` (the health
+ * probe — the cheapest call that proves both the host and the key). Both are
+ * built from ONE template in ONE place, on the host the user configured, whose
+ * default is loopback.
+ */
+describe("the OpenAlgo provider's egress, as the code actually makes it", () => {
+  const SOURCE = readFileSync(path.join(process.cwd(), "lib/quotes/openalgo.ts"), "utf8");
+  const TCS: QuoteKey = { symbol: "TCS", exchange: "NSE" };
+
+  /** Every request the provider makes for one snapshot and one health probe. */
+  async function callsFor(host: string): Promise<{ url: string; init: RequestInit }[]> {
+    const seen: { url: string; init: RequestInit }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen.push({ url: String(url), init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "success", results: [] }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const readGate = async (): Promise<FeedGateState> => ({
+      state: "ready",
+      creds: { apiKey: "k-egress", host },
+    });
+    const provider = createOpenAlgoProvider({ readGate, fetchImpl });
+    await provider.snapshot([TCS]);
+    await provider.health();
+    return seen;
+  }
+
+  it("reaches the loopback default and nowhere else — two endpoints, in that order", async () => {
+    const urls = (await callsFor(OPENALGO_DEFAULT_HOST)).map((c) => c.url);
+    expect(urls).toEqual([
+      `${OPENALGO_DEFAULT_HOST}/api/v1/multiquotes`,
+      `${OPENALGO_DEFAULT_HOST}/api/v1/funds`,
+    ]);
+  });
+
+  it("follows the host the USER configured in Import → OpenAlgo, and adds none of its own", async () => {
+    // The non-loopback case the capability sentence says out loud: a bridge on
+    // another machine on the user's own network. It is still the ONLY host.
+    const urls = (await callsFor("http://192.168.1.9:5000")).map((c) => c.url);
+    expect(urls.map((u) => new URL(u).host)).toEqual(["192.168.1.9:5000", "192.168.1.9:5000"]);
+    expect(urls.map((u) => new URL(u).pathname).sort()).toEqual(["/api/v1/funds", "/api/v1/multiquotes"]);
+  });
+
+  it("sends the scrip and the exchange and NOTHING ELSE — no quantity, no P&L, no account id", async () => {
+    const [poll] = await callsFor(OPENALGO_DEFAULT_HOST);
+    const body = JSON.parse(String(poll.init.body)) as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["apikey", "symbols"]);
+    expect(body.symbols).toEqual([{ symbol: "TCS", exchange: "NSE" }]);
+    // The open book carries quantities, average prices, stops and an account
+    // id; a poll carries the name of the scrip and the exchange it trades on.
+    expect(JSON.stringify(body)).not.toMatch(/qty|quantity|pnl|account|avg|price|stop|target/i);
+  });
+
+  it("names no host of its own anywhere in the source — every literal is loopback", () => {
+    const urls = [...SOURCE.matchAll(/https?:\/\/[^\s"'`)\]]+/g)].map((m) => m[0]);
+    for (const u of urls) expect(new URL(u).hostname, u).toBe("127.0.0.1");
+    const ips = [...new Set([...SOURCE.matchAll(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g)].map((m) => m[0]))];
+    expect(ips, "an address that is not loopback appears in the adapter").toEqual(["127.0.0.1"]);
+    // A vendor hostname in a comment is how a "just for testing" endpoint gets
+    // written; NSE and Yahoo are the two this provider exists to refuse (Q22).
+    expect(SOURCE).not.toMatch(/\b[a-z0-9-]+\.(?:com|in|io|net|org|co|dev|app|ai)\b/i);
+  });
+
+  it("builds every request from ONE call site and ONE template", () => {
+    // A second `fetch` call site is how a second host arrives without anyone
+    // editing the capability sentence.
+    expect((SOURCE.match(/doFetch\(/g) ?? []).length, "more than one fetch call site").toBe(1);
+    expect(SOURCE).toContain("`${base}/api/v1/${path}`");
+    expect(SOURCE).toMatch(/const base = normalizeHost\(creds\.host\)/);
+    // …and the only two paths that template is ever given.
+    const paths = [...SOURCE.matchAll(/post\(gate\.creds, "([a-z]+)"/g)].map((m) => m[1]);
+    expect([...new Set(paths)].sort()).toEqual(["funds", "multiquotes"]);
   });
 });

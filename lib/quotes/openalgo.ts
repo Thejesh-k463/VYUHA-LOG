@@ -82,8 +82,14 @@ export const OPENALGO_CAPABILITIES: ProviderCapabilities = {
   segments: ["NSE", "BSE", "NFO", "BFO", "MCX", "CDS"],
   // A poll of an LTP, not a push. See the deviation note above.
   staleness: "delayed",
-  // The broker session behind OpenAlgo dies daily — an exchange/SEBI rule, not
-  // Vyuha's and not OpenAlgo's. The desk says so once a day (Q24).
+  // The broker's API session behind OpenAlgo expires every day and has to be
+  // signed in again — the BROKER's rule, not Vyuha's and not OpenAlgo's. NO
+  // REGULATOR IS NAMED, here or on screen: an earlier wording blamed the
+  // exchanges and the market regulator, and no circular saying so is cited
+  // anywhere in this tree. The sentence the user reads is
+  // `LIVE_FEED_COPY.dailyReauth` (components/settings/live-feed-card.tsx),
+  // pinned verbatim by tests/live-feed-copy.test.ts; this comment must keep
+  // matching it. The desk says it once a day (Q24).
   requiresDailyAuth: true,
   egressDescription:
     "None beyond your own machine by default: requests go to your own OpenAlgo bridge on 127.0.0.1 (or the host you configured in Import → OpenAlgo, which is your choice and may be another machine on your network).",

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import {
   OPENALGO_DISCLOSURE_VERSION,
   OPENALGO_DOCS,
+  OPENALGO_FEED_ITEMS,
   OPENALGO_REFUSALS,
   OPENALGO_RISKS,
   OPENALGO_SITE,
@@ -77,6 +78,16 @@ export function OpenAlgoDialog({
 
           <Section title="What it does">
             <ItemList items={OPENALGO_WHAT_IT_DOES} />
+          </Section>
+
+          {/* Disclosure v2 (v4.1). Its own heading because it is a second,
+              separately-switched use of the same instance: the pull is one
+              request the user presses, the feed repeats every few seconds
+              while the Live Desk is open. Rendered by the SAME generic
+              ItemList as every other section, so a sentence added to
+              OPENALGO_FEED_ITEMS reaches the screen with no edit here. */}
+          <Section title="What the live price feed does">
+            <ItemList items={OPENALGO_FEED_ITEMS} />
           </Section>
 
           {/* The prominent block — same `text-warning` token the auto-MTM

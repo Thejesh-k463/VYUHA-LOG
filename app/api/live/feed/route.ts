@@ -58,9 +58,11 @@ function isSameOrigin(req: Request): boolean {
 
 /**
  * What a user may pick. `mock` is an e2e/dev pin, never a choice, and
- * `openalgo` is a v4.1 feature (owner ruling) held behind the ONE constant
- * `OPENALGO_FEED_ENABLED`: with it false the id is not in the zod enum at all,
- * so a hand-rolled POST asking for it is a 400 and stores nothing.
+ * `openalgo` ships in v4.1 behind the ONE constant `OPENALGO_FEED_ENABLED`
+ * (owner ruling). While it was false the id was not in the zod enum at all and
+ * a hand-rolled POST asking for it was a 400; now that it is true such a POST
+ * is parsed and meets the CONSENT GATE below instead — 403, and it still
+ * stores nothing until both halves of the acknowledgement hold.
  */
 const ALL_PICKABLE = ["manual", "eod", "openalgo"] as const;
 type Pickable = (typeof ALL_PICKABLE)[number];

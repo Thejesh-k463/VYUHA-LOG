@@ -26,6 +26,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PRESCRIPTIVE_LANGUAGE } from "@/lib/intelligence/insight";
+import { DEFAULT_RISK_PCT_PPM, LAB_METHODS } from "@/components/sizing/lab-config";
+import { sizePctVolatility, sizeVolatilityUnit } from "@/lib/risk/sizing";
 
 const root = path.resolve(__dirname, "..");
 const read = (p: string) => readFileSync(path.join(root, p), "utf8");
@@ -179,6 +181,44 @@ describe("the Lab and the calculator each name the other (U5)", () => {
       const src = stripComments(read(f));
       expect(src, f).not.toMatch(PRESCRIPTIVE_LANGUAGE);
     }
+  });
+});
+
+/**
+ * v4.1 docs wave. The `pct-volatility` tab description read "At identical
+ * inputs it returns a larger quantity than the Turtle unit" — false on the
+ * screen a reader opens. Both methods run `floor(budget x 1000 / atrP3)` over
+ * the same ATR and differ only in the budget, so Varsity returns
+ * `riskPpm / unitRiskPpm` times the Turtle unit (lib/risk/sizing.ts
+ * `sizePctVolatility` vs `sizeVolatilityUnit`); at the Lab's own opening
+ * sample — `DEFAULT_RISK_PCT_PPM` 2,500 against `unitRiskPpm` 10,000 — that
+ * factor is 0.25 and the Turtle unit is FOUR TIMES larger. Nothing else pins a
+ * `LAB_METHODS` description, so the false sentence could return unnoticed; the
+ * direction word is what this holds.
+ */
+describe("the % volatility tab states the true relation to the Turtle unit", () => {
+  it("never claims it always returns the larger quantity", () => {
+    const desc = LAB_METHODS.find((m) => m.id === "pct-volatility")?.description ?? "";
+    expect(desc, "no pct-volatility method in LAB_METHODS").not.toBe("");
+    expect(desc, "the false unconditional claim is back").not.toContain(
+      "it returns a larger quantity than the Turtle unit",
+    );
+    expect(desc, "the ratio that actually relates the two variants is not stated").toContain(
+      "times your per-trade risk % divided by the Turtle unit risk %",
+    );
+  });
+
+  it("the arithmetic the sentence describes is the arithmetic the engine does", () => {
+    // Same ATR, same lot size, same entry/stop: the only difference is the
+    // budget, so the quantities stand in the budgets' own ratio.
+    const common = { capitalP: 10_000_000, atrP3: 5_000_000, entryP: 100_000, stopP: 95_000, lotSize: 1 };
+    const varsity = sizePctVolatility({ ...common, riskPpm: DEFAULT_RISK_PCT_PPM });
+    const turtle = sizeVolatilityUnit({ ...common, unitRiskPpm: 10_000 });
+    expect(varsity.ok && turtle.ok).toBe(true);
+    if (!varsity.ok || !turtle.ok) return;
+    // 2,500 / 10,000 = a QUARTER, not "larger" and not "around twice".
+    expect(varsity.qty * 4).toBe(turtle.qty);
+    expect(varsity.qty).toBeLessThan(turtle.qty);
   });
 });
 

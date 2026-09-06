@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { DESK_COPY, EM_DASH, needsSessions, stalenessLabel, stopLabel } from "@/components/live/desk-copy";
+import {
+  DESK_COPY,
+  EM_DASH,
+  lockedInAtStop,
+  needsSessions,
+  resultsChip,
+  stalenessLabel,
+  stopLabel,
+} from "@/components/live/desk-copy";
 
 /**
  * The Live Desk copy guard (owner rulings Q31 / Q32).
@@ -232,5 +240,91 @@ describe("a stored mark is labelled by what is known about it", () => {
     expect(stalenessLabel("delayed", null)).toBe("Delayed");
     expect(stalenessLabel("tick", null)).toBe("Last traded");
     expect(stalenessLabel(null, null)).toBe(DESK_COPY.noMark);
+  });
+});
+
+/**
+ * v4.1 — the results date (owner ruling Q-9).
+ *
+ * It is a DATE FACT about the company, in the same family as the symbol, so it
+ * is FREE and it is the whole of what the desk says. The risk this pins is not
+ * that the chip goes missing; it is that a later sentence attaches an
+ * instruction to it — "Results in 2 days, consider trimming" is the exact shape
+ * SEBI's line forbids, and it would arrive as copy, not as a formula.
+ */
+describe("the results chip states a date fact and nothing follows it", () => {
+  it("spells today and tomorrow out, and counts the rest", () => {
+    expect(resultsChip(0)).toBe("Results today");
+    expect(resultsChip(1)).toBe("Results tomorrow");
+    expect(resultsChip(12)).toBe("Results in 12 days");
+  });
+
+  it("passes the desk's own banned vocabulary", () => {
+    for (const s of [resultsChip(0), resultsChip(1), resultsChip(9), DESK_COPY.resultsMissing, DESK_COPY.resultsPast]) {
+      expect(BANNED.test(s), s).toBe(false);
+    }
+  });
+
+  it("the row and the detail pane both render it, from the shared helper", () => {
+    const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+    // TWO renders, counted rather than merely present: the row's identity cell
+    // and the detail pane's block. `toContain` alone stayed green when the row
+    // chip was deleted, because the pane's copy of the call satisfied it.
+    const chips = [...src.matchAll(/resultsChip\(resultsIn\)/g)].length;
+    expect(chips, "one chip on the row, one in the detail pane").toBe(2);
+    const derived = [...src.matchAll(/daysToResults\(row\.resultsDate, today\)/g)].length;
+    expect(derived, "derived from ONE date and today in both places — never a per-row number").toBe(2);
+    expect(src, "the identity cell renders it as a chip beside the row's own facts").toMatch(
+      /resultsIn !== null && \(\s*<Badge[\s\S]{0,120}resultsChip\(resultsIn\)/,
+    );
+    expect(src, "the detail pane block").toContain('title="Results date"');
+    // FREE (Q-9). A results date behind <ProLock> would gate a fact about the
+    // company, which is invariant 7's line, not a Pro analytic.
+    expect(src).not.toMatch(/resultsChip[\s\S]{0,80}ProLock/);
+  });
+
+  it("says nothing about a date that has passed except that it has", () => {
+    expect(DESK_COPY.resultsPast).toBe("That date has passed.");
+    expect(DESK_COPY.resultsPast).not.toMatch(/\bago\b/);
+  });
+});
+
+/**
+ * v4.1 — `lockedInProfitP` reaches the screen.
+ *
+ * `lib/live/heat.ts` has computed it since v4.0 and published it on `HeatView`,
+ * and no surface rendered it: heat counts each row as `max(riskAtStopP, 0)`, so
+ * a stop that has trailed beyond entry contributes nothing, and the money it
+ * would return was dropped off the screen as well as out of the sum. The line
+ * states it WITHOUT netting it into heat — and without implying the money is
+ * already banked, because a stop is not a fill.
+ */
+describe("locked-in profit at stop is stated, not netted and not promised", () => {
+  it("names the arithmetic and its condition", () => {
+    const line = lockedInAtStop("₹10,000.00");
+    expect(line.startsWith("Locked in at stop ₹10,000.00")).toBe(true);
+    expect(line).toContain("computed");
+    expect(line).toContain("if every stop is hit");
+  });
+
+  it("never claims the money is secured", () => {
+    const line = lockedInAtStop("₹10,000.00");
+    for (const claim of [/\bprotected\b/i, /\bsafe\b/i, /\bguaranteed\b/i, /\bbanked\b/i, /\bsecured\b/i, /\brealised\b/i]) {
+      expect(claim.test(line), `${claim} in: ${line}`).toBe(false);
+    }
+    expect(BANNED.test(line), line).toBe(false);
+  });
+
+  it("the heat strip renders it, inside the Pro branch", () => {
+    const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+    expect(src).toContain("lockedInAtStop(fmt.money(heat.lockedInProfitP))");
+    // It must sit AFTER the `!pro || heat === null` lock, i.e. in the same
+    // branch that prints the heat percentage — heat is Pro (Q55).
+    const lock = src.indexOf("!pro || heat === null");
+    const line = src.indexOf("lockedInAtStop(");
+    expect(lock, "the Pro lock is gone from the heat tile").toBeGreaterThan(-1);
+    expect(line).toBeGreaterThan(lock);
+    // …and it must not be folded into the heat figure itself.
+    expect(src).not.toContain("heat.openRiskP - heat.lockedInProfitP");
   });
 });

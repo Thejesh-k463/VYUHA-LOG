@@ -1,6 +1,6 @@
 # Privacy
 
-**Last updated:** 2026-09-05 · **Applies to:** Vyuha v4.0.0 and later
+**Last updated:** 2026-09-06 · **Applies to:** Vyuha v4.1.0 and later
 
 Vyuha Desktop has no account, no server and no telemetry. This page exists because that
 claim deserves to be written down precisely rather than asserted in a slogan —
@@ -54,20 +54,69 @@ Exactly four kinds, and only one of them is automatic:
    nothing about you or your trades. If you would rather download nothing at
    all, you can drop bhavcopy files you already have straight into Atlas
    instead — that path makes no network request whatsoever.
-3. **Broker API pulls — only when you start one, or when you have switched on
-   the once-a-day auto-pull of your saved brokers at launch.** If you connect a
-   broker (Zerodha, Dhan, Angel One or Upstox — or another broker through the
-   OpenAlgo bridge you run on your own machine), Vyuha talks to *that broker's*
-   API to fetch your own trades. Dhan's connect-once PIN+TOTP mode makes one
-   extra sign-in call, and it goes only to Dhan's own endpoint
-   (`auth.dhan.co`) — never anywhere else. Your credentials are encrypted at
-   rest, bound to your machine, and sent nowhere except the broker itself. We
-   never see them.
+3. **Broker API pulls and the Live Desk price poll — only when you start one,
+   when you have switched on the once-a-day auto-pull of your saved brokers at
+   launch, or when you have chosen the bridge as the Live Desk's price
+   source.** If you connect a broker (Zerodha, Dhan, Angel One or Upstox — or
+   another broker through the OpenAlgo bridge you run on your own machine),
+   Vyuha talks to *that broker's* API to fetch your own trades. Dhan's
+   connect-once PIN+TOTP mode makes one extra sign-in call, and it goes only to
+   Dhan's own endpoint (`auth.dhan.co`) — never anywhere else.
+   That same bridge can also price your open positions: while the Live Desk is
+   open, Vyuha asks it once every 1–5 seconds, at the interval you set in
+   Settings → Live feed, and each request carries the trading symbols and
+   exchanges of the positions you have open and nothing else about them — no
+   quantity, no entry price, no P&L, no account — plus one `/funds` request
+   when the connection is checked. It is off until you switch the integration
+   on, accept the disclosure and pick that source, it goes to your own machine
+   (`http://127.0.0.1:5000`) unless you enter another address, and the prices
+   it shows are never written to your journal as ticks: one mark per position
+   per day is saved. Your credentials are encrypted at rest, bound to your
+   machine, and sent nowhere except the broker itself. We never see them.
 4. **The Telegram end-of-day digest — only if you switch it on, and this one
    is an upload.** It sends a summary of your own recorded numbers to a
    Telegram bot you create yourself, which means that content transits and is
    stored on Telegram's servers. It is off by default and can only be enabled
    behind a disclosure that says exactly that.
+
+<!--
+  Item 3, second paragraph — every claim and the code that performs it:
+  (Line numbers drift; each carries the identifier it points at, so grep the name.)
+    • 1–5 s, user-set interval  lib/quotes/openalgo.ts:59-71 (REFRESH_SECONDS_MIN/MAX/
+                                  DEFAULT + clampRefreshSeconds), :419 (subscribe()'s
+                                  `const timer = setInterval(() => void poll(), periodMs)`),
+                                  :420-427 (`const stop: Unsubscribe` → clearInterval(timer)
+                                  on the signal abort — stopped with the desk's stream)
+    • only while the desk is open  app/api/live/stream/route.ts (the SSE route is
+                                  what starts and aborts the subscription)
+    • symbols + exchange, nothing else
+                                  lib/quotes/openalgo.ts:357-361 (snapshot()'s
+                                  `symbols` array → post(…, "multiquotes", { symbols })),
+                                  :325 (the whole body: `JSON.stringify({ apikey:
+                                  creds.apiKey, ...extra })`), app/api/live/stream/route.ts:74-93
+                                  (openPositionKeys(): open positions of the selected
+                                  account, capped at MAX_KEYS = 500)
+    • one /funds on connect       lib/quotes/openalgo.ts:450 (health()'s
+                                  `await post(gate.creds, "funds", {})`), answer discarded
+                                  :459-460 (`Math.max(0, now() - started)` and nothing else)
+    • loopback default            lib/domain/openalgo-disclosure.ts OPENALGO_DEFAULT_HOST,
+                                  isLocalOpenAlgoHost(); the poll's only host is
+                                  normalizeHost(creds.host), lib/quotes/openalgo.ts:317-320
+                                  (post(): `const base = normalizeHost(creds.host)` → the
+                                  one doFetch of `${base}/api/v1/${path}`)
+    • opt-in, behind the disclosure
+                                  openAlgoGate() + isAckCurrent(), applied server-side in
+                                  lib/quotes/openalgo.ts:156-162 (readGateFromDb(): the
+                                  settings select → `if (!gate.allowed) return
+                                  { state: "disabled" … }`)
+    • no tick is written          lib/quotes/openalgo.ts:392-428 (subscribe(), whose poll()
+                                  only calls onTick) writes nothing;
+                                  lib/quotes/persist-mark.ts writes ONE row per position
+                                  per IST day into mtm_prices
+  This is the SAME kind of request as the pull above — the user's own broker
+  bridge, only when they switched it on — so the four-kinds claim below is
+  unchanged and still literally true.
+-->
 
 That is the complete list for Vyuha Desktop. There is no fifth thing.
 

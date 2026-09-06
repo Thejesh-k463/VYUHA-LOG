@@ -1,0 +1,34 @@
+-- v4.1 — `instruments.results_date`: the date a company reports, as the USER
+-- recorded it (owner ruling Q-9).
+--
+-- ONE COLUMN, AND IT IS A DATE FACT. It sits on `instruments` and not on
+-- `trades` because it is a fact about the COMPANY, not about a position: the
+-- same date is true for every account that holds the name, it survives the
+-- position being closed and re-opened, and a second lot must never be able to
+-- state a different one. `instruments` is already the security master
+-- (symbol ↔ ISIN ↔ sector ↔ lot_size ↔ expiry) and this is the same kind of
+-- row-level fact as `expiry` two columns above it.
+--
+-- NULLABLE, AND THERE IS NO SOURCE BUT THE USER. Vyuha fetches nothing to fill
+-- it: no results calendar is bundled, no host is contacted, and no importer
+-- writes it. A date is here because the person typed it on /instruments. That
+-- is why it is nullable rather than defaulted — an invented date would be a
+-- claim about a company Vyuha has no basis to make (invariant 6), and the
+-- absent column is the honest state.
+--
+-- TEXT, ISO `YYYY-MM-DD`, exactly like `expiry` and every other date in this
+-- schema. The route validates the shape (and the calendar) before the write;
+-- SQLite stores what it is given, so the guard is in
+-- `lib/live/results-date.ts` and re-applied on every POST.
+--
+-- IT TRAVELS IN A BACKUP. `lib/backup.ts` dumps `db.select().from(instruments)`
+-- — every schema column, no enumeration — so adding it to the schema is all
+-- that is needed for it to survive a round trip, and that is the right answer:
+-- it is the user's own record, not machine state, so it belongs beside the
+-- sector tags they typed rather than in SETTINGS_MACHINE_COLUMNS.
+--
+-- NOT ACCOUNT-SCOPED. Reference data, like the rest of this table and like
+-- `instrument_indices` beside it — invariants 8/9 have nothing to own here.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `instruments` ADD COLUMN `results_date` text;

@@ -81,6 +81,9 @@ describe("the loader hands the panel everything it renders", () => {
         "backfillDefaultDays",
         "backfillRateLimitMs",
         "capBands",
+        // Q52: the bundled classification maps, each with its sha256 and its
+        // own as-of date — the panel prints both beside the rotation table.
+        "mapDigests",
         "myNames",
         "notAdviceLine",
         "payload",

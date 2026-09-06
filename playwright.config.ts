@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
-import path from "node:path";
-
-const E2E_DB = path.join(process.cwd(), "data", "e2e.sqlite");
+// The path lives with the specs, not here: one spec has to open the same file
+// the server is serving from (see E2E_DB_PATH's own comment).
+import { E2E_DB_PATH as E2E_DB } from "./e2e/helpers";
 
 export default defineConfig({
   testDir: "./e2e",

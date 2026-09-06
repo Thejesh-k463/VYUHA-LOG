@@ -51,6 +51,17 @@ export interface DeskRow extends TrackerRow {
   /** ISO date of the first entry — the chart's left anchor. */
   entryDate: string | null;
   lotSize: number | null;
+  /**
+   * `instruments.results_date` for this symbol — ISO `YYYY-MM-DD`, or null.
+   *
+   * A STRING, not a computed distance: the distance depends on `today`, which
+   * the payload already carries once (`LiveDeskData.today`), and shipping a
+   * per-row number would put the same date arithmetic on 40+ rows and let a
+   * cached payload go stale at midnight. `daysToResults()` derives it at
+   * render. It stays OUT of `TrackerRow` because it is not arithmetic the row
+   * engine does — it is an identity fact, like `isin` and `accountName` above.
+   */
+  resultsDate: string | null;
   mtf: MtfBlock | null;
   /**
    * The stop tree's answer for this row (`manual → structure → ATR → percent`,

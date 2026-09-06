@@ -82,12 +82,13 @@ const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
 ];
 
 /**
- * What this release actually offers. OpenAlgo is a v4.1 feature (owner
- * ruling), so v4.0 renders two radios; `OPENALGO_FEED_ENABLED` in
- * `lib/quotes/types.ts` is the one line that brings the third back, and the
- * route's pickable set and the provider registry read the same constant. The
- * `openalgo` BRANCHES below stay — they are the card v4.1 needs, and a stored
- * value the picker no longer offers still falls back to `eod` on its own.
+ * What this release actually offers. v4.0 rendered two radios because OpenAlgo
+ * was withheld; v4.1 renders all three, and `OPENALGO_FEED_ENABLED` in
+ * `lib/quotes/types.ts` is still the one line that decides, read by the route's
+ * pickable set and the provider registry as well. Offering the radio is not
+ * running the feed: the route re-checks the consent pair and answers 403 until
+ * the disclosure is acknowledged, and a stored value the picker does not offer
+ * falls back to `eod` on its own.
  */
 const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "openalgo" || OPENALGO_FEED_ENABLED);
 
@@ -99,8 +100,9 @@ const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "openalgo" || OPENALGO_FE
  * refresh (a poll interval means nothing when the mark is yesterday's close or
  * a number the user typed) and the daily re-authentication note (a broker API
  * session is the only thing that expires daily). Rendering either in v4.0
- * advertises a feed this release does not ship — so both are gated here, and
- * flipping `OPENALGO_FEED_ENABLED` restores them with no edit to this file.
+ * advertised a feed that release did not ship, so both were gated here — and
+ * v4.1 brought them back with NO edit to the JSX below, because flipping
+ * `OPENALGO_FEED_ENABLED` moves this derived value with it.
  * `tests/live-feed-copy.test.ts` pins the gate.
  */
 export const BROKER_FEED_OFFERED = PROVIDERS.some((p) => p.id === "openalgo");

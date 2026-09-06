@@ -150,6 +150,30 @@ describe("positioning copy — 'local-first / 100% local & offline' is retired",
     expect(privacy).toContain("## The network requests Vyuha Desktop makes");
   });
 
+  it("PRIVACY item 3 still discloses the v4.1 Live Desk price poll", () => {
+    // v4.1 widened kind 3 rather than adding a fifth: the poll is the SAME kind
+    // of request as the pull — the user's own broker bridge, only when they
+    // switched it on — which is why the two sentences pinned above are still
+    // literally true. The disclosure itself is not self-evident from them,
+    // though: a future copy edit could tidy the paragraph away and leave a
+    // privacy sheet that never mentions a request made every 1–5 seconds. This
+    // pins the cadence sentence so that edit goes red.
+    //
+    // Whitespace-normalised because the file is hard-wrapped at ~78 columns and
+    // the sentence spans three source lines.
+    const privacy = read("docs/client/PRIVACY.md").replace(/\s+/g, " ");
+    expect(
+      privacy,
+      "PRIVACY.md no longer states the Live Desk price poll's cadence and where the user sets it",
+    ).toContain(
+      "while the Live Desk is open, Vyuha asks it once every 1–5 seconds, at the interval you set in Settings → Live feed",
+    );
+    // …and what it may carry, which is the half a buyer actually worries about.
+    expect(privacy, "PRIVACY.md no longer says what the poll does NOT send").toContain(
+      "no quantity, no entry price, no P&L, no account",
+    );
+  });
+
   it("the web platform is only ever described as in development, never dated", () => {
     // Only lines that talk about OUR web platform are judged — the comparison
     // table quotes a competitor's own "coming soon" and that is reportage.

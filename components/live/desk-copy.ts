@@ -46,6 +46,20 @@ export const DESK_COPY = {
   noMark: "No mark stored for this position yet.",
   staleMark: "Older than the newest mark on this desk.",
 
+  /**
+   * Q-9. The instrument's results date, as a distance. It is a DATE FACT about
+   * the company — the same kind of thing as the symbol — so it is FREE, not
+   * Pro, and it is the whole of what the desk says: no sentence follows it,
+   * ever. `resultsChip` below is the only string that renders it.
+   */
+  resultsMissing: "No results date recorded for this instrument.",
+  /**
+   * A recorded date that has gone by. The date stays on the record — the user
+   * typed it — but the desk stops counting: "4 days ago" would invite a
+   * conclusion about a print Vyuha has never seen and does not store.
+   */
+  resultsPast: "That date has passed.",
+
   heatTitle: "Portfolio heat",
   heatNoCapital: "Capital is not set, so heat has no denominator.",
   heatNoStop: (n: number) => `${n} of these rows carry no stop, and are excluded from heat.`,
@@ -77,6 +91,39 @@ export function needsData(what: string): string {
 /** Q31 (b): the level, its source and its distance — no instruction follows. */
 export function stopLabel(level: string, source: string, distance: string): string {
   return `Stop ${level} — ${source}. ${distance} away.`;
+}
+
+/**
+ * Q-9: the results chip. A noun phrase and a number of days, full stop.
+ *
+ * `days` comes from `daysToResults()`, which returns null for an absent or PAST
+ * date — so this function is only ever called with 0 or more and never prints
+ * "N days ago". "Results today" and "Results tomorrow" are spelled out because
+ * "Results in 0 days" reads as a rounding artefact rather than as today.
+ */
+export function resultsChip(days: number): string {
+  if (days === 0) return "Results today";
+  if (days === 1) return "Results tomorrow";
+  return `Results in ${days} days`;
+}
+
+/**
+ * The locked-in half of `portfolioHeat` (lib/live/heat.ts), which computed it
+ * from v4.0 and never printed it.
+ *
+ * WHY IT IS SAID AT ALL: heat counts each row's risk as `max(riskAtStopP, 0)`,
+ * so a row whose stop has trailed beyond entry contributes nothing to heat. The
+ * money it would return is real and was being dropped off the screen. It is
+ * stated on its own line rather than netted off the heat figure — the two are
+ * opposite sides of the strip, and one must never cancel the other.
+ *
+ * WHY THIS WORDING: "computed" and "if every stop is hit" are the whole claim.
+ * The word never used here is any that implies the money is already the user's
+ * — a stop is not a fill (`fillsCaveat`), and calling this "protected" or
+ * "banked" would assert an execution nobody has had.
+ */
+export function lockedInAtStop(amount: string): string {
+  return `Locked in at stop ${amount} — computed from the rows whose stop already sits beyond entry, if every stop is hit.`;
 }
 
 /** Q31 (a): the detail-pane sentence. States the arithmetic and its inputs. */

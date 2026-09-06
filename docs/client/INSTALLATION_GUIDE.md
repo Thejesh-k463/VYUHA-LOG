@@ -141,6 +141,25 @@ When a new version ships, download the new `Vyuha_x.x.x_x64-setup.exe` and run i
 existing install. Your local data is preserved (and a backup is taken automatically before any
 database migration).
 
+**Upgrading from v4.0.x to v4.1.0 — nothing is asked of you.** The v4.1.0 installer runs the
+v4.0.0 uninstaller once before it installs, and that one is the *guarded* uninstaller: if its
+"Delete the application data" checkbox appears, ticking it still erases the whole data folder, but
+not before your journal database and licence key have been named and copied to
+`Documents\Vyuha-backup-<date>`, and Cancel leaves everything exactly as it is.
+
+**Migrations on first launch of v4.1.0.** One database upgrade (0068: a results date you can record
+against an instrument), applied behind the same automatic
+`backups\pre-migrate-<timestamp>.sqlite` copy described below.
+
+**One thing you may want to do after upgrading, and nothing that happens on its own.** v4.1.0
+switches on the option to price the Live Desk from an OpenAlgo bridge you run yourself. It is off
+until you choose it: the OpenAlgo integration has to be on, its disclosure has to be accepted
+again (the disclosure changed, so an earlier acceptance is no longer current), and the source has
+to be picked in **Settings → Live feed**, where it asks your own bridge at the loopback default
+`http://127.0.0.1:5000` — this machine talking to itself — unless you type another address there.
+Until all three are true the desk prices exactly as it did in v4.0.0 — from the end-of-day
+bhavcopy on this machine, or from marks you type. Nothing is enabled by the update itself.
+
 **Upgrading from v3.9.x to v4.0.0 — nothing is asked of you.** The v4.0.0 installer runs the
 v3.9.1 uninstaller once before it installs, and that one is the *guarded* uninstaller. If its
 "Delete the application data" checkbox appears, ticking it still erases the whole data folder,
