@@ -4085,8 +4085,10 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
 - **The paste parser read "3,100.50" as ₹3** ("RELIANCE, 3,100.50" → cells "3" and "100.50"), and the new rule
   made that ₹3 the day's mark with a ₹100.50 stop. 3b REFUSED any comma-form line with a 1–3-digit cell before
   a 3-digit cell — which refused the form's own placeholder (superseded in 3c, see the first bullet: the
-  grouped number is now READ; only a tight line whose commas are genuinely ambiguous, "NIFTY,23,450", is
-  refused, with the two safe spellings named). The as-of date must be a real
+  grouped number is now READ; a tight comma line where a comma could be a thousands separator — "NIFTY,23,450",
+  but by the same shape "ITC,410,395" — is refused, and the result names a safe spelling for each meaning: one
+  number, or a price and a stop; the 3d audit found the first note named only the one-number spelling, which
+  would have steered a price+stop user into a ₹4,10,395 mark). The as-of date must be a real
   `YYYY-MM-DD` — free text sorted above every real day and became the permanent "latest" mark. A 0-price line
   is named too, not dropped silently. **Measured trap:** `Date.parse` returns NaN under vitest's faked clock, so
   the check is a range regex, not a parse.
@@ -4104,3 +4106,13 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   test asserted its own blind spot as a positive fact (removed: a sharper scan is an improvement).
 - **Recorded, not changed:** the equity paste writes a row for a symbol with no open position (pre-existing);
   `mtm_prices` carries no account, so a mark is an instrument fact shared across books (the table's contract).
+- **A red `load` job that was runner timing, and how it was told apart from a regression (2026-09-07).** CI on
+  `6c4713a` failed one job: `tests/load/b1-lenses-grouping.load.ts` measured t(4n)/t(n) = 10.9 against a limit
+  of 8. The release rule says a red load job is never tagged around, so it was not: no lens file has changed
+  since the `v4.0.0` tag (`git log 4d4aec3..HEAD -- lib/queries/lenses.ts …` is empty), the 17-file diff on that
+  commit touches nothing near lenses, the same job was green on the three commits before it, the file passes
+  locally, and `gh run rerun --failed` on the SAME commit was green. A ratio assertion on a shared runner can
+  lose to a noisy neighbour; the evidence bar for calling it that is "same sha, green on retry, and no code in
+  the path changed" — all three, not one. Measured side-effect: the workflow's `cancel-in-progress` concurrency
+  group is per branch, so re-running an OLDER commit's job cancels the NEWER commit's run; re-run the newest
+  sha's run instead, or wait for the old one to finish.

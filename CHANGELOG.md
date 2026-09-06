@@ -128,8 +128,9 @@ no dependency changes — `package-lock.json` is untouched.*
   paste dated to a future day is refused (a year typo would have outranked
   every real day), and a thousands-grouped price ("3,100.50", "1,23,456.00")
   is read as one number instead of as a ₹3 price with a ₹100.50 stop, and a
-  tight line whose commas are genuinely ambiguous ("NIFTY,23,450") is refused
-  with the two safe spellings named.
+  tight comma line where a comma could be a thousands separator ("NIFTY,23,450",
+  "ITC,410,395") is refused, and the result names both safe spellings — one for
+  a single number, one for a price and a stop.
 - **Fix wave 3 — the strip says what the link is doing, per connection.** A link
   that has carried no live quotes now reads **connected but not streaming**
   rather than "no prices yet": after hours the rows really do carry end-of-day

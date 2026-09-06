@@ -316,6 +316,16 @@ describe("the bulk paste refuses what it cannot read rather than storing a wrong
     const res = await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, form);
     expect(rowsFor("TCS").map((r) => r.price), "'TCS,3,120.50' was read as ₹3 with a ₹120.50 stop").toEqual([3120]);
     expect(res.message).toContain("ambiguous");
+    // The note's own advice, fed back through the parser, must read the way
+    // the note says: one number for the first spelling, price + stop for the
+    // second (an earlier note named only the one-number spelling, and a user
+    // who meant 410 + 395 would have typed "ITC, 410,395" → ₹4,10,395).
+    expect(res.message).toContain('"ITC 410 395"');
+    const advised = new FormData();
+    advised.set("prices", "ITC, 410, 395");
+    advised.set("asOf", DAY);
+    await equity.saveMtmPrices({ ok: false, message: "", updated: 0 }, advised);
+    expect(rowsFor("ITC").map((r) => r.price)).toEqual([410]);
     const spaced = new FormData();
     spaced.set("prices", "TCS, 3,120.50");
     spaced.set("asOf", DAY);

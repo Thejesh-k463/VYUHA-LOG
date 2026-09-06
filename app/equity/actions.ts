@@ -152,7 +152,7 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
   if (stopCount) parts.push(`${stopCount} stop/target update${stopCount === 1 ? "" : "s"}`);
   const notes: string[] = [];
   if (zeroed) notes.push(`${zeroed} line${zeroed === 1 ? "" : "s"} with a price of 0 or less: no mark stored.`);
-  if (ambiguous) notes.push(`${ambiguous} line${ambiguous === 1 ? "" : "s"} skipped — commas are ambiguous there; write "NIFTY, 23,450" or "NIFTY 23450".`);
+  if (ambiguous) notes.push(`${ambiguous} line${ambiguous === 1 ? "" : "s"} skipped — commas are ambiguous there. For one number write "NIFTY, 23,450" or "NIFTY 23450"; for a price and a stop write "ITC 410 395" or "ITC, 410, 395".`);
   const skippedNote = notes.length ? " " + notes.join(" ") : "";
   return {
     ok: priceCount > 0 || stopCount > 0,
