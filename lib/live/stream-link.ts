@@ -182,6 +182,50 @@ export function streamKeyOf(
 }
 
 /**
+ * The link state as the desk STORES it: the state, and the stream key it was
+ * reported for.
+ *
+ * `onState` is a fact about ONE connection, and the desk outlives connections
+ * — `<TrackerClient>` stays mounted across an account switch on purpose. So
+ * the state has to carry the identity of the stream that produced it, or the
+ * desk cannot tell "this is my stream's state" from "this is the state of the
+ * stream I just tore down".
+ */
+export interface KeyedLinkState {
+  key: string;
+  state: LinkState;
+}
+
+/**
+ * PURE. What the strip should show for `streamKey`, given what was last stored.
+ *
+ * G3 — THE STRIP KEPT THE OLD STREAM'S VERDICT ACROSS AN ACCOUNT SWITCH. The
+ * desk's effect destroys the old link and opens a new one when `streamKey`
+ * changes, but the React state still held the DEAD connection's last report,
+ * and `open()` emits `LINK_IDLE` only out of `stopped`/`paused` — so after a
+ * switch the strip went on printing `Live · openalgo · N s` (or "Feed stopped
+ * — <the old account's reason>") until the new connection's first frame
+ * landed, which outside market hours is up to 25 s and on a hidden tab is
+ * never.
+ *
+ * DERIVED, NOT RESET IN AN EFFECT. Writing `setLink(LINK_IDLE)` from the
+ * effect keyed on `streamKey` is exactly the pattern AGENTS.md forbids (it
+ * broke the Trades filter outright under the React Compiler), and it would
+ * also repaint once with the stale label before correcting itself. Asking the
+ * question at RENDER time has neither problem: the instant the key changes,
+ * the old stream's state stops being the answer.
+ *
+ * The alternative considered and rejected: having `open()` emit `LINK_IDLE`
+ * for every fresh link. It leaves one painted frame with the dead stream's
+ * label (the effect runs after commit), and it cannot fire at all when
+ * `open()` refuses because the tab is hidden — which is precisely when the
+ * stale label would sit on screen longest.
+ */
+export function linkStateFor(stored: KeyedLinkState, streamKey: string): LinkState {
+  return stored.key === streamKey ? stored.state : LINK_IDLE;
+}
+
+/**
  * One link: open it, and it reports its own state until it is destroyed.
  *
  * THE PHASE RULES, all four of which shipped wrong in the first consumer:

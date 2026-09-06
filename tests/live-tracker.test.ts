@@ -556,6 +556,24 @@ describe("the Live Desk consumes the SSE stream (FW-1)", () => {
     );
   });
 
+  it("shows the CURRENT stream's state, never the destroyed one's (G3)", () => {
+    // SOURCE, and only here: the WIRING is the finding. What the rule itself
+    // does is driven in `tests/live-stream-link.test.ts` (`linkStateFor`); what
+    // only this file can show is that the desk really asks it, and that the
+    // reset is DERIVED at render rather than written back from the effect —
+    // `setLink(LINK_IDLE)` keyed on `streamKey` is the pattern that broke the
+    // Trades filter outright under the React Compiler (AGENTS.md).
+    expect(src, "the strip keeps the old account's Live/Feed-stopped line after a switch").toMatch(
+      /const link = linkStateFor\(storedLink, streamKey\);/,
+    );
+    expect(src).toMatch(/setStoredLink\(\{ key: streamKey, state \}\)/);
+    expect(src, "a bare LinkState cannot tell whose stream reported it").not.toMatch(
+      /React\.useState<LinkState>\(LINK_IDLE\)/,
+    );
+    // The reset is never a setState in the effect body.
+    expect(src).not.toMatch(/setStoredLink\(\{ key: streamKey, state: LINK_IDLE \}\)/);
+  });
+
   it("hands the lifecycle to the link, and gives it the browser's own edges", () => {
     expect(src).toMatch(/createStreamLink\(\{/);
     for (const edge of [

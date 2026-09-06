@@ -191,8 +191,14 @@ async function readGateFromDb(): Promise<FeedGateState> {
   }
   return {
     state: "no-key",
+    // The route the sentence names is the route the app has (fix wave 3). It
+    // said "Import → OpenAlgo", which is the LAST step and not reachable until
+    // the first: the Import screen grows its OpenAlgo section only once the
+    // integration is switched on in Settings → Integrations (advanced), the
+    // same breadcrumb `OPENALGO_CAPABILITIES.egressDescription` and every other
+    // 4.1 surface uses. Both steps are named, in the order they have to happen.
     reason:
-      "No OpenAlgo connection is saved yet. Connect your feed — 20 seconds: Import → OpenAlgo, paste the API key from your OpenAlgo settings, and confirm the host.",
+      "No OpenAlgo connection is saved yet. Connect your feed — 20 seconds: switch OpenAlgo on in Settings → Integrations (advanced), then paste the API key from your OpenAlgo settings on the Import screen and confirm the host.",
   };
 }
 

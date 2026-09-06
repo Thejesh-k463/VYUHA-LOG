@@ -4,7 +4,9 @@ import {
   LIVE_GRACE_MS,
   RECONNECT_BASE_MS,
   SOURCE_CONNECTING,
+  LINK_IDLE,
   createStreamLink,
+  linkStateFor,
   msUntilCloseReopen,
   streamKeyOf,
   type LinkState,
@@ -219,6 +221,30 @@ describe("the phase is a claim about the pipe, and it is earned (F6)", () => {
     expect(h.phase()).toBe("live");
   });
 
+  /**
+   * G4 — THE AFTER-HOURS SNAPSHOT DELIVERS ITS QUOTES AND IS STILL NOT LIVE.
+   *
+   * The route snapshots unconditionally, so outside 09:00–15:40 it ships the
+   * bridge's last prints beside `marketOpen: false` and never subscribes. Two
+   * things are true of that frame at once, and the strip's copy has to survive
+   * both: the phase is `connected` (nothing is streaming), AND the quotes it
+   * carried DID reach the rows — `onFrame` pushes them before it reads
+   * `marketOpen`. That is why `LIVE_STREAM_COPY.connected` states the absence
+   * of a STREAM and no longer said "no prices yet", which was printed beside
+   * the prices that same frame had just delivered.
+   */
+  it("an after-hours snapshot is CONNECTED and still hands its quotes to the rows", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    h.sources[0].emit("snapshot", { marketOpen: false, quotes: [QUOTE] });
+
+    expect(h.phase(), "no subscription is running, so nothing is streaming").toBe("connected");
+    h.paint();
+    expect(h.batches.flat(), "the frame's quotes were dropped on the floor").toHaveLength(1);
+    expect(h.batches.flat()[0].ltp).toBe(QUOTE.ltp);
+    h.link.destroy();
+  });
+
   it("a stopped feed stays stopped, however long the route keeps heartbeating", () => {
     const h = harness(IST_1600);
     h.link.open();
@@ -326,6 +352,65 @@ describe("the stream key names the account AND the book it subscribed to (F4)", 
   it("changes when the same account's symbols change, exchange included", () => {
     expect(streamKeyOf(1, [row(1, "TCS")])).not.toBe(streamKeyOf(1, [row(1, "INFY")]));
     expect(streamKeyOf(1, [row(1, "TCS", "NSE")])).not.toBe(streamKeyOf(1, [row(1, "TCS", "BSE")]));
+  });
+
+  /**
+   * G3 — the strip must not keep the OLD stream's verdict across a switch.
+   *
+   * Two real links are driven here, one per account, exactly as the desk's
+   * effect creates them: the first reports its state, the switch changes the
+   * key, and what the strip shows is asked of `linkStateFor()` — the same pure
+   * function `tracker-client.tsx` calls at render. Before the fix the desk
+   * stored a bare `LinkState`, so the answer was the dead connection's.
+   */
+  it("drops the old stream's state the instant the key changes (G3)", () => {
+    const KEY_A = streamKeyOf(1, [row(1, "TCS")]);
+    const KEY_B = streamKeyOf(2, [row(2, "INFY")]);
+    expect(KEY_A).not.toBe(KEY_B);
+
+    // The desk's own state: whatever the live link last reported, and for whom.
+    let stored = { key: KEY_A, state: LINK_IDLE };
+
+    // Account A's stream, live with prices.
+    const a = harness(IST_1600);
+    a.link.open();
+    a.sources[0].emit("snapshot", { quotes: [QUOTE] });
+    stored = { key: KEY_A, state: a.last()! };
+    expect(stored.state.phase).toBe("live");
+    expect(linkStateFor(stored, KEY_A).phase, "its own stream's state is its own").toBe("live");
+
+    // …the account switch. The desk stays MOUNTED and the effect re-runs; the
+    // strip must not go on saying "Live · openalgo · N s" for a stream that
+    // has been destroyed.
+    expect(linkStateFor(stored, KEY_B)).toBe(LINK_IDLE);
+    a.link.destroy();
+
+    // Account B's stream reports, and only then does the strip say anything.
+    const b = harness(IST_1600);
+    b.link.open();
+    b.sources[0].emit("heartbeat", { t: 1 });
+    stored = { key: KEY_B, state: b.last()! };
+    expect(linkStateFor(stored, KEY_B).phase).toBe("connected");
+    b.link.destroy();
+  });
+
+  it("drops a TERMINAL verdict too — the old account's reason is not the new one's (G3)", () => {
+    const KEY_A = streamKeyOf(1, [row(1, "TCS")]);
+    const KEY_B = streamKeyOf(2, [row(2, "INFY")]);
+
+    const a = harness(IST_1600);
+    a.link.open();
+    a.sources[0].emit("error", { message: "The bridge is not logged in for today." });
+    const stored = { key: KEY_A, state: a.last()! };
+    expect(stored.state).toMatchObject({ phase: "stopped", reason: "The bridge is not logged in for today." });
+
+    // `stopped` is terminal for its OWN connection, and `open()` clears it
+    // only on a link that has one — which the new stream's link does not, so
+    // nothing but the key can answer this.
+    const shown = linkStateFor(stored, KEY_B);
+    expect(shown.phase, "the strip carried the old account's Feed stopped").toBe("idle");
+    expect(shown.reason).toBeNull();
+    a.link.destroy();
   });
 
   it("does NOT change when the same book arrives in a different order", () => {

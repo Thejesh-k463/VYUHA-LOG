@@ -2,7 +2,8 @@ import { todayIstIso } from "@/lib/domain/trading-day";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { trades, mtmPrices } from "@/lib/db/schema";
+import { trades } from "@/lib/db/schema";
+import { writeTypedMark } from "@/lib/queries/mtm";
 import { eq, sql } from "drizzle-orm";
 
 export const runtime = "nodejs";
@@ -58,11 +59,25 @@ export async function POST(req: Request) {
     .where(eq(trades.id, id))
     .run();
 
+  if (mtmPrice != null && !(mtmPrice > 0)) {
+    // Refused: a typed 0 used to sit unread in a second row; now that a typed
+    // mark replaces the day's row it would erase the real one.
+    return NextResponse.json({ ok: false, message: "A mark is a price above zero." }, { status: 400 });
+  }
   if (mtmPrice != null) {
-    const asOf = todayIstIso();
-    db.insert(mtmPrices)
-      .values({ symbol: t.symbol.toUpperCase(), tradingsymbol: t.tradingsymbol, price: mtmPrice, asOfDate: asOf })
-      .run();
+    // DELETE-THEN-INSERT for (symbol, IST day), not a bare insert: the number
+    // the user just typed is the day's mark, and a plain insert made it the
+    // row nobody reads. Every reader takes the FIRST row of the newest
+    // `as_of_date` with no tiebreak — rowid order — so a mark typed after the
+    // automatic 15:31 write (`lib/quotes/persist-mark.ts`) sat behind it and
+    // changed nothing on screen. `writeTypedMark()` is the same one
+    // transaction the feed and the bhavcopy apply already use.
+    writeTypedMark({
+      symbol: t.symbol,
+      tradingsymbol: t.tradingsymbol,
+      price: mtmPrice,
+      asOfDate: todayIstIso(),
+    });
   }
 
   for (const p of ["/risk", "/equity", "/active", "/", "/trades"]) revalidatePath(p);

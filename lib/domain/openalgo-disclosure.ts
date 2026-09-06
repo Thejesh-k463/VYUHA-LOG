@@ -188,7 +188,26 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // components/settings/live-feed-card.tsx:55-56, which is pinned by
       // tests/live-feed-copy.test.ts — two statements of one behaviour must not
       // drift, so tests/openalgo-disclosure.test.ts holds them together.
-      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; exchange holidays are not modelled in this version. Every figure derived from that mark is dated to the day it belongs to.",
+      //
+      // THE TYPED-MARK RULE (fix wave 3). The typed writers — the risk dialog
+      // and the equity page — now REPLACE the day's row for that symbol, so a
+      // price the user types is always that day's mark: typed before the close
+      // the automatic 15:31 write leaves it alone, typed after it replaces the
+      // automatic one, and one row per symbol per IST day stays the contract.
+      // Until this wave no user surface said what happens when the two meet,
+      // and the sentence added here is the SAME sentence on all seven surfaces
+      // (README.md, docs/client/README.md, docs/client/PRIVACY.md, the setup
+      // guide §9, lib/domain/help-content.ts, LIVE_FEED_COPY.staleness and
+      // this item), pinned across all of them by tests/live-feed-copy.test.ts.
+      //
+      // `OPENALGO_DISCLOSURE_VERSION` STAYS "2". Under the rule at :25-28 the
+      // bump is for a materially different RISK: this is a local write rule
+      // about which row of the user's own table wins, on the machine the app
+      // already runs on. No new host is contacted, nothing new is sent to the
+      // bridge and nothing new is kept from it — so re-prompting every install
+      // would be teaching them to click through a disclosure that has not
+      // changed in any way that concerns them.
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. A price you type yourself is that day's mark: the app does not overwrite it at the close, and typing after the close replaces the automatic one. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; exchange holidays are not modelled in this version. Every figure derived from that mark is dated to the day it belongs to.",
   },
   {
     title: "Your broker's API session expires every day",

@@ -76,9 +76,13 @@ no dependency changes — `package-lock.json` is untouched.*
   position you were on when the list reorders; a stopped feed stays reported as
   stopped instead of reading as connected; and a screen reader hears **one
   announcement per link change** instead of one per price. The strip reads
-  **Live** only while quotes are arriving — a heartbeat-only link outside
-  09:00–15:40, or one left after a refused subscribe, is no longer labelled
-  Live. The close-of-session mark gains a trigger you can observe: the desk
+  **Live** once a quote-bearing frame has arrived on a subscribed connection,
+  and heartbeats then keep it there — a heartbeat alone never earns it, so a
+  link that has carried no live quotes says it is connected and **not
+  streaming** instead, which is what it is after hours and before the first
+  frame; a refused subscribe reads **Feed stopped** with the provider's own
+  reason and stays stopped for that connection.
+  The close-of-session mark gains a trigger you can observe: the desk
   **reconnects its stream once at 15:31 IST** while it is open, and the connect
   door writes the mark — so "written by the app itself" holds whether or not you
   press anything, and if the desk is shut at 15:31 the mark is written the next
@@ -91,6 +95,32 @@ no dependency changes — `package-lock.json` is untouched.*
   check and on **every** desk open or stream reconnect, where the docs said
   "once" — the same host with the same key, nothing further sent and nothing
   further kept, which is why `OPENALGO_DISCLOSURE_VERSION` stays `"2"`.
+
+- **Fix wave 3 — a price you type is the one that stands.** Until this wave a
+  mark typed AFTER the automatic close-of-session row — in the risk dialog's
+  *Current price (MTM)* field, or on the equity page — was written beside it and
+  then silently lost: the typed writers inserted without deleting, and every
+  reader takes the first row it finds for that symbol on that date. Fix wave 2's
+  15:31 reconnect made the automatic row exist on every day the desk was open,
+  so the correction you typed at 16:00 was discarded and the dialog echoed the
+  bridge's price back at you. **A price you type yourself is that day's mark:
+  the app does not overwrite it at the close, and typing after the close
+  replaces the automatic one.** The typed writers now replace the day's row for
+  that symbol, exactly as the live door and the bhavcopy job already did, so
+  **one row per symbol per IST day** is still the whole contract — and that
+  sentence now appears on all seven surfaces that describe the mark, where none
+  of them said anything about it before. `OPENALGO_DISCLOSURE_VERSION` stays
+  `"2"`: this is a rule about which row of your own table wins, on your own
+  machine — no new host, nothing new sent and nothing new kept.
+
+- **Fix wave 3 — the strip says what the link is doing, per connection.** A link
+  that has carried no live quotes now reads **connected but not streaming**
+  rather than "no prices yet": after hours the rows really do carry end-of-day
+  prices, so the thing that is missing is the stream, not the prices. And the
+  strip no longer keeps the DESTROYED link's phase across an account switch —
+  it is derived at render from the connection it describes, so switching account
+  no longer shows the old book's link state until the new connection's first
+  frame arrives.
 
 - **Disclosure v2 — every install re-acknowledges before anything pulls or
   polls.** `OPENALGO_DISCLOSURE_VERSION` moves from `"1"` to `"2"`, and because

@@ -231,9 +231,23 @@ export async function GET(req: Request): Promise<Response> {
         } catch (e) {
           // The stream is NOT ended here. Ending it would drop the client onto
           // the `retry:` hint and reconnect it into the same refusal every 2–3
-          // seconds; the heartbeat below keeps the pipe honest instead, and the
-          // client treats the error as terminal and closes the EventSource —
-          // which aborts the request and tears the heartbeat down with it.
+          // seconds; the heartbeat below keeps the pipe honest instead.
+          //
+          // WHAT THE CLIENT ACTUALLY DOES (N2 — this comment claimed the
+          // opposite until the fix wave): it does NOT close the EventSource.
+          // `lib/live/stream-link.ts` treats a named `error` frame as terminal
+          // for the PHASE only — the strip locks to "Feed stopped — <this
+          // message>" and every later heartbeat merely refreshes how old the
+          // last frame is, without overwriting the verdict. The transport
+          // stays open, and the request with it. It is closed by the desk
+          // unmounting, by the tab going to the background, or by the
+          // once-a-day 15:31 IST re-establish — and a NEW connection is the
+          // only thing that clears the verdict. So this branch must assume the
+          // heartbeat below runs for the life of the tab rather than until a
+          // client hang-up that never comes; what makes that affordable is
+          // that the refusal left NO subscription and NO flush timer behind
+          // (both are created inside the `try` above), so the connection costs
+          // one frame every 25 s and nothing else.
           send("error", {
             provider: provider.id,
             message: e instanceof Error ? e.message : "The quote provider refused to subscribe.",

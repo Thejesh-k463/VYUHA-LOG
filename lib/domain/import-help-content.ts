@@ -249,7 +249,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
     steps: [
       "First: Settings → Integrations (advanced) → switch OpenAlgo on → read the disclosure → Accept. The Import tab's OpenAlgo section does not exist until you do — and the server refuses saves and pulls regardless of the UI, because hiding a button is never the only defence. Your acceptance is recorded in the Audit Log.",
       "As of Aug 2026 the OpenAlgo API key lives on the instance's /apikey page (the dashboard's API Key entry) — a 64-character hex string. It never expires on its own; it only stops working if you regenerate it, at which point the old one is dead and Vyuha needs the new one. This is OpenAlgo's key, not your broker's.",
-      "Then Import → OpenAlgo (self-hosted): paste that key; the host is http://127.0.0.1:5000, or your instance's port; and you pick the broker behind OpenAlgo — that choice stamps the trades and selects the charge profile, so it is asked, never guessed.",
+      "Then, on the Import screen, open the OpenAlgo (self-hosted) tab: paste that key; the host is http://127.0.0.1:5000, or your instance's port; and you pick the broker behind OpenAlgo — that choice stamps the trades and selects the charge profile, so it is asked, never guessed.",
       "Saving fires a live check against the instance, so a wrong key or port fails right there with a message — not tomorrow at pull time. A second instance appears as its own row with its own Preview / Pull & commit buttons.",
       "The tradebook covers the current trading day only — pull after you are done trading, and after the day's OpenAlgo dashboard login (broker sessions expire ~3 AM IST; an empty pull before that login is normal). Older history still comes in by file.",
     ],

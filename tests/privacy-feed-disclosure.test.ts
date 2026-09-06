@@ -406,3 +406,132 @@ describe("no surface says /funds is sent once, because the desk sends it on ever
     expect(naming, "the consent sheet must still disclose the probe").toContain("lib/domain/openalgo-disclosure.ts");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   G7 — THE HEURISTIC ABOVE IS A NET, NOT A PIN (fix wave 3)
+   ══════════════════════════════════════════════════════════════════════════
+
+   `overstatedFundsClaims()` is a window scan, and both of its windows are
+   guesses about how far apart two clauses sit. Two shapes walk through it:
+
+     1. A QUALIFIER ABOUT SOMETHING ELSE, WITHIN 200 CHARACTERS, EXCUSES A
+        "ONCE". `ALSO_ON_CONNECT` matches "desk opens" / "reconnects" anywhere
+        in the ±200-character window, and it cannot tell what those words are
+        ABOUT. The poll, the mark write and the stream all legitimately say
+        "the desk opens" — so a sentence that says `/funds` is sent once,
+        sitting beside a sentence about when the POLL starts, is waved through.
+        That is not hypothetical: the window is 200 characters precisely
+        because a paragraph-wide check let item 2's "when the Live Desk opens"
+        excuse the `/funds` sentence four items away (the header at :312-319).
+        Narrowing the window moved the hole, it did not close it.
+     2. A COUNT WORD MORE THAN 90 CHARACTERS FROM `/funds` IS NEVER EXAMINED.
+        `WINDOW` is ±90 around the path, so "Vyuha asks your bridge for your
+        balance exactly once …" plus 90 characters of true prose, then the path,
+        is a count claim the scan never sees.
+
+   Both are the same weakness: a heuristic decides whether copy is honest by
+   measuring distance. What the copy actually has to be is ONE known sentence,
+   so this block pins that sentence per surface — verbatim, flattened for the
+   hard wrap and the markup — and the scan above stays as the wide net that
+   catches a surface nobody thought to add to the table.
+
+   Six of the eight surfaces had no pin of any kind before this wave. Four of
+   those six do not name `/funds` at all, and their entry is `null`: the rule
+   for them is that they may not GAIN a count claim without gaining the
+   qualified sentence with it, and a `null` that starts naming the path is a red
+   here rather than a green nobody notices.
+*/
+
+/** How a reader sees these files: wrap joined, blockquote leaders and markup out. */
+function flatten(text: string): string {
+  return text
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * The corrected sentence each surface ships, verbatim.
+ *
+ * `null` means "this surface names no `/funds` path at all", which is also
+ * pinned — a surface that starts talking about the probe has to say it the
+ * qualified way, and this table is where that gets noticed.
+ */
+const FUNDS_PIN: Record<string, string | null> = {
+  "docs/client/PRIVACY.md":
+    "plus one `/funds` request each time you check the connection and each time the desk opens or its price stream reconnects",
+  "docs/client/OPENALGO_SETUP_GUIDE.html":
+    "Checking the connection calls /api/v1/funds once, and the desk calls it again each time it opens and each time its price stream reconnects",
+  "docs/client/README.md":
+    "Checking the connection calls OpenAlgo's `/funds` endpoint once, and the desk does the same each time it opens and each time its price stream reconnects",
+  "docs/client/GETTING_STARTED_DECK.html": null,
+  "docs/client/INSTALLATION_GUIDE.md": null,
+  "lib/domain/help-content.ts": null,
+  "lib/domain/openalgo-disclosure.ts":
+    "Checking the connection calls OpenAlgo's /funds endpoint once, and the desk does the same each time it opens and each time its price stream reconnects.",
+  "README.md": null,
+};
+
+describe("the corrected /funds sentence is pinned per surface, not merely un-caught (G7)", () => {
+  it("the table covers every surface the net covers — a surface added there is not exempt here", () => {
+    expect(Object.keys(FUNDS_PIN).sort()).toEqual([...SURFACES].sort());
+  });
+
+  it.each(SURFACES)("%s", (rel) => {
+    const pin = FUNDS_PIN[rel];
+    const flat = flatten(read(rel));
+    if (pin === null) {
+      expect(
+        flat,
+        `${rel} has started naming /funds. It may only do so in the qualified form — add its sentence to FUNDS_PIN.`,
+      ).not.toMatch(/\/(?:api\/v1\/)?funds\b/i);
+      return;
+    }
+    expect(flat, `${rel} no longer carries the corrected /funds sentence verbatim:\n  ${pin}`).toContain(pin);
+  });
+
+  it("every pin actually contains the path and the qualifier — a pin on prose that says neither proves nothing", () => {
+    for (const [rel, pin] of Object.entries(FUNDS_PIN)) {
+      if (pin === null) continue;
+      expect(pin, `${rel}'s pin does not name the path`).toMatch(/\/(?:api\/v1\/)?funds\b/i);
+      expect(pin, `${rel}'s pin does not say the desk's connect is one of the times`).toMatch(ALSO_ON_CONNECT);
+    }
+  });
+
+  it("the pins are what catch the two shapes the window scan lets through", () => {
+    // SHAPE 1 — a qualifier about the POLL, 200 characters from a `/funds`
+    // count claim, excuses it. Verbatim the structure the surfaces are written
+    // in: the cadence sentence and the probe sentence are neighbours.
+    const shape1 =
+      "While the Live Desk is open Vyuha asks your bridge every 1 to 5 seconds, and the polling starts when the desk opens and stops when it closes. " +
+      "Checking the connection calls OpenAlgo's `/funds` endpoint once.";
+    expect(
+      overstatedFundsClaims(shape1),
+      "the window scan is fooled: 'the desk opens' is about the poll, not about /funds",
+    ).toEqual([]);
+    // The pin is not: this is not the sentence any surface is allowed to ship.
+    expect(flatten(shape1)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
+
+    // SHAPE 2 — the count word sits further than WINDOW (90) from the path.
+    const filler = "the cheapest call there is, proving both the address you typed and the API key behind it are right";
+    expect(filler.length).toBeGreaterThan(WINDOW);
+    const shape2 = `Vyuha asks your bridge for your balance exactly once — ${filler} — by posting /funds.`;
+    expect(
+      overstatedFundsClaims(shape2),
+      "the window scan is blind: the count word is more than 90 characters from the path",
+    ).toEqual([]);
+    expect(flatten(shape2)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
+  });
+
+  it("the pin really can fire — the pre-fix sentence, planted into a real surface", () => {
+    // VERBATIM the copy fix wave 2 removed, put back the way a copy edit would
+    // put it back: the qualifier deleted, the rest of the sentence intact.
+    const shipped = read("docs/client/README.md");
+    const reverted = shipped.replace(
+      "Checking the connection calls OpenAlgo's `/funds` endpoint once, and the desk does the same each time it opens and each time its price stream reconnects — the cheapest call that proves the address and the key are both right.",
+      "Checking the connection calls OpenAlgo's `/funds` endpoint once — the cheapest call that proves the address and the key are both right.",
+    );
+    expect(reverted, "the sentence this test reverts is no longer in the file").not.toBe(shipped);
+    expect(flatten(reverted)).not.toContain(FUNDS_PIN["docs/client/README.md"]);
+  });
+});

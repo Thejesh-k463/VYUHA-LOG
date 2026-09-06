@@ -76,7 +76,9 @@ Exactly four kinds, and only one of them is automatic:
    it shows are never written to your journal as ticks: one mark per position
    per day is saved — written by the app itself once the desk reconnects at
    15:31 IST while it is open, or the next time you open it that day, and never
-   at the weekend. Your credentials are encrypted at rest, bound to your
+   at the weekend. A price you type yourself is that day's mark: the app does
+   not overwrite it at the close, and typing after the close replaces the
+   automatic one. Your credentials are encrypted at rest, bound to your
    machine, and sent nowhere except the broker itself. We never see them.
 4. **The Telegram end-of-day digest — only if you switch it on, and this one
    is an upload.** It sends a summary of your own recorded numbers to a

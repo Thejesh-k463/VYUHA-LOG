@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
-import { parseTickFrame, type TickQuote } from "@/lib/live/apply-ticks";
+import { type TickQuote } from "@/lib/live/apply-ticks";
 import {
   CLOSE_REOPEN_JITTER_MS,
   CLOSE_REOPEN_MINUTE,
@@ -671,7 +671,7 @@ describe("SEAM 3 · quotes make it live; a pipe with no quotes only makes it con
     // the absence; it carries no age, no price and no digit — a number here is
     // what made `Live · openalgo · 3 s` readable at 21:00.
     const line = h.strip("openalgo", 3);
-    expect(line).toBe("Connected · openalgo · no prices yet");
+    expect(line).toBe("Connected · openalgo · not streaming");
     expect(line).not.toMatch(/\d/);
     // The ANNOUNCEMENT carries even less: no provider, no number, no price word.
     const said = LIVE_STREAM_COPY.announce[h.phase() as LinkPhase];
@@ -720,7 +720,7 @@ describe("SEAM 3 · quotes make it live; a pipe with no quotes only makes it con
     // WHAT SHOULD HAPPEN (and does not): no subscription is running, so the
     // desk knows a price but not that prices are ARRIVING.
     expect(h.phase()).toBe("connected");
-    expect(h.strip("openalgo", 3)).toBe("Connected · openalgo · no prices yet");
+    expect(h.strip("openalgo", 3)).toBe("Connected · openalgo · not streaming");
     h.link.destroy();
   });
 });
@@ -1076,6 +1076,6 @@ describe("SEAM 8 · the desk's ONE live region, and the sentence C wrote about i
     expect(src).toContain("LIVE_STREAM_COPY.announce[link.phase]");
 
     expect(changelogWave2()).toContain("one\n  announcement per link change");
-    expect(changelogWave2()).toContain("The strip reads\n  **Live** only while quotes are arriving");
+    expect(changelogWave2()).toContain("The strip reads\n  **Live** once a quote-bearing frame has arrived on a subscribed connection,");
   });
 });

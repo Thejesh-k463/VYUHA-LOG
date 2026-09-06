@@ -224,6 +224,16 @@ export async function persistDailyMarks(
   // is what makes the second account of the day get its mark at all. It is
   // also what stops a live print from overwriting a mark the user typed into
   // the risk dialog today: whoever wrote the row first, keeps it.
+  //
+  // THE ASYMMETRY IS DELIBERATE (owner ruling, v4.1 fix wave 3). This door
+  // skips a held row; the TYPED doors (`writeTypedMark()` in
+  // `lib/queries/mtm.ts`, used by the risk dialog and the bulk MTM paste)
+  // delete-then-insert and replace one. So a mark typed BEFORE the close
+  // survives the automatic write, and a mark typed AFTER it wins — which is
+  // what "a typed mark is always the day's mark" means. Neither door needs a
+  // reader-side tiebreak, and none was added: `getMtmMap()` and the other ten
+  // readers still take the first row of the newest `as_of_date`, which is now
+  // the only row for it.
   let marked = 0;
   db.transaction((tx) => {
     for (const q of usable) {

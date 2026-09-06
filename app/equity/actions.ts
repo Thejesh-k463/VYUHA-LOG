@@ -3,9 +3,10 @@
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { mtmPrices, trades } from "@/lib/db/schema";
+import { trades } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
+import { writeTypedMark } from "@/lib/queries/mtm";
 
 export type MtmState = { ok: boolean; message: string; updated: number };
 
@@ -64,8 +65,19 @@ export async function saveMtmPrices(_prev: MtmState, formData: FormData): Promis
     if (!symbol) continue;
     const key = symbol.toUpperCase();
 
-    if (price != null) {
-      db.insert(mtmPrices).values({ symbol: key, price, asOfDate: asOf, updatedAt: now }).run();
+    if (price != null && price > 0) {
+      // (`price > 0`: a pasted 0 is not a mark, and since this write replaces
+      // the day's row it would erase the real one — the line is skipped.)
+      // DELETE-THEN-INSERT for (symbol, as-of day) — the same one transaction
+      // the feed and the bhavcopy apply use. A bare insert left a SECOND row
+      // for a day that already had one, and every reader takes the first row
+      // of the newest `as_of_date` in rowid order, so the price pasted here
+      // after the automatic 15:31 mark was stored and then ignored.
+      // The paste knows only the symbol; hand over the open trade's
+      // tradingsymbol so the feed's key survives the replacement (undefined,
+      // not null, lets `writeTypedMark` carry the held row's value).
+      const tradingsymbol = (bySymbol.get(key) ?? []).find((t) => t.tradingsymbol)?.tradingsymbol;
+      writeTypedMark({ symbol: key, tradingsymbol, price, asOfDate: asOf });
       priceCount++;
     }
 

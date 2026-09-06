@@ -97,20 +97,28 @@ export const LIVE_STREAM_COPY = {
   /** `<provider> · 3 s` — the age of the last frame, on the 30 s desk clock. */
   live: (provider: string, seconds: number) => `Live · ${provider} · ${seconds} s`,
   /**
-   * The pipe is OPEN and has carried no prices — the state "Live" used to be
-   * printed over.
+   * The pipe is OPEN and NOTHING IS STREAMING DOWN IT — the state "Live" used
+   * to be printed over.
    *
    * `GET /api/live/stream` heartbeats every 25 s whether or not it ever
    * subscribed, and outside 09:00–15:40 it never subscribes at all, so a
    * heartbeat counted as a live frame printed `Live · openalgo · 3 s` at 21:00
    * with no poll running behind it. This says the one thing the desk knows.
    *
-   * WHY NOT "outside market hours": the desk cannot tell that from "subscribed
-   * and silent" without asserting an exchange calendar it does not ship
-   * (`lib/live/market-hours.ts` models the clock, not holidays). It states the
-   * connection and the absence, and claims nothing about why.
+   * IT STATES THE ABSENCE OF A STREAM, NOT THE ABSENCE OF PRICES. It read
+   * "no prices yet" until the fix wave, and that was false on the ordinary
+   * evening: the route snapshots unconditionally, so outside the live window
+   * it ships the bridge's last prints beside `marketOpen: false`, and
+   * `stream-link.ts` hands those quotes to the rows BEFORE it decides the
+   * phase. The strip therefore said "no prices yet" beside the prices that
+   * very frame had just delivered. What is missing is the SUBSCRIPTION.
+   *
+   * WHY NO REASON IS CLAIMED: the desk cannot tell "outside market hours" from
+   * "subscribed and silent" without asserting an exchange calendar it does not
+   * ship (`lib/live/market-hours.ts` models the clock, not holidays). It states
+   * the connection and what is not happening, and nothing about why.
    */
-  connected: (provider: string) => `Connected · ${provider} · no prices yet`,
+  connected: (provider: string) => `Connected · ${provider} · not streaming`,
   connecting: "Connecting…",
   reconnecting: "Reconnecting…",
   /** The provider's own sentence follows; it is never rewritten here. */

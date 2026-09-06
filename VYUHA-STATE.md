@@ -27,11 +27,11 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.1.0 IN BUILD on `main` (COMMITTED: `66aa319` wave + `4b55620` fix wave + fix wave 2, sha pending; version strings still 4.0.0, bump next) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2. Current state — v4.1.0 IN BUILD on `main` (COMMITTED: `66aa319` wave + `4b55620` fix wave + `65dd329` fix wave 2 + fix wave 3 (sha at the bump); version strings still 4.0.0, bump next) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
 > **v4.1.0 IS IN BUILD, and it is COMMITTED.** Base commit `6631d21`; on top of it `66aa319` (the
-> wave), `4b55620` (the fix wave) and fix wave 2 (**sha pending** — the orchestrator commits it at
-> the gate). Nothing about 4.1 is an uncommitted working tree any more.
+> wave), `4b55620` (the fix wave), `65dd329` (fix wave 2) and fix wave 3 (**sha at the bump** — the
+> orchestrator commits it at the gate). Nothing about 4.1 is an uncommitted working tree any more.
 > `package.json` is still **4.0.0** — the bump happens after the audit, and no version field, Cargo
 > file or sidebar footer has been touched. `package-lock.json` is unmodified: **4.1 adds, removes and
 > upgrades no dependency.** One migration, **0068** (`instruments.results_date`, nullable TEXT,
@@ -104,7 +104,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > after 4.2, and "alerts" stays out of Pro copy; no `openalgo-charts` pilot; no journal-derived
 > Kelly; no size-index lists; **Upstox and Angel One price feeds are 4.2**.
 >
-> **VERIFY (2026-09-06, FIX-WAVE-2 gate, the tree after `4b55620` + fix wave 2): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 339 files / 6,334 passed / 35 skipped (6,369), `next build` compiled. Playwright on the fix-wave-2 tree: `e2e/z-live-desk.spec.ts` 9 passed incl. the stream-consumer test, the windowed j/k geometry and the error-frame case (a heartbeat after an error does not un-stop the feed). Earlier gates: fix wave (`4b55620`, CI SUCCESS) 337 / 6,273 / 35; wave (`66aa319`, CI 6/6) 334 / 6,177 / 35. README counts 6334 / 339 / 93 flows in 29 specs, all re-measured on this tree (`grep -c "^[[:space:]]*test(" e2e/*.spec.ts` = 93; `find tests -name "*.test.ts" | wc -l` = 339, two files added by fix wave 2: `tests/live-stream-link.test.ts`, `tests/seams-v41-fix2.test.ts`).**
+> **VERIFY (2026-09-07, FIX-WAVE-3 gate, the tree after `65dd329` + fix wave 3): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 341 files / 6,381 passed / 35 skipped (6,416), `next build` compiled. Playwright on the fix-wave-3 tree: `e2e/z-live-desk.spec.ts` 9 passed. Earlier gates: fix wave 2 (`65dd329`, CI SUCCESS 34051766379) 339 / 6,334 / 35; fix wave (`4b55620`, CI SUCCESS) 337 / 6,273 / 35; wave (`66aa319`, CI 6/6) 334 / 6,177 / 35. README counts 6381 / 341 / 93 flows in 29 specs, all re-measured on this tree (`find tests -name "*.test.ts" | wc -l` = 341: fix wave 3 added `tests/typed-mark-day-row.test.ts` and `tests/seams-v41-fix3.test.ts`).**
 
 ## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 

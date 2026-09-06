@@ -4015,3 +4015,37 @@ was 92 declared, not 93). Three owner pop-ups, all the recommended option:
   2 adds the error-frame case); the STATE §2 header still described an uncommitted tree; three comment citations
   had shifted by this range's own import line — identifiers only from here on; `egressDescription` still pointed
   at "Import → OpenAlgo" while every 4.1 surface says Settings → Integrations.
+
+## 2026-09-07 — v4.1.0 fix wave 2 audit (`4b55620..65dd329`, CI SUCCESS): 7 confirmed → 7 after the skeptic → fix wave 3
+
+Five Fable auditors (money 1/19, security 0/11, ui 2/22, test-integrity 1/16, docs 4/23; one duplicate) and the
+skeptic (7/7 CONFIRMED, replays run against the real modules and the migration's own DDL). The seam pass that
+preceded it (`tests/seams-v41-fix2.test.ts`, 12 crossings) had already found and fixed D1 — the after-hours
+snapshot promoting the strip to Live. One owner pop-up.
+
+- **A mark typed AFTER the automatic 15:31 row was silently discarded.** The risk dialog and the equity page
+  INSERT into `mtm_prices` with no DELETE; every reader (`getMtmMap`, `getSpotMap`, `indexMarks` — eleven call
+  sites) orders by `as_of_date DESC` with no tiebreak and takes the first row per symbol, which SQLite returns
+  in rowid order (replayed: 2,300 rows, `SCAN mtm_prices | USE TEMP B-TREE FOR ORDER BY`, the live row wins).
+  The mechanism predates 4.1; fix wave 2's 15:31 reconnect made the live row exist on every open-desk day, so
+  every same-day typed correction after the close was lost and the dialog echoed the bridge's price back.
+  **Ruling: a typed mark is ALWAYS the day's mark** — the typed writers delete-then-insert for (symbol, IST day)
+  exactly as the live door and the bhavcopy job do; typed before the close, the live door keeps skipping the held
+  row; typed after, it replaces the automatic row; one row per symbol per day stays the table's contract, and
+  the six user surfaces gain one sentence saying so (they promised "whichever comes first" and never mentioned a
+  typed mark at all). *Rejected: a reader-side `ORDER BY id DESC` tiebreak* (two rows per day would remain and
+  eleven readers would each carry the rule) and *docs-only* (a silent wrong number behind a documented gap).
+- **Cosmetic, fixed in fix wave 3:** the strip kept the DESTROYED link's phase across an account switch until the
+  new connection's first frame (the React state was not keyed to the connection it described — now derived
+  from `{key, state}` at render, no setState in the effect); "Connected · openalgo · no prices yet" was printed
+  on the very frame that delivered after-hours prices to the rows — the copy now states the absence of a live
+  stream ("not streaming"), not of prices; the CHANGELOG said "Live only while quotes are arriving" while a
+  heartbeat keeps a once-live link live with no age check (the module's stated definition: Live is a claim about
+  a subscribed connection, `N s` is the age of the last frame); the `/funds` window guard could be fooled by a
+  qualifier about something else within 200 characters, so the six surfaces without a verbatim pin now have
+  one; two error strings still pointed at "Import → OpenAlgo"; a route comment claimed the client closes the
+  EventSource on a terminal error (it keeps it: heartbeats refresh the age, a NEW connection clears it).
+- **Noted, not changed:** a connection opened inside 09:00–15:40 is never unsubscribed by the route, so a desk
+  left open polls the bridge at the slider cadence all evening — inside the disclosure's "while the Live Desk is
+  open"; and a desk opened after 15:40 polls nothing while the same sentence says it asks every 1–5 s (an
+  upper bound, over-claim in the safe direction; refuted as such in the wave audit).

@@ -51,9 +51,16 @@ export const LIVE_FEED_COPY = {
    * mark for that day, and the close is then no longer written. Saying only
    * "from the last price of the session" would describe a write that never
    * happens on any day the button was pressed.
+   *
+   * The typed-mark rule (fix wave 3) is appended rather than given its own key:
+   * `tests/live-feed-copy.test.ts` forbids README.md and the sales pages from
+   * carrying ANY whole `LIVE_FEED_COPY` value (owner answer Q60 — the settings
+   * card's copy is not marketing), and the same sentence has to appear in the
+   * README. As a clause of a longer string it is said identically on all seven
+   * surfaces without any of them reproducing a whole card string.
    */
   staleness:
-    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first.",
+    "Prices refresh on screen only. Ticks are never written to your journal — one mark per position per day is saved, from the last price of the session or from the price when you press Save today's mark, whichever comes first. A price you type yourself is that day's mark: the app does not overwrite it at the close, and typing after the close replaces the automatic one.",
   /** Only true while the host is loopback; the card says the other case too. */
   local:
     "Requests go to the OpenAlgo bridge on your own machine. Vyuha adds no new internet host for prices.",

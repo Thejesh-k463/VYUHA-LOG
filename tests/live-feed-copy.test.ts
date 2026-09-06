@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BROKER_FEED_OFFERED, LIVE_FEED_COPY, REFRESH_MAX, REFRESH_MIN } from "@/components/settings/live-feed-card";
+import { HELP_ENTRIES } from "@/lib/domain/help-content";
+import { OPENALGO_FEED_ITEMS } from "@/lib/domain/openalgo-disclosure";
 import { REFRESH_SECONDS_MAX, REFRESH_SECONDS_MIN } from "@/lib/quotes/openalgo";
 import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
@@ -423,5 +425,167 @@ describe("the broker-feed controls are gated on the release flag (D-7)", () => {
       "Your broker's API session expires every day and has to be signed in again; that is the broker's rule, not Vyuha's.",
     );
     expect(LIVE_FEED_COPY.dailyReauth).not.toMatch(/\b(SEBI|exchange|exchanges|circular|regulat\w*)\b/i);
+  });
+});
+
+/**
+ * G2 — WHAT HAPPENS WHEN A TYPED MARK AND THE AUTOMATIC MARK MEET.
+ *
+ * Fix wave 2 gave the close-of-session write a trigger (the 15:31 reconnect),
+ * and that made the automatic row exist on every day the desk was open. The
+ * typed writers — the risk dialog's "Current price (MTM)" and the equity page —
+ * INSERTED beside it with no delete, and every reader takes the first row it
+ * finds for that symbol on that date, so a correction typed after the close was
+ * silently discarded. Fix wave 3 makes the typed writers replace the day's row:
+ * a price you type is ALWAYS that day's mark.
+ *
+ * No user surface said anything about the collision — all seven promised
+ * "whichever comes first" and never mentioned a typed mark at all. One sentence
+ * now says it, and the point of the sentence is that it is the SAME sentence:
+ * seven documents each inventing their own phrasing for one write rule is how
+ * `/funds` ended up stated four different ways, three of them wrong.
+ *
+ * Pinned VERBATIM, per surface, because a paraphrase is exactly the failure —
+ * a guard that accepted "your typed price wins" would let the seven drift back
+ * apart while staying green. Deleting the sentence from any one of them reds
+ * this block and names the surface.
+ *
+ * NOT its own `LIVE_FEED_COPY` key: the Q60 guard above forbids README.md and
+ * the sales pages from carrying any WHOLE card string, and this sentence has to
+ * be in README.md. As a clause inside `staleness` it is said identically
+ * everywhere without any marketing surface reproducing a card string — the two
+ * rules hold at once, which is why the assertion below is `toContain`.
+ */
+describe("the typed-mark rule is said, in the same words, on every surface that describes the mark (G2)", () => {
+  const SENTENCE =
+    "A price you type yourself is that day's mark: the app does not overwrite it at the close, " +
+    "and typing after the close replaces the automatic one.";
+
+  /**
+   * What a READER sees, with the wrapping and the markup taken out.
+   *
+   * These files are hard-wrapped at ~78 columns, three of them under a `>`
+   * blockquote leader and one of them HTML, so the sentence never survives as a
+   * contiguous byte range in the source. Flattening is what lets the pin be
+   * verbatim rather than a bag of loose fragments. HTML comments go first: the
+   * setup guide carries a long owner-facing citation block a browser never
+   * renders, and a pin satisfied by a comment is a pin on nothing.
+   */
+  const flatten = (text: string) =>
+    text
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/^[ \t]*>[ \t]?/gm, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+
+  const flatFile = (rel: string) => flatten(read(rel));
+
+  /** The seven surfaces, and how each one is read. */
+  const SURFACES: [name: string, text: () => string][] = [
+    ["README.md", () => flatFile("README.md")],
+    ["docs/client/README.md", () => flatFile("docs/client/README.md")],
+    ["docs/client/PRIVACY.md", () => flatFile("docs/client/PRIVACY.md")],
+    ["docs/client/OPENALGO_SETUP_GUIDE.html", () => flatFile("docs/client/OPENALGO_SETUP_GUIDE.html")],
+    // The two copy modules are read as DATA, not as source: a sentence sitting
+    // in a `//` comment would satisfy a file scan and reach no screen.
+    ["lib/domain/help-content.ts (HELP_ENTRIES /live)", () =>
+      flatten(HELP_ENTRIES.find((e) => e.href === "/live")!.body.join(" ")),
+    ],
+    ["lib/domain/openalgo-disclosure.ts (OPENALGO_FEED_ITEMS)", () =>
+      flatten(OPENALGO_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ")),
+    ],
+    ["components/settings/live-feed-card.tsx (LIVE_FEED_COPY.staleness)", () =>
+      flatten(LIVE_FEED_COPY.staleness),
+    ],
+  ];
+
+  it("the flattener really reads a wrapped, quoted, marked-up copy of the sentence", () => {
+    // Every shape the seven surfaces actually store it in, and the shape that
+    // must NOT pass: a paraphrase.
+    const wrapped = "> yourself is that day's mark: the app does not\n> overwrite it at the close, and typing";
+    expect(flatten(`> A price you type\n${wrapped} after the close replaces the automatic one.`)).toContain(SENTENCE);
+    expect(
+      flatten("<li>A price you type yourself is that day's mark: the app does not\n    overwrite it at the close, and typing after the close replaces the automatic one.</li>"),
+    ).toContain(SENTENCE);
+    expect(flatten("<!-- A price you type yourself is that day's mark: the app does not overwrite it at the close, and typing after the close replaces the automatic one. -->"))
+      .not.toContain(SENTENCE);
+    expect(flatten("Your typed price wins over the automatic one.")).not.toContain(SENTENCE);
+  });
+
+  it.each(SURFACES)("%s says it, verbatim", (_name, text) => {
+    expect(text(), `the typed-mark rule is missing or reworded here — it must read exactly:\n  ${SENTENCE}`).toContain(
+      SENTENCE,
+    );
+  });
+
+  it("all seven say the identical string — one write rule, one sentence", () => {
+    const saying = SURFACES.filter(([, text]) => text().includes(SENTENCE)).map(([name]) => name);
+    expect(saying, "a surface dropped the shared sentence").toHaveLength(SURFACES.length);
+  });
+
+  it("it is a description of a write, not an instruction — the card's own ban applies to it", () => {
+    expect(BANNED.test(SENTENCE), SENTENCE).toBe(false);
+    // …and it names no regulator and no broker, like every other sentence here.
+    expect(SENTENCE).not.toMatch(/\b(SEBI|circular|regulat\w*)\b/i);
+  });
+
+  it("the sentence describes a LOCAL write rule, so the disclosure version does not move", () => {
+    // The rule at lib/domain/openalgo-disclosure.ts:25-28 bumps the version for
+    // a materially different RISK. Which row of the user's own table wins is
+    // not one: no new host is contacted, nothing new is sent to the bridge and
+    // nothing new is kept from it. Bumping here would re-prompt every install
+    // to re-read a statement that has not changed in any way that concerns
+    // them, which is how a consent dialog becomes something people click past.
+    expect(SENTENCE).not.toMatch(/\b(send|sends|sent|upload|uploads|host|server|internet)\b/i);
+  });
+});
+
+/**
+ * N1 — EVERY BREADCRUMB NAMES A ROUTE THE APP ACTUALLY HAS.
+ *
+ * `OPENALGO_CAPABILITIES.egressDescription` was corrected in fix wave 2 and
+ * pinned by `tests/seams-v41-fix2.test.ts` S7b; two sibling strings were missed
+ * and still sent the reader to "Import → OpenAlgo" as the FIRST step. It is not
+ * the first step and it is not reachable as one: the Import screen grows its
+ * OpenAlgo section only after the integration is switched on in
+ * Settings → Integrations (advanced) — `lib/domain/import-help-content.ts`'s own
+ * preceding step says so, and `readGateFromDb()` refuses regardless of the UI.
+ *
+ * The arrow notation is what is banned, not the Import screen: the API key form
+ * really does live there (`components/import/broker-connect.tsx`, tab "OpenAlgo
+ * (self-hosted)", rendered by `app/import/page.tsx`), so both strings still
+ * send the user there — for the key, after the switch, in that order.
+ */
+describe("the OpenAlgo breadcrumbs name the two steps in the order they happen (N1)", () => {
+  it("the no-key feed reason sends the reader to Settings → Integrations first", () => {
+    const adapter = read("lib/quotes/openalgo.ts");
+    const reason = adapter.match(/"No OpenAlgo connection is saved yet\.[^"]*"/)?.[0];
+    expect(reason, "the no-key reason string is gone from the adapter").toBeDefined();
+    expect(reason, "the no-key reason still points at a screen that does not exist yet").not.toContain(
+      "Import → OpenAlgo",
+    );
+    expect(reason).toContain("Settings → Integrations");
+    // …and it still says where the key itself goes, which is the Import screen.
+    expect(reason).toMatch(/Import screen/);
+    // The desk's own sentence is reused, not restated — it is the one the user
+    // has already seen on the Settings card.
+    expect(reason).toContain(LIVE_FEED_COPY.connect);
+  });
+
+  it("the import help step names the Import screen without the stale arrow", () => {
+    const src = read("lib/domain/import-help-content.ts");
+    expect(src, "import help still writes the breadcrumb as Import → OpenAlgo").not.toContain("Import → OpenAlgo");
+    expect(src, "import help no longer says where the key is pasted").toContain("OpenAlgo (self-hosted) tab");
+    // The step BEFORE it is the one that makes that tab exist, and it stays.
+    expect(src).toContain("First: Settings → Integrations (advanced)");
+  });
+
+  it("no live-feed surface in this guard's set carries the stale arrow in COPY", () => {
+    // Comment-stripped: the citation comment beside the corrected string quotes
+    // the wording it replaced, which is how the next reader knows what changed
+    // and why. A ban that swallowed its own explanation would delete the record.
+    for (const rel of [...SOURCES, "lib/quotes/openalgo.ts", "lib/domain/openalgo-disclosure.ts"]) {
+      expect(stripComments(read(rel)), `${rel} still writes "Import → OpenAlgo"`).not.toContain("Import → OpenAlgo");
+    }
   });
 });

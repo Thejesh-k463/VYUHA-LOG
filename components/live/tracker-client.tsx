@@ -20,7 +20,13 @@ import { daysToResults } from "@/lib/live/results-date";
 // rules and the close-of-session reconnect — with its browser edges injected
 // from here, so `tests/live-stream-link.test.ts` can DRIVE it in node instead
 // of grepping this file for the lines that would have done it.
-import { LINK_IDLE, createStreamLink, streamKeyOf, type LinkState } from "@/lib/live/stream-link";
+import {
+  LINK_IDLE,
+  createStreamLink,
+  linkStateFor,
+  streamKeyOf,
+  type KeyedLinkState,
+} from "@/lib/live/stream-link";
 import {
   CONNECT_PROMPT_COPY,
   DESK_COPY,
@@ -330,7 +336,19 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   // Ticks live HERE and nowhere else (owner answer Q25: "ticks in memory only,
   // exactly one persisted mark per position per day"). Nothing below writes.
   const [ticks, setTicks] = React.useState<TickMap>(NO_TICKS);
-  const [link, setLink] = React.useState<LinkState>(LINK_IDLE);
+  /**
+   * The link's last report, WITH THE STREAM IT CAME FROM (G3).
+   *
+   * The desk outlives its connections — it stays mounted across an account
+   * switch on purpose — so a bare `LinkState` here made the strip go on
+   * printing the DEAD stream's verdict ("Live · openalgo · 14 s", or "Feed
+   * stopped — <the old account's reason>") until the new connection's first
+   * frame. Storing the key the state was reported for lets `linkStateFor()`
+   * answer that at RENDER time; resetting it from the effect instead is the
+   * `setState`-in-an-effect AGENTS.md forbids. `""` is no stream's key, so the
+   * desk mounts idle.
+   */
+  const [storedLink, setStoredLink] = React.useState<KeyedLinkState>({ key: "", state: LINK_IDLE });
 
   const streaming = feed.streaming;
 
@@ -350,6 +368,14 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     () => streamKeyOf(data.selectedAccountId, wireRows),
     [data.selectedAccountId, wireRows],
   );
+
+  /**
+   * DERIVED, never reset in an effect (G3): the old stream's state stops being
+   * the answer the instant the key changes, so the strip falls back to
+   * "Connecting…" on the frame the switch renders — not 25 s later, and not
+   * never on a hidden tab. `lib/live/stream-link.ts` owns the rule.
+   */
+  const link = linkStateFor(storedLink, streamKey);
 
   /**
    * ONE `EventSource`, and only for a provider that really streams.
@@ -394,7 +420,9 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
       schedulePaint: (fn) => requestAnimationFrame(fn),
       cancelPaint: (id) => cancelAnimationFrame(id),
       random: () => Math.random(),
-      onState: setLink,
+      // Stamped with the stream it is a fact about, so a report that arrives
+      // from a connection the desk has already replaced cannot outlive it.
+      onState: (state) => setStoredLink({ key: streamKey, state }),
       // Ticks live HERE and nowhere else (owner answer Q25: "ticks in memory
       // only, exactly one persisted mark per position per day"). Nothing on
       // this path writes to the journal.

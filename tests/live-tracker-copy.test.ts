@@ -357,15 +357,21 @@ describe("the live stream's connection line says what it can support", () => {
     );
   });
 
-  it("says CONNECTED, not Live, for a pipe that has carried no prices", () => {
+  it("says CONNECTED, not Live, for a pipe with nothing streaming down it", () => {
     // The route heartbeats every 25 s whether or not it ever subscribed, and
     // outside 09:00–15:40 it never subscribes at all — so a heartbeat counted
     // as a live frame printed `Live · openalgo · 3 s` at 21:00 with no poll
     // running behind it. `tests/live-stream-link.test.ts` drives which frame
     // earns which phase; this is what the earned phase SAYS.
-    expect(LIVE_STREAM_COPY.connected("openalgo")).toBe("Connected · openalgo · no prices yet");
+    expect(LIVE_STREAM_COPY.connected("openalgo")).toBe("Connected · openalgo · not streaming");
     expect(LIVE_STREAM_COPY.connected("openalgo")).not.toContain("Live");
-    // It claims nothing about WHY there are no prices: the desk ships no
+    // G4: it states the absence of a STREAM, never the absence of PRICES. The
+    // line read "no prices yet" until the fix wave, and the after-hours
+    // snapshot ships quotes — `stream-link.ts` pushes them to the rows BEFORE
+    // it decides the phase (`tests/live-stream-link.test.ts` pins exactly
+    // that) — so the strip denied the prices it had just delivered.
+    expect(LIVE_STREAM_COPY.connected("openalgo")).not.toMatch(/no prices|price/i);
+    // It claims nothing about WHY nothing is streaming: the desk ships no
     // exchange calendar, so "outside market hours" is not a fact it holds.
     expect(LIVE_STREAM_COPY.connected("openalgo")).not.toMatch(/market hours|holiday|closed/i);
   });
