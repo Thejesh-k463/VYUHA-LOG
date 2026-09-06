@@ -91,6 +91,20 @@ const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
  */
 const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "openalgo" || OPENALGO_FEED_ENABLED);
 
+/**
+ * Is a BROKER-backed feed on offer at all in this release?
+ *
+ * Derived from the resolved list rather than restated, so the one flag stays
+ * the one source. Two controls exist only for such a feed: the 1–5 s on-screen
+ * refresh (a poll interval means nothing when the mark is yesterday's close or
+ * a number the user typed) and the daily re-authentication note (a broker API
+ * session is the only thing that expires daily). Rendering either in v4.0
+ * advertises a feed this release does not ship — so both are gated here, and
+ * flipping `OPENALGO_FEED_ENABLED` restores them with no edit to this file.
+ * `tests/live-feed-copy.test.ts` pins the gate.
+ */
+export const BROKER_FEED_OFFERED = PROVIDERS.some((p) => p.id === "openalgo");
+
 interface FeedResponse {
   ok: boolean;
   feed?: { stored: string; effective: string; refreshSeconds: number; blockedReason?: string };
@@ -201,32 +215,38 @@ export function LiveFeedCard({ current }: { current: Settings }) {
 
         <p className="text-xs text-muted-foreground">{LIVE_FEED_COPY.staleness}</p>
 
-        <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="live-feed-seconds">On-screen refresh</Label>
-            <span className="text-xs tabular-nums text-muted-foreground">{seconds}s</span>
+        {BROKER_FEED_OFFERED && (
+          <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="live-feed-seconds">On-screen refresh</Label>
+              <span className="text-xs tabular-nums text-muted-foreground">{seconds}s</span>
+            </div>
+            <input
+              id="live-feed-seconds"
+              type="range"
+              min={1}
+              max={5}
+              step={1}
+              value={seconds}
+              onChange={(e) => void saveSeconds(Number(e.target.value))}
+              className="w-full accent-[var(--color-primary)]"
+              data-testid="live-feed-seconds"
+            />
           </div>
-          <input
-            id="live-feed-seconds"
-            type="range"
-            min={1}
-            max={5}
-            step={1}
-            value={seconds}
-            onChange={(e) => void saveSeconds(Number(e.target.value))}
-            className="w-full accent-[var(--color-primary)]"
-            data-testid="live-feed-seconds"
-          />
-        </div>
+        )}
 
         {/* HIGHLIGHTED, and the highlight is the point: this is the one thing
-            about a broker feed that no amount of engineering removes. */}
-        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2" data-testid="live-feed-reauth">
-          <p className="flex items-start gap-2 text-xs text-warning">
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>{LIVE_FEED_COPY.dailyReauth}</span>
-          </p>
-        </div>
+            about a broker feed that no amount of engineering removes. Gated
+            with the slider above — in a release that offers no broker feed it
+            would describe a session the user never opens. */}
+        {BROKER_FEED_OFFERED && (
+          <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2" data-testid="live-feed-reauth">
+            <p className="flex items-start gap-2 text-xs text-warning">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+              <span>{LIVE_FEED_COPY.dailyReauth}</span>
+            </p>
+          </div>
+        )}
 
         {provider === "openalgo" && (
           <p className="text-xs text-muted-foreground">

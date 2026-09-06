@@ -13,7 +13,9 @@ import { gotoHydrated } from "./helpers";
  * component code through Playwright's transform. If a fold expectation here
  * reddens, check nav-config.ts first: the owner may have moved the fold.
  *
- * Positions group: 4 screens, folded shows only /risk  -> "3 more…".
+ * Positions group: 6 screens (v4.0 added /live and /atlas), folded shows
+ *                  /live + /risk -> "4 more…" (/strategies, /equity, /active,
+ *                  /atlas sit below the fold).
  * System group:    6 screens, folded shows /settings + /backup -> /audit and
  *                  /data-quality sit below the fold.
  *
@@ -28,6 +30,7 @@ import { gotoHydrated } from "./helpers";
 
 const EQUITY = 'aside nav a[href="/equity"]';
 const RISK = 'aside nav a[href="/risk"]';
+const LIVE = 'aside nav a[href="/live"]';
 
 /** Post-reload hydration gate — same clock signal gotoHydrated waits on. */
 async function awaitHydrated(page: Page): Promise<void> {
@@ -38,19 +41,21 @@ async function awaitHydrated(page: Page): Promise<void> {
 test("a folded group shows its default screens and hides the rest behind 'N more…'", async ({ page }) => {
   await gotoHydrated(page, "/");
 
-  // Default fold: Portfolio Risk survives, the other three render NO link at
-  // all — the fold removes rows, it does not just style them.
+  // Default fold: Live Desk and Portfolio Risk survive, the other four render
+  // NO link at all — the fold removes rows, it does not just style them.
+  await expect(page.locator(LIVE)).toBeVisible();
   await expect(page.locator(RISK)).toBeVisible();
   await expect(page.locator(EQUITY)).toHaveCount(0);
   await expect(page.locator('aside nav a[href="/strategies"]')).toHaveCount(0);
   await expect(page.locator('aside nav a[href="/active"]')).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Show 3 more Positions screens" })).toBeVisible();
+  await expect(page.locator('aside nav a[href="/atlas"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show 4 more Positions screens" })).toBeVisible();
 });
 
 test("'N more…' expands the group and 'Show less' folds it again", async ({ page }) => {
   await gotoHydrated(page, "/");
 
-  await page.getByRole("button", { name: "Show 3 more Positions screens" }).click();
+  await page.getByRole("button", { name: "Show 4 more Positions screens" }).click();
   await expect(page.locator(EQUITY)).toBeVisible();
   await expect(page.locator('aside nav a[href="/active"]')).toBeVisible();
 
@@ -58,12 +63,12 @@ test("'N more…' expands the group and 'Show less' folds it again", async ({ pa
   await expect(showLess).toBeVisible();
   await showLess.click();
   await expect(page.locator(EQUITY)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Show 3 more Positions screens" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show 4 more Positions screens" })).toBeVisible();
 });
 
 test("an expanded group STAYS expanded across a reload", async ({ page }) => {
   await gotoHydrated(page, "/");
-  await page.getByRole("button", { name: "Show 3 more Positions screens" }).click();
+  await page.getByRole("button", { name: "Show 4 more Positions screens" }).click();
   await expect(page.locator(EQUITY)).toBeVisible();
 
   // The expand state is client-restored from localStorage after hydration
@@ -103,7 +108,10 @@ test("the customize dialog demotes a default-visible screen; Reset restores the 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   // Unticking persists IMMEDIATELY (there is no save button in this dialog);
-  // closing just dismisses it.
+  // closing just dismisses it. BOTH default-visible screens have to go: v4.0
+  // promoted /live beside /risk, so unticking one alone still leaves the group
+  // foldable and proves nothing about the empty-set case below.
+  await dialog.getByRole("checkbox", { name: "Live Desk" }).setChecked(false);
   await dialog.getByRole("checkbox", { name: "Portfolio Risk" }).setChecked(false);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
@@ -121,5 +129,5 @@ test("the customize dialog demotes a default-visible screen; Reset restores the 
   // owner defaults.
   await page.locator("aside").getByRole("button", { name: "Reset" }).click();
   await expect(page.locator(RISK)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show 3 more Positions screens" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show 4 more Positions screens" })).toBeVisible();
 });

@@ -121,7 +121,8 @@ export interface StopZero {
   flags: StopFlag[];
 }
 
-export type StopResult =
+/** What `computeStop` itself can return. Every variant here may carry paise. */
+export type StopComputed =
   | StopOk
   | StopZero
   /** No risk percentage or no capital: the "risk not set" call to action. */
@@ -129,6 +130,36 @@ export type StopResult =
   /** Every branch of the tree was out of inputs. Not an error — a gap. */
   | { kind: "no-stop" }
   | { kind: "error"; code: StopErrorCode; source: StopSource };
+
+/**
+ * The stop as it crosses the wire to a reader WITHOUT the Pro entitlement.
+ *
+ * `qty`, `riskBudgetP`, `riskAtStopP` and `deployedP` are the same Pro figures
+ * the desk row nulls one field at a time (owner ruling Q55, invariant 7), and
+ * shipping them inside a nested object is the identical leak: hiding a cell
+ * does not stop View Source reading the RSC payload. So the gated shape holds
+ * NO number at all — only the provenance the tracker prints next to the level
+ * ("the manual rule"), which is a fact about where the level came from rather
+ * than a computed figure.
+ */
+export interface StopGated {
+  kind: "gated";
+  /** Which branch of the tree fired, when one did. Never a number. */
+  source: StopSource | null;
+}
+
+export type StopResult = StopComputed | StopGated;
+
+/**
+ * Reduce a computed stop to its wire shape for an unentitled reader.
+ *
+ * Pure and exported so the boundary can be unit-tested without a database:
+ * the assertion that matters is that nothing numeric survives it.
+ */
+export function gateStop(stop: StopComputed): StopGated {
+  const source = stop.kind === "ok" || stop.kind === "zero" || stop.kind === "error" ? stop.source : null;
+  return { kind: "gated", source };
+}
 
 /** Round a level to the tick AWAY from entry: wider for both sides, never tighter. */
 export function roundStopToTick(stopP: Paise, entryP: Paise, tickP: number): Paise {
@@ -173,7 +204,7 @@ function levelFor(source: StopSource, setup: StopSetup, settings: StopSettings):
  * @param settings  the user's risk configuration (`risk_config`)
  * @param chartCtx  optional circuit band for flag (h)
  */
-export function computeStop(setup: StopSetup, settings: StopSettings, chartCtx: StopChartCtx = {}): StopResult {
+export function computeStop(setup: StopSetup, settings: StopSettings, chartCtx: StopChartCtx = {}): StopComputed {
   const { side, entryP, tickP, lotSize } = setup;
 
   // The missing input, checked before anything is computed: with no risk

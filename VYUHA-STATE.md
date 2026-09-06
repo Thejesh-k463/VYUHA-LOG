@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v3.9.1 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v3.9.1` = `0e18b1d`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v4.0.0 IN RELEASE (merge `98eaa63`, bumped, verify pending)
+## 2. Current state — v3.9.1 TAGGED, BUILT and DEEP-VERIFIED 2026-09-06 (tag `v3.9.1` = `0e18b1d`; CI 6/6; release 3/3; deep verify 3/3; draft NOT yet published) · v4.0.0 IN RELEASE (merge `98eaa63`, bumped, **verify EXIT 0 on `5938aa6` — 328 files / 6,025 passed / 35 skipped**; CI red, fix wave in flight)
 
 > **v3.9.1 is RELEASE-COMPLETE ON OUR SIDE and waiting on the owner.** Tag `v3.9.1` = `0e18b1d`
 > pushed 2026-09-06; CI run `33986790273` 6/6; release run `33987227426` 3/3 (after one re-run of
@@ -37,8 +37,12 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > machine, submit WDSI.** Detail in **v3.9.1 RELEASE — the evidence** below.
 >
 > **v4.0.0 "Live Desk" is IN RELEASE** on the same day: `live-desk` merged to `main` at `98eaa63`,
-> the 4.0.0 version bump applied, `npm run verify` NOT yet run (the gate was coord-denied while
-> another session held it). See **v4.0.0 IN RELEASE** below.
+> the 4.0.0 version bump applied (the gate was coord-denied at bump time, so bump preceded gate),
+> and **`npm run verify` has since RUN GREEN on `5938aa6`: EXIT 0, 328 files / 6,025 passed /
+> 35 skipped, `next build` compiled.** **CI is a separate fact and it was RED:** run
+> `33994272205` on `5938aa6` failed on the `sizing-lab-page` timezone test and the
+> `z-sidebar-fold` e2e spec; the fix wave for both is in flight, and the tag waits on a green CI
+> run, not only on the local gate. See **v4.0.0 IN RELEASE** below.
 
 ### v3.9.0 — PUBLISHED 2026-09-05, the previous release (record kept)
 
@@ -55,7 +59,7 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 submitted. No open release actions. Verify baseline at that release: `npm run verify` EXIT=0,
 276 files / 5,243 tests (35 skipped), 2026-09-05. **Superseded as the baseline: v3.9.1 measured
 282 files / 5,269 tests passed / 35 skipped (EXIT 0, 2026-09-06) — that is the number a v4.0.0 run
-must not fall below. The 4.0.0 figure is 328 files / 6,025 passed / 35 skipped (EXIT 0); see `VERIFY:` below.**
+must not fall below. The 4.0.0 figure is 328 files / 6,055 passed / 35 skipped (EXIT 0, after the 17-item re-audit fix wave); see `VERIFY:` below.**
 
 **Since the release — on `main`, UNRELEASED, ships with whatever version comes next:** `6abbc9a`
 state docs, `97b2d6d` the `.claude/` agent layer, `28d6655` the overlay entrance-keyframe fix.
@@ -207,7 +211,7 @@ not as the current state:**
   this wave writes.
 
 
-### v4.0.0 "Live Desk" IN RELEASE — merged, bumped, gate pending
+### v4.0.0 "Live Desk" IN RELEASE — merged, bumped, local gate GREEN on `5938aa6`, CI red and being fixed
 
 **Merge.** Branch `live-desk` is on `main` at **`98eaa63`**. Four build commits: `0b56f7e`
 (migrations 0064/0065, `lib/live`, `lib/quotes` + SSE, `lib/risk` sizing/stops, `lib/atlas`),
@@ -228,8 +232,11 @@ not point-in-time", UDiFF primary with `sec_bhavdata_full` fallback, user-starte
 progress, 1.5 s rate limit, stop-and-keep) and file drop, with PRIVACY item #2 amended to match;
 the eight size indices in `lib/data/nse-index-map.json` (62 indices, 1,379 symbols);
 `docs/client/THIRD-PARTY-NOTICES.txt` in the installer resources and the client ZIP; migrations
-**0064–0067**; and the OpenAlgo feed adapter present but not the default —
-`settings.live_feed_provider` ships `eod`.
+**0064–0067**; and the OpenAlgo feed adapter present but WITHHELD — `OPENALGO_FEED_ENABLED` is
+`false`, `settings.live_feed_provider` ships `eod`, and a stored `openalgo` resolves back to `eod`.
+Every mark on the desk is a stored one (`mtm_prices` has no source column, so the chip reads
+"Stored mark" and dates it rather than naming a provenance it cannot prove); the Sizing Lab
+write-back stores the GLOBAL `risk_config` row, not a position.
 
 **Version bump 4.0.0 APPLIED, and applied BEFORE the gate**: `package.json`, both
 `package-lock.json` root version fields by hand, `Cargo.toml`, `Cargo.lock`,
@@ -238,12 +245,27 @@ the eight size indices in `lib/data/nse-index-map.json` (62 indices, 1,379 symbo
 deliberately and recorded in `docs/DECISIONS.md` 2026-09-06. The gate still runs, on the bumped
 tree, BEFORE the tag.
 
-**VERIFY: EXIT 0 — 328 files / 6,025 passed / 35 skipped, `next build` compiled (2026-09-06 ~03:25 IST, after the 30-finding fix wave).** Above the v3.9.1 floor of 282 files / 5,269 passed / 35 skipped. The first run on the merged tree (before the fix wave finished) was EXIT 1 on the README file-count pin only.
+**VERIFY (re-audit fix wave, 17 items): EXIT 0 — 328 files / 6,055 passed / 35 skipped, `next build` compiled, on the fix-wave tree (2026-09-06 ~12:40 IST); the commit sha is the one tagged `v4.0.0`.** The 5938aa6 line below is the prior run and stays as history.
+
+**VERIFY: EXIT 0 — 328 files / 6,025 passed / 35 skipped, `next build` compiled, on `5938aa6` (2026-09-06 ~03:25 IST, after the 30-finding fix wave).** Above the v3.9.1 floor of 282 files / 5,269 passed / 35 skipped. The first run on the merged tree (before the fix wave finished) was EXIT 1 on the README file-count pin only.
+
+**CI on the same commit was RED — run `33994272205` on `5938aa6`**, and a green local gate did not
+predict it: the `sizing-lab-page` test asserted a LOCAL-timezone date against a page that computes
+in IST (green on an IST machine, red on the runner), and the `z-sidebar-fold` e2e spec counted the
+pre-fold Positions group. Both are being fixed in the 2026-09-06 fix wave; **the tag waits on a
+green CI run, not on the local gate alone.**
 
 **Committed since:** 16b1ec1 (bump + docs waves) and the 30-finding audit fix wave (see `docs/DECISIONS.md` 2026-09-06 "v4.0.0 pre-tag audit"). The fix wave diff still owes its OWN six-dimension audit before the tag (audit skill step 4).
 
 **The ladder after 4.0.0** (owner Q4/Q20/Q21): **4.1 = the OpenAlgo live feed**, already built and
-merged, gated on `settings.live_feed_provider` and the existing disclosure consent; **4.2 = native
+merged, and WITHHELD from 4.0.0 by one compile-time constant — `OPENALGO_FEED_ENABLED` in
+`lib/quotes/types.ts` is `false`, so the provider is out of the registry, the Settings radios do
+not render it and a POST naming it is a 400. **4.1 = that constant flipped to `true` PLUS
+disclosure v2** (cadence, the symbols sent, the `/funds` probe) **plus the `docs/client/PRIVACY.md`
+item #3 amendment** — see `docs/DECISIONS.md` 2026-09-06 "v4.0.0 pre-tag audit", the
+`OPENALGO_FEED_ENABLED` bullet. It is NOT gated on `settings.live_feed_provider`, and the v1
+disclosure does not authorise it: the audit found v1 ("nothing runs on a schedule", "reads your
+executed trades and nothing else") being reused to consent to a 1–5 s poll. **4.2 = native
 `QuoteProvider` adapters for Upstox and Angel One** — NOT Dhan (Q21), and never NSE `quote-equity`
 or Yahoo (Q22).
 
@@ -1540,7 +1562,7 @@ priority; it is no longer the state.)*
   `scripts/license-upgrade.mjs` + `LICENSE_OPERATIONS.md` §1.5; copy aligned across
   `pricing.ts`, landing page and brochure (pinned by `tests/pricing.test.ts`).
 - ✅ **KEY BACKUP TAKEN AND RESTORE-TESTED 2026-08-21.** `vyuha-keys-2026-08-20.vkb` (1.4 KB) at
-  `T:Thejeshyuha-key-backups`, holding `license-private.pem` + `license-ledger.jsonl` as of the
+  `T:\Thejesh\vyuha-key-backups`, holding `license-private.pem` + `license-ledger.jsonl` as of the
   2 existing sales; the owner ran the `--restore` drill and it produced both files. Verified no
   `.vkb` sits inside the repo. **Also copied to an EXTERNAL DRIVE 2026-08-21**, which is what actually
   protects it: `C:`, `T:` and `K:` are all partitions of ONE physical NVMe (Disk 0, SK hynix 1TB —

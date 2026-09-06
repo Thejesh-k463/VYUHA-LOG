@@ -3508,13 +3508,26 @@ is red on the bumped tree, the tag does not happen.
 
 ## 2026-09-06 — The release ladder after 4.0: 4.1 is the OpenAlgo feed already in the tree, 4.2 is Upstox + Angel One — never Dhan
 
+> **SUPERSEDED IN ITS 4.1 HALF (2026-09-06, later the same day).** The gate described below —
+> "`settings.live_feed_provider` plus the existing disclosure consent" — is NOT what gates 4.1.
+> The pre-tag audit withheld the feed behind the compile-time constant `OPENALGO_FEED_ENABLED`
+> (`lib/quotes/types.ts`, `false`), and 4.1 is that constant flipped PLUS disclosure v2 PLUS the
+> PRIVACY item #3 amendment. See the `OPENALGO_FEED_ENABLED` bullet of
+> **"2026-09-06 — v4.0.0 pre-tag audit"** below (`docs/DECISIONS.md:3576`). The 4.2 half
+> (Upstox + Angel One, never Dhan)
+> stands unchanged.
+
 **v4.1 = the live feed.** It is already BUILT and merged, not a plan: `lib/quotes/openalgo.ts`, the
 provider registry, `persist-mark.ts`, `app/api/live/feed/route.ts` and
 `components/settings/live-feed-card.tsx` all ship in 4.0.0 behind migration **0067**'s
-`settings.live_feed_provider`, whose default is **`eod`**. The tag is gated on that flag and on the
-existing OpenAlgo disclosure consent, so 4.0.0 ships end-of-day marks and 4.1 is the release that
-makes the live provider its subject. OpenAlgo is named in Settings and the consent sheet and
-**nowhere in marketing** (Q60), enforced by `tests/live-feed-copy.test.ts`.
+`settings.live_feed_provider`, whose default is **`eod`**. ~~The tag is gated on that flag and on
+the existing OpenAlgo disclosure consent~~ — a setting is a preference, not a consent, and the v1
+disclosure never described a poll; the real gate is the constant plus disclosure v2. 4.0.0 ships
+stored marks and 4.1 is the release that makes the live provider its subject. OpenAlgo is named in
+Settings and in the consent sheet, and **marketing may say the bridge IMPORTS trades — it may not
+say it PRICES them** (Q60). That is the pairing `tests/live-feed-copy.test.ts` actually enforces:
+the word "OpenAlgo" has been on the landing page and in `README.md` since v3.1 as the import
+bridge, so "nowhere in marketing" was never true and the guard was never written that way.
 **Rejected: shipping the live provider ON in 4.0.0** — a feed switched on by a release rather than
 by a user is exactly the consent shape `openAlgoGate` exists to prevent.
 
@@ -3614,3 +3627,83 @@ number or a rule, with the alternative rejected:
   measured); C8's regulatory fact.
 
 The fix wave's own diff gets its own six-dimension audit before the tag (skill step 4).
+
+## 2026-09-06 — v4.0.0 fix-wave re-audit (`16b1ec1..5938aa6`): 17 items survived the skeptic, 0 refuted
+
+The audit the previous entry said the fix wave still owed. Six single-dimension auditors ran over
+the fix wave's OWN diff, a skeptic re-tested every survivor, and CI added two of its own: **14
+auditor findings + 1 cross-auditor note + 2 CI reds = 17 CONFIRMED, 0 REFUTED.** A green local gate
+(EXIT 0, 328 files / 6,025 passed / 35 skipped on `5938aa6`) did not predict the two CI reds — the
+runner's timezone and the e2e job are facts the local gate never evaluates. Each item with the
+alternative rejected:
+
+- **S-1 — a non-numeric `row.stop` reduces the row to the free shape, for free.** The gate
+  returned the Pro fields whenever a stop was merely PRESENT, so a stop stored as a string or a
+  blank still bought R and risk-at-stop. *Rejected: hiding the columns client-side* — hiding is not
+  gating; the numbers were still on the wire.
+- **S-X (cross-auditor) — the desk and the SSE stream resolve the stored provider exactly as the
+  feed route does.** Three surfaces read `settings.live_feed_provider` and only one of them fell an
+  unknown id back to `eod`, so a journal carrying `openalgo` could get two different answers on one
+  screen while `OPENALGO_FEED_ENABLED` is false. *Rejected: rewording the radio* — copy cannot fix
+  two resolvers disagreeing.
+- **M-1 — the Sizing Lab hand-off passes `side` EXPLICITLY; `seedFromParams` REQUIRES it and never
+  infers it from the levels; a missing side yields the sample, not a guess.** Inferring side from
+  where the stop sits mislabels a trailed long whose stop has moved above entry. *Rejected: keeping
+  stop-side inference as a fallback* — the trailed-long trap survives for every deep link, which is
+  exactly the path that carries no side.
+- **U-1 — `scrollPaddingStart` equals the sticky `thead`'s height**, so `j`/`k` no longer scroll a
+  row underneath the header it is meant to sit below. *Rejected: moving the `thead` out of the
+  scroll element* — it breaks column alignment, which is a worse defect than the one being fixed.
+  Builder note: the non-windowed path keeps `scrollIntoView({block:"nearest"})` (pinned by
+  `tests/live-route-budget.test.ts`) and corrects `scrollTop` by the measured header height right
+  after it, so both the pin and the fix hold.
+- **U-2 — the screen-reader-only R cell carries the same lock as the visible one.** A free copy's
+  assistive-tech reading announced a Pro number the screen did not show. One gate, both renderings.
+- **D-7 — the refresh slider and the re-authentication box are gated on `OPENALGO_FEED_ENABLED`.**
+  Controls for a provider that cannot be selected are an offer the build does not honour.
+- **D-2 — the help copy says what actually runs** (stored marks, no broker feed in 4.0.0).
+- **T-3 — the four consent-gate route tests are RESTORED and run under `vi.mock` with the flag
+  forced `true`.** Withholding the feed had made them unreachable, which quietly deleted the
+  coverage of the gate itself. *Rejected: `it.todo`* — a todo is a note, not a test; the consent
+  gate would have shipped 4.1 unproven.
+- **T-1 — the trail block is retitled to say what it pins: trail ARITHMETIC.** Its title claimed
+  M3's guarantee, which lives in `position-chart-copy`; two files appeared to cover the same thing
+  and neither fully did.
+- **T-2 — the M7 pin reads BOTH headers for "9.0 crore".** It matched one and passed while the
+  other drifted.
+- **CI-1 — the `sizing-lab-page` test expects `todayIstIso()`.** The page computes its date in IST;
+  the test built one in the RUNNER's local timezone, so it was green on an IST machine and red on
+  CI. The test was wrong, not the page.
+- **CI-2 — the `z-sidebar-fold` e2e spec matches the shipped fold.** Positions is **6** screens;
+  the fold list is `[/live, /risk]`, so the collapsed group reads **"Show 4 more"**, and test 4
+  unticks **Live Desk AND Portfolio Risk**. The spec had been written against the pre-fold group.
+- **D-1 — the 4.0.0 CHANGELOG entry says stored marks and no broker feed**, and "OpenAlgo live feed
+  (withheld; returns in 4.1 with disclosure v2)" joins the "Not in this release" list. It had said
+  the bridge was "selectable only after the disclosure" and that a row chip named "a delayed feed".
+  *Rejected: leaving it and correcting it at 4.1* — a buyer reads the CHANGELOG shipped with 4.0.0.
+- **D-3 — `docs/client/README.md` describes the mark WITHOUT claiming provenance.** `mtm_prices`
+  has no source column, so "end of day, entered by hand, or none stored yet" was a label the code
+  cannot produce. *Rejected: adding a source column to make the copy true* — a schema change to
+  rescue a sentence, in a release already frozen.
+- **D-4 — the write-back is "stored as the Live Desk's risk settings", not "written back to the
+  position".** `/api/risk/live-desk` writes the `scope:'global'` `risk_config` row; `risk_config`
+  has no `account_id` and no position is touched. Both D-3 and D-4 now have guards in
+  `tests/no-indicators-in-client-docs.test.ts` — the feed guard is conditional on
+  `OPENALGO_FEED_ENABLED` (it skips itself when 4.1 flips the constant), the write-back guard is
+  unconditional. *Rejected: fixing the copy without a guard* — this exact sentence had already
+  survived one docs wave.
+- **D-5 — `VYUHA-STATE.md`'s four verify claims agree**: EXIT 0, 328 files / 6,025 passed / 35
+  skipped, on `5938aa6`. Three places still said "pending" beside one that said EXIT 0, and a
+  handoff file that contradicts itself is read as the pessimistic half. It now also records CI run
+  `33994272205` as RED on that same commit, and that the tag waits on a green CI run rather than on
+  the local gate alone. *Rejected: recording only the green gate* — that is how a red CI becomes a
+  surprise at tag time.
+- **D-6 — the release-ladder entry is marked SUPERSEDED in its 4.1 half** (pointer to the
+  `OPENALGO_FEED_ENABLED` bullet above), and its marketing sentence is corrected: OpenAlgo is named
+  in marketing as the v3.1 IMPORT bridge, and what `tests/live-feed-copy.test.ts` enforces is the
+  pairing — marketing may say the bridge imports, and may not say it prices. *Rejected: deleting
+  the entry* — this file is append-only, and a decision that was made and then overtaken is worth
+  more than a decision that appears never to have happened.
+
+**Housekeeping:** the `live-desk` worktree was removed after the merge, so `main` is the only tree
+that carries this work.

@@ -14,8 +14,10 @@ adds no new network host.*
   good: symbol, product, quantity, average entry, the mark, the day's move,
   unrealised ₹ and %, and how many days you have held it — twelve sortable
   columns, all accounts together with an account filter in the header, a market
-  clock, and a chip on every row saying where its price came from (end of day,
-  a manual mark, a delayed feed) and how old it is, with a **Stale** badge when
+  clock, and a chip on every row saying its mark is a **stored** one — the
+  end-of-day bhavcopy close or a price typed in, kept in the same table with no
+  provenance column to tell them apart — and how old that mark is, with a
+  **Stale** badge when
   a row is older than the newest mark on the desk. It is your own record, so it
   is not sold. **Pro adds the forward-looking arithmetic:** risk at stop, open
   R, % of capital, the portfolio-heat strip and sector concentration, and the
@@ -73,10 +75,17 @@ adds no new network host.*
   sizing methods need (`risk_config`), the Atlas daily cache, the backfill
   ledger, and the live-feed settings.
 
-- **The live-feed adapter is in the build, and end-of-day is what runs.**
-  `settings.live_feed_provider` defaults to `eod`; the OpenAlgo bridge is
-  selectable only after the disclosure you already have to accept in
-  Integrations, and refreshing prices from it is what v4.1 is about.
+- **Every mark on the desk is a stored mark, and no broker feed prices it.**
+  The end-of-day bhavcopy close and a price you type in land in the same
+  `mtm_prices` table, so the desk says "stored mark" and dates it rather than
+  claiming a source it cannot prove. The OpenAlgo feed adapter, its consent
+  sheet and migration 0067 are all in the build, and all of it is **withheld by
+  one compile-time constant** — `OPENALGO_FEED_ENABLED` in
+  `lib/quotes/types.ts` is `false`, so the provider is not in the registry, the
+  Settings card does not offer it, and a POST asking for it is a 400. Turning
+  it on is what v4.1 is about, and it arrives with a rewritten disclosure —
+  cadence, the symbols sent, the `/funds` probe — and an amended
+  `docs/client/PRIVACY.md` item #3.
 
 - **The uninstaller still warns and copies first (unchanged since v3.8.0).**
   Before the "Delete the application data" option can act, the uninstaller
@@ -95,9 +104,11 @@ adds no new network host.*
 - **Not in this release, stated plainly:** Telegram alerts for a stop or target
   are not built; the owner's proprietary Atlas widgets are not here and will
   arrive as a separately signed daily file, not as code; cohort analytics stay
-  dark until there is enough history; and there are no native broker feeds —
-  Upstox and Angel One are v4.2. Journal-derived Kelly inputs and a
-  `results_date` on instruments did not make this release either.
+  dark until there is enough history; the OpenAlgo live feed is withheld (the
+  code ships, the constant is off, and it returns in 4.1 with disclosure v2);
+  and there are no native broker feeds — Upstox and Angel One are v4.2.
+  Journal-derived Kelly inputs and a `results_date` on instruments did not make
+  this release either.
 
 ## v3.9.1 — released 2026-09-06
 
@@ -2694,10 +2705,8 @@ Next 16 stages every `serverExternalPackages` entry as a **symlink** under
 developer's checkout**:
 
 ```
-better-sqlite3-90e2652d1716b047 -> T:\…yuha
-ode_modulesetter-sqlite3
-pdf-parse-08f4573089f02674      -> T:\…yuha
-ode_modules\pdf-parse
+better-sqlite3-90e2652d1716b047 -> T:\…\vyuha\node_modules\better-sqlite3
+pdf-parse-08f4573089f02674      -> T:\…\vyuha\node_modules\pdf-parse
 ```
 
 The compiled server requires those packages *by the hashed name*. The desktop

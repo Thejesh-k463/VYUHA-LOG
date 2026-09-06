@@ -249,12 +249,20 @@ export function sampleInputs(over: Partial<LabInputs> = {}): LabInputs {
 
 /**
  * The query `components/live/tracker-client.tsx` pushes when a row is opened
- * in the Lab: `/sizing-lab?from=live&symbol=<sym>&entry=<paise>&stop=<paise>`.
+ * in the Lab:
+ * `/sizing-lab?from=live&symbol=<sym>&side=<long|short>&entry=<paise>&stop=<paise>`.
  * Shaped like Next's `searchParams`, so a repeated key arrives as an array.
+ *
+ * `side` is REQUIRED. The Lab used to derive the direction from the levels,
+ * and the desk's own stop is a TRAILED level: a long whose stop has been
+ * raised above entry opened the Lab as a SHORT, and every charges-adjusted
+ * figure then priced the wrong leg.
  */
 export interface LabQuery {
   from?: string | string[];
   symbol?: string | string[];
+  /** The position's own side, stated by the desk. Never inferred here. */
+  side?: string | string[];
   entry?: string | string[];
   stop?: string | string[];
 }
@@ -283,6 +291,16 @@ function symbolParam(v: string | string[] | undefined): string | null {
 }
 
 /**
+ * The stated side. Exactly the two words the desk writes, lower-cased —
+ * anything else is a caller this Lab does not recognise, and a direction it
+ * guessed would be worse than the sample it falls back to.
+ */
+function sideParam(v: string | string[] | undefined): "long" | "short" | null {
+  const s = firstParam(v)?.trim().toLowerCase();
+  return s === "long" || s === "short" ? s : null;
+}
+
+/**
  * The tracker's query → the Lab's opening setup.
  *
  * Levels cross as integer paise and the Lab's fields are rupees, so the
@@ -295,15 +313,26 @@ function symbolParam(v: string | string[] | undefined): string | null {
  * The ATR field is cleared on a prefill for the same reason — the desk sends
  * no volatility, and the sample's Rs 85 belongs to a different stock. The
  * ATR methods report a typed missing-input reason instead of a number.
+ *
+ * THE DIRECTION IS NEVER INFERRED FROM THE LEVELS. `stopP > entryP ? "short" :
+ * "long"` reads a long whose stop has been TRAILED above entry as a short, and
+ * `chargesAdjustedRisk` then prices the opposite leg — a wrong number with no
+ * error anywhere. `side` therefore joins the symbol and both levels in the
+ * all-or-nothing rule: missing or unrecognised, the Lab opens its sample.
+ *
+ * A stop on the wrong side of entry FOR THE STATED SIDE is NOT flipped and not
+ * refused either: it is a fact about the position, and `stopIsOriented` is what
+ * reports it on screen.
  */
 export function seedFromParams(q: LabQuery, over: Partial<LabInputs> = {}): LabSeed {
   const sample = sampleInputs(over);
   if (firstParam(q.from) !== "live") return { inputs: sample, symbol: null };
 
   const symbol = symbolParam(q.symbol);
+  const side = sideParam(q.side);
   const entryP = paiseParam(q.entry);
   const stopP = paiseParam(q.stop);
-  if (symbol === null || entryP === null || stopP === null || entryP === stopP) {
+  if (symbol === null || side === null || entryP === null || stopP === null || entryP === stopP) {
     return { inputs: sample, symbol: null };
   }
 
@@ -312,7 +341,7 @@ export function seedFromParams(q: LabQuery, over: Partial<LabInputs> = {}): LabS
       ...sample,
       entryRupees: entryP / 100,
       stopRupees: stopP / 100,
-      direction: stopP > entryP ? "short" : "long",
+      direction: side,
       atrRupees: 0,
     },
     symbol,

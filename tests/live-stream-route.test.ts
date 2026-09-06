@@ -33,6 +33,10 @@ vi.mock("@/lib/quotes/registry", async (importOriginal) => {
   return {
     ...actual,
     getQuoteProvider: (stored?: string | null) => stub.provider ?? actual.getQuoteProvider(stored),
+    // The route resolves the STORED selection (S-X), so the stub has to sit on
+    // the same resolver the route actually calls — a stub left on the old one
+    // is a mock that silently stops mocking.
+    getLiveFeedProvider: async () => stub.provider ?? (await actual.getLiveFeedProvider()),
   };
 });
 
@@ -351,5 +355,49 @@ describe("teardown", () => {
     await reader.cancel();
     await vi.advanceTimersByTimeAsync(60_000);
     await expect(reader.read()).resolves.toMatchObject({ done: true });
+  });
+});
+
+/**
+ * S-X — the stored feed selection.
+ *
+ * `settings.live_feed_provider` is what the Settings card writes and what
+ * `app/api/live/feed/route.ts` honours through `getLiveFeedProvider()`. This
+ * route called `getQuoteProvider()` with NO stored value, which always resolves
+ * to the end-of-day default — so the one screen that promises "My typed marks
+ * — Nothing is fetched, ever" still read the stored bhavcopy.
+ */
+describe("the stored feed provider is the one that streams (S-X)", () => {
+  it("runs a saved `manual` selection, and quotes nothing it was not typed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MARKET_HOURS);
+    selectAccount(SWING);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "manual" }).run();
+
+    const stream = reading(await get());
+    await vi.advanceTimersByTimeAsync(10);
+
+    const [snap] = frames(stream.text, "snapshot");
+    expect(snap.provider, "the stream ignored the saved provider").toBe("manual");
+    expect(snap.capabilities.staleness).toBe("manual");
+    // TCS has two stored bhavcopy sessions and no typed mark. The end-of-day
+    // provider quoted it; the manual one must not — that is the whole promise.
+    expect(snap.quotes).toEqual([]);
+
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+  });
+
+  it("…and still runs the end-of-day provider when that is what is stored", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MARKET_HOURS);
+    selectAccount(SWING);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+
+    const stream = reading(await get());
+    await vi.advanceTimersByTimeAsync(10);
+
+    const [snap] = frames(stream.text, "snapshot");
+    expect(snap.provider).toBe("eod");
+    expect(snap.quotes.map((q: { key: { symbol: string } }) => q.key.symbol)).toEqual(["TCS"]);
   });
 });

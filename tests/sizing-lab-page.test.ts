@@ -27,12 +27,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { eq } from "drizzle-orm";
+// Pure (invariant 2), so a static import binds no database connection.
+import { todayIstIso } from "@/lib/domain/trading-day";
 import {
   DEFAULT_DEPLOY_CAP_PPM,
   DEFAULT_RISK_PCT_PPM,
   LAB_METHODS,
   sampleInputs,
   seedFromParams,
+  stopIsOriented,
 } from "@/components/sizing/lab-config";
 
 let t: TempDb;
@@ -131,14 +134,13 @@ describe("charge rates are resolved by the engine, and their source is named", (
       expect(from <= onDate, `${s.broker}/${s.segment}`).toBe(true);
       expect(to == null || onDate < to, `${s.broker}/${s.segment}`).toBe(true);
     }
-    // Called with no argument it resolves against TODAY's local calendar date,
-    // not a UTC instant — a book in IST must not price yesterday's schedule
-    // for the first five and a half hours of every day.
-    const now = new Date();
-    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-      now.getDate(),
-    ).padStart(2, "0")}`;
-    expect(page.loadSizingLab().ratesAsOf).toBe(todayLocal);
+    // Called with no argument it resolves against today in ASIA/KOLKATA
+    // (`todayIstIso()`), not against the runner's local calendar and not
+    // against a UTC instant. The old assertion built the date from a local
+    // `Date`, which is the same string only while the runner happens to sit in
+    // IST: CI on a UTC runner after 18:30Z read one day behind and failed with
+    // "expected '2026-09-06' to be '2026-09-05'".
+    expect(page.loadSizingLab().ratesAsOf).toBe(todayIstIso());
   });
 
   it("carries the account the figures were read for (invariant 8)", () => {
@@ -150,8 +152,8 @@ describe("charge rates are resolved by the engine, and their source is named", (
 
 /**
  * The Live Desk hand-off (U1). `components/live/tracker-client.tsx` pushes
- * `/sizing-lab?from=live&symbol=<sym>&entry=<paise>&stop=<paise>` — its levels
- * are integer PAISE and the Lab's fields are RUPEES, so the one thing that can
+ * `/sizing-lab?from=live&symbol=<sym>&side=<long|short>&entry=<paise>&stop=<paise>`.
+ * Its levels are integer PAISE and the Lab's fields are RUPEES, so one thing that can
  * go silently wrong here is a factor of a hundred. Everything else is refusal:
  * a query the Lab cannot fully trust opens the sample setup instead of mixing
  * one real level with one invented one.
@@ -160,7 +162,7 @@ describe("seedFromParams — the Live Desk hand-off", () => {
   const SAMPLE = sampleInputs();
 
   it("converts the tracker's paise into the Lab's rupees and names the position", () => {
-    const seed = seedFromParams({ from: "live", symbol: "RELIANCE", entry: "285000", stop: "260000" });
+    const seed = seedFromParams({ from: "live", symbol: "RELIANCE", side: "long", entry: "285000", stop: "260000" });
     expect(seed.symbol).toBe("RELIANCE");
     expect(seed.inputs.entryRupees).toBe(2850);
     expect(seed.inputs.stopRupees).toBe(2600);
@@ -168,21 +170,38 @@ describe("seedFromParams — the Live Desk hand-off", () => {
   });
 
   it("keeps the paise exactly — a level with paise on it survives the round trip", () => {
-    const seed = seedFromParams({ from: "live", symbol: "TCS", entry: "123456", stop: "120000" });
+    const seed = seedFromParams({ from: "live", symbol: "TCS", side: "long", entry: "123456", stop: "120000" });
     expect(seed.inputs.entryRupees).toBe(1234.56);
     expect(seed.symbol).toBe("TCS");
   });
 
-  it("reads a stop ABOVE entry as a short, because that is the only side it can be", () => {
-    const seed = seedFromParams({ from: "live", symbol: "INFY", entry: "285000", stop: "290000" });
-    expect(seed.inputs.direction).toBe("short");
-    expect(seed.inputs.entryRupees).toBe(2850);
-    expect(seed.inputs.stopRupees).toBe(2900);
+  it("takes the side the desk STATED, and never infers it from the levels (M-1)", () => {
+    // The bug this replaces: `direction: stopP > entryP ? "short" : "long"`.
+    // The desk sends the EFFECTIVE stop, so a long whose stop has been trailed
+    // above entry arrived with the stop above entry — and opened the Lab as a
+    // SHORT, after which `chargesAdjustedRisk` priced the sell leg on the way
+    // in. The row knows its own side; the query now carries it.
+    const trailedLong = seedFromParams({ from: "live", symbol: "INFY", side: "long", entry: "285000", stop: "290000" });
+    expect(trailedLong.inputs.direction, "the levels were allowed to overrule the stated side").toBe("long");
+    expect(trailedLong.inputs.entryRupees).toBe(2850);
+    expect(trailedLong.inputs.stopRupees).toBe(2900);
+    // …and NOT flipped to make it consistent. A stop on the wrong side of
+    // entry for the stated side is a fact about the position, and
+    // `stopIsOriented` is what reports it on screen (owner ruling M-1).
+    expect(stopIsOriented(trailedLong.inputs)).toBe(false);
+
+    const realShort = seedFromParams({ from: "live", symbol: "INFY", side: "short", entry: "285000", stop: "290000" });
+    expect(realShort.inputs.direction).toBe("short");
+    expect(stopIsOriented(realShort.inputs)).toBe(true);
+
+    // The mirror image: a short whose stop has been trailed BELOW entry.
+    const trailedShort = seedFromParams({ from: "live", symbol: "INFY", side: "short", entry: "285000", stop: "260000" });
+    expect(trailedShort.inputs.direction).toBe("short");
   });
 
   it("carries the caller's own defaults through — capital and stored risk are the server's", () => {
     const seed = seedFromParams(
-      { from: "live", symbol: "SBIN", entry: "80000", stop: "76000" },
+      { from: "live", symbol: "SBIN", side: "long", entry: "80000", stop: "76000" },
       { capitalRupees: 25_00_000, riskPctPpm: 7_500 },
     );
     expect(seed.inputs.capitalRupees).toBe(25_00_000);
@@ -194,21 +213,29 @@ describe("seedFromParams — the Live Desk hand-off", () => {
     // size for a real position from a number belonging to a different stock —
     // the methods report a typed reason for a missing input instead.
     expect(SAMPLE.atrRupees).toBe(85);
-    expect(seedFromParams({ from: "live", symbol: "SBIN", entry: "80000", stop: "76000" }).inputs.atrRupees).toBe(0);
+    expect(
+      seedFromParams({ from: "live", symbol: "SBIN", side: "long", entry: "80000", stop: "76000" }).inputs.atrRupees,
+    ).toBe(0);
   });
 
   it.each([
     ["no query at all", {}],
-    ["a query from somewhere else", { from: "menu", symbol: "SBIN", entry: "80000", stop: "76000" }],
-    ["a rupee figure where paise were promised", { from: "live", symbol: "SBIN", entry: "800.00", stop: "760.00" }],
-    ["a negative level", { from: "live", symbol: "SBIN", entry: "-80000", stop: "76000" }],
-    ["a zero level", { from: "live", symbol: "SBIN", entry: "0", stop: "76000" }],
-    ["a word", { from: "live", symbol: "SBIN", entry: "NaN", stop: "76000" }],
-    ["an unsafe integer", { from: "live", symbol: "SBIN", entry: "99999999999999999999", stop: "76000" }],
-    ["no stop — the desk omits it when the row has none", { from: "live", symbol: "SBIN", entry: "80000" }],
-    ["a stop equal to entry, which is no risk per share", { from: "live", symbol: "SBIN", entry: "80000", stop: "80000" }],
-    ["a symbol that is not a symbol", { from: "live", symbol: "<script>", entry: "80000", stop: "76000" }],
-    ["no symbol", { from: "live", entry: "80000", stop: "76000" }],
+    ["a query from somewhere else", { from: "menu", symbol: "SBIN", side: "long", entry: "80000", stop: "76000" }],
+    ["a rupee figure where paise were promised", { from: "live", symbol: "SBIN", side: "long", entry: "800.00", stop: "760.00" }],
+    ["a negative level", { from: "live", symbol: "SBIN", side: "long", entry: "-80000", stop: "76000" }],
+    ["a zero level", { from: "live", symbol: "SBIN", side: "long", entry: "0", stop: "76000" }],
+    ["a word", { from: "live", symbol: "SBIN", side: "long", entry: "NaN", stop: "76000" }],
+    ["an unsafe integer", { from: "live", symbol: "SBIN", side: "long", entry: "99999999999999999999", stop: "76000" }],
+    ["no stop — the desk omits it when the row has none", { from: "live", symbol: "SBIN", side: "long", entry: "80000" }],
+    ["a stop equal to entry, which is no risk per share", { from: "live", symbol: "SBIN", side: "long", entry: "80000", stop: "80000" }],
+    ["a symbol that is not a symbol", { from: "live", symbol: "<script>", side: "long", entry: "80000", stop: "76000" }],
+    ["no symbol", { from: "live", side: "long", entry: "80000", stop: "76000" }],
+    // M-1: `side` joins the all-or-nothing rule. Inferring it from the levels
+    // is what priced the wrong leg; defaulting it to "long" would price the
+    // wrong leg for every short instead.
+    ["no side at all", { from: "live", symbol: "SBIN", entry: "80000", stop: "76000" }],
+    ["a side that is not a side", { from: "live", symbol: "SBIN", side: "buy", entry: "80000", stop: "76000" }],
+    ["an empty side", { from: "live", symbol: "SBIN", side: "", entry: "80000", stop: "76000" }],
   ])("opens the sample setup on %s", (_why, q) => {
     const seed = seedFromParams(q);
     expect(seed.symbol).toBeNull();
@@ -216,7 +243,7 @@ describe("seedFromParams — the Live Desk hand-off", () => {
   });
 
   it("takes the first value when a param is repeated, and never an array", () => {
-    const seed = seedFromParams({ from: ["live"], symbol: ["ITC"], entry: ["30000"], stop: ["28000"] });
+    const seed = seedFromParams({ from: ["live"], symbol: ["ITC"], side: ["long"], entry: ["30000"], stop: ["28000"] });
     expect(seed.symbol).toBe("ITC");
     expect(seed.inputs.entryRupees).toBe(300);
   });
@@ -230,11 +257,20 @@ describe("seedFromParams — the Live Desk hand-off", () => {
  */
 describe("the prefill is actually wired up", () => {
   const src = (rel: string) => readFileSync(path.join(process.cwd(), rel), "utf8");
+  /** `side: r.side` in the tracker's URLSearchParams — stated, never derived. */
+  const SIDE_PARAM = /side:\s*r\.side/;
+  const FROM_LIVE = /from:\s*"live"/;
 
   it("the page awaits searchParams and passes them to the client", () => {
     const s = src("app/sizing-lab/page.tsx");
     expect(s).toMatch(/await\s+searchParams/);
     expect(s).toMatch(/query=\{/);
+  });
+
+  it("the Live Desk SENDS the side the Lab now requires (M-1)", () => {
+    const s = src("components/live/tracker-client.tsx");
+    expect(s, "the tracker omits `side`, so every hand-off opens the sample").toMatch(SIDE_PARAM);
+    expect(s).toMatch(FROM_LIVE);
   });
 
   it("the client seeds its setup through seedFromParams, with no effect syncing state", () => {

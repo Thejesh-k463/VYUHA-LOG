@@ -38,7 +38,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "Where do my open positions stand, and what is at risk if every stop is hit?",
     body: [
       "Every open position with the levels you recorded and the arithmetic between them: mark, unrealised P&L, open R against the risk frozen at entry, risk at stop, and portfolio heat — the sum of that risk over your capital, printed with its denominator.",
-      "Marks are end-of-day by default. Which source prices the desk — your own manual marks, the stored end-of-day bars, or an OpenAlgo feed — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
+      "Marks are end-of-day by default. Which source prices the desk — the stored end-of-day bhavcopy, or a mark you type — is chosen in Settings → Live feed, and the desk names the source and flags a mark older than the newest one on the screen.",
       "A row with no stop recorded is left out of heat and says so, rather than being counted as risk-free. Positions, marks and P&L are free; R, risk at stop, heat and the chart overlay are Pro.",
     ],
     keywords: ["live", "desk", "open positions", "mark", "heat", "risk at stop", "open r", "tracker", "quotes"],

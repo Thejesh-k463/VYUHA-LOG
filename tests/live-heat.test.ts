@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { portfolioHeat, sectorConcentration, type HeatRow } from "@/lib/live/heat";
 
@@ -74,6 +76,27 @@ describe("portfolioHeat", () => {
     const overflowRupees = overflowPaise / 100;
     expect(overflowRupees).toBeGreaterThan(9_00_00_000);
     expect(overflowRupees).toBeLessThan(9_10_00_000);
+  });
+
+  /**
+   * T-2 — and the PROSE, which is the half M7 actually corrected.
+   *
+   * The arithmetic above is a fact about IEEE-754; it holds whatever the
+   * comments say, so on its own it could never redden if someone restored
+   * "~₹90 lakh". The two headers that carry the claim are read here and
+   * asserted to state the crore figure, in both the round form and the exact
+   * rupee figure — a comment is documentation, and this is the only thing that
+   * makes it falsifiable.
+   */
+  it("…and BOTH headers that state that ceiling say it in rupees that match", () => {
+    const HEADERS = ["lib/live/heat.ts", "lib/live/tracker-row.ts"];
+    for (const rel of HEADERS) {
+      const src = fs.readFileSync(path.join(process.cwd(), rel), "utf8");
+      const header = src.slice(0, src.indexOf("*/") + 2);
+      expect(header, `${rel} no longer states the overflow ceiling`).toMatch(/₹9\.0 crore/);
+      expect(header, `${rel} dropped the exact rupee figure`).toContain("₹9,00,70,000");
+      expect(header, `${rel} is back to the ₹90 lakh figure M7 corrected`).not.toMatch(/₹90 lakh/);
+    }
   });
 
   it("treats a capital of 0 as unconfigured rather than as a zero base", () => {

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CHANDELIER_ATR_MULT_PERMILLE,
@@ -199,14 +201,25 @@ describe("trailSuggestions — the R ladder", () => {
 });
 
 /**
- * M3 — the ladder's R is the R FROZEN AT FIRST ENTRY (invariant 4), not the
- * distance to whatever stop is in force today.
+ * THE LADDER'S ARITHMETIC, ON WHATEVER R IT IS HANDED — NOT the M3 guard.
  *
- * The panel used to feed `computed.riskPerShareP` — the stop method's own
- * distance — into the ladder, so the moment a trail moved the panel's ladder
- * and the row's Open R described different Rs on the same position.
+ * `trailSuggestions` takes `riskPerShareP` as an ARGUMENT: it cannot know
+ * whether the caller passed the R frozen at first entry or the distance to
+ * today's stop, and `lib/live/trail.ts` is pure (invariant 2) and was
+ * untouched by the M3 fix. So what these two cases pin is that the ladder
+ * steps by exactly the R it is given: hand it ₹10/share and the rungs are
+ * 260/270/280; hand it the ₹5/share a trailed stop would imply and they are
+ * 255/260/265. Both pass with and without M3, which is why this block no
+ * longer claims to cover it.
+ *
+ * THE REAL M3 GUARD IS `tests/position-chart-copy.test.ts` — "the panel infers
+ * neither side nor R (M2, M3)" / "Open R and the ladder read the frozen risk,
+ * through the pure helper" — which reads
+ * `components/live/position-chart-panel.tsx` and reddens if the panel stops
+ * passing `frozenRiskPerShareP(riskAmountP, qty)` in as `riskPerShareP`. The
+ * WIRING was the bug; the arithmetic below was always right.
  */
-describe("the R ladder is built on frozen R, never on today's stop", () => {
+describe("the R ladder steps by exactly the R it is handed (M3's wiring is guarded in position-chart-copy)", () => {
   const ladderBars: Bar[] = Array.from({ length: 30 }, (_, i) => bar(i, 26_000));
 
   it("entry ₹250, planned SL ₹240, trail at ₹255: the ladder is 260 / 270 / 280", async () => {
@@ -227,7 +240,9 @@ describe("the R ladder is built on frozen R, never on today's stop", () => {
   });
 
   it("…and the trailing stop's own distance would have produced 255 / 260 / 265", () => {
-    // The bug, stated as arithmetic: ₹255 − ₹250 = ₹5 per share of "R".
+    // What the WRONG R would have produced, stated as arithmetic so the two
+    // ladders are visibly different numbers: ₹255 − ₹250 = ₹5 per share of
+    // "R". This does not detect the mis-wiring — the panel test does.
     const s = trailSuggestions({
       side: "long",
       entryP: 25_000,
@@ -237,5 +252,18 @@ describe("the R ladder is built on frozen R, never on today's stop", () => {
       qty: 99,
     });
     expect(s.rLadder!.map((x) => x.priceP)).toEqual([25_500, 26_000, 26_500]);
+  });
+
+  it("the guard this block defers to really exists, by name", () => {
+    // A cross-reference in a comment rots silently. This one is checked: if the
+    // panel guard is renamed or deleted, M3 loses its only coverage and this
+    // reddens instead of the claim quietly becoming false.
+    const src = fs.readFileSync(path.join(__dirname, "position-chart-copy.test.ts"), "utf8");
+    expect(src, "the M3 wiring guard is gone from position-chart-copy").toContain(
+      "Open R and the ladder read the frozen risk, through the pure helper",
+    );
+    expect(src, "the guard no longer pins the frozen-R wiring itself").toContain(
+      "frozenRiskPerShareP(riskAmountP, qty)",
+    );
   });
 });

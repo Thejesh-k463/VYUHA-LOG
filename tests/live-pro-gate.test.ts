@@ -78,6 +78,19 @@ describe("the client locks what it is not entitled to show", () => {
     expect(src).toContain("c.pro && !pro && <ProLock />");
   });
 
+  it("EVERY open-R cell is gated, including the sr-only levels table (U-2)", () => {
+    const src = read(TRACKER);
+    // The detail pane repeats the five levels in an `sr-only` table, because
+    // the canvas is opaque to a screen reader. That copy rendered
+    // `fmt.rMultiple(row.openRPpm)` unconditionally, so a free user's NULLED R
+    // reached assistive technology as the em dash — which this file's own
+    // vocabulary reserves for "cannot be computed", not "not entitled".
+    const all = [...src.matchAll(/fmt\.rMultiple\(row\.openRPpm\)/g)].length;
+    const gated = [...src.matchAll(/pro \? fmt\.rMultiple\(row\.openRPpm\) : <ProLock \/>/g)].length;
+    expect(all, "an open-R cell was added or removed — re-check that the new one is gated").toBe(2);
+    expect(gated, "an UNGATED open-R cell: a nulled Pro figure printed as the dash").toBe(all);
+  });
+
   it("the chart panel — the Pro overlay — is behind the same flag", () => {
     const src = read(TRACKER);
     const pane = src.slice(src.indexOf("function DetailPane"));
@@ -109,5 +122,16 @@ describe("the server strips the Pro fields rather than trusting the client to hi
     expect(src).toMatch(/pctOfCapital:\s*\{\s*ppm:\s*null,\s*denominator:\s*null\s*\}/);
     expect(src, "heat must be absent, not an empty decoy").toMatch(/entitlement\.pro\s*\?[^:]*portfolioHeat/);
     expect(src).toMatch(/entitlement\.pro\s*\?[^:]*sectorConcentration/);
+  });
+
+  it("reduces the stop OBJECT too — four of the same Pro figures live inside it (S-1)", () => {
+    const src = read(LOADER);
+    // `StopResult`'s `ok` variant carries `riskAtStopP`, `riskBudgetP`, `qty`
+    // and `deployedP` (`lib/live/stop.ts`). Nulling the four scalars on the row
+    // and then pushing `stop` verbatim shipped the headline one straight back.
+    expect(src, "the stop object crosses the wire unreduced").toMatch(
+      /stop:\s*entitlement\.pro\s*\?\s*stop\s*:\s*gateStop\(stop\)/,
+    );
+    expect(src, "`stop,` shorthand is the verbatim push this guard exists to stop").not.toMatch(/^\s*stop,\s*$/m);
   });
 });

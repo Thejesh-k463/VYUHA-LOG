@@ -265,17 +265,43 @@ describe("the v4.0 routes are reachable", () => {
 describe("/live loader — the Pro fields are absent for a free user (G2)", () => {
   it("nulls R, risk at stop and % of capital on every row", async () => {
     selectAccount(0);
+    // A risk percentage, so the stop tree actually COMPUTES rather than
+    // returning `{kind:"risk-not-set"}` — a gate asserted against an empty
+    // object would pass whether or not the reduction below exists.
+    setRiskPpm(2500);
+    const proRows = (await live.loadLiveDesk({ pro: true })).rows.filter((r) => r.stop.kind === "ok");
+    expect(proRows.length, "no row computed a stop; the assertions below would prove nothing").toBeGreaterThan(0);
+    expect(proRows[0].stop).toHaveProperty("riskAtStopP");
+
     const data = await live.loadLiveDesk({ pro: false });
     expect(data.rows.length).toBeGreaterThan(0);
+    // The row that DID compute a stop, named: a loop that meets a `no-stop`
+    // row first would otherwise report the weakest of the failures.
+    const sized = data.rows.find((r) => r.symbol === proRows[0].symbol)!;
+    expect(
+      (sized.stop as unknown as Record<string, unknown>).riskAtStopP,
+      `${sized.symbol} shipped risk at stop inside the stop object`,
+    ).toBeUndefined();
     for (const r of data.rows) {
       expect(r.riskAtStopP, `${r.symbol} shipped risk at stop`).toBeNull();
       expect(r.openRPpm, `${r.symbol} shipped open R`).toBeNull();
       expect(r.pctOfCapital.ppm, `${r.symbol} shipped % of capital`).toBeNull();
       expect(r.pctOfCapital.denominator, `${r.symbol} shipped the capital base`).toBeNull();
       expect(r.riskAmountP, `${r.symbol} shipped the frozen risk R is derived from`).toBeNull();
+      // S-1. `stop` is an OBJECT, and nulling four scalars beside it left the
+      // very same figures inside it: `StopOk` carries `riskAtStopP`,
+      // `riskBudgetP`, `qty` and `deployedP`. The free wire shape keeps the
+      // provenance and no number at all.
+      const stop = r.stop as unknown as Record<string, unknown>;
+      expect(r.stop.kind, `${r.symbol} shipped a computed stop object`).toBe("gated");
+      expect(stop.riskAtStopP, `${r.symbol} shipped risk at stop inside \`stop\``).toBeUndefined();
+      expect(stop.riskBudgetP, `${r.symbol} shipped the risk budget inside \`stop\``).toBeUndefined();
+      expect(stop.qty, `${r.symbol} shipped the sized quantity inside \`stop\``).toBeUndefined();
+      expect(stop.deployedP, `${r.symbol} shipped the deployed capital inside \`stop\``).toBeUndefined();
     }
     expect(data.heat, "the heat strip's numbers rode along in the payload").toBeNull();
     expect(data.concentration, "the sector table's numbers rode along in the payload").toBeNull();
+    setRiskPpm(null);
   });
 
   it("leaves every FREE field intact — the journal is never gated (invariant 7)", async () => {
@@ -298,10 +324,41 @@ describe("/live loader — the Pro fields are absent for a free user (G2)", () =
     selectAccount(0);
     const pro = await live.loadLiveDesk({ pro: true });
     const tcs = pro.rows.find((r) => r.symbol === "TCS")!;
+    expect(pro.rows.some((r) => r.stop.kind === "gated"), "a Pro payload must never carry the reduced stop").toBe(false);
     expect(tcs.riskAtStopP).toBe(200_000);
     expect(tcs.openRPpm).toBe(500_000);
     expect(tcs.riskAmountP).toBe(200_000);
     expect(pro.heat).not.toBeNull();
     expect(pro.concentration).not.toBeNull();
+  });
+});
+
+/**
+ * S-X — the stored feed selection.
+ *
+ * `settings.live_feed_provider` is what the Settings card writes and what
+ * `app/api/live/feed/route.ts` resolves through `getLiveFeedProvider()`. The
+ * desk called `getQuoteProvider()` with NO argument, which ignores the stored
+ * value and always builds the end-of-day provider — so a user who had chosen
+ * "My typed marks — Nothing is fetched, ever" had the desk read the bhavcopy
+ * behind their choice, while the card still showed the choice as saved.
+ */
+describe("/live loader — the stored feed provider is the one that runs (S-X)", () => {
+  it("honours a saved `manual` selection instead of the end-of-day default", async () => {
+    selectAccount(0);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "manual" }).run();
+    const data = await live.loadLiveDesk({ pro: true });
+    expect(data.feed.providerId, "the desk ignored the saved provider").toBe("manual");
+    expect(data.feed.staleness).toBe("manual");
+    expect(data.feed.streaming).toBe(false);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+  });
+
+  it("…and still builds the end-of-day provider when that is what is stored", async () => {
+    selectAccount(0);
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+    const data = await live.loadLiveDesk({ pro: true });
+    expect(data.feed.providerId).toBe("eod");
+    expect(data.feed.staleness).toBe("eod");
   });
 });

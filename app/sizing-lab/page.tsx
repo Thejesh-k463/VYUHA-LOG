@@ -183,7 +183,9 @@ export { compareAll_forSample as sampleCompare };
 
 /**
  * The Live Desk opens a row here with
- * `?from=live&symbol=…&entry=<paise>&stop=<paise>` (U1). `searchParams` is a
+ * `?from=live&symbol=…&side=<long|short>&entry=<paise>&stop=<paise>` (U1).
+ * `side` is stated by the desk and never inferred from the levels — a trailed
+ * stop sits above entry on a LONG. `searchParams` is a
  * promise in this version of Next, and it is handed to the client untouched —
  * the validation and the paise→rupees conversion are one pure function in
  * `lab-config.ts`, testable without rendering anything.

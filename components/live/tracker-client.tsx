@@ -44,6 +44,18 @@ export const VIRTUAL_THRESHOLD = 40;
 /** Row height the virtualiser estimates, in px. */
 const ROW_HEIGHT = 44;
 
+/**
+ * Header height assumed until the <thead> has been measured, in px.
+ *
+ * The header is `sticky top-0` INSIDE the scrolling box, so the first band of
+ * that box's viewport is permanently covered. Neither the virtualiser's
+ * `align:"auto"` nor `scrollIntoView({block:"nearest"})` knows that: both
+ * treat the top of the box as visible, so j/k landed the focused row exactly
+ * this many px under the header. The measured value replaces it on mount; this
+ * is only what the first keystroke before layout would use.
+ */
+const THEAD_HEIGHT_FALLBACK = 40;
+
 const PositionChartPanel = dynamic(
   // W2's real panel. `ssr:false` because it measures its own box and reads a
   // canvas: rendering it on the server produces a different tree than the
@@ -197,6 +209,14 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const filterRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
+  // Measured through a CALLBACK ref, not an effect: React runs it on mount and
+  // on unmount, so the height lands without a `setState` inside a `useEffect`
+  // keyed on other state (AGENTS.md — that pattern broke the Trades filter).
+  const [theadHeight, setTheadHeight] = React.useState(THEAD_HEIGHT_FALLBACK);
+  const theadRef = React.useCallback((el: HTMLTableSectionElement | null) => {
+    if (el) setTheadHeight(el.offsetHeight || THEAD_HEIGHT_FALLBACK);
+  }, []);
+
   React.useEffect(() => {
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -227,11 +247,22 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
+    // The sticky <thead> lives inside this scroll element, so its top
+    // `theadHeight` px are never visible. virtual-core subtracts
+    // `scrollPaddingStart` in exactly this case (`toOffset = item.start -
+    // options.scrollPaddingStart`), and without it `align:"auto"` parked the
+    // focused row underneath the header.
+    scrollPaddingStart: theadHeight,
   });
 
   const openLab = React.useCallback(
     (r: DeskRow) => {
-      const params = new URLSearchParams({ from: "live", symbol: r.symbol, entry: String(r.avgEntryP) });
+      // `side` travels EXPLICITLY. The Lab used to infer it from the levels
+      // (stop above entry ⇒ short), which reads a long whose stop has been
+      // trailed above entry as a short and then prices the wrong leg in
+      // `chargesAdjustedRisk`. The row already knows the side; sending it is
+      // the whole fix, and the Lab refuses a hand-off that omits it.
+      const params = new URLSearchParams({ from: "live", symbol: r.symbol, side: r.side, entry: String(r.avgEntryP) });
       if (r.effectiveStopP !== null) params.set("stop", String(r.effectiveStopP));
       router.push(`/sizing-lab?${params.toString()}`);
     },
@@ -261,8 +292,18 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           if (windowed) {
             virtualizer.scrollToIndex(next, { align: "auto" });
           } else {
-            const el = scrollRef.current?.querySelector<HTMLElement>(`[data-row-index="${next}"]`);
+            const box = scrollRef.current;
+            const el = box?.querySelector<HTMLElement>(`[data-row-index="${next}"]`);
             el?.scrollIntoView({ block: "nearest" });
+            // …and then clear the header BY HAND. `block:"nearest"` counts the
+            // band under the sticky <thead> as visible, so a row it scrolls to
+            // the top of the box lands underneath it and the user sees the row
+            // they just left. It is a no-op when the row was already in view,
+            // so this correction only ever fires on the edge that moved.
+            if (box && el) {
+              const rowTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+              if (rowTop - theadHeight < box.scrollTop) box.scrollTop = rowTop - theadHeight;
+            }
           }
         }
         return;
@@ -284,7 +325,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, focusIdx, openLab, windowed, virtualizer]);
+  }, [visible, focusIdx, openLab, windowed, virtualizer, theadHeight]);
 
   const marketOpen = now === null ? null : isMarketOpenIst(now);
 
@@ -422,7 +463,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
         className="max-h-[60vh] overflow-auto rounded-[var(--radius-card)] border border-border bg-card"
       >
         <table className="w-full border-collapse text-xs">
-          <thead className="sticky top-0 z-10 bg-[var(--color-header-band)] backdrop-blur">
+          <thead ref={theadRef} className="sticky top-0 z-10 bg-[var(--color-header-band)] backdrop-blur">
             <tr>
               {COLUMNS.map((c) => (
                 <th
@@ -638,13 +679,18 @@ function DetailPane({
 }) {
   const atrNeed = atrLength + 1;
   const rvolNeed = 21;
+  // Which branch of the stop tree fired. `gated` is the free-licence wire
+  // shape (`lib/live/stop.ts`): it keeps the provenance and drops every
+  // number, so this sentence reads the same for a free user as for a Pro one.
+  const treeSource =
+    row.stop.kind === "ok" || row.stop.kind === "zero" || row.stop.kind === "gated" ? row.stop.source : null;
   const stopSource =
     row.effectiveStopSource === "trailing"
       ? "your trailing stop"
       : row.effectiveStopSource === "planned"
         ? "the stop you recorded"
-        : row.stop.kind === "ok" || row.stop.kind === "zero"
-          ? `the ${row.stop.source} rule`
+        : treeSource !== null
+          ? `the ${treeSource} rule`
           : null;
 
   return (
@@ -777,7 +823,10 @@ function DetailPane({
           </tr>
           <tr>
             <th scope="row">Unrealised R</th>
-            <td>{fmt.rMultiple(row.openRPpm)}</td>
+            {/* The SAME gate as the visible cell above. A screen reader given
+                the em dash would be told the figure cannot be computed, when
+                what is true is that this licence does not carry it. */}
+            <td>{pro ? fmt.rMultiple(row.openRPpm) : <ProLock />}</td>
           </tr>
         </tbody>
       </table>

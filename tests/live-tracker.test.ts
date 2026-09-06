@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   computeTrackerRow,
   dayChangePpm,
@@ -400,5 +402,57 @@ describe("panel arithmetic (lib/live/panel-math)", () => {
     expect(frozenRiskPerShareP(null, 100)).toBeNull();
     expect(frozenRiskPerShareP(100_000, 0)).toBeNull();
     expect(frozenRiskPerShareP(0, 100)).toBeNull();
+  });
+});
+
+/**
+ * U-1 — j/k must land the focused row where the user can see it.
+ *
+ * The table's scroll element is a `max-h-[60vh] overflow-auto` box and the
+ * <thead> is `sticky top-0` INSIDE it, so the top band of that box is
+ * permanently covered. Neither scroller knows that: virtual-core's
+ * `align:"auto"` scrolled to `item.start` and the DOM path called
+ * `scrollIntoView({block:"nearest"})`, and both put the focused row exactly one
+ * header-height below the visible area — the user pressed j and saw nothing
+ * move, or saw the row they had just left.
+ *
+ * A SOURCE guard, in the family of `tests/live-pro-gate.test.ts`: the failure
+ * is a scroll offset in a jsdom-less client component, so what can be held to
+ * account here is that the correction is wired on BOTH paths from ONE measured
+ * height.
+ */
+describe("keyboard navigation clears the sticky header (U-1)", () => {
+  const stripComments = (raw: string) =>
+    raw.replace(/(?<![\w,*])\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const src = stripComments(
+    readFileSync(path.resolve(__dirname, "..", "components/live/tracker-client.tsx"), "utf8"),
+  );
+
+  it("the virtualiser is told how much of its viewport the header covers", () => {
+    expect(src, "the windowed path still scrolls the row to the top of the box, under the <thead>").toMatch(
+      /scrollPaddingStart:\s*theadHeight/,
+    );
+    expect(src, "a zero scroll padding is the original bug with a name on it").not.toMatch(
+      /scrollPaddingStart:\s*0\s*,/,
+    );
+  });
+
+  it("that height is MEASURED from the <thead>, with a stated fallback", () => {
+    expect(src, "the <thead> is not measured, so the padding is a guess").toMatch(/<thead ref=\{theadRef\}/);
+    expect(src).toMatch(/offsetHeight \|\| THEAD_HEIGHT_FALLBACK/);
+  });
+
+  it("the non-windowed path corrects for the SAME height after scrollIntoView", () => {
+    // `scrollIntoView({block:"nearest"})` stays — `tests/live-route-budget.ts`
+    // pins it as the DOM path, and it is a no-op for a row already in view.
+    // What it cannot know is that the top band of the box is covered, so the
+    // correction is applied straight after it, from the one measured height.
+    expect(src).toMatch(/scrollIntoView\(\{\s*block:\s*"nearest"/);
+    expect(src, "the DOM path must compute scrollTop itself to clear the header").toMatch(
+      /box\.scrollTop = rowTop - theadHeight/,
+    );
+    expect(src, "the correction must read the MEASURED height, not a literal").not.toMatch(
+      /rowTop - \d+/,
+    );
   });
 });

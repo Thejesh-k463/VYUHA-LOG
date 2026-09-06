@@ -5,10 +5,10 @@ import { priceHistory, riskConfig } from "@/lib/db/schema";
 import { deriveOpenPositions } from "@/lib/analytics/positions";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { portfolioHeat, sectorConcentration, type HeatRow } from "@/lib/live/heat";
-import { computeStop } from "@/lib/live/stop";
+import { computeStop, gateStop } from "@/lib/live/stop";
 import { computeTrackerRow, DEFAULT_ATR_LENGTH } from "@/lib/live/tracker-row";
 import type { Bar, LivePosition, Mark, Paise } from "@/lib/live/types";
-import { getQuoteProvider } from "@/lib/quotes";
+import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
@@ -186,7 +186,14 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   // The provider is the seam W2 replaces; the desk asks it for a snapshot and
   // falls back to what is already stored, so the tracker still renders with the
   // provider layer absent.
-  const provider = getQuoteProvider();
+  //
+  // THE STORED SELECTION IS RESOLVED, exactly as `app/api/live/feed/route.ts`
+  // resolves it. `getQuoteProvider()` with no argument ignores
+  // `settings.live_feed_provider` and always built the end-of-day provider, so
+  // a user who had chosen "My typed marks — Nothing is fetched, ever" still had
+  // the desk read the bhavcopy behind their choice, while the Settings card
+  // showed the choice as saved.
+  const provider = await getLiveFeedProvider();
   const keys: QuoteKey[] = positions.map((p) => ({
     symbol: p.symbol,
     exchange: asExchange(p.exchange),
@@ -312,7 +319,11 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
             accruedInterestP: toPaise(p.accruedInterest),
           }
         : null,
-      stop,
+      // The SAME boundary as the four scalars above, and for the same reason:
+      // `stop` is an OBJECT carrying `qty`, `riskBudgetP`, `deployedP` and
+      // `riskAtStopP`, so shipping it verbatim handed a free reader the very
+      // risk-at-stop figure the row two lines up had just nulled.
+      stop: entitlement.pro ? stop : gateStop(stop),
       spark: bars.slice(-SPARK_SESSIONS).map((b) => b.closeP),
     });
   }

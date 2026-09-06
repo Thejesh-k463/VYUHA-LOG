@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { LIVE_FEED_COPY, REFRESH_MAX, REFRESH_MIN } from "@/components/settings/live-feed-card";
+import { BROKER_FEED_OFFERED, LIVE_FEED_COPY, REFRESH_MAX, REFRESH_MIN } from "@/components/settings/live-feed-card";
 import { REFRESH_SECONDS_MAX, REFRESH_SECONDS_MIN } from "@/lib/quotes/openalgo";
+import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * The Live-feed copy guard (owner answers Q24, Q25, Q60).
@@ -201,5 +202,84 @@ describe("OpenAlgo is named where consent is given, and never in marketing (owne
       FEED_CLAIM.test("Brokers with no API of their own can pull live through OpenAlgo"),
       "the shipped v3.1 IMPORT sentence, which stays",
     ).toBe(false);
+  });
+});
+
+/**
+ * D-7 — the card may not render a control that belongs to a feed this release
+ * does not ship.
+ *
+ * v4.0 offers two providers: the stored end-of-day bhavcopy and marks the user
+ * types (`OPENALGO_FEED_ENABLED` false, `lib/quotes/types.ts`). Two blocks in
+ * the card were rendered unconditionally anyway — the 1–5 s on-screen refresh
+ * slider and the daily re-authentication note — and both describe a broker API
+ * session. Together they told the user a live feed exists here.
+ *
+ * The environment is `node` (vitest.config.ts) with no DOM, so the proof is
+ * structural rather than a render: both blocks must sit inside a
+ * `{BROKER_FEED_OFFERED && (…)}` subtree and appear nowhere else, and
+ * `BROKER_FEED_OFFERED` must equal the release flag. Deleting either gate — or
+ * restating the flag as a literal — reddens this.
+ */
+describe("the broker-feed controls are gated on the release flag (D-7)", () => {
+  const CARD = "components/settings/live-feed-card.tsx";
+  const src = stripComments(read(CARD));
+
+  /** Every `{FLAG && ( … )}` subtree in a source, matched by paren balance. */
+  function gatedRegions(text: string, flag: string): string[] {
+    const open = `{${flag} && (`;
+    const out: string[] = [];
+    for (let from = 0; ; ) {
+      const start = text.indexOf(open, from);
+      if (start < 0) return out;
+      let depth = 0;
+      let i = start + open.length - 1; // sits on the "("
+      for (; i < text.length; i++) {
+        if (text[i] === "(") depth++;
+        else if (text[i] === ")" && --depth === 0) break;
+      }
+      out.push(text.slice(start, i + 1));
+      from = i + 1;
+    }
+  }
+
+  const regions = gatedRegions(src, "BROKER_FEED_OFFERED");
+  const occurrences = (needle: string) => src.split(needle).length - 1;
+
+  it("the extractor really can fire — it finds a gate and stops at its own close", () => {
+    const sample = "<a/>\n{FLAG && (\n  <b onClick={() => f(1)} />\n)}\n<c/>";
+    // Balanced to the gate's OWN closing paren — the nested `()` of the arrow
+    // and the `f(1)` call are counted through, not stopped at.
+    expect(gatedRegions(sample, "FLAG")).toEqual(["{FLAG && (\n  <b onClick={() => f(1)} />\n)"]);
+    expect(gatedRegions(sample, "OTHER")).toEqual([]);
+  });
+
+  it("BROKER_FEED_OFFERED is DERIVED from the one release flag, not restated", () => {
+    expect(BROKER_FEED_OFFERED).toBe(OPENALGO_FEED_ENABLED);
+    expect(src, "the card no longer derives the gate from the provider list").toMatch(
+      /BROKER_FEED_OFFERED = PROVIDERS\.some\(\(p\) => p\.id === "openalgo"\)/,
+    );
+  });
+
+  it("the 1–5 s refresh slider renders ONLY behind the gate", () => {
+    const holders = regions.filter((r) => r.includes('data-testid="live-feed-seconds"'));
+    expect(holders.length, "the refresh-seconds control is not inside a BROKER_FEED_OFFERED gate").toBe(1);
+    expect(occurrences('data-testid="live-feed-seconds"'), "a second, ungated copy of the control").toBe(1);
+  });
+
+  it("the daily re-authentication note renders ONLY behind the gate", () => {
+    const holders = regions.filter((r) => r.includes("LIVE_FEED_COPY.dailyReauth"));
+    expect(holders.length, "the re-auth sentence is not inside a BROKER_FEED_OFFERED gate").toBe(1);
+    expect(holders[0]).toContain('data-testid="live-feed-reauth"');
+    expect(occurrences("LIVE_FEED_COPY.dailyReauth"), "a second, ungated copy of the sentence").toBe(1);
+  });
+
+  // Relaxes itself the moment v4.1 flips the flag: then both blocks are copy
+  // about a feature that ships, and the gate simply lets them through.
+  it.skipIf(OPENALGO_FEED_ENABLED)("so with the flag false neither reaches the screen — and the sentence still exists for v4.1", () => {
+    // The copy is NOT deleted: v4.1 flips one constant and the block returns
+    // verbatim, which is why the pinning tests above still hold it to the word.
+    expect(BROKER_FEED_OFFERED, "v4.0 offers no broker-backed feed").toBe(false);
+    expect(LIVE_FEED_COPY.dailyReauth.length).toBeGreaterThan(40);
   });
 });

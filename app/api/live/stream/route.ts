@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { getTrackerTrades } from "@/lib/queries/trades";
 import { isWithinLiveWindow } from "@/lib/quotes/mapping";
-import { getQuoteProvider } from "@/lib/quotes/registry";
+import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type Quote, type QuoteKey, type Unsubscribe } from "@/lib/quotes/types";
 
 /**
@@ -103,7 +103,12 @@ export async function GET(req: Request): Promise<Response> {
 
   const accountId = getSelectedAccountId();
   const keys = openPositionKeys();
-  const provider = getQuoteProvider();
+  // THE STORED SELECTION, resolved exactly as `app/api/live/feed/route.ts`
+  // resolves it. `getQuoteProvider()` takes the stored value as an ARGUMENT and
+  // was called with none, so this stream always built the end-of-day provider —
+  // a user who had chosen "My typed marks" had the desk read the bhavcopy
+  // behind their choice, on the one screen that promises nothing is fetched.
+  const provider = await getLiveFeedProvider();
   const encoder = new TextEncoder();
 
   let closed = false;

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HELP_ENTRIES, searchHelp } from "@/lib/domain/help-content";
+import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
 
 /**
@@ -96,6 +97,45 @@ describe("help describes the app that shipped, not the one that is planned", () 
 
   it("/live advertises no alerts — there is no alert code in v4.0", () => {
     expect(body("/live")).not.toMatch(/\balerts?\b/i);
+  });
+
+  /**
+   * D-2 — the same rule as the "alerts" guard above, for the feed.
+   *
+   * `/live` described three price sources, one of them "an OpenAlgo feed",
+   * while `OPENALGO_FEED_ENABLED` (lib/quotes/types.ts) is false: the registry
+   * omits the id, the Settings radios filter it and a POST asking for it is a
+   * 400. Help that names it is help for a release that did not ship.
+   *
+   * The guard reads the flag, so v4.1 relaxes it by flipping that one
+   * constant. It is a PAIRING guard, not a word ban: OpenAlgo the IMPORT path
+   * shipped in v3.1 and is described on /import, /import-help and /settings —
+   * what may not be said is that it, or any broker, PRICES anything.
+   */
+  const PRICE_CLAIM =
+    /\bfeed\b|live (price|prices|quote|quotes|tick|ticks)|real[- ]?time|streaming|prices the desk|marks? (are|from)/i;
+
+  it.skipIf(OPENALGO_FEED_ENABLED)("no help entry pairs OpenAlgo or a broker with a price source", () => {
+    const strings = HELP_ENTRIES.flatMap((e) => [e.title, e.answers, ...e.body, ...(e.refusals ?? [])]);
+    const offenders = strings.filter((s) => /openalgo|broker(?:'s)? feed/i.test(s) && PRICE_CLAIM.test(s));
+    expect(offenders, `help sells a feed v4.0 does not ship: ${offenders.join(" | ")}`).toEqual([]);
+  });
+
+  it.skipIf(OPENALGO_FEED_ENABLED)("/live names only the two sources that exist, and names neither OpenAlgo nor a broker", () => {
+    const text = [HELP_ENTRIES.find((e) => e.href === "/live")!.answers, body("/live")].join(" ");
+    expect(text).not.toMatch(/openalgo/i);
+    expect(text).not.toMatch(/\bbroker/i);
+    expect(text).toMatch(/end-of-day bhavcopy/i);
+    expect(text).toMatch(/a mark you type/i);
+  });
+
+  it("the pairing scan really can fire, and spares the shipped v3.1 import sentences", () => {
+    expect(PRICE_CLAIM.test("or an OpenAlgo feed — is chosen in Settings"), "the sentence D-2 removed").toBe(true);
+    expect(PRICE_CLAIM.test("Live prices through OpenAlgo"), "a price claim").toBe(true);
+    expect(
+      PRICE_CLAIM.test("A fifth path — OpenAlgo — gives Groww, Upstox and Kotak a same-day pull"),
+      "the v3.1 IMPORT sentence on /import, which stays",
+    ).toBe(false);
   });
 });
 
