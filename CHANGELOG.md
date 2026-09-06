@@ -14,10 +14,10 @@ adds no new network host.*
   good: symbol, product, quantity, average entry, the mark, the day's move,
   unrealised ₹ and %, and how many days you have held it — twelve sortable
   columns, all accounts together with an account filter in the header, a market
-  clock, and a chip on every row saying its mark is a **stored** one — the
-  end-of-day bhavcopy close or a price typed in, kept in the same table with no
-  provenance column to tell them apart — and how old that mark is, with a
-  **Stale** badge when
+  clock, and a chip on every row naming the mark it was priced from: **End of day ·
+  <session close>** for a bhavcopy close, **Stored mark** (undated) for a price you typed
+  into `mtm_prices` — that table has no reliable as-of column — or **No mark**. Only a
+  dated mark can earn the **Stale** badge, shown when
   a row is older than the newest mark on the desk. It is your own record, so it
   is not sold. **Pro adds the forward-looking arithmetic:** risk at stop, open
   R, % of capital, the portfolio-heat strip and sector concentration, and the
@@ -75,10 +75,11 @@ adds no new network host.*
   sizing methods need (`risk_config`), the Atlas daily cache, the backfill
   ledger, and the live-feed settings.
 
-- **Every mark on the desk is a stored mark, and no broker feed prices it.**
-  The end-of-day bhavcopy close and a price you type in land in the same
-  `mtm_prices` table, so the desk says "stored mark" and dates it rather than
-  claiming a source it cannot prove. The OpenAlgo feed adapter, its consent
+- **No broker feed prices the desk.** A row priced from the end-of-day bhavcopy
+  reads "End of day · <session close>"; a row priced only from a mark you typed
+  into `mtm_prices` reads "Stored mark" with no date, because that table has no
+  source or reliable as-of column; only dated marks can show Stale. The OpenAlgo
+  feed adapter, its consent
   sheet and migration 0067 are all in the build, and all of it is **withheld by
   one compile-time constant** — `OPENALGO_FEED_ENABLED` in
   `lib/quotes/types.ts` is `false`, so the provider is not in the registry, the

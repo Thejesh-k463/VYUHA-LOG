@@ -3637,10 +3637,10 @@ auditor findings + 1 cross-auditor note + 2 CI reds = 17 CONFIRMED, 0 REFUTED.**
 runner's timezone and the e2e job are facts the local gate never evaluates. Each item with the
 alternative rejected:
 
-- **S-1 — a non-numeric `row.stop` reduces the row to the free shape, for free.** The gate
-  returned the Pro fields whenever a stop was merely PRESENT, so a stop stored as a string or a
-  blank still bought R and risk-at-stop. *Rejected: hiding the columns client-side* — hiding is not
-  gating; the numbers were still on the wire.
+- **S-1 — `row.stop` is an OBJECT (`StopComputed`) carrying `riskAtStopP`, `riskBudgetP`, `qty`
+  and `deployedP`; it was pushed verbatim past the Pro gate after the four scalar row fields were
+  nulled.** Fix: `stop: entitlement.pro ? stop : gateStop(stop)` → `{kind:"gated", source}`.
+  *Rejected: hiding the columns client-side* — hiding is not gating; the numbers were still on the wire.
 - **S-X (cross-auditor) — the desk and the SSE stream resolve the stored provider exactly as the
   feed route does.** Three surfaces read `settings.live_feed_provider` and only one of them fell an
   unknown id back to `eod`, so a journal carrying `openalgo` could get two different answers on one
@@ -3707,3 +3707,46 @@ alternative rejected:
 
 **Housekeeping:** the `live-desk` worktree was removed after the merge, so `main` is the only tree
 that carries this work.
+
+### 2026-09-06 — load suite: c8 one-symbol baselines doubled (24k → 48k, 30k → 60k)
+
+CI run 34017468261 on `aba43f5` went red on `tests/load/c8-pairing-depth.load.ts` "scales linearly on
+ONE symbol": `Baseline n=24000 ran in 21.5 ms, below the 25 ms floor`. That is the suite's own
+timer-noise guard (`tests/load/helpers/measure.ts:24`), not a hot-path regression — the wave touched
+no engine file (`git diff --stat 5938aa6..aba43f5 -- lib/engine lib/analytics` is empty) and the same
+case read 57 ms on the previous, slower runner. The 2026-09-04 doubling reached only the many-symbols
+case (48k); the one-symbol case kept 24k under a comment that said it had been doubled. Raised the
+one-symbol case to 48k and the opening-sell case (38 ms on the fast runner) to 60k. Local: 5/5,
+baselines 133 ms / 147 ms, ratios 4.6× / 4.2× against the 6× bar. *Rejected:* lowering
+`MIN_MEASURABLE_MS` — the floor is what makes a ratio meaningful; the fix is more work per sample,
+not a smaller ruler.
+
+### 2026-09-06 — v4.0.0 second-wave re-audit (`5938aa6..aba43f5`): 6 confirmed, all cosmetic, fixed in wave 3
+
+Six Fable auditors over the 17-item wave: money 0, schema 0, security 0 (14 candidates refuted,
+incl. the `gated` stop never reaching heat/panel arithmetic and a crafted `/sizing-lab?side=` URL
+being refused), ui 1, test-integrity 1, docs 3. Two skeptic passes: all six CONFIRMED (one clock
+claim UNVERIFIABLE), 0 refuted.
+
+- **U-1b — the virtualised path needed `scrollMargin: theadHeight` as well as `scrollPaddingStart`,
+  and both spacers subtract it.** With the `<thead>` in-flow inside the scroll box, virtual-core
+  starts item 0 at offset 0 while its DOM offset is `h + item.start`; `scrollPaddingStart` alone
+  made `getOffsetForIndex` subtract `h` from a start that never included it. Worked numbers
+  (h = 40, row 22 of 44 px, clientHeight 600): before, `start` → scrollTop 928, row top at 80 (one
+  header below the header) and `end` clipped the row's bottom 40 px; after, `start` → 968 (row top
+  at 40, flush) and `end` → 452 (row bottom at 600). `getTotalSize()` is `end − scrollMargin`, so
+  the bottom spacer must subtract the margin from the last item's absolute `end` or scrollHeight
+  is `h` short. *Rejected: `scrollMargin` alone* — the padding is what keeps a row within `h` px of
+  the header from being scrolled needlessly.
+- **TI — skip-family constructs went 26 → 30: four `it.skipIf(OPENALGO_FEED_ENABLED)` guards** that
+  skip nothing today and relax themselves at the 4.1 flip. Recorded so the count is not read as
+  four dark tests.
+- **D2-F1 — the mark chip copy.** CHANGELOG, the client README and STATE said every row shows a
+  dated "stored mark". The desk prints "End of day · <session close>" for a bhavcopy-priced row and
+  an UNDATED "Stored mark" only for a row priced from `mtm_prices` (no reliable as-of column), or
+  "No mark"; only dated marks can show Stale (`components/live/desk-copy.ts:101-102`,
+  `load-desk.ts:252-263`, pinned by `tests/live-tracker-copy.test.ts:225-231`). Copy corrected.
+- **D2-F2 — the S-1 bullet above described a string/blank stop; the defect was the `StopComputed`
+  object.** Rewritten in place.
+- **D2-F3 — STATE §2 claimed the verify sha "is the one tagged `v4.0.0`" before any tag existed.**
+  Now says the run preceded commit `aba43f5` and that no tag exists yet.

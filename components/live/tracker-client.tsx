@@ -252,6 +252,18 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
     // `scrollPaddingStart` in exactly this case (`toOffset = item.start -
     // options.scrollPaddingStart`), and without it `align:"auto"` parked the
     // focused row underneath the header.
+    // `scrollMargin` is NOT redundant with the padding, and removing it
+    // reintroduces the bug. The <thead> is IN FLOW before the tbody, so a
+    // row's real offset is `theadHeight + item.start`; scrollMargin is how
+    // virtual-core is told that. Worked numbers, h=40, ROW_HEIGHT 44,
+    // clientHeight 600, row 22: align "start"/"auto" now scrolls to 968 (row
+    // top lands at 40, flush under the header) where it used to scroll to 928
+    // and park the row at 80 — one whole header BELOW where it belongs;
+    // align "end" now scrolls to 452, putting the row's bottom exactly on 600
+    // instead of clipping its last 40 px. Both spacers below subtract
+    // `theadHeight` again because `item.start`/`item.end` become absolute
+    // while `getTotalSize()` stays content-relative.
+    scrollMargin: theadHeight,
     scrollPaddingStart: theadHeight,
   });
 
@@ -501,7 +513,12 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
             )}
             {windowed && visible.length > 0 && (
               <tr aria-hidden>
-                <td colSpan={COLUMNS.length + 2} style={{ height: virtualizer.getVirtualItems()[0]?.start ?? 0 }} />
+                <td
+                  colSpan={COLUMNS.length + 2}
+                  style={{
+                    height: Math.max(0, (virtualizer.getVirtualItems()[0]?.start ?? theadHeight) - theadHeight),
+                  }}
+                />
               </tr>
             )}
             {/* Indices, not rows: the virtualiser already knows which index it
@@ -532,7 +549,10 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
                 <td
                   colSpan={COLUMNS.length + 2}
                   style={{
-                    height: Math.max(0, virtualizer.getTotalSize() - (virtualizer.getVirtualItems().at(-1)?.end ?? 0)),
+                    height: Math.max(
+                      0,
+                      virtualizer.getTotalSize() - ((virtualizer.getVirtualItems().at(-1)?.end ?? theadHeight) - theadHeight),
+                    ),
                   }}
                 />
               </tr>

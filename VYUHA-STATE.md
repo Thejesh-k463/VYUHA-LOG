@@ -59,7 +59,7 @@ artefacts signed with key id `4FF85F3BBE1DA21D` (= `tauri.conf.json` pubkey). **
 submitted. No open release actions. Verify baseline at that release: `npm run verify` EXIT=0,
 276 files / 5,243 tests (35 skipped), 2026-09-05. **Superseded as the baseline: v3.9.1 measured
 282 files / 5,269 tests passed / 35 skipped (EXIT 0, 2026-09-06) — that is the number a v4.0.0 run
-must not fall below. The 4.0.0 figure is 328 files / 6,055 passed / 35 skipped (EXIT 0, after the 17-item re-audit fix wave); see `VERIFY:` below.**
+must not fall below. The 4.0.0 figure is 328 files / 6,057 passed / 35 skipped (EXIT 0, after the 17-item re-audit fix wave); see `VERIFY:` below.**
 
 **Since the release — on `main`, UNRELEASED, ships with whatever version comes next:** `6abbc9a`
 state docs, `97b2d6d` the `.claude/` agent layer, `28d6655` the overlay entrance-keyframe fix.
@@ -234,8 +234,8 @@ the eight size indices in `lib/data/nse-index-map.json` (62 indices, 1,379 symbo
 `docs/client/THIRD-PARTY-NOTICES.txt` in the installer resources and the client ZIP; migrations
 **0064–0067**; and the OpenAlgo feed adapter present but WITHHELD — `OPENALGO_FEED_ENABLED` is
 `false`, `settings.live_feed_provider` ships `eod`, and a stored `openalgo` resolves back to `eod`.
-Every mark on the desk is a stored one (`mtm_prices` has no source column, so the chip reads
-"Stored mark" and dates it rather than naming a provenance it cannot prove); the Sizing Lab
+A bhavcopy-priced row's chip reads "End of day · <session close>"; a row priced only from
+`mtm_prices` reads "Stored mark" with no date (that table has no reliable as-of column); the Sizing Lab
 write-back stores the GLOBAL `risk_config` row, not a position.
 
 **Version bump 4.0.0 APPLIED, and applied BEFORE the gate**: `package.json`, both
@@ -245,7 +245,7 @@ write-back stores the GLOBAL `risk_config` row, not a position.
 deliberately and recorded in `docs/DECISIONS.md` 2026-09-06. The gate still runs, on the bumped
 tree, BEFORE the tag.
 
-**VERIFY (re-audit fix wave, 17 items): EXIT 0 — 328 files / 6,055 passed / 35 skipped, `next build` compiled, on the fix-wave tree (2026-09-06 ~12:40 IST); the commit sha is the one tagged `v4.0.0`.** The 5938aa6 line below is the prior run and stays as history.
+**VERIFY (re-audit fix wave, 17 items): EXIT 0 — 328 files / 6,057 passed / 35 skipped, `next build` compiled, on the fix-wave tree, before commit `aba43f5` (2026-09-06 12:18 IST). No `v4.0.0` tag exists yet; the latest tag is `v3.9.1`.** The 5938aa6 line below is the prior run and stays as history.
 
 **VERIFY: EXIT 0 — 328 files / 6,025 passed / 35 skipped, `next build` compiled, on `5938aa6` (2026-09-06 ~03:25 IST, after the 30-finding fix wave).** Above the v3.9.1 floor of 282 files / 5,269 passed / 35 skipped. The first run on the merged tree (before the fix wave finished) was EXIT 1 on the README file-count pin only.
 

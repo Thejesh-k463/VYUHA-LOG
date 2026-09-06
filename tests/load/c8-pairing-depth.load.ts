@@ -130,9 +130,9 @@ describe("C8 · pairing engine at depth", () => {
     const { ratio, small, large } = bestOf3(() => growthRatio(
       (size) => oneSymbol(size, 0.65, 0xc8b),
       (legs: Leg[]) => void pairLegs(legs),
-      // Doubled 2026-09-04: at 24k the baseline sat ON growthRatio's 25 ms floor
-      // (24.0 ms measured), so the ratio was timer noise on fast and slow boxes alike.
-      24_000,
+      // Doubled 2026-09-06 (aba43f5 CI, fast ubuntu runner): at 24k the one-symbol baseline read
+      // 21.5 ms, UNDER growthRatio's 25 ms floor, and the guard refused the ratio. 48k clears it.
+      48_000,
     ));
     report(small, { test: "c8", shape: "one-symbol-growing-queue" });
     report(large, { test: "c8", shape: "one-symbol-growing-queue" });
@@ -149,7 +149,8 @@ describe("C8 · pairing engine at depth", () => {
     const { ratio, small, large } = bestOf3(() => growthRatio(
       (size) => oneSymbol(size, 0.25, 0xc8c),
       (legs: Leg[]) => void pairLegs(legs),
-      30_000,
+      // Doubled 2026-09-06 with the case above: 30k read 38 ms on the fast runner, too close to the floor.
+      60_000,
     ));
     report(small, { test: "c8", shape: "opening-sell-heavy" });
     report(large, { test: "c8", shape: "opening-sell-heavy" });

@@ -435,6 +435,38 @@ describe("keyboard navigation clears the sticky header (U-1)", () => {
     expect(src, "a zero scroll padding is the original bug with a name on it").not.toMatch(
       /scrollPaddingStart:\s*0\s*,/,
     );
+    // `scrollPaddingStart` alone is only half the frame. The <thead> is IN
+    // FLOW inside the scroll box and precedes the tbody, so item 0's DOM
+    // offset is `theadHeight + item.start` while virtual-core believes it is
+    // `item.start`. `getOffsetForIndex(…,"auto")` then computes
+    // `toOffset = item.start - scrollPaddingStart`, which is short by one
+    // header height in BOTH directions: `start` parks the row 2h below the
+    // top, `end` clips its bottom h px. `scrollMargin` is the option that
+    // tells virtual-core where the list actually begins.
+    expect(src, "the virtualiser is not told the <thead> sits above the list, so item 0 is off by one header").toMatch(
+      /scrollMargin:\s*theadHeight/,
+    );
+  });
+
+  it("the top spacer is content-relative, because scrollMargin makes item.start absolute", () => {
+    // With `scrollMargin: theadHeight`, `item.start` is measured from the
+    // scroll element, not from the tbody — the first rendered index k sits at
+    // `theadHeight + 44k`. The spacer <tr> lives INSIDE the tbody, after the
+    // header, so it must be 44k. Leaving item.start raw adds the header height
+    // a second time and every rendered row drifts 40 px low.
+    expect(src, "the top spacer still uses the absolute item.start and double-counts the <thead>").toMatch(
+      /getVirtualItems\(\)\[0\]\?\.start \?\? theadHeight\) - theadHeight/,
+    );
+  });
+
+  it("the bottom spacer subtracts the same height from the last item's end", () => {
+    // `getTotalSize()` is `end - scrollMargin + paddingEnd` (virtual-core
+    // index.js:~1082) — already content-relative — while `last.end` became
+    // absolute. Subtracting one from the other leaves the tbody h px short,
+    // so the final rows can never be scrolled fully into view.
+    expect(src, "the bottom spacer mixes an absolute end with a content-relative total size").toMatch(
+      /getVirtualItems\(\)\.at\(-1\)\?\.end \?\? theadHeight\) - theadHeight/,
+    );
   });
 
   it("that height is MEASURED from the <thead>, with a stated fallback", () => {
