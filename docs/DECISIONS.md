@@ -4170,6 +4170,7 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   `1DA14CBEDB12388F641DD3F4FA74089A779D53D6D4E95102D91503EB9E0FBBA7` — that is the WDSI sha. The PUBLISHED
   GitHub asset is CI's build, SHA-256 `7ABAB234C481C6341CE95883C94C492CA0D6002EEE342EC8DDCA2B896EC29764` — that
   is the winget manifest at `release-packages/winget/4.1.0`.
-- **Owner actions outstanding:** publish the draft, install off the build machine, submit WDSI (form handed
-  over with the client-ZIP sha), and — after the release is public — the winget submission. The STATE §2 header
-  is rewritten to PUBLISHED only after the owner confirms.
+- **Owner actions:** the draft was PUBLISHED at 2026-09-07T10:00:03Z (15:30 IST) and installed on a non-build
+  machine the same hour ("working fine"); `releases/latest` → v4.1.0 and `latest/download/latest.json` serves
+  4.1.0 for six platforms (checked with `gh api` and `curl` after the owner's answer). WDSI form handed over
+  with the client-ZIP sha; the winget submission is the owner's, from `release-packages/winget/4.1.0`.
