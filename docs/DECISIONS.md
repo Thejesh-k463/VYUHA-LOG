@@ -4137,3 +4137,39 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   v4.0.x to v4.1.0" sentence in the root README mirroring the install guide. Second gate on the bump tree:
   341 files / 6,400 passed / 35 skipped, `next build` compiled. Lesson for the next bump: run these four
   guards' inputs through the bump first — policy "Applies to", README first quote, hero-row wording.
+
+### 2026-09-07 — v4.1.0 tagged on `c39675c`; release 3/3 on the second attempt; deep verify 3/3; draft awaits the owner
+
+- **Tag placed after CI 6/6 on the exact sha** (run 34102623205 on the bump commit `c39675c`, one past the last
+  code change `0c60a1b`, whose own run 34057976530 was 6/6). Pre-tag proofs on that tree, in order: `npm ci`
+  clean (769 packages, lock untouched — `git diff --numstat package-lock.json` empty), `npm ls esbuild` resolves
+  (0.28.1 nested under vite), `npm run desktop:build` EXIT 0 with `desktop-dist/.next/BUILD_ID` at
+  2026-09-07T14:21:05 and the static chunk carrying "Locked in at stop" (a 4.1-only string), the local `.sig` key
+  id decoded to `4FF85F3BBE1DA21D` = `tauri.conf.json`. **Rejected: tagging `0c60a1b` and bumping after** — the
+  version fields must be in the tagged tree or the installer says 4.0.0.
+- **The release run (34103493298) lost its Windows job on attempt 1 and was re-run, not re-tagged.** The
+  failure was `tests/seams-v41-fix2.test.ts` — `Error: Hook timed out in 10000ms` in its `beforeAll`, which is
+  `openTempDb("seams-v41-fix2", { seed: true })` (a migrated, seeded SQLite file) on a cold Windows runner under
+  vitest's default 10 s hook timeout. Evidence bar from the load-job entry above, all three met: the same sha's
+  CI Windows job ("Windows install + tests") was green forty minutes earlier, the file is green locally, and no
+  code in its path changed (the bump commit is docs and version fields). `gh run rerun 34103493298 --failed` ran
+  the Windows job alone; attempt 2 was green and uploaded the installer and its `.sig` into the SAME draft
+  (`release.yml` keeps the other platforms' assets), and `latest.json` reads 4.1.0 with both `windows-x86_64`
+  entries and a 416-char signature. **Rejected: raising the hook timeout in this release** — that is a
+  test-integrity change, needs a commit and a new tag, and the evidence says the runner, not the hook. Recorded
+  as a follow-up for the next wave: `vitest.config` has no `hookTimeout`; 102 `openTempDb` call sites, 87 of them
+  seeded, all run under the 10 s default; a global `hookTimeout: 30_000` (or per-file on the seeded ones) is the
+  fix, and this is its first recorded occurrence.
+- **`release:verify v4.1.0 -- --deep` 3/3** — every `.sig` decodes to `4FF85F3BBE1DA21D` and verifies over the
+  published bytes (installer 33.9 MB, two macOS tarballs 60.4 / 62.8 MB). Before the re-run the same command
+  reported "INCOMPLETE RELEASE — DO NOT PUBLISH" with the Windows installer and signature missing, which is the
+  script doing its job.
+- **Two SHA-256 values, two destinations, as for 4.0.0.** Client ZIP `release-packages/Vyuha_4.1.0_Client_Package.zip`
+  (13 files: installer + `.sig`, START_HERE, CHECKSUMS, WHATS_NEW, INSTALLATION_GUIDE, deck, both OpenAlgo guides,
+  REFUND_POLICY, TERMS, PRIVACY, THIRD-PARTY-NOTICES) carries the LOCAL installer, SHA-256
+  `1DA14CBEDB12388F641DD3F4FA74089A779D53D6D4E95102D91503EB9E0FBBA7` — that is the WDSI sha. The PUBLISHED
+  GitHub asset is CI's build, SHA-256 `7ABAB234C481C6341CE95883C94C492CA0D6002EEE342EC8DDCA2B896EC29764` — that
+  is the winget manifest at `release-packages/winget/4.1.0`.
+- **Owner actions outstanding:** publish the draft, install off the build machine, submit WDSI (form handed
+  over with the client-ZIP sha), and — after the release is public — the winget submission. The STATE §2 header
+  is rewritten to PUBLISHED only after the owner confirms.

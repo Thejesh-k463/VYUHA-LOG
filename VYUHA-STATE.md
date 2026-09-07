@@ -27,9 +27,19 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.1.0 BUMPED on `main` (wave `66aa319` + fix waves `4b55620` · `65dd329` · `1ec6de1` · `fe04728` · `6c4713a` · `2b3cbfa` · `0c60a1b`, CI 6/6 on `0c60a1b` = run 34057976530; the bump commit sits on `0c60a1b` and is the sha to tag once its own CI is 6/6) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2. Current state — v4.1.0 TAGGED `c39675c` 2026-09-07 (CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; DRAFT — owner's publish, off-machine install and WDSI outstanding) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
-> **v4.1.0 IS BUMPED and waits for its tag.** Base commit `6631d21`; on top of it `66aa319` (the
+> **v4.1.0 IS TAGGED and its draft release is complete; the owner publishes it.** Tag `v4.1.0` (annotated) =
+> `c39675c`, the bump commit, on which CI 34102623205 was 6/6. Release run 34103493298: attempt 1 lost the
+> Windows job to a 10 s `beforeAll` hook timeout in `tests/seams-v41-fix2.test.ts` (`openTempDb` with seed on a
+> cold runner — the same sha's CI Windows job was green), `gh run rerun --failed` attempt 2 green; nine assets on
+> the draft, `latest.json` 4.1.0 with both Windows entries; `release:verify v4.1.0 -- --deep` 3/3 on key
+> `4FF85F3BBE1DA21D`. Client ZIP `release-packages/Vyuha_4.1.0_Client_Package.zip` (13 files, NOTICES inside);
+> its installer SHA-256 `1DA14CBE…0FBBA7` is the WDSI sha; the PUBLISHED asset SHA-256 `7ABAB234…C29764` is in
+> the winget manifest at `release-packages/winget/4.1.0`. Local build proof: `BUILD_ID` 2026-09-07T14:21:05,
+> bundle carries "Locked in at stop", local `.sig` key id `4FF85F3BBE1DA21D`. **Owner actions outstanding:
+> publish the draft, install off the build machine, WDSI; then this header becomes PUBLISHED.** Follow-up for
+> the next wave: a global vitest `hookTimeout` (DECISIONS 2026-09-07). Base commit `6631d21`; on top of it `66aa319` (the
 > wave), `4b55620` (the fix wave), `65dd329` (fix wave 2), `1ec6de1` (fix wave 3), `fe04728` (3b),
 > `6c4713a` (3c), `2b3cbfa` (3d) and `0c60a1b` (3e — CI SUCCESS 34057976530, all six jobs). The bump
 > commit on top of `0c60a1b` (2026-09-07) sets **4.1.0** in `package.json`, `tauri.conf.json`,
