@@ -88,18 +88,20 @@ Exactly four kinds, and only one of them is automatic:
    once every 1–5 seconds while the desk is open, and nothing else about
    them — no quantity, no entry price, no P&L, no account. Equities only in
    this release. Futures and options rows are not priced by this feed: each
-   shows the position's recorded close, or its entry price when no close is
+   shows the position's recorded close, or a dash when no close is
    recorded, and says so on the row. The prices stay on this machine: never
    uploaded, never resold.
    Angel One can price the desk instead, on the same terms and behind the same
-   switch, from the client code, PIN and TOTP secret you already saved under
-   Import → Connect broker. Angel One clears every API session at 5 AM IST, and
-   Vyuha signs in to Angel One's own API host
+   switch, from the credentials you already saved under Import → Connect
+   broker. Vyuha signs in to Angel One's own API host
    (`apiconnect.angelone.in`) — the host the Angel One trade pull already
-   uses, so this adds no new one — at most once a day while it stays open, and
-   again after a relaunch or when you re-save the credentials. It generates the
-   one-time password itself
-   from the secret you enrolled, with nothing for you to click. Against that
+   uses, so this adds no new one — at most once a day while Vyuha stays open,
+   again after a relaunch, after Angel One's 5 AM IST session flush, or when
+   you re-save the credentials. Each sign-in sends four things: the client
+   code, the PIN, the one-time code derived from the TOTP secret — the secret
+   itself is never sent — and the SmartAPI app key, with nothing for you to
+   click. If a sign-in is refused, Vyuha tries at most three times and then
+   stops until you re-save the credentials. Against that
    same host it looks up, once per symbol, the token Angel One prices by, and
    keeps that mapping on this machine. It then asks for prices in batches of at
    most 50 symbols, at most one request a second, every 3, 5 or 10 seconds
@@ -107,7 +109,7 @@ Exactly four kinds, and only one of them is automatic:
    the selected account, at most 500 of them, and for nothing else about them —
    no quantity, no entry price, no P&L, no account. Equities only in this
    release. Futures and options rows are not priced by this feed: each shows
-   the position's recorded close, or its entry price when no close is recorded,
+   the position's recorded close, or a dash when no close is recorded,
    and says so on the row.
    The prices stay on this machine: never uploaded, never resold.
    Your credentials are encrypted at rest, bound to your
@@ -181,7 +183,7 @@ Exactly four kinds, and only one of them is automatic:
                                 the same clamped interval as the bridge)
     • equities only             futures and options rows are not priced by this
                                 feed: each shows the position's recorded close,
-                                or its entry price when no close is recorded,
+                                or a dash when no close is recorded,
                                 and says so on the row. Nothing in this tree
                                 writes the contract-keyed mark a derivative
                                 would otherwise read, so the sentence this
@@ -202,20 +204,31 @@ Exactly four kinds, and only one of them is automatic:
                                   tests/quotes-egress-guard.test.ts refuses any
                                   provider naming a host THIS file does not
                                   disclose.
-    • the sign-in, as a PROCESS   Angel One flushes every session at 5 AM IST;
-      rule                        the next one is opened from the client code,
-                                  PIN and the TOTP secret already in the
-                                  encrypted broker credentials, with no human
-                                  step. Nothing new is asked of the user and no
-                                  second credential is stored. The jwt is
-                                  cached IN MEMORY by
+    • the sign-in, as a PROCESS   Angel One flushes every session at 5 AM IST.
+      rule                        The jwt is cached IN MEMORY by
                                   `angelOneSessionExpiresAt()`, and the adapter
                                   holding it is rebuilt when the connection row
                                   changes — so the honest ceiling is "at most
-                                  once a day WHILE IT STAYS OPEN, and again
-                                  after a relaunch or a credential re-save",
-                                  not once per calendar day (v4.2 fix wave,
-                                  B-7).
+                                  once a day while Vyuha stays open, again
+                                  after a relaunch, after Angel One's 5 AM IST
+                                  session flush, or when you re-save the
+                                  credentials", not once per calendar day
+                                  (v4.2 fix wave, B-7; all four triggers named
+                                  per owner ruling C-2).
+    • FOUR things are sent, and   `angelOneLogin()` in lib/import/api/angelone.ts
+      the TOTP SECRET is not      posts `clientcode`, `password` (the PIN) and
+      one of them                 `totp` — a code minted at call time — under
+                                  `smartApiHeaders(creds.apiKey)`, which carries
+                                  the SmartAPI app key in `X-PrivateKey`. The
+                                  base32 secret stays in the encrypted broker
+                                  credentials on this machine. Nothing new is
+                                  asked of the user and no second credential is
+                                  stored (owner ruling C-4).
+    • three tries, then stop      a refused sign-in is retried at most three
+                                  times before the adapter stops until the
+                                  credentials are re-saved, so a wrong PIN is
+                                  three refusals and not one per poll (owner
+                                  ruling C-2).
     • the token look-up           Angel One prices by its own instrument token,
                                   so each symbol is resolved once against the
                                   same host and the mapping is kept locally.
@@ -227,7 +240,7 @@ Exactly four kinds, and only one of them is automatic:
                                   lib/quotes/persist-mark.ts (invariant 8)
     • equities only               futures and options rows are not priced by
                                   this feed: each shows the position's recorded
-                                  close, or its entry price when no close is
+                                  close, or a dash when no close is
                                   recorded, and says so on the row (v4.2 fix
                                   wave, B-5 — the same correction as the Upstox
                                   paragraph above, and the same literal)

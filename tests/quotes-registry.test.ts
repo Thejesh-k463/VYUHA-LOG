@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PROVIDER_ID,
@@ -336,6 +338,37 @@ describe("a feed this build WITHHOLDS is never effective, acknowledged or not", 
       selectProviderId({ liveFeedProvider: "kite", openalgoEnabled: false, openalgoAckVersion: null }),
       "a planned id must never be the effective feed",
     ).toBe("eod");
+  });
+});
+
+/**
+ * C-3 (v4.2 fix wave 3) — THE MEMO COMMENT QUOTES THE SHEET, SO IT MUST QUOTE
+ * THE CURRENT ONE.
+ *
+ * The one-instance-per-process comment justifies the cache by quoting the
+ * consent sheet's sign-in promise. Fix wave 2 (B-7) disproved that promise as
+ * written — the sign-in is a PROCESS rule, and this cache is the process it is
+ * a rule about — so the comment was left quoting a sentence no surface says any
+ * more, which is how the next reader "restores" the wrong one.
+ */
+describe("the one-instance comment quotes the sheet that shipped", () => {
+  /** `*`-prefixed and hard-wrapped: a quoted sentence straddles three lines. */
+  const flatten = (rel: string) =>
+    readFileSync(path.join(process.cwd(), rel), "utf8")
+      .replace(/^\s*\*\s?/gm, " ")
+      .replace(/\s+/g, " ");
+
+  it("states the process rule and its cap, not the calendar claim", () => {
+    const src = flatten("lib/quotes/registry.ts");
+    expect(src, "the comment still quotes the sentence B-7 disproved").not.toContain(
+      '"signs in once each trading day"',
+    );
+    expect(src).toContain(
+      "signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved",
+    );
+    expect(src, "the comment omits the C-2 cap the same instance now holds").toContain(
+      "caps a refused login at three attempts",
+    );
   });
 });
 

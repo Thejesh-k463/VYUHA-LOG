@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   ANGELONE_CAPABILITIES,
   ANGELONE_HOURLY_BUDGET,
+  ANGELONE_LOGIN_CAPPED_REASON,
+  ANGELONE_MAX_LOGIN_ATTEMPTS,
   ANGELONE_MAX_TOKENS_PER_CALL,
   ANGELONE_RATE_LIMIT_PER_SECOND,
   angelOneFeedErrorMessage,
@@ -21,6 +23,9 @@ import {
 } from "@/lib/quotes/angelone";
 import type { AngelTokenCache, ResolvedAngelToken } from "@/lib/quotes/angelone-tokens";
 import type { AngelOneCredentials } from "@/lib/import/api/angelone";
+// PURE, and the real decision the desk makes: the capped state has to be one
+// this function opens the connect prompt on, or the sentence has no screen.
+import { showConnectPrompt } from "@/lib/live/connect-prompt";
 import {
   ANGELONE_CADENCE_TIERS,
   angelOneCadenceSeconds,
@@ -302,13 +307,21 @@ describe("a quote — rupees in, paise out, and `close` is the PREVIOUS close", 
     // mark" — a value nothing writes, since no writer stores a CONTRACT-keyed
     // mark. The health line is printed by the SAME Settings card that prints
     // the B-5 footnote, so it states the same fallback the footnote does.
+    //
+    // …and fix wave 3, C-11: the fallback is A DASH, not the entry price. The
+    // row prints "—" when no close was ever recorded, and this clause is
+    // byte-identical on the card, the sheets, the help and the docs.
     expect(health.reason).toContain(
-      "each shows the position's recorded close, or its entry price when no close is recorded",
+      "each shows the position's recorded close, or a dash when no close is recorded",
     );
     expect(
       (health.reason ?? "").toLowerCase(),
       "the health line still promises the last stored mark",
     ).not.toContain("last stored mark");
+    expect(
+      (health.reason ?? "").toLowerCase(),
+      "the health line still promises the entry price (C-11)",
+    ).not.toContain("entry price");
   });
 });
 
@@ -407,7 +420,7 @@ describe("the session — one login a day, at 05:00 IST, and one attempt at a ti
     }
   });
 
-  it("NEVER loops a failing login — one attempt, then a minute of silence", async () => {
+  it("NEVER loops a failing login — one attempt, a minute of silence, THREE IN ALL", async () => {
     const h = harness({
       tokens: [tokenOf("SBIN", "NSE", "3045")],
       login: async () => {
@@ -426,7 +439,127 @@ describe("the session — one login a day, at 05:00 IST, and one attempt at a ti
     h.advance(31_000);
     await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/TOTP/i);
     expect(h.logins, "one more attempt, once the minute is up").toBe(2);
+
+    // …and the minute of silence ENDS somewhere (ruling C-2). The third
+    // refusal is the last attempt this instance ever makes.
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/refused the login three times/i);
+    expect(h.logins, "the third attempt is made, and reports the cap").toBe(3);
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/refused the login three times/i);
+    expect(h.logins, "and there is no fourth").toBe(3);
     expect(h.sent, "nothing was ever quoted without a session").toEqual([]);
+  });
+});
+
+/* ───────── the cap on refused logins (owner ruling C-2, fix wave 3) ──────── */
+
+/**
+ * A WRONG PIN IS SENT THREE TIMES, NOT 1,440 TIMES A DAY.
+ *
+ * `ANGELONE_LOGIN_RETRY_MS` spaced the attempts and nothing ENDED them: a
+ * credential saved wrong once went to apiconnect.angelone.in every 60 s for as
+ * long as the desk polled. The cap is per INSTANCE — the registry keys its one
+ * memoised provider on the connection row's `updated_at` plus a fingerprint of
+ * the stored ciphertext, so re-saving the credentials (or relaunching) is what
+ * clears it, and nothing about it is persisted.
+ */
+describe("three refused logins, and then it stops (ruling C-2)", () => {
+  const REFUSING = {
+    tokens: [tokenOf("SBIN", "NSE", "3045")],
+    login: async () => {
+      throw new Error("Angel One login: Invalid totp");
+    },
+  } as const;
+
+  it("attempts at t=0, 61 s and 122 s — and never a fourth", async () => {
+    // The constant and the sentence must agree: the user is told "three
+    // times", so three is what the code may spend.
+    expect(ANGELONE_MAX_LOGIN_ATTEMPTS).toBe(3);
+    expect(ANGELONE_LOGIN_CAPPED_REASON).toContain("three times");
+    const h = harness(REFUSING);
+
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow();
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow();
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow();
+    expect(h.logins, "three attempts, one a minute").toBe(3);
+
+    // t = 183 s: the minute is up, the stamp says "go", and the cap says no.
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/refused the login three times/i);
+    expect(h.logins, "the fourth attempt is never made").toBe(3);
+
+    // …and not the next morning either. The instance is done; a re-save builds
+    // a new one, which is the reset.
+    h.advance(24 * 60 * 60 * 1000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/refused the login three times/i);
+    expect(h.logins, "not a fourth a day later either").toBe(3);
+    expect(h.sent, "and no quote request was ever made without a session").toEqual([]);
+  });
+
+  it("says the ONE sentence that names what to re-save, in a state the desk prompts on", async () => {
+    const h = harness(REFUSING);
+    for (let i = 0; i < 3; i += 1) {
+      await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow();
+      h.advance(61_000);
+    }
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.ok).toBe(false);
+    // VERBATIM — the desk prints this reason, and it is the only sentence this
+    // state produces whatever the last poll happened to fail on.
+    expect(health.reason).toBe(
+      "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker.",
+    );
+    expect(health.reason).toBe(ANGELONE_LOGIN_CAPPED_REASON);
+    // `unreachable`, not `no-key`: a connection IS saved and was refused. What
+    // matters to the user is that the once-a-day connect prompt fires, and
+    // `lib/live/connect-prompt.ts` opens on exactly these two states — this
+    // asserts the real function rather than the state's name.
+    expect(health.state).toBe("unreachable");
+    expect(
+      showConnectPrompt({ providerId: "angelone", healthState: health.state }, null),
+      "a capped feed must still send the user to Import → Connect broker",
+    ).toBe(true);
+    // health() is a report, not a probe: it does not attempt a fourth login.
+    expect(h.logins).toBe(3);
+  });
+
+  it("a SUCCESSFUL login resets the count — three IN A ROW is the rule", async () => {
+    let attempt = 0;
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      login: async () => {
+        attempt += 1;
+        // The second attempt works; every other one is refused.
+        if (attempt === 2) return { jwtToken: "jwt-good" };
+        throw new Error("Angel One login: Invalid totp");
+      },
+      // The session dies as soon as it is used, so the next poll signs in
+      // again — the 05:00 IST flush case, which is legitimate and counts
+      // toward the cap only when it is REFUSED.
+      respond: () => {
+        throw new Error("Angel One quote: Invalid Token (AG8001)");
+      },
+    });
+
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/TOTP/i);
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")]), "attempt 2 signs in").resolves.toBeInstanceOf(Map);
+    expect(h.logins).toBe(2);
+
+    // Three more refusals — a NEW count of three, not one more on top of the
+    // first failure. Two would have been enough if the success had not reset.
+    for (let i = 0; i < 3; i += 1) {
+      h.advance(61_000);
+      await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow();
+    }
+    expect(h.logins, "2 attempts before the reset, then a fresh 3").toBe(5);
+
+    h.advance(61_000);
+    await expect(h.provider.snapshot([KEY("SBIN")])).rejects.toThrow(/refused the login three times/i);
+    expect(h.logins, "and now it stops").toBe(5);
   });
 });
 
@@ -461,6 +594,16 @@ describe("the gate, and a health() that never throws", () => {
   it("declares the one host it can reach, and the daily auth it really needs", () => {
     expect(ANGELONE_CAPABILITIES.id).toBe("angelone");
     expect(ANGELONE_CAPABILITIES.egressDescription).toContain("apiconnect.angelone.in");
+    // C-3 (fix wave 3). The sign-in clause is a PROCESS rule — B-7 disproved
+    // the calendar claim — and it now states its own ceiling, because C-2 gave
+    // the code one and a consent sheet that omits it under-states what is sent.
+    expect(ANGELONE_CAPABILITIES.egressDescription).toContain(
+      "signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved; a refused login is retried at most three times",
+    );
+    expect(
+      ANGELONE_CAPABILITIES.egressDescription,
+      "the sheet still claims a calendar-daily sign-in (B-7)",
+    ).not.toContain("once each trading day");
     expect(ANGELONE_CAPABILITIES.staleness).toBe("delayed");
     expect(ANGELONE_CAPABILITIES.requiresDailyAuth).toBe(true);
     expect(ANGELONE_CAPABILITIES.segments).toEqual(["NSE", "BSE"]);
@@ -502,7 +645,24 @@ describe("the breadcrumb the Angel One messages name", () => {
   it("no longer promises a 'last stored mark' anywhere in the adapter (B-5)", () => {
     expect(SRC.toLowerCase(), "the adapter still promises the last stored mark").not.toContain("last stored mark");
     expect(SRC).toContain(
-      "each shows the position's recorded close, or its entry price when no close is recorded",
+      "each shows the position's recorded close, or a dash when no close is recorded",
+    );
+  });
+
+  /**
+   * C-11 (fix wave 3) — "or a dash", in every STRING the adapter can print.
+   *
+   * The comment above the sentence explains what the dash replaced, so a blunt
+   * source-wide ban on the words would forbid the explanation as well. This
+   * bans the phrase in the STRING LITERALS instead: any line the adapter could
+   * hand to `health()` or to an error message.
+   */
+  it("promises a dash and never an entry price in any string it can print (C-11)", () => {
+    const literals = SRC.split("\n").filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"));
+    const offenders = literals.filter((line) => /entry price/i.test(line));
+    expect(offenders, `the adapter still prints "entry price": ${offenders.join(" | ")}`).toEqual([]);
+    expect(SRC, "and the replacement clause is stated, not just deleted").toContain(
+      "recorded close, or a dash when no close is recorded",
     );
   });
 });

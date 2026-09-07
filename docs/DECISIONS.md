@@ -4277,8 +4277,10 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   `load-desk.ts` calls it; `lib/quotes/manual.ts` applies `isCashKey()` so the typed-mark provider cannot quote an option at the
   underlying either (a quoted value outranks the stored mark, so the provider door had to close too). Rejected: relabel and
   keep the number; defer to the contract-keyed schema release. Consequence recorded for docs: no writer produces a
-  contract-keyed mark, so a derivative row shows its recorded close under an "End of day" pill, or its entry price — never a
-  "Stored mark" pill.
+  contract-keyed mark, so a derivative row shows its recorded close under an "End of day" pill, or a DASH when no close is
+  recorded (invariant 6; the desk has no entry-price rung — ruling C-11, fix wave 3, corrected copy that had said "entry
+  price") — never a "Stored mark" pill. The positions tracker, /risk, the performance report and the breach scan DO fall to
+  the entry price after the close, because they need a number to sum; the desk is the row that "says so", and it shows a dash.
 - **A-2 (consent claim, broken feature):** `getLiveFeedProvider()` built a fresh adapter per call, so the Angel One jwt cache,
   the 60 s failed-login backoff, the 1 req/s guard and the 4,000/h budget were per REQUEST: one `/live` visit = two
   `loginByPassword` calls (SSR + stream), every tab-foreground and the 15:31 reopen one more, a wrong PIN re-sent on every open,
@@ -4327,3 +4329,51 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   mangled, the second was passed as a pathspec); the message went through a file and `git commit -F`. A recursive shell grep
   over the whole tree hung (known: use the Grep tool). SendMessage is unavailable in this harness, so a builder cannot be
   appended mid-run — a follow-up builder on the same file set after it reports is the pattern.
+
+## 2026-09-07 — v4.2 fix-wave audit (`c487963..8ae5dea`, CI 34137371450 6/6): 12 raw → 12 unique → 12 after the skeptic → 13 with one promotion → fix wave 2 `99aa027` (CI 34148759788 6/6) → round 3: 13 raw → 11 unique → 11 after the skeptic
+
+- **Ladder so far:** 14 → 12 (+1 promoted) → 11. Fix wave 2 fixed all 13 plus three seam defects; round 3 found 11 (one
+  silent wrong number, one consent under-disclosure, nine cosmetic/guard items) → fix wave 3.
+- **A-1 was applied to the desk only; three readers still priced a derivative at its underlying (B-1/B-2/B-3):** `/risk`
+  (`ExposureInput.mtm` → exposure, risk-at-stop, to-target %, futures margin, SEBI radar), the performance report's
+  unrealised → terminal value → XIRR/TWR, and the auto-MTM breach scan ("NIFTY: mark 23450 has reached your target 150"
+  every EOD run). Reproduced: NIFTY 23500 CE 75 × ₹120 with the pasted spot 23,450 → +₹17,49,750 on /risk. All three now
+  call `storedMarkFor()`; `PERFORMANCE_FIELDS` gained `instrumentType` + `tradingsymbol` (the 2026-08-29 narrow projection
+  stands — no switch to `getTrackerTrades()`). Lesson recorded: a ruling that names the surfaces it covers is a checklist
+  for the builder AND the auditor; the first fix wave's builder set did not include those files, and the first re-audit
+  caught it by grepping every `mtm.get(` reader.
+- **A release flag outranks a stored consent (seam S4, wave 2):** `selectProviderId` returned a PLANNED provider when its
+  flag was off but a current ack existed (the picker column travels in backups), so the card showed no radio and no block
+  and the desk built the planned stub whose reason named `ANGELONE_FEED_ENABLED` to a customer. Now `withheldFeedReason(id)`
+  collapses a stored id outside `SHIPPED_PROVIDER_IDS` to `eod` BEFORE the ack gate with a customer-facing reason ("This
+  build does not offer the Angel One feed; the desk stays on end-of-day prices."); the `ack` route action is narrowed to the
+  flag-built set and the "Review and accept" control is withheld for a non-offered provider. Latent in 4.2 (all flags on);
+  the registry header advertises the flag flip as a supported one-line operation, which is why it had to hold.
+- **The card folds the POST's verdict (B-4):** `store()` and both accept paths discarded the `feed` the route already
+  returned, and the card is mounted unkeyed so `router.refresh()` preserved the stale `status`; an accepted sheet left the
+  blocked block and "Not live — blocked" on screen until reload, and the 4.1 switch-away path regressed. `foldFeedResponse`
+  folds `feed`/`upstox`/`angelone` from the POST body; no effect, no loop.
+- **Consent copy said what no writer produces (B-5):** "Futures and options rows keep their last stored mark" on eight
+  surfaces, including both consent sheets, while no code path stores a contract-keyed mark; the row shows its recorded
+  close (or, on the desk, a dash). Fixed on every surface with a byte-identity seam (S2). **B-7 (owner ruling: reword, do
+  not persist the jwt):** "signs in once each trading day" was true per PROCESS only; every relaunch, re-saved credential,
+  slider change or account switch signs in again, and the launch-time trade pull does its own uncached sign-in on the same
+  disclosed host. **B-6:** the cadence count is DEDUPED scrips, not per-trade positions — the noun moved to "scrips" on every
+  surface after the desk printed "your 50 open positions" beside 51 rows.
+- **Round-3 findings that shaped fix wave 3 (rulings in `06-ANSWERS.md`):** (C-1) applying A-1 to the /risk futures
+  SETTLEMENT reference was an over-reach — the exchange settles a stock future at the UNDERLYING's cash-segment close, the
+  contract rung is dead in production, and a short future (avgBuyPrice = 0 until covered, imports write no close) printed a
+  ₹0 delivery notional and ₹0 STT on the panel that exists to warn about the STT trap; ruling: the underlying's cash mark →
+  close → side-aware entry, null = unknown, never ₹0; A-1 intact for every P&L mark. (C-2) the adapter retried a refused
+  login every 60 s with no cap while the desk polled — up to 1,440 credential transmissions a day on a wrong PIN, the
+  pattern a broker lockout catches, under a sheet saying "at most once a day"; ruling: cap at three consecutive failures,
+  then stop until re-save or relaunch, and the sheet names the 5 AM IST flush re-login and the cap. (C-4) the sheet named
+  three credentials sent; the SmartAPI app key travels as `X-PrivateKey` on every request — a fourth. (C-11) the B-5
+  sentence promised an "entry price" fallback the desk row does not have (above).
+- **Guard shapes that could not fire:** the "exhaustive" `broker_connections` reverse scan matched one textual shape
+  (`.from(brokerConnections)`) and missed `sql`-template, `schema.` table-map and relational-API reads; the Angel One
+  fetch-shape rule had no floor and matched two-argument `fetch` only (a split-literal GTT plant passed); three passing seam
+  tests were titled "DEFECT … RED ON PURPOSE" — the one kind of cosmetic that can neutralise a red gate.
+- **Gate on `99aa027`:** `npm run verify` EXIT 0 — **357 files / 6,880 passed / 35 skipped**, `next build` compiled 12.0 s;
+  `e2e/z-live-desk.spec.ts` 9/9 twice; seam pass `tests/seams-v42-fix2.test.ts` 20 tests over seven crossings, three
+  defects found and fixed in the same wave; README 355 → 357 files, 6,821 → 6,880 tests. `package-lock.json` untouched.

@@ -48,14 +48,21 @@ import {
  *    thing this feed persists is the symbol → token mapping (migration 0070),
  *    which is a fact about the market and not about a book; the single stored
  *    price of the day is written by `lib/quotes/persist-mark.ts`.
- * 3. ONE LOGIN A DAY, AND ONE ATTEMPT AT A TIME. Angel One FLUSHES every
- *    session at 05:00 IST — the jwt's own `exp` claim is a red herring and
- *    trusting it would send a dead token all morning. The jwt is cached in
- *    memory until the next 05:00 IST and re-minted then, or immediately when an
- *    envelope says the session is invalid. A FAILED login is never retried in a
- *    loop: `generateTokens` is capped at 1,000/hour and a wrong PIN fails
- *    identically the second time, so the next attempt waits 60 s and `health()`
- *    says why in the meantime.
+ * 3. ONE LOGIN A DAY, ONE ATTEMPT AT A TIME, AND THREE IN ALL (ruling C-2).
+ *    Angel One FLUSHES every session at 05:00 IST — the jwt's own `exp` claim
+ *    is a red herring and trusting it would send a dead token all morning. The
+ *    jwt is cached in memory until the next 05:00 IST and re-minted then, or
+ *    immediately when an envelope says the session is invalid. A FAILED login
+ *    is never retried in a loop: `generateTokens` is capped at 1,000/hour and a
+ *    wrong PIN fails identically the second time, so the next attempt waits
+ *    60 s and `health()` says why in the meantime — AND the attempts are
+ *    COUNTED. After three consecutive refusals this instance stops signing in
+ *    altogether: a PIN saved wrong once would otherwise be transmitted every
+ *    60 s for as long as the desk is open (1,440 times a day), and the third
+ *    identical refusal is not evidence a fourth will differ. A SUCCESSFUL
+ *    login resets the count; a re-saved credential or a relaunch builds a new
+ *    instance (`lib/quotes/registry.ts` keys its cache on `updated_at` plus a
+ *    fingerprint of the stored ciphertext), which is how the user clears it.
  * 4. TWO CEILINGS, BOTH REFUSING (never queueing). One request a second
  *    (`createRateGuard(1)`), and a rolling 4,000 an hour. Angel One publishes
  *    1/s in one place and 10/s in another, and 5,000/hour; Vyuha takes the
@@ -112,6 +119,34 @@ export const ANGELONE_MIN_REQUEST_GAP_MS = 1000;
 /** After a failed login, the earliest the next attempt may be made. */
 export const ANGELONE_LOGIN_RETRY_MS = 60_000;
 
+/**
+ * Consecutive REFUSED logins after which this instance stops signing in
+ * (owner ruling C-2, v4.2 fix wave 3).
+ *
+ * The 60 s stamp above spaces the attempts; it never ENDS them, so a wrong PIN
+ * saved once was re-sent to Angel One every minute for as long as the desk
+ * polled — up to 1,440 credential transmissions a day, each one refused for the
+ * same reason as the first. Three is the cap because the second and third
+ * attempts cover the failures that are not about the credential at all (a clock
+ * that drifted a TOTP step, one bad response), and nothing after that is
+ * evidence a fourth would differ.
+ *
+ * THE CAP IS PER INSTANCE, AND THAT IS THE RESET. The registry memoises one
+ * instance per process keyed on the connection row's `updated_at` and a
+ * fingerprint of the stored ciphertext, so re-saving the credentials builds a
+ * fresh instance with a fresh count — and so does a relaunch. Nothing here is
+ * persisted; a cap that outlived the process would be a lock-out.
+ */
+export const ANGELONE_MAX_LOGIN_ATTEMPTS = 3;
+
+/**
+ * What the desk is told once the cap is reached — VERBATIM, and the only
+ * sentence this state produces. It names the three credentials and the screen
+ * that holds them, because re-saving them is the ONLY thing that clears it.
+ */
+export const ANGELONE_LOGIN_CAPPED_REASON =
+  "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker.";
+
 /** Angel One clears EVERY session at 05:00 IST, whatever the jwt's exp says. */
 export const ANGELONE_SESSION_FLUSH_IST_HOUR = 5;
 
@@ -135,8 +170,12 @@ export const ANGELONE_CAPABILITIES: ProviderCapabilities = {
   // Angel One flushes every session at 05:00 IST. This is the one provider for
   // which the flag is literally true every trading day.
   requiresDailyAuth: true,
+  // The sign-in clause is a PROCESS rule, not a calendar one (B-7), and it now
+  // states its own ceiling (C-2): the session lives in one memoised instance,
+  // so "once a day" is true while that instance is, and a refused login stops
+  // at three attempts instead of repeating every minute.
   egressDescription:
-    "Requests go to apiconnect.angelone.in — your own Angel One account, signed in once each trading day with the client code, PIN and TOTP secret you saved for imports. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
+    "Requests go to apiconnect.angelone.in — your own Angel One account, using the client code, PIN and TOTP secret you saved for imports: signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved; a refused login is retried at most three times. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
 };
 
 /* ─────────────────────────── the session, and its clock ─────────────────── */
@@ -182,7 +221,11 @@ export function angelOneFeedErrorMessage(e: unknown): string {
     return `Angel One refused the TOTP code (${raw}). Check the enrolled secret under Import → Connect broker and this machine's clock — a drifted clock produces valid-looking wrong codes. Prices stop arriving until it is fixed, and the desk keeps the last mark it had.`;
   }
   if (isAngelSessionInvalid(e)) {
-    return `Angel One says the session is no longer valid (${raw}). Vyuha signs in again on the next poll; Angel One clears every session at 5 AM IST, so this is expected once a morning.`;
+    // The re-sign-in after the 05:00 IST flush is legitimate and stays. It is
+    // the same attempt as any other, so it counts toward the C-2 cap only if it
+    // is REFUSED — and this sentence says so rather than promising an unlimited
+    // retry the code no longer performs.
+    return `Angel One says the session is no longer valid (${raw}). Vyuha signs in again on the next poll; Angel One clears every session at 5 AM IST, so this is expected once a morning. If that sign-in is refused it is attempted three times in all, and then stopped.`;
   }
   if (/password|\bpin\b/i.test(raw)) {
     return `Angel One refused the login PIN (${raw}) — the login PIN, not the account password. Re-enter it under Import → Connect broker.`;
@@ -490,6 +533,12 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
   let jwtUntil = 0;
   let lastLoginFailAt: number | null = null;
   let lastLoginError: string | null = null;
+  /**
+   * CONSECUTIVE refused logins (ruling C-2). Reset by a success, never
+   * persisted, and never incremented by a refusal of Vyuha's OWN guards — those
+   * send nothing, so they are not evidence about the credential.
+   */
+  let consecutiveLoginFailures = 0;
   let lastError: string | null = null;
   let lastRequestAt: number | null = null;
 
@@ -532,13 +581,23 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
     return { ok: true };
   }
 
+  /** True once three consecutive logins have been REFUSED (ruling C-2). */
+  function loginCapReached(): boolean {
+    return consecutiveLoginFailures >= ANGELONE_MAX_LOGIN_ATTEMPTS;
+  }
+
   /**
-   * The jwt, minted at most once a day and at most once a minute after a
-   * failure. ONE attempt, never a loop — see property 3 in the header.
+   * The jwt, minted at most once a day, at most once a minute after a failure,
+   * and at most three times in a row when it keeps being refused. ONE attempt,
+   * never a loop, and never for ever — see property 3 in the header.
    */
   async function session(creds: AngelOneCredentials): Promise<string> {
     const t = now();
     if (jwt && t < jwtUntil) return jwt;
+    // THE CAP IS CHECKED BEFORE THE CLOCK. Past three refusals the 60 s stamp
+    // is irrelevant: no attempt is made again on this instance at any hour, so
+    // the credential stops going out entirely rather than going out slower.
+    if (loginCapReached()) throw new Error(ANGELONE_LOGIN_CAPPED_REASON);
     if (lastLoginFailAt != null && t - lastLoginFailAt < ANGELONE_LOGIN_RETRY_MS) {
       throw new Error(lastLoginError ?? "The last Angel One sign-in failed; the next attempt is a minute away.");
     }
@@ -550,13 +609,20 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       jwtUntil = angelOneSessionExpiresAt(t);
       lastLoginFailAt = null;
       lastLoginError = null;
+      // A SUCCESS RESETS THE COUNT — the cap is about three refusals in a row,
+      // not about three refusals ever. The morning re-sign-in after the 05:00
+      // IST flush therefore starts from zero on a session that worked.
+      consecutiveLoginFailures = 0;
       return jwtToken;
     } catch (e) {
       jwt = null;
       jwtUntil = 0;
       lastLoginFailAt = t;
       lastLoginError = angelOneFeedErrorMessage(e);
-      throw new Error(lastLoginError);
+      consecutiveLoginFailures += 1;
+      // The third refusal reports the cap itself, so the sentence the user is
+      // left looking at is the one that says what to do about it.
+      throw new Error(loginCapReached() ? ANGELONE_LOGIN_CAPPED_REASON : lastLoginError);
     }
   }
 
@@ -736,6 +802,21 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       }
       if (gate.state === "disabled") return { ok: false, state: "disabled", ...counts, reason: gate.reason };
       if (gate.state === "no-key") return { ok: false, state: "no-key", ...counts, reason: gate.reason };
+      // A CAPPED INSTANCE ARRIVES HERE, and this is the branch that reports it
+      // (ruling C-2). Once the cap is reached `session()` throws
+      // ANGELONE_LOGIN_CAPPED_REASON before anything else in `snapshot()` runs,
+      // so `lastError` IS that sentence, verbatim — a second branch testing the
+      // counter here could never fire, and a guard that cannot fire is worse
+      // than no guard.
+      //
+      // `unreachable`, not `no-key`: a connection IS saved — it was refused —
+      // and `no-key` is defined one screen up as "no usable Angel One
+      // connection is saved". Both states open the desk's once-a-day connect
+      // prompt (`lib/live/connect-prompt.ts`), and its Angel One headline is
+      // chosen by PROVIDER, not by state, so the user is sent to Import →
+      // Connect broker either way; `unreachable` is the one whose documented
+      // meaning ("saved, but the broker sign-in is the common cause") is true
+      // here.
       if (lastError) return { ok: false, state: "unreachable", ...counts, reason: lastError };
 
       const notPriced = counts.unresolvedSymbols + counts.skippedDerivatives;
@@ -753,8 +834,11 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
               // holding a derivative the card states both promises at once. The
               // tail once named a value nothing writes — no writer stores a
               // CONTRACT-keyed mark, so there is no such number to keep; what
-              // the row shows is its recorded close, then its entry price.
-              ` ${notPriced} position(s) are not priced by this feed — ${counts.skippedDerivatives} futures/options and ${counts.unresolvedSymbols} Angel One has no matching scrip for — and each shows the position's recorded close, or its entry price when no close is recorded.`) +
+              // the row shows is its recorded close, then A DASH (ruling C-11,
+              // fix wave 3: the row prints "—", never the entry price, and this
+              // clause is byte-identical on the card, the sheets, the help and
+              // the docs).
+              ` ${notPriced} position(s) are not priced by this feed — ${counts.skippedDerivatives} futures/options and ${counts.unresolvedSymbols} Angel One has no matching scrip for — and each shows the position's recorded close, or a dash when no close is recorded.`) +
           (counts.pendingSymbols === 0 ? "" : ` ${counts.pendingSymbols} more are still being looked up.`),
       };
     },

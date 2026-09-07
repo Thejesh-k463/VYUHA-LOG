@@ -210,3 +210,80 @@ describe("computeSettlement — summary & ordering", () => {
     expect(e.nearestExpiry).toBeNull();
   });
 });
+
+/**
+ * OWNER RULING C-1 (v4.2 fix wave 3). A stock future is settled by the exchange
+ * at the UNDERLYING's cash-segment close, so `refPrice` is that cash mark —
+ * and when the book holds no cash mark, no recorded close and no usable entry
+ * price, the reference is UNKNOWN. It used to be coerced (`p.refPrice ?? 0`)
+ * into a ₹0 notional, ₹0 STT and a ₹0 "STT jump" — a fabricated number on the
+ * one panel whose whole job is to warn about a delivery obligation
+ * (invariant 6: blank beats 0). Unknown now stays unknown, all the way to the
+ * "—" the panel prints.
+ */
+describe("computeSettlement — stock future with an UNKNOWN reference price (C-1)", () => {
+  const unknownFut: SettlementInput = {
+    ...base,
+    id: 20,
+    symbol: "WIPRO",
+    tradingsymbol: "FUT WIPRO 25 Jun 2026",
+    segment: "future",
+    side: "short",
+    expiry: "2026-06-25",
+    netQty: 300,
+    refPrice: null,
+  };
+
+  it("carries a null reference through as an unknown notional — never ₹0", () => {
+    const o = computeSettlement([unknownFut], DEFAULT_SETTLEMENT_RATES, today).obligations[0];
+    expect(o.kind).toBe("stock_future");
+    expect(o.settles).toBe("yes"); // it WILL devolve; only its value is unknown
+    expect(o.notional).toBeNull();
+    expect(o.notional).not.toBe(0);
+    expect(o.physicalStt).toBeNull();
+    expect(o.exitStt).toBeNull();
+    expect(o.sttJump).toBeNull();
+    // The delivery is still stated in SHARES — that much is known.
+    expect(o.fundsOrShares).toContain("deliver 300 WIPRO");
+    expect(o.warn).toBe("danger"); // dte 1 — an unknown value is not a safe one
+  });
+
+  it("a LONG unknown future states no rupee figure it cannot derive", () => {
+    const o = computeSettlement(
+      [{ ...unknownFut, side: "long" }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    ).obligations[0];
+    expect(o.deliveryAction).toBe("Take delivery (buy)");
+    expect(o.notional).toBeNull();
+    expect(o.fundsOrShares).not.toContain("₹0");
+    expect(o.fundsOrShares.toLowerCase()).toContain("unknown");
+  });
+
+  it("the summary EXCLUDES it and counts it instead of summing a zero", () => {
+    const s = computeSettlement(
+      [
+        unknownFut,
+        { ...base, id: 21, symbol: "RELIANCE", tradingsymbol: "FUT RELIANCE 25 Jun 2026", segment: "future", expiry: "2026-06-25", netQty: 250, refPrice: 3000 },
+      ],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    );
+    expect(s.notionalAtRisk).toBe(750000); // the known future only
+    expect(s.fundsNeeded).toBe(750000);
+    expect(s.physicalSttTotal).toBe(750);
+    expect(s.unknownNotionalCount).toBe(1);
+    // …and an all-known book counts none.
+    expect(computeSettlement([{ ...unknownFut, refPrice: 500 }], DEFAULT_SETTLEMENT_RATES, today).unknownNotionalCount).toBe(0);
+  });
+
+  it("known-value futures are unchanged (the cash mark, times qty)", () => {
+    const o = computeSettlement(
+      [{ ...unknownFut, refPrice: 500 }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    ).obligations[0];
+    expect(o.notional).toBe(150000); // 500 × 300
+    expect(o.physicalStt).toBe(150);
+  });
+});

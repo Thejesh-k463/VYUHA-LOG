@@ -92,18 +92,39 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
 
   it("states the poll in full: the sign-in, the look-up, the batching, the cap and the scope", () => {
     const para = angelOneParagraph().replace(/\s+/g, " ");
-    expect(para, "the disclosure does not say the session is cleared daily").toMatch(
-      /clears every API session at 5 AM IST/,
-    );
-    // v4.2 fix wave, B-7. "signs in once a day" was true PER PROCESS only: the
-    // jwt is cached in memory by the adapter, so a relaunch or a credential
-    // re-save opens another session the same day, and a day the app never
-    // opens produces none. The disclosure states the mechanism instead.
+    // v4.2 fix wave, B-7, extended by owner ruling C-2 (2026-09-07). "signs in
+    // once a day" was true PER PROCESS only: the jwt is cached in memory by the
+    // adapter, so a relaunch or a credential re-save opens another session the
+    // same day, and a day the app never opens produces none. The disclosure
+    // states the mechanism instead — and names ALL FOUR triggers, the 5 AM IST
+    // flush included, because a list of three reads as an exhaustive one.
     expect(para, "the disclosure no longer states when a SECOND sign-in happens").toMatch(
-      /at most once a day while it stays open, and again after a relaunch or when you re-save the credentials/,
+      /at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials/,
     );
     expect(para, "the disclosure still claims a calendar-daily sign-in").not.toMatch(/signs in once a day/);
+    expect(para, "the disclosure no longer states the 5 AM IST flush at all").toMatch(/5 AM IST/);
     expect(para, "the disclosure does not say the sign-in is unattended").toMatch(/nothing for you to click/);
+    // C-4. The login request carries FOUR things and the TOTP SECRET is not one
+    // of them: `angelOneLogin()` posts clientcode, the PIN and a one-time code,
+    // under `smartApiHeaders(creds.apiKey)`. Three named understated the egress
+    // by a credential and overstated it by a secret that never leaves here.
+    for (const noun of [
+      "the client code",
+      "the PIN",
+      "the one-time code derived from the TOTP secret",
+      "the SmartAPI app key",
+    ]) {
+      expect(para, `item 3 does not name what the sign-in sends: ${noun}`).toContain(noun);
+    }
+    expect(para, "item 3 does not say the secret itself stays here").toContain("the secret itself is never sent");
+    expect(para, "item 3 claims the secret itself is the credential sent").not.toContain(
+      "signs in with the TOTP secret",
+    );
+    // C-2. The refused-login ceiling: a wrong PIN is three refusals against the
+    // broker's auth endpoint, not one per poll.
+    expect(para, "item 3 does not state the refused-sign-in ceiling").toContain(
+      "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.",
+    );
     expect(para, "the disclosure does not mention the token look-up").toMatch(
       /looks up, once per symbol, the token Angel One prices by/,
     );
@@ -130,10 +151,12 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     );
     expect(para, "the disclosure does not scope the release to equities").toMatch(/Equities only in this release/);
     expect(para, "the disclosure does not say the prices stay here").toMatch(/never uploaded, never resold/);
-    // v4.2 fix wave, B-5 — and what a derivative row shows INSTEAD.
+    // v4.2 fix wave, B-5 — and what a derivative row shows INSTEAD. C-11: the
+    // second half of the fallback is a DASH, not the position's entry price.
     expect(para, "the disclosure does not say what an unpriced derivative row shows").toContain(
-      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
     );
+    expect(para, "the disclosure still offers the entry price as the fallback").not.toContain("its entry price");
   });
 });
 

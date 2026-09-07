@@ -6,13 +6,16 @@ import {
   ANGELONE_FEED_COPY,
   FEED_BLOCKED_HEALTH,
   FEED_CHECKING,
+  KEEP_EOD_CTA,
   PROVIDERS,
   REVIEW_CONSENT_CTA,
   angelOneCadenceText,
   angelOneRowState,
+  feedBlockControl,
   feedBlockState,
   feedHealthText,
   foldFeedResponse,
+  foldWriteResult,
   offeredProviders,
 } from "@/components/settings/live-feed-card";
 import {
@@ -117,14 +120,70 @@ describe("the Angel One radio is offered only behind the one release flag", () =
 
   it("says Angel One, in the owner's words", () => {
     expect(ANGELONE_FEED_COPY.label).toBe("Angel One");
+    // C-3 (fix wave 3): the blurb used to say Vyuha "signs in again each
+    // morning", which is neither the cadence nor the trigger the adapter has —
+    // it signs in when the process needs a session, and again after a relaunch,
+    // after the 5 AM flush and whenever the credentials are re-saved.
     expect(ANGELONE_FEED_COPY.blurb).toBe(
-      "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
+      "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials — without asking you.",
     );
-    // Byte-identical to the Upstox scope sentence: one release-scope rule, one
-    // sentence, so the two rows cannot drift into two different promises.
+    // C-11 (owner ruling "or a dash"): byte-identical to the Upstox scope
+    // sentence — one release-scope rule, one sentence, so the two rows cannot
+    // drift into two different promises — and the fallback is the DASH the row
+    // really renders, never the entry price, which is a cost and not a mark.
     expect(ANGELONE_FEED_COPY.equityOnly).toBe(
-      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
     );
+    expect(ANGELONE_FEED_COPY.equityOnly, "the withdrawn entry-price promise").not.toMatch(/entry price/i);
+  });
+
+  /**
+   * C-3 — NO STRING ON THIS CARD MAY STATE A SIGN-IN CADENCE THE CODE HAS NOT.
+   *
+   * Two phrasings shipped for one behaviour: the blurb said "each morning" and
+   * the consent sheet said "once each trading day" (B-7, fix wave 2, corrected
+   * there and not here). Both describe a clock; the adapter follows a process —
+   * at most one sign-in a day WHILE THE APP STAYS OPEN, and another after a
+   * relaunch, after Angel One's 5 AM flush or a re-saved credential. A user who
+   * leaves the desk open across two days, or restarts it twice in an afternoon,
+   * sees sign-ins the copy denied.
+   *
+   * Scanned over EVERY string this module exports rather than over the two
+   * values that carried it, because the next such sentence will be written in a
+   * third place. `dailyReauth` lost the same two words with it: what is true
+   * there is that there is nothing for the reader to do, which is true of every
+   * hour and not of the morning.
+   */
+  it("states no morning and no trading-day cadence, in ANY string the card exports (C-3)", async () => {
+    const card = await import("@/components/settings/live-feed-card");
+    const strings: [string, string][] = [];
+    const walk = (where: string, value: unknown, depth = 0) => {
+      if (typeof value === "string") strings.push([where, value]);
+      else if (value && typeof value === "object" && depth < 3) {
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(`${where}.${k}`, v, depth + 1);
+      }
+    };
+    // Every exported value, one level into the arrays too: the picker's own
+    // labels and blurbs live inside `PROVIDERS`, not in a named constant.
+    for (const [name, value] of Object.entries(card)) walk(name, value);
+    // The scan is reading the copy it thinks it is.
+    expect(strings.map(([n]) => n)).toEqual(
+      expect.arrayContaining([
+        "ANGELONE_FEED_COPY.blurb",
+        "ANGELONE_FEED_COPY.dailyReauth",
+        "LIVE_FEED_COPY.dailyReauth",
+        "UPSTOX_FEED_COPY.blurb",
+      ]),
+    );
+    expect(strings.length, "the export scan found almost nothing — it is not reading the card").toBeGreaterThan(10);
+
+    const BANNED_CADENCE = /each morning|once each trading day/i;
+    for (const [where, text] of strings) {
+      expect(BANNED_CADENCE.test(text), `${where}: ${text}`).toBe(false);
+    }
+    // …and it really can fire on both shapes that shipped.
+    expect(BANNED_CADENCE.test("Vyuha signs in again each morning without asking you.")).toBe(true);
+    expect(BANNED_CADENCE.test("signed in once each trading day with the client code")).toBe(true);
   });
 });
 
@@ -308,8 +367,12 @@ describe("the 1–5 s slider is HIDDEN under the Angel One pick, and only under 
 
 describe("the daily re-authentication block is SHOWN for Angel One, with the factual sentence", () => {
   it("says what Angel One's system does, and what Vyuha does about it", () => {
+    // C-3: "…nothing for you to do each morning" lost its last two words. The
+    // CLAIM is about the reader and it survives — there is nothing for them to
+    // do — but the words tied it to a clock the code does not keep, and the
+    // export scan above bans that phrasing in every string on this card.
     expect(ANGELONE_FEED_COPY.dailyReauth).toBe(
-      "Angel One ends every API session at 5 AM IST. Vyuha opens the next one by itself from the client code, PIN and TOTP secret you saved — there is nothing for you to do each morning.",
+      "Angel One ends every API session at 5 AM IST. Vyuha opens the next one by itself from the client code, PIN and TOTP secret you saved — there is nothing for you to do.",
     );
     expect(ANGELONE_FEED_COPY.dailyReauth).toMatch(/5 AM IST/);
     // UNATTENDED is the whole point: the generic sentence says the session
@@ -394,11 +457,14 @@ describe("the consent sheet shows ANGEL ONE's items, and never another provider'
       // or the launch-time trade pull each sign in again on the same disclosed
       // host. The claim pinned here is the reworded one, which is what the code
       // does; it is still Angel One's alone.
-      [
-        "the once-a-day sign-in",
-        /signs in to apiconnect\.angelone\.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials/i,
-      ],
-      ["the 5 AM flush, unattended", /Angel One clears every session at 5 AM IST/i],
+      // C-3 (fix wave 3): the sheet's own owner restated the triggers in the
+      // same wave that reworded the card's blurb, so the two halves of the
+      // claim are pinned separately — the cadence, and the fact that the
+      // triggers are events and not a clock. A byte pin here would red on the
+      // sheet owner's wording rather than on the property.
+      ["the once-a-day sign-in", /signs in to apiconnect\.angelone\.in at most once a day/i],
+      ["the triggers that are not a clock", /again after a relaunch[^.]*re-save the credentials/i],
+      ["the 5 AM flush, unattended", /5 AM IST session flush|clears every session at 5 AM IST/i],
       ["the batching and the tiers", /in batches of 50, no more than once a second/i],
       ["the token look-up kept locally", /keeps that mapping on this machine/i],
     ] as [string, RegExp][]) {
@@ -677,7 +743,9 @@ describe("a blocked Angel One feed is stated, and the sheet is reachable again (
     expect(src).toContain('data-testid="live-feed-review-consent"');
     // The control opens the sheet for the provider that is BLOCKED, which is
     // the STORED one — `pick()` cannot be reached from a radio already checked.
-    expect(src).toMatch(/onClick=\{\(\) => setConsentOpen\(review\)\}/);
+    // C-6 renamed the derived value: the block carries at most ONE control, and
+    // which one it is is now a discriminated union (`review` | `keep-eod`).
+    expect(src).toMatch(/onClick=\{\(\) => setConsentOpen\(control\.provider\)\}/);
     expect(src).toContain("{REVIEW_CONSENT_CTA}");
     expect(REVIEW_CONSENT_CTA).toBe("Review and accept");
     expect(PRESCRIPTIVE_LANGUAGE.test(REVIEW_CONSENT_CTA), REVIEW_CONSENT_CTA).toBe(false);
@@ -762,8 +830,11 @@ describe("the card folds the POST's own verdict into its state (B-4)", () => {
 
   it("all three write paths fold, in the card itself", () => {
     const card = stripComments(read(CARD));
+    // C-7 wraps the fold: `foldWriteResult` IS `foldFeedResponse` plus the
+    // dropped health (asserted below), so the B-4 property is unchanged — all
+    // three write paths keep the server's verdict.
     expect(
-      card.match(/setStatus\(\(prev\) => foldFeedResponse\(prev, r\)\)/g)?.length,
+      card.match(/setStatus\(\(prev\) => foldWriteResult\(prev, r\)\)/g)?.length,
       "store() or one of the two accept paths still discards the answer",
     ).toBe(3);
     // …and it is not a fetch effect wearing a different hat: the only effect on
@@ -863,5 +934,191 @@ describe("a provider this build withholds gets no button, no sheet and no ack (B
       vi.doUnmock("@/lib/quotes/types");
       vi.resetModules();
     }
+  });
+});
+
+/**
+ * C-7 — THE HEALTH LINE DESCRIBED THE FEED THAT USED TO RUN.
+ *
+ * `health` is fetched ONCE, at mount, and it describes the EFFECTIVE provider.
+ * The POST bodies carry none: the provider action answers with `feed`, the ack
+ * action with the two radio states. So after a switch from end-of-day to a
+ * broker feed the card kept printing end-of-day's mount-time "Feed OK · N ms"
+ * over a feed it had never probed — until the user reloaded the page, since
+ * `settings-form.tsx` mounts this card UNKEYED and `router.refresh()` does not
+ * remount it. `needsConnect` reads the same stale value.
+ *
+ * Driven through the REAL route and the card's OWN fold: the mount answer, the
+ * write's answer, what the card is left holding, and the re-ask it now makes.
+ */
+describe("the health line describes the feed that runs NOW, not the one that ran at mount (C-7)", () => {
+  it("switching eod → angelone drops the stale line, and the re-ask names the new provider", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+    await post({ action: "ack", provider: "angelone" }); // both halves hold: SWING is connected
+
+    const mounted = await (await get()).json(); // what the mount fetch put in `status`
+    expect(mounted.feed.effective).toBe("eod");
+    expect(mounted.health.provider, "the mount fetch describes the effective provider").toBe("eod");
+    const atMount = feedHealthText({ health: mounted.health, blocked: false });
+    expect(atMount, "the fixture says nothing at mount, so this would prove nothing").not.toBe(FEED_CHECKING);
+
+    const r = await (await post({ action: "provider", provider: "angelone" })).json();
+    expect(r.feed.effective, "the write did not change what runs").toBe("angelone");
+    expect(r.health, "the POST carries no health — that is the whole defect").toBeUndefined();
+
+    const written = foldWriteResult(mounted, r);
+    expect(written?.health ?? null, "the card kept the PREVIOUS provider's health").toBeNull();
+    const afterWrite = feedHealthText({ health: written?.health, blocked: false });
+    expect(afterWrite).toBe(FEED_CHECKING);
+    expect(afterWrite, "end-of-day's mount-time line survived the switch to Angel One").not.toBe(atMount);
+    expect(afterWrite, "a feed that has never been probed reported OK").not.toContain("Feed OK");
+
+    // The re-ask the card now makes answers for the provider that RUNS.
+    const refreshed = await (await get()).json();
+    expect(refreshed.feed.effective).toBe("angelone");
+    expect(refreshed.health.provider, "the fresh GET still describes the old feed").toBe("angelone");
+  });
+
+  it("the fold is the B-4 fold plus the dropped health — nothing else changed", () => {
+    const prev = {
+      ok: true,
+      feed: { stored: "eod", effective: "eod", refreshSeconds: 3 },
+      angelone: { connected: true, ackCurrent: true, openCount: 7 },
+      health: { ok: true, state: "ok", latencyMs: 4, reason: "" },
+    };
+    const r = { ok: true, feed: { stored: "angelone", effective: "angelone", refreshSeconds: 3 } };
+    expect(foldWriteResult(prev, r)).toEqual({ ...foldFeedResponse(prev, r), health: null });
+    expect(foldWriteResult(null, r), "with no mount answer there is nothing to fold into").toBeNull();
+  });
+
+  it("the fetch is extracted, re-asked from all three write paths, and is still not an effect", () => {
+    const card = stripComments(read(CARD));
+    // ONE fetch, outside the component, called by the mount effect AND by the
+    // write paths. It sits outside so the effect can keep calling `setStatus`
+    // from the promise callback — `react-hooks/set-state-in-effect` fires on
+    // `void refreshStatus(ac.signal)` in the effect body, and AGENTS.md forbids
+    // silencing it.
+    expect(card, "the mount fetch was not extracted").toMatch(
+      /async function fetchStatus\(signal\?: AbortSignal\)/,
+    );
+    expect(card, "the mount effect no longer uses the extracted fetch").toMatch(
+      /void fetchStatus\(ac\.signal\)\.then\(\(j\) => \{/,
+    );
+    expect(card, "the write paths do not share the mount fetch").toMatch(
+      /async function refreshStatus\(\) \{\s*const j = await fetchStatus\(\);/,
+    );
+    expect(
+      card.match(/await refreshStatus\(\)/g)?.length,
+      "store() or one of the two accept paths never re-asks",
+    ).toBe(3);
+    // A plain fetch in an event handler — NOT a second effect, and never a
+    // state-derived one (AGENTS.md).
+    expect(card.match(/React\.useEffect\(/g)?.length, "a second effect appeared").toBe(1);
+  });
+});
+
+/**
+ * C-6 — A WITHHELD STORED PROVIDER LEFT THE BLOCK WITH NO WAY OUT.
+ *
+ * `liveFeedProvider` travels in a backup envelope, so a build with the release
+ * flag OFF can find the withheld broker's id in that column. B-8 correctly
+ * withdrew the "Review and accept" button there — a disclosure must not be
+ * accepted for a feed that cannot run — and that left the block TEXT ONLY. With
+ * `provider` initialised to `"eod"` (the withheld id is not in `PROVIDERS`), the
+ * end-of-day radio is already checked, and a checked radio fires no `onChange`:
+ * `pick()` was unreachable, the column kept the withheld id, and the block and
+ * its "not running" health line stayed for ever unless the user happened to
+ * select another provider and then end-of-day again.
+ *
+ * The flags are MOCKED for the route and INJECTED into the card's own filter,
+ * because all three are true in this build and the stuck state cannot occur
+ * while they are.
+ */
+describe("a withheld stored provider can be cleared from the block itself (C-6)", () => {
+  const offered = (openalgo: boolean, upstox: boolean, angelone: boolean) =>
+    offeredProviders({ openalgo, upstox, angelone }).map((p) => p.id);
+
+  it("the block grows ONE control, and it stores end-of-day through the ordinary write path", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "angelone" }).run();
+    vi.resetModules();
+    vi.doMock("@/lib/quotes/types", async () => ({
+      ...(await vi.importActual<typeof import("@/lib/quotes/types")>("@/lib/quotes/types")),
+      ANGELONE_FEED_ENABLED: false,
+    }));
+    try {
+      // The SAME temp database — lib/db caches its connection on globalThis.
+      const gated = await import("@/app/api/live/feed/route");
+      const ask = () =>
+        gated.GET(new Request("http://127.0.0.1:3011/api/live/feed", { headers: { host: "127.0.0.1:3011" } }));
+      const send = (body: unknown) =>
+        gated.POST(
+          new Request("http://127.0.0.1:3011/api/live/feed", {
+            method: "POST",
+            headers: { host: "127.0.0.1:3011", "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }),
+        );
+
+      const mounted = await (await ask()).json();
+      expect(mounted.feed.stored, "the withheld pick travelled in the backup").toBe("angelone");
+      expect(mounted.feed.effective, "a feed this build withholds ran anyway").toBe("eod");
+      expect(mounted.feed.blockedReason).toContain("This build does not offer the Angel One feed");
+
+      const ids = offered(true, true, false);
+      const block = feedBlockState(mounted.feed, ids);
+      expect(block, "the block is not stated at all").not.toBeNull();
+      expect(block?.reviewProvider, "B-8: a withheld broker's sheet must stay unreachable").toBeNull();
+
+      // THE DEFECT: a stated block, an already-checked eod radio that fires no
+      // onChange, and no control anywhere that stores what is already effective.
+      const control = feedBlockControl(mounted.feed, block, ids);
+      expect(control, "the block carries no control, so the state cannot be cleared").toEqual({ kind: "keep-eod" });
+      expect(KEEP_EOD_CTA).toBe("Keep end-of-day prices");
+
+      // …and the line under it says WHY, in the route's own words, instead of
+      // the generic sentence that points at a fix this build has not got.
+      const line = feedHealthText({ health: mounted.health, blocked: true, blockedReason: block?.reason });
+      expect(line, "the withheld block reported the generic blocked sentence").toBe(mounted.feed.blockedReason);
+      expect(line).not.toBe(FEED_BLOCKED_HEALTH);
+
+      // The control's own write — `pick("eod")` is the ordinary provider action.
+      const r = await (await send({ action: "provider", provider: "eod" })).json();
+      expect(r.ok).toBe(true);
+      const status = foldWriteResult(mounted, r);
+      expect(settingsRow()?.liveFeedProvider, "the withheld id is still what is stored").toBe("eod");
+      expect(feedBlockState(status?.feed, ids), "the block survived the one control that clears it").toBeNull();
+      expect(feedBlockControl(status?.feed, feedBlockState(status?.feed, ids), ids)).toBeNull();
+    } finally {
+      vi.doUnmock("@/lib/quotes/types");
+      vi.resetModules();
+    }
+  });
+
+  it("an OFFERED provider's block is unchanged — the sheet for the two brokers, text for OpenAlgo", () => {
+    const ids = offered(true, true, true);
+    const upstox = { stored: "upstox", effective: "eod", blockedReason: "…" };
+    expect(feedBlockControl(upstox, feedBlockState(upstox, ids), ids)).toEqual({ kind: "review", provider: "upstox" });
+    // OpenAlgo's radio IS on screen and its consent is given on the Integrations
+    // screen, so its block stays text-only exactly as it was in v4.1.
+    const openalgo = { stored: "openalgo", effective: "eod", blockedReason: "…" };
+    expect(feedBlockControl(openalgo, feedBlockState(openalgo, ids), ids)).toBeNull();
+    // Nothing blocked, nothing to clear.
+    expect(feedBlockControl({ stored: "eod", effective: "eod" }, null, ids)).toBeNull();
+    expect(feedBlockControl(undefined, null, ids)).toBeNull();
+  });
+
+  it("both controls reach the JSX, and at most one of them can render", () => {
+    const src = stripComments(read(CARD));
+    expect(src).toContain("const control = feedBlockControl(status?.feed, blocked);");
+    expect(src).toMatch(/\{control\?\.kind === "review" && \(/);
+    expect(src).toMatch(/\{control\?\.kind === "keep-eod" && \(/);
+    expect(src).toContain('data-testid="live-feed-keep-eod"');
+    expect(src, "the control does not take the ordinary write path").toMatch(/onClick=\{\(\) => void pick\("eod"\)\}/);
+    expect(src).toContain("{KEEP_EOD_CTA}");
+    // The health line carries the withheld reason, and only for that case.
+    expect(src).toMatch(/blockedReason: control\?\.kind === "keep-eod" \? blocked\?\.reason : null,/);
+    // One more sentence on a settings screen, held to the same bar as the rest.
+    expect(BANNED.test(KEEP_EOD_CTA), KEEP_EOD_CTA).toBe(false);
+    expect(PRESCRIPTIVE_LANGUAGE.test(KEEP_EOD_CTA), KEEP_EOD_CTA).toBe(false);
   });
 });

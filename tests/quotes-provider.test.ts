@@ -330,8 +330,10 @@ describe("the live feed is one instance per process, not one per caller", () => 
       expect((await ssr.snapshot(TCS_ONLY)).get("NSE:TCS")!.ltp).toBe(302575);
       expect((await stream.snapshot(TCS_ONLY)).get("NSE:TCS")!.ltp).toBe(302575);
 
-      // The consent sheet says "signs in once each trading day". This is that
-      // sentence, counted on the wire.
+      // The consent sheet says the account is "signed in at most once a day
+      // while Vyuha stays open" — a PROCESS rule since fix wave 2, and this
+      // cache is the process it is a rule about. That is the sentence, counted
+      // on the wire.
       expect(logins, "one visit, one login").toBe(1);
       expect(quoteCalls).toBe(2);
     },

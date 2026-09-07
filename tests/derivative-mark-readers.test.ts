@@ -66,6 +66,21 @@ const FUTURE_ID = 903;
  */
 const CLOSED_ID = 904;
 const CLOSED_NET_PNL = 500;
+/**
+ * OWNER RULING C-1 (fix wave 3) — the SETTLEMENT reference of a stock future.
+ * A future is settled by the exchange at the UNDERLYING's cash-segment close,
+ * so these two rows are shaped like the production case wave 2 could not price:
+ * sell-to-open (`buyQty 0`, so `avgBuyPrice` is still 0 until it is covered),
+ * `closingPrice: null` as every import writes it, and no contract-keyed mark —
+ * because nothing in the app writes one for a future.
+ */
+const SHORT_FUT_ID = 905;
+const SHORT_FUT_TRADINGSYMBOL = "FUT TCS 24 SEP 2026";
+const TCS_SPOT = 2100;
+const SHORT_FUT_ENTRY = 1410;
+/** …and the same row for an underlying with NO cash mark on record at all. */
+const UNKNOWN_FUT_ID = 906;
+const UNKNOWN_FUT_TRADINGSYMBOL = "FUT WIPRO 24 SEP 2026";
 
 /** The CASH spot of the underlying — the trap this file exists for. */
 const NIFTY_SPOT = 23450;
@@ -186,6 +201,41 @@ beforeAll(async () => {
         closingPrice: 1420,
         isOpen: true,
       }),
+      // C-1 — a SHORT stock future on an underlying that HAS a cash mark.
+      tradeRow({
+        id: SHORT_FUT_ID,
+        accountId: ACCOUNT,
+        bucket: "active",
+        segment: "future",
+        instrumentType: "future",
+        symbol: "TCS",
+        tradingsymbol: SHORT_FUT_TRADINGSYMBOL,
+        expiry: plusDays(10),
+        buyQty: 0,
+        sellQty: 500,
+        avgBuyPrice: 0, // sell-to-open: 0 until the position is covered
+        avgSellPrice: SHORT_FUT_ENTRY,
+        closingPrice: null,
+        isOpen: true,
+      }),
+      // C-1 — the same row with NOTHING to price it: no cash mark for WIPRO,
+      // no close, and no entry price either. Unknown must stay unknown.
+      tradeRow({
+        id: UNKNOWN_FUT_ID,
+        accountId: ACCOUNT,
+        bucket: "active",
+        segment: "future",
+        instrumentType: "future",
+        symbol: "WIPRO",
+        tradingsymbol: UNKNOWN_FUT_TRADINGSYMBOL,
+        expiry: plusDays(10),
+        buyQty: 0,
+        sellQty: 300,
+        avgBuyPrice: 0,
+        avgSellPrice: 0,
+        closingPrice: null,
+        isOpen: true,
+      }),
       // A closed, dated equity — see CLOSED_ID above.
       tradeRow({
         id: CLOSED_ID,
@@ -211,7 +261,7 @@ beforeAll(async () => {
       // Cash marks — what a bulk paste / bhavcopy leaves behind. NIFTY is here
       // because the Greeks panel needs the underlying's spot.
       { symbol: "NIFTY", tradingsymbol: "NIFTY", price: NIFTY_SPOT, asOfDate: "2026-09-04" },
-      { symbol: "TCS", tradingsymbol: "TCS", price: 2100, asOfDate: "2026-09-04" },
+      { symbol: "TCS", tradingsymbol: "TCS", price: TCS_SPOT, asOfDate: "2026-09-04" },
       { symbol: "RELIANCE", tradingsymbol: "RELIANCE", price: RELIANCE_SPOT, asOfDate: "2026-09-04" },
       // …and the future's OWN mark, keyed on its contract.
       {
@@ -264,12 +314,58 @@ describe("B-1 /risk never prices a derivative at the underlying's cash mark", ()
     expect(inputs.find((p) => p.id === OPTION_ID)!.spot).toBe(NIFTY_SPOT);
   });
 
-  it("futures settlement values delivery at the FUTURE's mark, not the cash spot", () => {
+  /**
+   * C-1 — the ONE place A-1's contract-mark precedence is the wrong reference.
+   * The exchange settles a stock future at the UNDERLYING's cash-segment close,
+   * so the delivery notional is struck off the same `spot` map the option
+   * branch reads — and when nothing prices the underlying, the value is
+   * UNKNOWN, not ₹0 (invariant 6). Wave 2 read `storedMarkFor() ?? close ??
+   * avgBuyPrice`, which in production is null ?? null ?? 0 on a sell-to-open
+   * future, so this panel printed "₹0" delivery value and "₹0" STT jump on a
+   * position that will certainly devolve into 500 shares.
+   */
+  it("C-1 futures settlement values delivery at the UNDERLYING's cash mark", () => {
     const ob = settlement.obligations.find((o) => o.id === FUTURE_ID)!;
     expect(ob.kind).toBe("stock_future");
-    // notional = refPrice × qty. The bug struck it off RELIANCE cash 1,400.
-    expect(ob.notional).toBe(RELIANCE_FUT_MARK * 500);
-    expect(ob.notional).not.toBe(RELIANCE_SPOT * 500);
+    // notional = the underlying's cash mark × qty…
+    expect(ob.notional).toBe(RELIANCE_SPOT * 500);
+    // …and NOT the contract's own mark, which A-1 keeps for P&L only.
+    expect(ob.notional).not.toBe(RELIANCE_FUT_MARK * 500);
+    expect(ob.physicalStt).toBe(Math.round(0.001 * RELIANCE_SPOT * 500)); // 700
+  });
+
+  it("C-1 a SHORT sell-to-open future is valued at the cash mark, never ₹0", () => {
+    const ob = settlement.obligations.find((o) => o.id === SHORT_FUT_ID)!;
+    expect(ob.side).toBe("short");
+    expect(ob.settles).toBe("yes");
+    // The wave-2 chain was null ?? null ?? avgBuyPrice(0) → ₹0 for this row.
+    expect(ob.notional).not.toBe(0);
+    expect(ob.notional).toBe(TCS_SPOT * 500); // 10,50,000
+    expect(ob.physicalStt).toBe(1050); // 0.1% of it
+    expect(ob.sttJump).toBe(1050 - 525); // never the ₹0 jump
+    // …and not the side-blind entry rung either (avgSellPrice is the fallback,
+    // used only when nothing prices the underlying).
+    expect(ob.notional).not.toBe(SHORT_FUT_ENTRY * 500);
+  });
+
+  it("C-1 with no cash mark, no close and no entry the notional stays UNKNOWN", () => {
+    const ob = settlement.obligations.find((o) => o.id === UNKNOWN_FUT_ID)!;
+    expect(ob.settles).toBe("yes"); // it still devolves — only its value is unknown
+    expect(ob.notional).toBeNull();
+    expect(ob.notional).not.toBe(0);
+    expect(ob.physicalStt).toBeNull();
+    expect(ob.sttJump).toBeNull();
+    // The totals exclude it and say how many they excluded.
+    expect(settlement.unknownNotionalCount).toBe(1);
+    expect(settlement.notionalAtRisk).toBe(RELIANCE_SPOT * 500 + TCS_SPOT * 500);
+  });
+
+  it("C-1 CONTROL: the option branch still reads the underlying's spot", () => {
+    const ob = settlement.obligations.find((o) => o.id === OPTION_ID)!;
+    // NIFTY is cash-settled, so it carries no delivery obligation — but the
+    // moneyness it resolved is the spot rung, unchanged by C-1.
+    expect(ob.kind).toBe("index_cash");
+    expect(inputs.find((p) => p.id === OPTION_ID)!.spot).toBe(NIFTY_SPOT);
   });
 });
 
@@ -325,7 +421,10 @@ describe("B-2 /reports/performance never prices a derivative at the underlying's
   });
 
   it("never books the 23,450 spot premium or the RELIANCE cash mark", () => {
+    // (C-10) A second `not.toContain(String(NIFTY_SPOT - 120))` line stood here
+    // and could never fire: every rupee on that page goes through `inr()`, so
+    // the digits "23330" are never adjacent in the text. The line above is the
+    // real negative — it reads the stated terminal value and compares numbers.
     expect(statedTerminal() - perfCapital - CLOSED_NET_PNL).not.toBe(UNREALISED_AT_UNDERLYING);
-    expect(perfText).not.toContain(String(NIFTY_SPOT - 120)); // 23,330 × 75 never appears
   });
 });

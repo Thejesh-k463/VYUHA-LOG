@@ -379,11 +379,17 @@ describe("health()", () => {
     // mark" — a value nothing writes, since no writer stores a CONTRACT-keyed
     // mark. The health line is printed by the SAME Settings card that prints
     // the B-5 footnote, so it states the same fallback the footnote does.
+    // …and fix wave 3, C-11: the fallback is A DASH, not the entry price. The
+    // row prints "—" when no close was ever recorded, and this clause is
+    // byte-identical on the card, the sheets, the help and the docs.
     expect(h.reason).toContain(
-      "each shows the position's recorded close, or its entry price when no close is recorded",
+      "each shows the position's recorded close, or a dash when no close is recorded",
     );
     expect((h.reason ?? "").toLowerCase(), "the health line still promises the last stored mark").not.toContain(
       "last stored mark",
+    );
+    expect((h.reason ?? "").toLowerCase(), "the health line still promises the entry price (C-11)").not.toContain(
+      "entry price",
     );
   });
 
@@ -556,7 +562,25 @@ describe("the breadcrumb the Upstox messages name", () => {
     const src = readFileSync(path.join(process.cwd(), "lib/quotes/upstox.ts"), "utf8");
     expect(src.toLowerCase(), "the adapter still promises the last stored mark").not.toContain("last stored mark");
     expect(src).toContain(
-      "each shows the position's recorded close, or its entry price when no close is recorded",
+      "each shows the position's recorded close, or a dash when no close is recorded",
+    );
+  });
+
+  /**
+   * C-11 (fix wave 3) — "or a dash", in every STRING the adapter can print.
+   *
+   * The comment above the sentence explains what the dash replaced, so a blunt
+   * source-wide ban on the words would forbid the explanation as well. This
+   * bans the phrase in the STRING LITERALS instead: any line the adapter could
+   * hand to `health()` or to an error message.
+   */
+  it("promises a dash and never an entry price in any string it can print (C-11)", () => {
+    const src = readFileSync(path.join(process.cwd(), "lib/quotes/upstox.ts"), "utf8");
+    const literals = src.split("\n").filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"));
+    const offenders = literals.filter((line) => /entry price/i.test(line));
+    expect(offenders, `the adapter still prints "entry price": ${offenders.join(" | ")}`).toEqual([]);
+    expect(src, "and the replacement clause is stated, not just deleted").toContain(
+      "recorded close, or a dash when no close is recorded",
     );
   });
 });

@@ -109,12 +109,18 @@ export const UPSTOX_FEED_COPY = {
    * which named a thing that does not exist. No writer stores a CONTRACT-keyed
    * mark (A-1 removed the underlying's cash mark from that read), so no
    * "Stored mark" pill can ever render for a future or an option: the row shows
-   * the position's recorded close, or its entry price when there is no close.
-   * The sentence now says what the row really shows, byte-for-byte the same as
-   * the consent sheets and the help entry (a seam test compares them).
+   * the position's recorded close, and a DASH when it has none.
+   *
+   * C-11 (fix wave 3, owner ruling "or a dash"): the sentence used to promise
+   * the ENTRY PRICE as the fallback, and the row does not show one — an entry
+   * price is a cost, not a mark, and printing it in a mark column would read as
+   * a price the market made. What the row shows when no close is recorded is a
+   * dash, so that is what the sentence says, byte-for-byte the same as the
+   * consent sheets, the help entry and the shipped docs (a seam test compares
+   * them).
    */
   equityOnly:
-    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
 } as const;
 
 /** What the GET tells the card about the Upstox radio. Never a token. */
@@ -159,6 +165,17 @@ export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: 
  *     measured against its own documented behaviour; it names no regulator,
  *     because none has been cited anywhere in this tree (the same ruling that
  *     softened `LIVE_FEED_COPY.dailyReauth`).
+ *
+ *     C-3 (fix wave 3): it used to say Vyuha "signs in again each morning",
+ *     and the code does no such thing. `lib/quotes/angelone.ts` signs in when
+ *     the process needs a session — at most once a day while the app stays
+ *     open, and AGAIN after a relaunch, after the 5 AM flush and whenever the
+ *     credentials are re-saved (fix wave 2 rebuilt the instance on a re-save).
+ *     "Each morning" describes neither the cadence nor the trigger, and a user
+ *     who leaves the desk open over two days sees a sign-in the copy denied.
+ *     The same wave removed "each morning" from `dailyReauth` for the same
+ *     reason: what is true there is that there is nothing for the user to do,
+ *     and that is true of every hour, not of the morning.
  *   • `dailyReauth` is the highlighted block's sentence for this provider. It
  *     says the same fact in the block's own voice. It exists as a SEPARATE
  *     value because `LIVE_FEED_COPY.dailyReauth` would be misleading here: it
@@ -174,19 +191,26 @@ export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: 
 export const ANGELONE_FEED_COPY = {
   label: "Angel One",
   blurb:
-    "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
+    "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials — without asking you.",
   /** Shown INSTEAD of the blurb when this account has no connection saved. */
   notConnected: "Add Angel One under Import → Connect broker first.",
-  /** Always, connected or not — the scope of the feed is not a footnote. */
+  /** Always, connected or not — the scope of the feed is not a footnote.
+   *  Byte-identical to the Upstox one (C-11 reworded both together). */
   equityOnly:
-    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
   /**
    * The highlighted block's sentence under an Angel One pick. FACTUAL and
    * attributed to the broker's own system — never to a regulator, which
    * `tests/live-feed-angelone-settings.test.ts` bans outright.
+   *
+   * C-3: the tail said "nothing for you to do each morning". The CLAIM there is
+   * about the reader and it survives — there is nothing for them to do — but
+   * the words tied it to a morning, and no card string may state a sign-in
+   * cadence this code does not keep (the guard in that test file scans every
+   * string this module exports). Dropping the two words says more, not less.
    */
   dailyReauth:
-    "Angel One ends every API session at 5 AM IST. Vyuha opens the next one by itself from the client code, PIN and TOTP secret you saved — there is nothing for you to do each morning.",
+    "Angel One ends every API session at 5 AM IST. Vyuha opens the next one by itself from the client code, PIN and TOTP secret you saved — there is nothing for you to do.",
 } as const;
 
 /** What the GET tells the card about the Angel One radio. Never a credential. */
@@ -318,6 +342,53 @@ export function feedBlockState(
 /** The control that reaches the sheet again once a radio can no longer fire one. */
 export const REVIEW_CONSENT_CTA = "Review and accept";
 
+/** The control that clears a block no sheet on this build can clear (C-6). */
+export const KEEP_EOD_CTA = "Keep end-of-day prices";
+
+/**
+ * WHICH control the blocked block renders — at most one, and sometimes none.
+ *
+ * C-6 — A WITHHELD STORED PROVIDER LEFT THE BLOCK WITH NO WAY OUT.
+ *
+ * `liveFeedProvider` travels in a backup envelope, so a build with the release
+ * flag OFF can find the withheld broker's id in that column. B-8 correctly
+ * withdrew the "Review and accept" button there (a disclosure must not be
+ * accepted for a feed that cannot run), and that left the block text-only —
+ * with `provider` initialised to `"eod"` (the withheld id is not in
+ * `PROVIDERS`), the end-of-day radio ALREADY CHECKED, and a checked radio
+ * firing no `onChange`. So `pick()` was unreachable, the stored column kept the
+ * withheld id, and the block and its "not running" health line stayed on screen
+ * for ever — until the user happened to select another provider and then
+ * end-of-day again. The block is honest and the state is stuck: those are
+ * different problems, and this fixes the second without weakening the first.
+ *
+ * PURE, and keyed on what this build OFFERS rather than on a provider name:
+ *
+ *   • `review`   — the stored pick has a sheet this card owns AND this build
+ *                  offers it. Unchanged from B-8.
+ *   • `keep-eod` — the stored pick is not offered at all. One control, which
+ *                  stores `eod` through the ordinary write path; the fold then
+ *                  clears the block because `stored === effective` again.
+ *   • `null`     — nothing is blocked, or the block belongs to a provider whose
+ *                  consent lives elsewhere (OpenAlgo, on the Integrations
+ *                  screen), whose radio is on screen and can still be clicked.
+ */
+export type FeedBlockControl =
+  | { kind: "review"; provider: SheetProvider }
+  | { kind: "keep-eod" }
+  | null;
+
+export function feedBlockControl(
+  feed: FeedState | undefined | null,
+  block: FeedBlock | null,
+  offeredIds?: readonly string[],
+): FeedBlockControl {
+  if (block == null || feed == null) return null;
+  if (block.reviewProvider !== null) return { kind: "review", provider: block.reviewProvider };
+  const offered = offeredIds ?? PROVIDERS.map((p) => p.id);
+  return offered.includes(feed.stored) ? null : { kind: "keep-eod" };
+}
+
 /**
  * The health line, DERIVED — including the case it used to get wrong.
  *
@@ -330,10 +401,19 @@ export const REVIEW_CONSENT_CTA = "Review and accept";
 export function feedHealthText(args: {
   health?: { ok: boolean; latencyMs: number | null; reason: string } | null;
   blocked: boolean;
+  /**
+   * C-6: said INSTEAD of the generic blocked sentence when the block is one the
+   * user cannot clear by accepting anything — a withheld feed. "The feed you
+   * picked is blocked" invites a fix that does not exist on this build; the
+   * route's own sentence ("This build does not offer the … feed") says why, and
+   * the one control beside it says what to do. Absent, the generic sentence
+   * stands, which is every other blocked case unchanged.
+   */
+  blockedReason?: string | null;
   lastLiveMarkDate?: string | null;
 }): string {
   const tail = args.lastLiveMarkDate ? ` · last saved mark ${args.lastLiveMarkDate}` : "";
-  if (args.blocked) return `${FEED_BLOCKED_HEALTH}${tail}`;
+  if (args.blocked) return `${args.blockedReason ?? FEED_BLOCKED_HEALTH}${tail}`;
   const h = args.health;
   if (h == null) return `${FEED_CHECKING}${tail}`;
   if (h.ok) return `Feed OK${h.latencyMs == null ? "" : ` · ${h.latencyMs} ms`}${tail}`;
@@ -449,7 +529,8 @@ export interface FeedResponse {
   upstox?: UpstoxFeedState;
   angelone?: AngelOneFeedState;
   lastLiveMarkDate?: string | null;
-  health?: { ok: boolean; state: string; latencyMs: number | null; reason: string };
+  /** `null` is "not known yet" — see `foldWriteResult` (C-7). */
+  health?: { ok: boolean; state: string; latencyMs: number | null; reason: string } | null;
   message?: string;
 }
 
@@ -465,6 +546,26 @@ export interface FeedPostResult {
   feed?: FeedResponse["feed"];
   upstox?: UpstoxFeedState;
   angelone?: AngelOneFeedState;
+}
+
+/**
+ * THE GET, in one place (C-7). It was inlined in the mount effect, so the health
+ * line could only ever describe the provider that was effective when the card
+ * mounted; every write path now re-asks with it.
+ *
+ * `null` is "the ask failed", which is exactly what the mount effect's catch
+ * always meant: the card still renders and the health line simply says nothing
+ * yet. It is deliberately OUTSIDE the component — the effect must keep calling
+ * `setStatus` from a promise callback rather than from its own body, or
+ * `react-hooks/set-state-in-effect` fires (and AGENTS.md forbids silencing it).
+ */
+async function fetchStatus(signal?: AbortSignal): Promise<FeedResponse | null> {
+  try {
+    const res = await fetch("/api/live/feed", signal ? { signal } : undefined);
+    return (await res.json()) as FeedResponse;
+  } catch {
+    return null;
+  }
 }
 
 async function post(body: Record<string, unknown>): Promise<FeedPostResult> {
@@ -505,6 +606,28 @@ export function foldFeedResponse(prev: FeedResponse | null, r: FeedPostResult): 
   };
 }
 
+/**
+ * C-7 — THE HEALTH LINE DESCRIBED THE FEED THAT USED TO RUN.
+ *
+ * `health` describes the EFFECTIVE provider and is fetched once, at mount. The
+ * POST bodies carry no health at all — the route answers the provider action
+ * with `feed` and the ack action with the two radio states — so after a switch
+ * from end-of-day to a broker feed the card went on printing end-of-day's
+ * mount-time "Feed OK · N ms" over a feed it had never probed, until the user
+ * reloaded the page. `needsConnect` read the same stale value, so the
+ * "Connect your feed" block could stay hidden behind another provider's health.
+ *
+ * A stale answer is worse than no answer here, so the write's fold sets `health`
+ * to null and the card re-asks (`refreshStatus()` — a plain fetch in the event
+ * handler, never an effect; a state-derived effect is what AGENTS.md bans).
+ * Until that GET lands, `feedHealthText` prints `FEED_CHECKING`, which is what
+ * the card already says whenever it has not been told.
+ */
+export function foldWriteResult(prev: FeedResponse | null, r: FeedPostResult): FeedResponse | null {
+  const next = foldFeedResponse(prev, r);
+  return next == null ? next : { ...next, health: null };
+}
+
 export function LiveFeedCard({ current }: { current: Settings }) {
   const router = useRouter();
   const [provider, setProvider] = React.useState<ProviderId>(
@@ -520,26 +643,32 @@ export function LiveFeedCard({ current }: { current: Settings }) {
 
   // Mount-only: ask the server for the health line. This is a FETCH effect
   // (its state comes from the network), never a state-derived one — deriving
-  // is what the other values in this card do.
+  // is what the other values in this card do, and `setStatus` is called from
+  // the promise callback, never from the effect body.
   React.useEffect(() => {
     const ac = new AbortController();
-    fetch("/api/live/feed", { signal: ac.signal })
-      .then((r) => r.json())
-      .then((j: FeedResponse) => setStatus(j))
-      .catch(() => {
-        /* the card still renders; the health line simply says nothing yet */
-      });
+    void fetchStatus(ac.signal).then((j) => {
+      if (j) setStatus(j);
+    });
     return () => ac.abort();
   }, []);
+
+  // The SAME ask, after a write (C-7): the POST bodies carry no health, so the
+  // card would otherwise go on describing the provider that was effective at
+  // mount. A plain fetch in an event handler — never a second effect.
+  async function refreshStatus() {
+    const j = await fetchStatus();
+    if (j) setStatus(j);
+  }
 
   const health = status?.health;
   const needsConnect = provider === "openalgo" && health != null && (health.state === "no-key" || health.state === "unreachable");
   const consentMissing = provider === "openalgo" && status?.openalgo != null && !(status.openalgo.enabled && status.openalgo.ackCurrent);
   // A-6: the stored pick is not the feed that runs — for ANY provider. Derived
-  // at render from what the route said; `review` is the sheet this card can
-  // re-open, and a const so the callback below narrows it.
+  // at render from what the route said; `control` is the ONE control the block
+  // may carry (C-6), and a const so the callback below narrows it.
   const blocked = feedBlockState(status?.feed);
-  const review = blocked?.reviewProvider ?? null;
+  const control = feedBlockControl(status?.feed, blocked);
 
   /**
    * The click. Upstox is the one pick that can need a sheet read first, and
@@ -576,9 +705,12 @@ export function LiveFeedCard({ current }: { current: Settings }) {
     // re-renders this card without remounting it, so nothing else will ever
     // correct `status` — the block, its button and the health line would go on
     // describing the feed as it was before this POST.
-    setStatus((prev) => foldFeedResponse(prev, r));
+    // C-7: …and the POST carries no health, so the fold drops the old one and
+    // the card asks again. The line reads "Checking the feed…" in between.
+    setStatus((prev) => foldWriteResult(prev, r));
     toast.success(r.message ?? "Saved.");
     router.refresh();
+    await refreshStatus();
   }
 
   /** Accepted the Upstox sheet: record the ack, then make the pick. */
@@ -591,8 +723,12 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       return;
     }
     // The SERVER's own reading of both halves, not an optimistic guess — and
-    // every half it answered with, not only this provider's (B-4).
-    setStatus((prev) => foldFeedResponse(prev, r));
+    // every half it answered with, not only this provider's (B-4). The ack
+    // alone can change what runs (an in-date acknowledgement unblocks a stored
+    // pick), so the health is re-asked here too rather than only after the
+    // store below — awaited, so the two GETs cannot land out of order (C-7).
+    setStatus((prev) => foldWriteResult(prev, r));
+    await refreshStatus();
     await store("upstox");
   }
 
@@ -605,7 +741,9 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       toast.error(r.message ?? "Could not record that you read it.");
       return;
     }
-    setStatus((prev) => foldFeedResponse(prev, r));
+    // Same as the Upstox path: fold, re-ask, then store (C-7).
+    setStatus((prev) => foldWriteResult(prev, r));
+    await refreshStatus();
     await store("angelone");
   }
 
@@ -773,17 +911,35 @@ export function LiveFeedCard({ current }: { current: Settings }) {
                 status?.feed?.blockedReason ??
                 "Turn OpenAlgo on in Integrations and read its disclosure first — until then the desk stays on end-of-day prices."}
             </p>
-            {review !== null && (
+            {control?.kind === "review" && (
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 className="mt-2"
                 disabled={pending}
-                onClick={() => setConsentOpen(review)}
+                onClick={() => setConsentOpen(control.provider)}
                 data-testid="live-feed-review-consent"
               >
                 {REVIEW_CONSENT_CTA}
+              </Button>
+            )}
+            {/* C-6: the stored pick is a feed this build does not offer, so
+                there is no radio to click and no sheet to accept. This is the
+                ONE control that clears it, and it takes the ordinary write
+                path — `pick("eod")` posts the provider action, the fold makes
+                `stored === effective` and the block goes with it. */}
+            {control?.kind === "keep-eod" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={pending}
+                onClick={() => void pick("eod")}
+                data-testid="live-feed-keep-eod"
+              >
+                {KEEP_EOD_CTA}
               </Button>
             )}
           </div>
@@ -805,7 +961,15 @@ export function LiveFeedCard({ current }: { current: Settings }) {
               user picked and is not getting. The blocked case is stated first,
               in one derived helper the tests can drive. */}
           <span data-testid="live-feed-health">
-            {feedHealthText({ health, blocked: blocked !== null, lastLiveMarkDate: status?.lastLiveMarkDate })}
+            {feedHealthText({
+              health,
+              blocked: blocked !== null,
+              // C-6: under a WITHHELD feed the generic sentence ("the feed you
+              // picked is blocked") points at a fix this build does not have.
+              // The route's own reason says why, beside the one control.
+              blockedReason: control?.kind === "keep-eod" ? blocked?.reason : null,
+              lastLiveMarkDate: status?.lastLiveMarkDate,
+            })}
           </span>
           <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => void markNow()}>
             Save today&apos;s mark

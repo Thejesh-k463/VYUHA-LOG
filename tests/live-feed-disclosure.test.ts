@@ -32,24 +32,41 @@ import { ANGELONE_CAPABILITIES } from "@/lib/quotes/angelone";
  * The sentence it replaces ("Futures and options rows keep their last stored
  * mark") was FALSE from 8ae5dea: a derivative reads only a contract-keyed mark
  * that no writer in this tree produces, so the row falls back to the position's
- * recorded close — or its entry price when no close was ever recorded — under
- * an "End of day" pill labelled "Not priced by this feed". One literal, shared
+ * recorded close — or, when no close was ever recorded, to a DASH — under an
+ * "End of day" pill labelled "Not priced by this feed". One literal, shared
  * by every surface, is what stops the two halves drifting into two promises;
  * `tests/seams-v42-fix.test.ts` compares this sheet with the card byte for byte.
+ *
+ * C-11 (owner ruling, 2026-09-07: "or a dash"). The fallback named "its entry
+ * price" for a row that never shows one: an unmarked derivative row prints a
+ * dash, and an entry price is not a mark at all — quoting it as the fallback
+ * invites a reader to treat the position's own cost as a price the market
+ * agreed to. `ENTRY_PRICE_BANNED` below is what keeps the correction from
+ * surviving in one file only.
  */
 const NOT_PRICED_SENTENCE =
-  "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.";
+  "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.";
 
 /**
- * B-7 (owner ruling: reword). The sign-in sentence, byte for byte.
+ * B-7 (owner ruling: reword) and C-2 (owner ruling, 2026-09-07: name every
+ * trigger). The sign-in sentence, byte for byte.
  *
  * "once each trading day" was true PER PROCESS and nowhere else: the session
  * lives in the adapter instance, so a relaunch or a credential re-save opens
  * another one the same day, and a machine left closed all day opens none. The
- * replacement states the mechanism instead of the calendar.
+ * replacement states the mechanism instead of the calendar — and states ALL
+ * FOUR of the things that open a session, the 5 AM IST flush included, because
+ * a list of three reads as an exhaustive one.
  */
 const ANGEL_SIGNIN_SENTENCE =
-  "Vyuha signs in to apiconnect.angelone.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials; Angel One clears every session at 5 AM IST.";
+  "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials.";
+
+/**
+ * C-2. The refused-login ceiling, byte for byte. Before it, a wrong PIN was one
+ * refusal PER POLL against the broker's own auth endpoint.
+ */
+const ANGEL_RETRY_SENTENCE =
+  "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.";
 
 describe("the stored acknowledgement", () => {
   it("reads a provider-id → version map out of the column", () => {
@@ -172,15 +189,80 @@ describe("the Angel One consent sheet", () => {
 
   const flat = ANGELONE_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ");
 
-  it("states the sign-in as the process rule it is, the 5 AM flush, and the credentials", () => {
+  it("states the sign-in as the process rule it is, with all four triggers named", () => {
     expect(flat).toContain(ANGEL_SIGNIN_SENTENCE);
-    expect(flat).toContain("client code, PIN and TOTP secret you saved under Import → Connect broker");
-    expect(flat).toContain("Angel One clears every session at 5 AM IST");
-    // The two things the old sentence promised and the code never kept: a
-    // relaunch and a credential re-save each open another session that day.
-    expect(flat, "the sheet no longer says what makes a SECOND sign-in happen").toContain(
-      "again after a relaunch or when you re-save the credentials",
+    expect(flat).toContain("what you saved under Import → Connect broker");
+    // The four things the old sentence promised or omitted: a relaunch, a
+    // credential re-save and the 5 AM IST flush each open another session, and
+    // the ceiling holds only while this process stays up.
+    for (const trigger of [
+      "at most once a day while Vyuha stays open",
+      "again after a relaunch",
+      "after Angel One's 5 AM IST session flush",
+      "when you re-save the credentials",
+    ]) {
+      expect(flat, `the sheet no longer names the trigger: ${trigger}`).toContain(trigger);
+    }
+  });
+
+  /**
+   * C-4 — THE SHEET NAMES EVERY CREDENTIAL THE SIGN-IN SENDS, AND THE LIST IS
+   * DERIVED FROM THE CODE THAT SENDS THEM.
+   *
+   * The sheet said "the client code, PIN and TOTP secret". `angelOneLogin()`
+   * sends FOUR things and the TOTP SECRET IS NOT ONE OF THEM: `clientcode`,
+   * `password` (the PIN) and `totp` — a code minted at call time — in the body,
+   * and the SmartAPI app key in the `X-PrivateKey` header
+   * (`smartApiHeaders(creds.apiKey)`). Naming three understates the egress by a
+   * credential and overstates it by a secret that never leaves this machine.
+   *
+   * The FIELD LIST is read out of the login function rather than typed here, so
+   * a fifth thing added to that request fails this test before it can ship
+   * undisclosed; only the noun each field is called in prose is a literal.
+   */
+  const ANGEL_API_SRC = fs.readFileSync(path.join(process.cwd(), "lib/import/api/angelone.ts"), "utf8");
+
+  const loginCredentialFields = (): string[] => {
+    const at = ANGEL_API_SRC.indexOf("export async function angelOneLogin(");
+    expect(at, "angelOneLogin() is gone — the derivation has nothing to read").toBeGreaterThan(-1);
+    const body = ANGEL_API_SRC.slice(at, ANGEL_API_SRC.indexOf("\n}", at));
+    return [...new Set([...body.matchAll(/creds\.(\w+)/g)].map((m) => m[1]))].sort();
+  };
+
+  /** Credential field on `AngelOneCredentials` → the noun the sheet must use. */
+  const CREDENTIAL_NOUN: Record<string, string> = {
+    apiKey: "the SmartAPI app key",
+    clientCode: "the client code",
+    pin: "the PIN",
+    totpSecret: "the one-time code derived from the TOTP secret",
+  };
+
+  it("names all four credentials the login request actually carries", () => {
+    const fields = loginCredentialFields();
+    expect(fields, "the login request no longer sends the four disclosed credentials").toEqual([
+      "apiKey",
+      "clientCode",
+      "pin",
+      "totpSecret",
+    ]);
+    for (const f of fields) {
+      const noun = CREDENTIAL_NOUN[f];
+      expect(noun, `angelOneLogin() sends creds.${f} and the sheet has no noun for it`).toBeDefined();
+      expect(flat, `the sheet does not name what it sends for creds.${f}`).toContain(noun);
+    }
+  });
+
+  it("says the TOTP SECRET is not what is sent, and never claims it signs in with it", () => {
+    expect(flat).toContain("the secret itself is never sent");
+    // The banned shape: it reads as though the base32 secret travelled to the
+    // broker on every sign-in. `totp(creds.totpSecret)` mints a 6-digit code.
+    expect(flat, "the sheet claims the secret itself is the credential sent").not.toContain(
+      "signs in with the TOTP secret",
     );
+  });
+
+  it("states the refused-login ceiling, so a wrong PIN is not one refusal per poll", () => {
+    expect(flat).toContain(ANGEL_RETRY_SENTENCE);
   });
 
   it("states the batch size, the one-a-second ceiling and the 3/5/10 cadence", () => {
@@ -312,12 +394,30 @@ describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
     "last stored mark",
   ];
 
-  /** B-7: the sign-in is a process rule, never a calendar one. */
-  const B7_BANNED = ["once each trading day", "signs in once a day", "sign-in each trading day"];
+  /**
+   * B-7 + C-3: the sign-in is a process rule, never a calendar one — and "each
+   * morning" is the same calendar promise in softer words. A machine left shut
+   * opens no session that morning; one relaunched at noon opens one then.
+   */
+  const B7_BANNED = [
+    "once each trading day",
+    "signs in once a day",
+    "sign-in each trading day",
+    "each morning",
+  ];
 
-  it.each(SURFACES)("%s carries neither disproved phrase", (rel) => {
+  /**
+   * C-11: the fallback for an unpriced derivative row is a DASH, not the
+   * position's own entry price. Banned as a phrase rather than as a whole
+   * sentence because the wrong fallback survives any amount of rewrapping.
+   */
+  const ENTRY_PRICE_BANNED = ["its entry price"];
+
+  const ALL_BANNED = [...B5_BANNED, ...B7_BANNED, ...ENTRY_PRICE_BANNED];
+
+  it.each(SURFACES)("%s carries none of the disproved phrases", (rel) => {
     const text = flatten(rel).toLowerCase();
-    const hits = [...B5_BANNED, ...B7_BANNED].filter((p) => text.includes(p));
+    const hits = ALL_BANNED.filter((p) => text.includes(p));
     expect(hits, `${rel} still says: ${hits.join(" / ")}`).toEqual([]);
   });
 
@@ -326,12 +426,12 @@ describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
     for (const rel of SURFACES) {
       const text = flatten(rel);
       expect(text, `${rel} dropped the derivative sentence instead of correcting it`).toContain(
-        "are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded",
+        "are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded",
       );
     }
     for (const rel of SURFACES) {
       expect(flatten(rel), `${rel} dropped the sign-in correction`).toContain(
-        "at most once a day while it stays open, and again after a relaunch or when you re-save the credentials",
+        "at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials",
       );
     }
   });
@@ -342,16 +442,23 @@ describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
       "Equities only in this release: futures and options\n   rows keep the mark already stored and say so.",
       "Vyuha signs in to apiconnect.angelone.in once each trading day with the client code, PIN and TOTP secret you saved.",
       "the Live Desk price poll … whose one sign-in each trading day Vyuha performs for you",
+      // C-3: the softer form of the same calendar promise.
+      "Angel One clears every API session at 5 AM IST; Vyuha opens the next one\n   itself each morning from that secret, without asking you.",
+      // C-11: the fallback that names a price the row never shows.
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
     ];
     for (const line of shipped) {
       const text = line.replace(/\s+/g, " ").toLowerCase();
       expect(
-        [...B5_BANNED, ...B7_BANNED].filter((p) => text.includes(p)).length,
+        ALL_BANNED.filter((p) => text.includes(p)).length,
         `a shipped line the ban must catch: ${line.slice(0, 70)}`,
       ).toBeGreaterThan(0);
     }
-    // …and a sentence that says "once a day" about something else is allowed.
+    // …and a sentence that says "once a day" about something else is allowed,
+    // as is the poll's own "no entry price" negative, which is not the fallback.
     const allowed = "Log in via Zerodha's own page once a day, paste the request token.";
-    expect([...B5_BANNED, ...B7_BANNED].filter((p) => allowed.toLowerCase().includes(p))).toEqual([]);
+    expect(ALL_BANNED.filter((p) => allowed.toLowerCase().includes(p))).toEqual([]);
+    const alsoAllowed = "and sends nothing else about them: no quantity, no entry price, no P&L, no account.";
+    expect(ALL_BANNED.filter((p) => alsoAllowed.toLowerCase().includes(p))).toEqual([]);
   });
 });

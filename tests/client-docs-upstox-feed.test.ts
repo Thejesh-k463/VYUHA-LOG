@@ -104,9 +104,14 @@ describe("PRIVACY.md discloses exactly one Upstox host, in item 3", () => {
     // literal on both consent sheets, in help and in the client README, and
     // it replaces a claim ("keeps the mark already stored") about a
     // contract-keyed mark that no writer in this tree produces.
+    //
+    // C-11 (owner ruling, 2026-09-07): the second half of that fallback is a
+    // DASH, not the position's entry price — the row prints "—" when it has no
+    // close, and an entry price is the trader's own cost, never a mark.
     expect(item, "the disclosure does not say what an unpriced derivative row shows").toContain(
-      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
     );
+    expect(item, "the disclosure still offers the entry price as the fallback").not.toContain("its entry price");
   });
 
   it("never names the account screen in the bullet — the user's browser goes there, not Vyuha", () => {

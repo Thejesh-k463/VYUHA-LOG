@@ -42,7 +42,21 @@ export interface SettlementInput {
   expiry: string | null; // ISO date
   netQty: number; // absolute open quantity in SHARES (lots × lot size)
   side: "long" | "short";
-  /** Settlement reference price: futures price for futures, underlying SPOT for options (if known). */
+  /**
+   * Settlement reference price — the UNDERLYING's cash-segment price for BOTH
+   * legs, and `null` when the book does not know it.
+   *
+   * For an option it judges moneyness (spot vs strike). For a future it is the
+   * DELIVERY price: the exchange settles a stock future at the underlying's
+   * cash close on expiry, not at the contract's own last traded price — so the
+   * caller reads the same cash mark it reads for options, then the recorded
+   * close, then the position's own side-aware entry (owner ruling C-1). This
+   * doc used to say "futures price for futures", and the wave-2 caller followed
+   * it; A-1's contract-mark precedence is for P&L, not for settlement.
+   *
+   * `null` means UNKNOWN and is carried through as an unknown notional — it is
+   * never coerced to 0 (invariant 6).
+   */
   refPrice: number | null;
 }
 
@@ -96,7 +110,10 @@ export interface SettlementObligation {
   settles: SettleResolution; // will it physically settle if left open?
   deliveryAction: "Take delivery (buy)" | "Give delivery (sell)" | null;
   deliveryQty: number; // shares to take/give if it settles
-  notional: number; // ₹ delivery value (strike×qty for options, refPrice×qty for futures)
+  /** ₹ delivery value (strike×qty for options, refPrice×qty for futures).
+   *  `null` = the reference price is unknown, so the value is unknown — the
+   *  panel prints "—" and the totals exclude it (ruling C-1, invariant 6). */
+  notional: number | null;
   fundsOrShares: string; // human note: cash needed / shares to deliver
   physicalStt: number | null; // ₹ STT incurred on physical settlement
   exitStt: number | null; // ₹ STT to square off now (futures only; null for options)
@@ -114,6 +131,10 @@ export interface SettlementSummary {
   certainDeliveryCount: number; // positions that will settle (futures + ITM options)
   notionalAtRisk: number; // Σ notional of settling / likely-to-settle positions
   fundsNeeded: number; // Σ cash to take delivery (long settlements)
+  /** How many settling positions the two totals above could NOT include,
+   *  because their reference price is unknown. A total that silently swallowed
+   *  them as ₹0 would read as "nothing more to worry about" (ruling C-1). */
+  unknownNotionalCount: number;
   /** Σ physicalStt — the STT physical settlement WILL levy on positions that
    *  settle. This is deliberately NOT a "extra vs squaring off" delta: the
    *  delta is only computable for futures (exit STT rides notional). For an
@@ -179,7 +200,7 @@ export function computeSettlement(
     let settles: SettleResolution = "no";
     let deliveryAction: SettlementObligation["deliveryAction"] = null;
     let deliveryQty = 0;
-    let notional = 0;
+    let notional: number | null = 0;
     let physicalStt: number | null = null;
     let exitStt: number | null = null;
     let fundsOrShares = "—";
@@ -187,15 +208,23 @@ export function computeSettlement(
     let reason = "";
 
     if (kind === "stock_future") {
-      const px = p.refPrice ?? 0;
+      // The reference is the underlying's cash price. UNKNOWN stays unknown:
+      // `?? 0` here printed "₹0" delivery value, "₹0" STT and a "₹0" STT jump
+      // on a position that will certainly devolve — the panel's whole purpose
+      // inverted by a coercion (ruling C-1, invariant 6).
+      const px = p.refPrice;
       settles = "yes";
       deliveryAction = p.side === "long" ? "Take delivery (buy)" : "Give delivery (sell)";
       deliveryQty = p.netQty;
-      notional = r2(px * p.netQty);
-      physicalStt = rupee(rates.deliverySttPct * notional);
-      exitStt = rupee(rates.futExitSttPct * notional);
+      notional = px == null ? null : r2(px * p.netQty);
+      physicalStt = notional == null ? null : rupee(rates.deliverySttPct * notional);
+      exitStt = notional == null ? null : rupee(rates.futExitSttPct * notional);
       fundsOrShares =
-        p.side === "long" ? `≈ ₹${rupee(notional)} cash to take delivery` : `deliver ${p.netQty} ${p.symbol} shares`;
+        p.side === "long"
+          ? notional == null
+            ? "cash to take delivery — settlement value unknown (no underlying price on record)"
+            : `≈ ₹${rupee(notional)} cash to take delivery`
+          : `deliver ${p.netQty} ${p.symbol} shares`;
       warn = near ? "danger" : approaching ? "warn" : "info";
       reason = `Stock future settles physically at expiry — ${deliveryAction.toLowerCase()} of ${p.netQty} shares.`;
     } else if (kind === "stock_option") {
@@ -268,13 +297,14 @@ export function computeSettlement(
     });
   }
 
-  // Sort: physical first, then nearest expiry first (nulls last), then bigger notional.
+  // Sort: physical first, then nearest expiry first (nulls last), then bigger
+  // notional (an unknown value sorts last within its expiry, never as ₹0).
   const rank = (o: SettlementObligation) => (o.physical ? 0 : 1);
   obligations.sort(
     (a, b) =>
       rank(a) - rank(b) ||
       (a.dte ?? Infinity) - (b.dte ?? Infinity) ||
-      b.notional - a.notional,
+      (b.notional ?? -1) - (a.notional ?? -1),
   );
 
   const physicalObs = obligations.filter((o) => o.physical);
@@ -288,12 +318,13 @@ export function computeSettlement(
     physicalCount: physicalObs.length,
     expiringPhysicalCount: physicalObs.filter((o) => o.dte != null && o.dte <= windowDays).length,
     certainDeliveryCount: obligations.filter((o) => o.settles === "yes").length,
-    notionalAtRisk: r2(settling.reduce((s, o) => s + o.notional, 0)),
+    notionalAtRisk: r2(settling.reduce((s, o) => s + (o.notional ?? 0), 0)),
     fundsNeeded: r2(
       settling
         .filter((o) => o.deliveryAction === "Take delivery (buy)")
-        .reduce((s, o) => s + o.notional, 0),
+        .reduce((s, o) => s + (o.notional ?? 0), 0),
     ),
+    unknownNotionalCount: settling.filter((o) => o.notional == null).length,
     physicalSttTotal: rupee(settling.reduce((s, o) => s + (o.physicalStt ?? 0), 0)),
     nearestExpiry: expiries[0] ?? null,
     obligations,

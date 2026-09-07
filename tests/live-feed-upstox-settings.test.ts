@@ -113,9 +113,13 @@ describe("the Upstox radio is offered only behind the one release flag", () => {
     expect(UPSTOX_FEED_COPY.blurb).toBe(
       "Uses the Analytics token saved under Import → Connect broker for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
     );
+    // C-11 (fix wave 3, owner ruling "or a dash"): the fallback the row really
+    // renders is a DASH, not the entry price — an entry price is a cost, and
+    // printing it in a mark column reads as a price the market made.
     expect(UPSTOX_FEED_COPY.equityOnly).toBe(
-      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
     );
+    expect(UPSTOX_FEED_COPY.equityOnly, "the withdrawn entry-price promise").not.toMatch(/entry price/i);
   });
 });
 

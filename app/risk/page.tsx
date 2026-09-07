@@ -286,16 +286,25 @@ export default function RiskPage() {
     .map((t) => {
       const netQty = Math.abs(t.buyQty - t.sellQty) || t.buyQty;
       const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
-      // Options: the UNDERLYING's spot, which is what moneyness is judged on.
-      // Futures: the FUTURE's own price — a mark stored under its contract,
-      // then its recorded close, then its entry (owner ruling A-1). It used to
-      // read `mtm[symbol]` under this same "uses the futures price" comment,
-      // and `mtm_prices` is keyed on symbol, so the delivery notional was
-      // struck off the underlying's cash mark instead.
+      // SETTLEMENT reference — the UNDERLYING's cash price for BOTH legs
+      // (owner ruling C-1). For an option it judges moneyness; for a future it
+      // is the DELIVERY price, because the exchange settles a stock future at
+      // the underlying's cash-segment close on expiry, not at the contract's
+      // own mark. A-1's contract-mark precedence stays in force for every P&L
+      // mark above (`storedMarkFor`) — it is the wrong reference only here, and
+      // it made this branch unusable in production: no writer stores a
+      // contract-keyed mark for a future, imports write `closingPrice: null`,
+      // and a sell-to-open future carries `avgBuyPrice = 0` until it is
+      // covered, so `refPrice` collapsed to 0 and the panel printed "₹0".
+      // Hence also the SIDE-AWARE entry (the exposure mapping above does the
+      // same) and `nonZero`: a price of 0 is not a price, and a missing
+      // reference stays null = unknown, never 0 (invariant 6).
+      const nonZero = (n: number | null | undefined) => (n != null && n > 0 ? n : null);
+      const cashMark = nonZero(spot.get(t.symbol.toUpperCase()));
       const refPrice =
         t.instrumentType === "option"
           ? spot.get(t.symbol.toUpperCase()) ?? null
-          : storedMarkFor(t, mtm) ?? t.closingPrice ?? t.avgBuyPrice;
+          : cashMark ?? nonZero(t.closingPrice) ?? nonZero(side === "long" ? t.avgBuyPrice : t.avgSellPrice);
       return {
         id: t.id,
         symbol: t.symbol,

@@ -574,8 +574,11 @@ export function createUpstoxProvider(opts: UpstoxProviderOptions = {}): QuotePro
               // holding a derivative the card states both promises at once. The
               // tail once named a value nothing writes — no writer stores a
               // CONTRACT-keyed mark, so there is no such number to keep; what
-              // the row shows is its recorded close, then its entry price.
-              `Upstox is connected with your read-only Analytics token. ${notPriced} position(s) are not priced by this feed — ${skipped.skippedDerivatives} futures/options and ${skipped.skippedNoIsin} without a known ISIN — and each shows the position's recorded close, or its entry price when no close is recorded.`,
+              // the row shows is its recorded close, then A DASH (ruling C-11,
+              // fix wave 3: the row prints "—", never the entry price, and this
+              // clause is byte-identical on the card, the sheets, the help and
+              // the docs).
+              `Upstox is connected with your read-only Analytics token. ${notPriced} position(s) are not priced by this feed — ${skipped.skippedDerivatives} futures/options and ${skipped.skippedNoIsin} without a known ISIN — and each shows the position's recorded close, or a dash when no close is recorded.`,
       };
     },
   };

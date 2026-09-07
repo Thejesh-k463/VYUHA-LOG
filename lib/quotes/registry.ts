@@ -377,8 +377,13 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
  * Angel One logins for one visit, a wrong PIN re-sent on every stream open, a
  * per-instance ceiling that is not the ceiling the consent sheet promises, and
  * a health line built from an instance that has never made a request saying
- * "connected". The consent sheet says "signs in once each trading day", and
- * this cache is what makes that sentence true.
+ * "connected". The consent sheet says the account is "signed in at most once a
+ * day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM
+ * IST session flush, or when the credentials are re-saved" (it said "once each
+ * trading day" until fix wave 2 disproved it — the sign-in is a PROCESS rule,
+ * and THIS CACHE is the process it is a rule about). The same sheet caps a
+ * refused login at three attempts, and that count lives in the instance too, so
+ * it is this cache that keeps a wrong PIN from being re-sent by every caller.
  *
  * IT IS A CACHE, AND A CACHE MUST EXPIRE. The key carries everything that would
  * make the stored session the WRONG session: the provider id, the account the

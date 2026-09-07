@@ -83,7 +83,7 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "Equity positions only in this release",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
   },
   {
     title: "The prices stay on this machine",
@@ -107,14 +107,26 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *
  * Every sentence below is checked against the code that performs it:
  *
- *   • "at most once a day WHILE IT STAYS OPEN, and again after a relaunch or a
- *     credential re-save" — `angelOneSessionExpiresAt()` in
+ *   • WHEN a sign-in happens — `angelOneSessionExpiresAt()` in
  *     lib/quotes/angelone.ts caches the jwt IN MEMORY to the 05:00 IST flush
  *     and to nothing the token claims, and the adapter that holds it is
  *     rebuilt when the connection row changes. So the sign-in is a PROCESS
  *     rule, not a calendar one: the sentence this replaced promised a ceiling
  *     across relaunches that nothing enforces, and promised a sign-in on a day
- *     the app is never opened (v4.2 fix wave, B-7);
+ *     the app is never opened (v4.2 fix wave, B-7). All four triggers are
+ *     named — open session, relaunch, the 5 AM IST flush, a credential
+ *     re-save (owner ruling C-2);
+ *   • WHAT is sent at that sign-in — `angelOneLogin()` in
+ *     lib/import/api/angelone.ts posts `clientcode`, `password` (the PIN) and
+ *     `totp` under `smartApiHeaders(creds.apiKey)`, so FOUR things go, not
+ *     three: the client code, the PIN, the one-time code minted at call time
+ *     from the TOTP secret — the SECRET ITSELF never leaves this machine — and
+ *     the SmartAPI app key in the `X-PrivateKey` header. The sheet named three
+ *     and implied the secret was sent (owner ruling C-4);
+ *   • "at most three times and then stops" — the refused-login ceiling the
+ *     Angel One adapter applies before it stops trying until the credentials
+ *     are re-saved, so a wrong PIN is three refusals rather than one per
+ *     poll (owner ruling C-2);
  *   • the host, the 50-token batch and the one-request-a-second ceiling —
  *     `planAngelOneBatches()` and the rate guard in the same file, which reach
  *     apiconnect.angelone.in and nothing else;
@@ -132,8 +144,8 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *     returns null for any key that is not a cash-segment scrip, so no
  *     derivative token is ever sent; nothing in this tree writes the
  *     contract-keyed mark a derivative would read, so the row falls back to the
- *     position's recorded close, or to its entry price when no close was ever
- *     recorded, and is labelled "Not priced by this feed";
+ *     position's recorded close, or to a dash when no close was ever recorded,
+ *     and is labelled "Not priced by this feed";
  *   • "never uploads them" — there is no journal write in either file and no
  *     host but Angel One's own is reachable from them.
  */
@@ -141,7 +153,7 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It signs in to your Angel One account at most once a day",
     body:
-      "Vyuha signs in to apiconnect.angelone.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials; Angel One clears every session at 5 AM IST. It signs in with the client code, PIN and TOTP secret you saved under Import → Connect broker, without asking you.",
+      "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials. Each sign-in sends four things from what you saved under Import → Connect broker, without asking you: the client code, the PIN, the one-time code derived from the TOTP secret — the secret itself is never sent — and the SmartAPI app key. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.",
   },
   {
     title: "It sends the tokens of your open positions to fetch prices",
@@ -161,7 +173,7 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "This feed prices your equity positions and nothing else",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
   },
   {
     title: "The prices Angel One returns stay on this machine",

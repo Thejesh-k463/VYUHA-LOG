@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
@@ -39,6 +39,8 @@ import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
  *
  * id | crossing value                | producer (file:line)                              | consumer (file:line)                                | unit / shape                | tests
  * ---|-------------------------------|---------------------------------------------------|-----------------------------------------------------|-----------------------------|-------
+ * (S1c moved in fix wave 3: the SETTLEMENT reference is the underlying's cash
+ *  mark, per owner ruling C-1. Every P&L reader below still reads storedMarkFor.)
  * S1 | the STORED MARK of one row    | 8ae5dea lib/analytics/positions.ts:79 storedMarkFor | C1 app/risk/page.tsx:137 ExposureInput.mtm           | ₹ per unit (paise on desk)  | S1a–e
  *    |   (`mtm_prices`, keyed on     |   + lib/queries/mtm.ts:12 getMtmMap (KEY = symbol)  | C1 app/risk/page.tsx:298 settlement refPrice        |                             |
  *    |    `symbol`, so a derivative  |                                                     | C1 lib/jobs/auto-mtm.ts:164 scanBreaches           |                             |
@@ -337,10 +339,6 @@ beforeAll(async () => {
   )!;
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 afterAll(() => {
   t?.cleanup();
 });
@@ -391,12 +389,16 @@ describe("S1 — the four readers of the stored mark agree on one book", () => {
     expect(riskInputs.find((p) => p.id === OPTION_ID)!.spot).toBe(NIFTY_SPOT);
   });
 
-  it("S1c  /risk values the futures delivery obligation at the FUTURE's own mark", () => {
+  it("S1c  /risk values the futures delivery obligation at the UNDERLYING's cash mark", () => {
     const ob = settlement.obligations.find((o) => o.id === FUTURE_ID)!;
     expect(ob.kind).toBe("stock_future");
-    // notional = refPrice × qty, and refPrice is the contract's mark.
-    expect(ob.notional).toBe(RELIANCE_FUT_MARK * 500);
-    expect(ob.notional).not.toBe(RELIANCE_SPOT * 500);
+    // SETTLEMENT is the one reader A-1 does NOT govern (owner ruling C-1, fix
+    // wave 3): the exchange settles a stock future at the underlying's
+    // cash-segment close on expiry, so the delivery notional is struck off the
+    // same `spot` map the option branch reads — while S1a/S1b/S1d above keep
+    // the contract's own mark for every P&L figure on the same book.
+    expect(ob.notional).toBe(RELIANCE_SPOT * 500);
+    expect(ob.notional).not.toBe(RELIANCE_FUT_MARK * 500);
   });
 
   it("S1d  /reports/performance books the unrealised leg at those same three marks", () => {
@@ -465,13 +467,32 @@ describe("S1 — the four readers of the stored mark agree on one book", () => {
  * ══════════════════════════════════════════════════════════════════════════ */
 const B5 = UPSTOX_FEED_COPY.equityOnly;
 /**
+ * THE SENTENCE, pinned (C-11, owner ruling "or a dash"). The row shows the
+ * position's recorded close; when NO close is recorded it shows a dash, not
+ * the entry price — an entry price on a mark column is a number the feed did
+ * not produce, presented as one it did. Every surface states the identical
+ * bytes, so this literal is the seam.
+ */
+const B5_EXACT =
+  "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.";
+/** The tail the adapters' `health.reason` ends with — the same fact, in the
+ *  sentence that prints UNDER the footnote on the same Settings card. */
+const B5_HEALTH_TAIL = "and each shows the position's recorded close, or a dash when no close is recorded.";
+/**
  * The doc surfaces vary the sentence's FIRST LETTER (it follows "Equities this
  * release: " in README.md) and its terminal punctuation (README.md continues
  * "— under either broker source"). Everything between is compared byte for
  * byte, which is what "the same sentence" has to mean here.
  */
 const B5_STEM = B5.slice(1).replace(/\.$/, "");
-const OLD_B5 = ["last stored mark", "keep the mark already stored", "keeps the mark already stored"];
+const OLD_B5 = [
+  "last stored mark",
+  "keep the mark already stored",
+  "keeps the mark already stored",
+  // C-11 retired this one: the row shows a DASH when nothing is recorded, and
+  // an entry price in a mark column is a number the feed never produced.
+  "its entry price when no close is recorded",
+];
 
 describe("S2 — the B-5 sentence is ONE literal on every surface that states it", () => {
   it("S2a  both card strings and both consent sheets carry the identical sentence", () => {
@@ -483,8 +504,12 @@ describe("S2 — the B-5 sentence is ONE literal on every surface that states it
       items.find((i) => i.body.includes("Only equity positions are priced by this feed"))!;
     expect(sheetItem(UPSTOX_FEED_ITEMS).body).toContain(B5);
     expect(sheetItem(ANGELONE_FEED_ITEMS).body).toContain(B5);
-    // The row's fallback is STATED, not implied: recorded close, then entry.
-    expect(B5).toContain("the position's recorded close, or its entry price when no close is recorded");
+    // …and the sentence is not merely SHARED, it is the pinned one. C-11 fixed
+    // the wording itself, so a surface can no longer drift by agreeing with
+    // the other three: the fallback is a DASH, stated, never implied, and
+    // never an entry price standing in for a mark (invariant 6 — never
+    // fabricate a denominator, and never fabricate a price either).
+    expect(B5).toBe(B5_EXACT);
   });
 
   it("S2b  the /live help entry states it for both broker sources", () => {
@@ -520,12 +545,13 @@ describe("S2 — the B-5 sentence is ONE literal on every surface that states it
     }
   });
 
-  it("S2d  DEFECT (B-5, unfixed): the Angel One adapter's own health sentence still promises it", async () => {
+  it("S2d  the Angel One adapter's health sentence states the SAME fallback as the footnote above it", async () => {
     // The SAME Settings card that prints the B-5 footnote prints the adapter's
     // `health.reason` under it (`feedHealthText` → `Not live — ${reason}`, and
     // the GET publishes `provider.health()` verbatim). So the two halves of
-    // this seam are C2's card copy and B2's adapter sentence — and on a book
-    // that holds a derivative the card states both promises at once.
+    // this seam are the card's copy and the adapter's own sentence — and on a
+    // book that holds a derivative the card prints BOTH at once, one under the
+    // other, so they have to say the same thing about the same row.
     //
     // Only `loginImpl` is injected: that is the BROKER, the far side of the
     // network. The gate, the credentials, the resolver and the counters are the
@@ -555,14 +581,19 @@ describe("S2 — the B-5 sentence is ONE literal on every surface that states it
     const health = (await provider.health()) as { ok: boolean; reason: string };
 
     expect(health.reason).toContain("not priced by this feed");
-    // ⛔ RED ON PURPOSE — a reported seam defect, not a fix.
-    // lib/quotes/angelone.ts:750 still ends that sentence with "and keep their
-    // last stored mark."; lib/quotes/upstox.ts:571 has the identical tail. The
-    // right value is the B-5 wording every other surface now uses: "each shows
-    // the position's recorded close, or its entry price when no close is
-    // recorded". The wave's builder fixes it; this test is the proof it reaches
-    // the screen.
-    expect(health.reason.toLowerCase()).not.toContain("last stored mark");
+    // THE INVARIANT: the health sentence ends on the SAME fallback the
+    // footnote above it states — the recorded close, or a dash. It used to end
+    // "and keep their last stored mark.", in both adapters, which described a
+    // value nothing writes: no writer stores a CONTRACT-keyed mark, so a
+    // derivative has no "mark already stored" to keep. Two sentences on one
+    // card, one row, one promise.
+    expect(health.reason).toContain(B5_HEALTH_TAIL);
+    expect(health.reason.trimEnd().endsWith(B5_HEALTH_TAIL), `health.reason = ${JSON.stringify(health.reason)}`).toBe(
+      true,
+    );
+    for (const old of OLD_B5) {
+      expect(health.reason.toLowerCase(), `the health sentence still promises "${old}"`).not.toContain(old);
+    }
   });
 });
 
@@ -593,16 +624,15 @@ describe("S3 — the cadence line and the prose count the same thing", () => {
     expect(plain(readDoc("docs/client/README.md"))).toContain("3 seconds up to 50 scrips");
   });
 
-  it("S3c  DEFECT (B-6, unfixed): the countless sentence still says the interval comes from positions", () => {
+  it("S3c  the no-count sentence names the same noun the counted one does", () => {
     // Same surface, same card, same fact: the interval is arithmetic over the
     // deduped SCRIP count (`angelOneCadenceSeconds` is fed `openPositionKeys()`
     // on the card and the stream's own `symbols` on the desk). The no-count
-    // branch states it is computed from "the positions this feed prices", which
-    // is the very noun B-6 corrected one function below it.
+    // branch sits one function above `angelOneCadenceLine`, and states the same
+    // rule without a number — so it names scrips too. "Positions" there would
+    // be a false statement about the user's book (B-6): one scrip can carry
+    // several positions, and it is priced once.
     expect(ANGELONE_CADENCE_NO_COUNT).toContain("Angel One allows about one request a second");
-    // ⛔ RED ON PURPOSE — components/live/desk-copy.ts:306.
-    // WRONG: "Refreshes on an interval computed from the positions this feed prices"
-    // RIGHT: "…computed from the scrips this feed prices" (B-6's own noun).
     expect(ANGELONE_CADENCE_NO_COUNT).not.toContain("positions this feed prices");
   });
 });
@@ -729,7 +759,7 @@ describe("S4 — a withheld provider is refused by the route, the picker and the
     });
   });
 
-  it("S4c  DEFECT (registry): with the flag OFF a CURRENT ack still makes the withheld feed effective", async () => {
+  it("S4c  with the flag OFF a CURRENT ack cannot make the withheld feed effective", async () => {
     selectAccount(ACCOUNT);
     // The other half of the same state: someone who accepted the sheet on a
     // build that offered Angel One, then moved to a build that withholds it.
@@ -740,29 +770,26 @@ describe("S4 — a withheld provider is refused by the route, the picker and the
       const feed = await offRegistry.resolveLiveFeed();
       const offeredIds = offCard.PROVIDERS.map((p) => p.id);
 
-      // The card has no radio for it and — because stored === effective —
-      // no block either, so this state is stated NOWHERE on the screen…
+      // The card offers no radio for it, which is the whole point of the flag.
       expect(offeredIds).not.toContain("angelone");
-      // …while the provider the desk actually builds is the PLANNED stub,
-      // whose sentence names a source-file constant to a paying customer.
       const built = offRegistry.createProvider(feed.effective);
       const health = await built.health();
 
-      // ⛔ RED ON PURPOSE — a reported seam defect, not a fix.
-      // lib/quotes/registry.ts:246 `selectProviderId()`.
-      //   WRONG: selectProviderId({liveFeedProvider:"angelone",
-      //          liveFeedAckJson:'{"angelone":"1"}'}) === "angelone" with
-      //          ANGELONE_FEED_ENABLED false, so resolveLiveFeed() answers
-      //          {stored:"angelone", effective:"angelone"} and no blockedReason.
-      //   RIGHT: "eod" (DEFAULT_PROVIDER_ID) — a withheld id must never be
-      //          effective, exactly as `openalgo` collapses when its own
-      //          constant is false. `resolveProviderId()` keeps `upstox` and
-      //          `angelone` because they are in PLANNABLE_IDS, so they survive
-      //          into ALL_IDS as PLANNED ids instead of being collapsed.
-      //   The promise this breaks is written at lib/quotes/types.ts:74-82:
-      //   "a stored `live_feed_provider = 'upstox'` collapses to the
-      //   end-of-day default again." It does not.
+      // THE INVARIANT — `selectProviderId()` in lib/quotes/registry.ts. An ack
+      // is consent to a provider, not a licence to run a withheld one: with
+      // ANGELONE_FEED_ENABLED false the stored pick collapses to
+      // DEFAULT_PROVIDER_ID, exactly as `openalgo` collapses when its own
+      // constant is false. `resolveProviderId()` still KEEPS `upstox` and
+      // `angelone` — they are in PLANNABLE_IDS and survive into ALL_IDS as
+      // PLANNED ids — so the id remains a legal stored value while never being
+      // an effective one. That is the promise stated in lib/quotes/types.ts:
+      // "a stored `live_feed_provider = 'upstox'` collapses to the end-of-day
+      // default again."
       expect(feed.effective).toBe("eod");
+      // …and because stored ≠ effective, the state is STATED on the card
+      // rather than being true and invisible, and the provider the desk builds
+      // is never the PLANNED stub whose sentence names a source-file constant
+      // to a paying customer.
       expect(offCard.feedBlockState(feed as FeedState, offeredIds)).not.toBeNull();
       expect(health.reason ?? "").not.toContain("ANGELONE_FEED_ENABLED");
     });
@@ -874,10 +901,12 @@ describe("S6 — PRIVACY item 3's Angel One paragraph still satisfies its own gu
     const para = angelParagraph();
     // The guard normalises the whole file the same way and asserts `includes`.
     expect(para).toContain(pin!);
-    // B-7: the honest ceiling, not a calendar promise nothing enforces.
+    // B-7 + C-2 (fix wave 3): the honest ceiling with all four triggers named,
+    // not a calendar promise nothing enforces.
     expect(para).toContain(
-      "at most once a day while it stays open, and again after a relaunch or when you re-save the credentials",
+      "at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials",
     );
+    expect(para).toContain("tries at most three times and then stops");
     expect(para).not.toContain("signs in once a day to Angel One");
     // ONE naming of the host in this paragraph: the second reference is "that
     // same host", so a reader counts one endpoint, which is the claim.
@@ -899,12 +928,32 @@ describe("S6 — PRIVACY item 3's Angel One paragraph still satisfies its own gu
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * S7 — a guard OF a guard. C4 declared eight owners of `broker_connections`
- * and two deliberate whole-database sweeps; C2 owns two of the eight. The
+ * and the deliberate whole-database sweeps; C2 owns two of the eight. The
  * property is recomputed here from the filesystem, independently of C4's own
  * lists, so a ninth reader added by a later wave cannot pass by being declared.
+ *
+ * WHAT COUNTS AS A READER is the list of shapes below, DUPLICATED verbatim
+ * from tests/account-isolation.test.ts (`BROKER_CONN_READERS`). It is a copy
+ * on purpose: this seam exists to recompute the guard's property from the
+ * filesystem, and importing the guard's own matcher would make it agree with
+ * the guard by construction. There is no shared helper under tests/helpers/
+ * that holds it. Change one, change the other.
  * ══════════════════════════════════════════════════════════════════════════ */
-describe("S7 — every reader of broker_connections resolves an account, or is one of two named sweeps", () => {
-  it("S7a  the exemption set is exactly {lib/jobs/auto-pull.ts, lib/vault.ts}", () => {
+const BROKER_CONN_READERS: readonly (readonly [string, RegExp])[] = [
+  ["query builder", /\.from\(\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\s*\)/],
+  ["sql template", /\$\{\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\s*\}/],
+  ["table map", /\bbroker_connections\s*:\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\b/],
+  ["relational api", /\.query\s*\.\s*brokerConnections\b/],
+  ["raw sql", /\bfrom\s+broker_connections\b/i],
+];
+/** Comments stripped: a prose header that NAMES `getSelectedAccountId()` to
+ *  explain why it does not call it is documentation, not a filter — and
+ *  lib/queries/account-delete.ts does exactly that, three times. */
+const codeOnly = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+
+describe("S7 — every reader of broker_connections resolves the selected account, or is a named exemption", () => {
+  it("S7a  the exemption set is exactly the three whole-DB sweeps and the one explicit-id module", () => {
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const e of fs.readdirSync(path.join(REPO, dir), { withFileTypes: true })) {
         const rel = `${dir}/${e.name}`;
@@ -915,20 +964,36 @@ describe("S7 — every reader of broker_connections resolves an account, or is o
     };
     const readers = ["lib", "app"]
       .flatMap((d) => walk(d))
-      .filter((rel) => readDoc(rel).includes(".from(brokerConnections)"))
+      .filter((rel) => BROKER_CONN_READERS.some(([, re]) => re.test(readDoc(rel))))
       .sort();
 
-    // A floor: a sweep that finds nothing passes for the wrong reason.
-    expect(readers.length, "no file selects broker_connections — has the table been renamed?").toBeGreaterThanOrEqual(9);
+    // A floor: a sweep that finds nothing passes for the wrong reason. Eleven,
+    // not nine — the `sql` template in lib/queries/account-delete.ts and
+    // lib/backup.ts's TABLE_MAP are the two the one-literal matcher missed.
+    expect(readers.length, "no file reads broker_connections — has the table been renamed?").toBeGreaterThanOrEqual(11);
     // The two readers this wave's C2 file set added must be in the scan.
     expect(readers).toContain("app/api/live/feed/route.ts");
     expect(readers).toContain("lib/quotes/registry.ts");
+    // …and so must the two only the widened matcher can see.
+    expect(readers).toContain("lib/queries/account-delete.ts");
+    expect(readers).toContain("lib/backup.ts");
 
     const unscoped = readers.filter((rel) => {
-      const src = readDoc(rel);
+      const src = codeOnly(readDoc(rel));
       return !/getSelectedAccountId\(\)/.test(src) && !/getWriteAccountId\(/.test(src);
     });
-    expect(unscoped).toEqual(["lib/jobs/auto-pull.ts", "lib/vault.ts"]);
+    // Three whole-database sweeps — the daily auto-pull, the plaintext-secret
+    // re-encryption, and the backup dump, which is every row in every account
+    // by definition — plus lib/queries/account-delete.ts, which scopes on an
+    // explicit validated account id because the account being deleted is
+    // almost never the account being viewed. Each is named in the guard with
+    // its reason; anything else appearing here is an unscoped reader.
+    expect(unscoped).toEqual([
+      "lib/backup.ts",
+      "lib/jobs/auto-pull.ts",
+      "lib/queries/account-delete.ts",
+      "lib/vault.ts",
+    ]);
 
     // …and every reader is named in the isolation guard, as an owner or as one
     // of those two sweeps. An undeclared reader is never scanned for invariant

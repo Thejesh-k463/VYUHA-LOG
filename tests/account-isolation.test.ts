@@ -428,10 +428,52 @@ describe("account-scoped table registry", () => {
    * answer.
    *
    * So for THIS table the scan is exhaustive rather than enumerated: every file
-   * under lib/ and app/ that selects the table must be declared, or must be
+   * under lib/ and app/ that reads the table must be declared, or must be
    * listed below as a deliberate whole-database reader with the reason stated.
+   *
+   * "Reads the table" is a LIST OF SHAPES, not one literal (round-3 audit,
+   * C-8). The scan used to match the single string `.from(brokerConnections)`,
+   * which is blind to four ways this codebase already reaches the same rows —
+   * so a reader written in any of them would be exactly as unscanned as the
+   * five the B-9 fix found, and the hole B-9 closed would be reopened by the
+   * matcher rather than by the registry. Every shape below either EXISTS in
+   * lib/ or app/ today or is free to write tomorrow:
+   *
+   *   • the query builder, with or without a namespace prefix
+   *     (`.from(brokerConnections)`, `.from(schema.brokerConnections)`);
+   *   • the table object interpolated into a `sql` template —
+   *     lib/queries/account-delete.ts does it in two joins;
+   *   • a table-map entry walked by a generic dump — lib/backup.ts's
+   *     `TABLE_MAP`, driven by `BACKUP_TABLES` in lib/backup-format.ts;
+   *   • the relational API `db.query.brokerConnections`, enabled by
+   *     `drizzle(sqlite, { schema })` in lib/db/index.ts — zero uses today,
+   *     and nothing stops the next one;
+   *   • raw SQL naming the table.
+   *
+   * The SAME list is duplicated in the S7 seam (tests/seams-v42-fix2.test.ts),
+   * which recomputes this property from the filesystem independently of these
+   * lists. It is duplicated on purpose: there is no shared helper under
+   * tests/helpers/ that holds it, and putting one there would make the seam
+   * import from the guard it exists to check. Change one, change the other.
    */
-  const BROKER_CONN_SELECT = ".from(brokerConnections)";
+  const BROKER_CONN_READERS: readonly (readonly [string, RegExp])[] = [
+    ["query builder", /\.from\(\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\s*\)/],
+    ["sql template", /\$\{\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\s*\}/],
+    ["table map", /\bbroker_connections\s*:\s*(?:[A-Za-z_$][\w$]*\.)?brokerConnections\b/],
+    ["relational api", /\.query\s*\.\s*brokerConnections\b/],
+    ["raw sql", /\bfrom\s+broker_connections\b/i],
+  ];
+  const readsBrokerConnections = (src: string): boolean => BROKER_CONN_READERS.some(([, re]) => re.test(src));
+
+  /**
+   * Source with comments stripped. A file's prose header may NAME
+   * `getSelectedAccountId()` while calling nothing — lib/queries/account-delete.ts
+   * says the words three times to explain why it does not use it — and a
+   * mention in a comment is not a filter.
+   */
+  const codeOnly = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+
   const BROKER_CONN_WHOLE_DB: Record<string, string> = {
     // Sweeps EVERY account's connections once per day: a commit lands in each
     // row's own account, and the aggregate view must not hide another book's
@@ -440,6 +482,25 @@ describe("account-scoped table registry", () => {
     // Re-encrypts plaintext secrets in place, keyed on the row id. An account
     // filter here would leave another book's key readable on disk.
     "lib/vault.ts": "the plaintext-secret sweep re-encrypts every row by id",
+    // Walks TABLE_MAP over BACKUP_TABLES and dumps every row of every table.
+    // Account-scoping a backup would make restore lossy: a backup dump is
+    // every row in every account, which is exactly why AGENTS.md forbids
+    // comparing a page count against one.
+    "lib/backup.ts": "the whole-database dump is every row in every account, by definition",
+  };
+
+  /**
+   * A declared owner that scopes on an EXPLICIT, validated account id rather
+   * than the selected one. It is NOT a whole-database reader — it touches one
+   * account — so it belongs in OWNERS; but `accountId > 0 ? filter : all` is
+   * not its rule. Its own header states why: the account being deleted or
+   * merged is almost never the account being viewed, and getSelectedAccountId
+   * is request-cached, so resolving it mid-delete could hand back the id the
+   * transaction is removing. Target validation mirrors getWriteAccountId
+   * (integer > 0, present in the accounts table) instead.
+   */
+  const BROKER_CONN_EXPLICIT_ID: Record<string, string> = {
+    "lib/queries/account-delete.ts": "the account is an explicit validated parameter, never the selected one",
   };
 
   const walk = (fs: typeof import("node:fs"), dir: string, out: string[] = []): string[] => {
@@ -455,19 +516,34 @@ describe("account-scoped table registry", () => {
     const fs = await import("node:fs");
     const readers = ["lib", "app"]
       .flatMap((d) => walk(fs, d))
-      .filter((rel) => fs.readFileSync(rel, "utf8").includes(BROKER_CONN_SELECT))
+      .filter((rel) => readsBrokerConnections(fs.readFileSync(rel, "utf8")))
       .sort();
-    // A floor: a sweep that finds nothing passes for the wrong reason.
-    expect(readers.length, "no file selects broker_connections — has the table been renamed?").toBeGreaterThanOrEqual(
-      9,
+    // A floor: a sweep that finds nothing passes for the wrong reason. Eleven,
+    // not the nine the one-literal matcher saw — the `sql` template in
+    // lib/queries/account-delete.ts and lib/backup.ts's TABLE_MAP are the two
+    // it was blind to.
+    expect(readers.length, "no file reads broker_connections — has the table been renamed?").toBeGreaterThanOrEqual(
+      11,
     );
+    // …and every shape in the list is a shape this repo really contains, so a
+    // regex that stops matching anything is a dead rung and says so here
+    // rather than by quietly shrinking the set. The relational API is the one
+    // exception: it is enabled and unused, and is here to catch the first use.
+    const bySrc = readers.map((rel) => fs.readFileSync(rel, "utf8"));
+    for (const [label, re] of BROKER_CONN_READERS) {
+      if (label === "relational api" || label === "raw sql") continue;
+      expect(
+        bySrc.some((src) => re.test(src)),
+        `the "${label}" rung of BROKER_CONN_READERS matches nothing under lib/ or app/ — it is a dead regex, and a dead regex is how C-8 happened`,
+      ).toBe(true);
+    }
     for (const rel of readers) {
       if (rel in BROKER_CONN_WHOLE_DB) {
         // A deliberate whole-database reader must STAY one. The moment it
         // resolves the selected account it is an ordinary owner and belongs in
         // the registry, under the scan below.
         expect(
-          /getSelectedAccountId\(\)/.test(fs.readFileSync(rel, "utf8")),
+          /getSelectedAccountId\(\)/.test(codeOnly(fs.readFileSync(rel, "utf8"))),
           `${rel} now resolves the selected account — declare it as a broker_connections owner`,
         ).toBe(false);
         continue;
@@ -481,20 +557,27 @@ describe("account-scoped table registry", () => {
 
   it("every broker_connections reader resolves the account AND applies the aggregate rule", async () => {
     const fs = await import("node:fs");
-    const scanned = OWNERS.broker_connections.filter((rel) =>
-      fs.readFileSync(rel, "utf8").includes(BROKER_CONN_SELECT),
-    );
-    // Floor: the five readers fix B-9 declared, plus the two that were there.
-    expect(scanned.length, "the declared owners no longer select the table").toBeGreaterThanOrEqual(7);
+    const scanned = OWNERS.broker_connections.filter((rel) => readsBrokerConnections(fs.readFileSync(rel, "utf8")));
+    // Floor: the five readers fix B-9 declared, the two that were there, and
+    // lib/queries/account-delete.ts — a declared owner all along, whose `sql`
+    // template the one-literal matcher never saw.
+    expect(scanned.length, "the declared owners no longer read the table").toBeGreaterThanOrEqual(8);
     for (const rel of scanned) {
-      const src = fs.readFileSync(rel, "utf8");
-      // A CALL, not the word: the generic scan below is satisfied by a mention
-      // in a comment, which is not a filter.
+      const src = codeOnly(fs.readFileSync(rel, "utf8"));
+      if (rel in BROKER_CONN_EXPLICIT_ID) {
+        // It must STAY explicit. The moment it resolves an account for itself
+        // it is an ordinary owner and the aggregate rule below applies to it.
+        expect(
+          /getSelectedAccountId\(\)|getWriteAccountId\(/.test(src),
+          `${rel} now resolves an account for itself — drop it from BROKER_CONN_EXPLICIT_ID and let the rule below apply`,
+        ).toBe(false);
+        continue;
+      }
+      // A CALL, not the word: `codeOnly` has already dropped the comments,
+      // because a mention in a prose header is not a filter.
       const reads = /getSelectedAccountId\(\)/.test(src);
       const writes = /getWriteAccountId\(/.test(src);
-      expect(reads || writes, `${rel} selects broker_connections without resolving an account (invariant 8)`).toBe(
-        true,
-      );
+      expect(reads || writes, `${rel} reads broker_connections without resolving an account (invariant 8)`).toBe(true);
       if (reads) {
         expect(
           /\b(?:accountId|selected|selectedAccountId)\s*>\s*0\b/.test(src),

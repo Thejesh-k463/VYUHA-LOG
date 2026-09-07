@@ -33,11 +33,14 @@ function dteChip(dte: number | null) {
   return <Badge variant={v}>{dte}d</Badge>;
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Stat({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
     <div className="rounded-lg border border-border bg-card-hover/40 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-0.5 text-sm font-semibold tabular-nums ${tone ?? ""}`}>{value}</div>
+      {/* A total that excluded something must say so on the same tile — a
+          silently short total reads as the whole obligation (ruling C-1). */}
+      {note ? <div className="mt-0.5 text-[10px] text-warning">{note}</div> : null}
     </div>
   );
 }
@@ -45,6 +48,10 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
   const { obligations } = summary;
   const hasDanger = obligations.some((o) => o.warn === "danger");
+  // Positions that WILL settle but whose reference price the book does not
+  // know: excluded from both ₹ totals, and said so rather than counted as ₹0.
+  const unknownNote =
+    summary.unknownNotionalCount > 0 ? `${summary.unknownNotionalCount} unknown` : undefined;
 
   return (
     <Card className="p-0">
@@ -76,8 +83,12 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                 value={String(summary.certainDeliveryCount)}
                 tone={summary.certainDeliveryCount > 0 ? "text-warning" : undefined}
               />
-              <Stat label="Notional at risk" value={inrCompact(summary.notionalAtRisk)} />
-              <Stat label="Funds to take delivery" value={inrCompact(summary.fundsNeeded)} />
+              <Stat
+                label="Notional at risk"
+                value={inrCompact(summary.notionalAtRisk)}
+                note={unknownNote}
+              />
+              <Stat label="Funds to take delivery" value={inrCompact(summary.fundsNeeded)} note={unknownNote} />
               {/* Labelled as what the number IS — the STT settlement will
                   levy. "Extra vs squaring off" is only computable for
                   futures; an option's exit STT needs its current premium,
@@ -87,6 +98,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                 label="STT on physical settlement"
                 value={inrCompact(summary.physicalSttTotal)}
                 tone={summary.physicalSttTotal > 0 ? "text-loss" : undefined}
+                note={unknownNote}
               />
             </div>
 
@@ -163,7 +175,9 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                           )}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">
-                          {o.settles === "no" ? "—" : inr(o.notional, { decimals: 0 })}
+                          {/* An unknown reference price prints "—", never ₹0
+                              (ruling C-1, invariant 6). */}
+                          {o.settles === "no" || o.notional == null ? "—" : inr(o.notional, { decimals: 0 })}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">
                           {o.physicalStt != null ? (

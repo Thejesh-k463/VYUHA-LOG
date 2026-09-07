@@ -11,7 +11,7 @@ import { NAV_ITEMS } from "@/components/layout/nav-config";
 // so the two are pinned to ONE constant rather than to two strings that agree
 // today. `components/settings/live-feed-card.tsx` is owned by another builder
 // this wave and is not edited here.
-import { FEED_BLOCKED_HEALTH, REVIEW_CONSENT_CTA } from "@/components/settings/live-feed-card";
+import { FEED_BLOCKED_HEALTH, REVIEW_CONSENT_CTA, feedBlockState } from "@/components/settings/live-feed-card";
 
 /**
  * The help desk's one hard promise: it describes the app that exists. This
@@ -238,9 +238,13 @@ describe("help describes the v4.2 Upstox price source (D)", () => {
     // the row falls back to the position's recorded close (or its entry price)
     // under an "End of day" pill. The literal is shared with the consent sheets
     // and the Settings card, byte for byte.
+    // C-11 (owner ruling, 2026-09-07): the second half of the fallback is a
+    // DASH. The row prints "—" when it has no close; an entry price is the
+    // trader's own cost and was never what that row shows.
     expect(text, "equities only in this release").toContain(
-      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.",
     );
+    expect(text, "help still offers the entry price as the fallback").not.toContain("its entry price");
     expect(text, "the prices are not sent on anywhere").toMatch(/never uploaded, never resold/);
   });
 
@@ -402,14 +406,31 @@ describe("help describes the v4.2 Angel One price source", () => {
     }
   });
 
-  it("says the daily sign-in is Vyuha's to do, on BOTH surfaces", () => {
+  it("says the unattended sign-in is Vyuha's to do, on BOTH surfaces", () => {
     for (const href of ["/live", "/settings"]) {
       const text = body(href);
-      expect(text, `${href} does not say the session is cleared daily`).toMatch(
-        /clears every API session at 5 AM IST/,
-      );
-      expect(text, `${href} does not say who signs in`).toMatch(/Vyuha opens the next one/);
+      expect(text, `${href} does not say who signs in`).toMatch(/Vyuha opens each API session/);
       expect(text, `${href} does not say the user is not asked`).toMatch(/without asking you|nothing to click/i);
+      // C-2 + C-3 (owner rulings, 2026-09-07). "each morning" was the calendar
+      // promise B-7 removed from the sheet, in softer words: a machine left
+      // shut opens no session that morning, and one relaunched at noon opens
+      // one then. Help states the same four triggers the sheet does.
+      for (const trigger of [
+        "at most once a day while Vyuha stays open",
+        "again after a relaunch",
+        "after Angel One's 5 AM IST session flush",
+        "when you re-save the credentials",
+      ]) {
+        expect(text, `${href} does not name the trigger: ${trigger}`).toContain(trigger);
+      }
+      expect(text, `${href} still promises a sign-in on a calendar schedule`).not.toMatch(/each morning/i);
+      expect(text, `${href} does not state the refused-sign-in ceiling`).toMatch(
+        /tries at most three times and then stops until you re-save the credentials/,
+      );
+      // C-4: the SECRET is not what travels — a one-time code derived from it is.
+      expect(text, `${href} implies the TOTP secret itself is sent`).toMatch(
+        /one-time code it derives from that (TOTP )?secret/,
+      );
     }
   });
 
@@ -482,6 +503,44 @@ describe("help names the blocked-feed state and the control that clears it", () 
     expect(sentence, "help does not say consent is asked for again").toMatch(/consent is asked for again/i);
   });
 
+  /**
+   * C-5 (owner ruling, 2026-09-07) — "Review and accept" IS NOT OFFERED FOR
+   * EVERY BLOCKED FEED.
+   *
+   * `feedBlockState()` returns `reviewProvider: null` for OpenAlgo, whose
+   * consent lives on the Integrations screen: its block renders as TEXT ONLY.
+   * Help and the client README promised the button for every block, which sends
+   * an OpenAlgo user looking for a control that is deliberately not rendered.
+   * The sentence now scopes the button to the two feeds whose sheets this card
+   * owns and names the other route for the third.
+   */
+  it("scopes Review and accept to the feeds whose sheet the card can reopen", () => {
+    const sentence = blockedSentence()!;
+    expect(sentence, "help still promises the button for every blocked feed").toMatch(
+      /for the Upstox and Angel One feeds/i,
+    );
+    expect(sentence, "help does not say how an OpenAlgo block is cleared").toMatch(
+      /Settings → Integrations/,
+    );
+    // …and the card really does withhold the control for OpenAlgo, which is
+    // the fact the sentence is describing. `stored !== effective` is the block.
+    const block = feedBlockState({
+      stored: "openalgo",
+      effective: "eod",
+      blockedReason: "The OpenAlgo integration is switched off.",
+    } as never);
+    expect(block, "an OpenAlgo pick that cannot run is no longer a block").not.toBeNull();
+    expect(
+      block!.reviewProvider,
+      "the card now owns OpenAlgo's sheet, so help may promise the button for it again",
+    ).toBeNull();
+    // …while the two the card does own still get it.
+    for (const id of ["upstox", "angelone"]) {
+      const b = feedBlockState({ stored: id, effective: "eod", blockedReason: "blocked" } as never);
+      expect(b!.reviewProvider, `${id} no longer reaches its sheet from the card`).toBe(id);
+    }
+  });
+
   it("…and describes the same fallback the card's health line states", () => {
     const sentence = blockedSentence()!.toLowerCase();
     for (const word of ["blocked", "end-of-day prices"]) {
@@ -504,6 +563,14 @@ describe("help names the blocked-feed state and the control that clears it", () 
     );
     expect(row!, "the client README does not name the restored backup").toMatch(
       /backup was restored on a machine that never accepted it/i,
+    );
+    // C-5: the button is not offered for OpenAlgo, whose consent lives on the
+    // Integrations screen — so the row scopes it and names the other route.
+    expect(row!, "the client README still promises the button for every blocked feed").toMatch(
+      /For the Upstox and Angel One feeds/i,
+    );
+    expect(row!, "the client README does not say how an OpenAlgo block is cleared").toMatch(
+      /Settings → Integrations/,
     );
   });
 });
