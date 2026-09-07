@@ -39,8 +39,11 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > `4FF85F3BBE1DA21D`. Client ZIP `release-packages/Vyuha_4.1.0_Client_Package.zip` (13 files, NOTICES inside);
 > its installer SHA-256 `1DA14CBE…0FBBA7` is the WDSI sha; the PUBLISHED asset SHA-256 `7ABAB234…C29764` is in
 > the winget manifest at `release-packages/winget/4.1.0`. Local build proof: `BUILD_ID` 2026-09-07T14:21:05,
-> bundle carries "Locked in at stop", local `.sig` key id `4FF85F3BBE1DA21D`. Follow-up for the 4.2 wave: a
-> global vitest `hookTimeout` (DECISIONS 2026-09-07). **Next: v4.2 (Upstox + Angel One quote adapters)** — six
+> bundle carries "Locked in at stop", local `.sig` key id `4FF85F3BBE1DA21D`. The follow-up landed the same
+> afternoon: `vitest.config.ts` `hookTimeout: 30_000`, proved red-on-revert with a 14 s probe, gate unchanged at
+> 341 / 6,400 / 35 (DECISIONS 2026-09-07). **winget for 4.1.0 is NOT submitted, by the standing rule** — #421585
+> (the 2.99.99 first submission) is still open since 2026-08-20; the validated manifest waits at
+> `release-packages/winget/4.1.0`. **Next: v4.2 (Upstox + Angel One quote adapters)** — six
 > owner rulings recorded 2026-09-07 in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 pre-build rulings"; two
 > owner inputs gate any Angel One code (the home-connection `/quote` test and the SmartAPI terms read). Base
 > commit `6631d21`; on top of it `66aa319` (the

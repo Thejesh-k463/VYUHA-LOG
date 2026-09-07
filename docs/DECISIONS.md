@@ -4173,4 +4173,13 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
 - **Owner actions:** the draft was PUBLISHED at 2026-09-07T10:00:03Z (15:30 IST) and installed on a non-build
   machine the same hour ("working fine"); `releases/latest` → v4.1.0 and `latest/download/latest.json` serves
   4.1.0 for six platforms (checked with `gh api` and `curl` after the owner's answer). WDSI form handed over
-  with the client-ZIP sha; the winget submission is the owner's, from `release-packages/winget/4.1.0`.
+  with the client-ZIP sha. **winget: NOT submitted, by the standing rule** — microsoft/winget-pkgs #421585 (the
+  first submission, 2.99.99) is still OPEN and untouched since 2026-08-20, and STATE records "no winget PR while
+  #421585 is open"; the 4.1.0 manifest validates (`winget validate` OK) and waits at `release-packages/winget/4.1.0`.
+- **`vitest.config.ts` gains `hookTimeout: 30_000` the same afternoon (post-tag, main only).** Proof: a probe
+  `tests/zzprobe-hook-timeout.test.ts` with a 14 s `beforeAll` passes under the new config and fails with the
+  release run's exact error, `Error: Hook timed out in 10000ms.`, with the line stashed; probe deleted. Gate on
+  the change: 341 / 6,400 / 35, `next build` compiled — coverage unchanged. 30 s is a ceiling for a migrated +
+  seeded SQLite file on a cold runner; a genuinely hung hook still fails. **Rejected: per-file timeouts on the 87
+  seeded sites** — the same edit 87 times, and the next seeded test forgets it. Not proven on a cold Windows CI
+  runner until the next Windows job runs with it (the only place the 10 s default ever fired).
