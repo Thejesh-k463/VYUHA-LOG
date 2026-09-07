@@ -4518,3 +4518,11 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   6,914 → 6,969 tests, screens 46 → 49 (now disk-gated). No `components/live` change (the `/live` harness stays 9/9 from `99aa027`).
   `package-lock.json` untouched. Wave cost: four Opus builders + one Opus seam tester; round-4 audit six Fable auditors + Fable skeptic.
   Round-5 audit owed over this commit's diff.
+- **Fix wave 4 = `3b478ea`; CI 34159744036 5/6 — the Windows job alone red, on a NEW pin, not a cold runner.** The U-1 order pin
+  in `tests/live-feed-angelone-settings.test.ts` ended `await refreshStatus\(\);\n {2}\}` with a literal `\n`; the Windows runner
+  checks the card out with CRLF (`core.autocrlf`), so `\);\r\n  }` never matched while every other job (Linux/macOS, LF) passed.
+  Reproduced locally by converting the card to CRLF: `1 failed | 75 passed` with the runner's own assertion; `\r?\n` → 76/76 on
+  both encodings. The file's older newline idioms (`indexOf("\n}")`, `split("\n")`) survive CRLF because `\n}` is a substring of
+  `\r\n}` — only an anchor that names the character BEFORE the newline is strict. Rule: a source-shape regex that spans a line
+  break writes `\r?\n`, as `tests/readme-claims.test.ts` already did. Fix-wave 4b is that one line; its CI run is the target
+  the round-5 audit waits for.

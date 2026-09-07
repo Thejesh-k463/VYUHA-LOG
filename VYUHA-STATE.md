@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE + THREE FIX WAVES on main (`2bacf06`, 2026-09-08 IST); audit ladder 14 → 12 → 11 → round 4 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE + FOUR FIX WAVES on main (`3b478ea`, 2026-09-08 IST); audit ladder 14 → 12 → 11 → 10 → round 5 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
 
 > **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
@@ -36,13 +36,21 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > a release flag outranks a stored consent; the card folds the POST verdict; consent copy says what a derivative row shows;
 > "scrips" not "positions") → fix wave 3 **`2bacf06`** (CI 34153510561 6/6; 11 + 1 seam items: the futures SETTLEMENT
 > reference is the underlying's cash mark with null = unknown; refused Angel One logins stop after three; the sheet names four
-> credentials, four sign-in triggers and the cap; "or a dash"; guard scans match five read shapes). **Round-4 audit is the next
-> step** (six Fable auditors + skeptic over `99aa027..2bacf06`), then the bump. Gate on `2bacf06`: **`npm run verify` EXIT 0 —
-> 358 files / 6,914 passed / 35 skipped, `next build` compiled 15.3 s**; README counts say 6914 / 358; seam files
-> `tests/seams-v42{,-fix,-fix2,-fix3}.test.ts` (35 + 20 + 20 + 10 tests). Rulings: `06-ANSWERS.md` "v4.2 fix-wave rulings"
-> (A-1, A-2, A-11, B-7, C-1, C-2, C-11 + session decisions); measurements: `docs/DECISIONS.md` 2026-09-07 entries "v4.2 wave
-> audit" and "v4.2 fix-wave audit". Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
-> `scanBreaches` reads every account (pre-existing, needs an owner ruling); `PLANNED_NOTES.angelone` names a constant but is
+> credentials, four sign-in triggers and the cap; "or a dash"; guard scans match five read shapes) → fix wave 4 **`3b478ea`**
+> (CI: see DECISIONS 2026-09-08 "round-4 audit"; 10 + 1 seam items: a SHORT future's exit STT is ₹0 and its `sttJump` the whole
+> physical STT; a second Angel One ceiling — three consecutive session-invalidations with no priced answer, then stop; the capped
+> sentence says "refused" or "could not reach"; the sheet, PRIVACY, help, READMEs, `egressDescription` and the card blurb name the
+> FIFTH sign-in trigger (account switch); the Funds tile counts only take-delivery unknowns; the footer renders 0.15% from the
+> constant; the / and /risk breach banners are scoped to the selected account (EOD job unscoped, by ruling); the consent accept
+> paths store before they re-ask; README screens 46 → 49 disk-gated). **Round-5 audit is the next step** (six Fable auditors +
+> skeptic over `2bacf06..3b478ea`), then the bump. Gate on `3b478ea`: **`npm run verify` EXIT 0 — 360 files / 6,969 passed /
+> 35 skipped, `next build` compiled 10.7 s**; README counts say 6969 / 360 / 49 screens; seam files
+> `tests/seams-v42{,-fix,-fix2,-fix3,-fix4}.test.ts` (35 + 20 + 20 + 10 + 11 tests). Rulings: `06-ANSWERS.md` "v4.2 fix-wave
+> rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11) and "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave shape +
+> session decisions); measurements: `docs/DECISIONS.md` 2026-09-07/08 entries "v4.2 wave audit", "v4.2 fix-wave audit", "v4.2
+> fix wave 3", "v4.2 round-4 audit". Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
+> a hand-edited non-statutory `stt_side` of `both` for `future` would diverge `charges.ts` from `exitStt` (M-1 limitation);
+> `runAutoMtm().breaches` is serialised by `/api/mtm/auto` and read by nobody; `PLANNED_NOTES.angelone` names a constant but is
 > unreachable for a live desk; `egressDescription` has no renderer; the generic account-isolation resolution scan still
 > matches prose for tables other than `broker_connections`.
 >

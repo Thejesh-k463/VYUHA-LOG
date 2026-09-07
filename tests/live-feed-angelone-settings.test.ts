@@ -1013,7 +1013,9 @@ describe("the health line describes the feed that runs NOW, not the one that ran
     // satisfied by the two accept paths asking BEFORE their own store. The
     // ordering itself is pinned in the U-1 block below.
     expect(card, "store() no longer re-asks after its own write").toMatch(
-      /const r = await post\(\{ action: "provider", provider: next \}\);[\s\S]*?await refreshStatus\(\);\n {2}\}/,
+      // `\r?\n`: the Windows CI runner checks the card out with CRLF (autocrlf),
+      // and a literal `\n` here reddened run 34159744036 on that job alone.
+      /const r = await post\(\{ action: "provider", provider: next \}\);[\s\S]*?await refreshStatus\(\);\r?\n {2}\}/,
     );
     // A plain fetch in an event handler — NOT a second effect, and never a
     // state-derived one (AGENTS.md).
