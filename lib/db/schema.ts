@@ -901,6 +901,18 @@ export const settings = sqliteTable("settings", {
   liveFeedProvider: text("live_feed_provider").notNull().default("eod"),
   liveFeedRefreshSeconds: integer("live_feed_refresh_seconds").notNull().default(3),
   lastLiveMarkDate: text("last_live_mark_date"),
+  // Broker live-feed consent (v4.2, migration 0069). ONE column for EVERY
+  // broker feed: a JSON object mapping provider id → the disclosure version
+  // that person accepted, `{"upstox":"1"}`. Angel One's key is already typed in
+  // LIVE_FEED_DISCLOSURE_VERSIONS, so the release that ships its adapter needs
+  // no second migration. Read only through `isFeedAckCurrent()`
+  // (lib/domain/live-feed-disclosure.ts), which compares with `===` — an older
+  // version, an absent key or an unreadable value is NO consent, and the feed
+  // falls back to 'eod'. MACHINE STATE, like the OpenAlgo consent pair above: a
+  // consent is a statement a person made on a machine, so it belongs in
+  // SETTINGS_MACHINE_COLUMNS (lib/backup-format.ts) and outside the settings
+  // baseline — a restored backup must never inherit somebody's acceptance.
+  liveFeedAckJson: text("live_feed_ack_json"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });
@@ -1253,6 +1265,34 @@ export const brokerConnections = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// angelone_instrument_tokens — symbol -> Angel One's own exchange token (0070).
+//
+// A CACHE OF A FACT ABOUT THE MARKET, not about a book. Angel One's quote
+// endpoint is keyed by `symboltoken`, learned one symbol at a time from
+// searchScrip at one request a second (there is no scrip-master download in
+// this release), so the answers are kept here and survive a restart.
+//
+// NO account_id, deliberately and permanently: SBIN's NSE token is the same
+// number in every account, so invariants 8/9 have nothing to own — the same
+// reasoning as the bhavcopy (0066) and Atlas (0065) caches. `tradingsymbol`
+// records WHICH series was chosen ("SBIN-EQ"), because searchScrip returns
+// sixteen rows for SBIN and a wrong pick prices a different instrument under a
+// right-looking name. `token` is TEXT: it is an identifier, never a quantity.
+// ---------------------------------------------------------------------------
+export const angeloneInstrumentTokens = sqliteTable(
+  "angelone_instrument_tokens",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    exchange: text("exchange").notNull(), // NSE | BSE — the token space is per exchange
+    symbol: text("symbol").notNull(), // canonical ticker, no series suffix
+    tradingsymbol: text("tradingsymbol").notNull(), // Angel One's own decorated name
+    token: text("token").notNull(),
+    resolvedAt: text("resolved_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("angelone_instrument_tokens_exchange_symbol_uq").on(t.exchange, t.symbol)],
+);
+
+// ---------------------------------------------------------------------------
 // accounts — first-class local portfolios. Existing journals migrate to id=1.
 // ---------------------------------------------------------------------------
 export const accounts = sqliteTable("accounts", {
@@ -1415,6 +1455,8 @@ export type NewCorporateAction = typeof corporateActions.$inferInsert;
 export type MarginConfigRow = typeof marginConfig.$inferSelect;
 export type TradeAttachment = typeof tradeAttachments.$inferSelect;
 export type BrokerConnection = typeof brokerConnections.$inferSelect;
+export type AngelOneInstrumentToken = typeof angeloneInstrumentTokens.$inferSelect;
+export type NewAngelOneInstrumentToken = typeof angeloneInstrumentTokens.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type TradingSession = typeof tradingSessions.$inferSelect;
 export type RegulatoryRulePack = typeof regulatoryRulePacks.$inferSelect;

@@ -145,6 +145,10 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "SmartAPI pulls today's fills from the trade book — and nothing expires on you: the login runs unattended from your TOTP secret (the base32 string behind the enrollment QR, not the 6-digit code).",
       "Register an app at smartapi.angelone.in. You need four things: the API key, your client code, your PIN and the TOTP secret. Free — SmartAPI has no subscription.",
       "All four credentials are stored encrypted at rest with a machine-bound key and never leave this machine except to Angel One itself.",
+      // v4.2 — the SAME four credentials now have a second job. Said here as a
+      // pointer, not as a second copy of the setup: the TOTP secret's origin is
+      // the step above, and repeating it is how two help cards drift.
+      "The same four credentials can also price the Live Desk: pick Angel One in Settings → Live feed, accept its disclosure, and the desk prices your open equity positions from this connection. Nothing extra to set up here.",
     ],
     openalgo: [
       "As of Aug 2026: the instance's .env takes your SmartAPI key as BROKER_API_KEY — and BROKER_API_SECRET is genuinely UNUSED for Angel One, because the login exchanges your TOTP instead of a secret. The redirect callback path is \"angel\".",
@@ -166,6 +170,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "Pulls today's fills using the Analytics token — it lasts a year and is read-only by design (it cannot place orders, even in principle).",
       "Two one-time steps at account.upstox.com → Apps: generate the Analytics token, and register your current IPv4 address under Static IPs — Upstox answers account APIs only from that address, so if pulls ever start failing with a 401, your connection's IP changed: re-register it there.",
       "The token is stored encrypted at rest with a machine-bound key and sent nowhere except to Upstox itself.",
+      "From v4.2 the SAME token can price the Live Desk, if you pick Upstox in Settings → Live feed: no second credential, and no second login. Generating a fresh Analytics token at account.upstox.com → Apps revokes the old one, so a regeneration stops this pull and that source at the same moment — paste the new token back here.",
     ],
     openalgo: [
       "As of Aug 2026: OpenAlgo needs its own Upstox developer app, created at account.upstox.com — the Analytics token above will not do. Set the app's redirect URL to your instance's /upstox/callback and put the app's key and secret in the .env.",

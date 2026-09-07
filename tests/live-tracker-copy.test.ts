@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   CONNECT_PROMPT_COPY,
+  angelOneCadenceLine,
   DESK_COPY,
+  NOT_PRICED_BY_FEED,
+  showsNotPricedByFeed,
   EM_DASH,
   LIVE_STREAM_COPY,
   lockedInAtStop,
@@ -12,6 +15,7 @@ import {
   stalenessLabel,
   stopLabel,
 } from "@/components/live/desk-copy";
+import { ANGELONE_FEED_COPY, LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
 
 /**
  * The Live Desk copy guard (owner rulings Q31 / Q32).
@@ -430,7 +434,10 @@ describe("the connect prompt borrows its sentences and restates neither", () => 
 
   it("renders the imported constants, not literals", () => {
     expect(src).toContain("{LIVE_FEED_COPY.connect}");
-    expect(src).toContain("{LIVE_FEED_COPY.dailyReauth}");
+    // `dailyReauth` is no longer rendered unconditionally (v4.2 seam fix, and
+    // the block below is what pins the three cases) — but it is still the
+    // imported constant rather than a literal wherever it IS rendered.
+    expect(src).toContain("LIVE_FEED_COPY.dailyReauth");
   });
 
   it("carries no second copy of either sentence anywhere under components/live", () => {
@@ -462,5 +469,214 @@ describe("the connect prompt borrows its sentences and restates neither", () => 
   it("is dismissible for the DAY, and says so on the control", () => {
     expect(CONNECT_PROMPT_COPY.dismissTitle).toMatch(/until tomorrow/i);
     expect(src).toContain("writeStored(promptKey, connectPromptDismissal())");
+  });
+});
+
+/**
+ * Ruling 4.2-8 — THE DERIVATIVE MARK LABEL.
+ *
+ * A feed that quotes cash scrips only leaves every futures and options row on
+ * the desk showing a stored number: an imported close, or a mark the user
+ * typed. Before this label the row was indistinguishable from a live one, and
+ * the strip above it said "Live · upstox · 2 s".
+ *
+ * WHAT MAKES IT SAFE is what it does NOT do: it states a fact about the feed,
+ * names no other product, and nothing follows it. The desk's own vocabulary
+ * guard (the BANNED scan above) covers the string as well, since it lives in
+ * `components/live/desk-copy.ts`.
+ */
+describe("a derivative row says which prices are not the feed's (ruling 4.2-8)", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+
+  it("is the sentence, verbatim, and it is a statement rather than an instruction", () => {
+    expect(NOT_PRICED_BY_FEED).toBe("Not priced by this feed");
+    expect(BANNED.test(NOT_PRICED_BY_FEED)).toBe(false);
+    // It claims nothing about WHY, and offers nothing to do about it.
+    expect(NOT_PRICED_BY_FEED).not.toMatch(/(instead|switch|use|try|upgrade)/i);
+  });
+
+  it("labels options and futures under `upstox` and `angelone`, and NOTHING under any other feed", () => {
+    // v4.2 ships two cash-only broker feeds, and the label is a fact about the
+    // FEED, so both carry it. `openalgo` deliberately does not: the bridge
+    // quotes contracts, and labelling its rows would be a false statement.
+    for (const id of ["upstox", "angelone"]) {
+      expect(showsNotPricedByFeed(id, "option"), id).toBe(true);
+      expect(showsNotPricedByFeed(id, "future"), id).toBe(true);
+      expect(showsNotPricedByFeed(id, "equity"), id).toBe(false);
+      // A row whose instrument type was never recorded is not labelled: the
+      // label would be a claim about an instrument nobody has classified.
+      expect(showsNotPricedByFeed(id, null), id).toBe(false);
+    }
+    for (const id of ["openalgo", "eod", "manual", "mock"]) {
+      expect(showsNotPricedByFeed(id, "option"), id).toBe(false);
+      expect(showsNotPricedByFeed(id, "future"), id).toBe(false);
+    }
+  });
+
+  it("renders in the MARK cell, beside the staleness pill, from the constant", () => {
+    // Same cell as "Stored mark"/"Stale": the label is the same kind of
+    // statement — where this number came from — so it belongs where the user
+    // already looks for that.
+    expect(src).toContain("showsNotPricedByFeed(providerId, row.instrumentType)");
+    expect(src).toContain("{NOT_PRICED_BY_FEED}");
+    expect(src).toContain("<StalenessChip row={row} newestDay={newestDay} providerId={providerId} />");
+  });
+});
+
+/**
+ * Ruling 4.2-8 — THE UPSTOX CONNECT PROMPT.
+ *
+ * Same banner, a different sentence and a different destination: the Upstox
+ * Analytics token is generated in a browser visit to the broker and saved on
+ * the Import screen, so the OpenAlgo headline ("20 seconds" — the measured cost
+ * of starting a bridge and signing in) and the OpenAlgo body (start your
+ * instance) are both false here.
+ */
+describe("the Upstox connect prompt says where its token lives", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+
+  it("is pinned VERBATIM, and promises no duration", () => {
+    expect(CONNECT_PROMPT_COPY.upstoxHeadline).toBe(
+      "Connect your feed — Upstox uses the Analytics token saved under Import → Brokers.",
+    );
+    expect(CONNECT_PROMPT_COPY.upstoxHeadline).not.toMatch(/second|minute/i);
+  });
+
+  it("routes to the Import screen, which is where the token is saved", () => {
+    expect(CONNECT_PROMPT_COPY.upstoxHref).toBe("/import");
+    expect(src).toContain("href={CONNECT_PROMPT_COPY.upstoxHref}");
+    expect(src).toContain("{CONNECT_PROMPT_COPY.upstoxCta}");
+  });
+
+  it("swaps BOTH OpenAlgo sentences out, not just the headline", () => {
+    // The body tells the reader to start an OpenAlgo instance. Saying that to
+    // an Upstox user is an instruction to set up software they are not running.
+    expect(src).toContain("<p className=\"text-sm font-medium\">{CONNECT_PROMPT_COPY.upstoxHeadline}</p>");
+    // …and the OpenAlgo headline survives as its own literal, which is what
+    // the seam guard (tests/seams-v41-fix.test.ts S5b) reads.
+    expect(src).toContain("<p className=\"text-sm font-medium\">{LIVE_FEED_COPY.connect}</p>");
+    // Widened in the Angel One wave for the same reason, not loosened: the
+    // body is rendered for the BRIDGE alone, and there are now two broker
+    // feeds it would be wrong for.
+    expect(src).toContain(
+      "{!upstoxFeed && !angeloneFeed && <p className=\"mt-1 text-muted-foreground\">{CONNECT_PROMPT_COPY.body}</p>}",
+    );
+    // …and the daily re-sign-in sentence is NOT true of Upstox, so it goes —
+    // see "the daily re-sign-in line names the right broker, or nobody" below.
+    // This assertion used to read `toContain("{LIVE_FEED_COPY.dailyReauth}")`
+    // with the comment "true of Upstox too"; it was neither.
+    expect(src).toContain("{upstoxFeed ? null : angeloneFeed ? (");
+  });
+});
+
+/**
+ * THE DAILY RE-SIGN-IN LINE IS A CLAIM ABOUT ONE BROKER (v4.2 seam fix).
+ *
+ * The prompt printed `LIVE_FEED_COPY.dailyReauth` — "Your broker's API session
+ * expires every day and has to be signed in again" — under ALL THREE feeds.
+ * Under Upstox that is false (the Analytics token is read-only for about a
+ * year, which `UPSTOX_FEED_COPY.blurb` says two lines away, and the Settings
+ * card already suppresses the sentence for exactly that reason). Under Angel
+ * One it is half false in the more expensive direction: the session really does
+ * die at 5 AM IST, but nobody signs it back in — Vyuha does, from the enrolled
+ * TOTP secret — so the generic sentence tells a user to do a chore that does
+ * not exist. OpenAlgo is the one feed it was written for, and it is unchanged.
+ *
+ * The Angel One sentence is REUSED from the Settings card, never restated: one
+ * sentence, one source, and the card's own guard
+ * (`tests/live-feed-angelone-settings.test.ts`) is what keeps it factual and
+ * regulator-free.
+ */
+describe("the daily re-sign-in line names the right broker, or nobody", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+
+  it("is suppressed entirely under Upstox", () => {
+    // `upstoxFeed` is the FIRST arm and its branch is `null` — nothing at all,
+    // not a softer sentence. The two remaining arms are asserted below.
+    const gate = src.match(/\{upstoxFeed \? null : angeloneFeed \? \(([\s\S]{0,600}?)\)\}/);
+    expect(gate, "the re-sign-in line is no longer suppressed under Upstox").not.toBeNull();
+    expect(gate![1]).toContain("ANGELONE_FEED_COPY.dailyReauth");
+    expect(gate![1]).toContain("LIVE_FEED_COPY.dailyReauth");
+  });
+
+  it("prints Angel One's own sentence under Angel One, and the generic one otherwise", () => {
+    expect(src).toContain("<p className=\"mt-1 text-muted-foreground\">{ANGELONE_FEED_COPY.dailyReauth}</p>");
+    // …and the OpenAlgo arm survives as its own literal, which is what the seam
+    // guard (tests/seams-v41-fix.test.ts S5b) reads.
+    expect(src).toContain("<p className=\"mt-1 text-muted-foreground\">{LIVE_FEED_COPY.dailyReauth}</p>");
+    // Imported from the card — a second literal is a second thing to drift.
+    expect(src).toMatch(/import \{ ANGELONE_FEED_COPY \} from "@\/components\/settings\/live-feed-card";/);
+    expect(src).toContain('import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card"');
+    expect(src.split("ANGELONE_FEED_COPY.dailyReauth").length - 1, "a second copy of the Angel One sentence").toBe(1);
+    expect(src.split("LIVE_FEED_COPY.dailyReauth").length - 1, "a second copy of the generic sentence").toBe(1);
+  });
+
+  it("the two sentences really are different, and neither names a regulator", () => {
+    expect(ANGELONE_FEED_COPY.dailyReauth).not.toBe(LIVE_FEED_COPY.dailyReauth);
+    expect(ANGELONE_FEED_COPY.dailyReauth).toContain("5 AM IST");
+    for (const line of [ANGELONE_FEED_COPY.dailyReauth, LIVE_FEED_COPY.dailyReauth]) {
+      expect(/\b(SEBI|exchange|exchanges|circular|regulat\w*)\b/i.test(line), line).toBe(false);
+    }
+    // The OpenAlgo sentence is unchanged byte for byte — it is the one feed the
+    // wording was ever true of.
+    expect(LIVE_FEED_COPY.dailyReauth).toBe(
+      "Your broker's API session expires every day and has to be signed in again; that is the broker's rule, not Vyuha's.",
+    );
+  });
+});
+
+/**
+ * Ruling 4.2-8 again — THE ANGEL ONE CONNECT PROMPT, and ruling 4.2-4's
+ * cadence line on the strip.
+ *
+ * The prompt is the third headline in the same banner. Angel One's credential
+ * is the client code, PIN and TOTP secret already saved on the Import screen,
+ * so the OpenAlgo headline ("20 seconds") and the OpenAlgo body (start your
+ * instance) are both false here, exactly as they are for Upstox — and no
+ * duration is promised in their place, because the daily sign-in is unattended
+ * and there is nothing for the user to time.
+ *
+ * The cadence line is on the strip because Angel One has no slider to point at:
+ * its interval is derived from the size of the book, so the desk states it.
+ */
+describe("the Angel One connect prompt and cadence line", () => {
+  const src = stripComments(fs.readFileSync(path.join(ROOT, "components/live/tracker-client.tsx"), "utf8"));
+
+  it("is pinned VERBATIM, and promises no duration", () => {
+    expect(CONNECT_PROMPT_COPY.angeloneHeadline).toBe(
+      "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Brokers.",
+    );
+    expect(CONNECT_PROMPT_COPY.angeloneHeadline).not.toMatch(/second|minute/i);
+    expect(BANNED.test(CONNECT_PROMPT_COPY.angeloneHeadline)).toBe(false);
+  });
+
+  it("routes to the Import screen, which is where those credentials are saved", () => {
+    expect(CONNECT_PROMPT_COPY.angeloneHref).toBe("/import");
+    expect(src).toContain("href={CONNECT_PROMPT_COPY.angeloneHref}");
+    expect(src).toContain("{CONNECT_PROMPT_COPY.angeloneCta}");
+  });
+
+  it("swaps BOTH OpenAlgo sentences out for it too", () => {
+    expect(src).toContain("<p className=\"text-sm font-medium\">{CONNECT_PROMPT_COPY.angeloneHeadline}</p>");
+    // …and the other two headlines survive as their own literals.
+    expect(src).toContain("<p className=\"text-sm font-medium\">{CONNECT_PROMPT_COPY.upstoxHeadline}</p>");
+    expect(src).toContain("<p className=\"text-sm font-medium\">{LIVE_FEED_COPY.connect}</p>");
+  });
+
+  it("the strip prints the tiered cadence, computed from the desk's OWN row count", () => {
+    // No route change and no new payload field: a number travelling on the
+    // wire is a number that can disagree with the screen it describes.
+    expect(src).toContain('const angeloneFeed = feed.providerId === "angelone";');
+    expect(src).toContain("angeloneFeed ? angelOneCadenceLine(rows.length) : null");
+    expect(src).toContain('data-testid="live-feed-cadence"');
+  });
+
+  it("the cadence sentence itself is descriptive, at every tier", () => {
+    for (const n of [0, 1, 30, 120, 300, 900]) {
+      const line = angelOneCadenceLine(n);
+      expect(BANNED.test(line), line).toBe(false);
+      expect(line, line).not.toMatch(/alerts?/i);
+      expect(line).toMatch(/^Refreshes every (3|5|10) seconds — /);
+    }
   });
 });

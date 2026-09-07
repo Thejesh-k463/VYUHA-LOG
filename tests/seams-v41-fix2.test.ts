@@ -19,7 +19,7 @@ import {
 import { LIVE_STREAM_COPY } from "@/components/live/desk-copy";
 import { OPENALGO_FEED_ITEMS } from "@/lib/domain/openalgo-disclosure";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
-import { toIst } from "@/lib/domain/trading-day";
+import { exchangeHolidayName, isExchangeHoliday, toIst } from "@/lib/domain/trading-day";
 import { quoteKeyId, type ProviderCapabilities, type Quote, type QuoteKey, type QuoteMap, type QuoteProvider } from "@/lib/quotes/types";
 
 /**
@@ -52,7 +52,7 @@ import { quoteKeyId, type ProviderCapabilities, type Quote, type QuoteKey, type 
  *  8 | `snapshot.marketOpen`           | app/api/live/stream/route.ts:210 (B)   | NOBODY — see DEFECT D1                     | boolean                | S3c
  *  9 | `streamKeyOf()` identity        | lib/live/stream-link.ts:181 (A)        | app/api/live/stream/route.ts:106 keys (B)  | string, account-scoped | S4a/S4b
  * 10 | per (symbol, IST day) mark      | lib/quotes/persist-mark.ts:231 (B)     | docs/client/README.md:44 sentence (C)      | rows in `mtm_prices`   | S5a/S5b
- * 11 | the weekend-ONLY refusal        | lib/quotes/persist-mark.ts:127 (B)     | disclosure item 6 / setup guide (C)        | refusal code, string   | S6a/S6b
+ * 11 | weekend + HOLIDAY refusal (4.2) | lib/quotes/persist-mark.ts:136-146 (B) | disclosure item 6 / setup guide (C)        | refusal code, string   | S6a/S6b
  * 12 | every `health()` call site      | lib/quotes/openalgo.ts:431 (C's text)  | feed route / stream route / load-desk      | call count             | S7a
  * 13 | `egressDescription` location    | lib/quotes/openalgo.ts:92 (C)          | components/settings/settings-form.tsx:475  | section title, string  | S7b
  * 14 | one announcement per phase      | components/live/desk-copy.ts:139 (A)   | CHANGELOG fix-wave-2 bullet (C)            | string per LinkPhase   | S8a/S8b
@@ -101,8 +101,10 @@ const AFTER_HOURS = new Date("2026-09-04T16:30:00Z");
 /** Saturday 2026-09-05, 16:00 IST. */
 const SATURDAY = new Date("2026-09-05T10:30:00Z");
 /**
- * FRIDAY 2026-10-02, 16:30 IST — Gandhi Jayanti, an NSE holiday the app does
- * not model. A weekday, so the mark IS written; C's docs say exactly that.
+ * FRIDAY 2026-10-02, 16:30 IST — Mahatma Gandhi Jayanti, on the bundled NSE
+ * holiday list. A WEEKDAY the exchange is shut, which is the whole F1 case: a
+ * weekend refusal never fires here, so before v4.2 the mark WAS written, from
+ * the previous session's price, under this date. Since v4.2 it is refused.
  */
 const HOLIDAY = new Date("2026-10-02T11:00:00Z");
 
@@ -893,27 +895,48 @@ describe("SEAM 5 · two accounts, one day — the behaviour C's sentence is pinn
   });
 });
 
-/* ═══ SEAM 6 (B→C) · the weekend is the ONLY day refusal ═══════════════════ */
+/* ═══ SEAM 6 (B→C) · the weekend AND the exchange holiday are refusals ═════ */
 
-describe("SEAM 6 · a weekday holiday writes, and every surface says weekend", () => {
-  it("S6a: 2026-10-02 (a Friday the exchange is shut) is written; a Saturday is refused", async () => {
+/**
+ * RE-PINNED FOR v4.2 (ruling F1). This seam pinned a DEFECT: v4.1 modelled the
+ * clock and not the exchange calendar, so a weekday the exchange was shut got a
+ * mark written under that day's date from whatever the bridge last printed —
+ * the previous session's close, filed as the holiday's. Both halves invert:
+ * `shouldPersistMark()` now refuses with code "holiday" from the bundled NSE
+ * list, and every surface that said "exchange holidays are not modelled in this
+ * version" says the refusal covers them. The guard is the same guard — B's
+ * refusal and C's sentence still have to agree — it is the agreed FACT that
+ * changed, so the banned phrase inverts with it.
+ */
+describe("SEAM 6 · a weekday exchange holiday is refused, and every surface says so", () => {
+  it("S6a: 2026-10-02 (a Friday the exchange is shut) is REFUSED, by name; the weekend still is; an ordinary weekday still writes", async () => {
     clearMarks();
-    // The app models the CLOCK, not the exchange calendar. A holiday is a
-    // weekday, so the door writes from whatever the bridge last printed.
+    selectAccount(SWING);
+
+    // The calendar, not just the clock. Gandhi Jayanti is a Friday.
+    expect(isExchangeHoliday("2026-10-02"), "the bundled list no longer covers 2026-10-02").toBe(true);
+    expect(new Date("2026-10-02T00:00:00Z").getUTCDay(), "the case only bites on a WEEKDAY holiday").toBe(5);
+
     const decision = persist.shouldPersistMark(HOLIDAY, null);
-    expect(decision.ok).toBe(true);
-    expect(decision.code).toBe(null);
+    expect(decision.ok).toBe(false);
+    expect(decision.code).toBe("holiday");
     expect(decision.date).toBe("2026-10-02");
+    // The refusal SAYS which day it was — the name comes from the same list.
+    expect(decision.reason).toBe(
+      `The exchange was closed for ${exchangeHolidayName("2026-10-02")} — there is no session to close.`,
+    );
+    expect(decision.reason).toContain("Mahatma Gandhi Jayanti");
 
-    const written = await persist.persistDailyMarks([quoteOf("TCS", 305_000, "2026-10-02T10:00:00.000Z")], {
+    // …and `ignoreClock` (the Save-today's-mark waiver) does not waive it.
+    const holiday = await persist.persistDailyMarks([quoteOf("TCS", 305_000, "2026-10-02T10:00:00.000Z")], {
       now: HOLIDAY,
+      ignoreClock: true,
     });
-    expect(written.written).toBe(true);
-    expect(written.marked).toBe(1);
-    expect(marks()).toEqual([["TCS", 3050, "2026-10-02"]]);
+    expect(holiday.written, "the previous session's price was filed under a shut day").toBe(false);
+    expect(holiday.code).toBe("holiday");
+    expect(marks()).toEqual([]);
 
-    // The WEEKEND, and only the weekend, is the day refusal — and `ignoreClock`
-    // does not waive it.
+    // The WEEKEND refusal is untouched, and `ignoreClock` does not waive it.
     expect(persist.shouldPersistMark(SATURDAY, null).code).toBe("weekend");
     const saturday = await persist.persistDailyMarks([quoteOf("TCS", 305_000, "2026-09-05T10:00:00.000Z")], {
       now: SATURDAY,
@@ -921,11 +944,20 @@ describe("SEAM 6 · a weekday holiday writes, and every surface says weekend", (
     });
     expect(saturday.written).toBe(false);
     expect(saturday.code).toBe("weekend");
-    expect(marks()).toEqual([["TCS", 3050, "2026-10-02"]]);
+    expect(marks()).toEqual([]);
+
+    // THE DOOR DID NOT JUST CLOSE. An ordinary open weekday after the close
+    // still writes — without this the two refusals above prove nothing.
+    const open = await persist.persistDailyMarks([quoteOf("TCS", 312_000, "2026-09-04T10:00:00.000Z")], {
+      now: AFTER_HOURS,
+    });
+    expect(open.written, "a normal trading day stopped writing its mark").toBe(true);
+    expect(open.code ?? null, "a successful write carries no refusal code").toBe(null);
+    expect(marks()).toEqual([["TCS", 3120, "2026-09-04"]]);
     clearMarks();
   });
 
-  it("S6b: C's surfaces say weekend and say holidays are not modelled — and no surface still promises a non-trading day", () => {
+  it("S6b: C's surfaces say weekend AND exchange holiday — and no surface still promises the write B no longer makes", () => {
     const guide = read("docs", "client", "OPENALGO_SETUP_GUIDE.html");
     const clientReadme = read("docs", "client", "README.md");
     const privacy = read("docs", "client", "PRIVACY.md");
@@ -933,32 +965,49 @@ describe("SEAM 6 · a weekday holiday writes, and every surface says weekend", (
     const help = HELP_ENTRIES.flatMap((e) => e.body).join(" ");
 
     expect(OPENALGO_FEED_ITEMS[5].body).toContain("On a weekend the button refuses — there is no session to close");
-    expect(OPENALGO_FEED_ITEMS[5].body).toContain("exchange holidays are not modelled in this version");
-    expect(guide).toContain("exchange holidays are not modelled in this version");
+    expect(OPENALGO_FEED_ITEMS[5].body).toContain("on an exchange holiday it refuses for the same reason");
     expect(guide).toContain("On a Saturday or a\n    Sunday nothing is written at all");
-    expect(clientReadme).toContain("neither of them writes anything at the weekend — exchange holidays are not modelled");
-    expect(readme).toContain("exchange holidays are not modelled in this version");
-    expect(privacy).toContain("never\n   at the weekend");
-    expect(help).toContain("At the weekend nothing is written — exchange holidays are not modelled in this version");
+    expect(guide).toContain("exchange holidays");
+    expect(clientReadme).toContain("writes anything at the weekend or on an exchange holiday");
+    expect(privacy).toContain("never\n   at the weekend or on an exchange holiday");
+    expect(help).toContain("At the weekend or on an exchange holiday nothing is written");
     // The sentence is B's own refusal, verbatim, and B still says it.
     expect(persist.shouldPersistMark(SATURDAY, null).reason).toBe("It is the weekend — there is no session to close.");
 
-    // THE ABSENCE, which is the other half of the correction. The only surviving
-    // "non-trading day" is the CHANGELOG's own "the docs said" clause.
+    // THE ABSENCE, INVERTED. In 4.1 the surfaces over-promised a refusal; in
+    // 4.2 the stale sentence over-promises a WRITE — it tells a user that a
+    // shut weekday still gets a mark, which is exactly what F1 stopped.
+    const BANNED = /holidays are not modelled|weekend and only the weekend|non-trading day|day the market did not trade/g;
     const surfaces: [string, string][] = [
-      ["README.md", readme],
       ["docs/client/README.md", clientReadme],
       ["docs/client/PRIVACY.md", privacy],
       ["docs/client/OPENALGO_SETUP_GUIDE.html", guide],
       ["help-content.ts", help],
       ["openalgo-disclosure.ts", OPENALGO_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ")],
     ];
-    const BANNED = /non-trading day|day the market did not trade/g;
     for (const [name, text] of surfaces) {
-      expect(text.match(BANNED) ?? [], `${name} still promises a refusal the code does not make`).toEqual([]);
+      expect(text.match(BANNED) ?? [], `${name} still promises a write the code no longer makes`).toEqual([]);
+    }
+    // The scan really fires on the sentence it is written against.
+    expect("exchange holidays are not modelled in this version".match(BANNED)?.length).toBe(1);
+
+    // THE VERSIONED HISTORIES are the one place the old sentence may survive,
+    // and only BEHIND the release that made it false: the root README's per
+    // version narrative and the CHANGELOG are records of what a release said.
+    // What may NOT happen is the CURRENT release's own block saying it.
+    const current = readme.indexOf("**v4.2.0");
+    const previous = readme.indexOf("**v4.1.0");
+    expect(current, "README.md no longer opens with the v4.2.0 note").toBeGreaterThan(-1);
+    expect(previous).toBeGreaterThan(current);
+    const currentBlock = readme.slice(current, previous);
+    expect(currentBlock.match(BANNED) ?? [], "README.md's v4.2.0 block still says holidays are not modelled").toEqual(
+      [],
+    );
+    expect(currentBlock, "README.md's v4.2.0 block does not state the holiday refusal").toContain("exchange holiday");
+    for (const m of [...readme.matchAll(BANNED)]) {
+      expect(m.index!, `README.md states "${m[0]}" outside a superseded release note`).toBeGreaterThan(previous);
     }
     const log = read("CHANGELOG.md");
-    expect(log.match(BANNED) ?? []).toEqual(["non-trading day"]);
     expect(log).toContain('the docs said "on a non-trading day"');
   });
 });
@@ -1002,9 +1051,14 @@ describe("SEAM 7 · every place C says /funds is posted, really posts it", () =>
     expect(read("docs", "client", "PRIVACY.md")).toContain(
       "each time you check the connection and each time the desk opens or its price\n   stream reconnects",
     );
-    // …and the version does NOT move: the same host and the same key.
+    // …and the /funds COUNT correction did not move the version: same host,
+    // same key, nothing new sent or kept. The constant is "3" in v4.2 for a
+    // different sentence entirely — item 6's holiday clause, which changed what
+    // the accepted disclosure promises is WRITTEN (see the constant's own note
+    // in lib/domain/openalgo-disclosure.ts). Pinned as a literal on purpose: a
+    // consent version that follows whatever the module says proves nothing.
     const { OPENALGO_DISCLOSURE_VERSION } = await import("@/lib/domain/openalgo-disclosure");
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("2");
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
   });
 
   it("S7b: the egress sentence sends the reader to a Settings section that exists", () => {

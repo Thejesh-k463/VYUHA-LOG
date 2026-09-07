@@ -7,6 +7,8 @@ import {
   sessionCloseIso,
   type StoredBar,
 } from "@/lib/quotes/mapping";
+import { NSE_HOLIDAY_YEAR } from "@/lib/domain/trading-day";
+import { isMarketOpenIst } from "@/lib/live/market-hours";
 import { quoteKeyId, toPaise, type QuoteKey } from "@/lib/quotes/types";
 
 /**
@@ -157,5 +159,40 @@ describe("isWithinLiveWindow — 09:00–15:40 IST, Mon–Fri", () => {
     expect(isWithinLiveWindow(ist("2026-09-06T06:00:00Z"))).toBe(false); // Sunday 11:30 IST
     // Friday 23:00 UTC is Saturday 04:30 IST — the IST day is what counts.
     expect(isWithinLiveWindow(ist("2026-09-04T23:00:00Z"))).toBe(false);
+  });
+
+  /**
+   * A LISTED EXCHANGE HOLIDAY IS NOT A LIVE WINDOW (v4.2, seam finding).
+   *
+   * `app/api/live/stream/route.ts` gates BOTH the broker subscription and the
+   * frame's `marketOpen` on this one answer. While it was weekday-and-clock
+   * only, Republic Day at 10:00 IST answered true: Upstox or Angel One would be
+   * polled every few seconds for six and a half hours on a shut exchange, and
+   * the desk strip printed "Live" over yesterday's close. `isMarketOpenIst()`
+   * (lib/live/market-hours.ts) already said false on the same instant — two
+   * doors, two answers, and the polling one was the wrong one.
+   *
+   * The calendar is asked through `isTradingDayIst()`, the single IST source
+   * (`tests/today-clock.test.ts` forbids a second +5:30 derivation).
+   */
+  it("is closed on a LISTED exchange holiday, at an hour that is otherwise inside the window", () => {
+    // 2026-01-26 is a Monday AND Republic Day in lib/data/nse-holidays.json.
+    expect(isWithinLiveWindow(ist("2026-01-26T04:30:00Z"))).toBe(false); // 10:00 IST
+    // …and the calendar door agrees, so the route can no longer poll a feed
+    // that the mark door and the desk clock both call shut.
+    expect(isMarketOpenIst(ist("2026-01-26T04:30:00Z"))).toBe(false);
+  });
+
+  it("is OPEN on the very next weekday, which is not on the list", () => {
+    // 2026-01-27, Tuesday, no holiday: the fix must not close ordinary days.
+    expect(isWithinLiveWindow(ist("2026-01-27T04:30:00Z"))).toBe(true); // 10:00 IST
+  });
+
+  it("treats an UNCOVERED year as unknown, never as a holiday", () => {
+    // The bundled list stops at 2026, so 2027-01-26 (a Tuesday) is unknown —
+    // and unknown answers "trading", which is what keeps a stale calendar from
+    // silently cancelling every session in January.
+    expect(NSE_HOLIDAY_YEAR).toBe(2026);
+    expect(isWithinLiveWindow(ist("2027-01-26T04:30:00Z"))).toBe(true); // 10:00 IST
   });
 });

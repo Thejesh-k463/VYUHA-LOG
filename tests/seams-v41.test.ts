@@ -57,7 +57,7 @@ import {
   createRateGuard,
   type FeedGateReader,
 } from "@/lib/quotes/openalgo";
-import { OPENALGO_FEED_ENABLED, type QuoteKey } from "@/lib/quotes/types";
+import { ANGELONE_FEED_ENABLED, OPENALGO_FEED_ENABLED, UPSTOX_FEED_ENABLED, type QuoteKey } from "@/lib/quotes/types";
 import { portfolioHeat, type HeatRow } from "@/lib/live/heat";
 import { lockedInAtStop, resultsChip } from "@/components/live/desk-copy";
 import { money } from "@/components/live/desk-format";
@@ -410,18 +410,80 @@ function privacyItem3(): string {
   return PRIVACY.slice(start, end);
 }
 
+/**
+ * PRIVACY.md's own enumeration of egress — "## The network requests Vyuha
+ * Desktop makes", from that heading to the next `## `. Every host the shipped
+ * capabilities may name has to be inside it.
+ */
+function privacyNetworkSection(): string {
+  const start = PRIVACY.indexOf("## The network requests Vyuha Desktop makes");
+  expect(start, "PRIVACY.md's network-requests section could not be located").toBeGreaterThan(-1);
+  const end = PRIVACY.indexOf("\n## ", start + 1);
+  expect(end).toBeGreaterThan(start);
+  return PRIVACY.slice(start, end);
+}
+
+/** The hosts the DOC discloses. Read from the doc — never a literal here. */
+function disclosedHosts(): Set<string> {
+  return new Set((privacyNetworkSection().match(DOMAIN_RE) ?? []).map((d) => d.toLowerCase()));
+}
+
+/** Hosts a capability block names, and the ones the doc does not carry. */
+function egressAudit(
+  caps: readonly { id: string; egressDescription: string }[],
+  disclosed: ReadonlySet<string> = disclosedHosts(),
+) {
+  const domains = new Set<string>();
+  const ips = new Set<string>();
+  for (const c of caps) {
+    for (const d of c.egressDescription.match(DOMAIN_RE) ?? []) domains.add(d.toLowerCase());
+    for (const ip of c.egressDescription.match(IPV4_RE) ?? []) ips.add(ip);
+  }
+  return { domains, ips, undisclosed: [...domains].filter((d) => !disclosed.has(d)).sort() };
+}
+
 describe("seam 3 — what the registry claims it talks to, and what the privacy surfaces say it talks to", () => {
-  it("no shipped provider capability names a non-loopback host but nsearchives.nseindia.com", () => {
+  /**
+   * v4.1 pinned this as a LITERAL list of one — `["nsearchives.nseindia.com"]`
+   * — which was true of a release whose only remote quote source was the EOD
+   * archive. v4.2 ships the Upstox adapter, whose `egressDescription` names
+   * `api.upstox.com`, and PRIVACY.md item 3 discloses it. The literal is
+   * therefore re-pinned as the RULE it always stood for, read off the privacy
+   * sheet itself: every host the code names must be a host the user was told
+   * about. It is NOT weaker — an undisclosed host still fails, and a host that
+   * appears in the code AND in the doc is two independent artefacts agreeing,
+   * not a list agreeing with itself. The negative control below proves the
+   * check can still go red.
+   */
+  it("every host a shipped provider capability names is disclosed in PRIVACY.md's network-request list", () => {
     const caps = registry.allProviderCapabilities();
-    const domains = new Set<string>();
-    const ips = new Set<string>();
-    for (const c of caps) {
-      for (const d of c.egressDescription.match(DOMAIN_RE) ?? []) domains.add(d.toLowerCase());
-      for (const ip of c.egressDescription.match(IPV4_RE) ?? []) ips.add(ip);
+    const { domains, ips, undisclosed } = egressAudit(caps);
+
+    // The scan has input: a capability that stopped describing its egress
+    // would otherwise make every assertion below vacuously true.
+    expect(domains.size, "no shipped capability names any remote host — this scan cannot fail").toBeGreaterThan(0);
+    expect(domains, "the EOD archive host vanished from the capability blocks").toContain("nsearchives.nseindia.com");
+    expect(undisclosed, "a capability block grew a host the privacy sheet does not carry").toEqual([]);
+
+    // NEGATIVE CONTROL 1 — the code half. An invented host is reported.
+    expect(
+      egressAudit([{ id: "rogue", egressDescription: "Quotes come from quotes.rogue-broker.com." }]).undisclosed,
+      "the undisclosed-host check no longer fires",
+    ).toEqual(["quotes.rogue-broker.com"]);
+
+    // NEGATIVE CONTROL 2 — the DOC half, per host and with no literal in it:
+    // take the real capability list, delete ONE host from the disclosed set,
+    // and that host must come back as undisclosed. If it does not, this seam is
+    // not actually reading that host out of PRIVACY.md.
+    const disclosed = disclosedHosts();
+    for (const host of domains) {
+      const stale = new Set([...disclosed].filter((h) => h !== host));
+      expect(
+        egressAudit(caps, stale).undisclosed,
+        `${host} is named by a capability but is not being checked against PRIVACY.md`,
+      ).toContain(host);
     }
-    expect([...domains], "a capability block grew a host the privacy sheet does not carry").toEqual([
-      "nsearchives.nseindia.com",
-    ]);
+
     for (const ip of ips) expect(isLocalOpenAlgoHost(ip), `${ip} is not loopback`).toBe(true);
     expect(PRIVACY.includes("nsearchives.nseindia.com"), "the eod host is not in PRIVACY.md").toBe(true);
   });
@@ -704,8 +766,11 @@ describe("seam 7 — OPENALGO_FEED_ENABLED is the one answer the card, the regis
   it("the card's derived offer, the flag and the route's provider list agree", async () => {
     resetFeed();
     expect(OPENALGO_FEED_ENABLED).toBe(true);
-    expect(card.BROKER_FEED_OFFERED, "the Settings card and the flag disagree about the feed").toBe(
-      OPENALGO_FEED_ENABLED,
+    // v4.2: the slider/cadence region is offered when ANY broker feed is —
+    // OpenAlgo, Upstox or Angel One. Equating it with the OpenAlgo flag alone
+    // was true only while it was the sole broker feed (builder H, 2026-09-07).
+    expect(card.BROKER_FEED_OFFERED, "the Settings card and the flags disagree about the feed").toBe(
+      OPENALGO_FEED_ENABLED || UPSTOX_FEED_ENABLED || ANGELONE_FEED_ENABLED,
     );
     expect(registry.SHIPPED_PROVIDER_IDS.includes("openalgo")).toBe(OPENALGO_FEED_ENABLED);
 

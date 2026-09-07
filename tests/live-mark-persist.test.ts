@@ -41,6 +41,15 @@ const AFTER_CLOSE = new Date("2026-09-04T10:30:00Z");
 const MID_SESSION = new Date("2026-09-04T05:34:00Z");
 /** Saturday 2026-09-05, 16:00 IST. */
 const WEEKEND = new Date("2026-09-05T10:30:00Z");
+/**
+ * FRIDAY 2026-10-02, 16:30 IST — Mahatma Gandhi Jayanti, on NSE's own CM
+ * trading list and now on the bundled one (`lib/data/nse-holidays.json`).
+ *
+ * A WEEKDAY, which is the whole of the F1 defect: both automatic doors fired
+ * here before v4.2 and wrote the bridge's last print — the PREVIOUS session's
+ * close — into `mtm_prices` dated to a day the exchange never opened.
+ */
+const HOLIDAY = new Date("2026-10-02T11:00:00Z");
 
 function quote(symbol: string, rupees: number, over: Partial<Quote> = {}): Quote {
   const key: QuoteKey = { symbol, exchange: "NSE" };
@@ -128,8 +137,23 @@ describe("shouldPersistMark — PURE, and refuses three cases for three reasons"
    * copy. The code is what the caller branches on; the sentence stays the
    * user's.
    */
+  it("refuses a LISTED EXCHANGE HOLIDAY, and says which day it was (F1)", () => {
+    const d = shouldPersistMark(HOLIDAY, null);
+    expect(d.ok, "a weekday holiday must not be markable").toBe(false);
+    expect(d.code).toBe("holiday");
+    expect(d.date).toBe("2026-10-02");
+    expect(d.reason).toBe("The exchange was closed for Mahatma Gandhi Jayanti — there is no session to close.");
+  });
+
+  it("still allows the weekday BEFORE and AFTER that holiday — the calendar refuses one day, not a week", () => {
+    // Thu 2026-10-01, 16:30 IST, and Mon 2026-10-05, 16:30 IST.
+    expect(shouldPersistMark(new Date("2026-10-01T11:00:00Z"), null).ok).toBe(true);
+    expect(shouldPersistMark(new Date("2026-10-05T11:00:00Z"), null).ok).toBe(true);
+  });
+
   it("names which rule refused, so a caller can waive one and only one", () => {
     expect(shouldPersistMark(WEEKEND, null).code).toBe("weekend");
+    expect(shouldPersistMark(HOLIDAY, null).code).toBe("holiday");
     expect(shouldPersistMark(MID_SESSION, null).code).toBe("before-close");
     expect(shouldPersistMark(AFTER_CLOSE, "2026-09-04").code).toBe("already-marked");
     expect(shouldPersistMark(AFTER_CLOSE, null).code).toBeNull();
@@ -230,6 +254,51 @@ describe("persistDailyMarks — rupees, once a day, never mid-session", () => {
     expect(marks(), "no mark may be dated to a day with no session").toHaveLength(0);
     // And the refusal must not stamp the day either, or Monday is blocked too.
     expect(stamp()).toBe(null);
+  });
+
+  /**
+   * F1 — THE BUG THIS WAVE FIXES, driven through the real write.
+   *
+   * A holiday is a weekday, so `shouldPersistMark()` said yes, the catch-up
+   * door and the 15:31 close door both fired, and the price they had was the
+   * PREVIOUS session's close (the bridge quotes nothing on a shut exchange).
+   * That row then WAS "the close of 2026-10-02" to `getMtmMap()` and to every
+   * unrealised-P&L figure downstream, for a session that never happened.
+   */
+  it("writes NOTHING on a listed exchange holiday, and the button cannot waive it either (F1)", async () => {
+    clearStamp();
+    const auto = await persist.persistDailyMarks([quote("TCS", 3025.75)], { now: HOLIDAY });
+    expect(auto.written, "a mark dated to a day the exchange was shut").toBe(false);
+    expect(auto.code).toBe("holiday");
+    expect(auto.date).toBe("2026-10-02");
+    expect(marks(), "no row may be dated to a non-session day").toHaveLength(0);
+
+    // `ignoreClock` waives the CLOCK and nothing else — the same rule that
+    // already protects the weekend.
+    const asked = await persist.persistDailyMarks([quote("TCS", 3025.75)], { now: HOLIDAY, ignoreClock: true });
+    expect(asked.written).toBe(false);
+    expect(asked.code).toBe("holiday");
+    expect(marks()).toHaveLength(0);
+    // …and a refusal must not stamp the day, or the next session is blocked.
+    expect(stamp()).toBe(null);
+  });
+
+  it("the AUTOMATIC door (catchUpDailyMark) is refused on that holiday too, and writes on the next session", async () => {
+    clearStamp();
+    const caps = { id: "openalgo" as const, streaming: true };
+    const onHoliday = await persist.catchUpDailyMark(caps, [quote("TCS", 3025.75)], { now: HOLIDAY });
+    expect(onHoliday?.written).toBe(false);
+    expect(onHoliday?.code).toBe("holiday");
+    expect(marks()).toHaveLength(0);
+
+    // Monday 2026-10-05, 16:30 IST — an ordinary session, and the same door
+    // writes. The calendar closes one day; it does not switch the feature off.
+    const next = await persist.catchUpDailyMark(caps, [quote("TCS", 3025.75)], {
+      now: new Date("2026-10-05T11:00:00Z"),
+    });
+    expect(next?.written).toBe(true);
+    expect(marks().map((m) => [m.symbol, m.asOfDate])).toEqual([["TCS", "2026-10-05"]]);
+    clearStamp();
   });
 
   it("never persists a zero or negative price — a mark of zero prints -100 %", async () => {

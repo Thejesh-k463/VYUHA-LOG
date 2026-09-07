@@ -20,7 +20,17 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
-import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import { FeedConsentDialog } from "@/components/system/feed-consent-dialog";
+// The cadence sentence is DERIVED and SHARED with the desk, never restated
+// here: `components/live/desk-copy.ts` owns it, and both surfaces print the
+// same string for the same book (ruling 4.2-4).
+import { angelOneCadenceLine } from "@/components/live/desk-copy";
+import {
+  ANGELONE_FEED_ITEMS,
+  LIVE_FEED_DISCLOSURE_VERSIONS,
+  UPSTOX_FEED_ITEMS,
+} from "@/lib/domain/live-feed-disclosure";
+import { ANGELONE_FEED_ENABLED, OPENALGO_FEED_ENABLED, UPSTOX_FEED_ENABLED } from "@/lib/quotes/types";
 import type { Settings } from "@/lib/db/schema";
 
 /** Mirrors lib/quotes/openalgo.ts (owner answer Q25). Pinned by the copy test. */
@@ -68,7 +78,134 @@ export const LIVE_FEED_COPY = {
     "Your OpenAlgo host is not this machine, so the symbols you hold are sent to that machine every few seconds while the desk is open.",
 } as const;
 
-type ProviderId = "manual" | "eod" | "openalgo";
+/**
+ * THE UPSTOX ROW (v4.2), kept OUT of `LIVE_FEED_COPY` on purpose.
+ *
+ * `tests/live-feed-copy.test.ts` forbids README.md and the sales pages from
+ * carrying any WHOLE `LIVE_FEED_COPY` value (owner answer Q60). These three
+ * sentences describe a token the user already saved for imports, and the setup
+ * docs may well need to say the same thing; a separate export keeps that guard
+ * meaning what it was written to mean instead of quietly widening it over
+ * another wave's files.
+ *
+ * WHAT IS DELIBERATELY NOT SAID HERE: the daily re-authentication sentence.
+ * `LIVE_FEED_COPY.dailyReauth` is true of a bridge session and NOT true of
+ * Upstox — its Analytics token is read-only for about a year — so the fact is
+ * stated once, in the affirmative, in `blurb`, and the warning block below is
+ * not rendered while Upstox is the pick. Two sentences contradicting each other
+ * on one card is worse than either alone.
+ */
+export const UPSTOX_FEED_COPY = {
+  label: "Upstox",
+  blurb:
+    "Uses the Analytics token saved under Import → Brokers for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
+  /** Shown INSTEAD of the blurb when the account has no connection: the blurb
+   *  describes a token this account does not have, and the next step does. */
+  notConnected: "Add Upstox under Import → Brokers first.",
+  /** Always, connected or not — the scope of the feed is not a footnote. */
+  equityOnly:
+    "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+} as const;
+
+/** What the GET tells the card about the Upstox radio. Never a token. */
+export interface UpstoxFeedState {
+  connected: boolean;
+  ackCurrent: boolean;
+}
+
+/**
+ * The Upstox row's second line and whether the radio takes a click — derived,
+ * never held in state (AGENTS.md: if you are resetting state in an effect, the
+ * state was derivable).
+ *
+ * `undefined` is the honest third case: the card's own fetch has not answered
+ * yet, or it failed. It renders the row ENABLED and lets the route refuse —
+ * disabling a control on the strength of a request that never came back would
+ * lock out a user whose feed is perfectly well connected.
+ */
+export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: boolean; line: string } {
+  const known = state != null;
+  const blocked = known && !state.connected;
+  return {
+    disabled: blocked,
+    line: blocked ? UPSTOX_FEED_COPY.notConnected : UPSTOX_FEED_COPY.blurb,
+  };
+}
+
+/**
+ * THE ANGEL ONE ROW (v4.2), kept out of `LIVE_FEED_COPY` for the same reason
+ * the Upstox one is: the Q60 guard forbids README.md and the sales pages from
+ * carrying any WHOLE `LIVE_FEED_COPY` value, and these sentences describe a
+ * credential the user already saved for imports, which the setup docs may need
+ * to repeat word for word.
+ *
+ * WHAT IS SAID AND WHY IT IS DEFENSIBLE:
+ *
+ *   • `blurb` names the three things Import → Brokers actually holds for Angel
+ *     One (client code, PIN, TOTP secret) and states the ONE operational fact
+ *     that follows from them — Angel One ends every API session at 5 AM IST,
+ *     and the next sign-in is performed by Vyuha from the enrolled secret with
+ *     nothing for the user to click. That is a fact about the BROKER's system,
+ *     measured against its own documented behaviour; it names no regulator,
+ *     because none has been cited anywhere in this tree (the same ruling that
+ *     softened `LIVE_FEED_COPY.dailyReauth`).
+ *   • `dailyReauth` is the highlighted block's sentence for this provider. It
+ *     says the same fact in the block's own voice. It exists as a SEPARATE
+ *     value because `LIVE_FEED_COPY.dailyReauth` would be misleading here: it
+ *     tells the reader the session "has to be signed in again", which for Angel
+ *     One is true of the SESSION and false of the READER — nobody is asked.
+ *   • `equityOnly` is byte-identical to the Upstox scope sentence on purpose.
+ *     One release-scope rule, one sentence.
+ *
+ * NOT SAID: any refresh interval. Angel One's is tiered and derived
+ * (`angelOneCadenceLine`), so a fixed number in a blurb would be a second,
+ * drifting source for something the poll computes.
+ */
+export const ANGELONE_FEED_COPY = {
+  label: "Angel One",
+  blurb:
+    "Uses the client code, PIN and TOTP secret saved under Import → Brokers. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
+  /** Shown INSTEAD of the blurb when this account has no connection saved. */
+  notConnected: "Add Angel One under Import → Brokers first.",
+  /** Always, connected or not — the scope of the feed is not a footnote. */
+  equityOnly:
+    "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+  /**
+   * The highlighted block's sentence under an Angel One pick. FACTUAL and
+   * attributed to the broker's own system — never to a regulator, which
+   * `tests/live-feed-angelone-settings.test.ts` bans outright.
+   */
+  dailyReauth:
+    "Angel One ends every API session at 5 AM IST. Vyuha opens the next one by itself from the client code, PIN and TOTP secret you saved — there is nothing for you to do each morning.",
+} as const;
+
+/** What the GET tells the card about the Angel One radio. Never a credential. */
+export interface AngelOneFeedState {
+  connected: boolean;
+  ackCurrent: boolean;
+  /** Open positions of the selected account, capped at 500 by the route. */
+  openCount: number;
+}
+
+/**
+ * The Angel One row's second line and whether the radio takes a click.
+ *
+ * DERIVED, never held in state (AGENTS.md), and `undefined` is the same honest
+ * third case the Upstox helper carries: the card's own fetch has not answered
+ * yet, so the row renders ENABLED and the route is left to refuse. Disabling a
+ * control on the strength of a request that never came back locks out a user
+ * whose feed is perfectly well connected.
+ */
+export function angelOneRowState(state: AngelOneFeedState | undefined): { disabled: boolean; line: string } {
+  const known = state != null;
+  const blocked = known && !state.connected;
+  return {
+    disabled: blocked,
+    line: blocked ? ANGELONE_FEED_COPY.notConnected : ANGELONE_FEED_COPY.blurb,
+  };
+}
+
+type ProviderId = "manual" | "eod" | "openalgo" | "upstox" | "angelone";
 
 const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
   {
@@ -86,6 +223,16 @@ const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
     label: "OpenAlgo bridge (your own)",
     blurb: "Live prices from the OpenAlgo instance you run and connect to your own broker.",
   },
+  {
+    id: "upstox",
+    label: UPSTOX_FEED_COPY.label,
+    blurb: UPSTOX_FEED_COPY.blurb,
+  },
+  {
+    id: "angelone",
+    label: ANGELONE_FEED_COPY.label,
+    blurb: ANGELONE_FEED_COPY.blurb,
+  },
 ];
 
 /**
@@ -96,34 +243,75 @@ const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
  * running the feed: the route re-checks the consent pair and answers 403 until
  * the disclosure is acknowledged, and a stored value the picker does not offer
  * falls back to `eod` on its own.
+ *
+ * v4.2 adds `upstox` AND `angelone` on the SAME pattern, each behind its own
+ * constant (`UPSTOX_FEED_ENABLED`, `ANGELONE_FEED_ENABLED`). Offering either
+ * radio is again not running the feed: the route answers 409 until a connection
+ * is saved for this account AND that provider's disclosure has been accepted at
+ * the version this build ships.
  */
-const PROVIDERS = ALL_PROVIDERS.filter((p) => p.id !== "openalgo" || OPENALGO_FEED_ENABLED);
+export const offeredProviders = (flags: {
+  openalgo: boolean;
+  upstox: boolean;
+  angelone: boolean;
+}): typeof ALL_PROVIDERS =>
+  ALL_PROVIDERS.filter(
+    (p) =>
+      (p.id !== "openalgo" || flags.openalgo) &&
+      (p.id !== "upstox" || flags.upstox) &&
+      (p.id !== "angelone" || flags.angelone),
+  );
+
+export const PROVIDERS = offeredProviders({
+  openalgo: OPENALGO_FEED_ENABLED,
+  upstox: UPSTOX_FEED_ENABLED,
+  angelone: ANGELONE_FEED_ENABLED,
+});
+
+/** The provider ids that ARE a broker-backed feed. `manual`/`eod` are not. */
+export const BROKER_FEED_IDS: readonly ProviderId[] = ["openalgo", "upstox", "angelone"];
 
 /**
  * Is a BROKER-backed feed on offer at all in this release?
  *
- * Derived from the resolved list rather than restated, so the one flag stays
- * the one source. Two controls exist only for such a feed: the 1–5 s on-screen
- * refresh (a poll interval means nothing when the mark is yesterday's close or
- * a number the user typed) and the daily re-authentication note (a broker API
- * session is the only thing that expires daily). Rendering either in v4.0
- * advertised a feed that release did not ship, so both were gated here — and
- * v4.1 brought them back with NO edit to the JSX below, because flipping
- * `OPENALGO_FEED_ENABLED` moves this derived value with it.
+ * Derived from the resolved list rather than restated, so the release flags
+ * stay the one source. Two controls exist only for such a feed: the 1–5 s
+ * on-screen refresh (a poll interval means nothing when the mark is yesterday's
+ * close or a number the user typed) and the daily re-authentication note (a
+ * broker API session is the only thing that expires daily). Rendering either in
+ * v4.0 advertised a feed that release did not ship, so both were gated here —
+ * and v4.1 brought them back with NO edit to the JSX below, because flipping
+ * the flags moves this derived value with them.
  * `tests/live-feed-copy.test.ts` pins the gate.
+ *
+ * ANY BROKER, NOT JUST OpenAlgo (v4.2 seam fix). This read
+ * `PROVIDERS.some((p) => p.id === "openalgo")` while OpenAlgo was the only
+ * broker feed, and that spelling survived the arrival of two more: with
+ * `OPENALGO_FEED_ENABLED` false and Upstox on, the Upstox radio rendered while
+ * the 1–5 s slider — which the Upstox adapter really reads
+ * (`lib/quotes/upstox.ts`) — vanished, and the Angel One cadence line with it,
+ * since both live inside this one gate. The question the gate asks is "does
+ * this release ship a broker feed at all", so it is asked of every broker id.
  */
-export const BROKER_FEED_OFFERED = PROVIDERS.some((p) => p.id === "openalgo");
+export const brokerFeedOffered = (ids: readonly string[]): boolean =>
+  ids.some((id) => (BROKER_FEED_IDS as readonly string[]).includes(id));
+
+export const BROKER_FEED_OFFERED = brokerFeedOffered(PROVIDERS.map((p) => p.id));
 
 interface FeedResponse {
   ok: boolean;
   feed?: { stored: string; effective: string; refreshSeconds: number; blockedReason?: string };
   openalgo?: { enabled: boolean; ackCurrent: boolean };
+  upstox?: UpstoxFeedState;
+  angelone?: AngelOneFeedState;
   lastLiveMarkDate?: string | null;
   health?: { ok: boolean; state: string; latencyMs: number | null; reason: string };
   message?: string;
 }
 
-async function post(body: Record<string, unknown>): Promise<{ ok: boolean; message?: string }> {
+async function post(
+  body: Record<string, unknown>,
+): Promise<{ ok: boolean; message?: string; upstox?: UpstoxFeedState; angelone?: AngelOneFeedState }> {
   const res = await fetch("/api/live/feed", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -140,6 +328,10 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   const [seconds, setSeconds] = React.useState(current.liveFeedRefreshSeconds ?? 3);
   const [status, setStatus] = React.useState<FeedResponse | null>(null);
   const [pending, setPending] = React.useState(false);
+  // WHICH sheet is open, not merely whether one is: two providers now have
+  // their own disclosure, and a boolean would open both at once the moment a
+  // third arrives. `null` is closed.
+  const [consentOpen, setConsentOpen] = React.useState<null | "upstox" | "angelone">(null);
 
   // Mount-only: ask the server for the health line. This is a FETCH effect
   // (its state comes from the network), never a state-derived one — deriving
@@ -159,7 +351,27 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   const needsConnect = provider === "openalgo" && health != null && (health.state === "no-key" || health.state === "unreachable");
   const consentMissing = provider === "openalgo" && status?.openalgo != null && !(status.openalgo.enabled && status.openalgo.ackCurrent);
 
+  /**
+   * The click. Upstox is the one pick that can need a sheet read first, and
+   * the sheet is opened INSTEAD of the write — the provider is stored only
+   * after the acknowledgement is stored, so a cancelled sheet leaves both the
+   * card and the database exactly as they were.
+   */
   async function pick(next: ProviderId) {
+    if (next === "upstox" && !(status?.upstox?.ackCurrent ?? false)) {
+      setConsentOpen("upstox");
+      return;
+    }
+    // Angel One, on the same rule and with its OWN sheet: the acknowledgement
+    // is stored per provider, so reading Upstox's is not reading this one.
+    if (next === "angelone" && !(status?.angelone?.ackCurrent ?? false)) {
+      setConsentOpen("angelone");
+      return;
+    }
+    await store(next);
+  }
+
+  async function store(next: ProviderId) {
     setPending(true);
     const previous = provider;
     setProvider(next);
@@ -172,6 +384,35 @@ export function LiveFeedCard({ current }: { current: Settings }) {
     }
     toast.success(r.message ?? "Saved.");
     router.refresh();
+  }
+
+  /** Accepted the Upstox sheet: record the ack, then make the pick. */
+  async function acceptUpstox() {
+    setPending(true);
+    const r = await post({ action: "ack", provider: "upstox" });
+    setPending(false);
+    if (!r.ok) {
+      toast.error(r.message ?? "Could not record that you read it.");
+      return;
+    }
+    // The SERVER's own reading of both halves, not an optimistic guess.
+    const fresh = r.upstox;
+    if (fresh) setStatus((prev) => (prev == null ? prev : { ...prev, upstox: fresh }));
+    await store("upstox");
+  }
+
+  /** Accepted the Angel One sheet: record the ack, then make the pick. */
+  async function acceptAngelOne() {
+    setPending(true);
+    const r = await post({ action: "ack", provider: "angelone" });
+    setPending(false);
+    if (!r.ok) {
+      toast.error(r.message ?? "Could not record that you read it.");
+      return;
+    }
+    const fresh = r.angelone;
+    if (fresh) setStatus((prev) => (prev == null ? prev : { ...prev, angelone: fresh }));
+    await store("angelone");
   }
 
   async function saveSeconds(next: number) {
@@ -197,51 +438,90 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       </CardHeader>
       <CardContent className="space-y-3" data-testid="live-feed-card">
         <div className="space-y-2">
-          {PROVIDERS.map((p) => (
-            <label
-              key={p.id}
-              className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2",
-                provider === p.id ? "border-primary bg-card-hover/60" : "border-border bg-card-hover/40",
-              )}
-            >
-              <input
-                type="radio"
-                name="live-feed-provider"
-                className="mt-1"
-                checked={provider === p.id}
-                disabled={pending}
-                onChange={() => void pick(p.id)}
-                data-testid={`live-feed-${p.id}`}
-              />
-              <span>
-                <span className="block text-sm font-medium">{p.label}</span>
-                <span className="block text-xs text-muted-foreground">{p.blurb}</span>
-              </span>
-            </label>
-          ))}
+          {PROVIDERS.map((p) => {
+            // Only the broker-credential rows have a state the server has to
+            // answer for; for every other row this is the blurb the list
+            // already carries.
+            const upstox = p.id === "upstox" ? upstoxRowState(status?.upstox) : null;
+            const angelone = p.id === "angelone" ? angelOneRowState(status?.angelone) : null;
+            const row = upstox ?? angelone;
+            return (
+              <label
+                key={p.id}
+                className={cn(
+                  "flex items-start gap-3 rounded-md border px-3 py-2",
+                  row?.disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer",
+                  provider === p.id ? "border-primary bg-card-hover/60" : "border-border bg-card-hover/40",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="live-feed-provider"
+                  className="mt-1"
+                  checked={provider === p.id}
+                  disabled={pending || (row?.disabled ?? false)}
+                  onChange={() => void pick(p.id)}
+                  data-testid={`live-feed-${p.id}`}
+                />
+                <span>
+                  <span className="block text-sm font-medium">{p.label}</span>
+                  <span className="block text-xs text-muted-foreground" data-testid={`live-feed-${p.id}-line`}>
+                    {row ? row.line : p.blurb}
+                  </span>
+                  {p.id === "upstox" && (
+                    <span className="block text-xs text-muted-foreground" data-testid="live-feed-upstox-scope">
+                      {UPSTOX_FEED_COPY.equityOnly}
+                    </span>
+                  )}
+                  {p.id === "angelone" && (
+                    <span className="block text-xs text-muted-foreground" data-testid="live-feed-angelone-scope">
+                      {ANGELONE_FEED_COPY.equityOnly}
+                    </span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
         </div>
 
         <p className="text-xs text-muted-foreground">{LIVE_FEED_COPY.staleness}</p>
 
+        {/* ANGEL ONE HAS NO SLIDER (ruling 4.2-4). Its interval is derived from
+            the size of this account's own book — the provider allows about one
+            request a second and takes 50 symbols to a batch — so a 1–5 s
+            control would offer a setting the poll overrides. The ONE line that
+            replaces it states the interval AND the arithmetic behind it.
+            The gate itself is untouched: the swap is a ternary INSIDE the one
+            `{BROKER_FEED_OFFERED && (…)}` subtree, which is what keeps the
+            slider in exactly one gated region (tests/live-feed-copy.test.ts). */}
         {BROKER_FEED_OFFERED && (
-          <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="live-feed-seconds">On-screen refresh</Label>
-              <span className="text-xs tabular-nums text-muted-foreground">{seconds}s</span>
+          provider === "angelone" ? (
+            <div
+              className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2"
+              data-testid="live-feed-angelone-cadence"
+            >
+              <Label>On-screen refresh</Label>
+              <p className="text-xs text-muted-foreground">{angelOneCadenceLine(status?.angelone?.openCount ?? 0)}</p>
             </div>
-            <input
-              id="live-feed-seconds"
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={seconds}
-              onChange={(e) => void saveSeconds(Number(e.target.value))}
-              className="w-full accent-[var(--color-primary)]"
-              data-testid="live-feed-seconds"
-            />
-          </div>
+          ) : (
+            <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="live-feed-seconds">On-screen refresh</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">{seconds}s</span>
+              </div>
+              <input
+                id="live-feed-seconds"
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={seconds}
+                onChange={(e) => void saveSeconds(Number(e.target.value))}
+                className="w-full accent-[var(--color-primary)]"
+                data-testid="live-feed-seconds"
+              />
+            </div>
+          )
         )}
 
         {/* HIGHLIGHTED, and the highlight is the point: this is the one thing
@@ -249,12 +529,30 @@ export function LiveFeedCard({ current }: { current: Settings }) {
             with the slider above — in a release that offers no broker feed it
             would describe a session the user never opens. */}
         {BROKER_FEED_OFFERED && (
-          <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2" data-testid="live-feed-reauth">
-            <p className="flex items-start gap-2 text-xs text-warning">
-              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>{LIVE_FEED_COPY.dailyReauth}</span>
-            </p>
-          </div>
+          // …and NOT while Upstox is the pick (v4.2). Its Analytics token is
+          // read-only for about a year, so "your broker's API session expires
+          // every day" would be a false statement sitting two lines under the
+          // true one in UPSTOX_FEED_COPY.blurb. The gate itself is untouched —
+          // the sentence is still defined once and rendered in exactly one
+          // place, which is what tests/live-feed-copy.test.ts pins.
+          // ANGEL ONE'S SESSION DOES DIE DAILY, so the block stays for it —
+          // but the generic sentence says the session "has to be signed in
+          // again", which is true of the session and false of the READER: the
+          // 5 AM flush is answered by an unattended sign-in from the enrolled
+          // TOTP secret. It therefore gets its own sentence, which states the
+          // broker's own behaviour and names no regulator (banned outright by
+          // tests/live-feed-angelone-settings.test.ts — no circular saying so
+          // is cited anywhere in this tree).
+          provider === "upstox" ? null : (
+            <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2" data-testid="live-feed-reauth">
+              <p className="flex items-start gap-2 text-xs text-warning">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  {provider === "angelone" ? ANGELONE_FEED_COPY.dailyReauth : LIVE_FEED_COPY.dailyReauth}
+                </span>
+              </p>
+            </div>
+          )
         )}
 
         {provider === "openalgo" && (
@@ -295,6 +593,34 @@ export function LiveFeedCard({ current }: { current: Settings }) {
             Save today&apos;s mark
           </Button>
         </div>
+
+        {/* The Upstox consent sheet. The generic dialog is handed UPSTOX's own
+            items — it imports no provider's disclosure module of its own, so
+            there is no OpenAlgo sentence in this tree to show by accident. The
+            acceptance is written by the SAME route that enforces the gate. */}
+        <FeedConsentDialog
+          open={consentOpen === "upstox"}
+          onOpenChange={(o) => setConsentOpen(o ? "upstox" : null)}
+          onAccept={() => void acceptUpstox()}
+          title="Before Upstox prices your desk"
+          version={LIVE_FEED_DISCLOSURE_VERSIONS.upstox}
+          items={UPSTOX_FEED_ITEMS}
+          testId="upstox-feed-dialog"
+        />
+
+        {/* Angel One's sheet — the SAME generic component, handed ANGEL ONE's
+            items and ANGEL ONE's version. Two sheets, two acknowledgements: the
+            column is a provider-id → version map, so accepting one is never
+            accepting the other. */}
+        <FeedConsentDialog
+          open={consentOpen === "angelone"}
+          onOpenChange={(o) => setConsentOpen(o ? "angelone" : null)}
+          onAccept={() => void acceptAngelOne()}
+          title="Before Angel One prices your desk"
+          version={LIVE_FEED_DISCLOSURE_VERSIONS.angelone}
+          items={ANGELONE_FEED_ITEMS}
+          testId="angelone-feed-dialog"
+        />
       </CardContent>
     </Card>
   );

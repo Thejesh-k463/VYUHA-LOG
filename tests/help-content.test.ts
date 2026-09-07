@@ -195,6 +195,118 @@ describe("help describes the app that shipped, not the one that is planned", () 
 });
 
 /**
+ * v4.2 — THE FOURTH PRICE SOURCE, AND THE CREDENTIAL IT SHARES.
+ *
+ * Upstox prices the Live Desk from the Analytics token the trade import
+ * already uses. Two things follow, and both are things help either says or
+ * gets wrong silently:
+ *
+ *   1. THE HOST AND THE SHAPE OF THE REQUEST. `api.upstox.com`, the open
+ *      positions of the SELECTED account, capped, at the same clamped
+ *      interval as the bridge — the same facts `docs/client/PRIVACY.md`
+ *      item 3 discloses. Help that describes a broker-priced desk without
+ *      them describes a different feature.
+ *   2. ONE TOKEN, TWO JOBS. Regenerating it at Upstox revokes the old one,
+ *      so the import and the desk source stop in the same moment. A user who
+ *      has not been told that reads one cause as two faults, and the two
+ *      screens that could have told them are the Live Desk's help and
+ *      Settings'.
+ *
+ * The equities-only line is here for the same reason as every other refusal in
+ * this registry: what the release does NOT do is part of the description.
+ */
+describe("help describes the v4.2 Upstox price source (D)", () => {
+  const body = (href: string) => HELP_ENTRIES.find((e) => e.href === href)!.body.join(" ");
+
+  it("/live names Upstox as a source, with the host, the cap and the cadence", () => {
+    const text = body("/live");
+    expect(text, "the fourth source is not described at all").toMatch(/\bUpstox\b/);
+    expect(text, "the host the poll actually reaches").toContain("api.upstox.com");
+    expect(text, "the cap on the keys sent").toMatch(/at most 500 of them/);
+    expect(text, "the interval, clamped the same way as the bridge").toMatch(/every 1 to 5 seconds/);
+    expect(text, "what the poll does NOT carry").toMatch(/no quantity, no entry price, no P&L, no account/);
+    expect(text, "equities only in this release").toMatch(/futures and options rows keep the mark already stored/i);
+    expect(text, "the prices are not sent on anywhere").toMatch(/never uploaded, never resold/);
+  });
+
+  it("/live says the source is opt-in and reuses the saved token rather than a new credential", () => {
+    const sentence = body("/live")
+      .split(/(?<=[.!?])\s+/)
+      .find((s) => /\bUpstox is the fourth source\b/.test(s));
+    expect(sentence, "no /live sentence introduces Upstox as a source").toBeDefined();
+    expect(sentence!, "consent is not named in the same sentence as the source").toMatch(/opt-in/i);
+    expect(sentence!).toMatch(/Settings → Live feed/);
+    expect(sentence!, "the token it reuses").toMatch(/Analytics token/);
+  });
+
+  it("both /live and /settings say that regenerating the token breaks the import AND the source", () => {
+    // The whole point of saying it: one action, two consequences, one
+    // afternoon. Neither screen may state the reuse and omit the revocation.
+    for (const href of ["/live", "/settings"]) {
+      const text = body(href);
+      expect(text, `${href} does not say the token is reused`).toMatch(/reuses (that|the Analytics) token/i);
+      // Not `[^.]*` between the two halves: the sentence names
+      // `account.upstox.com`, whose dots would end the class — the shape of
+      // this claim is a verb and a consequence, so both are asserted.
+      expect(text, `${href} does not say a regeneration revokes the old token`).toMatch(
+        /Regenerating (it|the Analytics token)\b/i,
+      );
+      expect(text, `${href} does not say what the regeneration does to the old token`).toMatch(
+        /revokes the old one/i,
+      );
+      expect(text, `${href} does not say both stop together`).toMatch(
+        /at the same moment|breaks the trade import and the Live Desk source/i,
+      );
+    }
+  });
+
+  it("/settings says where the token is generated — in the user's own browser, at Upstox", () => {
+    const text = body("/settings");
+    expect(text).toContain("account.upstox.com → Apps → Analytics");
+    expect(text, "the generation step is the user's, in their own browser").toMatch(/in your own browser/i);
+    // The privacy bullet names the QUOTE host only; the account screen is a
+    // help-only fact (owner ruling, v4.2) and must not leak into it.
+    expect(text, "/settings must not claim the app talks to the account screen").not.toMatch(
+      /Vyuha (asks|calls|contacts) account\.upstox\.com/i,
+    );
+  });
+
+  it("the close-of-session mark no longer says holidays are unmodelled — v4.2 knows them", () => {
+    const text = body("/live");
+    expect(text, "help still says exchange holidays are not modelled").not.toMatch(
+      /exchange holidays are not modelled/i,
+    );
+    expect(text, "help does not say the holiday is a day the mark is refused").toMatch(
+      /At the weekend or on an exchange holiday nothing is written/,
+    );
+  });
+
+  it("the new sentences carry none of the prescriptive vocabulary (SEBI copy rule)", () => {
+    // The same list `tests/live-feed-copy.test.ts` holds the Settings card to.
+    //
+    // SCOPED TO THE SENTENCES THAT NAME UPSTOX, deliberately. Run over the
+    // whole registry it reports three sentences that are the OPPOSITE of
+    // prescriptive — "names no trade to take", "not filing advice", "no
+    // invented session" — i.e. the ban's own vocabulary used to refuse. A
+    // whole-registry form would therefore have to be loosened until it caught
+    // nothing, which is the failure mode this wave is trying to avoid; the
+    // sentences this wave adds are held to the strict form instead.
+    const BANNED =
+      /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|consider(s|ed|ing)?|buy|sell now|target price|opportunit|guaranteed)\b/i;
+    const strings = HELP_ENTRIES.flatMap((e) => [e.answers, ...e.body, ...(e.refusals ?? [])]).filter((s) =>
+      /upstox/i.test(s),
+    );
+    expect(strings.length, "no help sentence names Upstox — the scan has nothing to read").toBeGreaterThan(2);
+    const offenders = strings.filter((s) => BANNED.test(s)).map((s) => s.slice(0, 100));
+    expect(offenders, `prescriptive vocabulary in the Upstox copy:\n${offenders.join("\n")}`).toEqual([]);
+    // …and the scan can fire, on a sentence shaped exactly like the ones above.
+    expect(BANNED.test("You should pick the Upstox source for a faster mark."), "the scan is dead").toBe(true);
+    // The word this product never prints, on any surface (owner ruling).
+    for (const s of strings) expect(s, "the Upstox copy names an alert").not.toMatch(/\balerts?\b/i);
+  });
+});
+
+/**
  * Keyword drift guard (v3.8 Wave 3). The command palette used to carry its
  * own hand-written keyword map, which duplicated this registry and drifted
  * from it (27 entries against 43, several stale). Palette keywords are now
@@ -202,6 +314,103 @@ describe("help describes the app that shipped, not the one that is planned", () 
  * help entry with at least one keyword, and the palette may not grow a
  * second map.
  */
+/**
+ * v4.2 — THE FIFTH PRICE SOURCE, AND THE CREDENTIAL IT SHARES.
+ *
+ * Angel One prices the Live Desk from the client code, PIN and TOTP secret the
+ * SmartAPI trade pull already uses. Three things follow, and help either says
+ * them or gets them wrong silently:
+ *
+ *   1. THE HOST AND THE SHAPE OF THE REQUEST. `apiconnect.angelone.in` — the
+ *      host the trade pull ALREADY uses, so no new one is added — the open
+ *      positions of the SELECTED account, capped, in batches of 50 at about a
+ *      request a second. The same facts `docs/client/PRIVACY.md` item 3
+ *      discloses.
+ *   2. THE SIGN-IN IS PERFORMED BY THE APP. Angel One clears every session at
+ *      5 AM IST and Vyuha opens the next one itself. "Signs in for you" is a
+ *      sentence a reader is entitled to see stated rather than discover.
+ *   3. THE INTERVAL IS NOT A SETTING. It is tiered on the size of the book, so
+ *      help that described "the interval you set" would send the reader looking
+ *      for a slider that is deliberately not there.
+ *
+ * And the same negative the Upstox block carries: the TOTP secret's ORIGIN is
+ * Import Help's Angel One card, and /live points at it rather than teaching it
+ * twice.
+ */
+describe("help describes the v4.2 Angel One price source", () => {
+  const body = (href: string) => HELP_ENTRIES.find((e) => e.href === href)!.body.join(" ");
+
+  it("/live names Angel One as a source, with the host, the cap and the batching", () => {
+    const text = body("/live");
+    expect(text, "the fifth source is not described at all").toMatch(/\bAngel One\b/);
+    expect(text, "the host the poll actually reaches").toContain("apiconnect.angelone.in");
+    expect(text, "the fact that it is not a new host").toMatch(/no new host is added/);
+    expect(text, "the cap on the keys sent").toMatch(/at most 500 of them/);
+    expect(text, "the batching and the rate").toMatch(/batches of 50 symbols at about one request a second/);
+    expect(text, "what the poll leaves out").toMatch(/no quantity, no entry price, no P&L, no account/);
+  });
+
+  it("/live introduces it as opt-in, in the same sentence that calls it a source", () => {
+    const sentence = body("/live")
+      .split(/(?<=[.!?])\s+/)
+      .find((s) => /\bAngel One is the fifth source\b/.test(s));
+    expect(sentence, "no /live sentence introduces Angel One as a source").toBeDefined();
+    expect(sentence!, "consent is not named in the same sentence as the source").toMatch(/opt-in/i);
+    expect(sentence!).toMatch(/Settings → Live feed/);
+  });
+
+  it("/live states the tiers, and never promises an interval the user can set", () => {
+    const text = body("/live");
+    expect(text, "the tiers are not stated").toMatch(
+      /3 seconds up to 50 open positions, 5 seconds from 51 to 200, 10 seconds from 201 to 500/,
+    );
+    // Scoped to the sentences that name Angel One, because the bridge and
+    // Upstox really do have a 1–5 s slider and must go on saying so.
+    const angel = text.split(/(?<=[.!?])\s+/).filter((s) => /angel one/i.test(s));
+    expect(angel.length, "no /live sentence names Angel One").toBeGreaterThan(0);
+    for (const s of angel) {
+      expect(s, `an Angel One sentence promises an interval the user sets: ${s}`).not.toMatch(
+        /interval you set|1 to 5 seconds/i,
+      );
+    }
+  });
+
+  it("says the daily sign-in is Vyuha's to do, on BOTH surfaces", () => {
+    for (const href of ["/live", "/settings"]) {
+      const text = body(href);
+      expect(text, `${href} does not say the session is cleared daily`).toMatch(
+        /clears every API session at 5 AM IST/,
+      );
+      expect(text, `${href} does not say who signs in`).toMatch(/Vyuha opens the next one/);
+      expect(text, `${href} does not say the user is not asked`).toMatch(/without asking you|nothing to click/i);
+    }
+  });
+
+  it("/live POINTS at where the TOTP secret comes from instead of teaching it again", () => {
+    // The enrollment step lives on Import Help's Angel One card
+    // (lib/domain/import-help-content.ts). Two cards teaching one enrollment is
+    // how they drift; the /live entry references it and stops.
+    const text = body("/live");
+    expect(text, "/live does not point at the import help card").toMatch(/Import Help/);
+    expect(text, "/live re-teaches the enrollment instead of pointing at it").not.toMatch(
+      /smartapi\.angelone\.in|behind the enrollment QR/i,
+    );
+  });
+
+  it("the Angel One copy is descriptive, never prescriptive, and names no alert", () => {
+    const BANNED =
+      /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|consider(s|ed|ing)?|buy|sell now|target price|opportunit|guaranteed)\b/i;
+    const strings = HELP_ENTRIES.flatMap((e) => [e.answers, ...e.body, ...(e.refusals ?? [])]).filter((s) =>
+      /angel one/i.test(s),
+    );
+    expect(strings.length, "no help sentence names Angel One — the scan has nothing to read").toBeGreaterThan(2);
+    const offenders = strings.filter((s) => BANNED.test(s)).map((s) => s.slice(0, 100));
+    expect(offenders, `prescriptive vocabulary in the Angel One copy:\n${offenders.join("\n")}`).toEqual([]);
+    expect(BANNED.test("You should pick the Angel One source for a faster mark."), "the scan is dead").toBe(true);
+    for (const s of strings) expect(s, "the Angel One copy names an alert").not.toMatch(/\balerts?\b/i);
+  });
+});
+
 describe("palette keywords derive from the help registry", () => {
   it("every NAV_ITEMS href has a help entry with at least one keyword", () => {
     const byHref = new Map(HELP_ENTRIES.map((e) => [e.href, e]));

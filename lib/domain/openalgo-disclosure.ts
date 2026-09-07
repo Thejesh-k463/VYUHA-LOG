@@ -32,8 +32,18 @@
  * instead of one the user presses. That is a materially different statement
  * about what runs and when, so every install re-acknowledges. `isAckCurrent()`
  * compares with `===`, so a stored "1" is refused with no extra code.
+ *
+ * "2" → "3" (v4.2): a sentence the user ACCEPTED became false. Version 2 told
+ * them the automatic close-of-session mark refuses at the weekend and that
+ * "exchange holidays are not modelled in this version" — so on a weekday the
+ * exchange was shut, the previous session's price was written under the closed
+ * day's date. v4.2 refuses that write from the bundled NSE holiday list
+ * (`lib/data/nse-holidays.json` → `isExchangeHoliday()`), which the user sees
+ * in their own stored marks. THE RULE, restated for this bump: bump when the
+ * risk statement materially changes, OR when a sentence already accepted stops
+ * being true about what the app writes. A typo fix is still not a bump.
  */
-export const OPENALGO_DISCLOSURE_VERSION = "2";
+export const OPENALGO_DISCLOSURE_VERSION = "3";
 
 /** Where the user gets OpenAlgo. Shown as text, never auto-opened. */
 export const OPENALGO_SITE = "https://openalgo.in";
@@ -200,14 +210,21 @@ export const OPENALGO_FEED_ITEMS: DisclosureItem[] = [
       // guide §9, lib/domain/help-content.ts, LIVE_FEED_COPY.staleness and
       // this item), pinned across all of them by tests/live-feed-copy.test.ts.
       //
-      // `OPENALGO_DISCLOSURE_VERSION` STAYS "2". Under the rule at :25-28 the
-      // bump is for a materially different RISK: this is a local write rule
-      // about which row of the user's own table wins, on the machine the app
-      // already runs on. No new host is contacted, nothing new is sent to the
-      // bridge and nothing new is kept from it — so re-prompting every install
-      // would be teaching them to click through a disclosure that has not
-      // changed in any way that concerns them.
-      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; exchange holidays are not modelled in this version. Every figure derived from that mark is dated to the day it belongs to.",
+      // `OPENALGO_DISCLOSURE_VERSION` STAYED "2" for the sentence above (the
+      // typed-price precedence rule, v4.1 fix wave 2): a local write rule about
+      // which row of the user's own table wins, no new host, nothing new sent
+      // or kept — re-prompting for it would have been teaching users to click
+      // through a disclosure that had not changed in any way that concerns
+      // them.
+      //
+      // The HOLIDAY clause below is why it is "3" in v4.2. This item used to
+      // say "exchange holidays are not modelled in this version", so a person
+      // accepted a statement that a weekday the exchange was shut still got a
+      // mark from the last price the bridge gave. That is no longer true —
+      // `shouldPersistMark()` refuses it with code "holiday" — and a consent
+      // sentence that has become false about what is written to the journal is
+      // a new version, not a copy fix (see the constant's own note).
+      "Ticks are never written to your journal. One mark per position per day is saved — from the last price of the session, or from the price when you press Save today's mark, whichever comes first. Vyuha writes the close-of-session one itself: the desk reconnects its price stream once at 15:31 IST while it is open and the mark is written then, or the next time you open the desk that day. A price you type yourself is that day's mark: the automatic close-of-session mark does not overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close. Whether a mark already exists is decided per symbol per IST day, so a second account's open positions get their own mark on the same day. On a weekend the button refuses — there is no session to close; on an exchange holiday it refuses for the same reason, from the NSE holiday list bundled with this release, so the previous session's price is never stored under a day the market was shut. Every figure derived from that mark is dated to the day it belongs to.",
   },
   {
     title: "Your broker's API session expires every day",

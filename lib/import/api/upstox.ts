@@ -230,7 +230,11 @@ export function normalizeUpstoxTrades(
  * default fetch egresses over IPv6 on dual-stack machines and every call
  * 401s (found live, 2026-08-28 — see the header).
  */
-function upstoxGet<T>(path: string, token: string): Promise<T> {
+// EXPORTED in v4.2 (export-only change, nothing else touched) so the live-quote
+// adapter `lib/quotes/upstox.ts` issues the SAME request rather than forking
+// it: the `family: 4` rule above is the reason Upstox answers at all on a
+// dual-stack machine, and a second copy of it is a second place to forget it.
+export function upstoxGet<T>(path: string, token: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
       {

@@ -12,6 +12,12 @@ import { ProLock } from "@/components/system/pro-lock";
 // them verbatim, including the ruling that the daily re-sign-in is the
 // BROKER's rule and names no regulator). Imported, never restated.
 import { LIVE_FEED_COPY } from "@/components/settings/live-feed-card";
+// Angel One's own re-sign-in sentence, on its OWN import line and not folded
+// into the one above: `tests/seams-v41-fix.test.ts` S5b pins that import
+// statement verbatim as the proof the banner renders the one source by
+// reference. Merging the two specifiers rewrites the line that guard reads and
+// reddens a seam this change has nothing to do with.
+import { ANGELONE_FEED_COPY } from "@/components/settings/live-feed-card";
 import { applyTicks, mergeTicks, type TickMap } from "@/lib/live/apply-ticks";
 import { connectPromptDismissal, connectPromptKey, showConnectPrompt } from "@/lib/live/connect-prompt";
 import { isMarketOpenIst, istParts } from "@/lib/live/market-hours";
@@ -32,13 +38,16 @@ import {
   DESK_COPY,
   EM_DASH,
   LIVE_STREAM_COPY,
+  NOT_PRICED_BY_FEED,
   lockedInAtStop,
   needsData,
   needsSessions,
   resultsChip,
   riskAtStopSentence,
+  showsNotPricedByFeed,
   stalenessLabel,
   stopLabel,
+  angelOneCadenceLine,
 } from "./desk-copy";
 import * as fmt from "./desk-format";
 import { deskAction, isTypingTarget, nextIndex } from "./desk-keys";
@@ -259,17 +268,35 @@ function Sparkline({ closes, label }: { closes: number[]; label: string }) {
   );
 }
 
-function StalenessChip({ row, newestDay }: { row: DeskRow; newestDay: string | null }) {
+function StalenessChip({
+  row,
+  newestDay,
+  providerId,
+}: {
+  row: DeskRow;
+  newestDay: string | null;
+  providerId: string;
+}) {
   const day = fmt.dayOf(row.markAsOf);
   const stale = newestDay !== null && day !== null && day < newestDay;
+  // Ruling 4.2-8. BESIDE the mark, in the same cell as the staleness pill,
+  // because it is the same kind of statement: where this number came from. It
+  // never replaces the mark — the stored one is still the best number the desk
+  // has for a contract, and hiding it would leave the row blank.
+  const notPriced = showsNotPricedByFeed(providerId, row.instrumentType);
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex flex-wrap items-center gap-1">
       <Badge variant={row.staleness === null ? "secondary" : "outline"} size="xs">
         {stalenessLabel(row.staleness, day ? fmt.shortDate(day) : null)}
       </Badge>
       {stale && (
         <Badge variant="warning" size="xs" title={DESK_COPY.staleMark}>
           Stale
+        </Badge>
+      )}
+      {notPriced && (
+        <Badge variant="secondary" size="xs">
+          {NOT_PRICED_BY_FEED}
         </Badge>
       )}
     </span>
@@ -527,6 +554,27 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   const promptKey = connectPromptKey(data.today);
   const promptStored = useStoredValue(promptKey);
   const promptOpen = showConnectPrompt({ providerId: feed.providerId, healthState: feed.healthState }, promptStored);
+  // Ruling 4.2-8. The Upstox prompt is a DIFFERENT sentence and a different
+  // destination: its token is generated in a browser visit to the broker and
+  // saved on the Import screen, so it neither promises "20 seconds" nor
+  // describes the OpenAlgo bridge the user is not running.
+  const upstoxFeed = feed.providerId === "upstox";
+  // Angel One (v4.2): a third headline and a third destination, on the same
+  // rule — its credential is the client code, PIN and TOTP secret already saved
+  // on the Import screen, so the prompt names that place and promises no
+  // duration (there is nothing for the user to time: the daily sign-in is
+  // unattended).
+  const angeloneFeed = feed.providerId === "angelone";
+  /**
+   * THE TIERED CADENCE, ON THE DESK, from the desk's OWN row count.
+   *
+   * Ruling 4.2-4 puts the same sentence on both surfaces. It is computed here
+   * rather than carried on the payload: `angelOneCadenceLine()` is pure, the
+   * desk already knows how many open rows it holds, and a number travelling on
+   * the wire is a number that can disagree with the screen it describes. The
+   * cap and the tiers live in that one function, never restated here.
+   */
+  const angeloneCadence = angeloneFeed ? angelOneCadenceLine(rows.length) : null;
 
   const virtualizer = useVirtualizer({
     count: visible.length,
@@ -673,6 +721,10 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
               </span>
             </>
           )}
+          {/* Angel One's interval is not a setting, so the strip says what it
+              is and why — the same sentence Settings prints in place of the
+              slider, from the same function over this desk's own row count. */}
+          {angeloneCadence !== null && <span data-testid="live-feed-cadence">{angeloneCadence}</span>}
         </span>
 
         {accountIds.length > 1 && (
@@ -718,13 +770,68 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
           className="flex flex-wrap items-start gap-3 rounded-[var(--radius)] border border-border bg-card-hover/40 px-3 py-2 text-xs"
         >
           <div className="min-w-0">
-            <p className="text-sm font-medium">{LIVE_FEED_COPY.connect}</p>
-            <p className="mt-1 text-muted-foreground">{CONNECT_PROMPT_COPY.body}</p>
+            {/* TWO <p>s, not one ternary INSIDE a <p>: `{LIVE_FEED_COPY.connect}`
+                has to survive as a literal in this source, because that exact
+                substring is what pins "the prompt renders the ONE source rather
+                than a copy" (tests/seams-v41-fix.test.ts S5b, and the desk copy
+                guard). A guard that reads source text is broken by rewriting
+                the expression it reads, even when the behaviour is identical. */}
+            {upstoxFeed ? (
+              <p className="text-sm font-medium">{CONNECT_PROMPT_COPY.upstoxHeadline}</p>
+            ) : angeloneFeed ? (
+              <p className="text-sm font-medium">{CONNECT_PROMPT_COPY.angeloneHeadline}</p>
+            ) : (
+              <p className="text-sm font-medium">{LIVE_FEED_COPY.connect}</p>
+            )}
+            {/* The bridge's own steps, and only for the bridge: telling an
+                Upstox or an Angel One user to start an OpenAlgo instance is an
+                instruction to set up software they are not using. */}
+            {!upstoxFeed && !angeloneFeed && <p className="mt-1 text-muted-foreground">{CONNECT_PROMPT_COPY.body}</p>}
             {/* The re-sign-in is the BROKER's rule, in the broker's own terms —
                 the sentence is imported from its one source and names no
-                regulator (owner ruling; tests/live-feed-copy.test.ts). */}
-            <p className="mt-1 text-muted-foreground">{LIVE_FEED_COPY.dailyReauth}</p>
+                regulator (owner ruling; tests/live-feed-copy.test.ts).
+                WHICH broker's rule, though, is not one sentence (v4.2 seam fix;
+                it printed the generic one for all three until now):
+                  • UPSTOX — NOTHING. Its Analytics token is read-only for about
+                    a year, so "expires every day" is simply false, and the
+                    Settings card already suppresses it for the same reason
+                    (components/settings/live-feed-card.tsx).
+                  • ANGEL ONE — its OWN sentence, reused from the card rather
+                    than restated here: the session really is cleared at 5 AM
+                    IST, but the next one is opened unattended from the enrolled
+                    TOTP secret, so the generic "has to be signed in again" is
+                    true of the session and false of the reader. It is factual
+                    about the broker and attributes nothing to a regulator
+                    (banned by tests/live-feed-angelone-settings.test.ts).
+                  • OpenAlgo / anything else — unchanged, byte for byte. */}
+            {upstoxFeed ? null : angeloneFeed ? (
+              <p className="mt-1 text-muted-foreground">{ANGELONE_FEED_COPY.dailyReauth}</p>
+            ) : (
+              // TWO <p>s again, for the reason given at the top of this block:
+              // `{LIVE_FEED_COPY.dailyReauth}` has to survive as that exact
+              // substring, because it is what tests/seams-v41-fix.test.ts S5b
+              // reads to prove the sentence is rendered by reference.
+              <p className="mt-1 text-muted-foreground">{LIVE_FEED_COPY.dailyReauth}</p>
+            )}
             {feed.reason && <p className="mt-1 text-muted-foreground">{feed.reason}</p>}
+            {upstoxFeed && (
+              <Link
+                href={CONNECT_PROMPT_COPY.upstoxHref}
+                data-testid="live-connect-prompt-action"
+                className="mt-1 inline-block font-medium text-primary underline underline-offset-2"
+              >
+                {CONNECT_PROMPT_COPY.upstoxCta}
+              </Link>
+            )}
+            {angeloneFeed && (
+              <Link
+                href={CONNECT_PROMPT_COPY.angeloneHref}
+                data-testid="live-connect-prompt-action"
+                className="mt-1 inline-block font-medium text-primary underline underline-offset-2"
+              >
+                {CONNECT_PROMPT_COPY.angeloneCta}
+              </Link>
+            )}
           </div>
           <button
             type="button"
@@ -893,6 +1000,7 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
                   expanded={expandedId === r.id}
                   breach={breach}
                   newestDay={newestDay}
+                  providerId={feed.providerId}
                   today={data.today}
                   onToggle={() => {
                     setFocusId(r.id);
@@ -957,6 +1065,7 @@ function Row({
   expanded,
   breach,
   newestDay,
+  providerId,
   today,
   onToggle,
 }: {
@@ -972,6 +1081,8 @@ function Row({
   expanded: boolean;
   breach: string | null;
   newestDay: string | null;
+  /** The selected feed's id — the "Not priced by this feed" label's condition. */
+  providerId: string;
   /** IST today (`LiveDeskData.today`) — the results chip's only other input. */
   today: string;
   onToggle: () => void;
@@ -1017,7 +1128,7 @@ function Row({
           desk announces the LINK, once, from the strip. */}
       <td className="px-2 py-1.5 text-right font-mono tabular-nums">
         <span className="block">{fmt.level(row.markP)}</span>
-        <StalenessChip row={row} newestDay={newestDay} />
+        <StalenessChip row={row} newestDay={newestDay} providerId={providerId} />
       </td>
       <td className={`px-2 py-1.5 text-right font-mono tabular-nums ${fmt.pnlClass(row.dayChangePpm)}`}>
         <span aria-hidden>{fmt.directionGlyph(row.dayChangePpm)}</span> {fmt.signedPct(row.dayChangePpm)}

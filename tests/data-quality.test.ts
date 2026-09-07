@@ -88,6 +88,31 @@ describe("data quality — critical gaps change money", () => {
     expect(find(assessDataQuality(inputs({ trades: [trade({ id: 7, isOpen: true })], markedTradeIds: new Set([7]) })), "unmarked_open")).toBeUndefined();
   });
 
+  /**
+   * v4.2 — AN ISSUE NOBODY CAN CLEAR IS NOT A DATA-QUALITY ISSUE.
+   *
+   * "Open positions without a mark" counted open FUTURES and OPTIONS and
+   * pointed at /equity. A typed mark for a contract is refused there by design:
+   * `mtm_prices` is keyed on the SYMBOL and `getMtmMap()` reads mtm[symbol]
+   * first, so M1 (`lib/quotes/persist-mark.ts`) skips derivative rows rather
+   * than pricing the cash position at the option's price. The result was a
+   * permanent critical issue, a permanently depressed score, and a link to a
+   * screen that could not fix it.
+   */
+  it("does not ask a DERIVATIVE for a mark it has no place to put", () => {
+    const future = trade({ id: 11, isOpen: true, closingPrice: null, instrumentType: "future" });
+    const option = trade({ id: 12, isOpen: true, closingPrice: null, instrumentType: "option", expiry: "2026-09-24", strike: 24000, optionType: "CE" });
+    expect(find(assessDataQuality(inputs({ trades: [future] })), "unmarked_open")).toBeUndefined();
+    expect(find(assessDataQuality(inputs({ trades: [option] })), "unmarked_open")).toBeUndefined();
+
+    // …and an unmarked CASH position in the same book is still counted, alone.
+    const cash = trade({ id: 13, isOpen: true, closingPrice: null });
+    const both = find(assessDataQuality(inputs({ trades: [future, option, cash] })), "unmarked_open");
+    expect(both?.count).toBe(1);
+    expect(both?.ids).toEqual([13]);
+    expect(both?.href).toBe("/equity");
+  });
+
   it("does not ask a closed position for a mark", () => {
     const r = assessDataQuality(inputs({ trades: [trade({ isOpen: false, closingPrice: null })] }));
     expect(find(r, "unmarked_open")).toBeUndefined();

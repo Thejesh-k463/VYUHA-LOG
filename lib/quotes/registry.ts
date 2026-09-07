@@ -3,10 +3,15 @@ import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import { createEodBhavcopyProvider, EOD_CAPABILITIES } from "./eod-bhavcopy";
 import { createManualProvider, MANUAL_CAPABILITIES } from "./manual";
 import { createMockProvider, MOCK_CAPABILITIES } from "./mock";
+import { isFeedAckCurrent, type LiveFeedDisclosureId } from "@/lib/domain/live-feed-disclosure";
 import { clampRefreshSeconds, createOpenAlgoProvider, OPENALGO_CAPABILITIES } from "./openalgo";
+import { createUpstoxProvider, UPSTOX_CAPABILITIES } from "./upstox";
+import { ANGELONE_CAPABILITIES, createAngelOneProvider } from "./angelone";
 import {
+  ANGELONE_FEED_ENABLED,
   NotEnabledError,
   OPENALGO_FEED_ENABLED,
+  UPSTOX_FEED_ENABLED,
   type ProviderCapabilities,
   type ProviderHealth,
   type ProviderId,
@@ -37,6 +42,14 @@ import {
  * consent columns are machine state), so a restore falls back to `eod` instead
  * of opening a feed nobody on THIS machine agreed to.
  *
+ * v4.2 adds the BROKER feeds under the same rule, with their own storage:
+ * `settings.live_feed_ack_json` (migration 0069) is a provider id → accepted
+ * disclosure version map, and `liveFeedAckGate()` reads it with `===`. One
+ * column serves BOTH brokers with no second migration: `upstox` ships behind
+ * `UPSTOX_FEED_ENABLED` and `angelone` behind `ANGELONE_FEED_ENABLED` (ruling
+ * 4.2-9 — Angel One ships ON in 4.2.0), each gated on its OWN key in that
+ * column, so consenting to one broker's feed never opens the other's.
+ *
  * SERVER-ONLY: three of the four shipped providers read the journal database
  * or the network. Client components import `@/lib/quotes/types` (pure), never
  * this file.
@@ -55,21 +68,48 @@ export const DEFAULT_PROVIDER_ID: ProviderId = "eod";
  * never permission: `selectProviderId()` below still re-checks the consent
  * pair, and flipping the constant back removes it everywhere at once.
  */
-export const SHIPPED_PROVIDER_IDS: readonly ProviderId[] = OPENALGO_FEED_ENABLED
-  ? ["eod", "manual", "mock", "openalgo"]
-  : ["eod", "manual", "mock"];
+export const SHIPPED_PROVIDER_IDS: readonly ProviderId[] = [
+  "eod",
+  "manual",
+  "mock",
+  ...(OPENALGO_FEED_ENABLED ? (["openalgo"] as const) : []),
+  // v4.2 ships the Upstox feed behind ONE constant, exactly as v4.1 shipped
+  // OpenAlgo's. Being listed here is SELECTABILITY, never permission:
+  // `selectProviderId()` re-checks the stored acknowledgement below.
+  ...(UPSTOX_FEED_ENABLED ? (["upstox"] as const) : []),
+  // …and v4.2 ships Angel One the same way (ruling 4.2-9). The line was
+  // written before the adapter existed, and shipping it really was the one
+  // edit the comment promised: `ANGELONE_FEED_ENABLED` went true.
+  ...(ANGELONE_FEED_ENABLED ? (["angelone"] as const) : []),
+];
 
-/** Typed, listed, and deliberately not built — see `createPlannedProvider()`. */
-export const PLANNED_PROVIDER_IDS = ["kite", "upstox", "dhan", "angelone"] as const;
+/** Every id that MAY be planned — the type the notes and labels are keyed on. */
+const PLANNABLE_IDS = ["kite", "upstox", "dhan", "angelone"] as const;
+export type PlannedProviderId = (typeof PLANNABLE_IDS)[number];
 
-const PLANNED_NOTES: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
+/**
+ * Typed, listed, and deliberately not built — see `createPlannedProvider()`.
+ *
+ * `upstox` and `angelone` BOTH left this list in v4.2 (their adapters are
+ * `lib/quotes/upstox.ts` and `lib/quotes/angelone.ts`), and either comes back
+ * the moment its constant is flipped off: the withheld state and the planned
+ * state are the same state, so one constant withdraws the feature from the
+ * shipped list, the picker and the route at once. `kite` and `dhan` are here
+ * for the ordinary reason — nothing is built.
+ */
+export const PLANNED_PROVIDER_IDS: readonly PlannedProviderId[] = PLANNABLE_IDS.filter(
+  (id) => !(id === "upstox" && UPSTOX_FEED_ENABLED) && !(id === "angelone" && ANGELONE_FEED_ENABLED),
+);
+
+const PLANNED_NOTES: Record<PlannedProviderId, string> = {
   kite: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
   upstox: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
   dhan: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
-  angelone: "v4.2+ — a broker feed needs its own consent sheet, its own privacy line and the broker's own data-fee disclosure.",
+  angelone:
+    "the adapter exists (lib/quotes/angelone.ts) and this release has withheld it — ANGELONE_FEED_ENABLED is false, and flipping it back to true returns the feed to the shipped list, the picker and the route at once.",
 };
 
-const PLANNED_LABELS: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
+const PLANNED_LABELS: Record<PlannedProviderId, string> = {
   kite: "Zerodha Kite Connect (not enabled in this release)",
   upstox: "Upstox (not enabled in this release)",
   dhan: "Dhan (not enabled in this release)",
@@ -84,7 +124,7 @@ const PLANNED_LABELS: Record<(typeof PLANNED_PROVIDER_IDS)[number], string> = {
  * privacy surface that the current release does not honour. The host arrives in the same
  * release as the consent sheet and the PRIVACY line — not before.
  */
-export function plannedCapabilities(id: (typeof PLANNED_PROVIDER_IDS)[number]): ProviderCapabilities {
+export function plannedCapabilities(id: PlannedProviderId): ProviderCapabilities {
   return {
     id,
     label: PLANNED_LABELS[id],
@@ -100,7 +140,7 @@ export function plannedCapabilities(id: (typeof PLANNED_PROVIDER_IDS)[number]): 
 }
 
 /** A typed provider that refuses, loudly, everywhere except `health()`. */
-export function createPlannedProvider(id: (typeof PLANNED_PROVIDER_IDS)[number]): QuoteProvider {
+export function createPlannedProvider(id: PlannedProviderId): QuoteProvider {
   const note = PLANNED_NOTES[id];
   return {
     id,
@@ -121,7 +161,7 @@ export function createPlannedProvider(id: (typeof PLANNED_PROVIDER_IDS)[number])
 
 const ALL_IDS: readonly ProviderId[] = [...SHIPPED_PROVIDER_IDS, ...PLANNED_PROVIDER_IDS];
 
-function isPlanned(id: ProviderId): id is (typeof PLANNED_PROVIDER_IDS)[number] {
+function isPlanned(id: ProviderId): id is PlannedProviderId {
   return (PLANNED_PROVIDER_IDS as readonly string[]).includes(id);
 }
 
@@ -132,6 +172,23 @@ export function resolveProviderId(raw: string | null | undefined): ProviderId {
 }
 
 export function createProvider(id: ProviderId, refreshSeconds?: number): QuoteProvider {
+  // THE BROKER FEEDS ARE DECIDED FIRST, before `isPlanned()` narrows their ids
+  // away. Upstox: the adapter re-reads the acknowledgement and the saved
+  // Analytics token on every call, so building one is never the same as being
+  // allowed to use one — and with the flag off it falls through to the planned
+  // branch below and refuses.
+  if (id === "upstox" && UPSTOX_FEED_ENABLED) {
+    return createUpstoxProvider({ refreshSeconds: clampRefreshSeconds(refreshSeconds) });
+  }
+  // Angel One: the adapter re-reads the acknowledgement and the saved
+  // credentials on every call, so building one is never the same as being
+  // allowed to use one. `refreshSeconds` is NOT passed — the cadence is the
+  // open-position count (ruling 4.2-4) and the slider is ignored for this
+  // provider, which is stated here as well as in the adapter so a future
+  // reader does not "fix" the omission. With the flag off it falls through to
+  // the planned branch below and refuses, rather than falling through to the
+  // end-of-day default and pricing a book from a source the user never picked.
+  if (id === "angelone" && ANGELONE_FEED_ENABLED) return createAngelOneProvider();
   if (isPlanned(id)) return createPlannedProvider(id);
   if (id === "mock") return createMockProvider();
   if (id === "manual") return createManualProvider();
@@ -141,11 +198,39 @@ export function createProvider(id: ProviderId, refreshSeconds?: number): QuotePr
   return createEodBhavcopyProvider();
 }
 
-/** The two settings columns and the consent pair that decide the feed. */
+/**
+ * PURE. The stored acknowledgement for ONE broker feed → may it run?
+ *
+ * `live_feed_ack_json` (migration 0069) holds provider id → accepted disclosure
+ * version, and `isFeedAckCurrent()` compares with `===`: an older version, an
+ * absent key or an unreadable blob is NO consent. A restored backup carries the
+ * picker column but not this one (machine state), so a restore falls back to
+ * `eod` instead of opening a broker feed nobody on THIS machine agreed to.
+ */
+export function liveFeedAckGate(
+  ackJson: string | null | undefined,
+  id: LiveFeedDisclosureId,
+): { allowed: boolean; reason?: string } {
+  if (isFeedAckCurrent(ackJson, id)) return { allowed: true };
+  return {
+    allowed: false,
+    reason:
+      "The live-price disclosure for this broker has not been accepted on this machine, or it has changed since you accepted it. Open Settings → Live feed and read it to continue.",
+  };
+}
+
+/** The settings columns and the consents that decide the feed. */
 export interface LiveFeedSelection {
   liveFeedProvider: string | null | undefined;
   openalgoEnabled: boolean;
   openalgoAckVersion: string | null | undefined;
+  /**
+   * `settings.live_feed_ack_json` — provider id → accepted disclosure version
+   * (v4.2, migration 0069). OPTIONAL so a caller written before this column
+   * existed keeps compiling; absent means no broker feed is acknowledged, which
+   * is the safe reading of a missing consent.
+   */
+  liveFeedAckJson?: string | null;
 }
 
 /**
@@ -160,9 +245,17 @@ export interface LiveFeedSelection {
  */
 export function selectProviderId(sel: LiveFeedSelection): ProviderId {
   const id = resolveProviderId(sel.liveFeedProvider);
-  if (id !== "openalgo") return id;
-  const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
-  return gate.allowed ? "openalgo" : DEFAULT_PROVIDER_ID;
+  if (id === "openalgo") {
+    const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
+    return gate.allowed ? "openalgo" : DEFAULT_PROVIDER_ID;
+  }
+  // The broker feeds are gated the same way, on the per-provider version in
+  // `live_feed_ack_json`. `angelone` is here for the day it ships: if the
+  // constant is flipped without a consent, it falls back like every other.
+  if (id === "upstox" || id === "angelone") {
+    return liveFeedAckGate(sel.liveFeedAckJson, id).allowed ? id : DEFAULT_PROVIDER_ID;
+  }
+  return id;
 }
 
 /** The stored feed settings, as `resolveLiveFeed()` returns them. */
@@ -189,6 +282,7 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
       liveFeedRefreshSeconds: settings.liveFeedRefreshSeconds,
       openalgoEnabled: settings.openalgoEnabled,
       openalgoAckVersion: settings.openalgoAckVersion,
+      liveFeedAckJson: settings.liveFeedAckJson,
     })
     .from(settings)
     .limit(1)
@@ -197,10 +291,15 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
     liveFeedProvider: row?.liveFeedProvider ?? DEFAULT_PROVIDER_ID,
     openalgoEnabled: row?.openalgoEnabled ?? false,
     openalgoAckVersion: row?.openalgoAckVersion ?? null,
+    liveFeedAckJson: row?.liveFeedAckJson ?? null,
   };
   const stored = resolveProviderId(sel.liveFeedProvider);
   const effective = selectProviderId(sel);
-  const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
+  // Whichever feed was picked, the reason shown is that feed's own gate.
+  const gate =
+    stored === "upstox" || stored === "angelone"
+      ? liveFeedAckGate(sel.liveFeedAckJson, stored)
+      : openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
   return {
     stored,
     effective,
@@ -243,6 +342,19 @@ export function allProviderCapabilities(): ProviderCapabilities[] {
     MANUAL_CAPABILITIES,
     MOCK_CAPABILITIES,
     OPENALGO_CAPABILITIES,
-    ...PLANNED_PROVIDER_IDS.map(plannedCapabilities),
+    // Listed UNCONDITIONALLY, for the same reason OpenAlgo's is: the adapter
+    // exists, so its declared egress must keep being held to the privacy sheet
+    // whichever way `UPSTOX_FEED_ENABLED` points. A capability block that
+    // disappeared with the feature flag would be a guard that stops guarding
+    // exactly when the code is easiest to change. (`upstox` leaves
+    // PLANNED_PROVIDER_IDS when the flag is on, so there is still exactly one
+    // block per id either way — the filter below keeps that true if the flag is
+    // ever turned off, when `upstox` rejoins the planned list.)
+    UPSTOX_CAPABILITIES,
+    // Angel One's block is listed unconditionally for the same reason, and it
+    // is the one that matters most: its declared host is the only claim the
+    // egress guard can hold `lib/quotes/angelone.ts` to.
+    ANGELONE_CAPABILITIES,
+    ...PLANNED_PROVIDER_IDS.filter((id) => id !== "upstox" && id !== "angelone").map(plannedCapabilities),
   ];
 }

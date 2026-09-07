@@ -4183,3 +4183,81 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   seeded SQLite file on a cold runner; a genuinely hung hook still fails. **Rejected: per-file timeouts on the 87
   seeded sites** — the same edit 87 times, and the next seeded test forgets it. Not proven on a cold Windows CI
   runner until the next Windows job runs with it (the only place the 10 s default ever fired).
+
+## 2026-09-07 — v4.2 wave: Upstox + Angel One quote adapters, equities only, no new host but `api.upstox.com`; a bundled NSE holiday list with a year guard
+
+Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v4.2 pre-build rulings" and
+"v4.2 build-session rulings"); the facts below are what the build measured or deliberately chose.
+
+- **The premise of ruling 4.2-3 was wrong and the owner re-ruled the same evening.** "Derivative contracts
+  resolve from the existing ISIN store" cannot hold: Angel One's `/market/v1/quote/` takes only NUMERIC
+  `symbolToken`s and no broker import persists a token per trade (`trades` has `tradingsymbol`, `isin`,
+  `strike`, `expiry` — no token). Upstox cash keys are `NSE_EQ|<ISIN>` (no lookup), but F&O keys are
+  `NSE_FO|<token>`, which only the instrument master on `assets.upstox.com` provides. **Ruled: Angel One
+  resolves tokens through `POST /order/v1/searchScrip` on the login host (already disclosed), lazily at
+  1 req/s, cached in `angelone_instrument_tokens` (migration 0070, no `account_id` — a token is a fact about
+  the market); both feeds price EQUITIES ONLY in 4.2 and derivative rows carry "Not priced by this feed".**
+  Rejected: the two instrument-master hosts (a new host each, a large daily download). Measured live by the
+  owner from home broadband before any Angel One code existed: login 200, quote 200 (SBIN-EQ 3045, keys
+  `exchange, tradingSymbol, symbolToken, ltp, open, high, low, close`, `unfetched: []`), searchScrip 200 with
+  **16 rows across series** (SBIN-AF/BE/BL/EQ/IQ…) — so the resolver selects by the trade's own series suffix
+  and defaults to `-EQ`; the series suffix is a WHITELIST, because `BAJAJ-AUTO-EQ` read greedily is
+  `BAJAJ`/series `AUTO`.
+- **One consent column for every broker feed: `settings.live_feed_ack_json`** (migration 0069), a JSON map
+  provider id → acknowledged disclosure version, gated by strict `===` per provider
+  (`lib/domain/live-feed-disclosure.ts`). Rejected: an `<broker>_ack_version` column per broker (the 4.1
+  OpenAlgo pair) — Angel One landed in the same release with a sheet and a constant and NO second migration,
+  which is the point. The column is in `SETTINGS_MACHINE_COLUMNS` so a consent never travels in a backup, and
+  `tests/backup-format.test.ts` now has an EXHAUSTIVENESS rule: every `settings` property matching
+  `/ack|consent|enabled|token|secret|key|machine|device|trial|licen[cs]e/i` is either redacted or allowlisted
+  with a >40-char reason (one allowlisted: `autoMtmEnabled`, a baseline preference). Before this rule the
+  redaction list was an allowlist nothing checked, and the new column would have shipped in backups silently.
+- **Upstox reuses the stored Analytics token (no second field, `requiresDailyAuth: false`) and its `health()`
+  makes no request.** The consent sheet names exactly one kind of request (the `/market-quote/*` poll), so a
+  probe call would be an undisclosed second one; OpenAlgo's `/funds` probe is the precedent NOT followed.
+  Angel One likewise. The IPv4-pinned `upstoxGet` is exported from the import module rather than forked (one
+  https path, one host string); `tests/upstox-api.test.ts` pins the export.
+- **Angel One cadence is "paced, not queued".** Ruling 4.2-4's tiers (≤50 → 3 s, 51–200 → 5 s, 201–500 → 10 s,
+  the slider ignored) plus `createRateGuard(1)`: within one sweep the ≤10 batches are spaced 1 s apart; nothing
+  is buffered between sweeps; a batch that cannot go is DROPPED and counted, never queued. A second ceiling,
+  a rolling 4,000/hour counter, is asserted as a unit and proven consulted, but is unreachable while the 1 s
+  pacing holds (3,600/h) — it is there for the day the pacing is loosened. The jwt is cached in memory to the
+  next **05:00 IST** (`angelOneSessionExpiresAt`, never the jwt's `exp`), one login attempt then 60 s of
+  silence (login is 1/s, `generateTokens` 1,000/hour — a retry loop locks the user out of their broker).
+  Rejected: refusing books over 200; a single fixed 5 s (10 calls × every 5 s = 7,200/h, breaches the
+  published 5,000/h inside the first hour).
+- **The NSE holiday list is bundled from Sentinel's verified file, trading holidays only, with a year guard
+  and "unknown ≠ holiday".** `lib/data/nse-holidays.json` = the 19 trading rows of
+  `TRADE-SENTINAL/sentinel/holidays.yaml` (verified against `nseindia.com/api/holiday-master` CM segment on
+  2026-08-27), NOT its `clearing_holidays` — a clearing holiday is a trading day, and conflating them once
+  cancelled a real session in Sentinel (26 Aug 2026). `isExchangeHoliday()` is true only when the date's year
+  is covered AND listed; an uncovered year is unknown and falls back to the weekday rule (today's behaviour),
+  while `tests/nse-holidays.test.ts` turns RED the day `todayIstIso()`'s year exceeds the bundled `year`, so a
+  stale list cannot ship. Rejected (4.1): "bundle = stale every year" — the guard is the answer; rejected
+  (4.2): Upstox `/v2/market/holidays` (Upstox users only). **Two consumers were holiday-blind and one of them
+  was a confirmed seam defect:** `isMarketOpenIst()` and the persist-mark door were fixed by the wave, but the
+  SSE route gates its subscription on `isWithinLiveWindow()` (`lib/quotes/mapping.ts`), which was weekday +
+  clock only — on Republic Day at 10:00 IST it returned true, so the broker would have been polled all session
+  on a shut exchange while the strip printed "Live". Fixed in the same wave (`isTradingDayIst` consulted;
+  `tests/quotes-mapping.test.ts` red on revert at 2026-01-26 04:30Z).
+- **A consent sentence that stops being TRUE is a new disclosure version** — `OPENALGO_DISCLOSURE_VERSION`
+  "2" → "3". Item 6 promised the automatic close mark refuses "the weekend and only the weekend: exchange
+  holidays are not modelled"; with the holiday list that sentence describes a write the app no longer makes.
+  The module's own rule (`openalgo-disclosure.ts:25-28`, "bump on a material RISK change") did not cover this
+  case and was widened in the constant's comment; `tests/privacy-feed-disclosure.test.ts` recorded the "stays
+  2" reasoning for the earlier `/funds` copy fix and now records why "3" is a different reason. Cost: every
+  OpenAlgo install re-acknowledges once. Rejected: leaving an accepted sentence false.
+- **The 4.1 seams that 4.2 legitimately invalidated were re-pinned, not deleted, and never weakened:** seam 3
+  now parses the covered hosts OUT OF `docs/client/PRIVACY.md`'s own network section (an undisclosed host
+  still fails; deleting any shipped host from the doc set brings it back as undisclosed — per host, so no
+  literal agrees with itself); S6a pins the holiday REFUSAL with a non-vacuity control (an ordinary weekday
+  still writes); S6b bans the old wording. `BROKER_FEED_OFFERED` became "any broker feed offered" — with
+  OpenAlgo off and Upstox on, the radio rendered but the 1–5 s slider the Upstox adapter really reads
+  vanished (latent, flag-conditional, found by the seam pass).
+- **Gate on the wave tree:** `npm run verify` EXIT 0 — **352 files / 6,726 passed / 35 skipped**, `next build`
+  compiled (first run EXIT 1 on three reds: the two Angel One quote files missing from the egress guard's
+  dynamic-URL allowlist, the README file count, and the `upstoxGet` export against the Upstox surface pin —
+  all three fixed in the same wave). `e2e/z-live-desk.spec.ts` 9/9 three times (builders C, G, H). Seam pass
+  `tests/seams-v42.test.ts`: 33 tests over nine crossings, one confirmed defect (above), one latent, one
+  documented gap (a cash equity with no ISIN in any bundled source is neither sent nor labelled — it surfaces
+  only in `health().skippedNoIsin`; pinned so it cannot widen silently).

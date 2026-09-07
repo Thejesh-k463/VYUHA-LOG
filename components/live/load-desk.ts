@@ -343,6 +343,10 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
       isin: t?.isin ?? null,
       entryDate: position.entryDate,
       lotSize: position.lotSize,
+      // The journal's own instrument type, carried so the client can tell a
+      // contract from a cash scrip without guessing at the tradingsymbol
+      // (ruling 4.2-8, the "Not priced by this feed" label).
+      instrumentType: position.instrumentType,
       // FREE, deliberately — a results date is a fact about the company, the
       // same kind of thing as the symbol itself, so it does not pass through
       // the `gated` boundary above (owner ruling Q-9, and invariant 7's spirit:

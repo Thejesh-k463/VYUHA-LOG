@@ -1,0 +1,33 @@
+-- v4.2 — `settings.live_feed_ack_json`: which BROKER live feeds this person
+-- has read the disclosure for, and which VERSION of it they accepted.
+--
+-- ONE COLUMN FOR EVERY BROKER FEED, ON PURPOSE. The value is a JSON object
+-- mapping provider id → accepted disclosure version — `{"upstox":"1"}` — not a
+-- boolean and not a per-broker column. Angel One's key is already typed in
+-- `LIVE_FEED_DISCLOSURE_VERSIONS` (lib/domain/live-feed-disclosure.ts) with no
+-- adapter behind it, so the release that ships that adapter adds a sheet and a
+-- constant and NO second migration. A column per broker would have made the
+-- schema grow once per integration and given four places to forget the gate.
+--
+-- A VERSION, NOT A TRUTH VALUE. Consent is recorded against a statement: bump
+-- the version when the risk statement materially changes and every install
+-- re-prompts instead of inheriting an acceptance of a different statement.
+-- `isFeedAckCurrent()` compares with `===`, so a stored "0", an absent key, an
+-- unreadable blob or a `true` written by some future careless writer are all
+-- refused with no extra code, and the feed falls back to 'eod'.
+--
+-- NULLABLE, AND NULL IS THE HONEST DEFAULT. Nobody has accepted anything on an
+-- upgraded install, and an invented default would be a consent nobody gave.
+--
+-- SELECTING A PROVIDER IS NOT CONSENT. `settings.live_feed_provider` (0067) may
+-- travel in a backup; this column may not. It is MACHINE STATE like the
+-- OpenAlgo consent pair from 0049 — a statement a person made on a machine —
+-- so it belongs in `SETTINGS_MACHINE_COLUMNS` (lib/backup-format.ts) and
+-- outside `BASELINE_SETTINGS_FIELDS`, and `lib/quotes/registry.ts` re-applies
+-- the gate at EVERY selection rather than trusting the stored picker value.
+--
+-- NOT ACCOUNT-SCOPED. `settings` is a single-row table; invariants 8/9 have
+-- nothing to own here.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `settings` ADD COLUMN `live_feed_ack_json` text;

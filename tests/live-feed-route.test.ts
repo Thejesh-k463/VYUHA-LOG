@@ -109,12 +109,20 @@ describe("GET — what the Settings card renders", () => {
     expect(body.feed.refreshSeconds).toBe(3);
   });
 
-  it("offers exactly the three v4.1 ships — `mock` is a test pin, never a choice", async () => {
+  it("offers exactly the four v4.2 ships — `mock` is a test pin, never a choice", async () => {
     const body = await (await get()).json();
     // `mock` is shipped-but-not-pickable: it is in SHIPPED_PROVIDER_IDS so e2e
     // can pin it through VYUHA_QUOTE_PROVIDER, and the route's PICKABLE filter
-    // is what keeps it out of the picker.
-    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual(["eod", "manual", "openalgo"]);
+    // is what keeps it out of the picker. `upstox` AND `angelone` joined the
+    // pickable set in v4.2, each behind its own release flag — and a SIXTH id
+    // appearing here is the regression this list exists to catch.
+    expect(body.providers.map((p: { id: string }) => p.id).sort()).toEqual([
+      "angelone",
+      "eod",
+      "manual",
+      "openalgo",
+      "upstox",
+    ]);
     for (const p of body.providers) {
       // The picker's label and its egress sentence come from the registry's
       // capability block, not from the JSX — and the id it is keyed by is the
@@ -303,7 +311,8 @@ describe("POST provider — the consent gate, on the shipped route", () => {
     // Without this they could all be passing for the v4.0 reason (a 400 from
     // the zod enum) rather than exercising the acknowledgement check at all.
     const ids = (await (await get()).json()).providers.map((p: { id: string }) => p.id).sort();
-    expect(ids).toEqual(["eod", "manual", "openalgo"]);
+    expect(ids).toContain("openalgo");
+    expect(ids).toEqual(["angelone", "eod", "manual", "openalgo", "upstox"]);
   });
 
   it("refuses openalgo with 403 and stores NOTHING when the disclosure was never accepted", async () => {

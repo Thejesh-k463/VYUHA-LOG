@@ -27,7 +27,34 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2. Current state — v4.2 WAVE BUILT on main, gate GREEN, pushed for CI (2026-09-07 evening IST); v4.1.0 remains the PUBLISHED release
+
+> **v4.2 is IN BUILD, not tagged.** One wave commit on top of `92c48cc` carries: the **Upstox** quote adapter
+> (`lib/quotes/upstox.ts`, reuses the stored Analytics token — `requiresDailyAuth: false`, one `/v3/market-quote/ltp`
+> call per 1–5 s sweep for ≤500 keys, `/ohlc` at most once a minute, `health()` makes no request) and the
+> **Angel One** adapter (`lib/quotes/angelone.ts` + `angelone-tokens.ts`: unattended 05:00-IST re-login via the
+> enrolled TOTP secret, OHLC-mode batches of 50 paced at 1 req/s, cadence tiers ≤50 → 3 s / 51–200 → 5 s /
+> 201–500 → 10 s with the reason on screen, tokens resolved lazily through `searchScrip` on the login host and
+> cached in `angelone_instrument_tokens`, migration **0070**; a surface pin refuses any order call). **Both ON**
+> (`UPSTOX_FEED_ENABLED`, `ANGELONE_FEED_ENABLED` in `lib/quotes/types.ts`), each behind its own consent sheet
+> (`lib/domain/live-feed-disclosure.ts`, versions "1"), acknowledged into ONE column `settings.live_feed_ack_json`
+> (migration **0069**, redacted from backups). **Equities only** — derivative rows carry "Not priced by this
+> feed" (owner rulings 4.2-7/4.2-8; M1 contract-keyed marks deferred). **PRIVACY #3 gains exactly one host,
+> `api.upstox.com`** (Angel One's host was already the login host). **NSE holiday calendar (F1):**
+> `lib/data/nse-holidays.json` (19 trading rows for 2026 from Sentinel's NSE-verified file, no clearing rows),
+> `isExchangeHoliday`/`isTradingDayIst` in `lib/domain/trading-day.ts`, a year-guard test that reddens when the
+> list is behind the calendar; the desk clock, the persist-mark door ("holiday" refusal), the stream window and
+> the 15:31 reopen all consult it; `OPENALGO_DISCLOSURE_VERSION` "2" → "3" because item 6 stopped being true.
+> `lib/analytics/data-quality.ts` no longer counts open derivatives as unmarked. Gate on the wave tree:
+> **`npm run verify` EXIT 0 — 352 files / 6,726 passed / 35 skipped, `next build` compiled**; `e2e/z-live-desk.spec.ts`
+> 9/9; `tests/seams-v42.test.ts` 33 tests (one confirmed seam defect, the holiday-blind stream window, fixed in
+> the wave). `package-lock.json` untouched; no dependency change. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md`
+> "v4.2 build-session rulings"; measurements: `docs/DECISIONS.md` 2026-09-07 "v4.2 wave"; session record:
+> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **Next:** CI on the wave sha → six-dimension audit + skeptic →
+> fix wave (own audit) → bump 4.2.0 (`CHANGELOG.md` 4.2.0 section is written at the bump; TERMS/REFUND
+> "Applies to" and the README "Now"/first quote already say 4.2.0) → the 11 release steps.
+
+## 2 (previous). Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
 > **v4.1.0 IS PUBLISHED** (2026-09-07T10:00:03Z = 15:30 IST) and installed on a non-build machine by the owner;
 > WDSI form handed over (client-ZIP sha), winget submission is the owner's once he chooses. Nothing is owed on

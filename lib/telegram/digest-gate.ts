@@ -6,10 +6,14 @@
 // Preconditions, in refusal order (each blocks alone):
 //   1. consent — the telegramGate (enabled AND current ack), never bypassed
 //   2. credentials on file (token + chat id)
-//   3. a market day in IST — weekends are known statically; exchange holidays
-//      are NOT knowable offline (the trading-day module's recorded posture),
-//      so a holiday digest can still go out: it reports the user's own
-//      recorded data, which is true on any day
+//   3. a market day in IST — weekends are known statically, and since v4.2
+//      exchange holidays ARE knowable offline (`isExchangeHoliday()` in
+//      lib/domain/trading-day.ts, over the bundled `lib/data/nse-holidays.json`).
+//      This gate still does not ask, on purpose: a holiday digest reports the
+//      user's own recorded data, which is true on any day, and suppressing it
+//      would silently drop a day from a report the user asked for. The doors
+//      where a holiday changes what is STORED do ask — `shouldPersistMark()`
+//      refuses with code "holiday"
 //   4. the clock has reached the configured IST send time
 //   5. not already sent today (last_telegram_sent_date guard). Catch-up is
 //      exactly this shape: opening the app at 21:00 still sends today's digest

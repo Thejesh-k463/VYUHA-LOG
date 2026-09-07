@@ -73,6 +73,10 @@ const DYNAMIC_URL_CALL_SITES: Record<string, string> = {
     "builds the bhavcopy URL from the NSE_ARCHIVE constant (nsearchives.nseindia.com) — the literal is checked below.",
   "lib/import/api/angelone.ts":
     "prefixes paths with the BASE constant (apiconnect.angelone.in) — the literal is checked below.",
+  "lib/quotes/angelone.ts":
+    "v4.2 Angel One quote poll — imports the SAME BASE constant from lib/import/api/angelone.ts (one host string in the tree; the literal is checked below) and adds no host (06-ANSWERS ruling 4.2-3).",
+  "lib/quotes/angelone-tokens.ts":
+    "v4.2 Angel One searchScrip token look-up — same BASE constant, same host, cached locally (06-ANSWERS ruling 4.2-7); never the scrip-master host.",
   "lib/import/api/openalgo.ts":
     "the OpenAlgo host is USER-CONFIGURED by design (self-hosted instance, default 127.0.0.1) — no fixed host exists to pin.",
   "lib/import/api/dhan.ts":

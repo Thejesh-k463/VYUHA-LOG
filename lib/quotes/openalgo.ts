@@ -1,6 +1,7 @@
 import "server-only";
 import { isAckCurrent, openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import { normalizeHost } from "@/lib/import/api/openalgo";
+import { createRateGuard } from "./rate-guard";
 import {
   quoteKeyId,
   toPaise,
@@ -292,18 +293,17 @@ function wireSymbol(key: QuoteKey): string {
 
 /* ─────────────────────────────── rate guard ─────────────────────────────── */
 
-/** A rolling one-second window. Refuses the 11th request, never queues it. */
-export function createRateGuard(limit = RATE_LIMIT_PER_SECOND) {
-  const stamps: number[] = [];
-  return {
-    take(now: number): boolean {
-      while (stamps.length > 0 && now - stamps[0] >= 1000) stamps.shift();
-      if (stamps.length >= limit) return false;
-      stamps.push(now);
-      return true;
-    },
-  };
-}
+/**
+ * A rolling one-second window. Refuses the 11th request, never queues it.
+ *
+ * MOVED in v4.2 to `lib/quotes/rate-guard.ts` and re-exported here so every
+ * existing importer (and `tests/quotes-openalgo.test.ts`) keeps working: the
+ * Upstox adapter applies the identical rule at 5 req/s, and a second copy of a
+ * refusal policy is how one of the two quietly becomes a queue. Its default is
+ * still 10 — `DEFAULT_RATE_LIMIT_PER_SECOND` there is this file's
+ * `RATE_LIMIT_PER_SECOND`.
+ */
+export { createRateGuard };
 
 /* ──────────────────────────────── provider ──────────────────────────────── */
 

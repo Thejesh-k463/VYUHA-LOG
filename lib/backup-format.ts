@@ -134,6 +134,16 @@ export const SETTINGS_MACHINE_COLUMNS = [
   // suppresses today's live mark on this machine — job bookkeeping, like
   // last_telegram_sent_date and last_auto_pull_date.
   "lastLiveMarkDate",
+  // Broker live-feed consent (v4.2, migration 0069). ONE column for every
+  // broker feed — a JSON map of provider id → the disclosure version that
+  // person accepted, `{"upstox":"1"}` — so it is exactly the
+  // openalgoEnabled/openalgoAckVersion pair in one cell, and gets the same
+  // treatment for the same reason: a consent is a statement a PERSON made on a
+  // MACHINE, and a backup travels. Blanked to null on dump and replaced on
+  // restore by whatever THIS machine had, so a restored file can neither grant
+  // nor revoke somebody's acceptance of a live broker feed. Nullable, so the
+  // blank is null — no SETTINGS_MACHINE_BLANKS entry is needed.
+  "liveFeedAckJson",
 ] as const;
 
 /**

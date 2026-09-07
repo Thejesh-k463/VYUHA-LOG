@@ -7,7 +7,7 @@
  * `rates-db.ts` (invariant 2). No DB, no React, no `Date.now()`; the clock is
  * always an argument.
  */
-import { toIst } from "@/lib/domain/trading-day";
+import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
 import { toPaise, type Exchange, type Quote, type QuoteKey } from "./types";
 
 /** The two CASH segments. Everything else on `Exchange` is a derivative. */
@@ -121,19 +121,33 @@ export const LIVE_WINDOW_START_MIN = 9 * 60;
 export const LIVE_WINDOW_END_MIN = 15 * 60 + 40;
 
 /**
- * May a streaming provider be started right now? Mon–Fri, 09:00–15:40 IST
+ * May a streaming provider be started right now? A TRADING DAY, 09:00–15:40 IST
  * (03D "Outside market hours / offline").
  *
- * Exchange holidays are NOT modelled anywhere in this app
- * (`lib/domain/trading-day.ts`), so this is a weekday-and-clock gate: on a
- * holiday the provider starts, returns nothing, and the desk keeps showing the
- * last close. That is the safe direction of the error — the unsafe one is
- * running a feed at 23:00 and calling a stale print "live".
+ * EXCHANGE HOLIDAYS CLOSE THIS WINDOW (v4.2 seam fix). The comment here used to
+ * argue the opposite — that a holiday poll was the harmless direction of the
+ * error because the value "feeds only `snapshot.marketOpen`". It does not:
+ * `app/api/live/stream/route.ts` gates the PROVIDER SUBSCRIPTION on the same
+ * value (line ~218), so on Republic Day at 10:00 IST the route subscribed
+ * Upstox or Angel One and polled a shut exchange every few seconds for six and
+ * a half hours, while the strip printed "Live" over yesterday's close. Worse,
+ * `isMarketOpenIst()` (lib/live/market-hours.ts) already answered false on the
+ * same instant, so the app held two answers and the polling door had the wrong
+ * one.
+ *
+ * The calendar is asked through `isTradingDayIst()` — weekend AND listed
+ * holiday in one call, over the bundled NSE list `lib/data/nse-holidays.json`.
+ * It is the single IST source and there is deliberately no second +5:30
+ * derivation here (`tests/today-clock.test.ts`). A year the list does not cover
+ * answers "not a holiday", so the weekday behaviour survives a stale calendar
+ * rather than the desk going silent every January.
+ *
+ * The other doors a holiday changes stay where they were: `shouldPersistMark()`
+ * (lib/quotes/persist-mark.ts) refuses with code `"holiday"`.
  */
 export function isWithinLiveWindow(now: Date): boolean {
+  if (!isTradingDayIst(now)) return false;
   const ist = toIst(now);
-  const day = ist.getUTCDay(); // toIst() puts IST wall-clock into the UTC fields
-  if (day === 0 || day === 6) return false;
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   return minutes >= LIVE_WINDOW_START_MIN && minutes <= LIVE_WINDOW_END_MIN;
 }

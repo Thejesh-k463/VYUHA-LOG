@@ -1,5 +1,5 @@
 import "server-only";
-import { todayIstIso, toIst } from "@/lib/domain/trading-day";
+import { exchangeHolidayName, isExchangeHoliday, todayIstIso, toIst } from "@/lib/domain/trading-day";
 import { isCashKey } from "./mapping";
 import { fromPaise, quoteKeyId, type Exchange, type ProviderId, type Quote, type QuoteKey } from "./types";
 
@@ -92,7 +92,7 @@ export const alreadyMarkedReason = (date: string) => `Today's mark is already sa
  * mark" button, and matching on `reason` would tie that waiver to copy. The
  * code is what a caller branches on; the sentence stays the user's.
  */
-export type PersistMarkRefusal = "weekend" | "before-close" | "already-marked";
+export type PersistMarkRefusal = "weekend" | "holiday" | "before-close" | "already-marked";
 
 export interface PersistMarkDecision {
   ok: boolean;
@@ -107,11 +107,19 @@ export interface PersistMarkDecision {
 /**
  * PURE. May the day's mark be written right now?
  *
- * Refuses three cases, each for its own reason: a weekend (no session to
- * close), before 15:30 IST (a mid-session price is not the day's close — and
- * persisting one would make "yesterday's close" mean 11:04), and a day that
- * already has its mark. Exchange holidays are not modelled anywhere in this
- * app; on a holiday the feed has nothing to persist, so nothing is written.
+ * Refuses four cases, each for its own reason: a weekend (no session to
+ * close), a LISTED EXCHANGE HOLIDAY, before 15:30 IST (a mid-session price is
+ * not the day's close — and persisting one would make "yesterday's close" mean
+ * 11:04), and a day that already has its mark.
+ *
+ * THE HOLIDAY REFUSAL IS F1 (v4.2), AND IT IS A REAL BUG FIX, not tidying. A
+ * holiday is a WEEKDAY, so before v4.2 the catch-up door and the 15:31 close
+ * door both fired on it and wrote whatever the bridge last printed — the
+ * PREVIOUS session's close — into `mtm_prices` under the HOLIDAY's date. Every
+ * "yesterday's close" read afterwards then resolved to a day the market never
+ * traded, and nothing on screen looked wrong. A year the bundled list does not
+ * cover answers "not a holiday", so this refusal can only ever fire on a date
+ * NSE's own holiday-master put there (`lib/data/nse-holidays.json`).
  *
  * `lastMarkDate` IS THE CALLER'S OWN FACT, and the signature keeps it because
  * it is still worth asking (the Settings card holds the banner date, and a
@@ -126,6 +134,15 @@ export function shouldPersistMark(now: Date, lastMarkDate: string | null | undef
   const day = ist.getUTCDay();
   if (day === 0 || day === 6) {
     return { ok: false, reason: "It is the weekend — there is no session to close.", date, code: "weekend" };
+  }
+  if (isExchangeHoliday(date)) {
+    const name = exchangeHolidayName(date);
+    return {
+      ok: false,
+      reason: `The exchange was closed${name ? ` for ${name}` : ""} — there is no session to close.`,
+      date,
+      code: "holiday",
+    };
   }
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   if (minutes < MARK_AFTER_IST_MIN) {
@@ -197,7 +214,9 @@ export async function persistDailyMarks(
     // refusal too — `shouldPersistMark()` reports it through the same
     // `ok: false`. A Saturday press then wrote a mark dated Saturday, and every
     // "yesterday's close" read through `getMtmMap()` resolved to a day the
-    // market never traded. The waiver is now named: only `before-close`.
+    // market never traded. The waiver is now named: only `before-close`. Since
+    // v4.2 that also protects the HOLIDAY refusal, which is the same defect on
+    // a weekday, and the "Save today's mark" button is refused there too.
     const waived = opts.ignoreClock === true && decision.code === "before-close";
     if (!waived) return { written: false, marked: 0, reason: decision.reason, date, code: decision.code };
   }

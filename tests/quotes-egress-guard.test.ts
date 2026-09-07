@@ -44,7 +44,42 @@ const PRIVACY_COVERED: Record<string, string> = {
   // part a marketing edit could quietly drop.
   "nsearchives.nseindia.com":
     "**End-of-day market data — only if you switch it on.** Downloads the free NSE/BSE bhavcopy to value open positions",
+  // v4.2 — the Upstox Live Desk source. Pinned to the HEAD of item 3's third
+  // paragraph, for the same reason as above: the sentence continues into the
+  // token, the cap and the cadence, and those are widenings of one disclosure.
+  // What the pin holds is the pair that matters — the HOST and the fact that
+  // the poll is what goes to it.
+  "api.upstox.com":
+    "the poll then goes to Upstox's own API host (`api.upstox.com`)",
+  // v4.2 — the Angel One Live Desk source. Ruling 4.2-3: this is NOT a new
+  // host. `apiconnect.angelone.in` is already the host the Angel One trade
+  // pull signs in to and reads from, so the desk poll adds VOLUME to a
+  // disclosed host rather than a host. It still has to be NAMED in the sheet
+  // before a capability may name it, which is what this entry enforces —
+  // pinned to the HEAD of item 3's fourth paragraph, where the sentence
+  // continues into the token look-up, the batching and the cap.
+  "apiconnect.angelone.in":
+    "Vyuha signs in once a day to Angel One's own API host (`apiconnect.angelone.in`)",
 };
+
+/**
+ * Hosts Vyuha does NOT contact, and may therefore never name in a capability.
+ *
+ * All four are real, documented endpoints of the same two brokers, which is
+ * exactly what makes them the plausible mistake: `assets.upstox.com` serves the
+ * instrument master, `wsfeeder-api.upstox.com` and `smartapisocket.angelone.in`
+ * are the two websocket feeds, and `margincalculator.angelbroking.com` is the
+ * margin API. A provider that reached any of them would be egress this release
+ * did not disclose and did not intend — and because none of them is in
+ * PRIVACY_COVERED, `undisclosedHosts()` is what refuses them. This list exists
+ * so the refusal is DEMONSTRATED rather than assumed.
+ */
+const NEVER_CONTACTED = [
+  "assets.upstox.com",
+  "wsfeeder-api.upstox.com",
+  "margincalculator.angelbroking.com",
+  "smartapisocket.angelone.in",
+] as const;
 
 /** The OpenAlgo bridge is the user's own machine, and PRIVACY.md says so. */
 const OPENALGO_DISCLOSED = "OpenAlgo bridge you run on your own machine";
@@ -58,15 +93,91 @@ function hostsIn(sentence: string): string[] {
   return [...new Set(found.map((h) => h.toLowerCase()))].filter((h) => !LOOPBACK.test(h));
 }
 
+/**
+ * `id → host` for every host a capability names that PRIVACY.md does not
+ * disclose. Extracted so the SAME function that judges the shipped registry can
+ * be shown to fire on a planted capability — a scan that has only ever been run
+ * against a passing input has not been shown to run at all.
+ */
+function undisclosedHosts(caps: readonly { id: string; egressDescription: string }[]): string[] {
+  const offenders: string[] = [];
+  for (const cap of caps) {
+    for (const host of hostsIn(cap.egressDescription)) {
+      if (!(host in PRIVACY_COVERED)) offenders.push(`${cap.id} → ${host}`);
+    }
+  }
+  return offenders;
+}
+
 describe("every provider's declared egress is already in the privacy sheet", () => {
   it("names no host PRIVACY.md does not disclose", () => {
-    const offenders: string[] = [];
-    for (const cap of allProviderCapabilities()) {
-      for (const host of hostsIn(cap.egressDescription)) {
-        if (!(host in PRIVACY_COVERED)) offenders.push(`${cap.id} → ${host}`);
-      }
+    expect(undisclosedHosts(allProviderCapabilities())).toEqual([]);
+  });
+
+  /**
+   * THE REFUSAL, DEMONSTRATED (v4.2).
+   *
+   * v4.2 adds ONE host — `api.upstox.com`, the quote endpoint, disclosed in
+   * PRIVACY item 3. Upstox publishes several others, and the instrument-master
+   * host is the one a provider would plausibly reach for while resolving a
+   * symbol to an instrument key. It is not disclosed, so it is not allowed:
+   * this case plants each of the four undisclosed hosts as a capability and
+   * requires the scan above to name it.
+   */
+  it("REFUSES a capability that names an undisclosed host — assets.upstox.com and the other three", () => {
+    for (const host of NEVER_CONTACTED) {
+      const planted = [{ id: "planted", egressDescription: `Fetches the instrument list from ${host} once a day.` }];
+      expect(hostsIn(planted[0].egressDescription), `${host} must be read as a host`).toEqual([host]);
+      expect(undisclosedHosts(planted), `${host} must be refused`).toEqual([`planted → ${host}`]);
     }
-    expect(offenders).toEqual([]);
+    // …and the disclosed one is accepted, so the refusal is about DISCLOSURE
+    // and not about the word "upstox".
+    expect(
+      undisclosedHosts([{ id: "planted", egressDescription: "Polls api.upstox.com every 1 to 5 seconds." }]),
+      "the disclosed quote host must pass the same scan",
+    ).toEqual([]);
+    // …and so must Angel One's, which is the same disclosed host as its trade
+    // pull. The two REFUSED angelone/angelbroking hosts above are the whole
+    // point: the allowance is per HOST, never per broker name.
+    expect(
+      undisclosedHosts([
+        { id: "planted", egressDescription: "Polls apiconnect.angelone.in in batches of 50 symbols." },
+      ]),
+      "the disclosed Angel One host must pass the same scan",
+    ).toEqual([]);
+  });
+
+  /**
+   * THE TWO ANGEL ONE HOSTS THAT MUST STAY REFUSED (v4.2).
+   *
+   * `smartapisocket.angelone.in` is the websocket feed and
+   * `margincalculator.angelbroking.com` is the margin API — both real,
+   * documented endpoints of the same broker whose quote host this release DOES
+   * disclose. That adjacency is what makes them the plausible mistake: a poll
+   * that "upgraded" to the socket, or a sizing feature that reached for the
+   * margin API, would be undisclosed egress under a name that already looks
+   * approved. Asserted as its own case so the refusal is demonstrated for the
+   * broker whose disclosure this wave added, not merely inherited.
+   */
+  it("REFUSES the Angel One socket and margin hosts even though the broker's quote host is disclosed", () => {
+    for (const host of ["smartapisocket.angelone.in", "margincalculator.angelbroking.com"]) {
+      expect(host in PRIVACY_COVERED, `${host} must not be disclosed`).toBe(false);
+      expect(
+        undisclosedHosts([{ id: "angelone", egressDescription: `Subscribes to ${host} while the desk is open.` }]),
+      ).toEqual([`angelone → ${host}`]);
+    }
+    // …and no shipped capability names either of them.
+    const named = new Set(allProviderCapabilities().flatMap((c) => hostsIn(c.egressDescription)));
+    expect(named.has("smartapisocket.angelone.in")).toBe(false);
+    expect(named.has("margincalculator.angelbroking.com")).toBe(false);
+  });
+
+  it("names none of the four undisclosed hosts anywhere in the privacy sheet either", () => {
+    // The other direction: a doc edit that "documents" a host the app does not
+    // contact would make PRIVACY_COVERED's next entry look already-justified.
+    for (const host of NEVER_CONTACTED) {
+      expect(privacy.toLowerCase(), `PRIVACY.md names ${host}, which Vyuha never contacts`).not.toContain(host);
+    }
   });
 
   it("keeps the disclosure that authorises each named host in the file, verbatim", () => {
@@ -96,10 +207,28 @@ describe("every provider's declared egress is already in the privacy sheet", () 
   });
 });
 
-describe("the feed adds no host at all", () => {
-  it("the only host any provider names is the bhavcopy archive the app already downloads", () => {
+describe("the feed names only hosts the privacy sheet already discloses", () => {
+  /**
+   * v4.1 could say "the only host is the bhavcopy archive" and pin the list to
+   * one element. v4.2 adds `api.upstox.com` (builder A's provider), so an
+   * equality pin would have to be edited by whoever adds a host — which is the
+   * one moment the pin exists to interrupt. The invariant that survives is the
+   * SUBSET: every host any provider names is a host PRIVACY.md discloses, and
+   * the bhavcopy archive is always among them, so the set can never be emptied
+   * into a vacuous pass.
+   */
+  it("every host any provider names is one PRIVACY.md discloses, and the archive is still one of them", () => {
     const named = new Set(allProviderCapabilities().flatMap((c) => hostsIn(c.egressDescription)));
-    expect([...named]).toEqual(["nsearchives.nseindia.com"]);
+    const disclosed = new Set(Object.keys(PRIVACY_COVERED));
+    expect([...named].filter((h) => !disclosed.has(h)), "a provider names an undisclosed host").toEqual([]);
+    expect([...named]).toContain("nsearchives.nseindia.com");
+    // The disclosure list itself stays short enough to read: three hosts in
+    // v4.2, and a fourth arrives with its own PRIVACY sentence or not at all.
+    expect([...disclosed].sort()).toEqual([
+      "api.upstox.com",
+      "apiconnect.angelone.in",
+      "nsearchives.nseindia.com",
+    ]);
   });
 
   it("leaves 'there is no fifth thing' literally true", () => {

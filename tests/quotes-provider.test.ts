@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import type { QuoteProvider } from "@/lib/quotes/types";
+// TYPE-ONLY, and it must stay that way: a value import of a `lib/quotes`
+// module here would bind the SQLite connection before `openTempDb()` runs.
+import type { UpstoxGetter } from "@/lib/quotes/upstox";
+import type { AngelQuoteFetcher } from "@/lib/quotes/angelone";
+import type { AngelTokenCache, ResolvedAngelToken } from "@/lib/quotes/angelone-tokens";
 
 /**
  * THE PROVIDER CONFORMANCE SUITE — one set of assertions, run against every
@@ -17,6 +22,8 @@ let t: TempDb;
 let mock: QuoteProvider;
 let manual: QuoteProvider;
 let eod: QuoteProvider;
+let upstox: QuoteProvider;
+let angelone: QuoteProvider;
 let quotes: typeof import("@/lib/quotes");
 
 const KEYS = [
@@ -47,6 +54,85 @@ beforeAll(async () => {
   mock = quotes.createMockProvider({ seed: 7, intervalMs: 1000, now: () => Date.parse("2026-09-04T10:00:00Z") });
   manual = quotes.createManualProvider();
   eod = quotes.createEodBhavcopyProvider();
+
+  /**
+   * The v4.2 Upstox adapter, run against the SAME conformance assertions with
+   * its gate, its clock and its HTTPS GET injected — no socket is opened. The
+   * recorded payload is the documented v3 `market-quote/ltp` shape: keyed by
+   * SEGMENT:TRADINGSYMBOL, each value repeating the instrument key that was
+   * SENT in `instrument_token`, which is what the adapter indexes on.
+   */
+  const ISINS: Record<string, string> = { TCS: "INE467B01029", INFY: "INE009A01021" };
+  upstox = quotes.createUpstoxProvider({
+    readGate: async () => ({ state: "ready", creds: { accessToken: "analytics-token" } }),
+    isinOf: (symbol) => ISINS[symbol] ?? null,
+    now: () => Date.parse("2026-09-04T10:00:00Z"),
+    getImpl: (async (path: string) =>
+      path.startsWith("/v3/market-quote/ohlc")
+        ? {
+            "NSE_EQ:TCS": {
+              instrument_token: "NSE_EQ|INE467B01029",
+              live_ohlc: { open: 3005.5, high: 3030, low: 3000, close: 3025.75 },
+            },
+          }
+        : {
+            "NSE_EQ:TCS": { last_price: 3025.75, instrument_token: "NSE_EQ|INE467B01029", cp: 3010.25, volume: 4567 },
+            "NSE_EQ:INFY": { last_price: 1499.9, instrument_token: "NSE_EQ|INE009A01021", cp: 1490, volume: 987 },
+          }) as UpstoxGetter,
+  });
+
+  /**
+   * The v4.2 Angel One adapter, run against the SAME conformance assertions
+   * with its gate, its clock, its pacing, its login, its symbol search and its
+   * token cache injected — no socket is opened and no login is minted twice.
+   *
+   * The recorded payload is the documented OHLC-mode shape: `fetched` rows
+   * keyed by the exchange TOKEN that was sent, with `close` carrying the
+   * PREVIOUS session's close. `sleep` advances the fake clock, which is what
+   * makes the adapter's own one-request-a-second pacing satisfiable inside a
+   * test that takes no wall-clock time.
+   */
+  const ANGEL_TOKENS: ResolvedAngelToken[] = [
+    { exchange: "NSE", symbol: "TCS", tradingsymbol: "TCS-EQ", token: "11536" },
+    { exchange: "NSE", symbol: "INFY", tradingsymbol: "INFY-EQ", token: "1594" },
+  ];
+  const ANGEL_ROWS: Record<string, { ltp: number; open: number; high: number; low: number; close: number }> = {
+    "11536": { ltp: 3025.75, open: 3005.5, high: 3030, low: 3000, close: 3010.25 },
+    "1594": { ltp: 1499.9, open: 1495, high: 1510, low: 1490, close: 1490 },
+  };
+  let angelClock = Date.parse("2026-09-04T10:00:00Z");
+  const angelCache: AngelTokenCache = {
+    async read(pairs) {
+      const out = new Map<string, ResolvedAngelToken>();
+      for (const p of pairs) {
+        const hit = ANGEL_TOKENS.find((r) => r.exchange === p.exchange && r.symbol === p.symbol);
+        if (hit) out.set(`${p.exchange}:${p.symbol}`, hit);
+      }
+      return out;
+    },
+    async write() {},
+  };
+  angelone = quotes.createAngelOneProvider({
+    readGate: async () => ({
+      state: "ready",
+      creds: { apiKey: "smart-key", clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" },
+    }),
+    now: () => angelClock,
+    sleep: async (ms) => {
+      angelClock += ms;
+    },
+    loginImpl: async () => ({ jwtToken: "jwt-conformance" }),
+    tokenCache: angelCache,
+    // Nothing this suite asks for is outside the cache, so a search would only
+    // ever be the NOSUCHSCRIP case — which must come back with no rows.
+    searchImpl: async () => [],
+    quoteImpl: (async (_creds, _jwt, batch) => ({
+      fetched: batch.tokens
+        .filter((t) => t in ANGEL_ROWS)
+        .map((t) => ({ exchange: batch.exchange, symbolToken: t, ...ANGEL_ROWS[t] })),
+      unfetched: batch.tokens.filter((t) => !(t in ANGEL_ROWS)),
+    })) as AngelQuoteFetcher,
+  });
 });
 
 afterAll(() => t?.cleanup());
@@ -55,6 +141,8 @@ describe.each([
   ["mock", () => mock],
   ["manual", () => manual],
   ["eod", () => eod],
+  ["upstox", () => upstox],
+  ["angelone", () => angelone],
 ])("conformance — %s", (_name, get) => {
   it("agrees with its own capability block about who it is", () => {
     const p = get();
@@ -98,6 +186,42 @@ describe.each([
     expect(typeof stop).toBe("function");
     stop();
     expect(() => stop()).not.toThrow();
+  });
+});
+
+describe("migration 0069 — settings.live_feed_ack_json, on a really migrated database", () => {
+  /**
+   * A hand-written migration with no `drizzle/meta/_journal.json` entry is
+   * SILENTLY SKIPPED (AGENTS.md, migrations 0027+), and the failure then
+   * surfaces as a SQLite "no such column" the first time the desk asks which
+   * feed may run. This asserts the column exists where it matters — in a
+   * database built by running the migrations — and that `resolveLiveFeed()`
+   * reads it.
+   */
+  it("exists on the migrated schema and is null until somebody accepts a sheet", () => {
+    const cols = t.sqlite.prepare("PRAGMA table_info(settings)").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain("live_feed_ack_json");
+    const row = t.db.select({ ack: t.schema.settings.liveFeedAckJson }).from(t.schema.settings).limit(1).all()[0];
+    expect(row?.ack ?? null).toBeNull();
+  });
+
+  it("is what decides whether a stored 'upstox' selection may actually run", async () => {
+    const registry = await import("@/lib/quotes/registry");
+    const { withFeedAck } = await import("@/lib/domain/live-feed-disclosure");
+
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "upstox", liveFeedAckJson: null }).run();
+    const blocked = await registry.resolveLiveFeed();
+    expect(blocked.stored).toBe("upstox");
+    expect(blocked.effective, "no acknowledgement means no broker feed").toBe("eod");
+    expect(blocked.blockedReason).toMatch(/disclosure/i);
+
+    t.db.update(t.schema.settings).set({ liveFeedAckJson: withFeedAck(null, "upstox") }).run();
+    const allowed = await registry.resolveLiveFeed();
+    expect(allowed.effective).toBe("upstox");
+    expect(allowed.blockedReason).toBeUndefined();
+
+    // Leave the row as the rest of the file found it.
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod", liveFeedAckJson: null }).run();
   });
 });
 

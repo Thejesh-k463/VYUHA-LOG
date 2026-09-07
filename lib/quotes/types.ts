@@ -60,6 +60,96 @@ export type ProviderId =
  */
 export const OPENALGO_FEED_ENABLED: boolean = true;
 
+/**
+ * THE SAME ONE SWITCH, FOR THE UPSTOX FEED (v4.2, owner ruling).
+ *
+ * `true` here is what moves `upstox` out of `PLANNED_PROVIDER_IDS` and into
+ * `SHIPPED_PROVIDER_IDS`, puts the radio on the Settings card and lets the feed
+ * route accept the id. Flipping it back to `false` withdraws the feature from
+ * all of them at once with no other edit, and a stored
+ * `live_feed_provider = 'upstox'` collapses to the end-of-day default again.
+ *
+ * IT IS A RELEASE SWITCH, NOT A CONSENT — the same distinction OpenAlgo's
+ * constant carries. Being pickable is not permission to run: `selectProviderId()`
+ * re-checks the acknowledgement stored in `settings.live_feed_ack_json` at every
+ * selection (`isFeedAckCurrent`, strict `===` against
+ * `LIVE_FEED_DISCLOSURE_VERSIONS.upstox`), so a restored backup carries the
+ * picker value but never the consent.
+ *
+ * PURE MODULE ON PURPOSE: `registry.ts` is `server-only` and the Settings card
+ * is a client component that has to read the same fact.
+ */
+export const UPSTOX_FEED_ENABLED: boolean = true;
+
+/**
+ * THE SAME ONE SWITCH, FOR THE ANGEL ONE FEED (v4.2, owner ruling 4.2-9).
+ *
+ * `true` — Angel One SHIPS ON in 4.2.0. The adapter is `lib/quotes/angelone.ts`
+ * and its token resolver is `lib/quotes/angelone-tokens.ts`; the consent
+ * storage it needed already existed (`settings.live_feed_ack_json`, migration
+ * 0069, a provider-id → version map), which is why shipping it added a sheet
+ * and a constant and NO second migration for the consent.
+ *
+ * IT IS A RELEASE SWITCH, NOT A CONSENT. Flipping it back to `false` returns
+ * `angelone` to `PLANNED_PROVIDER_IDS`, removes the radio and makes the feed
+ * route refuse the id — all with no other edit — while
+ * `selectProviderId()` re-checks `isFeedAckCurrent(json, "angelone")` at every
+ * selection either way. A restored backup carries the picker value and never
+ * the consent.
+ *
+ * PURE MODULE ON PURPOSE: `registry.ts` is `server-only` and the Settings card
+ * is a client component that has to read the same fact. Typed `boolean` rather
+ * than the literal so the guarded code stays type-checked.
+ */
+export const ANGELONE_FEED_ENABLED: boolean = true;
+
+/**
+ * THE ANGEL ONE CADENCE LADDER (v4.2, owner ruling 4.2-4 — BINDING).
+ *
+ * Angel One's poll interval is decided by HOW MANY OPEN POSITIONS the selected
+ * account holds, and by nothing else: the Live Desk refresh slider is IGNORED
+ * for this provider. That is not a UI simplification, it is the rate budget
+ * made visible — Angel One takes at most 50 exchange tokens per quote request
+ * and Vyuha sends at most one request a second, so a book of N positions needs
+ * ceil(N/50) seconds of wire time before it can be re-polled at all. The three
+ * tiers are exactly that arithmetic with headroom:
+ *
+ *      ≤ 50 positions  → 1 request  → 3 s
+ *   51–200 positions  → 2–4 requests → 5 s
+ *  201–500 positions  → 5–10 requests → 10 s
+ *
+ * A slider set to 1 s on a 300-position book would ask for ten requests a
+ * second, which Angel One would refuse and Vyuha would refuse first — so the
+ * honest thing is to not offer the choice and to SAY which tier is in force.
+ *
+ * PURE, and exported from the pure module on purpose: the adapter times its
+ * poll with it and the Settings/Live Desk card renders the same sentence from
+ * the same function, so the number on screen cannot drift from the number in
+ * the timer.
+ */
+export const ANGELONE_CADENCE_TIERS: readonly { maxOpenPositions: number; seconds: 3 | 5 | 10 }[] = [
+  { maxOpenPositions: 50, seconds: 3 },
+  { maxOpenPositions: 200, seconds: 5 },
+  { maxOpenPositions: 500, seconds: 10 },
+];
+
+/**
+ * PURE. Open-position count → the seconds between Angel One polls.
+ *
+ * Beyond the last tier the SLOWEST cadence stands rather than an extrapolation:
+ * `capabilities.maxSubscriptions` is 500, so a larger book is already being
+ * truncated somewhere, and speeding up in response to "too many" is the wrong
+ * direction. A zero or negative count gets the fastest tier — there is nothing
+ * to poll, and the number is only ever used to size a timer.
+ */
+export function angelOneCadenceSeconds(openCount: number): 3 | 5 | 10 {
+  const n = Number.isFinite(openCount) ? openCount : 0;
+  for (const tier of ANGELONE_CADENCE_TIERS) {
+    if (n <= tier.maxOpenPositions) return tier.seconds;
+  }
+  return ANGELONE_CADENCE_TIERS[ANGELONE_CADENCE_TIERS.length - 1].seconds;
+}
+
 /** How stale the caller MUST assume a price is. Never a guess, never upgraded. */
 export type Staleness = "tick" | "delayed" | "eod" | "manual";
 

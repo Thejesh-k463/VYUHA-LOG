@@ -262,8 +262,12 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
   it("the disclosure version the privacy copy describes is the one on file", () => {
     // A privacy sheet describing a poll, beside a consent version that never
     // mentioned one, is how an install ends up polling on an acceptance of a
-    // different statement. "2" is what re-prompts every v1 install.
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("2");
+    // different statement. "2" is what re-prompted every v1 install; "3" is
+    // what re-prompts every v2 install after item 6 stopped being true (v4.2:
+    // the bundled NSE holiday list makes the close mark refuse a holiday, so
+    // the accepted "weekend only" sentence no longer described what the app
+    // writes — docs/DECISIONS.md 2026-09-07, v4.2 wave).
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
   });
 });
 
@@ -282,8 +286,11 @@ describe("the consent sheet and the privacy sheet agree about the feed", () => {
    about a request is worse than one that never mentioned it.
 
    Nothing new is SENT — same host, same key, nothing kept but that it replied
-   and how long it took — so `OPENALGO_DISCLOSURE_VERSION` stays "2" (the rule
-   at lib/domain/openalgo-disclosure.ts:25-28: bump on a material RISK change).
+   and how long it took — so `OPENALGO_DISCLOSURE_VERSION` stayed "2" through
+   that fix (the rule at lib/domain/openalgo-disclosure.ts:25-28: bump on a
+   material RISK change). It moved to "3" in v4.2 for a different reason — an
+   accepted sentence (item 6, "weekend only") stopped being TRUE about what the
+   app writes — which widened the rule, not this one.
    The fix is therefore entirely a copy fix, and a copy fix needs a guard or it
    reverts the first time someone tightens a sentence.
 

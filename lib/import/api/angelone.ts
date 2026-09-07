@@ -46,7 +46,11 @@ export interface AngelOneCredentials {
   totpSecret: string;
 }
 
-const BASE = "https://apiconnect.angelone.in";
+/** The ONE Angel One host this app ever contacts — imports and the v4.2
+ *  live-quote adapter alike. Exported so `lib/quotes/angelone.ts` and
+ *  `lib/quotes/angelone-tokens.ts` build their URLs from THIS string instead
+ *  of forking a second copy that could drift to a second host. */
+export const BASE = "https://apiconnect.angelone.in";
 
 /**
  * SmartAPI demands client-environment headers on every call. The values are
@@ -54,7 +58,7 @@ const BASE = "https://apiconnect.angelone.in";
  * are honest for a desktop app that does not go collecting identifiers it
  * has no other use for (the machine-id module namespaces its own use).
  */
-function smartApiHeaders(apiKey: string, jwt?: string): Record<string, string> {
+export function smartApiHeaders(apiKey: string, jwt?: string): Record<string, string> {
   return {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -68,14 +72,14 @@ function smartApiHeaders(apiKey: string, jwt?: string): Record<string, string> {
   };
 }
 
-interface SmartApiEnvelope<T> {
+export interface SmartApiEnvelope<T> {
   status: boolean;
   message?: string;
   errorcode?: string;
   data?: T | null;
 }
 
-async function smartApiJson<T>(res: Response, what: string): Promise<T | null> {
+export async function smartApiJson<T>(res: Response, what: string): Promise<T | null> {
   const json = (await res.json().catch(() => null)) as SmartApiEnvelope<T> | null;
   if (!res.ok || !json || json.status === false) {
     const msg = json?.message || `HTTP ${res.status}`;

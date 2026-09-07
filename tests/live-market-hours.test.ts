@@ -44,6 +44,23 @@ describe("isMarketOpenIst", () => {
   it("pre-open is NOT 'open' — a call-auction fill is not a session fill", () => {
     expect(isMarketOpenIst(at("2026-09-04T03:35:00Z"))).toBe(false); // 09:05 IST
   });
+
+  it("is CLOSED all day on a listed exchange holiday, session window or not (F1)", () => {
+    // 2026-10-02 is a FRIDAY — Mahatma Gandhi Jayanti, on NSE's own CM trading
+    // list. Before v4.2 this answered `true` at 10:00 IST, so the route
+    // subscribed and the desk clock counted a session the exchange never had.
+    expect(isMarketOpenIst(at("2026-10-02T04:30:00Z"))).toBe(false); // 10:00 IST
+    expect(isMarketOpenIst(at("2026-10-02T03:45:00Z"))).toBe(false); // 09:15 IST exactly
+    expect(isMarketOpenIst(at("2026-01-26T05:00:00Z"))).toBe(false); // Republic Day, a Monday
+    // …and the neighbouring weekday is untouched.
+    expect(isMarketOpenIst(at("2026-10-01T04:30:00Z"))).toBe(true); // Thu 10:00 IST
+  });
+
+  it("still answers on the CLOCK for a year the bundled list does not cover", () => {
+    // An uncovered year is UNKNOWN, not a holiday: 2027-01-26 is a Tuesday and
+    // the desk keeps working rather than falling silent every January.
+    expect(isMarketOpenIst(at("2027-01-26T04:30:00Z"))).toBe(true); // 10:00 IST
+  });
 });
 
 describe("sessionBucketIst", () => {

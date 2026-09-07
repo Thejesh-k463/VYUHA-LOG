@@ -1,11 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { BROKER_FEED_OFFERED, LIVE_FEED_COPY, REFRESH_MAX, REFRESH_MIN } from "@/components/settings/live-feed-card";
+import {
+  BROKER_FEED_OFFERED,
+  brokerFeedOffered,
+  LIVE_FEED_COPY,
+  offeredProviders,
+  REFRESH_MAX,
+  REFRESH_MIN,
+} from "@/components/settings/live-feed-card";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { OPENALGO_FEED_ITEMS } from "@/lib/domain/openalgo-disclosure";
 import { REFRESH_SECONDS_MAX, REFRESH_SECONDS_MIN } from "@/lib/quotes/openalgo";
-import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import { ANGELONE_FEED_ENABLED, OPENALGO_FEED_ENABLED, UPSTOX_FEED_ENABLED } from "@/lib/quotes/types";
 
 /**
  * The Live-feed copy guard (owner answers Q24, Q25, Q60).
@@ -376,11 +383,47 @@ describe("the broker-feed controls are gated on the release flag (D-7)", () => {
     expect(gatedRegions(sample, "OTHER")).toEqual([]);
   });
 
-  it("BROKER_FEED_OFFERED is DERIVED from the one release flag, not restated", () => {
-    expect(BROKER_FEED_OFFERED).toBe(OPENALGO_FEED_ENABLED);
+  it("BROKER_FEED_OFFERED is DERIVED from the release flags, not restated", () => {
+    // v4.1 asserted `=== OPENALGO_FEED_ENABLED` and pinned the literal
+    // `PROVIDERS.some((p) => p.id === "openalgo")`. Both are wrong from v4.2:
+    // Upstox and Angel One are broker feeds too, and the gate they hide is the
+    // slider the Upstox adapter really reads. The property that must survive is
+    // "derived from the resolved provider list", which is what the two lines
+    // below say without naming one broker.
+    expect(BROKER_FEED_OFFERED).toBe(OPENALGO_FEED_ENABLED || UPSTOX_FEED_ENABLED || ANGELONE_FEED_ENABLED);
     expect(src, "the card no longer derives the gate from the provider list").toMatch(
-      /BROKER_FEED_OFFERED = PROVIDERS\.some\(\(p\) => p\.id === "openalgo"\)/,
+      /BROKER_FEED_OFFERED = brokerFeedOffered\(PROVIDERS\.map\(\(p\) => p\.id\)\)/,
     );
+  });
+
+  /**
+   * THE GATE IS ASKED OF EVERY BROKER, NOT OF OpenAlgo (v4.2 seam fix).
+   *
+   * The three release flags are injected rather than mocked: `offeredProviders`
+   * is the card's OWN filter taking them as an argument, so this runs the real
+   * derivation for combinations this build does not ship — which is the only
+   * way to see the defect, since all three flags are true today and the broken
+   * spelling and the correct one agree while OpenAlgo is on.
+   */
+  it("any broker feed opens the gate — OpenAlgo alone never was the question", () => {
+    const gate = (openalgo: boolean, upstox: boolean, angelone: boolean) =>
+      brokerFeedOffered(offeredProviders({ openalgo, upstox, angelone }).map((p) => p.id));
+
+    // The defect, exactly: OpenAlgo withheld, Upstox shipped. The radio renders
+    // and the slider it needs must render with it.
+    expect(gate(false, true, false), "Upstox is offered and the 1–5 s slider is gone").toBe(true);
+    // Angel One alone: its cadence line lives in the same subtree.
+    expect(gate(false, false, true), "Angel One is offered and its cadence line is gone").toBe(true);
+    expect(gate(true, false, false)).toBe(true);
+    expect(gate(true, true, true)).toBe(true);
+    // …and no broker at all still closes it completely, which is the v4.0
+    // behaviour this whole block exists to preserve.
+    expect(gate(false, false, false), "no broker feed ships and the controls still render").toBe(false);
+    // The manual/EOD radios are what remains, so the list is not empty either.
+    expect(offeredProviders({ openalgo: false, upstox: false, angelone: false }).map((p) => p.id)).toEqual([
+      "manual",
+      "eod",
+    ]);
   });
 
   it("the 1–5 s refresh slider renders ONLY behind the gate", () => {

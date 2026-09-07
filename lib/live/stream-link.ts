@@ -25,7 +25,7 @@
  * `tests/today-clock.test.ts` exists to prevent.
  */
 
-import { toIst } from "@/lib/domain/trading-day";
+import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
 import { parseTickFrame, type TickQuote } from "./apply-ticks";
 
 /** What the desk knows about the SSE pipe. Never a claim about the prices. */
@@ -137,7 +137,23 @@ export interface StreamLink {
 
 /**
  * ms from `now` until today's close-of-session reconnect, or null when that
- * instant has already passed (or it is a weekend, when no session closes).
+ * instant has already passed, or when today has no session to close — a
+ * weekend, or (v4.2) a listed exchange holiday.
+ *
+ * THE HOLIDAY ARM IS NOT LOAD-BEARING, and that is deliberate: the server is
+ * what refuses the mark (`shouldPersistMark()` answers `holiday`), so a desk
+ * left open on Republic Day would write nothing either way. This just stops it
+ * re-opening a stream that the SSE route will not subscribe a provider on, for
+ * a mark that cannot be written — the same reason the weekend has always been
+ * excluded here.
+ *
+ * That last clause was a CLAIM ABOUT ANOTHER FILE, and it was false when it was
+ * written: the route's subscribe gate reads `isWithinLiveWindow()`
+ * (lib/quotes/mapping.ts), not `isMarketOpenIst()`, and until the v4.2 seam fix
+ * that window was weekday-and-clock only — so a desk that DID re-open on a
+ * holiday got a real subscription and a real poll of a shut exchange. The
+ * window now asks `isTradingDayIst()` too, so the sentence is true of the code
+ * it describes; it is left non-load-bearing here on purpose.
  *
  * Returning null past the instant is what makes the reconnect happen ONCE per
  * IST day without any day-keyed state: the link re-arms on every open, and
@@ -148,8 +164,7 @@ export interface StreamLink {
  */
 export function msUntilCloseReopen(now: Date): number | null {
   const ist = toIst(now);
-  const weekday = ist.getUTCDay();
-  if (weekday === 0 || weekday === 6) return null; // no session to close
+  if (!isTradingDayIst(now)) return null; // no session to close
   const msPastMidnight =
     ((ist.getUTCHours() * 60 + ist.getUTCMinutes()) * 60 + ist.getUTCSeconds()) * 1_000 + ist.getUTCMilliseconds();
   const target = CLOSE_REOPEN_MINUTE * 60_000;

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import * as angelone from "@/lib/import/api/angelone";
 import { normalizeAngelTrades, productHintOf, exchangeOf, toParsedFile, type AngelTradeRow } from "@/lib/import/api/angelone";
@@ -222,7 +224,13 @@ describe("read-only by surface", () => {
     // The whole security argument for unattended sync is that this code path
     // CANNOT trade. That is enforced by the module surface, and this pin
     // makes adding an order method a CI failure instead of a review comment.
+    //
+    // v4.2 added THREE exports and no capability: `BASE`, `smartApiHeaders`
+    // and `smartApiJson`, so the live-quote adapter builds its URLs, its
+    // headers and its envelope handling from THIS module instead of forking a
+    // second copy that could drift to a second host or a laxer error path.
     expect(Object.keys(angelone).sort()).toEqual([
+      "BASE",
       "angelOneImportSource",
       "angelOneLogin",
       "canonicalAngelName",
@@ -230,8 +238,82 @@ describe("read-only by surface", () => {
       "fetchAngelTradeBook",
       "normalizeAngelTrades",
       "productHintOf",
+      "smartApiHeaders",
+      "smartApiJson",
       "stripSeriesSuffix",
       "toParsedFile",
     ]);
+  });
+
+  it("names exactly one host, and every Angel One URL in the tree is built from it", () => {
+    expect(angelone.BASE).toBe("https://apiconnect.angelone.in");
+  });
+});
+
+/**
+ * THE SAME RULE, HELD OVER THE v4.2 LIVE-QUOTE ADAPTER.
+ *
+ * Angel One has NO read-only key. The jwt that reads a price is the jwt that
+ * could place an order, and no setting, scope or key type removes that — so
+ * the protection cannot be a claim about the credential and has to be a
+ * property of the CODE. The consent sheet says, in the user's words, that
+ * "Vyuha's Angel One code contains no order call at all and a test refuses to
+ * let one be added". THIS is that test.
+ *
+ * It reads the SOURCE rather than the module surface, because the two quote
+ * files export functions that take a path or a batch: an order call could be
+ * added there without adding an export, and the export pin above would not
+ * see it.
+ */
+describe("the live-quote adapter is held to the same rule (v4.2)", () => {
+  const FILES = ["lib/quotes/angelone.ts", "lib/quotes/angelone-tokens.ts"] as const;
+  const sourceOf = (f: string) => readFileSync(path.join(process.cwd(), f), "utf8");
+
+  it("contains no order, modify or cancel path at all", () => {
+    for (const f of FILES) {
+      const src = sourceOf(f);
+      expect(src, `${f} names an order verb`).not.toMatch(/placeOrder|modifyOrder|cancelOrder/i);
+      // The ONE path under Angel One's order namespace this release may use.
+      // Anything else under /order/v1/ is refused, whatever it claims to do.
+      const orderPaths = [...src.matchAll(/\/order\/v1\/([A-Za-z]+)/g)].map((m) => m[1]);
+      expect([...new Set(orderPaths)], `${f} reaches a second /order/v1/ path`).toEqual(
+        f.endsWith("angelone-tokens.ts") ? ["searchScrip"] : [],
+      );
+      expect(src, `${f} reaches a fund or position endpoint`).not.toMatch(
+        /getRMS|getHolding|getPosition|convertPosition|\/order\/v1\/getTradeBook/i,
+      );
+    }
+  });
+
+  it("names no host but apiconnect.angelone.in, and writes no URL of its own", () => {
+    for (const f of FILES) {
+      const src = sourceOf(f);
+      // Every http(s) literal — there must be none: the base comes from
+      // lib/import/api/angelone.ts, which is where the one host lives.
+      expect([...src.matchAll(/https?:\/\/[^\s"'`)\]]+/g)].map((m) => m[0]), `${f} writes its own URL`).toEqual([]);
+      // …and no OTHER vendor host appears even in a comment, which is how a
+      // "just for testing" endpoint gets written.
+      const hosts = new Set(
+        (src.match(/\b(?:[a-z0-9-]+\.)+(?:com|in|io|net|org|co|dev|app|ai)\b/gi) ?? []).map((h) => h.toLowerCase()),
+      );
+      expect([...hosts].filter((h) => h !== "apiconnect.angelone.in"), `${f} names another host`).toEqual([]);
+    }
+  });
+
+  it("makes its requests from ONE call site each — a second fetch is a second host", () => {
+    for (const f of FILES) {
+      const src = sourceOf(f);
+      expect((src.match(/\bfetch\(/g) ?? []).length, `${f} has more than one fetch call site`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("writes nothing to the journal — the only table it touches is its own token cache", () => {
+    for (const f of FILES) {
+      const src = sourceOf(f);
+      const tables = [...src.matchAll(/db\s*\.\s*(?:insert|update|delete)\(([A-Za-z]+)/g)].map((m) => m[1]);
+      expect([...new Set(tables)], `${f} writes a journal table`).toEqual(
+        f.endsWith("angelone-tokens.ts") ? ["angeloneInstrumentTokens"] : [],
+      );
+    }
   });
 });

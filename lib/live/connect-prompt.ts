@@ -60,10 +60,27 @@ export interface ConnectPromptFeed {
 }
 
 /**
+ * The providers whose prompt has somewhere to send the user.
+ *
+ * `openalgo` and, since v4.2, `upstox` and `angelone` — each is a connection
+ * the user makes and can remake, so the prompt has somewhere to send them.
+ * `eod` and `manual` have no feed to connect; a provider that is merely PLANNED
+ * (`lib/quotes/registry.ts`) cannot be selected at all. The ids are compared as
+ * STRINGS so this file stays independent of the day `ProviderId` gains its next
+ * member.
+ *
+ * ANGEL ONE BELONGS HERE EVEN THOUGH ITS DAILY SIGN-IN IS UNATTENDED. The two
+ * states that open this prompt are `no-key` (nothing saved for this account)
+ * and `unreachable` — and both are fixed by the user going to Import → Brokers,
+ * not by waiting for the next morning's automatic sign-in.
+ */
+export const CONNECTABLE_PROVIDER_IDS: readonly string[] = ["openalgo", "upstox", "angelone"];
+
+/**
  * May the prompt show right now?
  *
- * ONLY for the bridge the user chose, and ONLY for the two states a
- * re-connection actually fixes:
+ * ONLY for a feed the user chose AND can reconnect, and ONLY for the two states
+ * a re-connection actually fixes:
  *   `no-key`       consent is in place but no connection is saved;
  *   `unreachable`  the bridge is saved but is not answering (the daily
  *                  broker sign-in is the common cause).
@@ -72,7 +89,7 @@ export interface ConnectPromptFeed {
  * needs no prompt at all.
  */
 export function showConnectPrompt(feed: ConnectPromptFeed, storedRaw: string | null | undefined): boolean {
-  if (feed.providerId !== "openalgo") return false;
+  if (!CONNECTABLE_PROVIDER_IDS.includes(feed.providerId)) return false;
   if (feed.healthState !== "no-key" && feed.healthState !== "unreachable") return false;
   return !isConnectPromptDismissed(storedRaw);
 }

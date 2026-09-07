@@ -10,15 +10,16 @@
  * rather than re-deriving the +5:30 offset — a second definition is precisely
  * what `tests/today-clock.test.ts` was written to prevent for "today".
  *
- * EXCHANGE HOLIDAYS ARE NOT MODELLED, deliberately and in line with the rest of
- * the app: Vyuha is offline-first and ships no holiday calendar, so
- * `isMarketOpenIst` answers "is this a weekday inside the session window",
- * which is a question about the clock. A caller that has a holiday list can
- * pass it; without one, the honest answer is the clock's, not a guess.
+ * EXCHANGE HOLIDAYS ARE MODELLED SINCE v4.2, from the BUNDLED NSE list
+ * (`lib/data/nse-holidays.json`, read through `isTradingDayIst()`), and the
+ * comment here said the opposite until then. Offline-first is why the list is
+ * bundled rather than fetched — it is not a reason to answer "open" on Republic
+ * Day. A year the list does not cover is UNKNOWN, so `isTradingDayIst()` falls
+ * back to the weekday answer this file used to give on its own.
  */
 
 import { sessionOf } from "@/lib/analytics/cockpit";
-import { toIst } from "@/lib/domain/trading-day";
+import { isTradingDayIst, toIst } from "@/lib/domain/trading-day";
 import { PPM, type Ppm } from "./types";
 
 /** NSE cash-market session, IST. Pre-open (09:00–09:15) is NOT "open". */
@@ -44,12 +45,15 @@ export function istParts(now: Date): { weekday: number; hour: number; minute: nu
  *
  * Monday–Friday, 09:15–15:30 IST INCLUSIVE of 15:30 — a fill stamped exactly
  * 15:30:00 is a closing-auction fill, not an after-hours one, which is the same
- * boundary `sessionOf()` and the sidebar clock already use. Holidays are not
- * modelled (see the file header), so this can say "open" on Republic Day.
+ * boundary `sessionOf()` and the sidebar clock already use.
+ *
+ * A LISTED HOLIDAY IS CLOSED (F1, v4.2). The SSE route asks this before it
+ * subscribes, so on Republic Day the bridge is never polled and the desk clock
+ * says the market is shut instead of counting a session nobody had.
  */
 export function isMarketOpenIst(now: Date): boolean {
-  const { weekday, minutes } = istParts(now);
-  if (weekday === 0 || weekday === 6) return false;
+  if (!isTradingDayIst(now)) return false;
+  const { minutes } = istParts(now);
   return minutes >= MARKET_OPEN_MINUTE && minutes <= MARKET_CLOSE_MINUTE;
 }
 

@@ -44,16 +44,26 @@ describe("the gate", () => {
   /**
    * v4.1 bumped the disclosure to "2" because the SAME instance now also
    * PRICES the desk every 1–5 s — a materially different statement from the
-   * one-request-you-press pull that "1" described. Strict `===` in
-   * `isAckCurrent` is the whole mechanism, so this is the case that proves the
-   * bump actually re-prompts rather than just changing a string.
+   * one-request-you-press pull that "1" described. v4.2 bumped it to "3"
+   * because item 6's holiday clause changed what an accepted statement says is
+   * WRITTEN (a shut weekday used to get the previous session's price under its
+   * own date; it is refused now). Strict `===` in `isAckCurrent` is the whole
+   * mechanism, so these are the cases that prove a bump actually re-prompts
+   * rather than just changing a string.
+   *
+   * THE LITERALS ARE THE POINT and must not follow the constant: "1" and "2"
+   * are the values sitting in `settings.openalgo_ack_version` on installs that
+   * already exist. A test that derived them would go green the moment someone
+   * put the version back.
    */
-  it("refuses an install that accepted disclosure v1 — the feed is not covered by it", () => {
-    const g = openAlgoGate({ enabled: true, ackVersion: "1" });
-    expect(g.allowed, "a v1 acceptance must not unlock the v2 feed").toBe(false);
-    expect(g.reason).toMatch(/changed since you accepted/i);
-    expect(isAckCurrent("1"), "isAckCurrent must agree with the gate").toBe(false);
-    expect(OPENALGO_DISCLOSURE_VERSION).toBe("2");
+  it("refuses an install that accepted disclosure v1 or v2 — 4.2's statement is not covered by either", () => {
+    for (const stale of ["1", "2"]) {
+      const g = openAlgoGate({ enabled: true, ackVersion: stale });
+      expect(g.allowed, `a v${stale} acceptance must not unlock the current feed`).toBe(false);
+      expect(g.reason).toMatch(/changed since you accepted/i);
+      expect(isAckCurrent(stale), "isAckCurrent must agree with the gate").toBe(false);
+    }
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
   });
 
   it("allows only when the switch is on AND the acceptance is current", () => {
@@ -194,6 +204,28 @@ describe("the live price feed disclosure (v2)", () => {
     expect(all).toMatch(/Save today's mark/);
     // "Prices refresh on screen only" is the card's own opening claim.
     expect(all).toMatch(/refresh on screen only/i);
+  });
+
+  it("states the v4.2 holiday refusal, and no longer promises the write it replaced", () => {
+    // v4.1 said "exchange holidays are not modelled in this version", and that
+    // was true: `shouldPersistMark()` refused the weekend and nothing else, so
+    // a weekday the exchange was shut got a mark from the last price the bridge
+    // gave, filed under the closed day's date. v4.2 refuses it
+    // (lib/quotes/persist-mark.ts, code "holiday", from the bundled NSE list),
+    // so the sentence a user ACCEPTED became false — which is why the version
+    // moved. Both halves are pinned here: the new promise and the absence of
+    // the old one.
+    const item6 = OPENALGO_FEED_ITEMS[5];
+    expect(item6.title).toBe("Prices refresh on screen only — ticks are never written");
+    expect(item6.body).toContain("On a weekend the button refuses — there is no session to close");
+    expect(item6.body).toContain(
+      "on an exchange holiday it refuses for the same reason, from the NSE holiday list bundled with this release",
+    );
+    expect(item6.body).toContain("never stored under a day the market was shut");
+    expect(all, "the disclosure still says holidays are not modelled").not.toMatch(/not modelled/i);
+    // A changed consent SENTENCE is a new consent VERSION (the constant's own
+    // rule). Literal, so it cannot silently follow the module back down.
+    expect(OPENALGO_DISCLOSURE_VERSION).toBe("3");
   });
 
   it("attributes the daily re-sign-in to the BROKER and to no regulator", () => {

@@ -16,6 +16,8 @@
  * entitled to make.
  */
 
+import { angelOneCadenceSeconds } from "@/lib/quotes/types";
+
 /** The em dash every un-computable figure renders. Never a 0, never "N/A". */
 export const EM_DASH = "—";
 
@@ -175,7 +177,126 @@ export const CONNECT_PROMPT_COPY = {
   label: "Connect your price feed",
   /** Stated on the button, because the dismissal really is only for today. */
   dismissTitle: "Hide this until tomorrow",
+  /**
+   * UPSTOX (v4.2, ruling 4.2-8). A DIFFERENT headline, and deliberately not
+   * `LIVE_FEED_COPY.connect` — that sentence ends "20 seconds", which is the
+   * honest measure of the OpenAlgo flow (open the bridge, sign in, come back)
+   * and NOT of this one: an Upstox Analytics token is generated in a browser
+   * visit to the broker. The prompt therefore says where the token already
+   * lives instead of promising a duration nobody measured.
+   *
+   * It names the Import screen because that is where the token is saved
+   * (`components/import/broker-connect.tsx`, rendered by `app/import/page.tsx`)
+   * — the same screen the feed reads it from, so the breadcrumb names a place
+   * that exists and a step that is really the next one.
+   */
+  upstoxHeadline: "Connect your feed — Upstox uses the Analytics token saved under Import → Brokers.",
+  upstoxCta: "Open Import",
+  upstoxHref: "/import",
+  /**
+   * ANGEL ONE (v4.2). The same shape as the Upstox pair and for the same
+   * reason: the credential already exists somewhere, and the prompt's job is to
+   * name that place rather than to promise a duration.
+   *
+   * It names the three things Angel One's session is built from — the client
+   * code, the PIN and the TOTP secret — because that is exactly what
+   * Import → Brokers holds for it, and because the sign-in Vyuha performs each
+   * morning is performed FROM those three. No duration is promised: there is
+   * nothing for the user to time, since the daily sign-in is unattended.
+   */
+  angeloneHeadline:
+    "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Brokers.",
+  angeloneCta: "Open Import",
+  angeloneHref: "/import",
 } as const;
+
+/**
+ * Ruling 4.2-8 — the DERIVATIVE mark label, printed beside the row's last
+ * stored mark in the same cell as the staleness pill.
+ *
+ * WHAT IT SAYS AND WHY IT IS SAFE: the Upstox feed prices cash scrips only, so
+ * a futures or options row on this desk is showing whatever is already in
+ * `mtm_prices` — an imported close or a mark the user typed — and NOT a price
+ * from the feed the strip names. The sentence states that fact and stops. No
+ * instruction follows it, nothing is recommended, and no alternative feed is
+ * named: it is the same discipline as `stalenessLabel()`, which says where a
+ * number came from and never what to do about it.
+ */
+export const NOT_PRICED_BY_FEED = "Not priced by this feed";
+
+/**
+ * Does THIS row, under THIS feed, carry that label?
+ *
+ * PURE, and keyed on the provider STRING rather than on a capability flag, so
+ * it cannot silently start labelling rows for a provider that does quote
+ * contracts. `instrumentType` is the journal's own `equity | option | future`
+ * (`lib/domain/constants.ts`); a null — a row whose type was never recorded —
+ * is NOT labelled, because the label would then be a claim about an instrument
+ * nobody has classified.
+ */
+export function showsNotPricedByFeed(providerId: string, instrumentType: string | null): boolean {
+  // v4.2 adds `angelone` on exactly the same footing: its adapter prices cash
+  // scrips only, so a futures or options row under it is showing a stored
+  // number too. Listed as VALUES rather than read off a capability flag, for
+  // the reason in the header — a provider that does quote contracts must not
+  // start labelling rows because it happens to share a flag.
+  if (providerId !== "upstox" && providerId !== "angelone") return false;
+  return instrumentType === "option" || instrumentType === "future";
+}
+
+/* ─────────────────────── the Angel One cadence line ──────────────────────── */
+
+/**
+ * ANGEL ONE'S REFRESH IS TIERED, NOT CHOSEN (ruling 4.2-4), and the ONE
+ * sentence that says so lives here.
+ *
+ * WHY THERE IS NO SLIDER. Angel One's market-data endpoint allows about one
+ * request a second and takes at most 50 symbols in a batch, so the interval is
+ * not a preference — it is arithmetic over the size of the user's own book. A
+ * 1–5 s slider under this feed would offer a setting the provider overrides,
+ * which is worse than no setting at all. The desk and the Settings card
+ * therefore print the SAME derived sentence in place of the control.
+ *
+ * WHY THE SENTENCE IS SHARED. `components/settings/live-feed-card.tsx` imports
+ * it from here rather than restating it. Two surfaces inventing their own
+ * phrasing for one cadence is how `/funds` ended up stated four different ways,
+ * three of them wrong (see the G2 block in tests/live-feed-copy.test.ts).
+ *
+ * VOICE: it states the interval, the provider's own limit, and the arithmetic
+ * between them. Nothing is recommended, nothing is prompted, and no number here
+ * is a price.
+ */
+
+/** The most open positions this feed prices — the desk's own cap (MAX_KEYS). */
+export const ANGELONE_MAX_PRICED_POSITIONS = 500;
+
+/** Symbols per SmartAPI market-data call; the batch the tiers are built on. */
+export const ANGELONE_BATCH_SIZE = 50;
+
+/** The book as the poll sees it: whole, non-negative, and capped at 500. */
+export function angelOnePricedCount(openCount: number): number {
+  if (!Number.isFinite(openCount)) return 0;
+  return Math.min(Math.max(0, Math.trunc(openCount)), ANGELONE_MAX_PRICED_POSITIONS);
+}
+
+/** Calls per refresh: 50 symbols to a batch, and never fewer than one. */
+export function angelOneRefreshCalls(openCount: number): number {
+  return Math.max(1, Math.ceil(angelOnePricedCount(openCount) / ANGELONE_BATCH_SIZE));
+}
+
+/**
+ * The line itself. `angelOneCadenceSeconds()` is the ONE source of the tier
+ * (lib/quotes/types.ts) — the copy never re-derives it, so the sentence and the
+ * poll can never disagree about the interval.
+ */
+export function angelOneCadenceLine(openCount: number): string {
+  const count = angelOnePricedCount(openCount);
+  const seconds = angelOneCadenceSeconds(count);
+  const calls = angelOneRefreshCalls(count);
+  const positions = count === 1 ? "position takes" : "positions take";
+  const requests = calls === 1 ? "call" : "calls";
+  return `Refreshes every ${seconds} seconds — Angel One allows about one request a second, and your ${count} open ${positions} ${calls} ${requests} per refresh.`;
+}
 
 /** "— needs 21 sessions. You have 8." The shortfall is always stated. */
 export function needsSessions(need: number, have: number): string {

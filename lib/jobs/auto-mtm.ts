@@ -173,7 +173,13 @@ export async function runAutoMtm(now = new Date()): Promise<AutoMtmOutcome> {
     return { ...none(`Already applied the ${target} bhavcopy.`), date: target };
   }
 
-  // Holidays aren't knowable offline — walk back past a missing file (max 3).
+  // Walk back past a missing file (max 3). The bundled NSE calendar (v4.2,
+  // `isExchangeHoliday()`) is NOT consulted here on purpose: a bhavcopy can be
+  // absent for reasons no calendar knows — a late publication, a blocked
+  // network, a year the list does not cover — so the walk-back has to handle a
+  // missing file anyway, and one mechanism that always runs beats two that
+  // disagree. Nothing here writes a mark under a date, so the F1 defect
+  // (a mark dated to a non-session day) has no equivalent on this path.
   let got: BhavcopyFetch | null = null;
   for (let i = 0; i < 3 && !got; i++) {
     got = await fetchBhavcopyForDate(target);

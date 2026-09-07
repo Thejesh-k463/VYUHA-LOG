@@ -1,7 +1,20 @@
 // Indian cash-market trading-day helpers (PURE). Used by the auto-MTM job to
-// decide which EOD bhavcopy date to fetch. Weekends are known statically;
-// exchange holidays are NOT (offline-first app) — callers handle a missing
-// file by walking back one more weekday.
+// decide which EOD bhavcopy date to fetch, and — since v4.2 — by the desk and
+// the mark doors to tell a session from a day the exchange was shut.
+//
+// WEEKENDS are known statically. EXCHANGE HOLIDAYS are known for the years the
+// BUNDLED list covers (`lib/data/nse-holidays.json`) and for no others: an
+// uncovered year answers "not a holiday", so the weekday behaviour every caller
+// had before v4.2 survives unchanged rather than the app going silent every
+// January. `tests/nse-holidays.test.ts` carries the YEAR GUARD that stops a
+// release shipping past the end of the list, and the reasoning for the
+// asymmetry (a wrongly LISTED date is far more expensive than a missing one)
+// is in the file's own `_note`.
+//
+// The bhavcopy walk-back still handles a missing file by walking back a
+// weekday: a file can be absent for reasons the calendar knows nothing about.
+
+import nseHolidays from "@/lib/data/nse-holidays.json";
 
 const IST_OFFSET_MIN = 330; // UTC+5:30
 
@@ -28,6 +41,60 @@ export function toIst(now: Date): Date {
  */
 export function todayIstIso(d = new Date()): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+/* ───────────────────────── the exchange calendar (F1) ────────────────────── */
+
+/**
+ * The last year `lib/data/nse-holidays.json` covers. A date in any other year
+ * is UNKNOWN to this module, and unknown is never reported as a holiday.
+ */
+export const NSE_HOLIDAY_YEAR: number = nseHolidays.year;
+
+/** When the bundled list was last diffed against NSE's own holiday-master. */
+export const NSE_HOLIDAYS_VERIFIED_AT: string = nseHolidays.verified_at;
+
+const HOLIDAY_DATES: ReadonlySet<string> = new Set(nseHolidays.trading_holidays.map((h) => h.date));
+
+/**
+ * Is this ISO date a listed NSE cash-market TRADING holiday?
+ *
+ * TRUE only when the date's year is covered by the bundled list AND the date is
+ * on it. An uncovered year answers FALSE — "unknown", not "a holiday" — which
+ * is what keeps a stale calendar from silently cancelling real sessions; the
+ * cost of that choice is that it must be noticed, which is the year guard's
+ * job (`tests/nse-holidays.test.ts`).
+ *
+ * CLEARING holidays are NOT here and must never be added: NSE publishes them as
+ * a separate list, the market is OPEN on them, and only settlement is shut.
+ */
+export function isExchangeHoliday(isoDate: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
+  if (Number(isoDate.slice(0, 4)) !== NSE_HOLIDAY_YEAR) return false;
+  return HOLIDAY_DATES.has(isoDate);
+}
+
+/** The listed holiday's name, for a sentence that says WHICH day it was. */
+export function exchangeHolidayName(isoDate: string): string | null {
+  if (!isExchangeHoliday(isoDate)) return null;
+  return nseHolidays.trading_holidays.find((h) => h.date === isoDate)?.name ?? null;
+}
+
+/**
+ * Is this a day the NSE cash market trades — a weekday that is not a listed
+ * holiday?
+ *
+ * Takes an ISO date (already India's day) or an INSTANT, which is converted
+ * through `todayIstIso()` rather than through a second +5:30 constant:
+ * 2026-09-04T19:00Z is already Saturday in India, and `tests/today-clock.test.ts`
+ * exists to keep that one definition one.
+ */
+export function isTradingDayIst(when: Date | string): boolean {
+  const isoDate = typeof when === "string" ? when : todayIstIso(when);
+  const d = new Date(isoDate + "T00:00:00Z");
+  const day = d.getUTCDay();
+  if (Number.isNaN(day) || day === 0 || day === 6) return false;
+  return !isExchangeHoliday(isoDate);
 }
 
 const isWeekend = (d: Date) => d.getUTCDay() === 0 || d.getUTCDay() === 6;

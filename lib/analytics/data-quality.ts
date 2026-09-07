@@ -50,7 +50,20 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
   const basis = i.trades.filter((t) => t.acquisition != null && (!t.acquisitionPrice || t.acquisitionPrice <= 0));
   add({ code: "unknown_basis", severity: "critical", title: "Unknown acquisition cost", detail: "These sales cannot produce trustworthy P&L, tax, expectancy, or ROM until their basis is confirmed.", count: basis.length, href: "/trades?basis=unknown" }, basis.map((t) => t.id));
 
-  const unmarked = i.trades.filter((t) => t.isOpen && !(t.closingPrice && t.closingPrice > 0) && !i.markedTradeIds.has(t.id));
+  // EQUITY ONLY, and the exclusion is the fix for a real dead end (v4.2).
+  //
+  // This counted every open DERIVATIVE as an unmarked position and sent the
+  // user to /equity to fix it — where a typed mark for a contract is REFUSED:
+  // `mtm_prices` is keyed on the SYMBOL, `getMtmMap()` reads mtm[symbol] first,
+  // and M1 (`lib/quotes/persist-mark.ts`, `isCashKey()`) skips derivative rows
+  // for exactly that reason, so a contract mark would price the cash position
+  // at the option's price. An issue nobody can clear is a permanent score
+  // penalty and a permanently red card; the honest report is that this check
+  // is about cash positions, until a mark store keyed on the traded contract
+  // exists. Option contract COMPLETENESS is still checked, below.
+  const unmarked = i.trades.filter(
+    (t) => t.isOpen && t.instrumentType === "equity" && !(t.closingPrice && t.closingPrice > 0) && !i.markedTradeIds.has(t.id),
+  );
   add({ code: "unmarked_open", severity: "critical", title: "Open positions without a mark", detail: "Unrealised P&L and live risk are incomplete for these positions.", count: unmarked.length, href: "/equity" }, unmarked.map((t) => t.id));
 
   const unstopped = i.trades.filter((t) => t.isOpen && (t.slPlanned == null || t.riskAmount == null));

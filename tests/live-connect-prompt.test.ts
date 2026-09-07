@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONNECTABLE_PROVIDER_IDS,
   CONNECT_PROMPT_VERSION,
   connectPromptDismissal,
   connectPromptKey,
@@ -70,10 +71,47 @@ describe("showConnectPrompt — only the bridge, only the states a reconnect fix
     expect(showConnectPrompt(feed(), connectPromptDismissal())).toBe(false);
   });
 
+  it("shows for UPSTOX in the same two states (v4.2)", () => {
+    // The Analytics token is a connection the user makes and can remake, so the
+    // prompt has somewhere to send them — which is the whole test for whether a
+    // provider belongs here.
+    expect(showConnectPrompt(feed({ providerId: "upstox" }), null)).toBe(true);
+    expect(showConnectPrompt(feed({ providerId: "upstox", healthState: "unreachable" }), null)).toBe(true);
+    // …and the same three silences apply to it.
+    expect(showConnectPrompt(feed({ providerId: "upstox" }), connectPromptDismissal())).toBe(false);
+    expect(showConnectPrompt(feed({ providerId: "upstox", healthState: "ok" }), null)).toBe(false);
+    expect(showConnectPrompt(feed({ providerId: "upstox", healthState: "disabled" }), null)).toBe(false);
+  });
+
+  it("shows for ANGEL ONE in the same two states (v4.2)", () => {
+    // Its daily sign-in is unattended, but the two states that open this prompt
+    // are not fixed by waiting for tomorrow: `no-key` means nothing is saved
+    // for this account and `unreachable` means what is saved is not answering.
+    // Both send the user to Import → Brokers, which is somewhere to go.
+    expect(showConnectPrompt(feed({ providerId: "angelone" }), null)).toBe(true);
+    expect(showConnectPrompt(feed({ providerId: "angelone", healthState: "unreachable" }), null)).toBe(true);
+    expect(showConnectPrompt(feed({ providerId: "angelone" }), connectPromptDismissal())).toBe(false);
+    expect(showConnectPrompt(feed({ providerId: "angelone", healthState: "ok" }), null)).toBe(false);
+    expect(showConnectPrompt(feed({ providerId: "angelone", healthState: "disabled" }), null)).toBe(false);
+  });
+
+  it("names the connectable providers as a value, not as a chain of !==", () => {
+    expect([...CONNECTABLE_PROVIDER_IDS].sort()).toEqual(["angelone", "openalgo", "upstox"]);
+  });
+
   it("never shows for the end-of-day or typed-marks providers", () => {
     // Neither has a feed to connect, and the desk must not prompt for one.
     expect(showConnectPrompt(feed({ providerId: "eod", healthState: "unreachable" }), null)).toBe(false);
     expect(showConnectPrompt(feed({ providerId: "manual", healthState: "no-key" }), null)).toBe(false);
+  });
+
+  it("never shows for a provider that is only PLANNED — there is nothing to connect yet", () => {
+    // `lib/quotes/registry.ts` PLANNED_PROVIDER_IDS. Prompting for a feed the
+    // release does not ship is a promise, not a prompt.
+    // `angelone` LEFT this list in v4.2 — it ships, so it is connectable.
+    for (const id of ["kite", "dhan"]) {
+      expect(showConnectPrompt(feed({ providerId: id }), null), id).toBe(false);
+    }
   });
 
   it("never shows for a healthy feed, or for an integration the user switched off", () => {

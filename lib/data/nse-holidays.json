@@ -1,0 +1,27 @@
+{
+  "_note": "NSE CASH-MARKET TRADING HOLIDAYS. A WRONGLY LISTED HOLIDAY SILENTLY SUPPRESSES A REAL SESSION'S AUTOMATIC CLOSE MARK — the desk says the market is shut, the catch-up door and the 15:31 close door both refuse, and nothing on screen looks broken. Only a RECORDED DIFF against NSE's own holiday-master may add a row here, and `verified_at` / `verified_against` must be rewritten by the session that ran the fetch, never copied. CLEARING HOLIDAYS ARE NOT TRADING HOLIDAYS and are deliberately absent: NSE publishes ?type=trading and ?type=clearing separately, a clearing holiday is a day the market is OPEN and settlement is shut, and conflating the two once cancelled a real session (2026-08-26, Id-E-Milad, a clearing holiday copied into a trading list). The list STOPS at `year`: a date in any other year is UNKNOWN, not a holiday, so the weekday behaviour survives and `tests/nse-holidays.test.ts`'s year guard goes red the moment the app's own IST year passes it. Source: https://www.nseindia.com/api/holiday-master?type=trading (segment CM).",
+  "year": 2026,
+  "verified_at": "2026-08-27",
+  "verified_against": "nseindia.com/api/holiday-master (CM segment), fetched live 2026-08-27",
+  "trading_holidays": [
+    { "date": "2026-01-15", "name": "Municipal Corporation Election - Maharashtra" },
+    { "date": "2026-01-26", "name": "Republic Day" },
+    { "date": "2026-02-15", "name": "Mahashivratri" },
+    { "date": "2026-03-03", "name": "Holi" },
+    { "date": "2026-03-21", "name": "Id-Ul-Fitr (Ramadan Eid)" },
+    { "date": "2026-03-26", "name": "Shri Ram Navami" },
+    { "date": "2026-03-31", "name": "Shri Mahavir Jayanti" },
+    { "date": "2026-04-03", "name": "Good Friday" },
+    { "date": "2026-04-14", "name": "Dr. Baba Saheb Ambedkar Jayanti" },
+    { "date": "2026-05-01", "name": "Maharashtra Day" },
+    { "date": "2026-05-28", "name": "Bakri Id" },
+    { "date": "2026-06-26", "name": "Muharram" },
+    { "date": "2026-08-15", "name": "Independence Day" },
+    { "date": "2026-09-14", "name": "Ganesh Chaturthi" },
+    { "date": "2026-10-02", "name": "Mahatma Gandhi Jayanti" },
+    { "date": "2026-10-20", "name": "Dussehra" },
+    { "date": "2026-11-10", "name": "Diwali-Balipratipada" },
+    { "date": "2026-11-24", "name": "Prakash Gurpurb Sri Guru Nanak Dev" },
+    { "date": "2026-12-25", "name": "Christmas" }
+  ]
+}

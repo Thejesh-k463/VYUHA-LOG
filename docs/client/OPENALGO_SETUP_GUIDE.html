@@ -392,9 +392,10 @@ separate switch from the trade pull, and it is off until you turn it on.</p>
     overwrite it, and typing after the close replaces the automatic one; any bhavcopy applied for that day — the Auto-MTM job if you have switched it on, a file you drop or paste yourself, or the history backfill — replaces it with the exchange close.
     Whether a mark already exists is decided per symbol per IST day, so
     a second account's open positions get their own mark on the same day. <b>On a Saturday or a
-    Sunday nothing is written at all, and the button does not override that.</b> The refusal is the
-    weekend and only the weekend: <b>exchange holidays are not modelled in this version</b>, so on a
-    weekday the exchange is shut the mark is written from the last price the bridge gave.</li>
+    Sunday nothing is written at all, and the button does not override that.</b> The same refusal
+    now covers <b>exchange holidays</b>, from an NSE holiday list bundled with this release: on a
+    weekday the exchange is shut, nothing is written either, so the previous session's price is
+    never stored under the closed day's date.</li>
   <li><b>The daily login still applies</b> (<a href="#daily">section 6</a>): the broker session
     behind OpenAlgo expires every day and has to be signed in again — that is the broker's rule, not
     Vyuha's. Until it is, prices stop arriving and the desk keeps the last mark it had. When the

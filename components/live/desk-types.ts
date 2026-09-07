@@ -60,6 +60,18 @@ export interface DeskRow extends TrackerRow {
    */
   exchange: Exchange;
   isin: string | null;
+  /**
+   * `equity | option | future` (`lib/domain/constants.ts`), or null when the
+   * journal never recorded one.
+   *
+   * It rides on the row for the same reason `exchange` does: the client has to
+   * tell a contract from a cash scrip WITHOUT re-deriving it. Ruling 4.2-8
+   * labels a derivative's mark cell "Not priced by this feed" under a feed that
+   * quotes cash only, and guessing from the tradingsymbol would label the wrong
+   * rows. It stays OUT of `TrackerRow` (`lib/live/types.ts`) because the row
+   * engine does no arithmetic with it — an identity fact, like `isin`.
+   */
+  instrumentType: string | null;
   /** ISO date of the first entry — the chart's left anchor. */
   entryDate: string | null;
   lotSize: number | null;

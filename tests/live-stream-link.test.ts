@@ -276,6 +276,15 @@ describe("an open desk re-establishes its stream once, just after the close (F3)
     expect(msUntilCloseReopen(new Date("2026-09-07T10:01:00.000Z")), "15:31:00 exactly").toBeNull();
     expect(msUntilCloseReopen(new Date(IST_1600))).toBeNull();
     expect(msUntilCloseReopen(new Date(SAT_1529)), "no session closes on a Saturday").toBeNull();
+    // …nor on a listed exchange holiday (F1, v4.2). 2026-10-02 is a FRIDAY —
+    // Gandhi Jayanti — so the weekday rule alone armed a reconnect for a mark
+    // the server now refuses and a stream the route will not subscribe.
+    expect(
+      msUntilCloseReopen(new Date("2026-10-02T09:59:00.000Z")),
+      "no session closes on an exchange holiday",
+    ).toBeNull();
+    // The weekday either side of it is untouched: 2026-10-01 at 15:29 IST.
+    expect(msUntilCloseReopen(new Date("2026-10-01T09:59:00.000Z"))).toBe(TO_CLOSE_REOPEN);
     // 09:00 IST — the whole session away.
     expect(msUntilCloseReopen(new Date("2026-09-07T03:30:00.000Z"))).toBe((15 * 60 + 31 - 9 * 60) * 60_000);
   });

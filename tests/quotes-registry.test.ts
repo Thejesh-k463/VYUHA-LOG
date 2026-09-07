@@ -7,11 +7,18 @@ import {
   createPlannedProvider,
   createProvider,
   getQuoteProvider,
+  liveFeedAckGate,
   resolveProviderId,
   selectProviderId,
 } from "@/lib/quotes/registry";
-import { NotEnabledError, OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import {
+  ANGELONE_FEED_ENABLED,
+  NotEnabledError,
+  OPENALGO_FEED_ENABLED,
+  UPSTOX_FEED_ENABLED,
+} from "@/lib/quotes/types";
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
+import { LIVE_FEED_DISCLOSURE_VERSIONS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 
 /**
  * The registry: which provider runs, and what happens to the ones v4.0
@@ -99,17 +106,18 @@ describe("the providers v4.0 did NOT build", () => {
     await expect(kite.snapshot([])).rejects.toThrow(/not enabled in this release/i);
     expect(() => kite.subscribe([], () => {})).toThrow(NotEnabledError);
 
-    // `openalgo` was the example here until v4.1 built it; a broker feed is
-    // the remaining planned shape, and its note names the version that would
-    // ship it (v4.2+), not the one that shipped OpenAlgo.
-    const upstox = createPlannedProvider("upstox");
-    await expect(upstox.snapshot([])).rejects.toThrow(/v4\.2/);
+    // `openalgo` was the example here until v4.1 built it, and `upstox` until
+    // v4.2 did (it is a SHIPPED id now — see the v4.2 block below). Kite is the
+    // remaining planned broker feed, and its note names the version that would
+    // ship it, not the one that shipped OpenAlgo.
+    const dhan = createPlannedProvider("dhan");
+    await expect(dhan.snapshot([])).rejects.toThrow(/v4\.2/);
     try {
-      await upstox.snapshot([]);
+      await dhan.snapshot([]);
       expect.unreachable("a disabled provider must refuse");
     } catch (e) {
       expect((e as NotEnabledError).code).toBe("PROVIDER_NOT_ENABLED");
-      expect((e as NotEnabledError).providerId).toBe("upstox");
+      expect((e as NotEnabledError).providerId).toBe("dhan");
     }
   });
 
@@ -128,6 +136,115 @@ describe("the providers v4.0 did NOT build", () => {
       expect(c.maxSubscriptions).toBe(0);
       expect(c.segments).toEqual([]);
       expect(c.label).toMatch(/not enabled in this release/i);
+    }
+  });
+});
+
+describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
+  const ACK = withFeedAck(null, "upstox"); // '{"upstox":"1"}'
+  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"1"}'
+
+  it("moves `upstox` out of the planned list and into the shipped one", () => {
+    expect(UPSTOX_FEED_ENABLED).toBe(true);
+    expect(SHIPPED_PROVIDER_IDS as readonly string[]).toContain("upstox");
+    expect(PLANNED_PROVIDER_IDS as readonly string[]).not.toContain("upstox");
+    expect(resolveProviderId("upstox")).toBe("upstox");
+    expect(createProvider("upstox").id).toBe("upstox");
+    expect(createProvider("upstox", 3).capabilities.staleness).toBe("delayed");
+  });
+
+  it("gates it on the STORED ACKNOWLEDGEMENT, exactly as OpenAlgo is gated", () => {
+    const base = { liveFeedProvider: "upstox", openalgoEnabled: false, openalgoAckVersion: null };
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.upstox).toBe("1");
+    expect(selectProviderId({ ...base, liveFeedAckJson: ACK }), "a current acknowledgement").toBe("upstox");
+    expect(selectProviderId({ ...base, liveFeedAckJson: null }), "never acknowledged").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: undefined }), "column absent").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: '{"upstox":"0"}' }), "an older disclosure").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: '{"angelone":"1"}' }), "another broker's consent").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: "not json" }), "an unreadable column").toBe("eod");
+    // A restored backup carries the picker column but not the consent column
+    // (machine state), which is exactly the middle case above.
+    expect(liveFeedAckGate(null, "upstox").allowed).toBe(false);
+    expect(liveFeedAckGate(ACK, "upstox").allowed).toBe(true);
+    expect(liveFeedAckGate(null, "upstox").reason).toMatch(/Settings → Live feed/);
+  });
+
+  it("does NOT let an OpenAlgo consent open the Upstox feed, or the reverse", () => {
+    expect(
+      selectProviderId({
+        liveFeedProvider: "upstox",
+        openalgoEnabled: true,
+        openalgoAckVersion: OPENALGO_DISCLOSURE_VERSION,
+        liveFeedAckJson: null,
+      }),
+    ).toBe("eod");
+    expect(
+      selectProviderId({
+        liveFeedProvider: "openalgo",
+        openalgoEnabled: false,
+        openalgoAckVersion: null,
+        liveFeedAckJson: ACK,
+      }),
+    ).toBe("eod");
+  });
+
+  it("SHIPS `angelone` too — ruling 4.2-9 turned the constant on", () => {
+    // The line in SHIPPED_PROVIDER_IDS was written while the adapter did not
+    // exist, promising that the constant would be the only edit. It was.
+    expect(ANGELONE_FEED_ENABLED).toBe(true);
+    expect(SHIPPED_PROVIDER_IDS as readonly string[]).toContain("angelone");
+    expect(PLANNED_PROVIDER_IDS as readonly string[]).not.toContain("angelone");
+    expect(resolveProviderId("angelone")).toBe("angelone");
+    const angel = createProvider("angelone");
+    expect(angel.id).toBe("angelone");
+    // A real adapter, not the placeholder: the placeholder promises nothing
+    // and names no host, and this one does both.
+    expect(angel.capabilities.streaming).toBe(true);
+    expect(angel.capabilities.egressDescription).toContain("apiconnect.angelone.in");
+    expect(angel.capabilities.label).not.toMatch(/not enabled/i);
+    expect(angel.capabilities.requiresDailyAuth, "Angel One clears every session at 5 AM IST").toBe(true);
+    // The slider is IGNORED for this provider (ruling 4.2-4) — passing one
+    // must not change what is built.
+    expect(createProvider("angelone", 1).capabilities.minSnapshotIntervalMs).toBe(3000);
+  });
+
+  it("gates Angel One on ITS OWN key in the same column — one broker's consent is not the other's", () => {
+    const base = { liveFeedProvider: "angelone", openalgoEnabled: false, openalgoAckVersion: null };
+    expect(LIVE_FEED_DISCLOSURE_VERSIONS.angelone).toBe("1");
+    expect(selectProviderId({ ...base, liveFeedAckJson: ANGEL_ACK }), "a current acknowledgement").toBe("angelone");
+    expect(selectProviderId({ ...base, liveFeedAckJson: null }), "never acknowledged").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: ACK }), "the UPSTOX consent must not open it").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: '{"angelone":"0"}' }), "an older disclosure").toBe("eod");
+    expect(selectProviderId({ ...base, liveFeedAckJson: "not json" }), "an unreadable column").toBe("eod");
+    // …and the reverse: Angel One's consent does not open Upstox's feed.
+    expect(
+      selectProviderId({ liveFeedProvider: "upstox", openalgoEnabled: false, openalgoAckVersion: null, liveFeedAckJson: ANGEL_ACK }),
+    ).toBe("eod");
+    expect(liveFeedAckGate(ANGEL_ACK, "angelone").allowed).toBe(true);
+    expect(liveFeedAckGate(null, "angelone").allowed).toBe(false);
+    // Accepting both is one column and two keys — no second migration.
+    const both = withFeedAck(ANGEL_ACK, "upstox");
+    expect(selectProviderId({ ...base, liveFeedAckJson: both })).toBe("angelone");
+    expect(
+      selectProviderId({ liveFeedProvider: "upstox", openalgoEnabled: false, openalgoAckVersion: null, liveFeedAckJson: both }),
+    ).toBe("upstox");
+  });
+
+  it("still has a planned provider that refuses, so the placeholder path is not dead code", async () => {
+    const kite = createProvider("kite");
+    expect(kite.capabilities.streaming).toBe(false);
+    expect(kite.capabilities.egressDescription).toMatch(/^none\b/i);
+    await expect(kite.snapshot([])).rejects.toBeInstanceOf(NotEnabledError);
+  });
+
+  it("carries both broker capability blocks whichever way the release switches point", () => {
+    for (const [id, host] of [
+      ["upstox", "api.upstox.com"],
+      ["angelone", "apiconnect.angelone.in"],
+    ] as const) {
+      const block = allProviderCapabilities().filter((c) => c.id === id);
+      expect(block, `exactly one block for ${id} — no planned duplicate`).toHaveLength(1);
+      expect(block[0].egressDescription).toContain(host);
     }
   });
 });
