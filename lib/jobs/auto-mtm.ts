@@ -7,6 +7,7 @@ import { applyBhavcopyMtm, type BhavcopyMtmResult } from "@/lib/import/mtm-bhavc
 import { latestBhavcopyDate, previousTradingDay, toDdmmyyyy } from "@/lib/domain/trading-day";
 import { getMtmMap } from "@/lib/queries/mtm";
 import { detectBreaches, type AlertPositionInput, type Breach } from "@/lib/risk/alerts";
+import { storedMarkFor } from "@/lib/analytics/positions";
 
 // T3.8 — opt-in EOD auto-MTM. The user's toggle in Settings is the ONLY thing
 // that allows a network fetch; everything fails silently offline (offline-first
@@ -122,7 +123,7 @@ export async function fetchBhavcopyForDate(isoDate: string): Promise<BhavcopyFet
 }
 
 /** Breach scan over open positions using the freshest MTM map (T3.9).
- *  Projected to the 12 columns `AlertPositionInput` reads — same WHERE, same
+ *  Projected to the 13 columns `AlertPositionInput` needs — same WHERE, same
  *  rows in the same order (perf sweep 2026-08-29: 33 ms → 6 ms at 3.5k open). */
 export function scanBreaches(): Breach[] {
   const open = db
@@ -130,6 +131,9 @@ export function scanBreaches(): Breach[] {
       id: tradesTable.id,
       symbol: tradesTable.symbol,
       tradingsymbol: tradesTable.tradingsymbol,
+      // `storedMarkFor` needs it: a derivative reads its own contract's mark,
+      // never the underlying's (owner ruling A-1).
+      instrumentType: tradesTable.instrumentType,
       buyQty: tradesTable.buyQty,
       sellQty: tradesTable.sellQty,
       avgBuyPrice: tradesTable.avgBuyPrice,
@@ -152,7 +156,12 @@ export function scanBreaches(): Breach[] {
       side: isShort ? "short" : "long",
       qty: Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty),
       entry: isShort ? t.avgSellPrice : t.avgBuyPrice,
-      mtm: mtm.get(t.symbol.toUpperCase()) ?? mtm.get(t.tradingsymbol.toUpperCase()) ?? t.closingPrice ?? 0,
+      // Equity: stored symbol → stored contract → close. Derivative: stored
+      // contract → close, NEVER the underlying's cash mark (owner ruling A-1)
+      // — that rung raised "NIFTY: mark 23450 has reached your target 150" on
+      // an option whose premium had not moved. The 0 tail stays: it is the
+      // "no mark at all" signal `detectBreaches` skips on (`!(p.mtm > 0)`).
+      mtm: storedMarkFor(t, mtm) ?? t.closingPrice ?? 0,
       slPlanned: t.slPlanned,
       trailingSl: t.trailingSl,
       targetPlanned: t.targetPlanned,

@@ -144,6 +144,13 @@ const PERFORMANCE_FIELDS = [
   "isOpen", "sellDate", "buyDate", "setupTag",
   "acquisition", "acquisitionPrice", "buyValue",
   "buyQty", "sellQty", "closingPrice", "avgBuyPrice",
+  // The two columns `storedMarkFor()` needs to price an OPEN position (owner
+  // ruling A-1, v4.2 fix wave): a derivative reads a mark stored under its own
+  // `tradingsymbol`, never `mtm[symbol]`, which for a derivative is the
+  // underlying's cash price. Without them the page marked an open option at
+  // the index spot and fed that into XIRR/TWR. Two columns, not a widening to
+  // getTrackerTrades() — the 2026-08-29 sweep's narrow projection stands.
+  "instrumentType", "tradingsymbol",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type PerformanceTrade = Pick<Trade, (typeof PERFORMANCE_FIELDS)[number]>;

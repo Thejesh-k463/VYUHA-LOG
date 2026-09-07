@@ -301,9 +301,16 @@ export function angelOneRefreshCalls(openCount: number): number {
  * printing the count as 0, would be a claim about this account's book that the
  * screen has not been told (invariant 6: never fabricate a denominator). It
  * states the provider's own limit and where the interval comes from, and stops.
+ *
+ * AND IT COUNTS THE SAME THING THE COUNTED SENTENCE COUNTS (B-6, v4.2 fix wave
+ * 2). Every count that reaches `angelOneCadenceLine()` below is the DEDUPED
+ * quote-key count, which is why that sentence says "open scrips"; this branch
+ * said the interval was computed from "the positions this feed prices", naming
+ * a different set of the user's book on the same card. Two positions in one
+ * scrip are one price and one step of the ladder — so the noun is "scrips".
  */
 export const ANGELONE_CADENCE_NO_COUNT =
-  `Refreshes on an interval computed from the positions this feed prices — Angel One allows about one request a second, and takes ${ANGELONE_BATCH_SIZE} symbols to a batch.` as const;
+  `Refreshes on an interval computed from the scrips this feed prices — Angel One allows about one request a second, and takes ${ANGELONE_BATCH_SIZE} symbols to a batch.` as const;
 
 /**
  * The line itself. `angelOneCadenceSeconds()` is the ONE source of the tier
@@ -314,15 +321,23 @@ export const ANGELONE_CADENCE_NO_COUNT =
  * Settings card's own fetch has not answered, or the desk holds neither a
  * stream frame nor a server snapshot. It prints the countless sentence above
  * rather than a number nobody sent.
+ *
+ * THE NOUN IS "SCRIP", NOT "POSITION" (B-6, ruling of 2026-09-07). Every count
+ * that reaches this sentence is the DEDUPED quote-key count — `openPositionKeys()`
+ * on the card, the stream's own `symbols` on the desk — while the desk lists one
+ * row per TRADE. A 51-row book in 50 scrips therefore printed "your 50 open
+ * positions take 1 call" beside 51 rows, which is a wrong statement about the
+ * user's book (invariant 6), not merely an awkward one. The batch limit is per
+ * scrip, so the sentence counts scrips and says so.
  */
 export function angelOneCadenceLine(openCount: number | null): string {
   if (openCount === null) return ANGELONE_CADENCE_NO_COUNT;
   const count = angelOnePricedCount(openCount);
   const seconds = angelOneCadenceSeconds(count);
   const calls = angelOneRefreshCalls(count);
-  const positions = count === 1 ? "position takes" : "positions take";
+  const scrips = count === 1 ? "scrip takes" : "scrips take";
   const requests = calls === 1 ? "call" : "calls";
-  return `Refreshes every ${seconds} seconds — Angel One allows about one request a second, and your ${count} open ${positions} ${calls} ${requests} per refresh.`;
+  return `Refreshes every ${seconds} seconds — Angel One allows about one request a second, and your ${count} open ${scrips} ${calls} ${requests} per refresh.`;
 }
 
 /**

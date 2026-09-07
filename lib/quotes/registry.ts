@@ -234,6 +234,47 @@ export interface LiveFeedSelection {
 }
 
 /**
+ * The name a WITHHELD feed is called by on screen — short, and a broker's, not
+ * a constant's. `PLANNED_LABELS` cannot serve here: it already carries its own
+ * "(not enabled in this release)" tail, which would read twice in a sentence
+ * that says the same thing.
+ */
+const WITHHELD_FEED_LABELS: Partial<Record<ProviderId, string>> = {
+  upstox: "Upstox",
+  angelone: "Angel One",
+  kite: "Zerodha Kite Connect",
+  dhan: "Dhan",
+  openalgo: "OpenAlgo",
+};
+
+/**
+ * PURE. Is this id one THIS BUILD does not offer — and if so, what does the
+ * user get told? `null` means the build ships it.
+ *
+ * THE RELEASE SWITCH OUTRANKS THE STORED CONSENT (v4.2 fix wave 2). The
+ * acknowledgement in `live_feed_ack_json` is written when the sheet is
+ * accepted and is NOT touched by a release switch, so an install that accepted
+ * Angel One's sheet on a build that offered it kept a current ack after moving
+ * to a build that withholds it. `selectProviderId()` checked only that ack, so
+ * the withheld feed came back EFFECTIVE — with `stored === effective` there was
+ * no block for the card to state, and the card has no radio for a withheld id,
+ * so the state was stated nowhere while the desk built the PLANNED stub whose
+ * `health()` names `ANGELONE_FEED_ENABLED` to a paying customer. That breaks
+ * the promise written at `lib/quotes/types.ts` ("a stored
+ * `live_feed_provider = 'upstox'` collapses to the end-of-day default again")
+ * and the one in `SHIPPED_PROVIDER_IDS` above ("flipping the constant back
+ * removes it everywhere at once").
+ *
+ * THE SENTENCE NAMES NO CONSTANT. It is shown to a customer, so it says what
+ * is running and why, not which identifier in the source is false.
+ */
+export function withheldFeedReason(id: ProviderId): string | null {
+  if ((SHIPPED_PROVIDER_IDS as readonly string[]).includes(id)) return null;
+  const label = WITHHELD_FEED_LABELS[id] ?? id;
+  return `This build does not offer the ${label} feed; the desk stays on end-of-day prices.`;
+}
+
+/**
  * PURE. The stored picker value → the provider that may actually run.
  *
  * The ONLY way to reach `openalgo` is all FOUR of: the release ships it
@@ -245,13 +286,20 @@ export interface LiveFeedSelection {
  */
 export function selectProviderId(sel: LiveFeedSelection): ProviderId {
   const id = resolveProviderId(sel.liveFeedProvider);
+  // THE RELEASE SWITCH IS CHECKED FIRST, BEFORE ANY CONSENT. `upstox` and
+  // `angelone` are in `PLANNABLE_IDS`, so with their constant off they survive
+  // `resolveProviderId()` as PLANNED ids instead of being collapsed the way an
+  // unknown string is — and a planned id must never be the effective feed. A
+  // stored acknowledgement cannot outrank this: consent is permission to run a
+  // feed this build offers, never permission to run one it does not.
+  if (withheldFeedReason(id) !== null) return DEFAULT_PROVIDER_ID;
   if (id === "openalgo") {
     const gate = openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
     return gate.allowed ? "openalgo" : DEFAULT_PROVIDER_ID;
   }
   // The broker feeds are gated the same way, on the per-provider version in
-  // `live_feed_ack_json`. `angelone` is here for the day it ships: if the
-  // constant is flipped without a consent, it falls back like every other.
+  // `live_feed_ack_json`. Reaching here means the build OFFERS the feed, so
+  // the acknowledgement is the only remaining question.
   if (id === "upstox" || id === "angelone") {
     return liveFeedAckGate(sel.liveFeedAckJson, id).allowed ? id : DEFAULT_PROVIDER_ID;
   }
@@ -295,16 +343,21 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
   };
   const stored = resolveProviderId(sel.liveFeedProvider);
   const effective = selectProviderId(sel);
-  // Whichever feed was picked, the reason shown is that feed's own gate.
-  const gate =
-    stored === "upstox" || stored === "angelone"
+  // Whichever feed was picked, the reason shown is that feed's own gate — and
+  // a feed this build does not OFFER is answered by the release switch, not by
+  // its consent gate, which would otherwise report "allowed" and leave the
+  // block with no words at all (v4.2 fix wave 2).
+  const reason =
+    withheldFeedReason(stored) ??
+    (stored === "upstox" || stored === "angelone"
       ? liveFeedAckGate(sel.liveFeedAckJson, stored)
-      : openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion });
+      : openAlgoGate({ enabled: sel.openalgoEnabled, ackVersion: sel.openalgoAckVersion })
+    ).reason;
   return {
     stored,
     effective,
     refreshSeconds: clampRefreshSeconds(row?.liveFeedRefreshSeconds ?? undefined),
-    ...(stored !== effective ? { blockedReason: gate.reason } : {}),
+    ...(stored !== effective ? { blockedReason: reason } : {}),
   };
 }
 
@@ -446,7 +499,15 @@ export function resetLiveFeedProviderCache(): void {
   cachedLiveFeedProvider = null;
 }
 
-/** The provider the stored settings actually allow, built and ready. */
+/**
+ * The provider the stored settings actually allow, built and ready.
+ *
+ * `feed.effective` can never be a WITHHELD id — `selectProviderId()` collapses
+ * one to `eod` before any consent is consulted — so no memo key is ever built
+ * for a planned provider and the desk cannot end up holding the planned stub.
+ * `VYUHA_QUOTE_PROVIDER` is the deliberate exception: it is the dev/e2e
+ * override, set by the operator on this machine, never by stored user state.
+ */
 export async function getLiveFeedProvider(): Promise<QuoteProvider> {
   const feed = await resolveLiveFeed();
   const env = process.env.VYUHA_QUOTE_PROVIDER;

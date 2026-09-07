@@ -15,6 +15,7 @@ import { loadRatesMap } from "@/lib/engine/rates-db";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { getStagedViews } from "@/lib/queries/staged";
 import type { ExposureInput } from "@/lib/analytics/exposure";
+import { storedMarkFor } from "@/lib/analytics/positions";
 import {
   computeSettlement,
   DEFAULT_SETTLEMENT_RATES,
@@ -129,11 +130,11 @@ export default function RiskPage() {
       const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
       const qty = Math.abs(t.buyQty - t.sellQty) || Math.max(t.buyQty, t.sellQty);
       const entry = side === "long" ? t.avgBuyPrice : t.avgSellPrice;
-      const mtmPrice =
-        mtm.get(t.symbol.toUpperCase()) ??
-        mtm.get(t.tradingsymbol.toUpperCase()) ??
-        t.closingPrice ??
-        entry;
+      // Equity: stored symbol → stored contract → close → entry.
+      // Derivative: stored contract → close → entry — NEVER the underlying's
+      // cash mark (owner ruling A-1; `storedMarkFor` is the one implementation
+      // of the precedence, shared with the tracker and the Live Desk).
+      const mtmPrice = storedMarkFor(t, mtm) ?? t.closingPrice ?? entry;
       return {
         id: t.id,
         symbol: t.symbol,
@@ -285,11 +286,16 @@ export default function RiskPage() {
     .map((t) => {
       const netQty = Math.abs(t.buyQty - t.sellQty) || t.buyQty;
       const side: "long" | "short" = t.buyQty >= t.sellQty ? "long" : "short";
-      // futures: settlement uses the futures price (its MTM); options: underlying spot.
+      // Options: the UNDERLYING's spot, which is what moneyness is judged on.
+      // Futures: the FUTURE's own price — a mark stored under its contract,
+      // then its recorded close, then its entry (owner ruling A-1). It used to
+      // read `mtm[symbol]` under this same "uses the futures price" comment,
+      // and `mtm_prices` is keyed on symbol, so the delivery notional was
+      // struck off the underlying's cash mark instead.
       const refPrice =
         t.instrumentType === "option"
           ? spot.get(t.symbol.toUpperCase()) ?? null
-          : mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
+          : storedMarkFor(t, mtm) ?? t.closingPrice ?? t.avgBuyPrice;
       return {
         id: t.id,
         symbol: t.symbol,

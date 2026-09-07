@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EquityCurve, UnderwaterCurve } from "@/components/dashboard/charts";
 import { monteCarloEquity } from "@/lib/analytics/monte-carlo";
+import { storedMarkFor } from "@/lib/analytics/positions";
 import { getPerformanceTrades } from "@/lib/queries/trades";
 import { getSettings } from "@/lib/queries/settings";
 import { getMtmMap } from "@/lib/queries/mtm";
@@ -160,7 +161,13 @@ export default function PerformancePage() {
   const unrealisedPaise = toPaise(
     open.reduce((s, t) => {
       const qty = Math.max(t.buyQty - t.sellQty, 0) || t.buyQty;
-      const px = mtm.get(t.symbol.toUpperCase()) ?? t.closingPrice ?? t.avgBuyPrice;
+      // A derivative is marked at its OWN contract, never at `mtm[symbol]` —
+      // which for an option or a future is the UNDERLYING's cash price (owner
+      // ruling A-1; `storedMarkFor` in lib/analytics/positions.ts is the one
+      // implementation, shared with /risk, the desk and the EOD job). An open
+      // NIFTY 23500 CE beside a bulk-pasted cash NIFTY booked lakhs of
+      // unrealised P&L into terminalPaise, and so into XIRR and TWR.
+      const px = storedMarkFor(t, mtm) ?? t.closingPrice ?? t.avgBuyPrice;
       return s + (px - t.avgBuyPrice) * qty;
     }, 0),
   );

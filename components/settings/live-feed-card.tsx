@@ -102,9 +102,19 @@ export const UPSTOX_FEED_COPY = {
   /** Shown INSTEAD of the blurb when the account has no connection: the blurb
    *  describes a token this account does not have, and the next step does. */
   notConnected: "Add Upstox under Import → Connect broker first.",
-  /** Always, connected or not — the scope of the feed is not a footnote. */
+  /**
+   * Always, connected or not — the scope of the feed is not a footnote.
+   *
+   * B-5: it used to say the derivative rows "keep their last stored mark",
+   * which named a thing that does not exist. No writer stores a CONTRACT-keyed
+   * mark (A-1 removed the underlying's cash mark from that read), so no
+   * "Stored mark" pill can ever render for a future or an option: the row shows
+   * the position's recorded close, or its entry price when there is no close.
+   * The sentence now says what the row really shows, byte-for-byte the same as
+   * the consent sheets and the help entry (a seam test compares them).
+   */
   equityOnly:
-    "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
 } as const;
 
 /** What the GET tells the card about the Upstox radio. Never a token. */
@@ -169,7 +179,7 @@ export const ANGELONE_FEED_COPY = {
   notConnected: "Add Angel One under Import → Connect broker first.",
   /** Always, connected or not — the scope of the feed is not a footnote. */
   equityOnly:
-    "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+    "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
   /**
    * The highlighted block's sentence under an Angel One pick. FACTUAL and
    * attributed to the broker's own system — never to a regulator, which
@@ -277,11 +287,31 @@ export const FEED_BLOCKED_FALLBACK =
 export const FEED_BLOCKED_HEALTH =
   "Not live — the feed you picked is blocked, so the desk stays on end-of-day prices.";
 
-export function feedBlockState(feed: FeedState | undefined | null): FeedBlock | null {
+/**
+ * B-8 — THE BUTTON OFFERED A SHEET THIS BUILD MAY NOT SHIP.
+ *
+ * `reviewProvider` was picked from `SHEET_PROVIDERS` alone, which is the list of
+ * providers that HAVE a sheet, not the list this release OFFERS. With a release
+ * flag off and the withheld broker's id sitting in `liveFeedProvider` — it
+ * travels in a backup envelope; the acknowledgement does not — the card grew a
+ * "Review and accept" button for a feed that has no radio, opened its consent
+ * sheet and recorded an acknowledgement for it. The block itself is still
+ * stated (the pick really is not running, and the user is entitled to know), so
+ * only the CONTROL is withheld: text, no button.
+ *
+ * `offeredIds` defaults to what this build ships and is injected by the tests,
+ * which is the only way to see the defect while all three flags are true.
+ */
+export function feedBlockState(
+  feed: FeedState | undefined | null,
+  offeredIds?: readonly string[],
+): FeedBlock | null {
   if (feed == null || feed.stored === feed.effective) return null;
-  const reviewProvider = (SHEET_PROVIDERS as readonly string[]).includes(feed.stored)
-    ? (feed.stored as SheetProvider)
-    : null;
+  const offered = offeredIds ?? PROVIDERS.map((p) => p.id);
+  const reviewProvider =
+    (SHEET_PROVIDERS as readonly string[]).includes(feed.stored) && offered.includes(feed.stored)
+      ? (feed.stored as SheetProvider)
+      : null;
   return { reason: feed.blockedReason ?? FEED_BLOCKED_FALLBACK, reviewProvider };
 }
 
@@ -401,7 +431,18 @@ export const brokerFeedOffered = (ids: readonly string[]): boolean =>
 
 export const BROKER_FEED_OFFERED = brokerFeedOffered(PROVIDERS.map((p) => p.id));
 
-interface FeedResponse {
+/**
+ * Does this build offer the provider whose sheet the card holds? (B-8.)
+ *
+ * The two dialogs used to mount unconditionally, so a withheld broker's
+ * disclosure was one state change away from being shown — and accepted —
+ * on a build that ships no radio for it. Derived from the resolved list, like
+ * every other release gate on this card, so flipping a flag moves it.
+ */
+export const OFFERS_UPSTOX = PROVIDERS.some((p) => p.id === "upstox");
+export const OFFERS_ANGELONE = PROVIDERS.some((p) => p.id === "angelone");
+
+export interface FeedResponse {
   ok: boolean;
   feed?: { stored: string; effective: string; refreshSeconds: number; blockedReason?: string };
   openalgo?: { enabled: boolean; ackCurrent: boolean };
@@ -412,15 +453,56 @@ interface FeedResponse {
   message?: string;
 }
 
-async function post(
-  body: Record<string, unknown>,
-): Promise<{ ok: boolean; message?: string; upstox?: UpstoxFeedState; angelone?: AngelOneFeedState }> {
+/**
+ * What a POST answers with. The `feed` verdict was ALREADY in the response and
+ * this type simply omitted it, which is how the card came to throw it away
+ * (B-4) — the route has returned `feed: await resolveLiveFeed()` from the
+ * provider action since v4.1.
+ */
+export interface FeedPostResult {
+  ok: boolean;
+  message?: string;
+  feed?: FeedResponse["feed"];
+  upstox?: UpstoxFeedState;
+  angelone?: AngelOneFeedState;
+}
+
+async function post(body: Record<string, unknown>): Promise<FeedPostResult> {
   const res = await fetch("/api/live/feed", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   return res.json();
+}
+
+/**
+ * B-4 — THE CARD ASKED, WAS ANSWERED, AND KEPT THE OLD ANSWER.
+ *
+ * `status` is filled by the mount fetch and by nothing else, and the card is
+ * mounted UNKEYED in `settings-form.tsx`, so `router.refresh()` re-renders it
+ * with the state it already had (DECISIONS: an initialiser does not re-run
+ * after `router.refresh()`). Every derived line about the feed — the blocked
+ * block, its "Review and accept" button, the "Not live — blocked" health line —
+ * therefore went on saying what was true before the write: after
+ * Review and accept → ack ok → store ok → "Saved.", the block stayed on screen
+ * until the user reloaded the page. The v4.1 switch-away path regressed the
+ * same way (a blocked OpenAlgo pick, switch to end-of-day: the eod radio checked
+ * AND a block saying the pick is blocked).
+ *
+ * The fix is not another fetch and not an effect: the POST's own body carries
+ * the server's verdict, so it is folded in. PURE, so the tests can drive it
+ * with a real route response — and it folds only what the response actually
+ * carried, because a missing key is "nothing new to say", not "no longer true".
+ */
+export function foldFeedResponse(prev: FeedResponse | null, r: FeedPostResult): FeedResponse | null {
+  if (prev == null) return prev;
+  return {
+    ...prev,
+    ...(r.feed ? { feed: r.feed } : {}),
+    ...(r.upstox ? { upstox: r.upstox } : {}),
+    ...(r.angelone ? { angelone: r.angelone } : {}),
+  };
 }
 
 export function LiveFeedCard({ current }: { current: Settings }) {
@@ -490,6 +572,11 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       toast.error(r.message ?? "Could not switch the feed.");
       return;
     }
+    // B-4: the write's own answer, not the mount fetch's. `router.refresh()`
+    // re-renders this card without remounting it, so nothing else will ever
+    // correct `status` — the block, its button and the health line would go on
+    // describing the feed as it was before this POST.
+    setStatus((prev) => foldFeedResponse(prev, r));
     toast.success(r.message ?? "Saved.");
     router.refresh();
   }
@@ -503,9 +590,9 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       toast.error(r.message ?? "Could not record that you read it.");
       return;
     }
-    // The SERVER's own reading of both halves, not an optimistic guess.
-    const fresh = r.upstox;
-    if (fresh) setStatus((prev) => (prev == null ? prev : { ...prev, upstox: fresh }));
+    // The SERVER's own reading of both halves, not an optimistic guess — and
+    // every half it answered with, not only this provider's (B-4).
+    setStatus((prev) => foldFeedResponse(prev, r));
     await store("upstox");
   }
 
@@ -518,8 +605,7 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       toast.error(r.message ?? "Could not record that you read it.");
       return;
     }
-    const fresh = r.angelone;
-    if (fresh) setStatus((prev) => (prev == null ? prev : { ...prev, angelone: fresh }));
+    setStatus((prev) => foldFeedResponse(prev, r));
     await store("angelone");
   }
 
@@ -729,30 +815,37 @@ export function LiveFeedCard({ current }: { current: Settings }) {
         {/* The Upstox consent sheet. The generic dialog is handed UPSTOX's own
             items — it imports no provider's disclosure module of its own, so
             there is no OpenAlgo sentence in this tree to show by accident. The
-            acceptance is written by the SAME route that enforces the gate. */}
-        <FeedConsentDialog
-          open={consentOpen === "upstox"}
-          onOpenChange={(o) => setConsentOpen(o ? "upstox" : null)}
-          onAccept={() => void acceptUpstox()}
-          title="Before Upstox prices your desk"
-          version={LIVE_FEED_DISCLOSURE_VERSIONS.upstox}
-          items={UPSTOX_FEED_ITEMS}
-          testId="upstox-feed-dialog"
-        />
+            acceptance is written by the SAME route that enforces the gate.
+            MOUNTED ONLY WHILE THIS BUILD OFFERS THE RADIO (B-8): a sheet for a
+            withheld provider is a disclosure the user can accept for a feed
+            that does not ship, and the route now refuses that ack too. */}
+        {OFFERS_UPSTOX && (
+          <FeedConsentDialog
+            open={consentOpen === "upstox"}
+            onOpenChange={(o) => setConsentOpen(o ? "upstox" : null)}
+            onAccept={() => void acceptUpstox()}
+            title="Before Upstox prices your desk"
+            version={LIVE_FEED_DISCLOSURE_VERSIONS.upstox}
+            items={UPSTOX_FEED_ITEMS}
+            testId="upstox-feed-dialog"
+          />
+        )}
 
         {/* Angel One's sheet — the SAME generic component, handed ANGEL ONE's
             items and ANGEL ONE's version. Two sheets, two acknowledgements: the
             column is a provider-id → version map, so accepting one is never
             accepting the other. */}
-        <FeedConsentDialog
-          open={consentOpen === "angelone"}
-          onOpenChange={(o) => setConsentOpen(o ? "angelone" : null)}
-          onAccept={() => void acceptAngelOne()}
-          title="Before Angel One prices your desk"
-          version={LIVE_FEED_DISCLOSURE_VERSIONS.angelone}
-          items={ANGELONE_FEED_ITEMS}
-          testId="angelone-feed-dialog"
-        />
+        {OFFERS_ANGELONE && (
+          <FeedConsentDialog
+            open={consentOpen === "angelone"}
+            onOpenChange={(o) => setConsentOpen(o ? "angelone" : null)}
+            onAccept={() => void acceptAngelOne()}
+            title="Before Angel One prices your desk"
+            version={LIVE_FEED_DISCLOSURE_VERSIONS.angelone}
+            items={ANGELONE_FEED_ITEMS}
+            testId="angelone-feed-dialog"
+          />
+        )}
       </CardContent>
     </Card>
   );

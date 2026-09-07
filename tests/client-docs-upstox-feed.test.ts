@@ -99,6 +99,14 @@ describe("PRIVACY.md discloses exactly one Upstox host, in item 3", () => {
     );
     expect(item, "the disclosure does not scope the release to equities").toMatch(/Equities only in this release/);
     expect(item, "the disclosure does not say the prices stay here").toMatch(/never uploaded, never resold/);
+    // v4.2 fix wave, B-5. "Equities only" is only half the fact: the reader
+    // still has to know what the OTHER rows show. The sentence is the same
+    // literal on both consent sheets, in help and in the client README, and
+    // it replaces a claim ("keeps the mark already stored") about a
+    // contract-keyed mark that no writer in this tree produces.
+    expect(item, "the disclosure does not say what an unpriced derivative row shows").toContain(
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+    );
   });
 
   it("never names the account screen in the bullet — the user's browser goes there, not Vyuha", () => {

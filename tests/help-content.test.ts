@@ -6,6 +6,12 @@ import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
 import { CONNECTABLE_PROVIDER_IDS } from "@/lib/live/connect-prompt";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
+// READ-ONLY import (v4.2 fix wave, B-13): the label the Settings card renders.
+// Help that describes a control by a paraphrase cannot be found by its words,
+// so the two are pinned to ONE constant rather than to two strings that agree
+// today. `components/settings/live-feed-card.tsx` is owned by another builder
+// this wave and is not edited here.
+import { FEED_BLOCKED_HEALTH, REVIEW_CONSENT_CTA } from "@/components/settings/live-feed-card";
 
 /**
  * The help desk's one hard promise: it describes the app that exists. This
@@ -227,7 +233,14 @@ describe("help describes the v4.2 Upstox price source (D)", () => {
     expect(text, "the cap on the keys sent").toMatch(/at most 500 of them/);
     expect(text, "the interval, clamped the same way as the bridge").toMatch(/every 1 to 5 seconds/);
     expect(text, "what the poll does NOT carry").toMatch(/no quantity, no entry price, no P&L, no account/);
-    expect(text, "equities only in this release").toMatch(/futures and options rows keep the mark already stored/i);
+    // v4.2 fix wave, B-5. "keep the mark already stored" was false: no writer
+    // in this tree produces the contract-keyed mark a derivative row reads, so
+    // the row falls back to the position's recorded close (or its entry price)
+    // under an "End of day" pill. The literal is shared with the consent sheets
+    // and the Settings card, byte for byte.
+    expect(text, "equities only in this release").toContain(
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+    );
     expect(text, "the prices are not sent on anywhere").toMatch(/never uploaded, never resold/);
   });
 
@@ -363,8 +376,20 @@ describe("help describes the v4.2 Angel One price source", () => {
 
   it("/live states the tiers, and never promises an interval the user can set", () => {
     const text = body("/live");
+    // v4.2 fix wave, B-6. The tiers count DEDUPED SCRIPS, not positions —
+    // `angelOneCadenceSeconds()` is fed the distinct instrument keys, so two
+    // positions in one symbol are one price to ask for. Help said "open
+    // positions", which over-states the interval for any book that doubles up.
     expect(text, "the tiers are not stated").toMatch(
-      /3 seconds up to 50 open positions, 5 seconds from 51 to 200, 10 seconds from 201 to 500/,
+      /3 seconds up to 50 scrips, 5 seconds from 51 to 200, 10 seconds from 201 to 500/,
+    );
+    expect(text, "the tiers no longer say what they count").toMatch(/distinct scrips/i);
+    const angelTierSentence = text
+      .split(/(?<=[.!?])\s+/)
+      .find((s) => /3 seconds up to 50/.test(s));
+    expect(angelTierSentence, "no sentence states the tiers").toBeDefined();
+    expect(angelTierSentence!, "the tier line still counts positions").not.toMatch(
+      /up to 50 open positions/,
     );
     // Scoped to the sentences that name Angel One, because the bridge and
     // Upstox really do have a 1–5 s slider and must go on saying so.
@@ -410,6 +435,76 @@ describe("help describes the v4.2 Angel One price source", () => {
     expect(offenders, `prescriptive vocabulary in the Angel One copy:\n${offenders.join("\n")}`).toEqual([]);
     expect(BANNED.test("You should pick the Angel One source for a faster mark."), "the scan is dead").toBe(true);
     for (const s of strings) expect(s, "the Angel One copy names an alert").not.toMatch(/\balerts?\b/i);
+  });
+});
+
+/**
+ * v4.2 fix wave, B-13 — THE BLOCKED FEED IS A STATE THE PRODUCT HAS AND NO
+ * WRITTEN SURFACE HAD.
+ *
+ * `feedBlockState()` fires whenever the STORED pick and the EFFECTIVE provider
+ * disagree — which is what a re-versioned disclosure or a backup restored on a
+ * machine that never accepted one produces. The card then prints
+ * `FEED_BLOCKED_HEALTH` and offers `REVIEW_CONSENT_CTA`. Until this wave, help,
+ * `docs/client/PRIVACY.md` and the client README described none of it: a user
+ * whose desk silently fell back to end-of-day prices had nothing to read.
+ *
+ * The CTA is asserted against the CARD'S OWN CONSTANT, not against a copy of
+ * its text. Two strings that agree today are how help ends up naming a button
+ * that has since been relabelled — and a control described by a paraphrase
+ * cannot be found by searching for its words.
+ */
+describe("help names the blocked-feed state and the control that clears it", () => {
+  const settings = HELP_ENTRIES.find((e) => e.href === "/settings")!;
+
+  const blockedSentence = () =>
+    settings.body
+      .flatMap((b) => b.split(/(?<=[.!?])\s+/))
+      .find((s) => /feed is blocked|feed you picked can no longer run/i.test(s));
+
+  it("Settings help says the feed can be blocked, and names the exact control", () => {
+    const sentence = blockedSentence();
+    expect(sentence, "no Settings help sentence describes the blocked feed").toBeDefined();
+    expect(sentence!, "help does not name the control the card renders").toContain(REVIEW_CONSENT_CTA);
+    expect(REVIEW_CONSENT_CTA, "the card's label moved without help moving with it").toBe(
+      "Review and accept",
+    );
+  });
+
+  it("…and says the two things that cause it", () => {
+    const sentence = blockedSentence()!;
+    expect(sentence, "help does not name the re-versioned disclosure").toMatch(
+      /disclosure changed since you accepted it/i,
+    );
+    expect(sentence, "help does not name the restored backup").toMatch(
+      /backup was restored on a machine that never accepted it/i,
+    );
+    expect(sentence, "help does not say consent is asked for again").toMatch(/consent is asked for again/i);
+  });
+
+  it("…and describes the same fallback the card's health line states", () => {
+    const sentence = blockedSentence()!.toLowerCase();
+    for (const word of ["blocked", "end-of-day prices"]) {
+      expect(FEED_BLOCKED_HEALTH.toLowerCase(), `the card's health line no longer says "${word}"`).toContain(
+        word,
+      );
+      expect(sentence, `help does not say "${word}"`).toContain(word);
+    }
+  });
+
+  it("the client README carries the same state, and the same control label", () => {
+    const clientReadme = fs.readFileSync(path.join(process.cwd(), "docs/client/README.md"), "utf8");
+    const row = clientReadme
+      .split("\n")
+      .find((l) => /feed you picked/i.test(l) && /blocked/i.test(l));
+    expect(row, "the client README's live-feed section never mentions a blocked feed").toBeDefined();
+    expect(row!, "the client README does not name the control").toContain(REVIEW_CONSENT_CTA);
+    expect(row!, "the client README does not say why the block appears").toMatch(
+      /disclosure changed since you accepted it/i,
+    );
+    expect(row!, "the client README does not name the restored backup").toMatch(
+      /backup was restored on a machine that never accepted it/i,
+    );
   });
 });
 

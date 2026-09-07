@@ -83,7 +83,7 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "Equity positions only in this release",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows keep their last stored mark and say so.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
   },
   {
     title: "The prices stay on this machine",
@@ -107,9 +107,14 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *
  * Every sentence below is checked against the code that performs it:
  *
- *   • the daily sign-in and the 05:00 IST flush —
- *     `angelOneSessionExpiresAt()` in lib/quotes/angelone.ts, which caches the
- *     jwt in memory to exactly that instant and to nothing the token claims;
+ *   • "at most once a day WHILE IT STAYS OPEN, and again after a relaunch or a
+ *     credential re-save" — `angelOneSessionExpiresAt()` in
+ *     lib/quotes/angelone.ts caches the jwt IN MEMORY to the 05:00 IST flush
+ *     and to nothing the token claims, and the adapter that holds it is
+ *     rebuilt when the connection row changes. So the sign-in is a PROCESS
+ *     rule, not a calendar one: the sentence this replaced promised a ceiling
+ *     across relaunches that nothing enforces, and promised a sign-in on a day
+ *     the app is never opened (v4.2 fix wave, B-7);
  *   • the host, the 50-token batch and the one-request-a-second ceiling —
  *     `planAngelOneBatches()` and the rate guard in the same file, which reach
  *     apiconnect.angelone.in and nothing else;
@@ -123,21 +128,25 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *     lib/quotes/angelone-tokens.ts, built from the same BASE, cached in
  *     `angelone_instrument_tokens` (migration 0070) and never a scrip-master
  *     download from a second host;
- *   • "equity only" — `angelCashKey()`, which returns null for any key that is
- *     not a cash-segment scrip, so no derivative token is ever sent;
+ *   • "equity only", and what a derivative row shows INSTEAD — `angelCashKey()`
+ *     returns null for any key that is not a cash-segment scrip, so no
+ *     derivative token is ever sent; nothing in this tree writes the
+ *     contract-keyed mark a derivative would read, so the row falls back to the
+ *     position's recorded close, or to its entry price when no close was ever
+ *     recorded, and is labelled "Not priced by this feed";
  *   • "never uploads them" — there is no journal write in either file and no
  *     host but Angel One's own is reachable from them.
  */
 export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
-    title: "It signs in to your Angel One account once each trading day",
+    title: "It signs in to your Angel One account at most once a day",
     body:
-      "Vyuha signs in to apiconnect.angelone.in once each trading day with the client code, PIN and TOTP secret you saved under Import → Connect broker. Angel One clears every session at 5 AM IST, so this happens each morning without asking you.",
+      "Vyuha signs in to apiconnect.angelone.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials; Angel One clears every session at 5 AM IST. It signs in with the client code, PIN and TOTP secret you saved under Import → Connect broker, without asking you.",
   },
   {
     title: "It sends the tokens of your open positions to fetch prices",
     body:
-      "It then sends the tokens of your open positions to apiconnect.angelone.in to fetch prices, in batches of 50, no more than once a second — every 3, 5 or 10 seconds depending on how many positions you hold, and the desk says which.",
+      "It then sends the tokens of your open positions to apiconnect.angelone.in to fetch prices, in batches of 50, no more than once a second — every 3, 5 or 10 seconds depending on how many scrips you hold open, and the desk says which.",
   },
   {
     title: "Angel One offers no read-only key, so the code carries the limit",
@@ -152,7 +161,7 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "This feed prices your equity positions and nothing else",
     body:
-      "Only equity positions are priced by this feed in this release. Futures and options rows keep their last stored mark and say so.",
+      "Only equity positions are priced by this feed in this release. Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
   },
   {
     title: "The prices Angel One returns stay on this machine",

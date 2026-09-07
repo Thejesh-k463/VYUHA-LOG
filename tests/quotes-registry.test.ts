@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PROVIDER_ID,
   PLANNED_PROVIDER_IDS,
@@ -10,6 +10,7 @@ import {
   liveFeedAckGate,
   resolveProviderId,
   selectProviderId,
+  withheldFeedReason,
 } from "@/lib/quotes/registry";
 import {
   ANGELONE_FEED_ENABLED,
@@ -246,6 +247,95 @@ describe("v4.2 — BOTH broker feeds ship, each behind its own consent", () => {
       expect(block, `exactly one block for ${id} — no planned duplicate`).toHaveLength(1);
       expect(block[0].egressDescription).toContain(host);
     }
+  });
+});
+
+/**
+ * v4.2 fix wave 2 — A RELEASE SWITCH OUTRANKS A STORED CONSENT.
+ *
+ * `SHIPPED_PROVIDER_IDS`' own comment promises that "flipping the constant back
+ * removes it everywhere at once", and `lib/quotes/types.ts` promises that a
+ * stored `live_feed_provider` then "collapses to the end-of-day default again".
+ * It did not. `selectProviderId()` checked only the ACKNOWLEDGEMENT for the two
+ * broker feeds, and the acknowledgement column is untouched by the flag — so
+ * someone who accepted the sheet on a build that offered Angel One and then
+ * moved to a build that withholds it kept a withheld feed as `effective`. The
+ * Settings card has no radio for it and, because `stored === effective`, no
+ * block either, so the state was stated NOWHERE; the desk meanwhile built the
+ * PLANNED stub, whose `health()` names `ANGELONE_FEED_ENABLED` to a customer.
+ *
+ * The flag is mocked because it is TRUE in this build, and the broken spelling
+ * and the correct one agree while it is.
+ */
+describe("a feed this build WITHHOLDS is never effective, acknowledged or not", () => {
+  const ANGEL_ACK = withFeedAck(null, "angelone"); // '{"angelone":"1"}'
+  const UPSTOX_ACK = withFeedAck(null, "upstox");
+  const base = { liveFeedProvider: "angelone", openalgoEnabled: false, openalgoAckVersion: null };
+
+  /** The REAL registry, re-imported with the ONE release flag off. */
+  async function withAngelOneWithheld(
+    fn: (off: typeof import("@/lib/quotes/registry")) => Promise<void> | void,
+  ): Promise<void> {
+    vi.resetModules();
+    vi.doMock("@/lib/quotes/types", async () => ({
+      ...(await vi.importActual<typeof import("@/lib/quotes/types")>("@/lib/quotes/types")),
+      ANGELONE_FEED_ENABLED: false,
+    }));
+    try {
+      await fn(await import("@/lib/quotes/registry"));
+    } finally {
+      vi.doUnmock("@/lib/quotes/types");
+      vi.resetModules();
+    }
+  }
+
+  it("collapses a withheld pick to end-of-day even when its acknowledgement is CURRENT", async () => {
+    await withAngelOneWithheld((off) => {
+      expect(off.SHIPPED_PROVIDER_IDS as readonly string[]).not.toContain("angelone");
+      // The id still RESOLVES — it is a planned id again, which is what keeps
+      // its capability block in the catalogue and under the egress guard.
+      expect(off.resolveProviderId("angelone")).toBe("angelone");
+      // …and it is never SELECTED, whatever the consent column says.
+      expect(
+        off.selectProviderId({ ...base, liveFeedAckJson: ANGEL_ACK }),
+        "a withheld feed was made effective by a stored acknowledgement",
+      ).toBe("eod");
+      expect(off.selectProviderId({ ...base, liveFeedAckJson: null }), "flag off, no ack").toBe("eod");
+      // The sibling feed this build still ships is untouched by the switch.
+      expect(
+        off.selectProviderId({
+          liveFeedProvider: "upstox",
+          openalgoEnabled: false,
+          openalgoAckVersion: null,
+          liveFeedAckJson: UPSTOX_ACK,
+        }),
+      ).toBe("upstox");
+    });
+  });
+
+  it("states WHY, in the user's words, and never names the source-file constant", async () => {
+    await withAngelOneWithheld((off) => {
+      const reason = off.withheldFeedReason("angelone");
+      expect(reason).toBe("This build does not offer the Angel One feed; the desk stays on end-of-day prices.");
+      // SEBI-safe: a customer is told what is running, not which constant is false.
+      expect(reason).not.toContain("ANGELONE_FEED_ENABLED");
+      expect(reason).not.toMatch(/[A-Z_]{6,}/);
+      // A shipped feed is not withheld, so it has no such reason at all.
+      expect(off.withheldFeedReason("upstox")).toBeNull();
+      expect(off.withheldFeedReason("eod")).toBeNull();
+    });
+  });
+
+  it("CONTROL — with the flag ON the same acknowledgement opens the feed", () => {
+    expect(ANGELONE_FEED_ENABLED).toBe(true);
+    expect(selectProviderId({ ...base, liveFeedAckJson: ANGEL_ACK })).toBe("angelone");
+    expect(withheldFeedReason("angelone")).toBeNull();
+    // …and a never-built id is withheld in EVERY build, which is the same rule.
+    expect(withheldFeedReason("kite")).toContain("does not offer");
+    expect(
+      selectProviderId({ liveFeedProvider: "kite", openalgoEnabled: false, openalgoAckVersion: null }),
+      "a planned id must never be the effective feed",
+    ).toBe("eod");
   });
 });
 

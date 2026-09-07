@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import {
   ANGELONE_FEED_COPY,
@@ -12,6 +12,8 @@ import {
   angelOneRowState,
   feedBlockState,
   feedHealthText,
+  foldFeedResponse,
+  offeredProviders,
 } from "@/components/settings/live-feed-card";
 import {
   ANGELONE_BATCH_SIZE,
@@ -121,7 +123,7 @@ describe("the Angel One radio is offered only behind the one release flag", () =
     // Byte-identical to the Upstox scope sentence: one release-scope rule, one
     // sentence, so the two rows cannot drift into two different promises.
     expect(ANGELONE_FEED_COPY.equityOnly).toBe(
-      "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
     );
   });
 });
@@ -171,12 +173,12 @@ describe("the cadence line states the tier and the arithmetic behind it", () => 
     [30, 3, 1],
     [120, 5, 3],
     [300, 10, 6],
-  ])("%i open positions → every %i s, %i calls per refresh", (count, seconds, calls) => {
+  ])("%i open scrips → every %i s, %i calls per refresh", (count, seconds, calls) => {
     expect(angelOneCadenceSeconds(count), "the tier itself").toBe(seconds);
     expect(angelOneRefreshCalls(count), "50 symbols to a batch").toBe(calls);
     expect(angelOneCadenceLine(count)).toBe(
       `Refreshes every ${seconds} seconds — Angel One allows about one request a second, ` +
-        `and your ${count} open positions take ${calls} ${calls === 1 ? "call" : "calls"} per refresh.`,
+        `and your ${count} open scrips take ${calls} ${calls === 1 ? "call" : "calls"} per refresh.`,
     );
   });
 
@@ -200,9 +202,9 @@ describe("the cadence line states the tier and the arithmetic behind it", () => 
   });
 
   it("never says 'take 1 calls' — the sentence is grammatical at every count", () => {
-    expect(angelOneCadenceLine(1)).toContain("your 1 open position takes 1 call per refresh");
-    expect(angelOneCadenceLine(2)).toContain("your 2 open positions take 1 call per refresh");
-    expect(angelOneCadenceLine(51)).toContain("your 51 open positions take 2 calls per refresh");
+    expect(angelOneCadenceLine(1)).toContain("your 1 open scrip takes 1 call per refresh");
+    expect(angelOneCadenceLine(2)).toContain("your 2 open scrips take 1 call per refresh");
+    expect(angelOneCadenceLine(51)).toContain("your 51 open scrips take 2 calls per refresh");
   });
 
   /**
@@ -239,7 +241,7 @@ describe("the cadence line states the tier and the arithmetic behind it", () => 
     const desk = deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: 50, feedSymbolCount: null });
     expect(card).toBe(desk);
     expect(card).toContain("Refreshes every 3 seconds");
-    expect(card).toContain("your 50 open positions take 1 call per refresh");
+    expect(card).toContain("your 50 open scrips take 1 call per refresh");
   });
 });
 
@@ -261,7 +263,7 @@ describe("the cadence line says nothing about a book it has not been told about 
     expect(angelOneCadenceText(undefined)).toBe(FEED_CHECKING);
     expect(angelOneCadenceText(undefined), "a book the card has not been told about").not.toMatch(/0 open/);
     // The sentence that used to print, so this test can tell the two apart.
-    expect(angelOneCadenceLine(0)).toContain("your 0 open positions take 1 call per refresh");
+    expect(angelOneCadenceLine(0)).toContain("your 0 open scrips take 1 call per refresh");
   });
 
   it("once the server has answered, it states that account's own count", () => {
@@ -387,8 +389,16 @@ describe("the consent sheet shows ANGEL ONE's items, and never another provider'
       .map((i) => `${i.title} ${i.body}`)
       .join(" ");
     for (const [what, pattern] of [
-      ["the once-a-day sign-in", /signs in to apiconnect\.angelone\.in once each trading day/i],
-      ["the 5 AM flush, unattended", /clears every session at 5 AM IST, so this happens each morning without asking you/i],
+      // B-7 (fix wave 2): the sheet used to say "once each trading day", which
+      // is true per PROCESS and not per day — a relaunch, a re-saved credential
+      // or the launch-time trade pull each sign in again on the same disclosed
+      // host. The claim pinned here is the reworded one, which is what the code
+      // does; it is still Angel One's alone.
+      [
+        "the once-a-day sign-in",
+        /signs in to apiconnect\.angelone\.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials/i,
+      ],
+      ["the 5 AM flush, unattended", /Angel One clears every session at 5 AM IST/i],
       ["the batching and the tiers", /in batches of 50, no more than once a second/i],
       ["the token look-up kept locally", /keeps that mapping on this machine/i],
     ] as [string, RegExp][]) {
@@ -671,5 +681,187 @@ describe("a blocked Angel One feed is stated, and the sheet is reachable again (
     expect(src).toContain("{REVIEW_CONSENT_CTA}");
     expect(REVIEW_CONSENT_CTA).toBe("Review and accept");
     expect(PRESCRIPTIVE_LANGUAGE.test(REVIEW_CONSENT_CTA), REVIEW_CONSENT_CTA).toBe(false);
+  });
+});
+
+/**
+ * B-4 — THE CARD ASKED, WAS ANSWERED, AND WENT ON SHOWING THE OLD ANSWER.
+ *
+ * `status` is filled by the card's mount fetch and by nothing else. `store()`
+ * threw away the POST's body except for `ok`/`message`, even though the route
+ * has answered the provider action with `feed: await resolveLiveFeed()` since
+ * v4.1 — and `settings-form.tsx` mounts this card UNKEYED, so `router.refresh()`
+ * re-renders it with the state it already had (DECISIONS: an initialiser does
+ * not re-run after `router.refresh()`). Everything derived from `status.feed`
+ * therefore kept describing the world as it was BEFORE the write:
+ *
+ *   • Review and accept → ack ok → store ok → "Saved.", and the blocked block,
+ *     its button and the "Not live — blocked" health line all stayed until the
+ *     user reloaded the page;
+ *   • the v4.1 switch-away path regressed with it — a blocked OpenAlgo pick,
+ *     switch to end-of-day, and the eod radio was checked while a block beside
+ *     it said the picked feed was blocked.
+ *
+ * Driven through the REAL route and through the card's OWN fold, so what is
+ * asserted is the card's derivation from the POST BODY — no second GET is made
+ * anywhere in this block, because the card does not make one either.
+ */
+describe("the card folds the POST's own verdict into its state (B-4)", () => {
+  it("Review and accept clears the block without a second GET", async () => {
+    // The restore case again: the pick travelled, the acknowledgement did not.
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "angelone", liveFeedAckJson: null }).run();
+    const mounted = await (await get()).json(); // what the mount fetch put in `status`
+    expect(feedBlockState(mounted.feed)?.reviewProvider, "the button is not even offered").toBe("angelone");
+
+    // The two POSTs the button really sends, in order, and nothing else.
+    const ack = await (await post({ action: "ack", provider: "angelone" })).json();
+    let status = foldFeedResponse(mounted, ack);
+    const stored = await (await post({ action: "provider", provider: "angelone" })).json();
+    expect(stored.feed, "the route already answers the write with its own verdict").toBeTruthy();
+    status = foldFeedResponse(status, stored);
+
+    expect(feedBlockState(status?.feed), "the blocked block survives an accepted sheet").toBeNull();
+    expect(status?.feed?.stored).toBe("angelone");
+    expect(status?.feed?.effective, "the accepted feed is what runs now").toBe("angelone");
+    expect(status?.angelone?.ackCurrent, "the ack the server just recorded").toBe(true);
+    expect(
+      feedHealthText({ health: status?.health, blocked: feedBlockState(status?.feed) !== null }),
+      "the health line still reads blocked after the block cleared",
+    ).not.toBe(FEED_BLOCKED_HEALTH);
+  });
+
+  it("the v4.1 switch-away path: picking end-of-day drops a blocked OpenAlgo block", async () => {
+    t.db
+      .update(t.schema.settings)
+      .set({ liveFeedProvider: "openalgo", openalgoEnabled: false, openalgoAckVersion: null })
+      .run();
+    const mounted = await (await get()).json();
+    expect(mounted.feed.stored).toBe("openalgo");
+    expect(feedBlockState(mounted.feed), "the fixture is not blocked, so this proves nothing").not.toBeNull();
+
+    const switched = await (await post({ action: "provider", provider: "eod" })).json();
+    const status = foldFeedResponse(mounted, switched);
+    expect(status?.feed?.stored).toBe("eod");
+    expect(
+      feedBlockState(status?.feed),
+      "end-of-day is checked AND a block says the feed you picked is blocked",
+    ).toBeNull();
+  });
+
+  it("folds only what the response carried — a missing key is not 'no longer true'", () => {
+    const prev = {
+      ok: true,
+      feed: { stored: "angelone", effective: "eod", refreshSeconds: 3, blockedReason: "x" },
+      angelone: { connected: true, ackCurrent: false, openCount: 7 },
+    };
+    // `refresh-seconds` answers with neither half; the card must not forget.
+    expect(foldFeedResponse(prev, { ok: true, message: "Refreshing every 3s." })).toEqual(prev);
+    // …and with no mount answer at all there is nothing to fold into.
+    expect(foldFeedResponse(null, { ok: true, feed: prev.feed })).toBeNull();
+  });
+
+  it("all three write paths fold, in the card itself", () => {
+    const card = stripComments(read(CARD));
+    expect(
+      card.match(/setStatus\(\(prev\) => foldFeedResponse\(prev, r\)\)/g)?.length,
+      "store() or one of the two accept paths still discards the answer",
+    ).toBe(3);
+    // …and it is not a fetch effect wearing a different hat: the only effect on
+    // this card is still the mount-only one.
+    expect(card.match(/React\.useEffect\(/g)?.length, "a second effect appeared").toBe(1);
+  });
+});
+
+/**
+ * B-8 — A WITHHELD BROKER'S SHEET WAS ONE STORED STRING AWAY.
+ *
+ * Three things were ungated while the picker itself was flag-gated: the route's
+ * `ack` action took `z.enum(["upstox", "angelone"])` unconditionally,
+ * `feedBlockState` offered `reviewProvider` for any id that HAS a sheet rather
+ * than any id this build OFFERS, and both dialogs mounted unconditionally. With
+ * a flag off and the withheld id sitting in `liveFeedProvider` — it travels in
+ * a backup envelope, the acknowledgement does not — the card grew a
+ * "Review and accept" button for a feed with no radio, opened that broker's
+ * disclosure and recorded an acknowledgement for it.
+ *
+ * The flags are INJECTED through the card's own `offeredProviders()` filter and
+ * MOCKED for the route, because all three are true in this build and the broken
+ * spelling and the correct one agree while they are.
+ */
+describe("a provider this build withholds gets no button, no sheet and no ack (B-8)", () => {
+  const offered = (openalgo: boolean, upstox: boolean, angelone: boolean) =>
+    offeredProviders({ openalgo, upstox, angelone }).map((p) => p.id);
+
+  it("the block is still STATED for a withheld provider, but its button is not", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "angelone", liveFeedAckJson: null }).run();
+    const body = await (await get()).json();
+    expect(body.feed.stored).toBe("angelone");
+
+    // As this build ships: the sheet is this card's, so the button is offered.
+    expect(feedBlockState(body.feed, offered(true, true, true))?.reviewProvider).toBe("angelone");
+    // Angel One withheld: the user is still told the pick is not running…
+    const withheld = feedBlockState(body.feed, offered(true, true, false));
+    expect(withheld?.reason, "the blocked fact was withheld with the button").toBe(body.feed.blockedReason);
+    // …and there is no control to open a disclosure for a feed that cannot run.
+    expect(withheld?.reviewProvider, "the card opens a withheld broker's sheet").toBeNull();
+    // The same property for the sibling provider, so this is not an Angel One
+    // special case.
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "upstox", liveFeedAckJson: null }).run();
+    const upstoxBody = await (await get()).json();
+    expect(feedBlockState(upstoxBody.feed, offered(true, true, true))?.reviewProvider).toBe("upstox");
+    expect(feedBlockState(upstoxBody.feed, offered(true, false, true))?.reviewProvider).toBeNull();
+    // Unchanged for OpenAlgo, whose consent lives on the Integrations screen.
+    expect(
+      feedBlockState({ stored: "openalgo", effective: "eod" }, offered(true, true, true))?.reviewProvider,
+    ).toBeNull();
+  });
+
+  it("both consent sheets mount only behind the release flag that offers them", () => {
+    const card = stripComments(read(CARD));
+    expect(card).toMatch(/\{OFFERS_UPSTOX && \(\s*<FeedConsentDialog/);
+    expect(card).toMatch(/\{OFFERS_ANGELONE && \(\s*<FeedConsentDialog/);
+    // Derived from the resolved list, never restated as a second flag read.
+    expect(card).toMatch(/OFFERS_UPSTOX = PROVIDERS\.some\(\(p\) => p\.id === "upstox"\)/);
+    expect(card).toMatch(/OFFERS_ANGELONE = PROVIDERS\.some\(\(p\) => p\.id === "angelone"\)/);
+    expect(card.match(/<FeedConsentDialog/g)?.length, "a third, ungated sheet").toBe(2);
+  });
+
+  it("the ack action is gated by the SAME release flag as the picker", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod", liveFeedAckJson: null }).run();
+    vi.resetModules();
+    vi.doMock("@/lib/quotes/types", async () => ({
+      ...(await vi.importActual<typeof import("@/lib/quotes/types")>("@/lib/quotes/types")),
+      ANGELONE_FEED_ENABLED: false,
+    }));
+    try {
+      // The SAME temp database — lib/db caches its connection on globalThis, so
+      // a re-imported route writes through the connection this file opened.
+      const gated = await import("@/app/api/live/feed/route");
+      const send = (body: unknown) =>
+        gated.POST(
+          new Request("http://127.0.0.1:3011/api/live/feed", {
+            method: "POST",
+            headers: { host: "127.0.0.1:3011", "content-type": "application/json" },
+            body: JSON.stringify(body),
+          }),
+        );
+
+      const refused = await send({ action: "ack", provider: "angelone" });
+      expect(refused.status, "an ack was accepted for a provider this build withholds").toBe(400);
+      expect(
+        parseFeedAcks(settingsRow()?.liveFeedAckJson).angelone,
+        "a withheld provider's acknowledgement was written anyway",
+      ).toBeUndefined();
+      // The picker refuses the same id, which is the behaviour being matched.
+      expect((await send({ action: "provider", provider: "angelone" })).status).toBe(400);
+      // …and the provider this build DOES ship is untouched by the gate.
+      expect((await send({ action: "ack", provider: "upstox" })).status).toBe(200);
+      expect(parseFeedAcks(settingsRow()?.liveFeedAckJson)).toEqual({
+        upstox: LIVE_FEED_DISCLOSURE_VERSIONS.upstox,
+      });
+    } finally {
+      vi.doUnmock("@/lib/quotes/types");
+      vi.resetModules();
+    }
   });
 });

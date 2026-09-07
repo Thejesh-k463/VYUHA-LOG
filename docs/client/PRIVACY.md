@@ -87,22 +87,28 @@ Exactly four kinds, and only one of them is automatic:
    keys of the open positions of the selected account, at most 500 of them,
    once every 1–5 seconds while the desk is open, and nothing else about
    them — no quantity, no entry price, no P&L, no account. Equities only in
-   this release: futures and options rows keep the mark already stored and say
-   so. The prices stay on this machine: never uploaded, never resold.
+   this release. Futures and options rows are not priced by this feed: each
+   shows the position's recorded close, or its entry price when no close is
+   recorded, and says so on the row. The prices stay on this machine: never
+   uploaded, never resold.
    Angel One can price the desk instead, on the same terms and behind the same
    switch, from the client code, PIN and TOTP secret you already saved under
-   Import → Connect broker. Angel One clears every API session at 5 AM IST, so
-   Vyuha signs in once a day to Angel One's own API host
+   Import → Connect broker. Angel One clears every API session at 5 AM IST, and
+   Vyuha signs in to Angel One's own API host
    (`apiconnect.angelone.in`) — the host the Angel One trade pull already
-   uses, so this adds no new one — generating the one-time password itself
+   uses, so this adds no new one — at most once a day while it stays open, and
+   again after a relaunch or when you re-save the credentials. It generates the
+   one-time password itself
    from the secret you enrolled, with nothing for you to click. Against that
    same host it looks up, once per symbol, the token Angel One prices by, and
    keeps that mapping on this machine. It then asks for prices in batches of at
    most 50 symbols, at most one request a second, every 3, 5 or 10 seconds
-   depending on how many positions you hold, and only for the open positions of
+   depending on how many scrips you hold open, and only for the open positions of
    the selected account, at most 500 of them, and for nothing else about them —
    no quantity, no entry price, no P&L, no account. Equities only in this
-   release: futures and options rows keep the mark already stored and say so.
+   release. Futures and options rows are not priced by this feed: each shows
+   the position's recorded close, or its entry price when no close is recorded,
+   and says so on the row.
    The prices stay on this machine: never uploaded, never resold.
    Your credentials are encrypted at rest, bound to your
    machine, and sent nowhere except the broker itself. We never see them.
@@ -173,8 +179,14 @@ Exactly four kinds, and only one of them is automatic:
     • 500 keys, every 1–5 s     openPositionKeys() and MAX_KEYS in
                                 app/api/live/stream/route.ts (the same cap and
                                 the same clamped interval as the bridge)
-    • equities only             futures and options rows keep the mark already
-                                stored, and the desk says so on the row
+    • equities only             futures and options rows are not priced by this
+                                feed: each shows the position's recorded close,
+                                or its entry price when no close is recorded,
+                                and says so on the row. Nothing in this tree
+                                writes the contract-keyed mark a derivative
+                                would otherwise read, so the sentence this
+                                replaces promised a value that does not exist
+                                (v4.2 fix wave, B-5)
   Still the same KIND of request — the user's own broker, only when they
   switched it on and picked it — so "four kinds" is unchanged again.
 
@@ -190,12 +202,20 @@ Exactly four kinds, and only one of them is automatic:
                                   tests/quotes-egress-guard.test.ts refuses any
                                   provider naming a host THIS file does not
                                   disclose.
-    • the once-a-day sign-in      Angel One flushes every session at 5 AM IST;
-                                  the next one is opened from the client code,
+    • the sign-in, as a PROCESS   Angel One flushes every session at 5 AM IST;
+      rule                        the next one is opened from the client code,
                                   PIN and the TOTP secret already in the
                                   encrypted broker credentials, with no human
                                   step. Nothing new is asked of the user and no
-                                  second credential is stored.
+                                  second credential is stored. The jwt is
+                                  cached IN MEMORY by
+                                  `angelOneSessionExpiresAt()`, and the adapter
+                                  holding it is rebuilt when the connection row
+                                  changes — so the honest ceiling is "at most
+                                  once a day WHILE IT STAYS OPEN, and again
+                                  after a relaunch or a credential re-save",
+                                  not once per calendar day (v4.2 fix wave,
+                                  B-7).
     • the token look-up           Angel One prices by its own instrument token,
                                   so each symbol is resolved once against the
                                   same host and the mapping is kept locally.
@@ -205,8 +225,12 @@ Exactly four kinds, and only one of them is automatic:
                                   guard in lib/quotes/rate-guard.ts
     • 500 keys, selected account  openPositionKeys() / MAX_POSITION_KEYS in
                                   lib/quotes/persist-mark.ts (invariant 8)
-    • equities only               futures and options rows keep the mark already
-                                  stored, and the desk says so on the row
+    • equities only               futures and options rows are not priced by
+                                  this feed: each shows the position's recorded
+                                  close, or its entry price when no close is
+                                  recorded, and says so on the row (v4.2 fix
+                                  wave, B-5 — the same correction as the Upstox
+                                  paragraph above, and the same literal)
 -->
 
 That is the complete list for Vyuha Desktop. There is no fifth thing.

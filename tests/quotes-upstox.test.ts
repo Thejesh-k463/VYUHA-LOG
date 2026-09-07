@@ -375,7 +375,16 @@ describe("health()", () => {
     expect(h.skippedDerivatives).toBe(1);
     expect(h.skippedNoIsin).toBe(1);
     expect(h.reason).toMatch(/2 position\(s\) are not priced by this feed/);
-    expect(h.reason).toMatch(/keep their last stored mark/);
+    // v4.2 fix wave 2, B-5. The tail used to promise "keep their last stored
+    // mark" — a value nothing writes, since no writer stores a CONTRACT-keyed
+    // mark. The health line is printed by the SAME Settings card that prints
+    // the B-5 footnote, so it states the same fallback the footnote does.
+    expect(h.reason).toContain(
+      "each shows the position's recorded close, or its entry price when no close is recorded",
+    );
+    expect((h.reason ?? "").toLowerCase(), "the health line still promises the last stored mark").not.toContain(
+      "last stored mark",
+    );
   });
 
   it("makes NO request of its own — the consent sheet names exactly one kind", async () => {
@@ -533,5 +542,21 @@ describe("the breadcrumb the Upstox messages name", () => {
       "Paste your read-only Analytics token under Import → Connect broker, then pick Upstox in Settings → Live feed.",
     );
     expect(src, "the old screen name is still here").not.toContain("Import → Brokers");
+  });
+
+  /**
+   * v4.2 fix wave 2, B-5 — the phrase, gone from the whole file.
+   *
+   * The health sentence is one branch of one template literal, so an assertion
+   * on ONE built reason proves only that branch. B-5 removed the phrase from
+   * every surface that states the rule; this holds the adapter's SOURCE to the
+   * same standard, so a second branch cannot quietly bring it back.
+   */
+  it("no longer promises a 'last stored mark' anywhere in the adapter (B-5)", () => {
+    const src = readFileSync(path.join(process.cwd(), "lib/quotes/upstox.ts"), "utf8");
+    expect(src.toLowerCase(), "the adapter still promises the last stored mark").not.toContain("last stored mark");
+    expect(src).toContain(
+      "each shows the position's recorded close, or its entry price when no close is recorded",
+    );
   });
 });

@@ -4261,3 +4261,69 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   `tests/seams-v42.test.ts`: 33 tests over nine crossings, one confirmed defect (above), one latent, one
   documented gap (a cash equity with no ISIN in any bundled source is neither sent nor labelled — it surfaces
   only in `health().skippedNoIsin`; pinned so it cannot widen silently).
+
+## 2026-09-07 — v4.2 wave audit (`92c48cc..3a3e026`, CI 34125653384 6/6): 15 raw → 13 unique → 13 after the skeptic → 14 with one promotion → fix wave `8ae5dea` (CI 34137371450 6/6)
+
+- **Audit ladder (six Fable auditors + Fable skeptic, orchestrated on Fable, Opus builders):** money 1 / schema 0 / security 3 /
+  ui 3 / test 4 / docs 4 = 15 raw; two overlaps merged (the GTT surface-pin gap found twice, the "what leaves the machine"
+  omission found twice) → 13; the skeptic killed none (12 CONFIRMED, 1 DOWNGRADED to cosmetic) and promoted one comment
+  defect → 14. Two more surfaced during the fix wave (the typed-mark provider's symbol-first quote; the desk's thrown
+  snapshot dropping the adapter's health `state`) → 16 fixed in `8ae5dea`.
+- **A-1 (money, silent wrong number, PRE-EXISTING but widened by 4.2):** every stored-mark READER resolved `mtm[symbol]` before
+  `mtm[tradingsymbol]`, and a derivative's `symbol` is the UNDERLYING, so an open `OPT TCS 30 Jun 2026 2500 CE` (875 × ₹2.75)
+  with a cash mark TCS = 2057.5 printed unrealised **+₹17,97,906 (+74,718 %)** on the desk, heat and /risk while the WRITE side
+  had refused derivative marks since 4.1 (M1). Ruling: drop the `symbol` rung for `instrumentType !== "equity"` —
+  `storedMarkFor()` in `lib/analytics/positions.ts` is the ONE implementation (`tradingsymbol → closingPrice → avgPrice`);
+  `load-desk.ts` calls it; `lib/quotes/manual.ts` applies `isCashKey()` so the typed-mark provider cannot quote an option at the
+  underlying either (a quoted value outranks the stored mark, so the provider door had to close too). Rejected: relabel and
+  keep the number; defer to the contract-keyed schema release. Consequence recorded for docs: no writer produces a
+  contract-keyed mark, so a derivative row shows its recorded close under an "End of day" pill, or its entry price — never a
+  "Stored mark" pill.
+- **A-2 (consent claim, broken feature):** `getLiveFeedProvider()` built a fresh adapter per call, so the Angel One jwt cache,
+  the 60 s failed-login backoff, the 1 req/s guard and the 4,000/h budget were per REQUEST: one `/live` visit = two
+  `loginByPassword` calls (SSR + stream), every tab-foreground and the 15:31 reopen one more, a wrong PIN re-sent on every open,
+  and a Settings health line computed on a fourth instance that had made no request. Ruling: a module-scoped SINGLE-SLOT memo
+  (angelone / upstox / openalgo; eod / manual / mock stay per-call) keyed on
+  `id | refreshSeconds | selectedAccountId | VYUHA_DB_PATH | live_feed_ack_json | openalgo flags | connection rows id@updated_at#FNV1a(apiKey ciphertext, authJson ciphertext)`;
+  `resolveLiveFeed()` (the consent gate) still runs on every call, and each adapter re-reads its own gate per `snapshot()`, so a
+  withdrawn consent is never served from the slot. One slot, not a map — the desk runs one feed and a map of live sessions is a
+  leak. Rejected: rewrite the consent sentence to match per-request logins. Measured: two callers against one temp DB → `logins
+  === 1`; reverting the memo → 2.
+- **Guards that agreed with themselves:** the Angel One "no order call" pin was a DENYLIST (`placeOrder|modifyOrder|cancelOrder`,
+  `/order/v1/<x>`) that passed SmartAPI's GTT namespace (`/gtt/v1/createRule` places a conditional order) and a template path
+  `/order/v1/${verb}`; now an ALLOWLIST over the three SmartAPI paths, with a test proving it fires on both plants. Angel One's
+  default fetchers (POST, path, `mode: "OHLC"`, body, bearer header) ran in no test — every test injected `quoteImpl`; flipping
+  the mode to `LTP` (no `close` → day change "—" under a "Live" strip) stayed green. Upstox path constants were compared only
+  with themselves and a comment cited a `/market-quote/*` pin that did not exist. Seam S4 claimed Angel One coverage it lacked.
+- **Cadence sentence from the wrong denominator (silent wrong number on screen):** the desk computed the Angel One tier from
+  `rows.length` (one per open TRADE) while the adapter paces on DEDUPED quote keys; at 51 rows / 50 keys the desk said
+  "every 5 seconds … 2 calls" against a 3 s / 1 call poll and a Settings card saying 3 s. Now: the stream's snapshot frame
+  `symbols` → `FeedInfo.symbolCount` (deduped, from the SSR snapshot) → no count, never rows; the SSR snapshot keys are
+  deduped on `quoteKeyId` with the shared `MAX_POSITION_KEYS`. Tests that pinned the SOURCE TEXT `angelOneCadenceLine(rows.length)`
+  were replaced by behaviour tests — an implementation pin was green over both defects.
+- **Blocked consent reached no screen:** `resolveLiveFeed()` set `effective: "eod"` + `blockedReason` for a stored broker feed
+  whose ack was stale, but the only renderer was OpenAlgo-gated; the radio showed the stored provider checked, the health line
+  reported the EOD provider's "Feed OK", and a checked radio fires no `onChange`, so the sheet could not be re-opened without
+  switching provider. Reachable by a future disclosure-version bump or a backup restored on another machine (`liveFeedProvider`
+  travels, `liveFeedAckJson` is blanked). Now: any provider with `stored !== effective` renders its reason with a
+  "Review and accept" control; the health line says blocked before it repeats anything.
+- **The desk's thrown snapshot dropped `state` (seam X6b):** the catch rebuilt health from the message only, so the desk said
+  `disabled` where the route said `no-key`, and the once-a-day connect prompt (Q24) could never fire for the state it exists
+  for. Now the catch adopts `provider.health()` only when it reports a failure; an `ok:true` health is discarded in favour of
+  the thrown sentence, because a green pill over a desk that priced nothing is worse than a `disabled` fallback.
+- **"Import → Brokers":** 29 new user-facing strings (both consent sheets included) named a screen that does not exist — the
+  card is "Connect broker (API) — …" and pre-wave docs said "Import → Connect broker" 11 times; 15 test assertions pinned the
+  coined wording verbatim. Now "Import → Connect broker" everywhere, with `tests/import-breadcrumb-label.test.ts` deriving the
+  legal targets from the card title. **No disclosure-version bump**: the Upstox/Angel One sheets had never shipped (migration
+  0069 and `live-feed-disclosure.ts` first appear after the 4.1.0 tag; backups blank the column), so version "1" was never
+  acknowledged by any install.
+- **Gate on the fix-wave tree:** `npm run verify` EXIT 0 — **355 files / 6,821 passed / 35 skipped**, `next build` compiled
+  17.3 s (a first run failed only on a transient Google-Fonts fetch during the build — both sandboxed and unsandboxed curls
+  returned 200 afterwards; the second full run passed). `e2e/z-live-desk.spec.ts` 9/9 twice (builder B3, then the orchestrator
+  after the last `components/live/*` edit). Seam pass `tests/seams-v42-fix.test.ts`: 20 tests over six crossings, each red with
+  either side reverted; one confirmed defect (X6b, above). README file count 352 → 355; six "tests" claims 6,726 → 6,821.
+  `package-lock.json` untouched. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 fix-wave rulings".
+- **Process:** a heredoc through the shell hook and a PowerShell here-string both failed as a commit message (the first was
+  mangled, the second was passed as a pathspec); the message went through a file and `git commit -F`. A recursive shell grep
+  over the whole tree hung (known: use the Grep tool). SendMessage is unavailable in this harness, so a builder cannot be
+  appended mid-run — a follow-up builder on the same file set after it reports is the pattern.

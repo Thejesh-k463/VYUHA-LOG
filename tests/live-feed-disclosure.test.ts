@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ANGELONE_FEED_ITEMS,
@@ -22,6 +24,32 @@ import { ANGELONE_CAPABILITIES } from "@/lib/quotes/angelone";
  *   2. the sheet names api.upstox.com and no other host — the sheet and the
  *      capability block are two statements of one fact and must not drift.
  */
+
+/**
+ * B-5 (v4.2 fix wave, owner ruling B-7 sheet). The derivative sentence, byte
+ * for byte, on BOTH sheets and on the Settings card.
+ *
+ * The sentence it replaces ("Futures and options rows keep their last stored
+ * mark") was FALSE from 8ae5dea: a derivative reads only a contract-keyed mark
+ * that no writer in this tree produces, so the row falls back to the position's
+ * recorded close — or its entry price when no close was ever recorded — under
+ * an "End of day" pill labelled "Not priced by this feed". One literal, shared
+ * by every surface, is what stops the two halves drifting into two promises;
+ * `tests/seams-v42-fix.test.ts` compares this sheet with the card byte for byte.
+ */
+const NOT_PRICED_SENTENCE =
+  "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.";
+
+/**
+ * B-7 (owner ruling: reword). The sign-in sentence, byte for byte.
+ *
+ * "once each trading day" was true PER PROCESS and nowhere else: the session
+ * lives in the adapter instance, so a relaunch or a credential re-save opens
+ * another one the same day, and a machine left closed all day opens none. The
+ * replacement states the mechanism instead of the calendar.
+ */
+const ANGEL_SIGNIN_SENTENCE =
+  "Vyuha signs in to apiconnect.angelone.in at most once a day while it stays open, and again after a relaunch or when you re-save the credentials; Angel One clears every session at 5 AM IST.";
 
 describe("the stored acknowledgement", () => {
   it("reads a provider-id → version map out of the column", () => {
@@ -86,7 +114,7 @@ describe("the Upstox consent sheet", () => {
     expect(flat).toContain("read-only");
     expect(flat).toContain("cannot place, change or cancel an order");
     expect(flat).toContain("Only equity positions are priced by this feed in this release");
-    expect(flat).toContain("Futures and options rows keep their last stored mark");
+    expect(flat).toContain(NOT_PRICED_SENTENCE);
     expect(flat).toContain("never uploads them");
     expect(flat).toContain("never resells market data");
   });
@@ -144,15 +172,21 @@ describe("the Angel One consent sheet", () => {
 
   const flat = ANGELONE_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ");
 
-  it("states the daily sign-in, the 5 AM flush and where the credentials came from", () => {
-    expect(flat).toContain("signs in to apiconnect.angelone.in once each trading day");
+  it("states the sign-in as the process rule it is, the 5 AM flush, and the credentials", () => {
+    expect(flat).toContain(ANGEL_SIGNIN_SENTENCE);
     expect(flat).toContain("client code, PIN and TOTP secret you saved under Import → Connect broker");
     expect(flat).toContain("Angel One clears every session at 5 AM IST");
+    // The two things the old sentence promised and the code never kept: a
+    // relaunch and a credential re-save each open another session that day.
+    expect(flat, "the sheet no longer says what makes a SECOND sign-in happen").toContain(
+      "again after a relaunch or when you re-save the credentials",
+    );
   });
 
   it("states the batch size, the one-a-second ceiling and the 3/5/10 cadence", () => {
     expect(flat).toContain("in batches of 50, no more than once a second");
-    expect(flat).toContain("every 3, 5 or 10 seconds depending on how many positions you hold");
+    expect(flat).toContain("every 3, 5 or 10 seconds depending on how many scrips you hold open");
+    expect(flat).not.toContain("how many positions you hold");
     expect(flat, "the desk must say which tier is in force").toContain("the desk says which");
   });
 
@@ -169,7 +203,7 @@ describe("the Angel One consent sheet", () => {
     expect(flat).toContain("looks up each symbol's Angel One token once, on the same host");
     expect(flat).toContain("keeps that mapping on this machine");
     expect(flat).toContain("Only equity positions are priced by this feed in this release");
-    expect(flat).toContain("Futures and options rows keep their last stored mark");
+    expect(flat).toContain(NOT_PRICED_SENTENCE);
     expect(flat).toContain("never uploads them");
     expect(flat).toContain("never resells market data");
   });
@@ -223,5 +257,101 @@ describe("the two sheets are two statements, not one", () => {
     expect(isFeedAckCurrent(both, "angelone")).toBe(true);
     // …and accepting only one leaves the other closed.
     expect(isFeedAckCurrent(withFeedAck(null, "angelone"), "upstox")).toBe(false);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * B-5 / B-7 — THE TWO FALSE SENTENCES, BANNED ACROSS EVERY SURFACE THAT SAID
+ * THEM.
+ *
+ * Fixing the consent sheet alone would leave the same false claim in help, in
+ * `docs/client/PRIVACY.md`, in the client README and on the GitHub landing
+ * page — four places a buyer reads BEFORE the dialog. This scan is the one
+ * that makes the fix a fact about the product rather than about one module:
+ * it reads the shipped files off disk, whitespace-normalised because they are
+ * hard-wrapped at ~78 columns and a banned phrase routinely straddles two
+ * source lines.
+ *
+ * "once a day" alone is NOT banned — `docs/client/README.md` truthfully says
+ * Zerodha's own page is signed in to once a day, and the OpenAlgo reconnect
+ * reminder is once a day. What is banned is the SIGN-IN CLAIM this wave
+ * disproved, in the exact forms it shipped in.
+ * ══════════════════════════════════════════════════════════════════════════ */
+describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
+  const ROOT = process.cwd();
+
+  /** The five files that carried one or both sentences at 8ae5dea. */
+  const SURFACES = [
+    "lib/domain/live-feed-disclosure.ts",
+    "lib/domain/help-content.ts",
+    "docs/client/PRIVACY.md",
+    "docs/client/README.md",
+    "README.md",
+  ] as const;
+
+  /**
+   * Whitespace-collapsed, with the leading `>` of a blockquote line dropped
+   * first. README.md states the v4.2 notes INSIDE a blockquote, so a sentence
+   * hard-wrapped across two lines reads "…by this > feed:" once the newline is
+   * collapsed — a normaliser that misses that reports a correct file as having
+   * dropped the sentence, which is how a guard gets loosened for the wrong
+   * reason.
+   */
+  const flatten = (rel: string) =>
+    fs
+      .readFileSync(path.join(ROOT, rel), "utf8")
+      .replace(/^[ \t]*>[ \t]?/gm, "")
+      .replace(/\s+/g, " ");
+
+  /** B-5: the derivative row never held a "stored mark" of its own. */
+  const B5_BANNED = [
+    "keep their last stored mark",
+    "keeps their last stored mark",
+    "keep the mark already stored",
+    "keeps the mark already stored",
+    "last stored mark",
+  ];
+
+  /** B-7: the sign-in is a process rule, never a calendar one. */
+  const B7_BANNED = ["once each trading day", "signs in once a day", "sign-in each trading day"];
+
+  it.each(SURFACES)("%s carries neither disproved phrase", (rel) => {
+    const text = flatten(rel).toLowerCase();
+    const hits = [...B5_BANNED, ...B7_BANNED].filter((p) => text.includes(p));
+    expect(hits, `${rel} still says: ${hits.join(" / ")}`).toEqual([]);
+  });
+
+  it("…and every one of those surfaces states the replacement instead", () => {
+    // A ban with nothing to replace it is satisfied by deleting the passage.
+    for (const rel of SURFACES) {
+      const text = flatten(rel);
+      expect(text, `${rel} dropped the derivative sentence instead of correcting it`).toContain(
+        "are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded",
+      );
+    }
+    for (const rel of SURFACES) {
+      expect(flatten(rel), `${rel} dropped the sign-in correction`).toContain(
+        "at most once a day while it stays open, and again after a relaunch or when you re-save the credentials",
+      );
+    }
+  });
+
+  it("the scan can fire — the exact lines that shipped are caught", () => {
+    const shipped = [
+      "Only equity positions are priced by this feed in this release. Futures and options rows keep their last stored mark and say so.",
+      "Equities only in this release: futures and options\n   rows keep the mark already stored and say so.",
+      "Vyuha signs in to apiconnect.angelone.in once each trading day with the client code, PIN and TOTP secret you saved.",
+      "the Live Desk price poll … whose one sign-in each trading day Vyuha performs for you",
+    ];
+    for (const line of shipped) {
+      const text = line.replace(/\s+/g, " ").toLowerCase();
+      expect(
+        [...B5_BANNED, ...B7_BANNED].filter((p) => text.includes(p)).length,
+        `a shipped line the ban must catch: ${line.slice(0, 70)}`,
+      ).toBeGreaterThan(0);
+    }
+    // …and a sentence that says "once a day" about something else is allowed.
+    const allowed = "Log in via Zerodha's own page once a day, paste the request token.";
+    expect([...B5_BANNED, ...B7_BANNED].filter((p) => allowed.toLowerCase().includes(p))).toEqual([]);
   });
 });

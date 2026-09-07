@@ -226,9 +226,13 @@ describe("X1 — the deduped SSR key count reaches the Angel One cadence sentenc
       feedSymbolCount: data.feed.symbolCount,
     });
 
-    expect(sentence).toBe(
-      "Refreshes every 3 seconds — Angel One allows about one request a second, and your 50 open positions take 1 call per refresh.",
-    );
+    // THE NOUN IS NOT PINNED HERE (B-12). What crosses this seam is the COUNT
+    // and the arithmetic over it; the wording of the sentence belongs to
+    // `desk-copy.ts` and its own tests, and pinning it twice made this seam test
+    // red for a copy change that crossed no seam at all.
+    expect(sentence).toContain("every 3 seconds");
+    expect(sentence).toMatch(/\byour 50 \b/);
+    expect(sentence).toContain("1 call per refresh");
     // The number the desk used to print, from its ROW count — a different tier,
     // a different call count, beside a poll running at 3 s.
     expect(sentence).not.toBe(angelOneCadenceLine(data.rows.length));
@@ -260,11 +264,16 @@ describe("X1 — the deduped SSR key count reaches the Angel One cadence sentenc
     // 0, NOT null: the provider was asked for nothing and answered. The desk
     // knows the size of this book, and it is zero.
     expect(data.feed.symbolCount).toBe(0);
-    expect(
-      deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: null, feedSymbolCount: data.feed.symbolCount }),
-    ).toBe(
-      "Refreshes every 3 seconds — Angel One allows about one request a second, and your 0 open positions take 1 call per refresh.",
-    );
+    const sentence = deskAngelOneCadence({
+      providerId: "angelone",
+      linkSymbolCount: null,
+      feedSymbolCount: data.feed.symbolCount,
+    });
+    // 0 is STATED, and it is not the countless sentence (B-12: the count, not
+    // the noun, is what crosses this seam).
+    expect(sentence).toMatch(/\byour 0 \b/);
+    expect(sentence).not.toBe(ANGELONE_CADENCE_NO_COUNT);
+    expect(sentence).toContain("every 3 seconds");
   });
 
   it("X1d  a provider that THREW publishes null, and the sentence states no count at all", async () => {
@@ -299,7 +308,7 @@ describe("X1 — the deduped SSR key count reaches the Angel One cadence sentenc
     expect(data.feed.symbolCount).toBe(50);
     expect(
       deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: null, feedSymbolCount: data.feed.symbolCount }),
-    ).toContain("your 50 open positions take 1 call");
+    ).toMatch(/\byour 50 \b.*\b1 call per refresh\b/);
   });
 });
 
@@ -399,35 +408,65 @@ describe("X2 — the open stream's own count outranks the server render's, and b
     expect(h.last().symbolCount).toBeNull();
   });
 
-  it("X2b  the live count wins over a stale SSR count, and the desk sentence is byte-identical to the card's", async () => {
+  it("X2b  BOTH surfaces state the route's own openCount, and the live count then wins over the stale SSR one", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-07T05:00:00.000Z"));
     selectAccount(BOOK_WIDE);
     setFeed("eod", null);
+
+    // ── THE PRODUCER, RUN FOR REAL (fix B-10) ────────────────────────────────
+    // The card's count is `openCount: (await openPositionKeys()).length` in
+    // app/api/live/feed/route.ts. The previous version of this test handed
+    // `angelOneCadenceText` a LITERAL 51 and called the result byte-identical
+    // to the desk's — so the one number the seam exists to check, the route's
+    // own, was never asked for. It is asked for here, from the real handler.
+    const body = (await (await get()).json()) as FeedBody;
     // The SSR count, from the real loader — one page render older than the frame.
     const data = await live.loadLiveDesk({ pro: true });
+
+    // 51 open ROWS in this book, 50 distinct KEYS. Both surfaces must say 50;
+    // a route that counted rows would publish 51 here, cross the tier, and the
+    // card would read "every 5 seconds … 2 calls" beside a poll doing one call
+    // every 3 s — which is the whole of ruling 4.2-4.
+    expect(data.rows).toHaveLength(51);
+    expect(body.angelone.openCount).toBe(50);
     expect(data.feed.symbolCount).toBe(50);
 
+    // Ruling 4.2-4: ONE sentence on both surfaces, each built by its OWN
+    // producer — the card from the route body, the desk from the loader.
+    // Byte-identical or it is two sentences.
+    const ssrDesk = deskAngelOneCadence({
+      providerId: "angelone",
+      linkSymbolCount: null,
+      feedSymbolCount: data.feed.symbolCount,
+    });
+    expect(angelOneCadenceText({ ...body.angelone })).toBe(ssrDesk);
+    // …and it really is the 50-key sentence, not the 51-row one.
+    expect(ssrDesk).not.toBe(angelOneCadenceLine(data.rows.length));
+    expect(ssrDesk).toContain("every 3 seconds");
+
+    // ── THE LIVE FRAME OUTRANKS THE RENDER ───────────────────────────────────
     const h = linkHarness();
     h.link.open();
     // The stream is subscribed to a WIDER book than the render captured (the
     // user opened a position in another tab). 51 keys crosses the tier.
     h.sources[0].emit("snapshot", snapshotFrame(51));
+    const liveCount = h.last().symbolCount;
+    expect(liveCount).toBe(51);
 
     const desk = deskAngelOneCadence({
       providerId: "angelone",
-      linkSymbolCount: h.last().symbolCount,
+      linkSymbolCount: liveCount,
       feedSymbolCount: data.feed.symbolCount,
     });
     // The poll that is actually running is the 51-key one, so the sentence is its.
-    expect(desk).toBe(
-      "Refreshes every 5 seconds — Angel One allows about one request a second, and your 51 open positions take 2 calls per refresh.",
-    );
+    expect(desk).toContain("every 5 seconds");
+    expect(desk).toContain("2 calls per refresh");
+    expect(desk).not.toBe(ssrDesk);
     expect(desk).not.toBe(angelOneCadenceLine(data.feed.symbolCount));
-
-    // Ruling 4.2-4: ONE sentence on both surfaces. The Settings card builds it
-    // from the route's own `angelone.openCount`; byte-identical or it is two.
-    expect(angelOneCadenceText({ connected: true, ackCurrent: true, openCount: 51 })).toBe(desk);
+    // The card, handed the SAME count, still prints the SAME bytes — the two
+    // surfaces are compared to each other, never to a copy literal (B-12).
+    expect(angelOneCadenceText({ ...body.angelone, openCount: liveCount! })).toBe(desk);
   });
 
   it("X2c  the tier edge is the KEY count: 50 and 51 are different sentences on both surfaces", () => {
@@ -440,8 +479,9 @@ describe("X2 — the open stream's own count outranks the server render's, and b
     expect(angelOneCadenceText({ connected: true, ackCurrent: true, openCount: 51 })).toBe(at51);
     // A provider that is not Angel One states no cadence at all.
     expect(deskAngelOneCadence({ providerId: "upstox", linkSymbolCount: 50, feedSymbolCount: 50 })).toBeNull();
-    // The card, before its own fetch has answered, says so rather than "0".
-    expect(angelOneCadenceText(undefined)).not.toContain("0 open positions");
+    // The card, before its own fetch has answered, says so rather than "0"
+    // (matched on the COUNT, not the noun — B-12).
+    expect(angelOneCadenceText(undefined)).not.toMatch(/\byour 0\b/);
   });
 });
 
@@ -726,7 +766,7 @@ describe("X6 — the broker's health crosses into the desk", () => {
     expect(data.feed.reason).not.toContain("Import → Brokers");
   });
 
-  it("X6b  DEFECT — the desk reports `disabled` where the same provider tells the route `no-key`, so the connect prompt can never fire", async () => {
+  it("X6b  the desk and the route report the SAME health state, so the connect prompt fires", async () => {
     selectAccount(BOOK_WIDE);
     t.db.delete(t.schema.brokerConnections).run();
     setFeed("angelone", disclosure.withFeedAck(null, "angelone"));
@@ -738,12 +778,14 @@ describe("X6 — the broker's health crosses into the desk", () => {
     // The route asks `provider.health()` directly and gets the truth.
     expect(body.health.state).toBe("no-key");
 
-    // The desk asks `snapshot()` FIRST; with an open book the adapter throws the
-    // gate's reason, and `load-desk.ts:250` rebuilds health from the message
-    // alone — the `state` is lost and `desk-types.ts` falls back to "disabled".
-    // Q24's once-a-day prompt only fires on `no-key` / `unreachable`, so the one
-    // prompt that would send the user to the screen the pill names is dead
-    // for exactly the state it exists for.
+    // The desk asks `snapshot()` FIRST, and with an open book the adapter throws
+    // the gate's reason. `load-desk.ts` carries the provider's `state` across
+    // that throw rather than rebuilding health from the message alone — where it
+    // rebuilt, the state was lost, `desk-types.ts` fell back to "disabled", and
+    // Q24's once-a-day prompt (which fires only on `no-key` / `unreachable`) was
+    // dead for exactly the state it exists for. The two surfaces agree, and the
+    // prompt that sends the user to the screen the pill names does fire.
+    expect(data.feed.healthState).toBe(body.health.state);
     expect(data.feed.healthState).toBe("no-key");
     expect(showConnectPrompt({ providerId: data.feed.providerId, healthState: data.feed.healthState }, null)).toBe(true);
   });

@@ -95,7 +95,14 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     expect(para, "the disclosure does not say the session is cleared daily").toMatch(
       /clears every API session at 5 AM IST/,
     );
-    expect(para, "the disclosure does not say the sign-in is once a day").toMatch(/signs in once a day/);
+    // v4.2 fix wave, B-7. "signs in once a day" was true PER PROCESS only: the
+    // jwt is cached in memory by the adapter, so a relaunch or a credential
+    // re-save opens another session the same day, and a day the app never
+    // opens produces none. The disclosure states the mechanism instead.
+    expect(para, "the disclosure no longer states when a SECOND sign-in happens").toMatch(
+      /at most once a day while it stays open, and again after a relaunch or when you re-save the credentials/,
+    );
+    expect(para, "the disclosure still claims a calendar-daily sign-in").not.toMatch(/signs in once a day/);
     expect(para, "the disclosure does not say the sign-in is unattended").toMatch(/nothing for you to click/);
     expect(para, "the disclosure does not mention the token look-up").toMatch(
       /looks up, once per symbol, the token Angel One prices by/,
@@ -104,6 +111,16 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     expect(para, "the disclosure does not state the batch size").toMatch(/batches of at most 50 symbols/);
     expect(para, "the disclosure does not state the rate").toMatch(/at most one request a second/);
     expect(para, "the disclosure does not state the tiers").toMatch(/every 3, 5 or 10 seconds/);
+    // v4.2 fix wave 2, B-6 — what the TIER is a function of. The ladder is fed
+    // the deduped instrument keys the poll will ask for, so two positions in
+    // one scrip are one price and one tier step; "how many positions you hold"
+    // states a slower interval than the code will actually run (invariant 6).
+    expect(para, "the tier is still said to come from the position count").toMatch(
+      /depending on how many scrips you hold open/,
+    );
+    expect(para, "the tier is still said to come from the position count").not.toMatch(
+      /how many positions you hold/,
+    );
     expect(para, "the disclosure does not scope the poll to the selected account").toMatch(
       /only for the open positions of the selected account/,
     );
@@ -113,6 +130,39 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     );
     expect(para, "the disclosure does not scope the release to equities").toMatch(/Equities only in this release/);
     expect(para, "the disclosure does not say the prices stay here").toMatch(/never uploaded, never resold/);
+    // v4.2 fix wave, B-5 — and what a derivative row shows INSTEAD.
+    expect(para, "the disclosure does not say what an unpriced derivative row shows").toContain(
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
+    );
+  });
+});
+
+/**
+ * v4.2 fix wave, B-6 — THE CADENCE COUNTS SCRIPS, NOT POSITIONS.
+ *
+ * `angelOneCadenceSeconds()` is fed the DEDUPED instrument keys the poll will
+ * actually ask for, so two positions in one symbol are one price. Every written
+ * surface said "open positions", which states a slower interval than the code
+ * runs for any book that doubles up — and it is the kind of error a reader can
+ * only find by timing the desk with a stopwatch.
+ */
+describe("the Angel One cadence is stated in scrips on every client surface", () => {
+  const clientReadme = visible(read("docs/client/README.md"));
+
+  it("the client README's tier row counts scrips", () => {
+    const row = clientReadme.split("\n").find((l) => /3 seconds\*{0,2} up to 50/.test(l));
+    expect(row, "the client README no longer states the Angel One tiers").toBeDefined();
+    expect(row!, "the tier row still counts positions").not.toMatch(/up to 50 open positions/);
+    expect(row!, "the tier row does not count scrips").toMatch(/up to 50 scrips/);
+    expect(row!, "the row never says what a scrip is here").toMatch(/distinct symbols/i);
+  });
+
+  it("the scan can fire — the row exactly as it shipped is caught", () => {
+    const shipped =
+      "| **Angel One's refresh is set by the size of your book, not by a slider** | Angel One allows about one request a second, so the interval is arithmetic rather than a preference: **3 seconds** up to 50 open positions, **5 seconds** from 51 to 200, **10 seconds** from 201 to 500. |";
+    expect(/3 seconds\*{0,2} up to 50/.test(shipped), "the finder cannot see the shipped row").toBe(true);
+    expect(/up to 50 open positions/.test(shipped)).toBe(true);
+    expect(/up to 50 scrips/.test(shipped)).toBe(false);
   });
 });
 

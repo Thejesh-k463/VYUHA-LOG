@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-6821%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-6880%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-93%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
@@ -47,16 +47,21 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 > resold, and never written per tick — the one-mark-a-day rule is unchanged.
 > **Angel One is the fifth source**, on credentials you also already saved: the
 > **client code, PIN and TOTP secret** under **Import → Connect broker**. Angel One
-> clears every API session at **5 AM IST**, so Vyuha opens the next one itself
-> each morning from the secret you enrolled — **nothing for you to click**. It
-> asks `apiconnect.angelone.in`, already the host the Angel One trade pull uses,
+> clears every API session at **5 AM IST**, and Vyuha signs in to
+> `apiconnect.angelone.in` at most once a day while it stays open, and again
+> after a relaunch or when you re-save the credentials — the one-time password
+> comes from the secret you enrolled, so there is **nothing for you to click**.
+> That host is already the one the Angel One trade pull uses,
 > so **no new host is added**; the poll goes out in batches of **50 symbols** at
 > about one request a second, which makes its refresh **arithmetic rather than a
-> setting**: **3 seconds** up to 50 open positions, **5 seconds** to 200, **10
-> seconds** to 500. The 1–5 second slider is hidden under this source and
+> setting**, counted in **scrips** rather than positions: **3 seconds** up to 50
+> scrips, **5 seconds** to 200, **10 seconds** to 500. The 1–5 second slider is
+> hidden under this source and
 > replaced by one line stating the interval and the calls each refresh takes.
-> **Equities this release**: a futures or options row keeps the mark already
-> stored and says so, under either broker source. Beside it, the
+> **Equities this release**: futures and options rows are not priced by this
+> feed: each shows the position's recorded close, or its entry price when no
+> close is recorded, and says so on the row — under either broker source. Beside
+> it, the
 > automatic close-of-session mark now refuses on an **exchange holiday** as
 > well as at the weekend, from a holiday list bundled with the release, so a
 > shut Thursday no longer carries the previous session's price forward under
@@ -526,7 +531,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **6821** | **46** | **0** |
+| **6880** | **46** | **0** |
 | tests, 93 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -879,7 +884,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       6821 unit + integration tests across 355 files (+ tests/load: 16 load cases, run separately)
+tests/       6880 unit + integration tests across 357 files (+ tests/load: 16 load cases, run separately)
 e2e/         93 Playwright flows through the real app, in 29 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -900,7 +905,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **6821 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **6880 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -916,7 +921,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (6821 tests) |
+| `npm test` | Vitest unit + integration suite (6880 tests) |
 | `npm run test:e2e` | Playwright e2e — 93 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -986,7 +991,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 6821 Vitest unit + integration tests (+ tests/load)
+  tests/          # 6880 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

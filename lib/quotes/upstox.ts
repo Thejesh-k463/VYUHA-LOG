@@ -568,7 +568,14 @@ export function createUpstoxProvider(opts: UpstoxProviderOptions = {}): QuotePro
         reason:
           notPriced === 0
             ? "Upstox is connected with your read-only Analytics token."
-            : `Upstox is connected with your read-only Analytics token. ${notPriced} position(s) are not priced by this feed — ${skipped.skippedDerivatives} futures/options and ${skipped.skippedNoIsin} without a known ISIN — and keep their last stored mark.`,
+            : // THE B-5 FALLBACK, IN THE B-5 WORDS (v4.2 fix wave 2). This
+              // sentence is published by the GET verbatim and printed by the
+              // SAME Settings card that prints the B-5 footnote, so on a book
+              // holding a derivative the card states both promises at once. The
+              // tail once named a value nothing writes — no writer stores a
+              // CONTRACT-keyed mark, so there is no such number to keep; what
+              // the row shows is its recorded close, then its entry price.
+              `Upstox is connected with your read-only Analytics token. ${notPriced} position(s) are not priced by this feed — ${skipped.skippedDerivatives} futures/options and ${skipped.skippedNoIsin} without a known ISIN — and each shows the position's recorded close, or its entry price when no close is recorded.`,
       };
     },
   };

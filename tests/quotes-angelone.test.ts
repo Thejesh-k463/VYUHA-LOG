@@ -298,6 +298,17 @@ describe("a quote — rupees in, paise out, and `close` is the PREVIOUS close", 
     const health = (await h.provider.health()) as AngelOneHealth;
     expect(health.skippedDerivatives).toBe(1);
     expect(health.reason).toMatch(/not priced by this feed/i);
+    // v4.2 fix wave 2, B-5. The tail used to promise "keep their last stored
+    // mark" — a value nothing writes, since no writer stores a CONTRACT-keyed
+    // mark. The health line is printed by the SAME Settings card that prints
+    // the B-5 footnote, so it states the same fallback the footnote does.
+    expect(health.reason).toContain(
+      "each shows the position's recorded close, or its entry price when no close is recorded",
+    );
+    expect(
+      (health.reason ?? "").toLowerCase(),
+      "the health line still promises the last stored mark",
+    ).not.toContain("last stored mark");
   });
 });
 
@@ -478,5 +489,20 @@ describe("the breadcrumb the Angel One messages name", () => {
       "Save the API key, client code, PIN and TOTP secret under Import → Connect broker",
     );
     expect(SRC, "the old screen name is still here").not.toContain("Import → Brokers");
+  });
+
+  /**
+   * v4.2 fix wave 2, B-5 — the phrase, gone from the whole file.
+   *
+   * The health sentence is one branch of one template literal, so an assertion
+   * on ONE built reason proves only that branch. B-5 removed the phrase from
+   * every surface that states the rule; this holds the adapter's SOURCE to the
+   * same standard, so a second branch cannot quietly bring it back.
+   */
+  it("no longer promises a 'last stored mark' anywhere in the adapter (B-5)", () => {
+    expect(SRC.toLowerCase(), "the adapter still promises the last stored mark").not.toContain("last stored mark");
+    expect(SRC).toContain(
+      "each shows the position's recorded close, or its entry price when no close is recorded",
+    );
   });
 });

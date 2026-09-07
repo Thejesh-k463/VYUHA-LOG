@@ -114,7 +114,7 @@ describe("the Upstox radio is offered only behind the one release flag", () => {
       "Uses the Analytics token saved under Import → Connect broker for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
     );
     expect(UPSTOX_FEED_COPY.equityOnly).toBe(
-      "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
+      "Futures and options rows are not priced by this feed: each shows the position's recorded close, or its entry price when no close is recorded, and says so on the row.",
     );
   });
 });

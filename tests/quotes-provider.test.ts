@@ -584,3 +584,57 @@ describe("EodBhavcopyProvider — the default, and it fetches nothing", () => {
     expect(none.reason).toMatch(/import a bhavcopy/i);
   });
 });
+
+/* ═══════ A WITHHELD FEED, READ OFF A REAL DATABASE (v4.2 fix wave 2) ═══════
+ * The pure half of this lives in `tests/quotes-registry.test.ts`. This is the
+ * half that only a real `settings` row can show: `resolveLiveFeed()` publishes
+ * the verdict AND the sentence the Settings card prints, and before the fix a
+ * withheld pick with a CURRENT acknowledgement came back
+ * {stored:"angelone", effective:"angelone"} with no `blockedReason` at all —
+ * so the card showed no radio, no block, and said nothing about it anywhere.
+ *
+ * LAST IN THE FILE ON PURPOSE: `vi.resetModules()` gives every later import a
+ * fresh module registry, and `lib/db` caches its connection on `globalThis`,
+ * so the re-imported registry reads the very same temp database.
+ * ════════════════════════════════════════════════════════════════════════ */
+describe("resolveLiveFeed on a build that withholds the stored feed", () => {
+  it("answers 'eod' with a reason, and the reason names no source-file constant", async () => {
+    const { withFeedAck } = await import("@/lib/domain/live-feed-disclosure");
+    t.db
+      .update(t.schema.settings)
+      .set({ liveFeedProvider: "angelone", liveFeedAckJson: withFeedAck(null, "angelone") })
+      .run();
+
+    // CONTROL, as this build ships: the acknowledgement really does open it.
+    const shipped = await import("@/lib/quotes/registry");
+    shipped.resetLiveFeedProviderCache();
+    const on = await shipped.resolveLiveFeed();
+    expect(on.stored).toBe("angelone");
+    expect(on.effective).toBe("angelone");
+
+    vi.resetModules();
+    vi.doMock("@/lib/quotes/types", async () => ({
+      ...(await vi.importActual<typeof import("@/lib/quotes/types")>("@/lib/quotes/types")),
+      ANGELONE_FEED_ENABLED: false,
+    }));
+    try {
+      const off = await import("@/lib/quotes/registry");
+      const feed = await off.resolveLiveFeed();
+      expect(feed.stored, "the pick is still reported verbatim").toBe("angelone");
+      expect(feed.effective, "a withheld feed was left effective by a stored consent").toBe("eod");
+      expect(feed.blockedReason, "the withheld state was stated nowhere on the screen").toBe(
+        "This build does not offer the Angel One feed; the desk stays on end-of-day prices.",
+      );
+      // …and the provider the desk then builds is end-of-day, not the PLANNED
+      // stub whose sentence names the constant to a paying customer.
+      const built = off.createProvider(feed.effective);
+      expect(built.id).toBe("eod");
+      expect((await built.health()).reason ?? "").not.toContain("ANGELONE_FEED_ENABLED");
+    } finally {
+      vi.doUnmock("@/lib/quotes/types");
+      vi.resetModules();
+      t.db.update(t.schema.settings).set({ liveFeedProvider: "eod", liveFeedAckJson: null }).run();
+      (await import("@/lib/quotes/registry")).resetLiveFeedProviderCache();
+    }
+  });
+});

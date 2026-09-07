@@ -298,6 +298,27 @@ describe("the live-quote adapter is held to the same rule (v4.2)", () => {
   /** Any SmartAPI-shaped path fragment, INCLUDING one built by interpolation. */
   const PATH_TOKEN = /\/(?:rest|order|market|auth|secure|angelbroking|gtt|portfolio|funds)[A-Za-z0-9_/.${}-]*/g;
 
+  /**
+   * EVERY `fetch(` call site's FIRST argument, at ANY arity (fix B-11).
+   *
+   * The first version matched `/\bfetch\(\s*([^,]+),/g` — it required a comma,
+   * so a one-argument `fetch(url)` matched NOTHING and the loop body never ran.
+   * Combined with assertions that only lived inside that loop, the rule was
+   * vacuous exactly where it mattered: a URL assembled into a local and passed
+   * alone (`const url = BASE + "…" + "…"; fetch(url)`) satisfied it in silence,
+   * while the docstring above promised "a new endpoint fails by DEFAULT".
+   *
+   * `[^)]*` stops at the first `)`, which is inside the options object of both
+   * real calls — that is fine and deliberate: the first argument ends at the
+   * first comma long before then, and an argument list this cannot parse yields
+   * a fragment that fails the shape check rather than an exemption.
+   */
+  const FETCH_CALL = /\bfetch\(\s*([^)]*)\)/g;
+  const fetchFirstArgs = (src: string): string[] =>
+    [...src.matchAll(FETCH_CALL)].map((m) => m[1].split(",")[0].trim());
+  /** `${BASE}${CONST}` and nothing else: one host string, one imported path constant. */
+  const BUILT_FROM_CONSTANT = /^`\$\{BASE\}\$\{([A-Za-z_][A-Za-z0-9_]*)\}`$/;
+
   it("the login path really is the one the import module uses", () => {
     // The allowlist's third member is anchored to the code, not to this file:
     // if the login endpoint ever moves, this fails rather than silently
@@ -322,8 +343,8 @@ describe("the live-quote adapter is held to the same rule (v4.2)", () => {
     }
   });
 
-  it("CATCHES the two endpoints the old denylist let through", () => {
-    // Both of these passed the previous rule. The GTT namespace places a
+  it("CATCHES the three endpoints a previous rule let through", () => {
+    // The first two passed the old DENYLIST. The GTT namespace places a
     // resting order and is not under `/order/v1/` at all; the templated verb
     // defeated an `[A-Za-z]+` capture, which stopped at the `$`. A guard that
     // cannot be shown to fire is not a guard.
@@ -333,16 +354,41 @@ describe("the live-quote adapter is held to the same rule (v4.2)", () => {
     expect(strayPaths(templated)).toEqual(["/order/v1/${verb}"]);
     // …while the three real paths are accepted, so the rule is not just "no".
     for (const p of ALLOWED_PATHS) expect(strayPaths(`const P = "${p}";`)).toEqual([]);
+
+    // THE THIRD PLANT (fix B-11): the same GTT rule, SPLIT across two string
+    // literals and handed to a one-argument `fetch`. It defeats the path rule
+    // by construction — `/rest/secure/angelbroking/` is a prefix of the real
+    // quote path, and `gtt/v1/createRule` carries no leading slash, so
+    // PATH_TOKEN never sees it:
+    const split = 'const url = BASE + "/rest/secure/angelbroking/" + "gtt/v1/createRule"; fetch(url);';
+    expect(strayPaths(split), "the path rule alone cannot see a split literal").toEqual([]);
+    // …and it defeated the OLD fetch rule too, which needed a trailing comma
+    // and therefore matched nothing at all on a one-argument call:
+    expect([...split.matchAll(/\bfetch\(\s*([^,]+),/g)]).toHaveLength(0);
+    // The rule that DOES catch it is the first-argument shape, at any arity.
+    expect(fetchFirstArgs(split)).toEqual(["url"]);
+    expect(BUILT_FROM_CONSTANT.test("url")).toBe(false);
+    // …and the two real shapes are still accepted, so this is not just "no".
+    for (const c of ALLOWED_PATH_CONSTANTS) {
+      expect(fetchFirstArgs("await fetch(`${BASE}${" + c + "}`, { method: 'POST' });")).toEqual([
+        "`${BASE}${" + c + "}`",
+      ]);
+      expect(BUILT_FROM_CONSTANT.exec("`${BASE}${" + c + "}`")?.[1]).toBe(c);
+    }
   });
 
   it("hands `fetch` a constant, never a path it assembled", () => {
     for (const f of FILES) {
       const src = sourceOf(f);
-      for (const m of src.matchAll(/\bfetch\(\s*([^,]+),/g)) {
-        const arg = m[1].trim();
+      const args = fetchFirstArgs(src);
+      // THE FLOOR (fix B-11). Without it every assertion below lives inside a
+      // loop that a one-argument `fetch(url)` skips entirely, and the test
+      // reports green on the file it was written to refuse.
+      expect(args.length, `${f} does not have exactly one parsable fetch call site`).toBe(1);
+      for (const arg of args) {
         // `${BASE}${CONST}` and nothing else: one host string in the tree, and
         // a path that is an imported constant rather than an expression.
-        const built = /^`\$\{BASE\}\$\{([A-Za-z_][A-Za-z0-9_]*)\}`$/.exec(arg);
+        const built = BUILT_FROM_CONSTANT.exec(arg);
         expect(built, `${f} builds its own URL: ${arg}`).not.toBeNull();
         expect(ALLOWED_PATH_CONSTANTS as readonly string[], `${f} interpolates ${built?.[1]}`).toContain(built![1]);
       }
@@ -379,7 +425,10 @@ describe("the live-quote adapter is held to the same rule (v4.2)", () => {
   it("makes its requests from ONE call site each — a second fetch is a second host", () => {
     for (const f of FILES) {
       const src = sourceOf(f);
-      expect((src.match(/\bfetch\(/g) ?? []).length, `${f} has more than one fetch call site`).toBeLessThanOrEqual(1);
+      // EXACTLY one (fix B-11), not "at most one": `<=1` was satisfied by a
+      // file with no fetch at all, so it could not tell "this adapter makes one
+      // request" from "the shape check above had nothing to check".
+      expect((src.match(/\bfetch\(/g) ?? []).length, `${f} does not have exactly one fetch call site`).toBe(1);
     }
   });
 

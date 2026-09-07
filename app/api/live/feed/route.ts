@@ -101,6 +101,26 @@ const PICKABLE: readonly [Pickable, Pickable, ...Pickable[]] = [
   ...OPTIONAL_PICKABLE.filter(([, enabled]) => enabled).map(([id]) => id),
 ];
 
+/**
+ * WHICH DISCLOSURES MAY BE ACKNOWLEDGED (B-8).
+ *
+ * The `provider` action has always been flag-gated through `PICKABLE`; the
+ * `ack` action was `z.enum(["upstox", "angelone"])` unconditionally. So on a
+ * build that withholds one of them — the flag is the ONE line that decides — a
+ * POST could still record an acknowledgement for the withheld broker, and the
+ * card's "Review and accept" button would send exactly that POST whenever the
+ * withheld id was sitting in `liveFeedProvider` (it travels in a backup
+ * envelope; the acknowledgement is machine state and does not).
+ *
+ * Derived from `PICKABLE` rather than from a second list of flags, so the
+ * picker and the consent write can never disagree about what this build ships.
+ */
+const ACK_PROVIDERS = ["upstox", "angelone"] as const;
+type AckProvider = (typeof ACK_PROVIDERS)[number];
+const ACKABLE: readonly AckProvider[] = ACK_PROVIDERS.filter((id) =>
+  (PICKABLE as readonly string[]).includes(id),
+);
+
 const ActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("provider"), provider: z.enum(PICKABLE) }),
   z.object({ action: z.literal("refresh-seconds"), seconds: z.number().int() }),
@@ -112,7 +132,15 @@ const ActionSchema = z.discriminatedUnion("action", [
   // v4.2 — one action, two providers. The acknowledgement is stored per
   // provider id (a JSON map), so widening the enum is the whole change: the
   // gate that reads it back is `isFeedAckCurrent(json, id)`.
-  z.object({ action: z.literal("ack"), provider: z.enum(["upstox", "angelone"]) }),
+  // …and it is narrowed again by the release flags (B-8): an id this build does
+  // not offer is a 400 here, exactly as an unshipped `provider` id is, and
+  // nothing is written.
+  z.object({
+    action: z.literal("ack"),
+    provider: z.enum(ACK_PROVIDERS).refine((id) => ACKABLE.includes(id), {
+      message: "That feed is not offered in this build.",
+    }),
+  }),
 ]);
 
 function settingsRow() {

@@ -331,7 +331,25 @@ describe("account-scoped table registry", () => {
     // wholly to the query module and never touches the table itself — the same
     // shape as capital_snapshots above.
     advance_tax_challans: ["lib/queries/challans.ts", "lib/queries/account-delete.ts"],
-    broker_connections: ["app/api/import/broker/route.ts", "lib/queries/broker-connections.ts", "lib/queries/account-delete.ts"],
+    // v4.2 (fix B-9). The three original entries described the IMPORT half only,
+    // and the live feed grew five more readers of the same table without one of
+    // them being declared — so the "every declared owner resolves the account"
+    // scan below never looked at a single live-quote credential read. Each of
+    // the five resolves through getSelectedAccountId() and applies the
+    // `accountId > 0 ? filter : all` rule (invariant 8): the feed route filters
+    // in SQL, the four adapters filter the rows they fetched, and registry.ts
+    // additionally folds the account into its memo key so one book's cached
+    // connection can never answer another book's request.
+    broker_connections: [
+      "app/api/import/broker/route.ts",
+      "lib/queries/broker-connections.ts",
+      "lib/queries/account-delete.ts",
+      "app/api/live/feed/route.ts",
+      "lib/quotes/registry.ts",
+      "lib/quotes/angelone.ts",
+      "lib/quotes/upstox.ts",
+      "lib/quotes/openalgo.ts",
+    ],
     panel_dismissals: ["lib/queries/dismissals.ts", "lib/queries/account-delete.ts"],
     // v3.9 (migration 0062). Reads scope through getSelectedAccountId; the
     // ONLY writer is the import commit path, which resolves the WRITE
@@ -394,6 +412,95 @@ describe("account-scoped table registry", () => {
         OWNERS[tbl],
         `${rel} writes ${tbl} directly but is not declared as an owner — that omission is why defects D-1/D-2 went unscanned`,
       ).toContain(rel);
+    }
+  });
+
+  /**
+   * THE REVERSE DIRECTION FOR broker_connections (v4.2 fix B-9).
+   *
+   * `MUST_BE_DECLARED` above is the reverse scan for WRITERS, and it is
+   * deliberately a hand-kept list of four. That left the READERS of
+   * broker_connections unscanned in the same way, and the live feed then grew
+   * five of them — `app/api/live/feed/route.ts`, and the four quote adapters —
+   * without one being declared. Every one reads a stored API key and answers a
+   * screen with it, so an unscoped one would price account #2's book from
+   * account #1's broker session, and the registry's memo would cache the
+   * answer.
+   *
+   * So for THIS table the scan is exhaustive rather than enumerated: every file
+   * under lib/ and app/ that selects the table must be declared, or must be
+   * listed below as a deliberate whole-database reader with the reason stated.
+   */
+  const BROKER_CONN_SELECT = ".from(brokerConnections)";
+  const BROKER_CONN_WHOLE_DB: Record<string, string> = {
+    // Sweeps EVERY account's connections once per day: a commit lands in each
+    // row's own account, and the aggregate view must not hide another book's
+    // eligible broker. Documented at the call site.
+    "lib/jobs/auto-pull.ts": "daily auto-pull sweeps every account's connections by design",
+    // Re-encrypts plaintext secrets in place, keyed on the row id. An account
+    // filter here would leave another book's key readable on disk.
+    "lib/vault.ts": "the plaintext-secret sweep re-encrypts every row by id",
+  };
+
+  const walk = (fs: typeof import("node:fs"), dir: string, out: string[] = []): string[] => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(fs, p, out);
+      else if (/\.tsx?$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+
+  it("every reader of broker_connections is declared as its owner", async () => {
+    const fs = await import("node:fs");
+    const readers = ["lib", "app"]
+      .flatMap((d) => walk(fs, d))
+      .filter((rel) => fs.readFileSync(rel, "utf8").includes(BROKER_CONN_SELECT))
+      .sort();
+    // A floor: a sweep that finds nothing passes for the wrong reason.
+    expect(readers.length, "no file selects broker_connections — has the table been renamed?").toBeGreaterThanOrEqual(
+      9,
+    );
+    for (const rel of readers) {
+      if (rel in BROKER_CONN_WHOLE_DB) {
+        // A deliberate whole-database reader must STAY one. The moment it
+        // resolves the selected account it is an ordinary owner and belongs in
+        // the registry, under the scan below.
+        expect(
+          /getSelectedAccountId\(\)/.test(fs.readFileSync(rel, "utf8")),
+          `${rel} now resolves the selected account — declare it as a broker_connections owner`,
+        ).toBe(false);
+        continue;
+      }
+      expect(
+        OWNERS.broker_connections,
+        `${rel} reads broker_connections but is not declared as an owner — an undeclared reader is never scanned for invariant 8`,
+      ).toContain(rel);
+    }
+  });
+
+  it("every broker_connections reader resolves the account AND applies the aggregate rule", async () => {
+    const fs = await import("node:fs");
+    const scanned = OWNERS.broker_connections.filter((rel) =>
+      fs.readFileSync(rel, "utf8").includes(BROKER_CONN_SELECT),
+    );
+    // Floor: the five readers fix B-9 declared, plus the two that were there.
+    expect(scanned.length, "the declared owners no longer select the table").toBeGreaterThanOrEqual(7);
+    for (const rel of scanned) {
+      const src = fs.readFileSync(rel, "utf8");
+      // A CALL, not the word: the generic scan below is satisfied by a mention
+      // in a comment, which is not a filter.
+      const reads = /getSelectedAccountId\(\)/.test(src);
+      const writes = /getWriteAccountId\(/.test(src);
+      expect(reads || writes, `${rel} selects broker_connections without resolving an account (invariant 8)`).toBe(
+        true,
+      );
+      if (reads) {
+        expect(
+          /\b(?:accountId|selected|selectedAccountId)\s*>\s*0\b/.test(src),
+          `${rel} resolves the account but never applies \`> 0 ? filter : all\` — id 0 is a view (invariant 9)`,
+        ).toBe(true);
+      }
     }
   });
 

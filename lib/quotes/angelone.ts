@@ -747,7 +747,14 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
           `Angel One is connected with your own account, polling every ${counts.cadenceSeconds} seconds.` +
           (notPriced === 0
             ? ""
-            : ` ${notPriced} position(s) are not priced by this feed — ${counts.skippedDerivatives} futures/options and ${counts.unresolvedSymbols} Angel One has no matching scrip for — and keep their last stored mark.`) +
+            : // THE B-5 FALLBACK, IN THE B-5 WORDS (v4.2 fix wave 2). This
+              // sentence is published by the GET verbatim and printed by the
+              // SAME Settings card that prints the B-5 footnote, so on a book
+              // holding a derivative the card states both promises at once. The
+              // tail once named a value nothing writes — no writer stores a
+              // CONTRACT-keyed mark, so there is no such number to keep; what
+              // the row shows is its recorded close, then its entry price.
+              ` ${notPriced} position(s) are not priced by this feed — ${counts.skippedDerivatives} futures/options and ${counts.unresolvedSymbols} Angel One has no matching scrip for — and each shows the position's recorded close, or its entry price when no close is recorded.`) +
           (counts.pendingSymbols === 0 ? "" : ` ${counts.pendingSymbols} more are still being looked up.`),
       };
     },

@@ -684,7 +684,7 @@ describe("the Angel One connect prompt and cadence line", () => {
   it("51 rows in 50 scrips reads 3 seconds and 1 call — what the poll really does", () => {
     const line = deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: 50, feedSymbolCount: null });
     expect(line).toContain("Refreshes every 3 seconds");
-    expect(line).toContain("your 50 open positions take 1 call per refresh");
+    expect(line).toContain("your 50 open scrips take 1 call per refresh");
     // …and the sentence the row count used to produce is a DIFFERENT one, so
     // this test can tell the fix from the defect.
     expect(angelOneCadenceLine(51)).toContain("Refreshes every 5 seconds");
@@ -702,7 +702,7 @@ describe("the Angel One connect prompt and cadence line", () => {
     expect(at(null, 50)).toBe(angelOneCadenceLine(50));
     // Neither: the sentence loses its count rather than borrowing a wrong one.
     expect(at(null, null)).toBe(ANGELONE_CADENCE_NO_COUNT);
-    expect(at(null, null)).not.toMatch(/\d+ open position/);
+    expect(at(null, null)).not.toMatch(/\d+ open scrip/);
     expect(at(null, null), "an interval nobody computed").not.toMatch(/every \d+ seconds/);
   });
 
@@ -716,6 +716,21 @@ describe("the Angel One connect prompt and cadence line", () => {
     expect(BANNED.test(ANGELONE_CADENCE_NO_COUNT), ANGELONE_CADENCE_NO_COUNT).toBe(false);
     expect(ANGELONE_CADENCE_NO_COUNT).toContain("about one request a second");
     expect(ANGELONE_CADENCE_NO_COUNT).toContain("50 symbols to a batch");
+  });
+
+  /**
+   * v4.2 fix wave 2, B-6 — the countless branch counts the SAME thing.
+   *
+   * `angelOneCadenceLine()` one function below says "open scrips" because every
+   * count that reaches it is the DEDUPED quote-key count. The no-count branch
+   * described that same arithmetic as "the positions this feed prices", which
+   * names a different set of the user's book on the same card (invariant 6).
+   */
+  it("names SCRIPS, not positions — the same noun the counted sentence uses (B-6)", () => {
+    expect(ANGELONE_CADENCE_NO_COUNT).toContain("computed from the scrips this feed prices");
+    expect(ANGELONE_CADENCE_NO_COUNT, "the countless sentence still says positions").not.toContain("positions");
+    // The counted sentence has said "scrip" since B-6; this is the pair.
+    expect(angelOneCadenceLine(50)).toContain("open scrips take");
   });
 
   it("the desk renders THAT derivation, and no longer counts rows", () => {

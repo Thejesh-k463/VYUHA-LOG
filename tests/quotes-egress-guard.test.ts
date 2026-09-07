@@ -57,9 +57,11 @@ const PRIVACY_COVERED: Record<string, string> = {
   // disclosed host rather than a host. It still has to be NAMED in the sheet
   // before a capability may name it, which is what this entry enforces —
   // pinned to the HEAD of item 3's fourth paragraph, where the sentence
-  // continues into the token look-up, the batching and the cap.
+  // continues into the sign-in cadence (B-7: "at most once a day while it
+  // stays open, and again after a relaunch"), the token look-up, the batching
+  // and the cap.
   "apiconnect.angelone.in":
-    "Vyuha signs in once a day to Angel One's own API host (`apiconnect.angelone.in`)",
+    "Vyuha signs in to Angel One's own API host (`apiconnect.angelone.in`)",
 };
 
 /**
