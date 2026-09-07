@@ -98,10 +98,10 @@ export const LIVE_FEED_COPY = {
 export const UPSTOX_FEED_COPY = {
   label: "Upstox",
   blurb:
-    "Uses the Analytics token saved under Import → Brokers for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
+    "Uses the Analytics token saved under Import → Connect broker for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
   /** Shown INSTEAD of the blurb when the account has no connection: the blurb
    *  describes a token this account does not have, and the next step does. */
-  notConnected: "Add Upstox under Import → Brokers first.",
+  notConnected: "Add Upstox under Import → Connect broker first.",
   /** Always, connected or not — the scope of the feed is not a footnote. */
   equityOnly:
     "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
@@ -141,7 +141,7 @@ export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: 
  *
  * WHAT IS SAID AND WHY IT IS DEFENSIBLE:
  *
- *   • `blurb` names the three things Import → Brokers actually holds for Angel
+ *   • `blurb` names the three things Import → Connect broker actually holds for Angel
  *     One (client code, PIN, TOTP secret) and states the ONE operational fact
  *     that follows from them — Angel One ends every API session at 5 AM IST,
  *     and the next sign-in is performed by Vyuha from the enrolled secret with
@@ -164,9 +164,9 @@ export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: 
 export const ANGELONE_FEED_COPY = {
   label: "Angel One",
   blurb:
-    "Uses the client code, PIN and TOTP secret saved under Import → Brokers. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
+    "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
   /** Shown INSTEAD of the blurb when this account has no connection saved. */
-  notConnected: "Add Angel One under Import → Brokers first.",
+  notConnected: "Add Angel One under Import → Connect broker first.",
   /** Always, connected or not — the scope of the feed is not a footnote. */
   equityOnly:
     "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
@@ -205,7 +205,110 @@ export function angelOneRowState(state: AngelOneFeedState | undefined): { disabl
   };
 }
 
+/**
+ * WHAT THE CARD SAYS WHILE ITS OWN FETCH HAS NOT ANSWERED (A-7).
+ *
+ * The health line has always said this; the Angel One cadence line said
+ * `angelOneCadenceLine(status?.angelone?.openCount ?? 0)` instead, which prints
+ * "your 0 open positions take 1 call per refresh" before the mount fetch
+ * answers — and for ever if it fails, because the catch swallows. A 0 where the
+ * number is simply unknown is a claim about the user's book (invariant 6), so
+ * both surfaces now say the same honest thing: nothing is known yet.
+ */
+export const FEED_CHECKING = "Checking the feed…";
+
+/**
+ * The cadence line the Angel One block renders. DERIVED, never held in state.
+ *
+ * `undefined` — the fetch has not answered, or it failed — is the third case,
+ * exactly as it is for the two row-state helpers above. It renders the checking
+ * sentence rather than an invented count.
+ */
+export function angelOneCadenceText(state: AngelOneFeedState | undefined): string {
+  return state == null ? FEED_CHECKING : angelOneCadenceLine(state.openCount);
+}
+
 type ProviderId = "manual" | "eod" | "openalgo" | "upstox" | "angelone";
+
+/** The provider ids whose disclosure this card can re-open a sheet for. */
+const SHEET_PROVIDERS = ["upstox", "angelone"] as const;
+type SheetProvider = (typeof SHEET_PROVIDERS)[number];
+
+/** What `/api/live/feed` says about the stored pick versus the running one. */
+export interface FeedState {
+  stored: string;
+  effective: string;
+  refreshSeconds?: number;
+  blockedReason?: string;
+}
+
+/**
+ * A blocked feed, as a value. `null` means the stored pick IS what runs.
+ *
+ * A-6 — THE BLOCKED STATE HAD EXACTLY ONE RENDERER, AND IT WAS OpenAlgo'S.
+ * `resolveLiveFeed()` falls back to `eod` whenever the stored provider's
+ * acknowledgement is not current — a disclosure-version bump, or a backup
+ * restored on another machine, where `liveFeedProvider` travels and
+ * `liveFeedAckJson` does not. The route publishes `blockedReason` for every
+ * provider, but the card rendered it only inside `provider === "openalgo" && …`.
+ * So with Upstox stored and blocked the radio showed CHECKED (the state is
+ * initialised from the stored value), the health line read "Feed OK" (it
+ * describes the EFFECTIVE provider, which is end-of-day and perfectly healthy),
+ * nothing said blocked — and because a checked radio fires no `onChange`, the
+ * one path to the consent sheet was unreachable without first switching to
+ * another provider and back.
+ *
+ * PURE, and keyed on `stored !== effective` rather than on a provider name, so
+ * a fourth feed is covered the day it ships. `reviewProvider` is the stored
+ * provider when this card owns its sheet; OpenAlgo's consent lives on the
+ * Integrations screen, so it is null there and the block is text only — which
+ * is the v4.1 behaviour, unchanged.
+ */
+export interface FeedBlock {
+  reason: string;
+  reviewProvider: SheetProvider | null;
+}
+
+/** Said when the feed is blocked and the server sent no sentence of its own. */
+export const FEED_BLOCKED_FALLBACK =
+  "The feed you picked is not running, so the desk stays on end-of-day prices.";
+
+/** The health line under a blocked feed. It describes the PICK, not the fallback. */
+export const FEED_BLOCKED_HEALTH =
+  "Not live — the feed you picked is blocked, so the desk stays on end-of-day prices.";
+
+export function feedBlockState(feed: FeedState | undefined | null): FeedBlock | null {
+  if (feed == null || feed.stored === feed.effective) return null;
+  const reviewProvider = (SHEET_PROVIDERS as readonly string[]).includes(feed.stored)
+    ? (feed.stored as SheetProvider)
+    : null;
+  return { reason: feed.blockedReason ?? FEED_BLOCKED_FALLBACK, reviewProvider };
+}
+
+/** The control that reaches the sheet again once a radio can no longer fire one. */
+export const REVIEW_CONSENT_CTA = "Review and accept";
+
+/**
+ * The health line, DERIVED — including the case it used to get wrong.
+ *
+ * `health` describes the EFFECTIVE provider (the route builds it from
+ * `getLiveFeedProvider()`), so under a blocked feed it is end-of-day's health
+ * and it is fine: the card printed "Feed OK" over a feed the user picked and is
+ * not getting. A blocked feed is stated as blocked, before anything else is
+ * said about it.
+ */
+export function feedHealthText(args: {
+  health?: { ok: boolean; latencyMs: number | null; reason: string } | null;
+  blocked: boolean;
+  lastLiveMarkDate?: string | null;
+}): string {
+  const tail = args.lastLiveMarkDate ? ` · last saved mark ${args.lastLiveMarkDate}` : "";
+  if (args.blocked) return `${FEED_BLOCKED_HEALTH}${tail}`;
+  const h = args.health;
+  if (h == null) return `${FEED_CHECKING}${tail}`;
+  if (h.ok) return `Feed OK${h.latencyMs == null ? "" : ` · ${h.latencyMs} ms`}${tail}`;
+  return `Not live — ${h.reason}${tail}`;
+}
 
 const ALL_PROVIDERS: { id: ProviderId; label: string; blurb: string }[] = [
   {
@@ -350,6 +453,11 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   const health = status?.health;
   const needsConnect = provider === "openalgo" && health != null && (health.state === "no-key" || health.state === "unreachable");
   const consentMissing = provider === "openalgo" && status?.openalgo != null && !(status.openalgo.enabled && status.openalgo.ackCurrent);
+  // A-6: the stored pick is not the feed that runs — for ANY provider. Derived
+  // at render from what the route said; `review` is the sheet this card can
+  // re-open, and a const so the callback below narrows it.
+  const blocked = feedBlockState(status?.feed);
+  const review = blocked?.reviewProvider ?? null;
 
   /**
    * The click. Upstox is the one pick that can need a sheet read first, and
@@ -501,7 +609,11 @@ export function LiveFeedCard({ current }: { current: Settings }) {
               data-testid="live-feed-angelone-cadence"
             >
               <Label>On-screen refresh</Label>
-              <p className="text-xs text-muted-foreground">{angelOneCadenceLine(status?.angelone?.openCount ?? 0)}</p>
+              {/* A-7: `?? 0` printed "your 0 open positions take 1 call per
+                  refresh" before the mount fetch answered, and for ever if it
+                  failed. The helper says "Checking the feed…" until the server
+                  has answered, exactly as the health line does. */}
+              <p className="text-xs text-muted-foreground">{angelOneCadenceText(status?.angelone)}</p>
             </div>
           ) : (
             <div className="space-y-2 rounded-md border border-border bg-card-hover/40 px-3 py-2">
@@ -561,12 +673,33 @@ export function LiveFeedCard({ current }: { current: Settings }) {
           </p>
         )}
 
-        {consentMissing && (
-          <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
+        {/* THE BLOCKED FEED (A-6). One block, for whichever provider is stored:
+            the row above still shows that pick checked — it IS what is stored —
+            so this is the only thing on the card that says it is not running.
+            The OpenAlgo arm is untouched (its sentence and its fallback are the
+            v4.1 ones, and it gets no button, because its consent is given on
+            the Integrations screen); Upstox and Angel One get the control that
+            re-opens their sheet, which a checked radio can no longer reach. */}
+        {(blocked !== null || consentMissing) && (
+          <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2" data-testid="live-feed-blocked">
             <p className="text-xs text-warning">
-              {status?.feed?.blockedReason ??
+              {blocked?.reason ??
+                status?.feed?.blockedReason ??
                 "Turn OpenAlgo on in Integrations and read its disclosure first — until then the desk stays on end-of-day prices."}
             </p>
+            {review !== null && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={pending}
+                onClick={() => setConsentOpen(review)}
+                data-testid="live-feed-review-consent"
+              >
+                {REVIEW_CONSENT_CTA}
+              </Button>
+            )}
           </div>
         )}
 
@@ -581,13 +714,12 @@ export function LiveFeedCard({ current }: { current: Settings }) {
         )}
 
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          {/* A-6: `health` is the EFFECTIVE provider's health, so under a
+              blocked feed it reported end-of-day as "Feed OK" — over a feed the
+              user picked and is not getting. The blocked case is stated first,
+              in one derived helper the tests can drive. */}
           <span data-testid="live-feed-health">
-            {health == null
-              ? "Checking the feed…"
-              : health.ok
-                ? `Feed OK${health.latencyMs == null ? "" : ` · ${health.latencyMs} ms`}`
-                : `Not live — ${health.reason}`}
-            {status?.lastLiveMarkDate ? ` · last saved mark ${status.lastLiveMarkDate}` : ""}
+            {feedHealthText({ health, blocked: blocked !== null, lastLiveMarkDate: status?.lastLiveMarkDate })}
           </span>
           <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => void markNow()}>
             Save today&apos;s mark

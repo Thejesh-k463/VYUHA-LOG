@@ -9,7 +9,7 @@ import { plannedRewardRisk } from "@/lib/risk/calculators";
  */
 export type PositionTrade = Pick<
   Trade,
-  | "id" | "broker" | "bucket" | "segment" | "exchange" | "symbol" | "tradingsymbol"
+  | "id" | "broker" | "bucket" | "segment" | "instrumentType" | "exchange" | "symbol" | "tradingsymbol"
   | "optionType" | "strike" | "expiry" | "isOpen"
   | "buyQty" | "sellQty" | "avgBuyPrice" | "avgSellPrice" | "closingPrice"
   | "buyDate" | "sellDate" | "mtfFundedAmount" | "mtfInterest"
@@ -52,6 +52,39 @@ export interface OpenPosition {
   breakevenPrice: number | null;
 }
 
+/**
+ * The mark this position may read out of the stored MTM map, or null.
+ *
+ * A DERIVATIVE DROPS THE `symbol` RUNG (owner ruling A-1, v4.2 fix wave).
+ * `mtm_prices` is keyed on `symbol`, and a derivative trade carries its
+ * UNDERLYING there — so `mtm.get(symbol)` on an option hands back the cash
+ * price of the underlying and prices the premium at it. An open
+ * `OPT TCS 30 JUN 2026 2500 CE` (875 × ₹2.75) against a stored `TCS = 2057.5`
+ * printed +₹17,97,906.25 (+74,718 %) across the desk, heat, /risk and exposure
+ * — a number nothing in the book ever traded (invariant 6). The WRITE side
+ * already refuses a derivative mark for the same reason (`isCashKey()` in
+ * `lib/quotes/persist-mark.ts`, `writeTypedMark()` in `lib/queries/mtm.ts`);
+ * this is the read side of that one rule.
+ *
+ * EQUITIES ARE UNCHANGED — `symbol → tradingsymbol`. Anything that is not
+ * exactly `"equity"` reads the TRADED CONTRACT only: an unknown or missing
+ * instrument type is treated as a contract because falling through to the
+ * recorded close is a real stored number, while pricing a premium off spot is
+ * not (invariant 6 again — the cheap failure over the expensive one).
+ *
+ * It is EXPORTED so `components/live/load-desk.ts` resolves the same rungs from
+ * the same code. The two held the precedence separately, and drifting apart is
+ * exactly how the desk and the tracker came to print different marks.
+ */
+export function storedMarkFor(
+  t: { symbol: string; tradingsymbol: string; instrumentType: string | null },
+  mtm: Map<string, number>,
+): number | null {
+  const contract = mtm.get(t.tradingsymbol.toUpperCase()) ?? null;
+  if (t.instrumentType !== "equity") return contract;
+  return mtm.get(t.symbol.toUpperCase()) ?? contract;
+}
+
 function daysBetween(a: string | null, b: string): number | null {
   if (!a) return null;
   const d1 = new Date(a + "T00:00:00").getTime();
@@ -78,11 +111,10 @@ export function deriveOpenPositions(
       const qty = Math.abs(t.buyQty - t.sellQty) || (isShort ? t.sellQty : t.buyQty);
       const avgPrice = isShort ? t.avgSellPrice : t.avgBuyPrice;
       const invested = qty * avgPrice;
-      const mtmPrice =
-        mtm.get(t.symbol.toUpperCase()) ??
-        mtm.get(t.tradingsymbol.toUpperCase()) ??
-        t.closingPrice ??
-        avgPrice;
+      // Equity: stored symbol → stored contract → close → entry.
+      // Derivative: stored contract → close → entry (never the underlying's
+      // cash mark — see `storedMarkFor` above, owner ruling A-1).
+      const mtmPrice = storedMarkFor(t, mtm) ?? t.closingPrice ?? avgPrice;
       const currentValue = qty * mtmPrice;
       // Short profits when price falls: P&L = (entry − mtm) × qty, the mirror
       // of the long case (mtm − entry) × qty.

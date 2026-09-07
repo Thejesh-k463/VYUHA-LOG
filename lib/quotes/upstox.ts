@@ -195,7 +195,7 @@ async function readGateFromDb(): Promise<UpstoxGateState> {
   return {
     state: "no-key",
     reason:
-      "No Upstox connection is saved for this account. Paste your read-only Analytics token under Import → Brokers, then pick Upstox in Settings → Live feed.",
+      "No Upstox connection is saved for this account. Paste your read-only Analytics token under Import → Connect broker, then pick Upstox in Settings → Live feed.",
   };
 }
 
@@ -396,7 +396,7 @@ export function upstoxFeedErrorMessage(e: unknown): string {
     return `Upstox refused the request because it carried too many instrument keys (UDAPI100043). Vyuha sends at most ${UPSTOX_MAX_KEYS} at a time; nothing was priced on this poll.`;
   }
   if (/UDAPI100050|401|403|refused the token|invalid token|expired/i.test(raw)) {
-    return "Upstox refused the Analytics token (UDAPI100050 — invalid or expired). Paste a fresh read-only Analytics token under Import → Brokers; prices stop arriving until you do, and the desk keeps the last mark it had.";
+    return "Upstox refused the Analytics token (UDAPI100050 — invalid or expired). Paste a fresh read-only Analytics token under Import → Connect broker; prices stop arriving until you do, and the desk keeps the last mark it had.";
   }
   return raw;
 }

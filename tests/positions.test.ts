@@ -144,3 +144,108 @@ describe("deriveOpenPositions — MTF stays long-only and unaffected", () => {
     expect(p.unrealised).toBe(1000); // (210-200)*100
   });
 });
+
+/**
+ * A-1 (owner ruling, v4.2 fix wave). `mtm_prices` is keyed on `symbol`, and a
+ * DERIVATIVE trade carries its UNDERLYING there — so reading the `symbol` rung
+ * on an option prices the premium at the underlying's cash price. The write
+ * side already refuses a derivative mark (`isCashKey()` in persist-mark,
+ * `writeTypedMark()` in lib/queries/mtm.ts); this is the read side of the same
+ * rule. The reproduction below is the auditor's: 875 × ₹2.75 against a stored
+ * `TCS = 2057.5` printed +₹17,97,906.25 (+74,718 %) — a number nothing in the
+ * book ever traded (invariant 6).
+ */
+describe("deriveOpenPositions — a derivative never reads the underlying's cash mark (A-1)", () => {
+  const option = (over: Partial<Trade> = {}) =>
+    trade({
+      symbol: "TCS",
+      tradingsymbol: "OPT TCS 30 JUN 2026 2500 CE",
+      instrumentType: "option",
+      segment: "stock_option",
+      optionType: "CE",
+      strike: 2500,
+      expiry: "2026-06-30",
+      buyQty: 875,
+      avgBuyPrice: 2.75,
+      buyDate: "2026-06-01",
+      ...over,
+    });
+
+  it("an open option with a cash mark under its underlying reads its own CLOSE, not the spot", () => {
+    const p = deriveOpenPositions([option({ closingPrice: 3.1 })], new Map([["TCS", 2057.5]]), "2026-06-05")[0];
+    expect(p.mtmPrice).toBe(3.1);
+    expect(p.mtmPrice).not.toBe(2057.5);
+    expect(p.unrealised).toBe(306.25); // 875 × (3.10 − 2.75)
+    expect(p.unrealised).not.toBe(1797906.25); // what the symbol rung printed
+  });
+
+  it("with no recorded close it falls to its own average price, never the spot", () => {
+    const p = deriveOpenPositions([option()], new Map([["TCS", 2057.5]]), "2026-06-05")[0];
+    expect(p.mtmPrice).toBe(2.75);
+    expect(p.unrealised).toBe(0);
+  });
+
+  it("a mark stored under the TRADED CONTRACT is still read — only the symbol rung is dropped", () => {
+    const p = deriveOpenPositions(
+      [option({ closingPrice: 3.1 })],
+      new Map([
+        ["TCS", 2057.5],
+        ["OPT TCS 30 JUN 2026 2500 CE", 4.2],
+      ]),
+      "2026-06-05",
+    )[0];
+    expect(p.mtmPrice).toBe(4.2);
+  });
+
+  it("a written (short) option is protected by the same rung, in the same direction", () => {
+    const p = deriveOpenPositions(
+      [option({ buyQty: 0, avgBuyPrice: 0, sellQty: 875, avgSellPrice: 2.75, sellDate: "2026-06-01", closingPrice: 3.1 })],
+      new Map([["TCS", 2057.5]]),
+      "2026-06-05",
+    )[0];
+    expect(p.mtmPrice).toBe(3.1);
+    expect(p.unrealised).toBe(-306.25);
+  });
+
+  it("CONTROL: an equity in the same scrip still reads the cash mark under its symbol", () => {
+    const p = deriveOpenPositions(
+      [
+        trade({
+          symbol: "TCS",
+          tradingsymbol: "TCS",
+          instrumentType: "equity",
+          segment: "eq_delivery",
+          bucket: "equity",
+          buyQty: 10,
+          avgBuyPrice: 2000,
+          closingPrice: 1990,
+          buyDate: "2026-06-01",
+        }),
+      ],
+      new Map([["TCS", 2057.5]]),
+      "2026-06-05",
+    )[0];
+    expect(p.mtmPrice).toBe(2057.5);
+    expect(p.unrealised).toBe(575); // 10 × (2057.5 − 2000)
+  });
+
+  it("a future is a derivative too — the rung is instrumentType, not optionType", () => {
+    const p = deriveOpenPositions(
+      [
+        option({
+          tradingsymbol: "FUT TCS 25 JUN 2026",
+          instrumentType: "future",
+          segment: "future",
+          optionType: null,
+          strike: null,
+          buyQty: 175,
+          avgBuyPrice: 2050,
+          closingPrice: 2049,
+        }),
+      ],
+      new Map([["TCS", 2057.5]]),
+      "2026-06-05",
+    )[0];
+    expect(p.mtmPrice).toBe(2049);
+  });
+});

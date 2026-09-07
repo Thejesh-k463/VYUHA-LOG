@@ -47,7 +47,7 @@ import {
   showsNotPricedByFeed,
   stalenessLabel,
   stopLabel,
-  angelOneCadenceLine,
+  deskAngelOneCadence,
 } from "./desk-copy";
 import * as fmt from "./desk-format";
 import { deskAction, isTypingTarget, nextIndex } from "./desk-keys";
@@ -566,15 +566,27 @@ export function TrackerClient({ data, pro }: { data: LiveDeskData; pro: boolean 
   // unattended).
   const angeloneFeed = feed.providerId === "angelone";
   /**
-   * THE TIERED CADENCE, ON THE DESK, from the desk's OWN row count.
+   * THE TIERED CADENCE, ON THE DESK, FROM THE COUNT THE POLL ITSELF USES (A-5).
    *
-   * Ruling 4.2-4 puts the same sentence on both surfaces. It is computed here
-   * rather than carried on the payload: `angelOneCadenceLine()` is pure, the
-   * desk already knows how many open rows it holds, and a number travelling on
-   * the wire is a number that can disagree with the screen it describes. The
-   * cap and the tiers live in that one function, never restated here.
+   * Ruling 4.2-4 puts the same sentence on both surfaces. This read
+   * `angelOneCadenceLine(rows.length)` — one row per open TRADE — while the
+   * adapter paces on the DEDUPED quote-key count and Settings states
+   * `openPositionKeys().length`, so a 51-row / 50-key book printed "every 5
+   * seconds … 2 calls" here beside a poll running at 3 s and one call, and
+   * beside a Settings card saying 3 s. Two denominators cannot make one
+   * sentence.
+   *
+   * The count now comes from the stream's own snapshot frame (`symbols`, which
+   * the route has always sent and nothing read) and falls back to the server
+   * render's `feed.symbolCount` — and to NO COUNT AT ALL, never to `rows`. The
+   * order and the arithmetic live in `deskAngelOneCadence()`, beside the
+   * sentence itself.
    */
-  const angeloneCadence = angeloneFeed ? angelOneCadenceLine(rows.length) : null;
+  const angeloneCadence = deskAngelOneCadence({
+    providerId: feed.providerId,
+    linkSymbolCount: link.symbolCount,
+    feedSymbolCount: feed.symbolCount ?? null,
+  });
 
   const virtualizer = useVirtualizer({
     count: visible.length,

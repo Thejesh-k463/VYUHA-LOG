@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 // TYPE-ONLY, and it must stay that way: a value import of a `lib/quotes`
@@ -343,5 +345,56 @@ describe("migration 0070 — angelone_instrument_tokens, on a really migrated da
     expect(out.lookups).toBe(0);
     expect(search.calls).toEqual([]);
     expect(out.tokens.get("BSE:SBIN")?.token).toBe("500112");
+  });
+});
+
+/**
+ * WHOSE SERIES FEEDS THE TIE-BREAKER (v4.2 fix A-14).
+ *
+ * The header of `lib/quotes/angelone-tokens.ts` used to say the trade's own
+ * series wins "when Vyuha knows it (Angel One's own imports carry SBIN-EQ)".
+ * The SmartAPI import strips the suffix before it stores anything, so an
+ * Angel-imported trade is the one case that can NEVER feed that rule. The
+ * behaviour is right and was never the bug; the sentence was, and a comment
+ * that misdescribes which input reaches a tie-break is how the next reader
+ * "fixes" the wrong half.
+ */
+describe("the series tie-breaker is fed by another source, never by Angel One's own import", () => {
+  it("Angel One's own import STRIPS the series, so its trades arrive with none", async () => {
+    const { stripSeriesSuffix, normalizeAngelTrades } = await import("@/lib/import/api/angelone");
+    expect(stripSeriesSuffix("SBIN-EQ")).toBe("SBIN");
+
+    // …and that is really what the import stores on the trade row.
+    const { trades } = normalizeAngelTrades(
+      [{ tradingsymbol: "SBIN-EQ", exchange: "NSE", producttype: "DELIVERY", transactiontype: "BUY",
+         fillsize: "1", fillprice: "800", filltime: "10:00:00" }],
+      "2026-09-07",
+    );
+    expect(trades[0]!.tradingsymbol).toBe("SBIN");
+
+    // So the key the resolver sees carries no series, and the "-EQ" default —
+    // not the trade's own series — is what picks the row.
+    const cash = tokens.angelCashKey({ symbol: "SBIN", exchange: "NSE", tradingsymbol: trades[0]!.tradingsymbol });
+    expect(cash?.series, "an Angel-imported trade cannot feed the tie-breaker").toBeNull();
+    expect(tokens.pickAngelScripRow(SBIN_ROWS, { symbol: "SBIN", exchange: "NSE", series: cash?.series })?.symboltoken)
+      .toBe("3045"); // SBIN-EQ, by the default rule
+  });
+
+  it("a tradingsymbol that KEPT its series is the case the tie-breaker exists for", () => {
+    const cash = tokens.angelCashKey({ symbol: "SBIN", exchange: "NSE", tradingsymbol: "SBIN-BE" });
+    expect(cash?.series).toBe("BE");
+    // Here "-EQ" would be the wrong instrument, and the trade's own series wins.
+    expect(tokens.pickAngelScripRow(SBIN_ROWS, { symbol: "SBIN", exchange: "NSE", series: cash?.series })?.symboltoken)
+      .toBe("11129");
+  });
+
+  it("and the header says so — the claim about Angel One's own imports is gone", () => {
+    const src = readFileSync(path.join(process.cwd(), "lib/quotes/angelone-tokens.ts"), "utf8");
+    expect(src, "the header still claims Angel One's own imports carry a series").not.toMatch(
+      /Angel One's own imports[\s\S]{0,40}carry "SBIN-EQ"/,
+    );
+    expect(src, "the header must name the strip that makes the tie-breaker unreachable from that source").toMatch(
+      /stripSeriesSuffix/,
+    );
   });
 });

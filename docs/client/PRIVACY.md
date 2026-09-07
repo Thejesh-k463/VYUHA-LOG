@@ -82,7 +82,7 @@ Exactly four kinds, and only one of them is automatic:
    Upstox can price the desk instead, on the same terms and behind the same
    switch: the poll then goes to Upstox's own API host (`api.upstox.com`) and
    reuses the read-only Analytics token you already saved under Import →
-   Brokers — the same token the trade import uses, which Upstox issues for
+   Connect broker — the same token the trade import uses, which Upstox issues for
    about a year, so there is no daily sign-in to do. It carries the instrument
    keys of the open positions of the selected account, at most 500 of them,
    once every 1–5 seconds while the desk is open, and nothing else about
@@ -91,7 +91,7 @@ Exactly four kinds, and only one of them is automatic:
    so. The prices stay on this machine: never uploaded, never resold.
    Angel One can price the desk instead, on the same terms and behind the same
    switch, from the client code, PIN and TOTP secret you already saved under
-   Import → Brokers. Angel One clears every API session at 5 AM IST, so
+   Import → Connect broker. Angel One clears every API session at 5 AM IST, so
    Vyuha signs in once a day to Angel One's own API host
    (`apiconnect.angelone.in`) — the host the Angel One trade pull already
    uses, so this adds no new one — generating the one-time password itself

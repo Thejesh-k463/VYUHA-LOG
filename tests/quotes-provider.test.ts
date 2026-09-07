@@ -1,10 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
-import type { QuoteProvider } from "@/lib/quotes/types";
+import type { QuoteKey, QuoteProvider } from "@/lib/quotes/types";
 // TYPE-ONLY, and it must stay that way: a value import of a `lib/quotes`
 // module here would bind the SQLite connection before `openTempDb()` runs.
 import type { UpstoxGetter } from "@/lib/quotes/upstox";
-import type { AngelQuoteFetcher } from "@/lib/quotes/angelone";
+import type { AngelOneHealth, AngelQuoteFetcher } from "@/lib/quotes/angelone";
 import type { AngelTokenCache, ResolvedAngelToken } from "@/lib/quotes/angelone-tokens";
 
 /**
@@ -225,6 +225,177 @@ describe("migration 0069 — settings.live_feed_ack_json, on a really migrated d
   });
 });
 
+/* ═══════ ONE LIVE-FEED INSTANCE PER PROCESS (v4.2 fix A-2) ════════════════
+ * `getLiveFeedProvider()` has four callers on one /live visit — the SSR desk
+ * load, every EventSource open, the Settings health line and "Save today's
+ * mark" — and the session, the rate guard, the hourly budget and `lastError`
+ * all live INSIDE the instance. A factory call per caller therefore meant a
+ * login per caller, a ceiling per caller, and a health line from an instance
+ * that had never made a request. These tests drive the REAL registry against
+ * the REAL Angel One adapter over a stubbed `fetch`, so the login is counted
+ * where it actually happens: no socket is opened, and the credential is a
+ * fixture.
+ */
+describe("the live feed is one instance per process, not one per caller", () => {
+  let registry: typeof import("@/lib/quotes/registry");
+  let ANGEL_ACK: string;
+  let UPSTOX_ACK: string;
+
+  /** Counted per request KIND, which is what the consent sheet promises. */
+  let logins = 0;
+  let quoteCalls = 0;
+  let loginWorks = true;
+
+  const TCS_ONLY: QuoteKey[] = [{ symbol: "TCS", exchange: "NSE" }];
+
+  const envelope = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+
+  /** The SmartAPI wire, recorded — login, then the OHLC quote, and nothing else. */
+  const stubbedFetch = async (input: unknown): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("/rest/auth/angelbroking/user/v1/loginByPassword")) {
+      logins += 1;
+      return loginWorks
+        ? envelope({ status: true, data: { jwtToken: `jwt-${logins}` } })
+        : envelope({ status: false, message: "Invalid totp" });
+    }
+    if (url.includes("/rest/secure/angelbroking/market/v1/quote/")) {
+      quoteCalls += 1;
+      return envelope({
+        status: true,
+        data: {
+          fetched: [
+            { exchange: "NSE", symbolToken: "11536", ltp: 3025.75, open: 3005.5, high: 3030, low: 3000, close: 3010.25 },
+          ],
+          unfetched: [],
+        },
+      });
+    }
+    throw new Error(`the adapter asked for something nobody stubbed: ${url}`);
+  };
+
+  beforeAll(async () => {
+    registry = await import("@/lib/quotes/registry");
+    const { withFeedAck } = await import("@/lib/domain/live-feed-disclosure");
+    ANGEL_ACK = withFeedAck(null, "angelone");
+    UPSTOX_ACK = withFeedAck(ANGEL_ACK, "upstox");
+
+    t.db
+      .insert(t.schema.brokerConnections)
+      .values({
+        accountId: 1,
+        broker: "angelone",
+        apiKey: "smartapi-key",
+        accessToken: "unused-by-the-feed",
+        authJson: JSON.stringify({ clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" }),
+        updatedAt: "2026-09-07T04:00:00.000Z",
+      })
+      .run();
+    // Pre-resolved, so the poll is a login plus ONE quote request: searchScrip
+    // is the resolver's business and `tests/angelone-tokens.test.ts` owns it.
+    t.db
+      .insert(t.schema.angeloneInstrumentTokens)
+      .values({ exchange: "NSE", symbol: "TCS", tradingsymbol: "TCS-EQ", token: "11536" })
+      .run();
+    t.db
+      .update(t.schema.settings)
+      .set({ liveFeedProvider: "angelone", liveFeedAckJson: ANGEL_ACK, liveFeedRefreshSeconds: 3 })
+      .run();
+    vi.stubGlobal("fetch", stubbedFetch);
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+    registry.resetLiveFeedProviderCache();
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod", liveFeedAckJson: null }).run();
+    t.db.delete(t.schema.brokerConnections).run();
+    t.db.delete(t.schema.angeloneInstrumentTokens).run();
+  });
+
+  it(
+    "hands two callers the SAME provider, so one visit is one Angel One sign-in",
+    async () => {
+      registry.resetLiveFeedProviderCache();
+      logins = 0;
+      quoteCalls = 0;
+
+      // The two callers the /live visit really makes: the SSR desk load and
+      // the EventSource the browser opens a moment later.
+      const ssr = await registry.getLiveFeedProvider();
+      const stream = await registry.getLiveFeedProvider();
+      expect(ssr.id).toBe("angelone");
+      expect(stream, "a second caller must not build a second session").toBe(ssr);
+
+      expect((await ssr.snapshot(TCS_ONLY)).get("NSE:TCS")!.ltp).toBe(302575);
+      expect((await stream.snapshot(TCS_ONLY)).get("NSE:TCS")!.ltp).toBe(302575);
+
+      // The consent sheet says "signs in once each trading day". This is that
+      // sentence, counted on the wire.
+      expect(logins, "one visit, one login").toBe(1);
+      expect(quoteCalls).toBe(2);
+    },
+    20_000,
+  );
+
+  it("builds a NEW instance when the slider, the consent or the connection row changes", async () => {
+    registry.resetLiveFeedProviderCache();
+    const base = await registry.getLiveFeedProvider();
+    expect(await registry.getLiveFeedProvider(), "nothing changed, so nothing is rebuilt").toBe(base);
+
+    t.db.update(t.schema.settings).set({ liveFeedRefreshSeconds: 5 }).run();
+    const afterSlider = await registry.getLiveFeedProvider();
+    expect(afterSlider).not.toBe(base);
+
+    // A SECOND sheet accepted into the same column (migration 0069 holds both
+    // brokers) is a new consent, so the cached instance is dropped.
+    t.db.update(t.schema.settings).set({ liveFeedAckJson: UPSTOX_ACK }).run();
+    const afterAck = await registry.getLiveFeedProvider();
+    expect(afterAck).not.toBe(afterSlider);
+    expect(await registry.getLiveFeedProvider(), "and the new one is then reused").toBe(afterAck);
+
+    // A re-saved credential — the case a stale jwt would survive.
+    t.db
+      .update(t.schema.brokerConnections)
+      .set({ apiKey: "smartapi-key-regenerated", updatedAt: "2026-09-07T05:00:00.000Z" })
+      .run();
+    const afterCredential = await registry.getLiveFeedProvider();
+    expect(afterCredential).not.toBe(afterAck);
+    expect(await registry.getLiveFeedProvider()).toBe(afterCredential);
+
+    // Put the settings back the way the block found them.
+    t.db.update(t.schema.settings).set({ liveFeedRefreshSeconds: 3, liveFeedAckJson: ANGEL_ACK }).run();
+  });
+
+  it(
+    "reports the FAILED sign-in on the health line, because it is the instance that failed",
+    async () => {
+      registry.resetLiveFeedProviderCache();
+      logins = 0;
+      loginWorks = false;
+      try {
+        const desk = await registry.getLiveFeedProvider();
+        await expect(desk.snapshot(TCS_ONLY)).rejects.toThrow(/TOTP/i);
+
+        // The Settings card asks a moment later. A fresh instance would have
+        // no memory of the failure and would say "connected" with zero
+        // requests made — which is exactly what this cache exists to stop.
+        const settingsCard = await registry.getLiveFeedProvider();
+        const health = (await settingsCard.health()) as AngelOneHealth;
+        expect(health.ok).toBe(false);
+        expect(health.state).toBe("unreachable");
+        expect(health.reason).toMatch(/TOTP/i);
+        // …and the wrong TOTP was not re-sent by the second caller.
+        expect(logins).toBe(1);
+      } finally {
+        loginWorks = true;
+        registry.resetLiveFeedProviderCache();
+      }
+    },
+    20_000,
+  );
+});
+
 describe("MockProvider — deterministic, and the only provider tests ever see", () => {
   it("gives two providers built with the same seed the same prices", async () => {
     const a = quotes.createMockProvider({ seed: 42, now: () => 0 });
@@ -300,6 +471,51 @@ describe("ManualMarkProvider — the marks the user typed", () => {
 
   it("is silent about a symbol with no mark rather than substituting a price", async () => {
     expect((await manual.snapshot(KEYS)).has("NSE:INFY")).toBe(false);
+  });
+
+  /**
+   * A-1 (owner ruling 2026-09-07, "drop the symbol rung for derivatives"), the
+   * QUOTE door of the same defect `storedMarkFor()` closes on the stored-mark
+   * door: `mtm_prices` is keyed on the UNDERLYING, so resolving an option key
+   * by `symbol` marks the premium at the underlying's cash mark — and on the
+   * desk a quote OUTRANKS the stored mark, so this door alone still returns
+   * the wrong number. `eod-bhavcopy.ts` has filtered by `isCashKey()` since it
+   * was written; this provider is the one that never did.
+   */
+  it("gives a derivative key NO quote from the underlying's typed mark (A-1)", async () => {
+    const snap = await manual.snapshot([
+      { symbol: "TCS", exchange: "NFO", tradingsymbol: "OPT TCS 30 Jun 2026 2500 CE" },
+      { symbol: "TCS", exchange: "NSE" },
+    ]);
+    expect(snap.has("NFO:OPT TCS 30 JUN 2026 2500 CE")).toBe(false);
+    // …and the cash key of the same underlying still reads its own mark.
+    expect(snap.get("NSE:TCS")!.ltp).toBe(312040);
+  });
+
+  it("quotes a derivative ONLY from a mark typed under the contract's own tradingsymbol", async () => {
+    // The store holds both the underlying's cash mark and a mark for the
+    // contract itself; the contract must read ₹2.75, never ₹2,057.50.
+    const p = quotes.createManualProvider(async () => [
+      { symbol: "TCS", tradingsymbol: "TCS", price: 2057.5, asOfDate: "2026-09-04" },
+      { symbol: "TCS", tradingsymbol: "OPT TCS 30 JUN 2026 2500 CE", price: 2.75, asOfDate: "2026-09-04" },
+    ]);
+    const snap = await p.snapshot([
+      { symbol: "TCS", exchange: "NFO", tradingsymbol: "OPT TCS 30 Jun 2026 2500 CE" },
+      { symbol: "TCS", exchange: "NSE" },
+    ]);
+    expect(snap.get("NFO:OPT TCS 30 JUN 2026 2500 CE")!.ltp).toBe(275);
+    expect(snap.get("NSE:TCS")!.ltp).toBe(205750);
+  });
+
+  it("gives a derivative key with no tradingsymbol nothing at all, not the underlying", async () => {
+    // `quoteKeyId()` falls back to `symbol`, so the contract-only rung must not
+    // fall back with it — that would restore the symbol rung through the back
+    // door for a future keyed without its contract name.
+    const p = quotes.createManualProvider(async () => [
+      { symbol: "TCS", tradingsymbol: "TCS", price: 2057.5, asOfDate: "2026-09-04" },
+    ]);
+    const snap = await p.snapshot([{ symbol: "TCS", exchange: "NFO" }]);
+    expect(snap.has("NFO:TCS")).toBe(false);
   });
 
   it("never pushes: streaming is false and subscribe emits nothing", () => {

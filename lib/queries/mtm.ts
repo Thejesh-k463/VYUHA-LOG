@@ -65,8 +65,19 @@ export const getSpotMap = cache((): Map<string, number> => {
  * `mtm_prices` is keyed on symbol, so a typed premium would sit under
  * RELIANCE and — now that a typed mark replaces the day's row — delete the
  * cash mark every RELIANCE share position reads. The live door refuses the
- * same write (`isCashKey()` in persist-mark). Until a mark store keyed on the
- * traded contract exists, a derivative position shows the close or a dash.
+ * same write (`isCashKey()` in persist-mark).
+ *
+ * WHAT A DERIVATIVE POSITION THEREFORE READS (owner ruling A-1, v4.2 fix
+ * wave). It used to say "the close or a dash" here, and that was FALSE of the
+ * code: `deriveOpenPositions()` and the Live Desk both resolved
+ * `mtm.get(symbol) ?? mtm.get(tradingsymbol) ?? close`, and the first rung is
+ * the UNDERLYING — so an option priced itself at the underlying's cash mark
+ * (875 × ₹2.75 against a stored TCS = 2057.5 printed +₹17,97,906.25). The
+ * refusal above only ever covered the WRITE. The READ precedence is now, in
+ * one place, `storedMarkFor()` in `lib/analytics/positions.ts`: a row whose
+ * `instrumentType` is not `"equity"` reads a mark stored under its OWN
+ * tradingsymbol, then its recorded close, then its average price — never the
+ * underlying's. Equities are unchanged (symbol, then tradingsymbol).
  */
 export const DERIVATIVE_MARK_MESSAGE = "Marks for options and futures are not stored in this version.";
 export function isDerivativeInstrument(t: { instrumentType: string }): boolean {

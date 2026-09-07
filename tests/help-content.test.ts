@@ -3,6 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HELP_ENTRIES, searchHelp } from "@/lib/domain/help-content";
 import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
+import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
+import { CONNECTABLE_PROVIDER_IDS } from "@/lib/live/connect-prompt";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
 
 /**
@@ -449,5 +451,160 @@ describe("search", () => {
 
   it("a nonsense query returns nothing rather than everything", () => {
     expect(searchHelp(HELP_ENTRIES, "zzzznotaword")).toEqual([]);
+  });
+});
+
+/**
+ * A-4 — THE PRIVACY INVENTORY IS COMPLETE, NOT MERELY TRUE.
+ *
+ * "WHAT LEAVES THE MACHINE" listed "the Live Desk price poll to your own
+ * OpenAlgo bridge or to Upstox if you chose one of them as the desk's source"
+ * while a THIRD desk feed shipped in the same release — Angel One, which polls
+ * apiconnect.angelone.in and signs itself in once a trading day, unattended.
+ * Nothing was undisclosed (the /settings entry describes that sign-in three
+ * sentences earlier); the paragraph that a reader treats as the INVENTORY was
+ * two feeds out of three, which is the kind of incompleteness that reads as a
+ * hidden one.
+ *
+ * The existing v4.2 scans could not see it: they filter for sentences matching
+ * /angel one/i, and the omission was precisely a sentence that did not.
+ * This one goes the other way — it derives the feeds from the REGISTRY and
+ * demands the sentence name each. A fourth feed cannot ship without the
+ * paragraph changing, because `NAME` below must gain an entry to stay exact.
+ */
+describe("the WHAT-LEAVES inventory names every feed that can leave the machine (A-4)", () => {
+  const whatLeaves = (): string => {
+    const s = HELP_ENTRIES.find((e) => e.href === "/settings")!.body.find((b) =>
+      b.startsWith("WHAT LEAVES THE MACHINE"),
+    );
+    expect(s, "the /settings entry no longer carries a WHAT LEAVES THE MACHINE paragraph").toBeDefined();
+    return s!;
+  };
+
+  /**
+   * The desk sources that reach a host at all: SHIPPED in this release, and a
+   * connection the user makes (`CONNECTABLE_PROVIDER_IDS`, lib/live/connect-prompt.ts).
+   * `eod`/`manual` read what is already here; `mock` generates prices in-process.
+   */
+  const deskFeeds = () => {
+    const caps = new Map(allProviderCapabilities().map((c) => [c.id, c]));
+    return SHIPPED_PROVIDER_IDS.filter((id) => CONNECTABLE_PROVIDER_IDS.includes(id)).map((id) => caps.get(id)!);
+  };
+
+  /** What each feed is CALLED in prose. The sentence is held to these. */
+  const NAME: Record<string, RegExp> = {
+    openalgo: /OpenAlgo/,
+    upstox: /Upstox/,
+    angelone: /Angel One/,
+  };
+
+  it("the scan has real feeds to read, and each one really does reach out", () => {
+    const feeds = deskFeeds();
+    expect(feeds.length, "no shipped feed is a connection the user makes — the scan is dead").toBeGreaterThan(2);
+    for (const c of feeds) {
+      expect(c.streaming, `${c.id} is listed as a desk feed but pushes nothing`).toBe(true);
+      expect(c.egressDescription.length, `${c.id} declares no egress at all`).toBeGreaterThan(0);
+    }
+  });
+
+  it("the name map covers exactly the shipped feeds — a fourth one fails here first", () => {
+    expect(
+      Object.keys(NAME).sort(),
+      "a desk feed was added or withdrawn without revisiting the WHAT-LEAVES sentence",
+    ).toEqual(deskFeeds().map((c) => c.id).sort());
+  });
+
+  it("names every one of them", () => {
+    const text = whatLeaves();
+    for (const c of deskFeeds()) {
+      expect(text, `the inventory omits the ${c.id} poll`).toMatch(NAME[c.id]);
+    }
+  });
+
+  it("says out loud that Vyuha performs the daily sign-in the one feed that needs it", () => {
+    // A daily session AND a remote host: the bridge also reports
+    // `requiresDailyAuth`, but its egress is "None beyond your own machine",
+    // and the sign-in it means is the user's own, into their own bridge.
+    const daily = deskFeeds().filter((c) => c.requiresDailyAuth && !/^none/i.test(c.egressDescription));
+    expect(
+      daily.map((c) => c.id),
+      "no shipped desk feed signs itself in to a remote host — this claim has nothing to guard",
+    ).toEqual(["angelone"]);
+    expect(whatLeaves(), "the inventory does not say who does the unattended sign-in").toMatch(
+      /(sign-in|signs in)[^.]*Vyuha|Vyuha[^.]*(sign-in|signs in)/i,
+    );
+  });
+});
+
+/**
+ * A-12 — THE ROW IS GREYED, NOT ABSENT.
+ *
+ * Three surfaces said the broker feed "appears only after" / "is offered only
+ * after" the credential is saved. The Settings card renders a row for EVERY id
+ * in `PROVIDERS` (components/settings/live-feed-card.tsx) whatever is saved:
+ * with no connection it renders greyed, carrying "Add Upstox under
+ * Import → Connect broker first." A user who has not connected goes looking for
+ * a row that is on the screen in front of them, disabled.
+ *
+ * The correction is "greyed until" / "can be picked only once", so this bans
+ * the APPEARANCE verbs and leaves the picking verbs alone.
+ */
+describe("no surface says the feed row appears only after a credential (A-12)", () => {
+  const ABSENT_CLAIM = /\b(appears|appear|is offered|offered|shows up|is shown)\b[^.|]{0,60}?\bonly\s+(?:after|once)\b/i;
+
+  /**
+   * SCOPED TO THE PASSAGES ABOUT THE LIVE-FEED ROW, and deliberately not to
+   * every sentence naming a broker. The /import entry says "A fifth path —
+   * OpenAlgo — appears here only after you switch it on in Settings →
+   * Integrations", which is TRUE of the Import screen: `broker-connect.tsx`
+   * renders the OpenAlgo tab only when the integration is on. The falsehood
+   * this bans is about the SETTINGS ROW, so the passage has to be about the
+   * Live feed for its sentences to be read at all.
+   */
+  const ABOUT_THE_FEED_ROW = /Live feed|desk'?s source|prices? (?:the|your) (?:Live )?[Dd]esk/;
+
+  /** Passages, then sentences inside them: a help body string, or a markdown
+   *  paragraph (README's release note wraps over a dozen quoted lines). */
+  const passages = (text: string) => text.split(/\n\s*\n/);
+
+  const offendingSentences = (units: string[]) =>
+    units
+      .filter((u) => ABOUT_THE_FEED_ROW.test(u))
+      .flatMap((u) => u.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/))
+      .filter((s) => ABSENT_CLAIM.test(s));
+
+  const SURFACES: [string, () => string[]][] = [
+    [
+      "lib/domain/help-content.ts",
+      () => HELP_ENTRIES.flatMap((e) => [e.title, e.answers, ...e.body, ...(e.refusals ?? [])]),
+    ],
+    [
+      "docs/client/README.md",
+      () => passages(fs.readFileSync(path.join(process.cwd(), "docs/client/README.md"), "utf8")),
+    ],
+    ["README.md", () => passages(fs.readFileSync(path.join(process.cwd(), "README.md"), "utf8"))],
+  ];
+
+  it("the ban fires on the wording it replaced and spares the wording that replaced it", () => {
+    expect(
+      ABSENT_CLAIM.test("It is opt-in exactly like the others — it appears only after you have saved your token"),
+      "the ban is dead",
+    ).toBe(true);
+    expect(ABSENT_CLAIM.test("it is offered only after you have saved your Upstox Analytics token")).toBe(true);
+    expect(ABSENT_CLAIM.test("it appears as a source only after you switch the integration on")).toBe(true);
+    expect(ABSENT_CLAIM.test("its row there stays greyed until you have saved your Upstox Analytics token")).toBe(
+      false,
+    );
+    expect(ABSENT_CLAIM.test("it can be picked only once you have accepted its disclosure")).toBe(false);
+  });
+
+  it.each(SURFACES)("%s describes the row as greyed, not missing", (rel, units) => {
+    const read = units();
+    expect(
+      read.filter((u) => ABOUT_THE_FEED_ROW.test(u)).length,
+      `${rel} has no passage about the Live feed row — the scan is reading the wrong file`,
+    ).toBeGreaterThan(0);
+    const offenders = offendingSentences(read).map((s) => s.slice(0, 140));
+    expect(offenders, `${rel} says the row is absent until connected:\n${offenders.join("\n")}`).toEqual([]);
   });
 });

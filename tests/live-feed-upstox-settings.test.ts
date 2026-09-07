@@ -3,8 +3,12 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import {
+  FEED_BLOCKED_HEALTH,
   PROVIDERS,
+  REVIEW_CONSENT_CTA,
   UPSTOX_FEED_COPY,
+  feedBlockState,
+  feedHealthText,
   upstoxRowState,
 } from "@/components/settings/live-feed-card";
 import {
@@ -71,7 +75,7 @@ const NEW_STRINGS: [where: string, text: string][] = [
   ["dialog cancel", "Not now"],
   [
     "route refusal (no connection)",
-    "No Upstox connection is saved for this account. Add Upstox under Import → Brokers first.",
+    "No Upstox connection is saved for this account. Add Upstox under Import → Connect broker first.",
   ],
   [
     "route refusal (no acknowledgement)",
@@ -107,7 +111,7 @@ describe("the Upstox radio is offered only behind the one release flag", () => {
   it("says Upstox, in the owner's words", () => {
     expect(UPSTOX_FEED_COPY.label).toBe("Upstox");
     expect(UPSTOX_FEED_COPY.blurb).toBe(
-      "Uses the Analytics token saved under Import → Brokers for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
+      "Uses the Analytics token saved under Import → Connect broker for this account. Upstox keeps that token read-only for about a year, so there is no daily login.",
     );
     expect(UPSTOX_FEED_COPY.equityOnly).toBe(
       "Prices equity positions only in this release; futures and options rows keep their last stored mark.",
@@ -119,7 +123,7 @@ describe("the row's state is DERIVED from what the route said about this account
   it("no connection saved → the radio is dead and says what to do about it", () => {
     const s = upstoxRowState({ connected: false, ackCurrent: false });
     expect(s.disabled).toBe(true);
-    expect(s.line).toBe("Add Upstox under Import → Brokers first.");
+    expect(s.line).toBe("Add Upstox under Import → Connect broker first.");
   });
 
   it("connection saved → the radio takes a click and the line describes the token", () => {
@@ -303,7 +307,7 @@ describe("POST provider upstox — 409 until BOTH halves hold, storing nothing",
   it("refuses when no connection is saved, and names the next step", async () => {
     const res = await post({ action: "provider", provider: "upstox" });
     expect(res.status).toBe(409);
-    expect((await res.json()).message).toContain("Add Upstox under Import → Brokers first.");
+    expect((await res.json()).message).toContain("Add Upstox under Import → Connect broker first.");
     expect(settingsRow()?.liveFeedProvider, "a refused pick was stored anyway").toBe("eod");
   });
 
@@ -375,5 +379,57 @@ describe("the route reads the row's existence and never its token", () => {
     const src = stripComments(read(ROUTE));
     expect(src).toMatch(/\.select\(\{ id: brokerConnections\.id \}\)/);
     expect(src, "the route reads a credential column").not.toMatch(/brokerConnections\.(apiKey|accessToken|authJson)/);
+  });
+});
+
+/**
+ * A-6 — THE UPSTOX HALF OF THE SAME DEFECT.
+ *
+ * Identical mechanism to the Angel One case pinned in
+ * `tests/live-feed-angelone-settings.test.ts`: `resolveLiveFeed()` falls back
+ * to `eod` and publishes `blockedReason` whenever the STORED provider's
+ * acknowledgement is not current, and the card rendered that reason only under
+ * `provider === "openalgo"`. The Upstox radio therefore showed checked, the
+ * health line described the end-of-day fallback, and the consent sheet could
+ * not be re-opened — a checked radio fires no `onChange`, and `pick()` is the
+ * only opener.
+ *
+ * Driven through the REAL route, so the fixture cannot drift from the server.
+ */
+describe("a blocked Upstox feed is stated, and the sheet is reachable again (A-6)", () => {
+  it("a disclosure-version bump blocks the stored pick, and the card says so", async () => {
+    // The version-bump case (the restore case is pinned on the Angel One
+    // twin): the pick is stored, the acknowledgement is an older version.
+    t.db
+      .update(t.schema.settings)
+      .set({ liveFeedProvider: "upstox", liveFeedAckJson: '{"upstox":"0"}' })
+      .run();
+    const body = await (await get()).json();
+    expect(body.feed.stored).toBe("upstox");
+    expect(body.feed.effective, "a stale acknowledgement still priced the desk").toBe("eod");
+
+    const block = feedBlockState(body.feed);
+    expect(block, "nothing on the card says the Upstox feed is blocked").not.toBeNull();
+    expect(block?.reason).toBe(body.feed.blockedReason);
+    expect(block?.reason).toMatch(/disclosure/i);
+    expect(block?.reviewProvider, "the sheet cannot be re-opened for the stored provider").toBe("upstox");
+    expect(feedHealthText({ health: body.health, blocked: true })).toBe(FEED_BLOCKED_HEALTH);
+  });
+
+  it("accepting the sheet again clears it — one write, same GET", async () => {
+    await post({ action: "ack", provider: "upstox" });
+    const body = await (await get()).json();
+    expect(body.feed.effective).toBe("upstox");
+    expect(feedBlockState(body.feed)).toBeNull();
+    expect(feedHealthText({ health: body.health, blocked: false })).not.toBe(FEED_BLOCKED_HEALTH);
+  });
+
+  it("nothing is blocked when the stored pick IS what runs", () => {
+    expect(feedBlockState({ stored: "upstox", effective: "upstox", refreshSeconds: 3 })).toBeNull();
+    expect(feedBlockState(undefined), "a card whose fetch has not answered claims nothing").toBeNull();
+    // An unblocked feed needs no control, and a provider whose consent lives
+    // elsewhere gets the text without one (OpenAlgo, unchanged from v4.1).
+    expect(feedBlockState({ stored: "openalgo", effective: "eod", blockedReason: "…" })?.reviewProvider).toBeNull();
+    expect(REVIEW_CONSENT_CTA).toBe("Review and accept");
   });
 });

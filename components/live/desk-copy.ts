@@ -115,10 +115,18 @@ export const LIVE_STREAM_COPY = {
    * phase. The strip therefore said "no prices yet" beside the prices that
    * very frame had just delivered. What is missing is the SUBSCRIPTION.
    *
-   * WHY NO REASON IS CLAIMED: the desk cannot tell "outside market hours" from
-   * "subscribed and silent" without asserting an exchange calendar it does not
-   * ship (`lib/live/market-hours.ts` models the clock, not holidays). It states
-   * the connection and what is not happening, and nothing about why.
+   * WHY NO REASON IS CLAIMED (A-13 — this paragraph used to say the app ships no
+   * exchange calendar, which stopped being true in v4.2). It DOES ship one:
+   * `lib/data/nse-holidays.json`, read by `lib/live/market-hours.ts` through
+   * `isTradingDayIst()`, so "today is a listed holiday" is a fact the app can
+   * state. The reason is still not claimed here, and the reason for THAT is the
+   * remaining one: this string is a statement about the CONNECTION, and the
+   * desk cannot tell "the exchange is shut" from "subscribed and silent" —
+   * a bridge that is connected and quiet on a trading afternoon prints exactly
+   * the same frame as one on Republic Day. Naming the holiday here would
+   * therefore explain a silence on the days it happened to coincide with and
+   * mis-explain it on every other. The holiday, when there is one, belongs to
+   * the market clock beside "Market closed", not to the pipe's own label.
    */
   connected: (provider: string) => `Connected · ${provider} · not streaming`,
   connecting: "Connecting…",
@@ -190,7 +198,7 @@ export const CONNECT_PROMPT_COPY = {
    * — the same screen the feed reads it from, so the breadcrumb names a place
    * that exists and a step that is really the next one.
    */
-  upstoxHeadline: "Connect your feed — Upstox uses the Analytics token saved under Import → Brokers.",
+  upstoxHeadline: "Connect your feed — Upstox uses the Analytics token saved under Import → Connect broker.",
   upstoxCta: "Open Import",
   upstoxHref: "/import",
   /**
@@ -200,12 +208,12 @@ export const CONNECT_PROMPT_COPY = {
    *
    * It names the three things Angel One's session is built from — the client
    * code, the PIN and the TOTP secret — because that is exactly what
-   * Import → Brokers holds for it, and because the sign-in Vyuha performs each
+   * Import → Connect broker holds for it, and because the sign-in Vyuha performs each
    * morning is performed FROM those three. No duration is promised: there is
    * nothing for the user to time, since the daily sign-in is unattended.
    */
   angeloneHeadline:
-    "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Brokers.",
+    "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Connect broker.",
   angeloneCta: "Open Import",
   angeloneHref: "/import",
 } as const;
@@ -214,7 +222,8 @@ export const CONNECT_PROMPT_COPY = {
  * Ruling 4.2-8 — the DERIVATIVE mark label, printed beside the row's last
  * stored mark in the same cell as the staleness pill.
  *
- * WHAT IT SAYS AND WHY IT IS SAFE: the Upstox feed prices cash scrips only, so
+ * WHAT IT SAYS AND WHY IT IS SAFE: the Upstox and Angel One feeds price cash
+ * scrips only (`showsNotPricedByFeed` below names both), so
  * a futures or options row on this desk is showing whatever is already in
  * `mtm_prices` — an imported close or a mark the user typed — and NOT a price
  * from the feed the strip names. The sentence states that fact and stops. No
@@ -285,17 +294,65 @@ export function angelOneRefreshCalls(openCount: number): number {
 }
 
 /**
+ * WHAT THE SENTENCE SAYS WHEN NOBODY HAS STATED A COUNT (A-5).
+ *
+ * The interval is arithmetic over the number of KEYS the poll batches, so with
+ * no count there is no interval to state either — and inventing one, or
+ * printing the count as 0, would be a claim about this account's book that the
+ * screen has not been told (invariant 6: never fabricate a denominator). It
+ * states the provider's own limit and where the interval comes from, and stops.
+ */
+export const ANGELONE_CADENCE_NO_COUNT =
+  `Refreshes on an interval computed from the positions this feed prices — Angel One allows about one request a second, and takes ${ANGELONE_BATCH_SIZE} symbols to a batch.` as const;
+
+/**
  * The line itself. `angelOneCadenceSeconds()` is the ONE source of the tier
  * (lib/quotes/types.ts) — the copy never re-derives it, so the sentence and the
  * poll can never disagree about the interval.
+ *
+ * `null` is the honest third case (A-5): the surface has no count yet — the
+ * Settings card's own fetch has not answered, or the desk holds neither a
+ * stream frame nor a server snapshot. It prints the countless sentence above
+ * rather than a number nobody sent.
  */
-export function angelOneCadenceLine(openCount: number): string {
+export function angelOneCadenceLine(openCount: number | null): string {
+  if (openCount === null) return ANGELONE_CADENCE_NO_COUNT;
   const count = angelOnePricedCount(openCount);
   const seconds = angelOneCadenceSeconds(count);
   const calls = angelOneRefreshCalls(count);
   const positions = count === 1 ? "position takes" : "positions take";
   const requests = calls === 1 ? "call" : "calls";
   return `Refreshes every ${seconds} seconds — Angel One allows about one request a second, and your ${count} open ${positions} ${calls} ${requests} per refresh.`;
+}
+
+/**
+ * THE DESK'S CADENCE LINE, AND THE COUNT IT IS ALLOWED TO USE (A-5).
+ *
+ * THE DEFECT THIS REPLACES. `tracker-client.tsx` printed
+ * `angelOneCadenceLine(rows.length)` — one row per open TRADE — while the
+ * adapter paces on the DEDUPED quote-key count (`quoteKeyId`, two trades in one
+ * scrip = 2 rows and 1 key) and the Settings card states
+ * `openPositionKeys().length`. A 51-row / 50-key book therefore read "every 5
+ * seconds … 2 calls" on the desk beside a poll running at 3 s and one call, and
+ * beside a Settings card saying 3 s. Ruling 4.2-4 is one sentence on both
+ * surfaces; two different denominators cannot produce one sentence.
+ *
+ * THE ORDER, and why. The LIVE frame's count first: `symbols` on the snapshot
+ * frame is the very set the route handed the provider for THIS connection, so
+ * it is the only number that is true of the poll now running. The SSR
+ * snapshot's count second (`FeedInfo.symbolCount`) — the same deduped
+ * arithmetic, one page render older. Neither, and the sentence is printed
+ * WITHOUT a count: the row count is not a fallback, it is the wrong number.
+ */
+export function deskAngelOneCadence(args: {
+  providerId: string;
+  /** `LinkState.symbolCount` — the open stream's own snapshot frame. */
+  linkSymbolCount: number | null;
+  /** `FeedInfo.symbolCount` — the server render's snapshot, or null. */
+  feedSymbolCount: number | null;
+}): string | null {
+  if (args.providerId !== "angelone") return null;
+  return angelOneCadenceLine(args.linkSymbolCount ?? args.feedSymbolCount ?? null);
 }
 
 /** "— needs 21 sessions. You have 8." The shortfall is always stated. */

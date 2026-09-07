@@ -87,7 +87,7 @@ describe("showConnectPrompt — only the bridge, only the states a reconnect fix
     // Its daily sign-in is unattended, but the two states that open this prompt
     // are not fixed by waiting for tomorrow: `no-key` means nothing is saved
     // for this account and `unreachable` means what is saved is not answering.
-    // Both send the user to Import → Brokers, which is somewhere to go.
+    // Both send the user to Import → Connect broker, which is somewhere to go.
     expect(showConnectPrompt(feed({ providerId: "angelone" }), null)).toBe(true);
     expect(showConnectPrompt(feed({ providerId: "angelone", healthState: "unreachable" }), null)).toBe(true);
     expect(showConnectPrompt(feed({ providerId: "angelone" }), connectPromptDismissal())).toBe(false);

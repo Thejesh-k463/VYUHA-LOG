@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  ANGELONE_CADENCE_NO_COUNT,
   CONNECT_PROMPT_COPY,
   angelOneCadenceLine,
+  deskAngelOneCadence,
   DESK_COPY,
   NOT_PRICED_BY_FEED,
   showsNotPricedByFeed,
@@ -537,7 +539,7 @@ describe("the Upstox connect prompt says where its token lives", () => {
 
   it("is pinned VERBATIM, and promises no duration", () => {
     expect(CONNECT_PROMPT_COPY.upstoxHeadline).toBe(
-      "Connect your feed — Upstox uses the Analytics token saved under Import → Brokers.",
+      "Connect your feed — Upstox uses the Analytics token saved under Import → Connect broker.",
     );
     expect(CONNECT_PROMPT_COPY.upstoxHeadline).not.toMatch(/second|minute/i);
   });
@@ -644,7 +646,7 @@ describe("the Angel One connect prompt and cadence line", () => {
 
   it("is pinned VERBATIM, and promises no duration", () => {
     expect(CONNECT_PROMPT_COPY.angeloneHeadline).toBe(
-      "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Brokers.",
+      "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Connect broker.",
     );
     expect(CONNECT_PROMPT_COPY.angeloneHeadline).not.toMatch(/second|minute/i);
     expect(BANNED.test(CONNECT_PROMPT_COPY.angeloneHeadline)).toBe(false);
@@ -663,11 +665,66 @@ describe("the Angel One connect prompt and cadence line", () => {
     expect(src).toContain("<p className=\"text-sm font-medium\">{LIVE_FEED_COPY.connect}</p>");
   });
 
-  it("the strip prints the tiered cadence, computed from the desk's OWN row count", () => {
-    // No route change and no new payload field: a number travelling on the
-    // wire is a number that can disagree with the screen it describes.
+  /**
+   * A-5 — THE STRIP COUNTED THE WRONG THING, AND SAID SO CONFIDENTLY.
+   *
+   * The desk printed `angelOneCadenceLine(rows.length)`: one row per open
+   * TRADE. The adapter paces on the DEDUPED quote-key count (`quoteKeyId` =
+   * exchange:tradingsymbol — two trades in one scrip are two rows and ONE key)
+   * and the Settings card states `openPositionKeys().length`, which is that
+   * same deduped set. So a 51-row / 50-key book read "every 5 seconds … 2
+   * calls" on the desk while the poll ran at 3 s and one call and Settings said
+   * 3 s. Ruling 4.2-4 asks for ONE sentence on both surfaces; two different
+   * denominators cannot produce one sentence.
+   *
+   * These are BEHAVIOUR tests over the shared derivation, not a pin on the
+   * source text of the old call — the old pin was green throughout the defect,
+   * because it asserted exactly the expression that was wrong.
+   */
+  it("51 rows in 50 scrips reads 3 seconds and 1 call — what the poll really does", () => {
+    const line = deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: 50, feedSymbolCount: null });
+    expect(line).toContain("Refreshes every 3 seconds");
+    expect(line).toContain("your 50 open positions take 1 call per refresh");
+    // …and the sentence the row count used to produce is a DIFFERENT one, so
+    // this test can tell the fix from the defect.
+    expect(angelOneCadenceLine(51)).toContain("Refreshes every 5 seconds");
+    expect(angelOneCadenceLine(51)).toContain("2 calls per refresh");
+    expect(line).not.toBe(angelOneCadenceLine(51));
+  });
+
+  it("takes the LIVE stream's count first, then the server render's, then none", () => {
+    const at = (linkSymbolCount: number | null, feedSymbolCount: number | null) =>
+      deskAngelOneCadence({ providerId: "angelone", linkSymbolCount, feedSymbolCount });
+    // The open stream's own snapshot frame is the only count true of the poll
+    // running now, so it wins whenever it exists.
+    expect(at(50, 51)).toBe(angelOneCadenceLine(50));
+    // One page render older, but the same deduped arithmetic.
+    expect(at(null, 50)).toBe(angelOneCadenceLine(50));
+    // Neither: the sentence loses its count rather than borrowing a wrong one.
+    expect(at(null, null)).toBe(ANGELONE_CADENCE_NO_COUNT);
+    expect(at(null, null)).not.toMatch(/\d+ open position/);
+    expect(at(null, null), "an interval nobody computed").not.toMatch(/every \d+ seconds/);
+  });
+
+  it("says nothing at all under any other feed", () => {
+    for (const providerId of ["openalgo", "upstox", "eod", "manual", "mock"]) {
+      expect(deskAngelOneCadence({ providerId, linkSymbolCount: 50, feedSymbolCount: 50 })).toBeNull();
+    }
+  });
+
+  it("the countless sentence is descriptive, and states the provider's own limit", () => {
+    expect(BANNED.test(ANGELONE_CADENCE_NO_COUNT), ANGELONE_CADENCE_NO_COUNT).toBe(false);
+    expect(ANGELONE_CADENCE_NO_COUNT).toContain("about one request a second");
+    expect(ANGELONE_CADENCE_NO_COUNT).toContain("50 symbols to a batch");
+  });
+
+  it("the desk renders THAT derivation, and no longer counts rows", () => {
     expect(src).toContain('const angeloneFeed = feed.providerId === "angelone";');
-    expect(src).toContain("angeloneFeed ? angelOneCadenceLine(rows.length) : null");
+    expect(src, "the desk still computes the cadence from its row count").not.toContain(
+      "angelOneCadenceLine(rows.length)",
+    );
+    expect(src).toContain("linkSymbolCount: link.symbolCount");
+    expect(src).toContain("feedSymbolCount: feed.symbolCount ?? null");
     expect(src).toContain('data-testid="live-feed-cadence"');
   });
 
@@ -678,5 +735,74 @@ describe("the Angel One connect prompt and cadence line", () => {
       expect(line, line).not.toMatch(/alerts?/i);
       expect(line).toMatch(/^Refreshes every (3|5|10) seconds — /);
     }
+  });
+});
+
+/**
+ * A-13 — THE COMMENT THAT DESCRIBED A PREVIOUS RELEASE.
+ *
+ * `LIVE_STREAM_COPY.connected` explains why it claims no REASON for a silent
+ * stream, and the explanation used to be "the desk cannot assert an exchange
+ * calendar it does not ship (`lib/live/market-hours.ts` models the clock, not
+ * holidays)". v4.2 ships one: `lib/data/nse-holidays.json`, read through
+ * `isTradingDayIst()`, which `market-hours.ts` consults. The string is
+ * UNCHANGED — the reason for not naming a holiday is the other one, that this
+ * label is a statement about the CONNECTION and a quiet bridge on a trading
+ * afternoon sends the same frame as one on Republic Day — but a comment that
+ * states a fact about another file has to be true of that file.
+ */
+describe("the strip's own comment tells the truth about the calendar this build ships (A-13)", () => {
+  const raw = fs.readFileSync(path.join(ROOT, "components/live/desk-copy.ts"), "utf8");
+
+  it("no longer says the app ships no exchange calendar", () => {
+    expect(raw, "the comment still claims market-hours models the clock only").not.toMatch(
+      /models the clock, not holidays/,
+    );
+    expect(raw).toContain("lib/data/nse-holidays.json");
+  });
+
+  it("…and the two files it now names really are what it says they are", () => {
+    expect(fs.existsSync(path.join(ROOT, "lib/data/nse-holidays.json")), "the bundled calendar").toBe(true);
+    const hours = fs.readFileSync(path.join(ROOT, "lib/live/market-hours.ts"), "utf8");
+    expect(hours, "market-hours does not consult the calendar after all").toMatch(/isTradingDayIst/);
+  });
+
+  it("the STRING is unchanged: it still claims no reason for a silent stream", () => {
+    // Deliberate, and re-asserted here so the comment fix cannot drift into a
+    // copy change: the label is about the pipe, and a holiday would explain the
+    // silence on one day a year and mis-explain it on every other.
+    expect(LIVE_STREAM_COPY.connected("upstox")).toBe("Connected · upstox · not streaming");
+    expect(LIVE_STREAM_COPY.connected("upstox")).not.toMatch(/holiday|closed|market hours/i);
+  });
+});
+
+/**
+ * A-11 — THE BREADCRUMB NAMES THE SCREEN IT ACTUALLY IS.
+ *
+ * Owner ruling, 2026-09-07: the phrase is exactly `Import → Connect broker`.
+ * The old wording named a tab ("Brokers") that the Import screen does not have,
+ * so every sentence that told a user where their token lives sent them to a
+ * place with the wrong name.
+ */
+describe("the Import breadcrumb is the owner's phrase, in every file this wave owns (A-11)", () => {
+  const FILES = [
+    "components/live/desk-copy.ts",
+    "components/settings/live-feed-card.tsx",
+    "app/api/live/feed/route.ts",
+  ];
+
+  it.each(FILES)("%s says Import → Connect broker, and never Import → Brokers", (rel) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    expect(raw, `${rel} still carries the old breadcrumb`).not.toContain("Import → Brokers");
+    expect(raw, `${rel} names the Import screen at all`).toContain("Import → Connect broker");
+  });
+
+  it("both connect-prompt headlines carry it, verbatim", () => {
+    expect(CONNECT_PROMPT_COPY.upstoxHeadline).toBe(
+      "Connect your feed — Upstox uses the Analytics token saved under Import → Connect broker.",
+    );
+    expect(CONNECT_PROMPT_COPY.angeloneHeadline).toBe(
+      "Connect your feed — Angel One uses the client code, PIN and TOTP secret saved under Import → Connect broker.",
+    );
   });
 });

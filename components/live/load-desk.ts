@@ -2,13 +2,13 @@ import "server-only";
 import { asc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { priceHistory, riskConfig } from "@/lib/db/schema";
-import { deriveOpenPositions } from "@/lib/analytics/positions";
+import { deriveOpenPositions, storedMarkFor } from "@/lib/analytics/positions";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { portfolioHeat, sectorConcentration, type HeatRow } from "@/lib/live/heat";
 import { computeStop, gateStop } from "@/lib/live/stop";
 import { computeTrackerRow, DEFAULT_ATR_LENGTH } from "@/lib/live/tracker-row";
 import type { Bar, LivePosition, Mark, Paise } from "@/lib/live/types";
-import { catchUpDailyMark } from "@/lib/quotes/persist-mark";
+import { catchUpDailyMark, MAX_POSITION_KEYS } from "@/lib/quotes/persist-mark";
 import { getLiveFeedProvider } from "@/lib/quotes/registry";
 import { quoteKeyId, type Exchange, type ProviderHealth, type Quote, type QuoteKey } from "@/lib/quotes/types";
 import { getAccounts, getSelectedAccountId } from "@/lib/queries/accounts";
@@ -204,6 +204,28 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     exchange: asExchange(p.exchange),
     tradingsymbol: p.tradingsymbol,
   }));
+  // ── The SUBSCRIPTION set, deduped (owner ruling A-5) ─────────────────────
+  // `keys` above is one per POSITION, because the row loop reads `keys[i]` to
+  // pair a row with its own quote. What the PROVIDER is asked for is one per
+  // SCRIP: two open trades in one scrip (a pyramided entry, two accounts under
+  // the aggregate view) are one subscription, and asking twice spends the same
+  // ceiling twice — on Angel One it also moves the whole book into a slower
+  // cadence tier for nothing. `app/api/live/stream/route.ts` and
+  // `lib/quotes/persist-mark.ts` have deduped on `quoteKeyId()` since v4.1;
+  // the SSR half did not, so the snapshot and the stream disagreed about the
+  // size of the very same book. `MAX_POSITION_KEYS` is imported rather than
+  // restated so the cap cannot drift from the stream route's.
+  const snapshotKeys: QuoteKey[] = [];
+  {
+    const seen = new Set<string>();
+    for (const k of keys) {
+      const id = quoteKeyId(k);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      snapshotKeys.push(k);
+      if (snapshotKeys.length >= MAX_POSITION_KEYS) break;
+    }
+  }
   let quotes = new Map<string, { ltp: number; staleness: Mark["staleness"]; asOf: string }>();
   /** The snapshot as the provider gave it — what the day's mark is written from. */
   let rawQuotes: Quote[] = [];
@@ -211,14 +233,52 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
   // way `app/api/live/feed/route.ts` reads it. A provider without one falls
   // back to ok/disabled below.
   let health: ProviderHealth & { state?: string } = { ok: true };
+  /**
+   * The deduped key count the provider was ACTUALLY handed, for `FeedInfo`.
+   * It stays null until a snapshot comes back, so a provider that threw
+   * publishes "not known" rather than a count nothing was ever asked for
+   * (invariant 6) — the client branches on the null.
+   */
+  let symbolCount: number | null = null;
   try {
-    const snap = await provider.snapshot(keys);
+    const snap = await provider.snapshot(snapshotKeys);
+    symbolCount = snapshotKeys.length;
     rawQuotes = [...snap.values()];
     quotes = new Map([...snap].map(([k, q]) => [k, { ltp: q.ltp, staleness: q.staleness, asOf: q.asOf }]));
     health = await provider.health();
   } catch (e) {
-    // A provider that throws must not take the journal's own record with it.
-    health = { ok: false, reason: e instanceof Error ? e.message : "The quote provider could not be read." };
+    // A provider that throws must not take the journal's own record with it —
+    // and it must not take its own DIAGNOSIS with it either.
+    //
+    // This used to rebuild health from the thrown MESSAGE alone, which dropped
+    // `state`, so `FeedInfo` below fell back to "disabled". `GET /api/live/feed`
+    // calls `health()` directly and published "no-key" off the very same
+    // provider and the very same database, and `showConnectPrompt()`
+    // (`lib/live/connect-prompt.ts`, owner answer Q24) fires only on `no-key`
+    // and `unreachable` — so the once-a-day desk prompt was dead for exactly
+    // the state it exists for: a consented broker feed with no connection saved
+    // for the SELECTED account (switch accounts and the connection is gone).
+    // Only an EMPTY book escaped, because `snapshot([])` returns before it can
+    // throw and `health()` is reached the ordinary way.
+    //
+    // `health()` NEVER throws, by contract (`lib/quotes/types.ts`), and it makes
+    // no request of its own on Upstox or Angel One; OpenAlgo answers the gate
+    // states without one and probes `/funds` only when the gate is open — which
+    // is the path where the desk has already failed and "unreachable" is the
+    // very answer being sought. The `try` is belt and braces: a provider that
+    // breaks its own contract still must not cost the journal its record.
+    const thrown = e instanceof Error ? e.message : "The quote provider could not be read.";
+    let reported: (ProviderHealth & { state?: string }) | null = null;
+    try {
+      reported = await provider.health();
+    } catch {
+      reported = null;
+    }
+    // The adapter's verdict is used ONLY when it has one. A provider reporting
+    // itself healthy has explained nothing about the throw, and publishing its
+    // `ok: true` would print a green pill over a desk that priced nothing — so
+    // there the thrown sentence stays the only thing stated (invariant 6).
+    health = reported && !reported.ok ? { ...reported, reason: reported.reason ?? thrown } : { ok: false, reason: thrown };
   }
 
   // ── The automatic day mark, SECOND door (owner answer Q25) ────────────────
@@ -273,7 +333,17 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
     // `keys[i]` is this position's own quote key — the two arrays are built
     // from `positions` in one order and are never filtered apart.
     const quoted = quotes.get(quoteKeyId(keys[i]));
-    const storedMark = mtm.get(p.symbol.toUpperCase()) ?? mtm.get(p.tradingsymbol.toUpperCase()) ?? null;
+    // ONE implementation of the stored-mark precedence, shared with
+    // `deriveOpenPositions` (owner ruling A-1): a DERIVATIVE drops the
+    // `symbol` rung, because `mtm_prices` is keyed on symbol and a contract
+    // carries its UNDERLYING there — reading it printed the underlying's cash
+    // price as this contract's premium, under a "Stored mark" badge. The desk
+    // and the tracker held that precedence separately, which is how they came
+    // to disagree; they now cannot.
+    const storedMark = storedMarkFor(
+      { symbol: p.symbol, tradingsymbol: p.tradingsymbol, instrumentType: position.instrumentType },
+      mtm,
+    );
     const mark: Mark = quoted
       ? { markP: quoted.ltp, staleness: quoted.staleness, asOf: quoted.asOf }
       : storedMark !== null
@@ -411,6 +481,9 @@ export async function loadLiveDesk(entitlement: { pro: boolean }): Promise<LiveD
           : "disabled",
     reason: health.reason ?? null,
     asOf: newestAsOf,
+    // The DEDUPED subscription size, not `rows.length` — the client states the
+    // Angel One cadence from it before the stream ever connects.
+    symbolCount,
   };
 
   return {

@@ -71,7 +71,7 @@ export interface ConnectPromptFeed {
  *
  * ANGEL ONE BELONGS HERE EVEN THOUGH ITS DAILY SIGN-IN IS UNATTENDED. The two
  * states that open this prompt are `no-key` (nothing saved for this account)
- * and `unreachable` — and both are fixed by the user going to Import → Brokers,
+ * and `unreachable` — and both are fixed by the user going to Import → Connect broker,
  * not by waiting for the next morning's automatic sign-in.
  */
 export const CONNECTABLE_PROVIDER_IDS: readonly string[] = ["openalgo", "upstox", "angelone"];

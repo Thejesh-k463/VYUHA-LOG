@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   UPSTOX_CAPABILITIES,
@@ -355,7 +357,7 @@ describe("health()", () => {
     expect(h.state).toBe("unreachable");
     expect(h.reason).toMatch(/Analytics token/);
     expect(h.reason).toMatch(/UDAPI100050/);
-    expect(h.reason).toMatch(/Import → Brokers/);
+    expect(h.reason).toMatch(/Import → Connect broker/);
   });
 
   it("reports OK, and counts what this feed cannot price instead of hiding it", async () => {
@@ -475,5 +477,61 @@ describe("subscribe", () => {
     const stop = p.subscribe([RELIANCE], () => {}, ctrl.signal);
     expect(typeof stop).toBe("function");
     expect(() => stop()).not.toThrow();
+  });
+});
+
+/* ─────────────────── the two paths, pinned as LITERALS (A-9) ─────────────── */
+
+/**
+ * THE PATH PINS THE REST OF THE SUITE ASSUMED EXISTED.
+ *
+ * `tests/upstox-api.test.ts` says the shared `upstoxGet` is "held to
+ * /market-quote/* only" by this file — and until v4.2's fix wave it was not:
+ * the constants were only ever compared with themselves (`calls[0].path`
+ * against `${UPSTOX_LTP_PATH}?…`), which stays green whatever the constant is
+ * changed to. These are the literals, and the pin on what `upstoxGet` is ever
+ * handed. It matters because that helper is the IPv4-pinned GET the IMPORT
+ * path uses: a path built here reaches Upstox with the user's Analytics token
+ * attached.
+ */
+describe("the market-quote paths, as literals", () => {
+  it("are the two documented v3 market-quote endpoints and nothing else", () => {
+    expect(UPSTOX_LTP_PATH).toBe("/v3/market-quote/ltp");
+    expect(UPSTOX_OHLC_PATH).toBe("/v3/market-quote/ohlc");
+    expect(UPSTOX_OHLC_PATH).toMatch(/^\/v3\/market-quote\//);
+    expect(UPSTOX_LTP_PATH).toMatch(/^\/v3\/market-quote\//);
+    // A path, never a URL: the host belongs to `upstoxGet` in
+    // lib/import/api/upstox.ts, so there is one Upstox host in the tree.
+    for (const p of [UPSTOX_LTP_PATH, UPSTOX_OHLC_PATH]) expect(p).not.toMatch(/https?:|upstox\.com/);
+  });
+
+  it("are the ONLY paths the adapter ever hands the shared GET", async () => {
+    const { get, calls } = recordingGetter();
+    const p = createUpstoxProvider({ readGate: async () => READY, getImpl: get, isinOf, now: () => 0 });
+    await p.snapshot([RELIANCE, TCS]);
+    // A second poll a minute later, so the OHLC call is made again and both
+    // branches of the once-a-minute rule are in the recorded set.
+    const q = createUpstoxProvider({ readGate: async () => READY, getImpl: get, isinOf, now: () => 60_001 });
+    await q.snapshot([RELIANCE]);
+
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    const paths = [...new Set(calls.map((c) => c.path.split("?")[0]))].sort();
+    expect(paths).toEqual(["/v3/market-quote/ltp", "/v3/market-quote/ohlc"]);
+    // Everything after the "?" is the query the adapter builds — nothing may
+    // add a path segment to it.
+    for (const c of calls) expect(c.path.split("?").length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("the breadcrumb the Upstox messages name", () => {
+  it("is Import → Connect broker, which is what the Import screen calls the card", () => {
+    // The refused-token sentence is asserted above, on the health line. This
+    // is the other one: the no-connection reason, which is built inside the
+    // DB gate reader and so has no injectable seam (v4.2 fix A-11).
+    const src = readFileSync(path.join(process.cwd(), "lib/quotes/upstox.ts"), "utf8");
+    expect(src).toContain(
+      "Paste your read-only Analytics token under Import → Connect broker, then pick Upstox in Settings → Live feed.",
+    );
+    expect(src, "the old screen name is still here").not.toContain("Import → Brokers");
   });
 });

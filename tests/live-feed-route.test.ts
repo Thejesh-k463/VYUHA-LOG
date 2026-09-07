@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import { OPENALGO_DISCLOSURE_VERSION } from "@/lib/domain/openalgo-disclosure";
+import { FEED_BLOCKED_HEALTH, feedBlockState, feedHealthText } from "@/components/settings/live-feed-card";
 
 /**
  * `/api/live/feed` — the Live Desk's feed settings, and the consent gate that
@@ -348,5 +349,19 @@ describe("POST provider — the consent gate, on the shipped route", () => {
     expect(body.feed.effective).toBe("eod");
     expect(body.feed.blockedReason).toBeTruthy();
     expect(body.health.provider).toBe("eod");
+
+    // A-6 — OpenAlgo'S OWN BEHAVIOUR IS UNCHANGED, and that is the point of
+    // asserting it here. The card's blocked block is now derived from
+    // `stored !== effective` for EVERY provider instead of from
+    // `provider === "openalgo"`, so this case must keep rendering exactly what
+    // v4.1 rendered: the route's sentence, and NO "Review and accept" control
+    // — OpenAlgo's consent is given on the Integrations screen, not in a sheet
+    // this card owns.
+    const block = feedBlockState(body.feed);
+    expect(block?.reason).toBe(body.feed.blockedReason);
+    expect(block?.reviewProvider, "the card offered a sheet OpenAlgo does not have").toBeNull();
+    // …and the health line no longer reports the end-of-day fallback as the
+    // health of the feed the user picked.
+    expect(feedHealthText({ health: body.health, blocked: block !== null })).toBe(FEED_BLOCKED_HEALTH);
   });
 });

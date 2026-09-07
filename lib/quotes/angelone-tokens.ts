@@ -23,11 +23,21 @@ import type { QuoteKey } from "./types";
  * 2. THE SERIES IS CHOSEN, NEVER GUESSED. `searchscrip: "SBIN"` answers with
  *    sixteen rows — SBIN-AF, SBIN-BE, SBIN-BL, SBIN-EQ, SBIN-IQ and more —
  *    which are different instruments with the same first five letters. The
- *    trade's own series wins when Vyuha knows it (Angel One's own imports
- *    carry "SBIN-EQ"), then "-EQ", then a lone row; anything else is
- *    UNRESOLVABLE and is labelled as such. Picking "whichever came first"
- *    would price one instrument under another's name, which is invariant 6's
- *    exact failure mode.
+ *    trade's own series wins when Vyuha knows it, then "-EQ", then a lone row;
+ *    anything else is UNRESOLVABLE and is labelled as such. Picking "whichever
+ *    came first" would price one instrument under another's name, which is
+ *    invariant 6's exact failure mode.
+ *
+ *    WHEN THE FIRST RULE ACTUALLY FIRES — not on Angel One's own imports. The
+ *    SmartAPI trade pull strips the suffix before it stores anything
+ *    (`stripSeriesSuffix` in `lib/import/api/angelone.ts`, so "SBIN-EQ" is
+ *    stored as tradingsymbol "SBIN"), which is what lines Angel rows up with
+ *    every other source. An Angel-imported trade therefore reaches
+ *    `angelCashKey()` with `series: null` and lands on the "-EQ" default —
+ *    right for a delivery holding, and the default this app assumes anyway.
+ *    The tie-breaker is for a tradingsymbol that still CARRIES its series from
+ *    somewhere else (a hand-typed row, or a file whose parser keeps it), which
+ *    is exactly the case where "-EQ" would be the wrong instrument.
  * 3. NOT ONE ORDER PATH. `/order/v1/searchScrip` is a read, but it lives under
  *    Angel One's order namespace and the SAME jwt could place an order — so
  *    this file contains searchScrip and nothing else under that prefix, and

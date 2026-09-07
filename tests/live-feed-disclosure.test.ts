@@ -82,7 +82,7 @@ describe("the Upstox consent sheet", () => {
   it("states the host, the cadence, the token and the equity-only limit", () => {
     expect(flat).toContain("api.upstox.com");
     expect(flat).toContain("every 1 to 5 seconds while the Live Desk is open");
-    expect(flat).toContain("Analytics token you saved under Import → Brokers");
+    expect(flat).toContain("Analytics token you saved under Import → Connect broker");
     expect(flat).toContain("read-only");
     expect(flat).toContain("cannot place, change or cancel an order");
     expect(flat).toContain("Only equity positions are priced by this feed in this release");
@@ -146,7 +146,7 @@ describe("the Angel One consent sheet", () => {
 
   it("states the daily sign-in, the 5 AM flush and where the credentials came from", () => {
     expect(flat).toContain("signs in to apiconnect.angelone.in once each trading day");
-    expect(flat).toContain("client code, PIN and TOTP secret you saved under Import → Brokers");
+    expect(flat).toContain("client code, PIN and TOTP secret you saved under Import → Connect broker");
     expect(flat).toContain("Angel One clears every session at 5 AM IST");
   });
 

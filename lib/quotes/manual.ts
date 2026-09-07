@@ -1,5 +1,5 @@
 import "server-only";
-import { manualQuoteFromMark, type StoredMark } from "./mapping";
+import { isCashKey, manualQuoteFromMark, type StoredMark } from "./mapping";
 import {
   quoteKeyId,
   type ProviderCapabilities,
@@ -17,8 +17,17 @@ import {
  * mark is already persisted in `mtm_prices` (schema.ts:666, "manual / EOD
  * price entry"), written by `app/api/positions/risk/route.ts:60-65` from the
  * risk dialog and by the bhavcopy paste panel, and read back by
- * `deriveOpenPositions()` through `getMtmMap()` with the precedence
- * `mtm[symbol] → mtm[tradingsymbol] → trades.closingPrice`. v4.0 adds no
+ * `deriveOpenPositions()` through `getMtmMap()`.
+ *
+ * THE READ PRECEDENCE IS INSTRUMENT-DEPENDENT (owner ruling A-1, v4.2 fix
+ * wave): an EQUITY reads `mtm[symbol] → mtm[tradingsymbol] → closingPrice`,
+ * a DERIVATIVE DROPS THE `symbol` RUNG and reads the traded contract only,
+ * because `mtm_prices` is keyed on the UNDERLYING and marking a premium at the
+ * underlying's cash price is a number nothing in the book ever traded
+ * (invariant 6). `storedMarkFor()` in `lib/analytics/positions.ts` is the ONE
+ * implementation of the stored-mark side of that rule — read it there, not
+ * here; this file is the QUOTE side of the same door, and it applies the rule
+ * through the shared `isCashKey()` in `snapshot()` below. v4.0 adds no
  * storage for marks; W0's migration `0064` extends `risk_config` only. So this
  * provider READS the existing table and writes nothing — the write path stays
  * the existing `/api/positions/*` routes, which already audit and revalidate.
@@ -102,9 +111,24 @@ export function createManualProvider(read: ManualMarkReader = readManualMarksFro
       if (keys.length === 0) return out;
       const { bySymbol, byTradingsymbol } = indexMarks(await read());
       for (const key of keys) {
-        const mark =
-          bySymbol.get(key.symbol.trim().toUpperCase()) ??
-          byTradingsymbol.get((key.tradingsymbol ?? key.symbol).trim().toUpperCase());
+        // A DERIVATIVE NEVER READS THE `symbol` RUNG (owner ruling A-1). A
+        // typed mark is stored against the UNDERLYING, so `bySymbol` would
+        // quote an `OPT TCS … 2500 CE` at TCS's cash mark — and a quote
+        // outranks the stored mark in `components/live/load-desk.ts`, so this
+        // door alone still prints the wrong number. Same `isCashKey()` rule
+        // the bhavcopy provider and `persist-mark.ts` already apply; the
+        // contract rung is `key.tradingsymbol` ONLY, with no fall back to
+        // `key.symbol` (that fall back IS the symbol rung by another name).
+        const symbol = key.symbol.trim().toUpperCase();
+        const contract = (key.tradingsymbol ?? "").trim().toUpperCase();
+        // `isCashKey()` guarantees a cash key's contract is empty or equal to
+        // its symbol, so the second rung is `symbol` either way — unchanged
+        // behaviour for equities.
+        const mark = isCashKey(key)
+          ? (bySymbol.get(symbol) ?? byTradingsymbol.get(symbol))
+          : contract === ""
+            ? undefined
+            : byTradingsymbol.get(contract);
         // No mark is not a zero mark — the symbol is simply absent from the map
         // and the desk renders "—" (invariant 6).
         if (mark) out.set(quoteKeyId(key), manualQuoteFromMark(key, mark));

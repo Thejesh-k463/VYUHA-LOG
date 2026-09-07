@@ -37,10 +37,28 @@ export interface LinkState {
   reason: string | null;
   /** `now()` of the last frame. null when nothing has arrived. */
   at: number | null;
+  /**
+   * HOW MANY SYMBOLS THIS STREAM IS ABOUT — the DEDUPED quote-key count the
+   * route captured for this connection (`symbols` on the snapshot frame), or
+   * null while no snapshot has arrived.
+   *
+   * It is parsed here because the desk had no other honest source for it. The
+   * Angel One cadence sentence is arithmetic over the number of KEYS the poll
+   * batches (`quoteKeyId` = exchange:tradingsymbol), and the desk was computing
+   * it from its ROW count — two trades in one scrip are two rows and one key,
+   * so a 51-row / 50-key book printed "every 5 seconds … 2 calls" beside a poll
+   * running at 3 s and one call, and beside a Settings card saying 3 s. The
+   * route has always sent the real number (`symbols: keys.length`); nothing
+   * read it.
+   *
+   * It is a fact about the CONNECTION, never about the prices, so it travels
+   * with the rest of the link state and resets to null on a new connection.
+   */
+  symbolCount: number | null;
 }
 
-export const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null };
-export const LINK_PAUSED: LinkState = { phase: "paused", reason: null, at: null };
+export const LINK_IDLE: LinkState = { phase: "idle", reason: null, at: null, symbolCount: null };
+export const LINK_PAUSED: LinkState = { phase: "paused", reason: null, at: null, symbolCount: null };
 
 /**
  * First reconnect delay, in ms, doubling to `RECONNECT_STEPS`.
@@ -169,6 +187,23 @@ export function msUntilCloseReopen(now: Date): number | null {
     ((ist.getUTCHours() * 60 + ist.getUTCMinutes()) * 60 + ist.getUTCSeconds()) * 1_000 + ist.getUTCMilliseconds();
   const target = CLOSE_REOPEN_MINUTE * 60_000;
   return msPastMidnight >= target ? null : target - msPastMidnight;
+}
+
+/**
+ * The snapshot frame's `symbols` — the deduped key count — or null.
+ *
+ * PURE and STRICT: only a finite, non-negative whole number is a count. A
+ * missing field (every `tick` and `heartbeat` frame carries none), a string, a
+ * float or a negative is null, which the desk renders as "no count" rather than
+ * as 0 — invariant 6 in spirit: a 0 here would state that this account's book
+ * is empty, which is a claim about the user's positions and not a fact this
+ * frame carries.
+ */
+export function parseSymbolCount(raw: unknown): number | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const value = (raw as { symbols?: unknown }).symbols;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return null;
+  return value;
 }
 
 /**
@@ -324,10 +359,13 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     }
     retry = 0;
     const at = env.now();
+    // The snapshot states it once per connection; every later frame carries
+    // none, so the last stated count stands until a NEW connection restates it.
+    const symbolCount = parseSymbolCount(raw) ?? state.symbolCount;
     if (state.phase === "stopped") {
       // Terminal: the heartbeat refreshes how old the last frame is and does
       // not touch the verdict the provider already gave for this connection.
-      setState({ ...state, at });
+      setState({ ...state, at, symbolCount });
       return;
     }
     // A snapshot is honest about the clock: outside 09:00–15:40 the route ships
@@ -337,13 +375,13 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
     const marketShut =
       raw !== null && typeof raw === "object" && (raw as { marketOpen?: unknown }).marketOpen === false;
     if (quotes.length > 0 && !marketShut) {
-      setState({ phase: "live", reason: null, at });
+      setState({ phase: "live", reason: null, at, symbolCount });
       return;
     }
     // Heartbeat-only. A link that HAS been live stays live inside its grace —
     // that is what the heartbeat is for — and one that never carried a quote
     // says only that it is connected.
-    setState({ phase: state.phase === "live" ? "live" : "connected", reason: null, at });
+    setState({ phase: state.phase === "live" ? "live" : "connected", reason: null, at, symbolCount });
   };
 
   function onError(ev: Event) {
@@ -360,7 +398,7 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
       } catch {
         reason = null;
       }
-      setState({ phase: "stopped", reason, at: env.now() });
+      setState({ phase: "stopped", reason, at: env.now(), symbolCount: state.symbolCount });
       return;
     }
     if (source !== null && source.readyState === SOURCE_CONNECTING) {
@@ -368,12 +406,12 @@ export function createStreamLink<T>(env: StreamLinkEnv<T>): StreamLink {
       // hint. Say so; do not race it with a second timer — and do not say it at
       // all for a routine re-establish inside the heartbeat window.
       if (state.at !== null && env.now() - state.at < LIVE_GRACE_MS) return;
-      setState({ phase: "reconnecting", reason: null, at: state.at });
+      setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount });
       return;
     }
     closeSource();
     retry = Math.min(retry + 1, RECONNECT_STEPS);
-    setState({ phase: "reconnecting", reason: null, at: state.at });
+    setState({ phase: "reconnecting", reason: null, at: state.at, symbolCount: state.symbolCount });
     retryTimer = env.setTimer(open, RECONNECT_BASE_MS * 2 ** (retry - 1));
   }
 

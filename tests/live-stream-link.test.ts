@@ -8,6 +8,7 @@ import {
   createStreamLink,
   linkStateFor,
   msUntilCloseReopen,
+  parseSymbolCount,
   streamKeyOf,
   type LinkState,
   type StreamSource,
@@ -428,5 +429,71 @@ describe("the stream key names the account AND the book it subscribed to (F4)", 
     // stream down several times a second.
     expect(streamKeyOf(1, [row(1, "TCS"), row(1, "INFY")])).toBe(streamKeyOf(1, [row(1, "INFY"), row(1, "TCS")]));
     expect(streamKeyOf(1, [row(1, "TCS"), row(1, "TCS")])).toBe(streamKeyOf(1, [row(1, "TCS")]));
+  });
+});
+
+/* ───────────────── A-5 — the count the cadence sentence needs ───────────── */
+
+/**
+ * THE SNAPSHOT FRAME'S `symbols`, WHICH NOTHING READ.
+ *
+ * `app/api/live/stream/route.ts` has always sent `symbols: keys.length` — the
+ * DEDUPED quote-key count it handed the provider — and this module parsed only
+ * the quotes and `marketOpen`. The desk therefore had no source for the one
+ * number the Angel One cadence sentence is arithmetic over, and computed it
+ * from its ROW count instead: two trades in one scrip are two rows and one key,
+ * so a 51-row / 50-key book said "every 5 seconds … 2 calls" beside a poll
+ * running at 3 s and one call (ruling 4.2-4 says ONE sentence on both surfaces).
+ *
+ * It is parsed as part of the LINK STATE because it is a fact about the
+ * connection: it belongs to the stream that stated it and to no other.
+ */
+describe("the snapshot frame states how many symbols this stream is about (A-5)", () => {
+  it("is null until a snapshot says so, and then survives the heartbeats", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    const s = h.sources[0];
+
+    s.emit("heartbeat", {});
+    expect(h.last()?.symbolCount, "a heartbeat carries no count and must not invent one").toBeNull();
+
+    s.emit("snapshot", { symbols: 50, quotes: [QUOTE] });
+    expect(h.last()?.symbolCount, "the snapshot's own key count was dropped").toBe(50);
+
+    // Every later frame carries none, and the count is still true of this
+    // connection — only a new one restates it.
+    s.emit("tick", { quotes: [QUOTE] });
+    expect(h.last()?.symbolCount).toBe(50);
+    s.emit("heartbeat", {});
+    expect(h.last()?.symbolCount).toBe(50);
+    h.link.destroy();
+  });
+
+  it("travels with the phase, including the one the provider ended", () => {
+    const h = harness(IST_1600);
+    h.link.open();
+    const s = h.sources[0];
+    s.emit("snapshot", { symbols: 7, quotes: [QUOTE] });
+    s.emit("error", { message: "The bridge is not logged in for today." });
+    expect(h.last()?.phase).toBe("stopped");
+    expect(h.last()?.symbolCount, "the stopped verdict forgot what it was about").toBe(7);
+
+    // A paused link is holding no stream at all, so it states no count either.
+    h.link.pause();
+    expect(h.last()?.symbolCount).toBeNull();
+    h.link.destroy();
+  });
+
+  it("refuses anything that is not a whole, non-negative count", () => {
+    // A 0 that came from a bad frame would print "your 0 open positions" —
+    // a claim about the user's book (invariant 6), so only a real number counts.
+    expect(parseSymbolCount({ symbols: 0 })).toBe(0);
+    expect(parseSymbolCount({ symbols: 50 })).toBe(50);
+    expect(parseSymbolCount({ quotes: [] }), "a frame with no count").toBeNull();
+    expect(parseSymbolCount({ symbols: "50" })).toBeNull();
+    expect(parseSymbolCount({ symbols: 1.5 })).toBeNull();
+    expect(parseSymbolCount({ symbols: -1 })).toBeNull();
+    expect(parseSymbolCount(null)).toBeNull();
+    expect(parseSymbolCount("snapshot")).toBeNull();
   });
 });

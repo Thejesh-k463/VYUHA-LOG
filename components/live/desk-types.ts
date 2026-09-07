@@ -123,6 +123,21 @@ export interface FeedInfo {
   reason: string | null;
   /** Newest `asOf` across every mark on the desk; null when nothing is marked. */
   asOf: string | null;
+  /**
+   * How many DISTINCT quote keys the SSR render handed the provider — the
+   * deduped `quoteKeyId()` count, not the row count (two open trades in one
+   * scrip are one subscription; `load-desk.ts` dedupes exactly as
+   * `app/api/live/stream/route.ts` and `lib/quotes/persist-mark.ts` do).
+   *
+   * It is on the wire because the client has to state the Angel One quote
+   * cadence BEFORE the stream connects, and the cadence is a function of the
+   * subscription size (`ANGELONE_CADENCE_TIERS`, `lib/quotes/types.ts`).
+   * Counting rows in the client would over-state it on any book that holds one
+   * scrip twice, and inventing a number is what invariant 6 forbids — so
+   * `null` means NO PROVIDER SNAPSHOT WAS TAKEN (the provider threw), and the
+   * client must say it does not know rather than print a cadence.
+   */
+  symbolCount: number | null;
 }
 
 /** What the chart payload held back, stated rather than silently trimmed. */

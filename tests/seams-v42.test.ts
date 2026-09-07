@@ -78,6 +78,7 @@ let t: TempDb;
 let route: typeof import("@/app/api/live/feed/route");
 let registry: typeof import("@/lib/quotes/registry");
 let upstox: typeof import("@/lib/quotes/upstox");
+let angelTokens: typeof import("@/lib/quotes/angelone-tokens");
 let persistMark: typeof import("@/lib/quotes/persist-mark");
 let dataQualityQuery: typeof import("@/lib/queries/data-quality");
 
@@ -141,6 +142,7 @@ beforeAll(async () => {
   route = await import("@/app/api/live/feed/route");
   registry = await import("@/lib/quotes/registry");
   upstox = await import("@/lib/quotes/upstox");
+  angelTokens = await import("@/lib/quotes/angelone-tokens");
   persistMark = await import("@/lib/quotes/persist-mark");
   dataQualityQuery = await import("@/lib/queries/data-quality");
 
@@ -283,7 +285,7 @@ describe("S2 — the card and the route never disagree about which half is missi
     expect(row.line).toBe(UPSTOX_FEED_COPY.blurb);
 
     const message = (await (await post({ action: "provider", provider: "upstox" })).json()).message as string;
-    expect(message).not.toContain("Import → Brokers");
+    expect(message).not.toContain("Import → Connect broker");
     expect(message).toContain("Read what the Upstox feed does");
   });
 
@@ -411,11 +413,19 @@ describe("S3 — the sheet on screen is the statement the server stores", () => 
   });
 });
 
-/* ═══════ SEAM 4 — what A's adapter refuses to send ↔ what C's desk labels ═══
+/* ═══════ SEAM 4 — what A's adapters refuse to send ↔ what C's desk labels ═══
  * Two files, two vocabularies for one fact: A classifies a QuoteKey
  * (exchange + tradingsymbol), C classifies the journal's `instrumentType`
  * string. Ruling 4.2-8 requires the two partitions to be the SAME partition.
  * The keys come out of `openPositionKeys()` — the real book, not literals.
+ *
+ * BOTH BROKER FEEDS CROSS THIS SEAM (fix A-10). `showsNotPricedByFeed()` labels
+ * a row under `upstox` AND under `angelone`, so the partition has to hold for
+ * each adapter separately — and the two adapters refuse on DIFFERENT grounds:
+ * Upstox needs an ISIN and drops a cash scrip it has none for, while Angel One
+ * resolves by name and instead reports that scrip as UNRESOLVED. This block ran
+ * only the Upstox half until the v4.2 fix wave, so the label's second provider
+ * was crossing an untested seam.
  */
 describe("S4 — no row is both unsent and unexplained, none both sent and labelled", () => {
   it("the derivative rows the adapter drops are exactly the rows the desk labels", async () => {
@@ -465,14 +475,104 @@ describe("S4 — no row is both unsent and unexplained, none both sent and label
     expect(health.reason).toContain("3 position(s) are not priced by this feed");
   });
 
-  it("the label is off for every other feed, so a labelled row can only be an Upstox row", () => {
+  it("the label is off for every other feed, so a labelled row is an Upstox or an Angel One row", () => {
+    // The title used to say "can only be an Upstox row", which the desk copy
+    // has not matched since `angelone` joined the label (fix A-10).
     for (const id of ["eod", "manual", "openalgo", "mock"]) {
       expect(showsNotPricedByFeed(id, "option")).toBe(false);
       expect(showsNotPricedByFeed(id, "future")).toBe(false);
     }
+    for (const id of ["upstox", "angelone"]) {
+      expect(showsNotPricedByFeed(id, "option")).toBe(true);
+      expect(showsNotPricedByFeed(id, "future")).toBe(true);
+      expect(showsNotPricedByFeed(id, "equity")).toBe(false);
+      // A row nobody classified is not labelled — the label would be a claim.
+      expect(showsNotPricedByFeed(id, null)).toBe(false);
+    }
     expect(NOT_PRICED_BY_FEED).toBe("Not priced by this feed");
-    // A row nobody classified is not labelled — the label would be a claim.
-    expect(showsNotPricedByFeed("upstox", null)).toBe(false);
+  });
+
+  /* ── the same crossing, for Angel One's resolver (fix A-10) ─────────────── */
+
+  it("the keys Angel One's resolver REFUSES are exactly the rows the desk labels", async () => {
+    const keys = await persistMark.openPositionKeys();
+    const scripOf = (k: { exchange: string; symbol: string; tradingsymbol?: string }) =>
+      `${k.exchange}:${(k.tradingsymbol ?? k.symbol).toUpperCase()}`;
+
+    // A's side: the resolver's own `skipped` set, from the real resolver, with
+    // searchScrip answering for the two symbols Angel One knows and refusing
+    // the one it does not. Nothing is injected about WHICH keys are skipped —
+    // that decision is `angelCashKey()`'s, and it is the thing under test.
+    const KNOWN: Record<string, { tradingsymbol: string; symboltoken: string }> = {
+      RELIANCE: { tradingsymbol: "RELIANCE-EQ", symboltoken: "2885" },
+      TCS: { tradingsymbol: "TCS-EQ", symboltoken: "11536" },
+    };
+    const resolver = angelTokens.createAngelTokenResolver({
+      search: async (_creds, _jwt, exchange, searchscrip) => {
+        const hit = KNOWN[searchscrip];
+        return hit ? [{ exchange, ...hit }] : [];
+      },
+      cache: { async read() { return new Map(); }, async write() {} },
+      now: () => Date.parse("2026-09-07T04:00:00Z"),
+    });
+    const out = await resolver.resolve(keys, {
+      creds: { apiKey: "k", clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" },
+      jwt: "jwt",
+      budget: 10,
+    });
+
+    const refused = new Set(out.skipped.map(scripOf));
+    const sent = new Set([...out.tokens.keys()]); // `${exchange}:${symbol}`
+
+    // C's side, over the SAME rows, keyed on the journal's own instrument type.
+    const labelled = new Set(
+      ROWS.filter((r) => showsNotPricedByFeed("angelone", r.instrumentType)).map(
+        (r) => `${r.exchange}:${r.tradingsymbol}`,
+      ),
+    );
+
+    expect([...refused].sort()).toEqual([...labelled].sort());
+    expect([...refused].sort()).toEqual(["NFO:INFY26SEPFUT", "NFO:RELIANCE26SEP3000CE"]);
+    // Nothing sent is labelled, and nothing labelled is sent.
+    for (const s of sent) expect(labelled.has(s)).toBe(false);
+    for (const s of labelled) expect(sent.has(s)).toBe(false);
+
+    // MCX and CDS are refused by the same rule, without a row in the book:
+    // ruling 4.2-8 is equities on NSE/BSE, and everything else is never sent.
+    for (const exchange of ["MCX", "CDS", "NFO", "BFO"] as const) {
+      expect(angelTokens.angelCashKey({ symbol: "GOLD", exchange, tradingsymbol: "GOLD" })).toBeNull();
+    }
+  });
+
+  it("a cash scrip with no ISIN is UNRESOLVED for Angel One, not skipped — and still unlabelled", async () => {
+    const keys = await persistMark.openPositionKeys();
+    const resolver = angelTokens.createAngelTokenResolver({
+      // Angel One knows nothing about this ticker, which is the honest answer
+      // for a symbol no exchange lists.
+      search: async (_creds, _jwt, exchange, searchscrip) =>
+        searchscrip === "ZZQQNOTLISTED" ? [] : [{ exchange, tradingsymbol: `${searchscrip}-EQ`, symboltoken: "11536" }],
+      cache: { async read() { return new Map(); }, async write() {} },
+      now: () => Date.parse("2026-09-07T04:00:00Z"),
+    });
+    const out = await resolver.resolve(keys, {
+      creds: { apiKey: "k", clientCode: "C1", pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP" },
+      jwt: "jwt",
+      budget: 10,
+    });
+
+    // The two feeds disagree about this row ON PURPOSE, and both are right:
+    // Upstox cannot build an instrument key without an ISIN, while Angel One
+    // asks by name and gets told there is no such scrip.
+    expect(upstox.planUpstoxKeys(keys).skippedNoIsin.map((k) => k.symbol)).toEqual(["ZZQQNOTLISTED"]);
+    expect(out.skipped.map((k) => k.symbol)).not.toContain("ZZQQNOTLISTED");
+    expect(out.unresolved).toContain("NSE:ZZQQNOTLISTED");
+    expect(out.tokens.has("NSE:ZZQQNOTLISTED")).toBe(false);
+
+    // …and NEITHER feed labels it, because the label is a claim about the
+    // instrument KIND and this is an equity. The count is what accounts for
+    // it, on the adapter's own health line.
+    expect(showsNotPricedByFeed("angelone", "equity")).toBe(false);
+    expect(showsNotPricedByFeed("upstox", "equity")).toBe(false);
   });
 
   it("the empty book sends nothing and asks nothing of Upstox", async () => {

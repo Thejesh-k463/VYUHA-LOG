@@ -165,7 +165,7 @@ function upstoxState(ackJson: string | null | undefined) {
  */
 function upstoxRefusal(ackJson: string | null | undefined): string | null {
   if (!upstoxConnected()) {
-    return "No Upstox connection is saved for this account. Add Upstox under Import → Brokers first.";
+    return "No Upstox connection is saved for this account. Add Upstox under Import → Connect broker first.";
   }
   if (!isFeedAckCurrent(ackJson ?? null, "upstox")) {
     return "Read what the Upstox feed does and accept it first — until then the desk stays on end-of-day prices.";
@@ -226,7 +226,7 @@ async function angelOneState(ackJson: string | null | undefined) {
  */
 function angelOneRefusal(ackJson: string | null | undefined): string | null {
   if (!angelOneConnected()) {
-    return "No Angel One connection is saved for this account. Add Angel One under Import → Brokers first.";
+    return "No Angel One connection is saved for this account. Add Angel One under Import → Connect broker first.";
   }
   if (!isFeedAckCurrent(ackJson ?? null, "angelone")) {
     return "Read what the Angel One feed does and accept it first — until then the desk stays on end-of-day prices.";

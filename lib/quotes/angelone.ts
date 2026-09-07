@@ -179,13 +179,13 @@ export function isAngelSessionInvalid(e: unknown): boolean {
 export function angelOneFeedErrorMessage(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
   if (/totp/i.test(raw)) {
-    return `Angel One refused the TOTP code (${raw}). Check the enrolled secret under Import → Brokers and this machine's clock — a drifted clock produces valid-looking wrong codes. Prices stop arriving until it is fixed, and the desk keeps the last mark it had.`;
+    return `Angel One refused the TOTP code (${raw}). Check the enrolled secret under Import → Connect broker and this machine's clock — a drifted clock produces valid-looking wrong codes. Prices stop arriving until it is fixed, and the desk keeps the last mark it had.`;
   }
   if (isAngelSessionInvalid(e)) {
     return `Angel One says the session is no longer valid (${raw}). Vyuha signs in again on the next poll; Angel One clears every session at 5 AM IST, so this is expected once a morning.`;
   }
   if (/password|\bpin\b/i.test(raw)) {
-    return `Angel One refused the login PIN (${raw}) — the login PIN, not the account password. Re-enter it under Import → Brokers.`;
+    return `Angel One refused the login PIN (${raw}) — the login PIN, not the account password. Re-enter it under Import → Connect broker.`;
   }
   return raw;
 }
@@ -386,7 +386,7 @@ export interface AngelOneHealth extends ProviderHealth {
 const NO_CONSENT_REASON =
   "The Angel One live-price disclosure has not been accepted on this machine. Open Settings → Live feed, read what the feed sends, and accept it to continue.";
 const NO_KEY_REASON =
-  "No Angel One connection is saved for this account. Save the API key, client code, PIN and TOTP secret under Import → Brokers, then pick Angel One in Settings → Live feed.";
+  "No Angel One connection is saved for this account. Save the API key, client code, PIN and TOTP secret under Import → Connect broker, then pick Angel One in Settings → Live feed.";
 
 /**
  * Reads the SAME storage the import path uses: the per-provider acknowledgement

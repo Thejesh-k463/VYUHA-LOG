@@ -78,7 +78,7 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It uses the read-only Analytics token you already saved",
     body:
-      "It uses the Analytics token you saved under Import → Brokers. Upstox makes that token read-only for about a year — it cannot place, change or cancel an order, and Vyuha never asks for one that can.",
+      "It uses the Analytics token you saved under Import → Connect broker. Upstox makes that token read-only for about a year — it cannot place, change or cancel an order, and Vyuha never asks for one that can.",
   },
   {
     title: "Equity positions only in this release",
@@ -132,7 +132,7 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It signs in to your Angel One account once each trading day",
     body:
-      "Vyuha signs in to apiconnect.angelone.in once each trading day with the client code, PIN and TOTP secret you saved under Import → Brokers. Angel One clears every session at 5 AM IST, so this happens each morning without asking you.",
+      "Vyuha signs in to apiconnect.angelone.in once each trading day with the client code, PIN and TOTP secret you saved under Import → Connect broker. Angel One clears every session at 5 AM IST, so this happens each morning without asking you.",
   },
   {
     title: "It sends the tokens of your open positions to fetch prices",

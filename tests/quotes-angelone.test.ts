@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ANGELONE_CAPABILITIES,
   ANGELONE_HOURLY_BUDGET,
   ANGELONE_MAX_TOKENS_PER_CALL,
   ANGELONE_RATE_LIMIT_PER_SECOND,
+  angelOneFeedErrorMessage,
   angelOneSessionExpiresAt,
   createAngelOneProvider,
   createHourlyBudget,
@@ -454,5 +457,26 @@ describe("the gate, and a health() that never throws", () => {
     expect(ANGELONE_CAPABILITIES.maxSubscriptions).toBe(
       ANGELONE_CADENCE_TIERS[ANGELONE_CADENCE_TIERS.length - 1].maxOpenPositions,
     );
+  });
+});
+
+/**
+ * THE BREADCRUMB THESE MESSAGES SEND THE USER TO (v4.2 fix A-11).
+ *
+ * The Import screen's card is called "Connect broker". Every sentence this
+ * adapter shows when a credential is missing or refused has to name it exactly
+ * — a breadcrumb to a screen that is not called that is a dead end, and this
+ * adapter's three messages are shown at the moment prices stop arriving.
+ */
+describe("the breadcrumb the Angel One messages name", () => {
+  const SRC = readFileSync(path.join(process.cwd(), "lib/quotes/angelone.ts"), "utf8");
+
+  it("is Import → Connect broker, in every sentence that names a screen", () => {
+    expect(angelOneFeedErrorMessage(new Error("Invalid totp"))).toContain("Import → Connect broker");
+    expect(angelOneFeedErrorMessage(new Error("Invalid pin"))).toContain("Import → Connect broker");
+    expect(SRC).toContain(
+      "Save the API key, client code, PIN and TOTP secret under Import → Connect broker",
+    );
+    expect(SRC, "the old screen name is still here").not.toContain("Import → Brokers");
   });
 });

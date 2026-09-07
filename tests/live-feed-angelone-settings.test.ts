@@ -4,14 +4,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 import {
   ANGELONE_FEED_COPY,
+  FEED_BLOCKED_HEALTH,
+  FEED_CHECKING,
   PROVIDERS,
+  REVIEW_CONSENT_CTA,
+  angelOneCadenceText,
   angelOneRowState,
+  feedBlockState,
+  feedHealthText,
 } from "@/components/settings/live-feed-card";
 import {
   ANGELONE_BATCH_SIZE,
   ANGELONE_MAX_PRICED_POSITIONS,
   angelOneCadenceLine,
   angelOneRefreshCalls,
+  deskAngelOneCadence,
 } from "@/components/live/desk-copy";
 import {
   ANGELONE_FEED_ITEMS,
@@ -72,7 +79,7 @@ const NEW_STRINGS: [where: string, text: string][] = [
   ["dialog title", "Before Angel One prices your desk"],
   [
     "route refusal (no connection)",
-    "No Angel One connection is saved for this account. Add Angel One under Import → Brokers first.",
+    "No Angel One connection is saved for this account. Add Angel One under Import → Connect broker first.",
   ],
   [
     "route refusal (no acknowledgement)",
@@ -109,7 +116,7 @@ describe("the Angel One radio is offered only behind the one release flag", () =
   it("says Angel One, in the owner's words", () => {
     expect(ANGELONE_FEED_COPY.label).toBe("Angel One");
     expect(ANGELONE_FEED_COPY.blurb).toBe(
-      "Uses the client code, PIN and TOTP secret saved under Import → Brokers. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
+      "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in again each morning without asking you.",
     );
     // Byte-identical to the Upstox scope sentence: one release-scope rule, one
     // sentence, so the two rows cannot drift into two different promises.
@@ -123,7 +130,7 @@ describe("the row's state is DERIVED from what the route said about this account
   it("no connection saved → the radio is dead and says what to do about it", () => {
     const s = angelOneRowState({ connected: false, ackCurrent: false, openCount: 0 });
     expect(s.disabled).toBe(true);
-    expect(s.line).toBe("Add Angel One under Import → Brokers first.");
+    expect(s.line).toBe("Add Angel One under Import → Connect broker first.");
   });
 
   it("connection saved → the radio takes a click and the line describes the credential", () => {
@@ -198,13 +205,80 @@ describe("the cadence line states the tier and the arithmetic behind it", () => 
     expect(angelOneCadenceLine(51)).toContain("your 51 open positions take 2 calls per refresh");
   });
 
+  /**
+   * ONE SENTENCE, TWO SURFACES — asserted as BEHAVIOUR (A-5 / A-7).
+   *
+   * This used to pin the two call sites as SOURCE TEXT
+   * (`angelOneCadenceLine(status?.angelone?.openCount ?? 0)` and
+   * `angelOneCadenceLine(rows.length)`), and both defects this wave fixes were
+   * live underneath those green pins: the desk counted ROWS where the poll
+   * counts deduped KEYS, and the card defaulted an unknown count to 0. A pin on
+   * the expression that is wrong can only ever report that it is still there.
+   */
   it("is ONE sentence, shared by both surfaces rather than restated", () => {
-    // The card imports it from the desk's copy module; a second literal in
-    // either file is a second sentence to drift (the G2 rule).
-    expect(stripComments(read(CARD))).toContain("angelOneCadenceLine(status?.angelone?.openCount ?? 0)");
-    expect(stripComments(read("components/live/tracker-client.tsx"))).toContain("angelOneCadenceLine(rows.length)");
+    // Still the G2 rule: the sentence is DEFINED once, and both surfaces import
+    // it rather than writing their own.
     const defs = stripComments(read(DESK_COPY_FILE)).match(/Refreshes every \$\{seconds\} seconds/g) ?? [];
     expect(defs.length, "the cadence sentence is written in more than one place").toBe(1);
+    expect(stripComments(read(CARD)), "the card restates the sentence instead of importing it").not.toMatch(
+      /Refreshes every/,
+    );
+    expect(
+      stripComments(read("components/live/tracker-client.tsx")),
+      "the desk restates the sentence instead of importing it",
+    ).not.toMatch(/Refreshes every/);
+  });
+
+  it("BOTH surfaces say the same thing for the same book — 50 keys is 3 seconds and 1 call", () => {
+    // The Settings card counts `openPositionKeys().length` (deduped) and the
+    // desk now counts the stream's own `symbols` (that same deduped set), so
+    // one book produces one sentence. It did not: the desk counted the 51 ROWS
+    // behind those 50 keys and printed 5 seconds and 2 calls beside a card
+    // saying 3 seconds and 1 call.
+    const card = angelOneCadenceText({ connected: true, ackCurrent: true, openCount: 50 });
+    const desk = deskAngelOneCadence({ providerId: "angelone", linkSymbolCount: 50, feedSymbolCount: null });
+    expect(card).toBe(desk);
+    expect(card).toContain("Refreshes every 3 seconds");
+    expect(card).toContain("your 50 open positions take 1 call per refresh");
+  });
+});
+
+/**
+ * A-7 — THE CARD STATED A BOOK NOBODY HAD TOLD IT ABOUT.
+ *
+ * The cadence block rendered `angelOneCadenceLine(status?.angelone?.openCount ??
+ * 0)`, so between mount and the fetch answering — and FOR EVER if that fetch
+ * failed, because the catch swallows — the card told a user with a full book
+ * "your 0 open positions take 1 call per refresh". A 0 where the number is
+ * simply unknown is a claim about the user's positions (invariant 6), and this
+ * same card already had the honest treatment for exactly this case: the health
+ * line says "Checking the feed…" until the server answers.
+ */
+describe("the cadence line says nothing about a book it has not been told about (A-7)", () => {
+  const src = stripComments(read(CARD));
+
+  it("before the fetch answers, it says it is checking — it does not claim 0 positions", () => {
+    expect(angelOneCadenceText(undefined)).toBe(FEED_CHECKING);
+    expect(angelOneCadenceText(undefined), "a book the card has not been told about").not.toMatch(/0 open/);
+    // The sentence that used to print, so this test can tell the two apart.
+    expect(angelOneCadenceLine(0)).toContain("your 0 open positions take 1 call per refresh");
+  });
+
+  it("once the server has answered, it states that account's own count", () => {
+    expect(angelOneCadenceText({ connected: true, ackCurrent: true, openCount: 0 })).toBe(angelOneCadenceLine(0));
+    expect(angelOneCadenceText({ connected: true, ackCurrent: true, openCount: 51 })).toContain(
+      "Refreshes every 5 seconds",
+    );
+  });
+
+  it("the JSX renders the derived text, and no defaulted count survives in the card", () => {
+    expect(src).toContain("angelOneCadenceText(status?.angelone)");
+    expect(src, "the card still defaults an unknown count to 0").not.toContain("openCount ?? 0");
+  });
+
+  it("it is the SAME treatment the health line uses — one sentence, not two", () => {
+    expect(feedHealthText({ health: null, blocked: false })).toBe(FEED_CHECKING);
+    expect(src.split('"' + FEED_CHECKING + '"').length - 1, "the checking sentence is written twice").toBe(1);
   });
 });
 
@@ -446,7 +520,7 @@ describe("POST provider angelone — 409 until BOTH halves hold, storing nothing
   it("refuses when no connection is saved, and names the next step", async () => {
     const res = await post({ action: "provider", provider: "angelone" });
     expect(res.status).toBe(409);
-    expect((await res.json()).message).toContain("Add Angel One under Import → Brokers first.");
+    expect((await res.json()).message).toContain("Add Angel One under Import → Connect broker first.");
     expect(settingsRow()?.liveFeedProvider, "a refused pick was stored anyway").toBe("eod");
   });
 
@@ -525,5 +599,77 @@ describe("the route reads the row's existence and never the credential", () => {
     const fn = src.slice(src.indexOf("function angelOneConnected()"));
     expect(fn.slice(0, fn.indexOf("\n}"))).toMatch(/\.select\(\{ id: brokerConnections\.id \}\)/);
     expect(src, "the route reads a credential column").not.toMatch(/brokerConnections\.(apiKey|accessToken|authJson)/);
+  });
+});
+
+/**
+ * A-6 — A BLOCKED FEED WAS INVISIBLE FOR EVERY PROVIDER BUT OpenAlgo.
+ *
+ * `resolveLiveFeed()` falls back to `eod` and publishes `blockedReason`
+ * whenever the STORED provider's acknowledgement is not current — a disclosure
+ * version bump, or a backup restored on another machine (`liveFeedProvider`
+ * travels in the envelope; `liveFeedAckJson` is machine state and does not).
+ * The card rendered that reason only inside `provider === "openalgo" && …`, so
+ * with Angel One stored and blocked: the radio showed CHECKED (the card's state
+ * is initialised from the stored value), the health line said "Feed OK" (it
+ * describes the EFFECTIVE provider, which is end-of-day and genuinely healthy),
+ * nothing said blocked — and because a checked radio fires no `onChange`, the
+ * one path to the consent sheet was unreachable without switching away first.
+ *
+ * Driven through the REAL route, so the fixture cannot drift from what the
+ * server sends.
+ */
+describe("a blocked Angel One feed is stated, and the sheet is reachable again (A-6)", () => {
+  const src = stripComments(read(CARD));
+
+  it("the restore case: the pick travels, the acknowledgement does not", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "angelone", liveFeedAckJson: null }).run();
+    const body = await (await get()).json();
+    expect(body.feed.stored, "the pick is what the user chose").toBe("angelone");
+    expect(body.feed.effective, "…and it is not what runs").toBe("eod");
+    expect(body.feed.blockedReason).toBeTruthy();
+
+    const block = feedBlockState(body.feed);
+    expect(block, "the card renders nothing at all for a blocked Angel One feed").not.toBeNull();
+    expect(block?.reason).toBe(body.feed.blockedReason);
+    expect(block?.reviewProvider, "there is no way back to the consent sheet").toBe("angelone");
+  });
+
+  it("the health line stops reporting the FALLBACK feed as fine", async () => {
+    const body = await (await get()).json();
+    const blocked = feedBlockState(body.feed) !== null;
+    // The trap: `health` describes the EFFECTIVE provider, so the card said
+    // whatever end-of-day had to say about itself over a feed the user picked
+    // and is not getting. Whatever that is, the blocked fact comes first.
+    expect(body.health.provider, "the health line describes the fallback").toBe("eod");
+    expect(feedHealthText({ health: body.health, blocked })).toBe(FEED_BLOCKED_HEALTH);
+    // The exact shape that used to print "Feed OK" over a blocked feed.
+    expect(feedHealthText({ health: { ok: true, latencyMs: null, reason: "" }, blocked: true })).toBe(
+      FEED_BLOCKED_HEALTH,
+    );
+    expect(feedHealthText({ health: body.health, blocked }), "a blocked feed still reads OK").not.toContain("Feed OK");
+    // …and with nothing blocked it is unchanged from v4.1.
+    expect(feedHealthText({ health: { ok: true, latencyMs: 12, reason: "" }, blocked: false })).toBe("Feed OK · 12 ms");
+  });
+
+  it("accepting the sheet clears the block — the same GET, one write later", async () => {
+    await post({ action: "ack", provider: "angelone" });
+    const body = await (await get()).json();
+    expect(body.feed.stored).toBe("angelone");
+    expect(body.feed.effective).toBe("angelone");
+    expect(body.feed.blockedReason).toBeUndefined();
+    expect(feedBlockState(body.feed)).toBeNull();
+  });
+
+  it("the block and its control reach the JSX, for the STORED provider", () => {
+    expect(src).toContain("const blocked = feedBlockState(status?.feed);");
+    expect(src).toContain('data-testid="live-feed-blocked"');
+    expect(src).toContain('data-testid="live-feed-review-consent"');
+    // The control opens the sheet for the provider that is BLOCKED, which is
+    // the STORED one — `pick()` cannot be reached from a radio already checked.
+    expect(src).toMatch(/onClick=\{\(\) => setConsentOpen\(review\)\}/);
+    expect(src).toContain("{REVIEW_CONSENT_CTA}");
+    expect(REVIEW_CONSENT_CTA).toBe("Review and accept");
+    expect(PRESCRIPTIVE_LANGUAGE.test(REVIEW_CONSENT_CTA), REVIEW_CONSENT_CTA).toBe(false);
   });
 });

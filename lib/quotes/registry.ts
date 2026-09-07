@@ -308,12 +308,156 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
   };
 }
 
+/* ───────────────── one live-feed instance per process (A-2) ─────────────── */
+
+/**
+ * ONE INSTANCE PER PROCESS — because the session, the rate guard and the hourly
+ * budget live INSIDE the instance (v4.2 fix A-2).
+ *
+ * `createProvider()` is a factory, and the broker adapters keep their whole
+ * session in closure variables: Angel One's jwt and its "one login, then 60 s
+ * of silence" retry stamp, both brokers' 1-req/s guard, Angel One's rolling
+ * 4,000-an-hour budget, and the `lastError` `health()` reports. A fresh
+ * instance per CALLER therefore meant a fresh session per caller — and there
+ * are four callers on one /live visit (the SSR desk load, every EventSource
+ * open, the Settings health line, the "Save today's mark" button). That is two
+ * Angel One logins for one visit, a wrong PIN re-sent on every stream open, a
+ * per-instance ceiling that is not the ceiling the consent sheet promises, and
+ * a health line built from an instance that has never made a request saying
+ * "connected". The consent sheet says "signs in once each trading day", and
+ * this cache is what makes that sentence true.
+ *
+ * IT IS A CACHE, AND A CACHE MUST EXPIRE. The key carries everything that would
+ * make the stored session the WRONG session: the provider id, the account the
+ * connection is read through (invariant 8), the acknowledgement column, the
+ * OpenAlgo consent pair, the refresh slider, and a fingerprint of the broker
+ * connection rows themselves (id, `updated_at` and a digest of the stored
+ * ciphertext). So a regenerated token, a re-saved PIN, a new consent, a changed
+ * slider or a switched account all build a NEW instance and drop the old one —
+ * a single slot, never a map, because the desk runs one feed at a time and a
+ * map of live sessions is a leak.
+ *
+ * WHICH PROVIDERS. Only the three that hold per-instance state worth sharing.
+ * `eod`, `manual` and `mock` keep no session, no guard and no credential, so
+ * memoising them would buy nothing and hide the mock's per-instance walk.
+ * OpenAlgo's only per-instance state IS its rate guard — sharing it is what
+ * makes its published ceiling true process-wide — and it re-reads its gate on
+ * every call, so there is nothing in it that must not be shared.
+ */
+let cachedLiveFeedProvider: { key: string; provider: QuoteProvider } | null = null;
+
+/** The ids whose instance is shared. Everything else is built per call. */
+const MEMOISED_PROVIDER_IDS: readonly ProviderId[] = ["angelone", "upstox", "openalgo"];
+
+/** Which `broker_connections` rows each feed reads — the same rule its gate uses. */
+const FEED_CONNECTION_MATCH: Partial<Record<ProviderId, (broker: string) => boolean>> = {
+  angelone: (b) => b === "angelone",
+  upstox: (b) => b === "upstox",
+  // `like('openalgo%')` in the adapter's own gate reader.
+  openalgo: (b) => b.startsWith("openalgo"),
+};
+
+/**
+ * A short digest of the stored credential columns — NEVER the credential.
+ *
+ * FNV-1a, 32 bits, because this is a change detector and not a security
+ * boundary: `updated_at` alone would miss two saves inside one millisecond, and
+ * putting the ciphertext itself in a process-lived cache key would keep a
+ * second copy of a secret alive for no reason.
+ */
+function credentialDigest(...parts: (string | null | undefined)[]): string {
+  let h = 0x811c9dc5;
+  for (const part of parts) {
+    const s = String(part ?? "");
+    for (let i = 0; i < s.length; i += 1) {
+      h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    h = Math.imul(h ^ 0x1f, 0x01000193) >>> 0; // a separator, so a|b ≠ ab
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+/**
+ * Everything that decides WHICH instance this is. `@/lib/db` is imported
+ * lazily, like everything else in this module.
+ */
+async function liveFeedInstanceKey(id: ProviderId, refreshSeconds: number): Promise<string> {
+  const { db } = await import("@/lib/db");
+  const { settings, brokerConnections } = await import("@/lib/db/schema");
+  const { getSelectedAccountId } = await import("@/lib/queries/accounts");
+  const row = db
+    .select({
+      ack: settings.liveFeedAckJson,
+      openalgoEnabled: settings.openalgoEnabled,
+      openalgoAckVersion: settings.openalgoAckVersion,
+    })
+    .from(settings)
+    .limit(1)
+    .all()[0];
+
+  // ACCOUNT SCOPE (invariant 8): the connection every adapter reads is the one
+  // for the SELECTED account, so switching account must not reuse the session
+  // minted from another book's credential. Id 0 is the aggregate view, where
+  // the adapters take the most recently updated row — so every candidate row
+  // goes into the key and any change to any of them rebuilds the instance.
+  const accountId = getSelectedAccountId();
+  const matches = FEED_CONNECTION_MATCH[id];
+  let credentials = "none";
+  if (matches) {
+    const rows = db
+      .select({
+        id: brokerConnections.id,
+        accountId: brokerConnections.accountId,
+        broker: brokerConnections.broker,
+        apiKey: brokerConnections.apiKey,
+        authJson: brokerConnections.authJson,
+        updatedAt: brokerConnections.updatedAt,
+      })
+      .from(brokerConnections)
+      .all()
+      .filter((r) => matches(String(r.broker ?? "")) && (accountId > 0 ? r.accountId === accountId : true));
+    credentials =
+      rows
+        .map((r) => `${r.id}@${r.updatedAt}#${credentialDigest(r.apiKey, r.authJson)}`)
+        .sort()
+        .join(",") || "none";
+  }
+
+  return [
+    id,
+    refreshSeconds,
+    accountId,
+    // Two temp databases in one process are two different books; keying on the
+    // file keeps a test's instance out of the next test's database.
+    process.env.VYUHA_DB_PATH ?? "",
+    row?.ack ?? "",
+    row?.openalgoEnabled ? 1 : 0,
+    row?.openalgoAckVersion ?? "",
+    credentials,
+  ].join("|");
+}
+
+/**
+ * Drop the shared instance. For tests and for any caller that has just
+ * invalidated something the key cannot see; a settings or connection write
+ * needs no reset, because the key already carries both.
+ */
+export function resetLiveFeedProviderCache(): void {
+  cachedLiveFeedProvider = null;
+}
+
 /** The provider the stored settings actually allow, built and ready. */
 export async function getLiveFeedProvider(): Promise<QuoteProvider> {
   const feed = await resolveLiveFeed();
   const env = process.env.VYUHA_QUOTE_PROVIDER;
-  if (env && env.trim()) return createProvider(resolveProviderId(env), feed.refreshSeconds);
-  return createProvider(feed.effective, feed.refreshSeconds);
+  const id = env && env.trim() ? resolveProviderId(env) : feed.effective;
+  if (!MEMOISED_PROVIDER_IDS.includes(id)) return createProvider(id, feed.refreshSeconds);
+
+  const key = await liveFeedInstanceKey(id, feed.refreshSeconds);
+  if (cachedLiveFeedProvider && cachedLiveFeedProvider.key === key) return cachedLiveFeedProvider.provider;
+  const provider = createProvider(id, feed.refreshSeconds);
+  cachedLiveFeedProvider = { key, provider };
+  return provider;
 }
 
 /**

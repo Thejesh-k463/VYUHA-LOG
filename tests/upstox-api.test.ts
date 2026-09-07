@@ -197,8 +197,11 @@ describe("read-only by surface", () => {
       "toParsedFile",
       // v4.2: the IPv4-pinned GET helper is exported so lib/quotes/upstox.ts
       // reuses it instead of forking a second https path. It is a GET, and
-      // the quote adapter's own surface pin (tests/quotes-upstox.test.ts)
-      // holds it to /market-quote/* only.
+      // what holds it to `/v3/market-quote/*` is the block "the market-quote
+      // paths, as literals" at the end of tests/quotes-upstox.test.ts, which
+      // pins both constants as literals and asserts on the paths the adapter
+      // really hands it. (That block was cited here before it existed — the
+      // constants were only ever compared with themselves; fix A-9.)
       "upstoxGet",
       "upstoxImportSource",
     ]);
