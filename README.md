@@ -28,9 +28,9 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 Most journals tell you your P&L. **Vyuha tells you why.**
 
-> **Now: v4.0.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
+> **Now: v4.1.0** — full history in [CHANGELOG.md](CHANGELOG.md). Landing page: https://thejesh-k463.github.io/VYUHA-LOG/
 >
-> **New in 4.1 — in build, not yet released.** The Live Desk can be priced by a
+> **v4.1.0 — a bridge you already run.** The Live Desk can be priced by a
 > **bridge you run yourself on your own machine**. The feed that shipped
 > **switched off** in v4.0.0 is switched on, and **Settings → Live feed** now
 > offers three sources: the end-of-day bhavcopy already on this machine (still
@@ -707,7 +707,7 @@ forever.** Your own record of your trading is never held hostage.
 <img src="docs/screenshots/risk.png" alt="Portfolio Risk cockpit — exposure, open risk @ SL, VaR, Greeks, margin and breach alerts" width="900" />
 
 - Live exposure: initial risk, open P&L, **open risk @ SL**, allocation, sector concentration (HHI), one-click trail-to-breakeven.
-- **Sector concentration says how sure it is (v3.8).** A bundled four-level NSE taxonomy (macro · sector · industry · basic industry) classifies 2,229 ISINs with a confidence tier and provenance; the resolution chain is your own instruments → the taxonomy → the bundled index map, and your own tag is never overwritten. Data layer only — sector *analytics* are v4.0.
+- **Sector concentration says how sure it is (v3.8).** A bundled four-level NSE taxonomy (macro · sector · industry · basic industry) classifies 2,229 ISINs with a confidence tier and provenance; the resolution chain is your own instruments → the taxonomy → the bundled index map, and your own tag is never overwritten. Data layer only — sector analytics shipped in v4.0.0.
 - **VaR / CVaR / parametric VaR**, beta-weighted exposure, NIFTY stress scenarios (±3%, ±5%, crash+IV spike).
 - **Option Greeks** (Black-Scholes) with a three-tier IV fallback ending at the real **India VIX**.
 - **Margin estimate** (SPAN approximation) per broker × segment, fully editable rate table.
@@ -808,13 +808,13 @@ On the desktop app: Everything lives in **one SQLite file on your disk** — cop
 
 **Landing page:** https://thejesh-k463.github.io/VYUHA-LOG/ — features, screenshots, pricing and the comparison table.
 
-**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
+**Desktop:** grab your platform's build from [**Releases**](https://github.com/Thejesh-k463/VYUHA-LOG/releases) — zero dependencies, Node.js is bundled, and your data persists in app-data across updates and reinstalls; the uninstaller warns and copies the journal and licence to `Documents\Vyuha-backup-<date>` before its delete-data option can act. Ticking "Delete the application data" erases that folder — journal, licence key and attachments — once the copy has been made. **Upgrading from v4.0.x to v4.1.0:** the installer runs the v4.0.0 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migration 0068 runs on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.9.x to v4.0.0:** the installer runs the v3.9.1 uninstaller once, and that one is the guarded one — it names the journal and licence, copies them to `Documents\Vyuha-backup-<date>` and stops if you Cancel, so nothing is asked of you. Migrations 0064–0067 run on first launch behind an automatic `backups\pre-migrate-<timestamp>.sqlite` copy. **Upgrading from v3.7.1 or earlier:** the installer runs that older uninstaller once, and it has no backup step at all — leave its "Delete the application data" box unticked.
 
 | Platform | File | Data lives in |
 |---|---|---|
 | **Windows** | `Vyuha_x.y.z_x64-setup.exe` | `%APPDATA%\in.vyuha.tradejournal` |
 
-Current release: **v4.0.0**. If the window ever comes up blank, the sidecar's own log is at
+Current release: **v4.1.0**. If the window ever comes up blank, the sidecar's own log is at
 `%APPDATA%\in.vyuha.tradejournal\logs\sidecar.log` — attach it to a bug report.
 
 **What's free and what isn't:** every fresh install starts a **7-day full-Pro trial** — no signup, no card, no server call. After that the **core journal is free forever**: recording closed trades, all six broker importers, the dashboard, staged positions, playbooks, the trade calculator, Lenses grouping with per-group delete, recoverable deletion, and backups. A licence unlocks the analytics layer — the Portfolio Risk cockpit, Arjun's Eye, Edge/Setups, Discipline, the Trade Review Desk (review queue, Sunday ritual, Process Score), the Options Seller Journal and expiry analytics, the tax pack (Tax Summary, ITR, Advance Tax, Harvest, AIS reconcile), broker-cost and MTF comparison, per-group edge on Lenses, PDF reports, and live open-position tracking with SL/target. Your own record of your trading is never held hostage — every trade you have already taken stays readable, editable and exportable without a key — and your record stays yours either way.

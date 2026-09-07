@@ -4116,3 +4116,24 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
   the path changed" — all three, not one. Measured side-effect: the workflow's `cancel-in-progress` concurrency
   group is per branch, so re-running an OLDER commit's job cancels the NEWER commit's run; re-run the newest
   sha's run instead, or wait for the old one to finish.
+- **The v4.1.0 bump reddened four doc guards, and all four were right (2026-09-07).** The bump commit on
+  `0c60a1b` set the version fields (`bump-version`, `cargo update -p vyuha --offline`, lock root fields by
+  hand — numstat 2 2), dated the CHANGELOG entry, restored the landing chip and swept the stale 4.0 claims.
+  Its first `npm run verify` failed `tests/client-docs-version.test.ts` twice (TERMS and REFUND_POLICY
+  "Applies to" must be ≥ `package.json`), `tests/readme-claims.test.ts` (the README "Now:" line must name
+  the first `> **vX.Y.Z` quote, and the 4.1 quote was headed "New in v4.1.0", so the first version quote
+  the guard saw was still 4.0.0) and `tests/live-feed-copy.test.ts` Q60 (the landing hero's chips carry no
+  sentence terminator, so to the guard the whole row is one sentence, and the new chip's "priced by" sat in
+  it beside the import chip's "OpenAlgo"). Fixes: both policies apply to v4.1.0, last updated 2026-09-07;
+  the README quote is headed `**v4.1.0 — a bridge you already run.**`; the chip says the desk "can take its
+  marks from a bridge you already run" — a rewording, because a reader scans that row the way the guard
+  does. The 4.1 chip REPLACES the 4.0 chip: one "New in" chip, always the newest release; the Live Desk,
+  Sizing Lab and Market Atlas stay described in the page body. **Rejected: a full stop inside the chip to
+  split the guard's sentence** — that games the check without removing the pairing. **Rejected: keeping
+  both chips** — two "new in" chips say neither is new. Also swept into the commit: the installer filename
+  and footer line in `docs/client/INSTALLATION_GUIDE.md`, the deck's version pill and footer, the brochure
+  and landing pills, "Sector analytics come in v4.0" (client and root README), the v4.0-section "Stored
+  mark (undated)" row (now dated to v4.0.0 with the v4.1 behaviour named beside it), and an "Upgrading from
+  v4.0.x to v4.1.0" sentence in the root README mirroring the install guide. Second gate on the bump tree:
+  341 files / 6,400 passed / 35 skipped, `next build` compiled. Lesson for the next bump: run these four
+  guards' inputs through the bump first — policy "Applies to", README first quote, hero-row wording.

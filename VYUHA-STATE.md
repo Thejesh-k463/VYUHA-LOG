@@ -27,13 +27,14 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.1.0 IN BUILD on `main` (COMMITTED: `66aa319` wave + `4b55620` fix wave + `65dd329` fix wave 2 + fix wave 3 (sha at the bump); version strings still 4.0.0, bump next) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2. Current state — v4.1.0 BUMPED on `main` (wave `66aa319` + fix waves `4b55620` · `65dd329` · `1ec6de1` · `fe04728` · `6c4713a` · `2b3cbfa` · `0c60a1b`, CI 6/6 on `0c60a1b` = run 34057976530; the bump commit sits on `0c60a1b` and is the sha to tag once its own CI is 6/6) · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
-> **v4.1.0 IS IN BUILD, and it is COMMITTED.** Base commit `6631d21`; on top of it `66aa319` (the
-> wave), `4b55620` (the fix wave), `65dd329` (fix wave 2) and fix wave 3 (**sha at the bump** — the
-> orchestrator commits it at the gate). Nothing about 4.1 is an uncommitted working tree any more.
-> `package.json` is still **4.0.0** — the bump happens after the audit, and no version field, Cargo
-> file or sidebar footer has been touched. `package-lock.json` is unmodified: **4.1 adds, removes and
+> **v4.1.0 IS BUMPED and waits for its tag.** Base commit `6631d21`; on top of it `66aa319` (the
+> wave), `4b55620` (the fix wave), `65dd329` (fix wave 2), `1ec6de1` (fix wave 3), `fe04728` (3b),
+> `6c4713a` (3c), `2b3cbfa` (3d) and `0c60a1b` (3e — CI SUCCESS 34057976530, all six jobs). The bump
+> commit on top of `0c60a1b` (2026-09-07) sets **4.1.0** in `package.json`, `tauri.conf.json`,
+> `Cargo.toml`, `Cargo.lock` (`cargo update -p vyuha --offline`, numstat 1 1) and the sidebar footer
+> (`v4.1`); `package-lock.json` root fields were edited BY HAND (numstat 2 2): **4.1 adds, removes and
 > upgrades no dependency.** One migration, **0068** (`instruments.results_date`, nullable TEXT,
 > hand-written with a `drizzle/meta/_journal.json` entry).
 >
@@ -104,7 +105,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > after 4.2, and "alerts" stays out of Pro copy; no `openalgo-charts` pilot; no journal-derived
 > Kelly; no size-index lists; **Upstox and Angel One price feeds are 4.2**.
 >
-> **VERIFY (2026-09-07, FIX-WAVE-3d gate, the tree after `6c4713a` + fix wave 3d): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 341 files / 6,400 passed / 35 skipped (6,435), `next build` compiled. Playwright on the fix-wave-3 tree: `e2e/z-live-desk.spec.ts` 9 passed. Earlier gates: fix wave 3c (`6c4713a`) 341 / 6,399 / 35; fix wave 3b (`fe04728`, CI 34056113744) 341 / 6,392 / 35; fix wave 3 (`1ec6de1`, CI SUCCESS 34054833245) 341 / 6,381 / 35; fix wave 2 (`65dd329`, CI SUCCESS 34051766379) 339 / 6,334 / 35; fix wave (`4b55620`, CI SUCCESS) 337 / 6,273 / 35; wave (`66aa319`, CI 6/6) 334 / 6,177 / 35. README counts 6400 / 341 / 93 flows in 29 specs, all re-measured on this tree (`find tests -name "*.test.ts" | wc -l` = 341: fix wave 3 added `tests/typed-mark-day-row.test.ts` and `tests/seams-v41-fix3.test.ts`).**
+> **VERIFY (2026-09-07, the v4.1.0 BUMP tree on `0c60a1b`): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 341 files / 6,400 passed / 35 skipped (6,435), `next build` compiled in 11.3 s; `npm ls esbuild` resolves; `package-lock.json` numstat 2 2. The FIRST gate on the bump tree was RED on four doc guards (`client-docs-version` ×2, `readme-claims` first-quote, `live-feed-copy` Q60 on the landing hero) — all four were the bump's own docs and were fixed before this run (DECISIONS 2026-09-07). Playwright on the fix-wave-3 tree: `e2e/z-live-desk.spec.ts` 9 passed (`components/live/**` unchanged since). Earlier gates: fix wave 3d/3e (`2b3cbfa`, `0c60a1b` — CI SUCCESS 34057976530) 341 / 6,400 / 35; fix wave 3c (`6c4713a`) 341 / 6,399 / 35; fix wave 3b (`fe04728`, CI 34056113744) 341 / 6,392 / 35; fix wave 3 (`1ec6de1`, CI SUCCESS 34054833245) 341 / 6,381 / 35; fix wave 2 (`65dd329`, CI SUCCESS 34051766379) 339 / 6,334 / 35; fix wave (`4b55620`, CI SUCCESS) 337 / 6,273 / 35; wave (`66aa319`, CI 6/6) 334 / 6,177 / 35. README counts 6400 / 341 / 93 flows in 29 specs, all re-measured on this tree (`find tests -name "*.test.ts" | wc -l` = 341: fix wave 3 added `tests/typed-mark-day-row.test.ts` and `tests/seams-v41-fix3.test.ts`).**
 
 ## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 

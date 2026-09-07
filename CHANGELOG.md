@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.1.0 — unreleased
+## v4.1.0 — 2026-09-07
 
 *The release where the Live Desk can be priced by a bridge you already run. The
 OpenAlgo feed that shipped switched off in v4.0.0 is switched on — behind a
