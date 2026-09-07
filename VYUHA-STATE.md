@@ -27,9 +27,10 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE BUILT on main, gate GREEN, pushed for CI (2026-09-07 evening IST); v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE BUILT on main, gate GREEN, CI GREEN on `3a3e026` (34125653384, 6/6; 2026-09-07 evening IST); NOT audited, NOT tagged; v4.1.0 remains the PUBLISHED release
 
-> **v4.2 is IN BUILD, not tagged.** One wave commit on top of `92c48cc` carries: the **Upstox** quote adapter
+> **v4.2 is IN BUILD, not tagged.** Wave commit `c817b15` on `92c48cc` (CI 34124736781 was 4/6 on one STATE-heading pin,
+> fixed by the one-line `3a3e026`, CI 34125653384 SUCCESS 6/6). The wave carries: the **Upstox** quote adapter
 > (`lib/quotes/upstox.ts`, reuses the stored Analytics token — `requiresDailyAuth: false`, one `/v3/market-quote/ltp`
 > call per 1–5 s sweep for ≤500 keys, `/ohlc` at most once a minute, `health()` makes no request) and the
 > **Angel One** adapter (`lib/quotes/angelone.ts` + `angelone-tokens.ts`: unattended 05:00-IST re-login via the
