@@ -4524,5 +4524,5 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   Reproduced locally by converting the card to CRLF: `1 failed | 75 passed` with the runner's own assertion; `\r?\n` → 76/76 on
   both encodings. The file's older newline idioms (`indexOf("\n}")`, `split("\n")`) survive CRLF because `\n}` is a substring of
   `\r\n}` — only an anchor that names the character BEFORE the newline is strict. Rule: a source-shape regex that spans a line
-  break writes `\r?\n`, as `tests/readme-claims.test.ts` already did. Fix-wave 4b is that one line; its CI run is the target
-  the round-5 audit waits for.
+  break writes `\r?\n`, as `tests/readme-claims.test.ts` already did. Fix-wave 4b = **`dd729ed`** (that one line + docs);
+  **CI 34160531101 on `dd729ed`: SUCCESS 6/6.** The round-5 audit target is `2bacf06..dd729ed`.
