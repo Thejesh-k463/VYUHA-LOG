@@ -54,7 +54,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > fix wave (own audit) → bump 4.2.0 (`CHANGELOG.md` 4.2.0 section is written at the bump; TERMS/REFUND
 > "Applies to" and the README "Now"/first quote already say 4.2.0) → the 11 release steps.
 
-## 2 (previous). Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2. Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
 > **v4.1.0 IS PUBLISHED** (2026-09-07T10:00:03Z = 15:30 IST) and installed on a non-build machine by the owner;
 > WDSI form handed over (client-ZIP sha), winget submission is the owner's once he chooses. Nothing is owed on
