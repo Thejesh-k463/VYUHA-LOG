@@ -437,3 +437,46 @@ describe("a blocked Upstox feed is stated, and the sheet is reachable again (A-6
     expect(REVIEW_CONSENT_CTA).toBe("Review and accept");
   });
 });
+
+/**
+ * U-1 — THE UPSTOX HALF OF THE ACCEPT-ORDER DEFECT.
+ *
+ * Same mechanism as the Angel One twin (`tests/live-feed-angelone-settings.test.ts`,
+ * where the full block and the route-driven cost live): `acceptUpstox()` ran
+ * ack POST → `setPending(false)` → `await refreshStatus()` → `await store()`.
+ * The GET in the middle is answered by the route's health line, which probes
+ * the provider that is still EFFECTIVE — the one this click replaces — so the
+ * sheet closed onto an un-moved radio, with nothing disabled and no toast,
+ * until that probe answered; a second click in that window ran a concurrent
+ * `store()`. Pinned in the source: vitest runs `environment: "node"` and the
+ * repo ships no DOM harness, so the component cannot be driven here.
+ */
+describe("accepting the Upstox sheet writes the pick before it re-asks the route (U-1)", () => {
+  const acceptUpstox = () => {
+    const card = stripComments(read(CARD));
+    const start = card.indexOf("async function acceptUpstox()");
+    expect(start, "acceptUpstox() is gone from the card").toBeGreaterThan(-1);
+    return card.slice(start, card.indexOf("\n  }", start));
+  };
+
+  it("no GET sits between the acknowledgement and the write it precedes", () => {
+    const body = acceptUpstox();
+    expect(body, "the accepted sheet does not store the Upstox pick").toMatch(/await store\("upstox"\)/);
+    expect(
+      body,
+      "acceptUpstox() re-asks the route before its own write — that GET describes the provider being replaced (U-1)",
+    ).not.toMatch(/refreshStatus\(\)/);
+  });
+
+  it("the radios stay disabled from the accepted sheet until the write lands", () => {
+    const body = acceptUpstox();
+    expect(body).toMatch(/setPending\(true\)/);
+    expect(
+      body.match(/setPending\(false\)/g)?.length ?? 0,
+      "pending is lowered outside the refused-ack branch, leaving a window for a second click",
+    ).toBe(1);
+    expect(body, "the refused ack does not re-enable the radios first").toMatch(
+      /if \(!r\.ok\) \{\s*setPending\(false\);\s*toast\.error\(/,
+    );
+  });
+});

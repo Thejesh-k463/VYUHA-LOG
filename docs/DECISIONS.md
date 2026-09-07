@@ -4422,3 +4422,99 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   pass `tests/seams-v42-fix3.test.ts` 10 tests over six crossings (one defect: the STT tile lacked the "n unknown" note its two
   neighbours got — fixed in the wave); README 357 → 358 files, 6,880 → 6,914 tests. **CI 34153510561 on `2bacf06`: SUCCESS 6/6.**
   Round-4 audit owed over `99aa027..2bacf06`.
+
+## 2026-09-08 — v4.2 round-4 audit (`99aa027..2bacf06`): 8 confirmed → 7 after the skeptic → 10 with three promotions → fix wave 4; a short future's exit STT is ₹0; a second Angel One ceiling on session invalidations
+
+- **Ladder:** six Fable auditors (money 2 / schema 0 / security 1 / ui 1 / test 2 / docs 2) → 8 confirmed → the Fable skeptic
+  killed D-1 (the sheet's four-trigger sentence is B-7's ruled wording; the account-switch omission was raised to the owner instead)
+  → 7 → promoted P-1 (footer rate word), P-3 (an outage counted as a refusal), P-5 (stale test titles) → **10**. Rejected
+  promotions: P-2 (exercise STT is a ruled named constant, 2026-08-12), P-4 (the READMEs list what is SAVED, the consent surfaces
+  what is SENT), P-6 (`INSTALLATION_GUIDE` "first launch of v4.1.0 … 0068" is a BUMP-commit item — `package.json` is still 4.1.0).
+  For the first time in this release no survivor was an on-screen wrong number. Rulings: `06-ANSWERS.md` "v4.2 round-4 rulings".
+- **M-1 (owner ruling):** futures STT is a SELL-SIDE levy (`charge_config` `future` = `{pct, side: "sell"}`, honoured by
+  `lib/engine/charges.ts`), so `settlement.ts`'s `exitStt` is side-aware — the sell-side rate × notional for a LONG (the square-off is
+  a sell) and **₹0 for a SHORT** (the square-off is a buy) — and a short future's `sttJump` is therefore its WHOLE `physicalStt`.
+  Side-blind, it charged a short an exit STT it would never pay and understated the devolvement penalty by that amount, on the one
+  panel that exists to warn about it; wave 3's C-1 is what first gave the short a non-zero notional to multiply. Nothing rendered the
+  field, so it was latent; two pins asserted the wrong value (`seams-v42-fix3` F3a `exitStt > 0` on the SHORT SBIN future,
+  `derivative-mark-readers` `sttJump = 1050 − 525` on the SHORT TCS future) and were corrected. `sttFromConfig` still returns the pct
+  only — the side belongs to the exit direction, not the config row — with the KNOWN LIMITATION that a hand-edited non-statutory
+  `stt_side` of `both` for `future` would make `charges.ts` charge both legs while `exitStt` reads ₹0 for a short. A short whose
+  notional is unknown keeps `exitStt` null (C-1's unknown-row rule composes above the side rule; the row prints "—").
+  Rejected: keep side-blind and relabel; thread `sttSide` into `SettlementRates`.
+- **M-2 — AMENDS the fix-wave-3 C-1 entry ("… every tile says 'n unknown'"):** every tile EXCEPT Funds. `fundsNeeded` sums
+  "Take delivery (buy)" rows only, so its exclusion count is its own: new `SettlementSummary.unknownFundsCount` (take-delivery ∧
+  unknown notional) drives that tile; `unknownNotionalCount` still drives Notional-at-risk and STT. A SHORT unknown future had
+  printed "Funds to take delivery ₹0 · 1 unknown" — a caveat about a row that DELIVERS shares, on the tile that counts cash.
+- **P-1:** the obligations footer named exercise STT as 0.125% while `DEFAULT_SETTLEMENT_RATES.exerciseSttPct` had been 0.15% since
+  1-Apr-2026 (FA 2026, `b26cb5c`), and said "Statutory rates are editable in charge config" — false for exercise STT. The rate word
+  is now RENDERED from the constant (`pctText()`), the delivery-rate literal is gone (that rate comes from charge config and can
+  differ), and the copy names which rates are configurable and which is fixed. Pinned both ways: rendered text against the constant,
+  source against any hard-coded percent literal.
+- **T-1:** the /risk settlement `refPrice` ladder (C-1: cash mark → recorded close → side-aware entry) had no fixture below rung 1 —
+  deleting the recorded-close rung, or making the entry rung side-blind, left all 113 tests green. `derivative-mark-readers` now
+  carries a future with no cash mark and a close (₹8,75,000 vs ₹8,50,000 on the rung below) and a partially-covered SHORT with both
+  entry prices non-zero (₹2,40,000 vs a side-blind ₹2,00,000); both proven red by making each revert real. Lesson, again: a ruling
+  that names rungs is a fixture list.
+- **C-1 (owner ruling) — a second Angel One ceiling, on session invalidations.** `ANGELONE_MAX_LOGIN_ATTEMPTS = 3` counted REFUSED
+  logins only, and `invalidateSession()` nulled the jwt on every AG8001/AG8002/AG8003/"invalid token"/401 answer.
+  `lib/import/api/angelone.ts` turns ANY non-ok status into `Angel One quote: HTTP 401`, so an app key without market-data
+  entitlement produced one on every quote: login accepted → quote invalid → jwt nulled → next poll signs in again → refusal counter
+  reset. The credential went to `apiconnect.angelone.in` on every poll — 1,200 an hour at the 3 s tier, bounded only by `slot()`,
+  above Angel One's own 1,000/hour login limit — and the C-2 cap could never fire because no login was ever refused. Now
+  `ANGELONE_MAX_SESSION_INVALIDATIONS = 3` counts CONSECUTIVE invalidations with no priced answer between them; after the third,
+  `session()` stops signing in and `health()` reports `ANGELONE_SESSION_INVALID_CAPPED_REASON` in the same `state: "unreachable"`
+  shape C-2 uses, so the desk prompt, the route and the card needed no change. A priced snapshot (≥ 1 row with a usable last price)
+  resets it; an empty or all-`unfetched` answer does not, because it is not evidence the session works. The 05:00 IST flush re-login
+  is scheduled, not an invalidation: the counter is incremented in `invalidateSession()` and nowhere else (proven by MUTATION — a
+  naive "count every re-mint" reddens exactly one test — since there is no fix to revert for a guard). Per instance like C-2: a
+  re-save or relaunch is the reset; nothing is persisted. Rejected: count invalidations toward the existing cap (a legitimate flush
+  re-login plus two broker hiccups would stop the feed); a daily ceiling per instance.
+- **P-3 (owner ruling) — the capped sentence names WHICH failure it was.** `session()` counted any throw from `login()` as a
+  failure, including the bare `fetch` TypeError of an unreachable host, so a three-minute outage ended with "Angel One refused the
+  login three times — re-save …", telling a user with good credentials to re-save them. The COUNT is deliberately unchanged (the
+  ruling text is "failures"; a fourth attempt at an unreachable host is as pointless as a fourth wrong PIN). What changed is the
+  sentence: `classifyAngelOneLoginFailure()` reads the shape of the throw because the API client does not label it — a `TypeError`
+  (or ENOTFOUND/ECONNREFUSED/"fetch failed") is `unreachable`, an envelope message or a 4xx is `refused`. **Session decision beyond
+  the ruling's letter: a bare 5xx is `unreachable` too** — a gateway answering 502 is not a statement about the credential, and the
+  non-accusing sentence is the one that cannot mislead; overrule by deleting one line and its test. Three capped sentences now
+  exist, all SEBI-safe, all naming Import → Connect broker, all pinned verbatim, none may ever carry a credential value.
+- **D-1 (owner ruling, raised under the ask-on-contradiction rule after the skeptic killed it):** the sign-in trigger list is
+  `liveFeedInstanceKey()`'s field list, not a prose list. The sheet named four triggers while the key includes the SELECTED
+  ACCOUNT (invariant 8: the `broker_connections` row every adapter reads is that account's own; id 0 is the aggregate view), so an
+  account switch — including to or from "All accounts" — rebuilds the instance, signs in again on the next poll and resets both
+  caps. Named as a fifth trigger on all five copy surfaces (sheet, PRIVACY #3, help ×3, README, client README), in
+  `ANGELONE_CAPABILITIES.egressDescription`, and in the memo comment `tests/quotes-registry` pins. The C-1 ceiling is stated in the
+  same clause family ("signs in at most three times in a row without a priced answer in between") — the builder's first draft said
+  "signs in AGAIN at most three times", one sign-in too many; the bound is three sessions in total. **NO disclosure-version bump:**
+  `git cat-file -e v4.1.0:lib/domain/live-feed-disclosure.ts` exits 128 — the file did not exist at the last released tag, so no
+  install holds an ack for this sheet. One canonical clause per fact, asserted on every surface by one loop, appended AFTER the
+  four-trigger substring that three other tests pin byte-for-byte. Rejected: re-key the memo so a same-credential switch reuses the
+  session (a session minted from one book's credential silently serving another is what invariant 8 exists to prevent); leave as ruled.
+- **Breach-scan scope (owner ruling, invariant 8):** the two page banners (`app/page.tsx`, `app/risk/page.tsx`) call
+  `scanBreachesForSelectedAccount()` → `getSelectedAccountId()` with the house rule `accountId > 0 ? filter : all`; the EOD auto-MTM
+  job keeps the unscoped `scanBreaches()` because it prices every account from one bhavcopy and must report on every account it
+  marked — its call site is byte-identical. Pinned by `tests/breach-scan-scope.test.ts` (two accounts, one breach each, both pages'
+  `<BreachBanner breaches>` prop read off the real element tree). Rejected: leave and record; scope the EOD job too.
+- **U-1:** ruling C-7 stands (after every successful write the card re-asks the route), but `acceptUpstox()`/`acceptAngelOne()`
+  asked BETWEEN the ack POST and the provider POST, where `healthLine()` can only probe the still-effective provider the click is
+  about to replace — for OpenAlgo an untimed network `/funds` POST — with the sheet closed, `pending` false, the radio unmoved and
+  no toast until that probe returned; a second click in that window started a concurrent `store()`. The accept paths now fold the
+  ack, store the provider, and let `store()`'s own trailing GET be the single re-ask; `pending` is lowered only where the ack was
+  refused, so it covers the whole accept→store span. The old pin (three `await refreshStatus()` occurrences) codified the defect
+  and is replaced by an ORDER pin in both settings tests — a source-order assertion, because vitest runs `environment: "node"` with
+  no DOM harness and `include: tests/**/*.test.ts`, so the component cannot be driven.
+- **D-2 (owner ruling):** README "screens in the desktop app" was 46, set in `16b1ec1` when disk already had 49; `app/**/page.tsx`
+  is 49 at v4.0.0, v4.1.0 and HEAD, and no reconstructable rule (nav hrefs give 47) yields 46 — the only "At a glance" cell with no
+  gate. `tests/readme-claims` now derives it from disk with the rule beside it: a SCREEN is one `app/**/page.tsx`, counted
+  recursively; layouts, route handlers and error/loading files are not screens. Rejected: drop the row.
+- **T-2 / P-5 (cosmetic):** a passing seam test (fix3 F3c) still carried a "⛔ REPORTED SEAM DEFECT … RED until E1 fixes it" header
+  — the same shape round 3 struck from fix2; rewritten to state the invariant. Two `help-content` test titles said "three sources"
+  where five are named; retitled and the body now asserts all five. A regex `/s` flag in two new tests failed `tsc` under the
+  es2017 target (`[^\]]*` already spans newlines) — dropped; typecheck is part of `npm run verify`, so it would have stopped the gate.
+- **Gate on the fix-wave-4 tree:** `npm run verify` EXIT 0 — **360 files / 6,969 passed / 35 skipped**, `next build` compiled 10.7 s;
+  seam pass `tests/seams-v42-fix4.test.ts` 11 tests over ten crossings (one defect: the card's own Angel One blurb still named four
+  triggers — fixed before the gate, pin moved with it); `tests/breach-scan-scope.test.ts` new (9). README 358 → 360 files,
+  6,914 → 6,969 tests, screens 46 → 49 (now disk-gated). No `components/live` change (the `/live` harness stays 9/9 from `99aa027`).
+  `package-lock.json` untouched. Wave cost: four Opus builders + one Opus seam tester; round-4 audit six Fable auditors + Fable skeptic.
+  Round-5 audit owed over this commit's diff.

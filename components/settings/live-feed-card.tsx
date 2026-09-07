@@ -191,7 +191,7 @@ export function upstoxRowState(state: UpstoxFeedState | undefined): { disabled: 
 export const ANGELONE_FEED_COPY = {
   label: "Angel One",
   blurb:
-    "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials — without asking you.",
+    "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts — without asking you.",
   /** Shown INSTEAD of the blurb when this account has no connection saved. */
   notConnected: "Add Angel One under Import → Connect broker first.",
   /** Always, connected or not — the scope of the feed is not a footnote.
@@ -717,18 +717,23 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   async function acceptUpstox() {
     setPending(true);
     const r = await post({ action: "ack", provider: "upstox" });
-    setPending(false);
     if (!r.ok) {
+      setPending(false);
       toast.error(r.message ?? "Could not record that you read it.");
       return;
     }
     // The SERVER's own reading of both halves, not an optimistic guess — and
-    // every half it answered with, not only this provider's (B-4). The ack
-    // alone can change what runs (an in-date acknowledgement unblocks a stored
-    // pick), so the health is re-asked here too rather than only after the
-    // store below — awaited, so the two GETs cannot land out of order (C-7).
+    // every half it answered with, not only this provider's (B-4).
     setStatus((prev) => foldWriteResult(prev, r));
-    await refreshStatus();
+    // U-1: STORE FIRST, and let `store()`'s own trailing GET be the re-ask
+    // C-7 asks for. A GET here would be answered by `healthLine()`, which
+    // probes the provider that is still EFFECTIVE — the one this click is
+    // replacing, and for OpenAlgo an untimed network POST — while the sheet is
+    // already closed and the radio has not moved. Its answer is discarded by
+    // the very next write in any case (`foldWriteResult` nulls `health`).
+    // `pending` is NOT lowered above, so it stays raised from this click until
+    // `store()` lowers it after its own POST: a second radio click cannot
+    // start a concurrent write in between.
     await store("upstox");
   }
 
@@ -736,14 +741,15 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   async function acceptAngelOne() {
     setPending(true);
     const r = await post({ action: "ack", provider: "angelone" });
-    setPending(false);
     if (!r.ok) {
+      setPending(false);
       toast.error(r.message ?? "Could not record that you read it.");
       return;
     }
-    // Same as the Upstox path: fold, re-ask, then store (C-7).
+    // Same as the Upstox path: fold, then store, and the store's own trailing
+    // GET is the re-ask (C-7 kept, its order fixed — U-1). `pending` stays
+    // raised across the hand-off for the same reason.
     setStatus((prev) => foldWriteResult(prev, r));
-    await refreshStatus();
     await store("angelone");
   }
 

@@ -140,6 +140,29 @@ describe("README test counts agree with each other", () => {
     expect(stated.length, "README no longer states a load-case count").toBeGreaterThan(0);
     for (const s of stated) expect(s, "README states a load-case count that is not on disk").toBe(cases.length);
   });
+
+  it("the screen count matches app/**/page.tsx on disk", () => {
+    // D-2 (owner ruling, 2026-09-08). The "At a glance" cell said 46 while
+    // disk had 49 — and had had 49 at v4.0.0 and v4.1.0 too, so the number was
+    // wrong on the day it was written (16b1ec1) and no counting rule anyone
+    // could reconstruct produced 46. It is the only cell in that table with no
+    // gate, which is exactly why it drifted.
+    //
+    // THE RULE, so the next reader does not have to guess it: a SCREEN is one
+    // Next.js route segment that renders a page — i.e. one `app/**/page.tsx`,
+    // counted recursively, route groups and dynamic segments included, and
+    // layouts, route handlers and error/loading files excluded because none of
+    // them is a screen a user can be on.
+    const pages = readdirSync(path.join(root, "app"), { recursive: true }).filter(
+      (f) => path.basename(String(f)) === "page.tsx",
+    );
+    expect(pages.length, "app/ has no page.tsx at all — the derivation is reading the wrong tree").toBeGreaterThan(0);
+    const cell = readme.match(
+      /\| \*\*[\d,]+\*\* \| \*\*(\d+)\*\* \| \*\*0\*\* \|\r?\n\| tests, \d+ end-to-end flows \| screens in the desktop app \|/,
+    );
+    expect(cell, "the 'screens in the desktop app' cell is gone from the At a glance table").not.toBeNull();
+    expect(num(cell?.[1]), "README states a screen count that is not on disk").toBe(pages.length);
+  });
 });
 
 describe("README release notes read newest first", () => {

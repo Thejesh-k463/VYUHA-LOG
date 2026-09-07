@@ -6,7 +6,9 @@
 // stock option — open into expiry converts it into a *delivery obligation*:
 //   • you must take/give delivery of the underlying shares (full notional), and
 //   • the position is charged **equity-delivery STT (0.1%) on the whole notional**,
-//     plus STT on exercise (0.125% on intrinsic) — vs the tiny premium/turnover STT
+//     plus STT on exercise (0.15% on intrinsic since 1-Apr-2026) — vs the tiny
+//     premium/turnover STT (and, for a SHORT future, vs nothing at all: its
+//     square-off is a BUY, and futures STT is charged on the sell leg only)
 //     of simply squaring off. This "STT jump" + the surprise delivery is a classic
 //     retail money-trap. This module flags those obligations ahead of expiry.
 //
@@ -63,7 +65,8 @@ export interface SettlementInput {
 export interface SettlementRates {
   /** Equity-delivery STT as a fraction (e.g. 0.001 = 0.1%) — from charge_config eq_delivery. */
   deliverySttPct: number;
-  /** STT on exercise of options, on intrinsic value (statutory default 0.125%). */
+  /** STT on exercise of options, on intrinsic value (statutory default 0.15%
+   *  since 1-Apr-2026 — FA 2026, NSE circular 02/2026 row 4(b)). */
   exerciseSttPct: number;
   /** Normal futures sell STT (on turnover) — for the square-off comparison. */
   futExitSttPct: number;
@@ -116,8 +119,21 @@ export interface SettlementObligation {
   notional: number | null;
   fundsOrShares: string; // human note: cash needed / shares to deliver
   physicalStt: number | null; // ₹ STT incurred on physical settlement
-  exitStt: number | null; // ₹ STT to square off now (futures only; null for options)
-  sttJump: number | null; // physicalStt − exitStt (extra bled by not squaring off)
+  /**
+   * ₹ STT to square off now — SIDE-AWARE, because futures STT is SELL-SIDE
+   * ONLY (`charge_config` carries the `future` segment as
+   * `{ pct, side: "sell" }`, and `lib/engine/charges.ts` levies it on
+   * `sellValue` alone). Squaring off a LONG is a SELL, so it costs the
+   * sell-side rate × notional; squaring off a SHORT is a BUY, which STT does
+   * not touch, so it costs ₹0 (owner ruling M-1).
+   *
+   * Futures only — null for options, whose exit STT rides the CURRENT PREMIUM
+   * an offline journal does not know — and null when the notional is unknown.
+   */
+  exitStt: number | null;
+  /** physicalStt − exitStt (extra bled by not squaring off). A SHORT future's
+   *  exitStt is 0, so its jump is the WHOLE physicalStt. */
+  sttJump: number | null;
   warn: Warn;
   reason: string;
 }
@@ -133,8 +149,21 @@ export interface SettlementSummary {
   fundsNeeded: number; // Σ cash to take delivery (long settlements)
   /** How many settling positions the two totals above could NOT include,
    *  because their reference price is unknown. A total that silently swallowed
-   *  them as ₹0 would read as "nothing more to worry about" (ruling C-1). */
+   *  them as ₹0 would read as "nothing more to worry about" (ruling C-1).
+   *
+   *  This is the exclusion count for `notionalAtRisk` and `physicalSttTotal`,
+   *  which consider EVERY settling row. `fundsNeeded` has a narrower base and
+   *  therefore its own count — see `unknownFundsCount`. */
   unknownNotionalCount: number;
+  /** How many settling TAKE-DELIVERY positions `fundsNeeded` could not include,
+   *  because their reference price is unknown.
+   *
+   *  `fundsNeeded` sums only "Take delivery (buy)" rows, so a give-delivery row
+   *  is not something it left out — it is something it never wanted. Hanging
+   *  `unknownNotionalCount` on that tile printed "Funds to take delivery ₹0 ·
+   *  1 unknown" over a book whose single unknown row delivers SHARES and needs
+   *  no cash at all (M-2). */
+  unknownFundsCount: number;
   /** Σ physicalStt — the STT physical settlement WILL levy on positions that
    *  settle. This is deliberately NOT a "extra vs squaring off" delta: the
    *  delta is only computable for futures (exit STT rides notional). For an
@@ -218,7 +247,14 @@ export function computeSettlement(
       deliveryQty = p.netQty;
       notional = px == null ? null : r2(px * p.netQty);
       physicalStt = notional == null ? null : rupee(rates.deliverySttPct * notional);
-      exitStt = notional == null ? null : rupee(rates.futExitSttPct * notional);
+      // SIDE-AWARE (owner ruling M-1). Futures STT is charged on the SELL leg
+      // only, so squaring off a LONG (a sell) costs the rate × notional and
+      // squaring off a SHORT (a buy) costs nothing. Side-blind, this charged a
+      // short an exit STT it would never pay and shrank `sttJump` by that
+      // amount — understating the very penalty this module warns about. A short
+      // future's jump IS its whole delivery STT.
+      exitStt =
+        notional == null ? null : p.side === "long" ? rupee(rates.futExitSttPct * notional) : 0;
       fundsOrShares =
         p.side === "long"
           ? notional == null
@@ -325,6 +361,11 @@ export function computeSettlement(
         .reduce((s, o) => s + (o.notional ?? 0), 0),
     ),
     unknownNotionalCount: settling.filter((o) => o.notional == null).length,
+    // The SAME filter `fundsNeeded` reduces over — so the count is exactly what
+    // that total left out, never what it never asked for (M-2).
+    unknownFundsCount: settling.filter(
+      (o) => o.deliveryAction === "Take delivery (buy)" && o.notional == null,
+    ).length,
     physicalSttTotal: rupee(settling.reduce((s, o) => s + (o.physicalStt ?? 0), 0)),
     nearestExpiry: expiries[0] ?? null,
     obligations,

@@ -80,7 +80,12 @@ import { ExpiryObligations } from "@/components/risk/expiry-obligations";
 import { ANGELONE_FEED_ITEMS, withFeedAck } from "@/lib/domain/live-feed-disclosure";
 import { showConnectPrompt } from "@/lib/live/connect-prompt";
 import { todayIstIso } from "@/lib/domain/trading-day";
-import type { SettlementSummary } from "@/lib/analytics/settlement";
+import {
+  DEFAULT_SETTLEMENT_RATES,
+  computeSettlement,
+  type SettlementInput,
+  type SettlementSummary,
+} from "@/lib/analytics/settlement";
 import type { AngelOneHealth } from "@/lib/quotes/angelone";
 import type { UpstoxHealth } from "@/lib/quotes/upstox";
 
@@ -223,13 +228,24 @@ function panelRowCells(id: number): string[] {
   return (cells as unknown[]).map((td) => flattenText(td).join(""));
 }
 
-/** One `<Stat>` tile, INVOKED — the tile's own rendered text, note included. */
-function panelStatText(label: string): string {
-  const tree = ExpiryObligations({ summary: settlement });
+/** One `<Stat>` tile of ANY summary, INVOKED — the tile's own rendered text,
+ *  note included. */
+function statTextOf(summary: SettlementSummary, label: string): string {
+  const tree = ExpiryObligations({ summary });
   const stat = findElem(tree, (e) => typeof e.type === "function" && e.props.label === label);
   expect(stat, `no Stat tile labelled ${label}`).not.toBeNull();
   const rendered = (stat!.type as (p: Record<string, unknown>) => unknown)(stat!.props);
   return flattenText(rendered).join(" ");
+}
+
+/** One `<Stat>` tile of the PAGE's summary. */
+function panelStatText(label: string): string {
+  return statTextOf(settlement, label);
+}
+
+/** Every text leaf the panel renders for a summary, joined — the footer included. */
+function panelTextOf(summary: SettlementSummary): string {
+  return flattenText(ExpiryObligations({ summary })).join(" ");
 }
 
 const REPO = process.cwd();
@@ -478,7 +494,12 @@ describe("F3 — the settlement reference survives the page → analytics → pa
     expect(o.notional).toBe(KNOWN_NOTIONAL);
     expect(o.notional).not.toBe(CONTRACT_NOTIONAL);
     expect(o.physicalStt).toBeGreaterThan(0);
-    expect(o.exitStt).toBeGreaterThan(0);
+    // SHORT: squaring it off is a BUY, and futures STT is charged on the SELL
+    // leg only — so there is no exit STT to set against the delivery STT, and
+    // the whole physicalStt is the jump (owner ruling M-1, wave 4). This pin
+    // used to assert `toBeGreaterThan(0)`, which asserted the side-blind bug.
+    expect(o.exitStt).toBe(0);
+    expect(o.sttJump).toBe(o.physicalStt);
 
     // THE CONSUMER'S OUTPUT — the two rupee cells a user actually reads.
     const cells = panelRowCells(KNOWN_ID);
@@ -517,26 +538,125 @@ describe("F3 — the settlement reference survives the page → analytics → pa
   });
 
   /**
-   * ⛔ REPORTED SEAM DEFECT — E1, and this test is RED until E1 fixes it.
+   * THE INVARIANT: a tile whose total EXCLUDED something says so on the tile
+   * itself (ruling C-1) — and the STT tile is one of the three that must.
    *
-   * `physicalSttTotal` is built by the SAME reduce that builds the two totals
-   * above (lib/analytics/settlement.ts:328, `s + (o.physicalStt ?? 0)`), so on
-   * this book it excludes the unknown row exactly as they do — but the third
-   * tile is the only one of the three that was not given the note
-   * (components/risk/expiry-obligations.tsx:96-101, `note` prop absent). The
-   * panel's own comment states the rule it breaks: "A total that excluded
-   * something must say so on the same tile — a silently short total reads as
-   * the whole obligation (ruling C-1)".
+   * `physicalSttTotal` is built by the same reduce as `notionalAtRisk`
+   * (`s + (o.physicalStt ?? 0)`), over every SETTLING row, so on any book it
+   * excludes exactly the rows `unknownNotionalCount` counts. It therefore
+   * carries the same "n unknown" note its two neighbours carry. A silently
+   * short total reads as the whole obligation.
    *
-   * WRONG: the STT tile shows a total short by `unknownNotionalCount`
-   *        positions, with nothing on the tile saying so.
-   * RIGHT: `note={unknownNote}`, the one-line change its two neighbours got.
-   *
-   * The seam tester does not edit a builder's file, so this lands red.
+   * (The Funds tile is the ONE tile with a narrower base — it sums
+   * take-delivery rows only, so it carries its own `unknownFundsCount`. See
+   * the M-2 block below.)
    */
   it("F3c  the STT tile states the same exclusion its two neighbours state", () => {
     expect(settlement.physicalSttTotal).toBeGreaterThan(0);
     expect(panelStatText("STT on physical settlement")).toContain("1 unknown");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * v4.2 FIX WAVE 4 — the same panel, two things it stated that were not true.
+ *
+ * M-2  the Funds tile borrowed the OTHER tiles' exclusion count.
+ * P-1  the footer named a repealed statutory rate, and called it editable.
+ *
+ * Both are read the way a human reads them: the tile's own rendered text and
+ * the panel's own footer, off the REAL component, against a summary the REAL
+ * engine built.
+ * ══════════════════════════════════════════════════════════════════════════ */
+const futInput = (over: Partial<SettlementInput> & { id: number }): SettlementInput => ({
+  symbol: "WIPRO",
+  tradingsymbol: "FUT WIPRO 24 SEP 2026",
+  segment: "future",
+  optionType: null,
+  strike: null,
+  expiry: EXPIRY,
+  netQty: 300,
+  side: "short",
+  refPrice: null,
+  ...over,
+});
+
+/** A book whose ONLY unknown-value row delivers SHARES, not cash. */
+const shortUnknownBook = () =>
+  computeSettlement(
+    [
+      futInput({ id: 1 }), // short, no reference price → unknown notional
+      futInput({
+        id: 2,
+        symbol: "RELIANCE",
+        tradingsymbol: "FUT RELIANCE 24 SEP 2026",
+        side: "long",
+        netQty: 500,
+        refPrice: 1400, // → ₹7,00,000 of delivery funds, fully known
+      }),
+    ],
+    DEFAULT_SETTLEMENT_RATES,
+    TODAY_IST,
+  );
+
+describe("M-2 the Funds tile counts only the rows ITS OWN total left out", () => {
+  it("a SHORT unknown future notes nothing on the Funds tile, and 1 unknown on the other two", () => {
+    const s = shortUnknownBook();
+    // The engine's two counts have parted company, and that is the fix.
+    expect(s.unknownNotionalCount).toBe(1);
+    expect(s.unknownFundsCount).toBe(0);
+    expect(s.fundsNeeded).toBe(700000); // the long row, whole and known
+
+    const funds = statTextOf(s, "Funds to take delivery");
+    expect(funds).not.toContain("unknown");
+    // WRONG (pre-M-2): "Funds to take delivery ₹7L · 1 unknown" — a caveat
+    // about a row that delivers shares, on the tile that counts cash.
+    expect(statTextOf(s, "Notional at risk")).toContain("1 unknown");
+    expect(statTextOf(s, "STT on physical settlement")).toContain("1 unknown");
+  });
+
+  it("CONTROL: a LONG unknown future DOES note the Funds tile — that total is genuinely short", () => {
+    const s = computeSettlement([futInput({ id: 3, side: "long" })], DEFAULT_SETTLEMENT_RATES, TODAY_IST);
+    expect(s.unknownFundsCount).toBe(1);
+    expect(statTextOf(s, "Funds to take delivery")).toContain("1 unknown");
+  });
+});
+
+describe("P-1 the footer states the rate the panel actually computed", () => {
+  /** 0.0015 → "0.15" — the same rendering the component must derive. */
+  const pct = (frac: number) => String(Number((frac * 100).toFixed(4)));
+
+  it("names the exercise-STT rate in force (0.15%), never the repealed 0.125%", () => {
+    const text = panelTextOf(shortUnknownBook());
+    // Derived from the CONSTANT the page spreads into computeSettlement, so a
+    // future statutory change moves both together or fails here.
+    expect(pct(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)).toBe("0.15");
+    expect(text).toContain(`${pct(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)}% of intrinsic`);
+    expect(text).not.toContain("0.125");
+  });
+
+  it("the rate word is RENDERED from the constant, not written down beside it", () => {
+    const src = readDoc("components/risk/expiry-obligations.tsx");
+    expect(src).toContain("DEFAULT_SETTLEMENT_RATES.exerciseSttPct");
+    // A literal is what drifted: the constant moved to 0.15% on 1-Apr-2026 and
+    // the sentence stayed at 0.125% for five months.
+    expect(src).not.toContain("0.125");
+    expect(src).not.toContain("0.15%");
+  });
+
+  it("says which rates come from charge config and which one does not", () => {
+    const text = plain(panelTextOf(shortUnknownBook()));
+    // FALSE before P-1: "Statutory rates are editable in charge config" — the
+    // exercise rate is a named constant by ruling (DECISIONS 2026-08-12).
+    expect(text).not.toContain("Statutory rates are editable in charge config");
+    expect(text).toContain("charge config");
+    expect(text.toLowerCase()).toContain("not editable");
+  });
+
+  it("stays computed-and-neutral: no recommendation verbs anywhere on the panel", () => {
+    const text = panelTextOf(shortUnknownBook()).toLowerCase();
+    for (const word of ["recommend", "you should", "we suggest", "consider "]) {
+      expect(text, `the panel must not say "${word}"`).not.toContain(word);
+    }
   });
 });
 

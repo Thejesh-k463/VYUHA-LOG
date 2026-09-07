@@ -125,7 +125,7 @@ describe("the Angel One radio is offered only behind the one release flag", () =
     // it signs in when the process needs a session, and again after a relaunch,
     // after the 5 AM flush and whenever the credentials are re-saved.
     expect(ANGELONE_FEED_COPY.blurb).toBe(
-      "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials — without asking you.",
+      "Uses the client code, PIN and TOTP secret saved under Import → Connect broker. Angel One clears every session at 5 AM IST; Vyuha signs in at most once a day while it stays open — again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts — without asking you.",
     );
     // C-11 (owner ruling "or a dash"): byte-identical to the Upstox scope
     // sentence — one release-scope rule, one sentence, so the two rows cannot
@@ -991,7 +991,7 @@ describe("the health line describes the feed that runs NOW, not the one that ran
     expect(foldWriteResult(null, r), "with no mount answer there is nothing to fold into").toBeNull();
   });
 
-  it("the fetch is extracted, re-asked from all three write paths, and is still not an effect", () => {
+  it("the fetch is extracted, re-asked after the write, and is still not an effect", () => {
     const card = stripComments(read(CARD));
     // ONE fetch, outside the component, called by the mount effect AND by the
     // write paths. It sits outside so the effect can keep calling `setStatus`
@@ -1007,13 +1007,124 @@ describe("the health line describes the feed that runs NOW, not the one that ran
     expect(card, "the write paths do not share the mount fetch").toMatch(
       /async function refreshStatus\(\) \{\s*const j = await fetchStatus\(\);/,
     );
-    expect(
-      card.match(/await refreshStatus\(\)/g)?.length,
-      "store() or one of the two accept paths never re-asks",
-    ).toBe(3);
+    // U-1: the re-ask is made AFTER the write it describes, by `store()`, and
+    // by nothing that runs before one. The count this line used to assert
+    // (three re-asks, one per write path) is what codified the defect: it was
+    // satisfied by the two accept paths asking BEFORE their own store. The
+    // ordering itself is pinned in the U-1 block below.
+    expect(card, "store() no longer re-asks after its own write").toMatch(
+      /const r = await post\(\{ action: "provider", provider: next \}\);[\s\S]*?await refreshStatus\(\);\n {2}\}/,
+    );
     // A plain fetch in an event handler — NOT a second effect, and never a
     // state-derived one (AGENTS.md).
     expect(card.match(/React\.useEffect\(/g)?.length, "a second effect appeared").toBe(1);
+  });
+});
+
+/**
+ * U-1 — THE ACCEPT PATHS ASKED THE ROUTE ABOUT THE FEED THEY WERE ABOUT TO
+ * REPLACE, WITH THE DIALOG ALREADY CLOSED AND `pending` ALREADY FALSE.
+ *
+ * C-7 is not in question — after a successful write the card re-asks. Only the
+ * ORDER was wrong. Both accept paths ran: ack POST → `setPending(false)` →
+ * `await refreshStatus()` → `await store(provider)`. The GET in the middle is
+ * answered by `healthLine()`, which probes the STILL-EFFECTIVE provider — for
+ * OpenAlgo an untimed network POST to `/funds`. So with an unreachable
+ * OpenAlgo host the sheet closed, the radio had not moved, no toast had shown
+ * and nothing was disabled until that probe timed out, and a second click in
+ * that window started a CONCURRENT `store()`. The answer it waited for was
+ * then discarded anyway: `foldWriteResult` nulls `health` on the very next
+ * write.
+ *
+ * The card cannot be driven here — vitest runs `environment: "node"`, the repo
+ * ships no jsdom/happy-dom and no @testing-library/react, and `include` is
+ * `tests/**` `/*.test.ts`, so a .tsx harness would not even be collected;
+ * adding a dependency is not this wave's business. So the ORDER is pinned in
+ * the source, the smallest honest means, and the COST of the old order is
+ * driven through the real route in the last case.
+ */
+describe("the accept paths store first and let the write's own re-ask describe the new feed (U-1)", () => {
+  /** The body of one `async function name()` declared at the component's own indent. */
+  const bodyOf = (src: string, name: string) => {
+    const start = src.indexOf(`async function ${name}()`);
+    expect(start, `${name}() is gone from the card`).toBeGreaterThan(-1);
+    const end = src.indexOf("\n  }", start);
+    expect(end, `${name}() has no closing brace at the component's indent`).toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  it("neither accept path asks the route between the ack and the store", () => {
+    const card = stripComments(read(CARD));
+    for (const [name, provider] of [
+      ["acceptUpstox", "upstox"],
+      ["acceptAngelOne", "angelone"],
+    ] as const) {
+      const body = bodyOf(card, name);
+      expect(body, `${name}() does not store the pick it just took consent for`).toMatch(
+        new RegExp(`await store\\("${provider}"\\)`),
+      );
+      expect(
+        body,
+        `${name}() re-asks the route BEFORE the write it is about to make — that GET describes the provider being replaced (U-1)`,
+      ).not.toMatch(/refreshStatus\(\)/);
+    }
+  });
+
+  it("`pending` covers the whole accept → store span, so a second click cannot start a second write", () => {
+    const card = stripComments(read(CARD));
+    for (const name of ["acceptUpstox", "acceptAngelOne"] as const) {
+      const body = bodyOf(card, name);
+      expect(body, `${name}() does not disable the radios while it writes`).toMatch(/setPending\(true\)/);
+      // Lowered ONCE, and only where the ack was refused; on the accepted path
+      // `store()` owns it from its own `setPending(true)` onwards.
+      expect(
+        body.match(/setPending\(false\)/g)?.length ?? 0,
+        `${name}() lowers pending outside the refusal branch, leaving a window for a concurrent store()`,
+      ).toBe(1);
+      expect(
+        body,
+        `${name}() does not lower pending as the first thing it does when the ack is refused`,
+      ).toMatch(/if \(!r\.ok\) \{\s*setPending\(false\);/);
+    }
+  });
+
+  it("a refused ack still stops there: it says so and stores nothing (unchanged)", () => {
+    const card = stripComments(read(CARD));
+    for (const name of ["acceptUpstox", "acceptAngelOne"] as const) {
+      const body = bodyOf(card, name);
+      const at = body.indexOf("if (!r.ok)");
+      const refusal = body.slice(at, body.indexOf("}", at));
+      expect(refusal, `${name}() no longer says the ack was refused`).toMatch(
+        /toast\.error\(r\.message \?\? "Could not record that you read it\."\)/,
+      );
+      expect(refusal, `${name}() writes a provider after a refused ack`).not.toMatch(/store\(/);
+      expect(refusal, `${name}() does not return after a refused ack`).toMatch(/return;/);
+    }
+  });
+
+  it("the GET the accept path used to make can only describe the feed being replaced — and the write discards it", async () => {
+    t.db.update(t.schema.settings).set({ liveFeedProvider: "eod" }).run();
+    const acked = await (await post({ action: "ack", provider: "angelone" })).json();
+    expect(acked.ok).toBe(true);
+
+    // THIS is the ask that sat between the ack and the store.
+    const mid = await (await get()).json();
+    expect(mid.feed.effective, "the store has not happened yet").toBe("eod");
+    expect(
+      mid.health.provider,
+      "the route's health line probes the EFFECTIVE provider, which is still the old one",
+    ).toBe("eod");
+
+    const stored = await (await post({ action: "provider", provider: "angelone" })).json();
+    expect(stored.feed.effective).toBe("angelone");
+    expect(
+      foldWriteResult(mid, stored)?.health,
+      "the answer the accept path waited for survived the write it was waiting on",
+    ).toBeNull();
+
+    // Which is why one GET is enough, and why it belongs after the write.
+    const after = await (await get()).json();
+    expect(after.health.provider, "store()'s own trailing re-ask describes the feed that RUNS").toBe("angelone");
   });
 });
 

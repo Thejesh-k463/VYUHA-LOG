@@ -287,3 +287,110 @@ describe("computeSettlement — stock future with an UNKNOWN reference price (C-
     expect(o.physicalStt).toBe(150);
   });
 });
+
+/**
+ * OWNER RULING M-1 (v4.2 fix wave 4). Futures STT is SELL-SIDE ONLY — the
+ * `future` row of `charge_config` is `{ pct: 0.0005, side: "sell" }`
+ * (lib/db/seed-data.ts) and `lib/engine/charges.ts` levies it on `sellValue`
+ * alone. `exitStt` is what SQUARING OFF costs, so it depends on the direction
+ * of the square-off, which is the opposite of the position's side:
+ *
+ *   LONG  → square off by SELLING → sell-side rate × notional
+ *   SHORT → square off by BUYING  → ₹0, because STT does not touch the buy leg
+ *
+ * The side-blind version charged a short future an exit STT it would never pay
+ * and, through `sttJump = physicalStt − exitStt`, UNDERSTATED the penalty for
+ * letting it devolve by exactly that amount — on the one panel that exists to
+ * warn about that penalty. For a short, the whole delivery STT IS the jump.
+ */
+describe("computeSettlement — exit STT is side-aware (M-1)", () => {
+  const sbinFut = (side: "long" | "short"): SettlementInput => ({
+    ...base,
+    id: 30,
+    symbol: "SBIN",
+    tradingsymbol: "FUT SBIN 25 Jun 2026",
+    segment: "future",
+    side,
+    expiry: "2026-06-25",
+    netQty: 500,
+    refPrice: 1400, // notional = 1400 × 500 = 7,00,000
+  });
+
+  it("a LONG future squares off by SELLING — the sell-side rate applies", () => {
+    const o = computeSettlement([sbinFut("long")], DEFAULT_SETTLEMENT_RATES, today).obligations[0];
+    expect(o.deliveryAction).toBe("Take delivery (buy)");
+    expect(o.notional).toBe(700000);
+    expect(o.physicalStt).toBe(700); // 0.1%  × 7,00,000 — delivery STT
+    expect(o.exitStt).toBe(350); //     0.05% × 7,00,000 — futures STT, sell side
+    expect(o.sttJump).toBe(350); //     700 − 350
+  });
+
+  it("a SHORT future squares off by BUYING — ₹0 exit STT, so the jump is the WHOLE delivery STT", () => {
+    const o = computeSettlement([sbinFut("short")], DEFAULT_SETTLEMENT_RATES, today).obligations[0];
+    expect(o.deliveryAction).toBe("Give delivery (sell)");
+    expect(o.notional).toBe(700000);
+    expect(o.physicalStt).toBe(700);
+    expect(o.exitStt).toBe(0);
+    expect(o.exitStt).not.toBe(350); // the side-blind figure this ruling removes
+    expect(o.sttJump).toBe(700); // 700 − 0, not 350
+  });
+
+  it("the two sides differ by exactly the sell-side charge a short never pays", () => {
+    const long = computeSettlement([sbinFut("long")], DEFAULT_SETTLEMENT_RATES, today).obligations[0];
+    const short = computeSettlement([sbinFut("short")], DEFAULT_SETTLEMENT_RATES, today).obligations[0];
+    expect(short.sttJump! - long.sttJump!).toBe(350);
+    expect(long.exitStt! - short.exitStt!).toBe(350);
+  });
+});
+
+/**
+ * M-2 — the Funds tile's exclusion count is its OWN.
+ *
+ * `fundsNeeded` sums only "Take delivery (buy)" rows, so the positions it could
+ * not include are the unknown TAKE-DELIVERY ones. `unknownNotionalCount` counts
+ * every settling row with an unknown notional, give-delivery included — hung on
+ * the Funds tile it printed "Funds to take delivery ₹0 · 1 unknown" over a book
+ * whose only unknown row delivers SHARES and needs no cash at all.
+ */
+describe("computeSettlement — the Funds tile counts only what IT excluded (M-2)", () => {
+  const unknownShortFut: SettlementInput = {
+    ...base,
+    id: 40,
+    symbol: "WIPRO",
+    tradingsymbol: "FUT WIPRO 25 Jun 2026",
+    segment: "future",
+    side: "short",
+    expiry: "2026-06-25",
+    netQty: 300,
+    refPrice: null,
+  };
+
+  it("a SHORT unknown future is counted by the notional tiles and NOT by the funds tile", () => {
+    const s = computeSettlement([unknownShortFut], DEFAULT_SETTLEMENT_RATES, today);
+    expect(s.obligations[0].deliveryAction).toBe("Give delivery (sell)");
+    expect(s.unknownNotionalCount).toBe(1); // notional + STT totals did exclude it
+    expect(s.unknownFundsCount).toBe(0); // …but fundsNeeded never wanted it
+    expect(s.fundsNeeded).toBe(0);
+  });
+
+  it("a LONG unknown future IS counted by the funds tile — that total is genuinely short", () => {
+    const s = computeSettlement(
+      [{ ...unknownShortFut, side: "long" }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    );
+    expect(s.obligations[0].deliveryAction).toBe("Take delivery (buy)");
+    expect(s.unknownNotionalCount).toBe(1);
+    expect(s.unknownFundsCount).toBe(1);
+  });
+
+  it("both signs at once: two unknown rows, one of them funds", () => {
+    const s = computeSettlement(
+      [unknownShortFut, { ...unknownShortFut, id: 41, symbol: "LT", tradingsymbol: "FUT LT 25 Jun 2026", side: "long" }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    );
+    expect(s.unknownNotionalCount).toBe(2);
+    expect(s.unknownFundsCount).toBe(1);
+  });
+});

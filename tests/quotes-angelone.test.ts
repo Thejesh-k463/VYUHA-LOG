@@ -5,10 +5,14 @@ import {
   ANGELONE_CAPABILITIES,
   ANGELONE_HOURLY_BUDGET,
   ANGELONE_LOGIN_CAPPED_REASON,
+  ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON,
   ANGELONE_MAX_LOGIN_ATTEMPTS,
+  ANGELONE_MAX_SESSION_INVALIDATIONS,
   ANGELONE_MAX_TOKENS_PER_CALL,
   ANGELONE_RATE_LIMIT_PER_SECOND,
+  ANGELONE_SESSION_INVALID_CAPPED_REASON,
   angelOneFeedErrorMessage,
+  classifyAngelOneLoginFailure,
   angelOneSessionExpiresAt,
   createAngelOneProvider,
   createHourlyBudget,
@@ -563,6 +567,290 @@ describe("three refused logins, and then it stops (ruling C-2)", () => {
   });
 });
 
+/* ───── the cap on session INVALIDATIONS (owner ruling C-1, fix wave 4) ──── */
+
+/**
+ * A LOGIN THAT IS ACCEPTED, AND A SESSION THAT IS NEVER USABLE.
+ *
+ * C-2 counts REFUSED logins. `invalidateSession()` nulls the jwt whenever an
+ * answer matches `isAngelSessionInvalid` — and `lib/import/api/angelone.ts`
+ * turns ANY non-ok status into "Angel One quote: HTTP 401", so an app key
+ * without market-data entitlement produces that on every single quote. The loop
+ * was: login accepted → quote says invalid → jwt nulled → next poll signs in
+ * again (accepted, C-2 counter reset) → … The credential went to
+ * apiconnect.angelone.in on EVERY poll — 1,200 an hour at the 3 s tier — and
+ * the C-2 cap could never fire, because no login was ever refused.
+ *
+ * The second counter is CONSECUTIVE INVALIDATIONS WITH NO PRICED QUOTE BETWEEN
+ * THEM. Three, then this instance stops signing in, in the same `state` and
+ * `reason` shape C-2 reports, until a re-save or a relaunch rebuilds it.
+ */
+describe("three invalid sessions, and then it stops (ruling C-1)", () => {
+  const PRICED = { exchange: "NSE", tradingSymbol: "SBIN-EQ", symbolToken: "3045", ltp: 1005.9, close: 1016.1 };
+  /** What an app key with no market-data entitlement answers to every quote. */
+  const NOT_ENTITLED = (): never => {
+    throw new Error("Angel One quote: HTTP 401");
+  };
+  const SESSION_INVALID_CAPPED_REASON =
+    "Angel One reported the session invalid three times in a row, with no price in between. Relaunching Vyuha or re-saving the client code, PIN and TOTP secret under Import → Connect broker starts a fresh attempt.";
+
+  /**
+   * Poll n times at the fastest cadence tier (3 s). A poll before the cap
+   * returns a map; a poll after it throws, so both are collected.
+   */
+  async function poll(h: Harness, n: number): Promise<string[]> {
+    const out: string[] = [];
+    for (let i = 0; i < n; i += 1) {
+      try {
+        await h.provider.snapshot([KEY("SBIN")]);
+        out.push("<no error>");
+      } catch (e) {
+        out.push(e instanceof Error ? e.message : String(e));
+      }
+      h.advance(3000);
+    }
+    return out;
+  }
+
+  it("signs in THREE times across ten polls, and then not at all", async () => {
+    // The constant, the sentence and this file's literal all say three; the
+    // constant is a SIBLING of ANGELONE_MAX_LOGIN_ATTEMPTS, not a replacement.
+    expect(ANGELONE_MAX_SESSION_INVALIDATIONS).toBe(3);
+    expect(ANGELONE_MAX_LOGIN_ATTEMPTS, "the C-2 cap is untouched").toBe(3);
+    expect(SESSION_INVALID_CAPPED_REASON).toBe(ANGELONE_SESSION_INVALID_CAPPED_REASON);
+    expect(ANGELONE_SESSION_INVALID_CAPPED_REASON).toContain("three times in a row");
+    const h = harness({ tokens: [tokenOf("SBIN", "NSE", "3045")], respond: NOT_ENTITLED });
+    const errors = await poll(h, 10);
+
+    // THE POINT OF THE RULING. Before it this was ten logins and ten
+    // credential transmissions; the 60 s stamp never applied, because the
+    // login itself never failed.
+    expect(h.logins, "three logins, whatever the poll count").toBe(3);
+    expect(h.sent.length, "one quote per session, and no session after the third").toBe(3);
+    // Polls 1–3 spend a session and come back empty; poll 4 onwards sends
+    // nothing at all and says why.
+    expect(errors.slice(0, 3)).toEqual(["<no error>", "<no error>", "<no error>"]);
+    expect(errors[3]).toBe(SESSION_INVALID_CAPPED_REASON);
+    expect(errors[9], "and not the tenth poll either").toBe(SESSION_INVALID_CAPPED_REASON);
+
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.ok).toBe(false);
+    // The SAME shape C-2 reports, so the card and the route need no change…
+    expect(health.state).toBe("unreachable");
+    // …and a sentence that is about the SESSION, not about a refused login:
+    // nothing was refused here, and re-saving a correct credential would not
+    // be what the user is left staring at.
+    expect(health.reason).toBe(SESSION_INVALID_CAPPED_REASON);
+    expect(health.reason).not.toContain("refused the login");
+    expect(
+      showConnectPrompt({ providerId: "angelone", healthState: health.state }, null),
+      "a capped feed must still reach the user",
+    ).toBe(true);
+    expect(h.logins, "health() is a report, not a fourth login").toBe(3);
+  });
+
+  it("says so the moment the third session dies, not one poll later", async () => {
+    // health() is asked BETWEEN the third invalidation and the poll that would
+    // have signed in again. The last poll's own error is still "Vyuha signs in
+    // again on the next poll" — a promise this instance will not keep.
+    const h = harness({ tokens: [tokenOf("SBIN", "NSE", "3045")], respond: NOT_ENTITLED });
+    await poll(h, 3);
+    expect(h.logins).toBe(3);
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.reason).toBe(SESSION_INVALID_CAPPED_REASON);
+    expect(health.reason, "the desk was still promised a sign-in that will not happen").not.toMatch(
+      /signs in again on the next poll/,
+    );
+    expect(health.state).toBe("unreachable");
+  });
+
+  it("a PRICED answer resets the count — three IN A ROW is the rule", async () => {
+    let n = 0;
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      respond: () => {
+        n += 1;
+        // The second poll gets a real price; every other one says the session
+        // is invalid.
+        if (n === 2) return { fetched: [PRICED], unfetched: [] };
+        return NOT_ENTITLED();
+      },
+    });
+    const errors = await poll(h, 10);
+
+    // 1 → invalid (login 1). 2 → login 2, PRICED, count back to zero. 3 → the
+    // live jwt is used and dies (no login). 4 → login 3. 5 → login 4, and the
+    // third invalidation since the price. 6 onwards → nothing.
+    expect(h.logins, "one more login than the cap alone would have allowed").toBe(4);
+    expect(errors[1], "the priced poll succeeded").toBe("<no error>");
+    expect(errors[5]).toBe(SESSION_INVALID_CAPPED_REASON);
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.reason).toBe(SESSION_INVALID_CAPPED_REASON);
+  });
+
+  it("the 05:00 IST flush re-login counts toward NEITHER cap", async () => {
+    let n = 0;
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      respond: () => {
+        n += 1;
+        // An ANSWER, but not a price: nothing is invalidated and nothing is
+        // reset either — an empty answer is not evidence the session works.
+        if (n === 2) return { fetched: [], unfetched: [{ symbolToken: "3045" }] };
+        return NOT_ENTITLED();
+      },
+    });
+
+    await poll(h, 2);
+    expect(h.logins).toBe(2);
+    // Past 05:00 IST: Angel One has flushed the session, so the next poll signs
+    // in again. That re-login is SCHEDULED, not an invalidation — it must not
+    // move either counter.
+    h.advance(Date.parse("2026-09-07T23:30:01Z") - h.now());
+    const errors = await poll(h, 4);
+
+    // 3 → the flush re-login (login 3), then invalid. 4 → login 4, invalid, and
+    // that is the third invalidation. 5 onwards → nothing.
+    expect(h.logins, "the flush login is a login, and it is not an invalidation").toBe(4);
+    expect(errors[2]).toBe(SESSION_INVALID_CAPPED_REASON);
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.reason).toBe(SESSION_INVALID_CAPPED_REASON);
+  });
+});
+
+/* ── the capped sentence says WHICH failure it was (owner ruling P-3) ────── */
+
+/**
+ * THREE MINUTES OF NO NETWORK IS NOT A WRONG PIN.
+ *
+ * `angelOneLogin` calls a bare `fetch`, which throws a TypeError with no HTTP
+ * status when the host cannot be reached. C-2 counted that as a failure like
+ * any other — correctly, the bound is about attempts — but then told the user
+ * Angel One had REFUSED the login and to re-save credentials that were fine.
+ * The count is unchanged; the SENTENCE now distinguishes the two.
+ */
+describe("the capped sentence distinguishes a refusal from an outage (ruling P-3)", () => {
+  const UNREACHABLE_CAPPED_REASON =
+    "Angel One could not be reached on three sign-in attempts — the credentials were not refused. Relaunching Vyuha or re-saving them under Import → Connect broker starts a fresh attempt.";
+
+  async function capOut(h: Harness): Promise<string[]> {
+    const errors: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      await h.provider.snapshot([KEY("SBIN")]).catch((e: unknown) => {
+        errors.push(e instanceof Error ? e.message : String(e));
+      });
+      h.advance(61_000);
+    }
+    return errors;
+  }
+
+  it("a BROKER REFUSAL keeps the C-2 sentence, and names what to re-save", async () => {
+    // An HTTP answer with a SmartAPI envelope: they were reached, and they said no.
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      login: async () => {
+        throw new Error("Angel One login: Invalid totp");
+      },
+    });
+    const errors = await capOut(h);
+    expect(h.logins).toBe(3);
+    expect(errors[3]).toBe(
+      "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker.",
+    );
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.reason).toContain("refused the login three times");
+  });
+
+  it("a 4xx with no envelope is still a refusal — they answered", async () => {
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      login: async () => {
+        throw new Error("Angel One login: HTTP 403");
+      },
+    });
+    const errors = await capOut(h);
+    expect(errors[3]).toContain("refused the login three times");
+  });
+
+  it("a HOST THAT CANNOT BE REACHED says so, and does not blame the credentials", async () => {
+    // What `fetch` throws on a connect failure: a TypeError, no HTTP status.
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      login: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const errors = await capOut(h);
+    expect(h.logins, "the bound is unchanged — every failure still counts").toBe(3);
+    expect(errors[3]).toBe(UNREACHABLE_CAPPED_REASON);
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.ok).toBe(false);
+    expect(health.state).toBe("unreachable");
+    expect(health.reason).toBe(UNREACHABLE_CAPPED_REASON);
+    expect(
+      health.reason,
+      "a three-minute outage must not tell the user their credentials were refused",
+    ).not.toContain("refused the login");
+  });
+
+  it("classifies by HOW the login threw, because the API module does not label it", () => {
+    expect(UNREACHABLE_CAPPED_REASON).toBe(ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON);
+    // No answer at all — what `fetch` throws on a connect failure.
+    expect(classifyAngelOneLoginFailure(new TypeError("fetch failed"))).toBe("unreachable");
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: getaddrinfo ENOTFOUND apiconnect.angelone.in"))).toBe(
+      "unreachable",
+    );
+    expect(classifyAngelOneLoginFailure(new Error("connect ECONNREFUSED 13.234.0.1:443"))).toBe("unreachable");
+    // A gateway saying 502 is not a statement about the credential either.
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: HTTP 503"))).toBe("unreachable");
+    // They answered: an envelope, a 4xx, or a body with no jwt in it.
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: Invalid totp"))).toBe("refused");
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: HTTP 401"))).toBe("refused");
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: HTTP 403"))).toBe("refused");
+    expect(classifyAngelOneLoginFailure(new Error("Angel One login: no session token in the response."))).toBe(
+      "refused",
+    );
+  });
+
+  it("keeps three DISTINCT capped sentences, all SEBI-safe and all naming the screen", () => {
+    const three = [
+      ANGELONE_LOGIN_CAPPED_REASON,
+      ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON,
+      ANGELONE_SESSION_INVALID_CAPPED_REASON,
+    ];
+    expect(new Set(three).size, "two caps that read the same explain nothing").toBe(3);
+    for (const s of three) {
+      expect(s, `no breadcrumb in "${s}"`).toContain("Import → Connect broker");
+      expect(s.trim().endsWith("."), s).toBe(true);
+      for (const banned of [/\brecommend/i, /\bsuggest/i, /\bshould\b/i, /\bconsider\b/i, /\bbuy\b/i, /\bsell\b/i]) {
+        expect(s, `banned ${banned} in "${s}"`).not.toMatch(banned);
+      }
+      // A capped sentence is shown at the moment prices stop: it may never
+      // carry a credential VALUE, only the names of the fields.
+      expect(s).not.toMatch(/\d{4,}/);
+    }
+  });
+
+  it("the LAST failure decides the sentence, not the first", async () => {
+    let attempt = 0;
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      login: async () => {
+        attempt += 1;
+        // The outage clears; the credential is then genuinely refused.
+        if (attempt < 3) throw new TypeError("fetch failed");
+        throw new Error("Angel One login: Invalid totp");
+      },
+    });
+    const errors = await capOut(h);
+    expect(h.logins).toBe(3);
+    expect(errors[2], "the third refusal reports the cap it just reached").toContain(
+      "refused the login three times",
+    );
+    expect(errors[3]).toContain("refused the login three times");
+  });
+});
+
 /* ────────────────────────────── gate and health ─────────────────────────── */
 
 describe("the gate, and a health() that never throws", () => {
@@ -598,7 +886,7 @@ describe("the gate, and a health() that never throws", () => {
     // the calendar claim — and it now states its own ceiling, because C-2 gave
     // the code one and a consent sheet that omits it under-states what is sent.
     expect(ANGELONE_CAPABILITIES.egressDescription).toContain(
-      "signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved; a refused login is retried at most three times",
+      "signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved, or when the selected account is switched; a refused login is retried at most three times",
     );
     expect(
       ANGELONE_CAPABILITIES.egressDescription,

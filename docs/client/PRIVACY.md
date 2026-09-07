@@ -97,11 +97,15 @@ Exactly four kinds, and only one of them is automatic:
    (`apiconnect.angelone.in`) — the host the Angel One trade pull already
    uses, so this adds no new one — at most once a day while Vyuha stays open,
    again after a relaunch, after Angel One's 5 AM IST session flush, or when
-   you re-save the credentials. Each sign-in sends four things: the client
-   code, the PIN, the one-time code derived from the TOTP secret — the secret
-   itself is never sent — and the SmartAPI app key, with nothing for you to
-   click. If a sign-in is refused, Vyuha tries at most three times and then
-   stops until you re-save the credentials. Against that
+   you re-save the credentials, and again when you switch the selected
+   account, including to or from All accounts. Each sign-in sends four things:
+   the client code, the PIN, the one-time code derived from the TOTP secret —
+   the secret itself is never sent — and the SmartAPI app key, with nothing
+   for you to click. If a sign-in is refused, Vyuha tries at most three times
+   and then stops until you re-save the credentials. If Angel One reports an
+   accepted session invalid, Vyuha signs in at most three times in a row
+   without a priced answer in between, and then stops until you re-save the
+   credentials or relaunch Vyuha. Against that
    same host it looks up, once per symbol, the token Angel One prices by, and
    keeps that mapping on this machine. It then asks for prices in batches of at
    most 50 symbols, at most one request a second, every 3, 5 or 10 seconds
@@ -214,7 +218,27 @@ Exactly four kinds, and only one of them is automatic:
                                   session flush, or when you re-save the
                                   credentials", not once per calendar day
                                   (v4.2 fix wave, B-7; all four triggers named
-                                  per owner ruling C-2).
+                                  per owner ruling C-2). A FIFTH was added per
+                                  owner ruling D-1 (2026-09-08): the memo key
+                                  `liveFeedInstanceKey()` in
+                                  lib/quotes/registry.ts carries the SELECTED
+                                  ACCOUNT, because the connection row every
+                                  adapter reads is that account's own, so
+                                  switching account — including to or from the
+                                  aggregate "All accounts" view — rebuilds the
+                                  instance and signs in again on the next
+                                  poll. The trigger list IS that key's fields.
+    • two ceilings, not one       A REFUSED sign-in stops after three attempts
+                                  until the credentials are re-saved (C-2). A
+                                  session that was ACCEPTED and is later
+                                  reported invalid stops after three
+                                  consecutive invalidations with no priced
+                                  answer between them, until a re-save or a
+                                  relaunch; a priced answer resets that count
+                                  and the 5 AM IST flush re-login never counts
+                                  toward it (owner ruling C-1). Without the
+                                  second, an invalidated session was re-minted
+                                  on the very next poll.
     • FOUR things are sent, and   `angelOneLogin()` in lib/import/api/angelone.ts
       the TOTP SECRET is not      posts `clientcode`, `password` (the PIN) and
       one of them                 `totp` — a code minted at call time — under

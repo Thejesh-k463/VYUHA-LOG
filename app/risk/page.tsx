@@ -50,7 +50,7 @@ import { BreachBanner } from "@/components/risk/breach-banner";
 import { SebiRadarPanel } from "@/components/risk/sebi-radar-panel";
 import { sebiRadar, type RadarPosition } from "@/lib/risk/sebi-radar";
 import { getActiveRadarRules } from "@/lib/queries/rule-packs";
-import { scanBreaches } from "@/lib/jobs/auto-mtm";
+import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
 
 export const dynamic = "force-dynamic";
 
@@ -339,7 +339,7 @@ export default function RiskPage() {
       <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
       <div className="space-y-5 p-6">
         <ProGate>
-        <BreachBanner breaches={scanBreaches()} />
+        <BreachBanner breaches={scanBreachesForSelectedAccount()} />
         {/* The page's ONE capital nudge — the cockpit, margin gauge and limits
             check below all show "—" for %-of-capital figures instead of a
             number computed on an invented base (invariant 6). */}

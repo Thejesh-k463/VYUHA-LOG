@@ -3,7 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CalendarClock, ShieldCheck, PackageCheck } from "lucide-react";
 import { inr, inrCompact, fmtDate } from "@/lib/format";
-import type { SettlementSummary, SettlementObligation, Warn } from "@/lib/analytics/settlement";
+import {
+  DEFAULT_SETTLEMENT_RATES,
+  type SettlementSummary,
+  type SettlementObligation,
+  type Warn,
+} from "@/lib/analytics/settlement";
 
 const warnBadge: Record<Warn, { variant: "loss" | "warning" | "secondary"; label: string }> = {
   danger: { variant: "loss", label: "Square off" },
@@ -24,6 +29,12 @@ const kindLabel: Record<SettlementObligation["kind"], string> = {
   commodity: "Commodity",
   not_derivative: "—",
 };
+
+/** A rate fraction as the percent WORD the footer prints: 0.0015 → "0.15".
+ *  Derived, never written down beside the constant — for five months after the
+ *  Finance Act 2026 raised `exerciseSttPct`, the footer went on naming the
+ *  repealed rate while the panel computed with the new one (P-1). */
+const pctText = (frac: number) => String(Number((frac * 100).toFixed(4)));
 
 function dteChip(dte: number | null) {
   if (dte == null) return <span className="text-muted-foreground">—</span>;
@@ -52,6 +63,13 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
   // know: excluded from both ₹ totals, and said so rather than counted as ₹0.
   const unknownNote =
     summary.unknownNotionalCount > 0 ? `${summary.unknownNotionalCount} unknown` : undefined;
+  // The Funds total has a NARROWER base — it sums "Take delivery (buy)" rows
+  // only — so its exclusion count is its own (M-2). A give-delivery row with an
+  // unknown notional is not something that total left out; it is something it
+  // never wanted, and borrowing the other tiles' count printed "Funds to take
+  // delivery ₹0 · 1 unknown" over a short future that needs no cash at all.
+  const unknownFundsNote =
+    summary.unknownFundsCount > 0 ? `${summary.unknownFundsCount} unknown` : undefined;
 
   return (
     <Card className="p-0">
@@ -88,7 +106,11 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                 value={inrCompact(summary.notionalAtRisk)}
                 note={unknownNote}
               />
-              <Stat label="Funds to take delivery" value={inrCompact(summary.fundsNeeded)} note={unknownNote} />
+              <Stat
+                label="Funds to take delivery"
+                value={inrCompact(summary.fundsNeeded)}
+                note={unknownFundsNote}
+              />
               {/* Labelled as what the number IS — the STT settlement will
                   levy. "Extra vs squaring off" is only computable for
                   futures; an option's exit STT needs its current premium,
@@ -202,12 +224,21 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
               <CappedNote total={obligations.length} noun="obligations" />
             </div>
 
+            {/* The rate WORD is derived from the rate the panel computed with
+                (P-1). Delivery and futures-exit STT are resolved from
+                charge_config by the page (invariant 3); exercise STT has no
+                charge_config column and stays a named constant by ruling
+                (DECISIONS 2026-08-12), so the copy must not promise it is
+                editable. */}
             <p className="text-[0.6875rem] text-muted-foreground">
               Indian single-stock F&amp;O is <strong>physically settled</strong>; index F&amp;O is cash-settled. An ITM
               stock option or any stock future left open at expiry devolves into share delivery and a delivery-STT
-              charge (0.1% of notional) plus exercise STT (0.125% of intrinsic) — far more than squaring off. Enter the
-              underlying spot in the bulk-MTM box below to resolve option moneyness; otherwise obligations are shown
-              conditionally. Statutory rates are editable in charge config.
+              charge on the whole notional, plus exercise STT (
+              {`${pctText(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)}% of intrinsic`}) — computed as far more than the
+              STT of squaring off. Enter the underlying spot in the bulk-MTM box below to resolve option moneyness;
+              otherwise obligations are shown conditionally. Delivery STT and the futures square-off STT are read from
+              your charge config; exercise STT is a fixed statutory rate (Finance Act 2026, in force 1 April 2026) and
+              is not editable.
             </p>
           </>
         )}

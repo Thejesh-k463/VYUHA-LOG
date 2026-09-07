@@ -101,6 +101,20 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     expect(para, "the disclosure no longer states when a SECOND sign-in happens").toMatch(
       /at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials/,
     );
+    // D-1 (owner ruling, 2026-09-08). The FIFTH trigger. `liveFeedInstanceKey()`
+    // in lib/quotes/registry.ts keys the adapter instance on the SELECTED
+    // account (invariant 8), so switching account — including to or from the
+    // aggregate "All accounts" view — rebuilds the instance and signs in again
+    // on the next poll. Four named read as an exhaustive list.
+    expect(para, "item 3 does not name the account-switch trigger").toContain(
+      "and again when you switch the selected account, including to or from All accounts",
+    );
+    // C-1 (owner ruling, round 4). The SECOND ceiling: an ACCEPTED session the
+    // broker later reports invalid used to null the jwt and re-login with no
+    // ceiling at all, which is credentials at poll cadence.
+    expect(para, "item 3 does not state the session-invalid ceiling").toContain(
+      "If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha.",
+    );
     expect(para, "the disclosure still claims a calendar-daily sign-in").not.toMatch(/signs in once a day/);
     expect(para, "the disclosure no longer states the 5 AM IST flush at all").toMatch(/5 AM IST/);
     expect(para, "the disclosure does not say the sign-in is unattended").toMatch(/nothing for you to click/);

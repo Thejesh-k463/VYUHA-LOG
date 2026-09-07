@@ -52,7 +52,14 @@ import {
  *    Angel One FLUSHES every session at 05:00 IST — the jwt's own `exp` claim
  *    is a red herring and trusting it would send a dead token all morning. The
  *    jwt is cached in memory until the next 05:00 IST and re-minted then, or
- *    immediately when an envelope says the session is invalid. A FAILED login
+ *    when an envelope says the session is invalid — and THAT re-minting is
+ *    bounded too (ruling C-1): three sessions in a row that Angel One calls
+ *    invalid, with no priced quote between them, and this instance stops
+ *    signing in. An app key without market-data entitlement answers HTTP 401 to
+ *    every quote, which is a permanent condition a login cannot fix; without
+ *    the bound it re-sent the credential on every poll for ever, 1,200 an hour
+ *    at the 3 s tier, and the C-2 cap could not fire because no login was ever
+ *    refused. A FAILED login
  *    is never retried in a loop: `generateTokens` is capped at 1,000/hour and a
  *    wrong PIN fails identically the second time, so the next attempt waits
  *    60 s and `health()` says why in the meantime — AND the attempts are
@@ -147,6 +154,58 @@ export const ANGELONE_MAX_LOGIN_ATTEMPTS = 3;
 export const ANGELONE_LOGIN_CAPPED_REASON =
   "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker.";
 
+/**
+ * The SAME cap, when the three failures were not answers at all (ruling P-3).
+ *
+ * `angelOneLogin` calls a bare `fetch`, which throws a TypeError carrying no
+ * HTTP status when the host cannot be reached. Every failure still counts — the
+ * bound is about attempts, and three minutes of retrying an unreachable host is
+ * as pointless as three wrong PINs — but the sentence above would tell a user
+ * whose credentials are perfectly good to re-save them, which is the one thing
+ * that cannot help. This sentence says what actually happened and names the two
+ * things that DO clear the cap.
+ */
+export const ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON =
+  "Angel One could not be reached on three sign-in attempts — the credentials were not refused. Relaunching Vyuha or re-saving them under Import → Connect broker starts a fresh attempt.";
+
+/**
+ * Consecutive SESSION INVALIDATIONS after which this instance stops signing in
+ * (owner ruling C-1, v4.2 fix wave 4). Sibling of
+ * `ANGELONE_MAX_LOGIN_ATTEMPTS`, counting the OTHER half of the loop.
+ *
+ * C-2 counts refused logins. This counts accepted logins whose SESSION is then
+ * called invalid — AG8001/AG8002/AG8003, "invalid token", "unauthor", a bare
+ * 401 — with no priced quote in between. `lib/import/api/angelone.ts` turns any
+ * non-ok status into "Angel One quote: HTTP 401", so an app key without
+ * market-data entitlement produces one on every quote: login accepted, quote
+ * invalid, jwt nulled, sign in again, refusal counter reset to zero. The
+ * credential went out on every poll and no cap could ever fire.
+ *
+ * Three for the same reason C-2 is three: the second and third cover the
+ * failures that are not permanent (one bad response, a session that really did
+ * expire mid-cycle), and nothing after that is evidence a fourth would differ.
+ * A PRICED answer — any snapshot returning at least one row with a usable last
+ * price — resets it, because that is proof the session works. The 05:00 IST
+ * flush re-login is SCHEDULED, not an invalidation, and counts for nothing.
+ *
+ * PER INSTANCE, exactly like C-2, and that is the reset: the registry keys its
+ * memoised provider on the connection row's `updated_at` plus a fingerprint of
+ * the stored ciphertext, so re-saving the credentials or relaunching builds a
+ * fresh instance. Nothing here is persisted; a cap that outlived the process
+ * would be a lock-out.
+ */
+export const ANGELONE_MAX_SESSION_INVALIDATIONS = 3;
+
+/**
+ * What the desk is told once the invalidation cap is reached — VERBATIM.
+ *
+ * It is deliberately NOT the refused-login sentence: nothing was refused here,
+ * and re-saving a correct credential is not what fixes an app key with no
+ * market-data entitlement. It states what Angel One said and what clears it.
+ */
+export const ANGELONE_SESSION_INVALID_CAPPED_REASON =
+  "Angel One reported the session invalid three times in a row, with no price in between. Relaunching Vyuha or re-saving the client code, PIN and TOTP secret under Import → Connect broker starts a fresh attempt.";
+
 /** Angel One clears EVERY session at 05:00 IST, whatever the jwt's exp says. */
 export const ANGELONE_SESSION_FLUSH_IST_HOUR = 5;
 
@@ -175,7 +234,7 @@ export const ANGELONE_CAPABILITIES: ProviderCapabilities = {
   // so "once a day" is true while that instance is, and a refused login stops
   // at three attempts instead of repeating every minute.
   egressDescription:
-    "Requests go to apiconnect.angelone.in — your own Angel One account, using the client code, PIN and TOTP secret you saved for imports: signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved; a refused login is retried at most three times. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
+    "Requests go to apiconnect.angelone.in — your own Angel One account, using the client code, PIN and TOTP secret you saved for imports: signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved, or when the selected account is switched; a refused login is retried at most three times, and after three sessions in a row that Angel One calls invalid no further sign-in is made until Vyuha is relaunched or the credentials are re-saved. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
 };
 
 /* ─────────────────────────── the session, and its clock ─────────────────── */
@@ -214,6 +273,41 @@ export function isAngelSessionInvalid(e: unknown): boolean {
   return /AG800[123]|invalid token|token expired|session expired|unauthor|\b401\b/i.test(raw);
 }
 
+/**
+ * Which KIND of login failure this was (ruling P-3).
+ *
+ * `refused` — Angel One answered: a SmartAPI envelope with `status:false`, or
+ * an HTTP status the envelope could not be read from. They were reached, and
+ * the sign-in did not go through.
+ * `unreachable` — no answer at all: `fetch` threw before there was a response.
+ */
+export type AngelOneLoginFailureKind = "refused" | "unreachable";
+
+/** No-answer signatures. undici throws a TypeError whose `cause` carries these. */
+const NETWORK_FAILURE =
+  /fetch failed|network|ENOTFOUND|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|socket hang up|getaddrinfo|other side closed|terminated/i;
+
+/**
+ * PURE. Classify a thrown login failure (ruling P-3).
+ *
+ * `lib/import/api/angelone.ts` does not label the two: `smartApiJson` throws
+ * `Angel One login: <envelope message>` or `Angel One login: HTTP <status>`,
+ * and the bare `fetch` above it throws undici's TypeError with no status at
+ * all. So the classification is made HERE, from the shape of the throw.
+ *
+ * A 5xx is read as UNREACHABLE, not as a refusal: Angel One's gateway answering
+ * "502" is not a statement about the credential, and the whole point of this
+ * ruling is that the capped sentence must not send a user to re-save a
+ * credential that is fine. Anything else — an envelope message, a 4xx, a
+ * response carrying no jwt — is a refusal: they answered.
+ */
+export function classifyAngelOneLoginFailure(e: unknown): AngelOneLoginFailureKind {
+  if (e instanceof TypeError) return "unreachable";
+  const raw = e instanceof Error ? `${e.message} ${String((e as { cause?: unknown }).cause ?? "")}` : String(e);
+  if (/\bHTTP 5\d\d\b/.test(raw)) return "unreachable";
+  return NETWORK_FAILURE.test(raw) ? "unreachable" : "refused";
+}
+
 /** PURE. An Angel One failure → the sentence the desk shows. */
 export function angelOneFeedErrorMessage(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
@@ -225,7 +319,7 @@ export function angelOneFeedErrorMessage(e: unknown): string {
     // the same attempt as any other, so it counts toward the C-2 cap only if it
     // is REFUSED — and this sentence says so rather than promising an unlimited
     // retry the code no longer performs.
-    return `Angel One says the session is no longer valid (${raw}). Vyuha signs in again on the next poll; Angel One clears every session at 5 AM IST, so this is expected once a morning. If that sign-in is refused it is attempted three times in all, and then stopped.`;
+    return `Angel One says the session is no longer valid (${raw}). Vyuha signs in again on the next poll; Angel One clears every session at 5 AM IST, so this is expected once a morning. If that sign-in is refused it is attempted three times in all, and then stopped — and if three sessions in a row are called invalid with no price in between, signing in stops as well.`;
   }
   if (/password|\bpin\b/i.test(raw)) {
     return `Angel One refused the login PIN (${raw}) — the login PIN, not the account password. Re-enter it under Import → Connect broker.`;
@@ -539,6 +633,17 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
    * send nothing, so they are not evidence about the credential.
    */
   let consecutiveLoginFailures = 0;
+  /**
+   * Which kind the LAST login failure was (ruling P-3) — it chooses which
+   * capped sentence the user is left looking at, and nothing else.
+   */
+  let lastLoginFailureKind: AngelOneLoginFailureKind = "refused";
+  /**
+   * CONSECUTIVE session invalidations with NO PRICED QUOTE between them
+   * (ruling C-1). Reset by a priced snapshot, never persisted, and never moved
+   * by the 05:00 IST flush re-login — that one is scheduled, not a failure.
+   */
+  let consecutiveSessionInvalidations = 0;
   let lastError: string | null = null;
   let lastRequestAt: number | null = null;
 
@@ -587,6 +692,21 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
   }
 
   /**
+   * The C-2 sentence, in the voice of the failure that actually happened
+   * (ruling P-3). The COUNT is the same either way; only the sentence differs.
+   */
+  function loginCappedReason(): string {
+    return lastLoginFailureKind === "unreachable"
+      ? ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON
+      : ANGELONE_LOGIN_CAPPED_REASON;
+  }
+
+  /** True once three sessions in a row have been called invalid (ruling C-1). */
+  function sessionInvalidCapReached(): boolean {
+    return consecutiveSessionInvalidations >= ANGELONE_MAX_SESSION_INVALIDATIONS;
+  }
+
+  /**
    * The jwt, minted at most once a day, at most once a minute after a failure,
    * and at most three times in a row when it keeps being refused. ONE attempt,
    * never a loop, and never for ever — see property 3 in the header.
@@ -597,7 +717,14 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
     // THE CAP IS CHECKED BEFORE THE CLOCK. Past three refusals the 60 s stamp
     // is irrelevant: no attempt is made again on this instance at any hour, so
     // the credential stops going out entirely rather than going out slower.
-    if (loginCapReached()) throw new Error(ANGELONE_LOGIN_CAPPED_REASON);
+    if (loginCapReached()) throw new Error(loginCappedReason());
+    // AND THE OTHER CEILING (ruling C-1). Three accepted sessions that Angel
+    // One then called invalid, with no price in between, is the same evidence
+    // as three refusals: the next sign-in would be the fourth transmission of a
+    // credential nothing has been able to use. The two caps cannot both be
+    // reached — every invalidation needs a session, and a successful login
+    // zeroes the refusal count — so the sentence is never ambiguous.
+    if (sessionInvalidCapReached()) throw new Error(ANGELONE_SESSION_INVALID_CAPPED_REASON);
     if (lastLoginFailAt != null && t - lastLoginFailAt < ANGELONE_LOGIN_RETRY_MS) {
       throw new Error(lastLoginError ?? "The last Angel One sign-in failed; the next attempt is a minute away.");
     }
@@ -620,15 +747,31 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       lastLoginFailAt = t;
       lastLoginError = angelOneFeedErrorMessage(e);
       consecutiveLoginFailures += 1;
+      // EVERY failure counts, including one where Angel One never answered
+      // (ruling P-3): the bound is about attempts, and a fourth attempt at an
+      // unreachable host is as pointless as a fourth wrong PIN. What the kind
+      // decides is the SENTENCE, so a three-minute outage does not send the
+      // user to re-save credentials that are fine.
+      lastLoginFailureKind = classifyAngelOneLoginFailure(e);
       // The third refusal reports the cap itself, so the sentence the user is
       // left looking at is the one that says what to do about it.
-      throw new Error(loginCapReached() ? ANGELONE_LOGIN_CAPPED_REASON : lastLoginError);
+      throw new Error(loginCapReached() ? loginCappedReason() : lastLoginError);
     }
   }
 
+  /**
+   * The session Angel One just called invalid is dropped — AND COUNTED
+   * (ruling C-1).
+   *
+   * The count is what makes the re-mint bounded. It is incremented HERE and
+   * nowhere else, so the two jwt-clearing paths that are not invalidations —
+   * the 05:00 IST expiry (a clock comparison in `session()`) and a failed login
+   * (which nulls the jwt in its own catch) — cannot move it.
+   */
   function invalidateSession(): void {
     jwt = null;
     jwtUntil = 0;
+    consecutiveSessionInvalidations += 1;
   }
 
   async function snapshot(keys: readonly QuoteKey[], _signal?: AbortSignal): Promise<QuoteMap> {
@@ -708,6 +851,11 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       }
     }
     lastUnfetched = unfetched;
+    // A PRICE IS THE PROOF THE SESSION WORKS (ruling C-1). One priced row is
+    // enough and nothing less will do: an empty `fetched`, or an answer that is
+    // all `unfetched`, says nothing about the session, so it must not clear a
+    // count that exists to stop a credential being re-sent for ever.
+    if (out.size > 0) consecutiveSessionInvalidations = 0;
     return out;
   }
 
@@ -817,6 +965,16 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       // Connect broker either way; `unreachable` is the one whose documented
       // meaning ("saved, but the broker sign-in is the common cause") is true
       // here.
+      // THE INVALIDATION CAP, AND THIS BRANCH REALLY FIRES (ruling C-1).
+      // Unlike the login cap — whose sentence `session()` has already written
+      // into `lastError` before health() can be asked — the third invalidation
+      // happens INSIDE a poll that otherwise succeeded, so between it and the
+      // next poll `lastError` is still "Vyuha signs in again on the next poll".
+      // That promise is no longer true, and this is the sentence that is. From
+      // the next poll on, `lastError` is this same string anyway.
+      if (sessionInvalidCapReached()) {
+        return { ok: false, state: "unreachable", ...counts, reason: ANGELONE_SESSION_INVALID_CAPPED_REASON };
+      }
       if (lastError) return { ok: false, state: "unreachable", ...counts, reason: lastError };
 
       const notPriced = counts.unresolvedSymbols + counts.skippedDerivatives;

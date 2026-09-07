@@ -379,11 +379,20 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
  * a health line built from an instance that has never made a request saying
  * "connected". The consent sheet says the account is "signed in at most once a
  * day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM
- * IST session flush, or when the credentials are re-saved" (it said "once each
- * trading day" until fix wave 2 disproved it — the sign-in is a PROCESS rule,
- * and THIS CACHE is the process it is a rule about). The same sheet caps a
- * refused login at three attempts, and that count lives in the instance too, so
- * it is this cache that keeps a wrong PIN from being re-sent by every caller.
+ * IST session flush, or when the credentials are re-saved, and again when the
+ * selected account is switched" (it said "once each trading day" until fix wave
+ * 2 disproved it — the sign-in is a PROCESS rule, and THIS CACHE is the process
+ * it is a rule about; the fifth trigger was named in fix wave 4, owner ruling
+ * D-1). The same sheet caps a refused login at three attempts, and that count
+ * lives in the instance too, so it is this cache that keeps a wrong PIN from
+ * being re-sent by every caller.
+ *
+ * THE TRIGGER LIST ON THAT SHEET IS THIS KEY'S FIELDS, and nothing else. Every
+ * user-changeable input of `liveFeedInstanceKey()` below is a thing that
+ * rebuilds the instance and therefore opens another session on the next poll —
+ * which is why the account is disclosed as a trigger (D-1) and why adding a
+ * field here without adding a clause to `ANGELONE_FEED_ITEMS` in
+ * lib/domain/live-feed-disclosure.ts under-states the egress.
  *
  * IT IS A CACHE, AND A CACHE MUST EXPIRE. The key carries everything that would
  * make the stored session the WRONG session: the provider id, the account the

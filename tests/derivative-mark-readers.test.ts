@@ -82,6 +82,35 @@ const SHORT_FUT_ENTRY = 1410;
 const UNKNOWN_FUT_ID = 906;
 const UNKNOWN_FUT_TRADINGSYMBOL = "FUT WIPRO 24 SEP 2026";
 
+/**
+ * T-1 (v4.2 fix wave 4) — THE TWO LOWER RUNGS OF THE SETTLEMENT LADDER.
+ *
+ * `app/risk/page.tsx` resolves a future's settlement reference as
+ *   cash mark  →  nonZero(closingPrice)  →  nonZero(side-aware entry)
+ * and until now every fixture in this file (and in the seam file) stopped at
+ * rung 1: both C-1 futures carry a cash mark, and the third carries nothing at
+ * all. So DELETING rung 2, or making rung 3 side-blind (`avgBuyPrice` for both
+ * signs — the exact bug C-1 fixed), left the whole suite green. The two rows
+ * below are the fixtures that reach each rung, and each one carries a DIFFERENT
+ * non-zero value on the rung beneath it, so a collapse is visible as a wrong
+ * rupee figure rather than as an absence.
+ */
+const CLOSE_FUT_ID = 907;
+const CLOSE_FUT_TRADINGSYMBOL = "FUT HDFCBANK 24 SEP 2026";
+/** Rung 2 — the recorded close. HDFCBANK has no `mtm_prices` row of any kind. */
+const CLOSE_FUT_CLOSE = 1750;
+/** …and the rung BELOW it, deliberately different, so a fallthrough shows. */
+const CLOSE_FUT_ENTRY = 1700;
+
+const SIDE_FUT_ID = 908;
+const SIDE_FUT_TRADINGSYMBOL = "FUT ITC 24 SEP 2026";
+/** Rung 3 on a SHORT — the sell price is the entry, and the only price it has. */
+const SIDE_FUT_SELL = 480;
+/** A partially-covered short carries a buy price too. A side-blind rung reads
+ *  THIS one, and lands 20% low on the delivery obligation. */
+const SIDE_FUT_BUY = 400;
+const SIDE_FUT_QTY = 500;
+
 /** The CASH spot of the underlying — the trap this file exists for. */
 const NIFTY_SPOT = 23450;
 const OPT_TRADINGSYMBOL = "OPT NIFTY 25 JUN 2026 23500 CE";
@@ -236,6 +265,44 @@ beforeAll(async () => {
         closingPrice: null,
         isOpen: true,
       }),
+      // T-1 rung 2 — NO cash mark for HDFCBANK anywhere in mtm_prices, but the
+      // row carries a recorded close. Sell-to-open, so `avgBuyPrice` is 0 and
+      // the entry rung underneath is `avgSellPrice`, a different figure.
+      tradeRow({
+        id: CLOSE_FUT_ID,
+        accountId: ACCOUNT,
+        bucket: "active",
+        segment: "future",
+        instrumentType: "future",
+        symbol: "HDFCBANK",
+        tradingsymbol: CLOSE_FUT_TRADINGSYMBOL,
+        expiry: plusDays(10),
+        buyQty: 0,
+        sellQty: 500,
+        avgBuyPrice: 0,
+        avgSellPrice: CLOSE_FUT_ENTRY,
+        closingPrice: CLOSE_FUT_CLOSE,
+        isOpen: true,
+      }),
+      // T-1 rung 3 — no cash mark, no close, and BOTH entry prices non-zero
+      // (a short 600 partially covered by 100). Only the side-aware rung reads
+      // the sell price; a side-blind one reads 400 and understates delivery.
+      tradeRow({
+        id: SIDE_FUT_ID,
+        accountId: ACCOUNT,
+        bucket: "active",
+        segment: "future",
+        instrumentType: "future",
+        symbol: "ITC",
+        tradingsymbol: SIDE_FUT_TRADINGSYMBOL,
+        expiry: plusDays(10),
+        buyQty: 100,
+        sellQty: 600,
+        avgBuyPrice: SIDE_FUT_BUY,
+        avgSellPrice: SIDE_FUT_SELL,
+        closingPrice: null,
+        isOpen: true,
+      }),
       // A closed, dated equity — see CLOSED_ID above.
       tradeRow({
         id: CLOSED_ID,
@@ -342,10 +409,39 @@ describe("B-1 /risk never prices a derivative at the underlying's cash mark", ()
     expect(ob.notional).not.toBe(0);
     expect(ob.notional).toBe(TCS_SPOT * 500); // 10,50,000
     expect(ob.physicalStt).toBe(1050); // 0.1% of it
-    expect(ob.sttJump).toBe(1050 - 525); // never the ₹0 jump
+    // M-1 (wave 4): squaring a SHORT future off is a BUY, and futures STT is a
+    // SELL-side levy — so there is no exit STT to net off, and the jump is the
+    // WHOLE delivery STT. This pin asserted 1050 − 525, i.e. a ₹525 exit charge
+    // this position would never have paid, which UNDERSTATED the jump by half.
+    expect(ob.exitStt).toBe(0);
+    expect(ob.sttJump).toBe(1050);
     // …and not the side-blind entry rung either (avgSellPrice is the fallback,
     // used only when nothing prices the underlying).
     expect(ob.notional).not.toBe(SHORT_FUT_ENTRY * 500);
+  });
+
+  /**
+   * T-1 — the ladder's lower rungs, each reached by a fixture of its own. See
+   * the CLOSE_FUT_ID / SIDE_FUT_ID header above for why they exist.
+   */
+  it("T-1 rung 2: no cash mark on the underlying → the RECORDED CLOSE prices the delivery", () => {
+    const ob = settlement.obligations.find((o) => o.id === CLOSE_FUT_ID)!;
+    expect(ob.kind).toBe("stock_future");
+    expect(ob.settles).toBe("yes");
+    expect(ob.notional).toBe(CLOSE_FUT_CLOSE * 500); // 8,75,000
+    // Delete rung 2 and this falls through to the entry rung below it.
+    expect(ob.notional).not.toBe(CLOSE_FUT_ENTRY * 500);
+    expect(ob.notional).not.toBeNull();
+  });
+
+  it("T-1 rung 3: nothing prices it but its own entry, and the entry is read SIDE-AWARE", () => {
+    const ob = settlement.obligations.find((o) => o.id === SIDE_FUT_ID)!;
+    expect(ob.side).toBe("short");
+    expect(ob.netQty).toBe(SIDE_FUT_QTY);
+    expect(ob.notional).toBe(SIDE_FUT_SELL * SIDE_FUT_QTY); // 2,40,000
+    // A side-blind rung (`avgBuyPrice` for both signs) prices this row at
+    // ₹2,00,000 — 17% short of the shares it will actually have to deliver.
+    expect(ob.notional).not.toBe(SIDE_FUT_BUY * SIDE_FUT_QTY);
   });
 
   it("C-1 with no cash mark, no close and no entry the notional stays UNKNOWN", () => {
@@ -357,7 +453,11 @@ describe("B-1 /risk never prices a derivative at the underlying's cash mark", ()
     expect(ob.sttJump).toBeNull();
     // The totals exclude it and say how many they excluded.
     expect(settlement.unknownNotionalCount).toBe(1);
-    expect(settlement.notionalAtRisk).toBe(RELIANCE_SPOT * 500 + TCS_SPOT * 500);
+    // Every OTHER settling row on this book, each priced off the rung it
+    // reaches: cash mark (×2), recorded close, side-aware entry.
+    expect(settlement.notionalAtRisk).toBe(
+      RELIANCE_SPOT * 500 + TCS_SPOT * 500 + CLOSE_FUT_CLOSE * 500 + SIDE_FUT_SELL * SIDE_FUT_QTY,
+    );
   });
 
   it("C-1 CONTROL: the option branch still reads the underlying's spot", () => {

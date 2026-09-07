@@ -113,9 +113,18 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *     rebuilt when the connection row changes. So the sign-in is a PROCESS
  *     rule, not a calendar one: the sentence this replaced promised a ceiling
  *     across relaunches that nothing enforces, and promised a sign-in on a day
- *     the app is never opened (v4.2 fix wave, B-7). All four triggers are
+ *     the app is never opened (v4.2 fix wave, B-7). All FIVE triggers are
  *     named — open session, relaunch, the 5 AM IST flush, a credential
- *     re-save (owner ruling C-2);
+ *     re-save (owner ruling C-2) and a switch of the selected account (owner
+ *     ruling D-1). The list is not invented here: it is the fields of
+ *     `liveFeedInstanceKey()` in lib/quotes/registry.ts, the memo key this
+ *     adapter's instance is built against, and the SELECTED ACCOUNT is one of
+ *     them because the connection row every adapter reads is that account's
+ *     own (invariant 8; id 0 is the aggregate view). Switching account —
+ *     including to or from "All accounts" — therefore rebuilds the instance,
+ *     signs in again on the next poll and resets the refused-login count with
+ *     it. Anything a user can change that enters that key belongs in this
+ *     sentence;
  *   • WHAT is sent at that sign-in — `angelOneLogin()` in
  *     lib/import/api/angelone.ts posts `clientcode`, `password` (the PIN) and
  *     `totp` under `smartApiHeaders(creds.apiKey)`, so FOUR things go, not
@@ -127,6 +136,13 @@ export const UPSTOX_FEED_ITEMS: DisclosureItem[] = [
  *     Angel One adapter applies before it stops trying until the credentials
  *     are re-saved, so a wrong PIN is three refusals rather than one per
  *     poll (owner ruling C-2);
+ *   • the SECOND ceiling, on a session that was ACCEPTED and is later reported
+ *     invalid (AG8001 / a bare 401 on the quote call) — three consecutive
+ *     invalidations with no priced answer between them, then the same capped
+ *     state until a re-save or a relaunch; a priced answer resets the count and
+ *     the 05:00 IST flush re-login never counts toward it (owner ruling C-1).
+ *     Without it, an invalidated jwt was nulled and re-minted on the very next
+ *     poll — credentials at poll cadence, which is not a ceiling at all;
  *   • the host, the 50-token batch and the one-request-a-second ceiling —
  *     `planAngelOneBatches()` and the rate guard in the same file, which reach
  *     apiconnect.angelone.in and nothing else;
@@ -153,7 +169,7 @@ export const ANGELONE_FEED_ITEMS: DisclosureItem[] = [
   {
     title: "It signs in to your Angel One account at most once a day",
     body:
-      "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials. Each sign-in sends four things from what you saved under Import → Connect broker, without asking you: the client code, the PIN, the one-time code derived from the TOTP secret — the secret itself is never sent — and the SmartAPI app key. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.",
+      "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts. Each sign-in sends four things from what you saved under Import → Connect broker, without asking you: the client code, the PIN, the one-time code derived from the TOTP secret — the secret itself is never sent — and the SmartAPI app key. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials. If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha.",
   },
   {
     title: "It sends the tokens of your open positions to fetch prices",

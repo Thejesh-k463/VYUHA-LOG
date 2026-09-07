@@ -2,7 +2,8 @@ import "server-only";
 import { inflateRawSync } from "node:zlib";
 import { db } from "@/lib/db";
 import { settings as settingsTable, trades as tradesTable } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { applyBhavcopyMtm, type BhavcopyMtmResult } from "@/lib/import/mtm-bhavcopy";
 import { latestBhavcopyDate, previousTradingDay, toDdmmyyyy } from "@/lib/domain/trading-day";
 import { getMtmMap } from "@/lib/queries/mtm";
@@ -122,10 +123,29 @@ export async function fetchBhavcopyForDate(isoDate: string): Promise<BhavcopyFet
   return looksLikeBhavcopy(text) ? { text, source: "legacy", url: legacyUrl } : null;
 }
 
-/** Breach scan over open positions using the freshest MTM map (T3.9).
- *  Projected to the 13 columns `AlertPositionInput` needs — same WHERE, same
- *  rows in the same order (perf sweep 2026-08-29: 33 ms → 6 ms at 3.5k open). */
-export function scanBreaches(): Breach[] {
+/** How wide a breach scan reaches. `accountId` follows the house rule
+ *  `accountId > 0 ? filter : all` — 0 and null are both "every account", so the
+ *  All-accounts VIEW behaves here exactly as it does in every `lib/queries/*`
+ *  read (invariant 8). */
+export interface BreachScanScope {
+  accountId: number | null;
+}
+
+/**
+ * Breach scan over open positions using the freshest MTM map (T3.9).
+ *
+ * Projected to the 13 columns `AlertPositionInput` needs — same WHERE, same
+ * rows in the same order (perf sweep 2026-08-29: 33 ms → 6 ms at 3.5k open).
+ *
+ * SCOPE (owner ruling, 2026-09-08). Called with no argument this reads EVERY
+ * account, which is what the EOD auto-MTM job needs: it prices every account
+ * from one bhavcopy, so it must report on every account it just marked. The two
+ * PAGE banners are account-scoped surfaces and must not be — they use
+ * `scanBreachesForSelectedAccount()` below, or an explicit scope.
+ */
+export function scanBreaches(scope?: BreachScanScope): Breach[] {
+  const accountId = scope?.accountId ?? 0;
+  const isOpen = eq(tradesTable.isOpen, true);
   const open = db
     .select({
       id: tradesTable.id,
@@ -145,7 +165,7 @@ export function scanBreaches(): Breach[] {
       riskAmount: tradesTable.riskAmount,
     })
     .from(tradesTable)
-    .where(eq(tradesTable.isOpen, true))
+    .where(accountId > 0 ? and(isOpen, eq(tradesTable.accountId, accountId)) : isOpen)
     .all();
   const mtm = getMtmMap();
   const inputs: AlertPositionInput[] = open.map((t) => {
@@ -169,6 +189,20 @@ export function scanBreaches(): Breach[] {
     };
   });
   return detectBreaches(inputs);
+}
+
+/**
+ * The scan the two PAGE banners run (app/page.tsx, app/risk/page.tsx).
+ *
+ * A banner sits on an account-scoped page, so it speaks for the account on
+ * screen: with "Personal" selected, the whole-database scan raised a stop
+ * breach naming a symbol that is not in the book below it — invariant 8's exact
+ * failure mode, where nothing on screen looks broken. `getSelectedAccountId()`
+ * resolves the selection and 0 (the All-accounts view) reads every account,
+ * the same rule every `lib/queries/*` read applies.
+ */
+export function scanBreachesForSelectedAccount(): Breach[] {
+  return scanBreaches({ accountId: getSelectedAccountId() });
 }
 
 export async function runAutoMtm(now = new Date()): Promise<AutoMtmOutcome> {

@@ -48,18 +48,31 @@ const NOT_PRICED_SENTENCE =
   "Futures and options rows are not priced by this feed: each shows the position's recorded close, or a dash when no close is recorded, and says so on the row.";
 
 /**
- * B-7 (owner ruling: reword) and C-2 (owner ruling, 2026-09-07: name every
- * trigger). The sign-in sentence, byte for byte.
+ * B-7 (owner ruling: reword), C-2 (owner ruling, 2026-09-07: name every
+ * trigger) and D-1 (owner ruling, 2026-09-08: name the FIFTH one). The sign-in
+ * sentence, byte for byte.
  *
  * "once each trading day" was true PER PROCESS and nowhere else: the session
  * lives in the adapter instance, so a relaunch or a credential re-save opens
  * another one the same day, and a machine left closed all day opens none. The
- * replacement states the mechanism instead of the calendar — and states ALL
- * FOUR of the things that open a session, the 5 AM IST flush included, because
- * a list of three reads as an exhaustive one.
+ * replacement states the mechanism instead of the calendar — and states every
+ * one of the things that open a session, the 5 AM IST flush included, because
+ * a short list reads as an exhaustive one.
+ *
+ * THE SOURCE OF TRUTH FOR THAT LIST IS `liveFeedInstanceKey()` in
+ * lib/quotes/registry.ts — the memo key the adapter instance is built against.
+ * Anything in that key that a user can change is a sign-in trigger, and the
+ * SELECTED ACCOUNT is one of its fields (invariant 8: the connection row this
+ * feed reads is the selected account's own, and id 0 is the aggregate view).
+ * The function is module-private, so the list below is a literal; if it ever
+ * becomes exported, derive this from it instead of restating it.
  */
 const ANGEL_SIGNIN_SENTENCE =
-  "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials.";
+  "Vyuha signs in to apiconnect.angelone.in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials, and again when you switch the selected account, including to or from All accounts.";
+
+/** D-1. The fifth trigger's own clause, as every surface must word it. */
+const ACCOUNT_SWITCH_TRIGGER =
+  "and again when you switch the selected account, including to or from All accounts";
 
 /**
  * C-2. The refused-login ceiling, byte for byte. Before it, a wrong PIN was one
@@ -67,6 +80,17 @@ const ANGEL_SIGNIN_SENTENCE =
  */
 const ANGEL_RETRY_SENTENCE =
   "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.";
+
+/**
+ * C-1 (owner ruling, round 4). The SECOND ceiling, byte for byte, and a
+ * different failure from the one above: the login was ACCEPTED and the broker
+ * later answers AG8001/401 on the quote call. Before it, that nulled the jwt
+ * and the next poll signed in again with no ceiling at all — credentials at
+ * poll cadence, 1,200 an hour at the 3-second tier. A priced answer resets the
+ * count; the 05:00 IST flush re-login never counts toward it.
+ */
+const ANGEL_SESSION_INVALID_SENTENCE =
+  "If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha.";
 
 describe("the stored acknowledgement", () => {
   it("reads a provider-id → version map out of the column", () => {
@@ -189,20 +213,44 @@ describe("the Angel One consent sheet", () => {
 
   const flat = ANGELONE_FEED_ITEMS.map((i) => `${i.title} ${i.body}`).join(" ");
 
-  it("states the sign-in as the process rule it is, with all four triggers named", () => {
+  it("states the sign-in as the process rule it is, with all five triggers named", () => {
     expect(flat).toContain(ANGEL_SIGNIN_SENTENCE);
     expect(flat).toContain("what you saved under Import → Connect broker");
-    // The four things the old sentence promised or omitted: a relaunch, a
-    // credential re-save and the 5 AM IST flush each open another session, and
-    // the ceiling holds only while this process stays up.
+    // The five things the old sentence promised or omitted: a relaunch, a
+    // credential re-save, the 5 AM IST flush and an account switch each open
+    // another session, and the ceiling holds only while this process stays up.
+    // Every one of them is a field of `liveFeedInstanceKey()` in
+    // lib/quotes/registry.ts (D-1) — that key IS the trigger list.
     for (const trigger of [
       "at most once a day while Vyuha stays open",
       "again after a relaunch",
       "after Angel One's 5 AM IST session flush",
       "when you re-save the credentials",
+      ACCOUNT_SWITCH_TRIGGER,
     ]) {
       expect(flat, `the sheet no longer names the trigger: ${trigger}`).toContain(trigger);
     }
+  });
+
+  /**
+   * D-1 — THE ACCOUNT IS IN THE MEMO KEY, SO IT IS A TRIGGER.
+   *
+   * This is the derivation the literal above stands in for: read the key
+   * builder's own body and assert the account field is still one of its
+   * inputs. If a later wave re-keys the memo so a same-credential switch
+   * reuses the session, THIS is the test that says the sheet must lose the
+   * fifth trigger — rather than the sheet quietly over-stating the egress.
+   */
+  it("names the account switch because the memo key still carries the account", () => {
+    const registry = fs.readFileSync(path.join(process.cwd(), "lib/quotes/registry.ts"), "utf8");
+    const at = registry.indexOf("async function liveFeedInstanceKey(");
+    expect(at, "liveFeedInstanceKey() is gone — the trigger list has nothing to stand on").toBeGreaterThan(-1);
+    const body = registry.slice(at, registry.indexOf("\n}", at));
+    expect(body, "the key no longer reads the selected account").toContain("getSelectedAccountId()");
+    expect(body, "the key no longer mixes the account into the instance identity").toMatch(
+      /return \[[^\]]*\baccountId\b/,
+    );
+    expect(flat).toContain(ACCOUNT_SWITCH_TRIGGER);
   });
 
   /**
@@ -263,6 +311,15 @@ describe("the Angel One consent sheet", () => {
 
   it("states the refused-login ceiling, so a wrong PIN is not one refusal per poll", () => {
     expect(flat).toContain(ANGEL_RETRY_SENTENCE);
+  });
+
+  it("states the SECOND ceiling too — a session invalidated after it was accepted (C-1)", () => {
+    // Two different failures, two different ceilings, and the sheet that named
+    // only the first under-stated the egress by a re-login per poll.
+    expect(flat).toContain(ANGEL_SESSION_INVALID_SENTENCE);
+    // The reset condition is part of the promise: without it the sentence
+    // reads as "three sign-ins ever", which is not what the code does.
+    expect(flat).toContain("without a priced answer in between");
   });
 
   it("states the batch size, the one-a-second ceiling and the 3/5/10 cadence", () => {
@@ -432,6 +489,26 @@ describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
     for (const rel of SURFACES) {
       expect(flatten(rel), `${rel} dropped the sign-in correction`).toContain(
         "at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when you re-save the credentials",
+      );
+    }
+  });
+
+  /**
+   * D-1 + C-1 (owner rulings, 2026-09-08). The five surfaces that list the
+   * sign-in triggers list the SAME five, and state BOTH ceilings.
+   *
+   * A trigger named on the consent sheet and missing from PRIVACY.md is the
+   * drift this describe block exists to catch: the buyer-facing document is
+   * the one an outside reader audits us against. One canonical clause per
+   * fact, asserted on every surface, so a rewrite of one file cannot leave
+   * four saying something else.
+   */
+  it("every surface names the FIFTH trigger and the second ceiling", () => {
+    for (const rel of SURFACES) {
+      const text = flatten(rel);
+      expect(text, `${rel} does not name the account-switch trigger (D-1)`).toContain(ACCOUNT_SWITCH_TRIGGER);
+      expect(text, `${rel} does not state the session-invalid ceiling (C-1)`).toContain(
+        ANGEL_SESSION_INVALID_SENTENCE,
       );
     }
   });

@@ -153,7 +153,11 @@ describe("help describes the app that shipped, not the one that is planned", () 
     expect(naked, `help prices the desk from a bridge without naming the consent: ${naked.join(" | ")}`).toEqual([]);
   });
 
-  it("/live names all three sources, and says the third is opt-in and on-screen only", () => {
+  it("/live names all five sources, and says the bridge is opt-in and on-screen only", () => {
+    // P-5 (fix wave 4): the title and the body said THREE while
+    // lib/domain/help-content.ts had named five since v4.2 shipped the Upstox
+    // and Angel One feeds. A test that checks three of five passes a help desk
+    // that has silently dropped two — so all five are asserted here.
     // The one place the flag is still read: help may name the bridge as a
     // price source only while the release actually offers it. If v4.1 were
     // rolled back, this is the case that says the help desk went with it.
@@ -162,6 +166,8 @@ describe("help describes the app that shipped, not the one that is planned", () 
     expect(text).toMatch(/end-of-day bhavcopy/i);
     expect(text).toMatch(/a mark you type/i);
     expect(text).toMatch(/openalgo/i);
+    expect(text, "/live no longer names Upstox as a source").toMatch(/upstox/i);
+    expect(text, "/live no longer names Angel One as a source").toMatch(/angel one/i);
     // The three properties that make naming it honest: it is chosen, it is
     // gated on the disclosure, and it writes no tick (lib/quotes/persist-mark.ts).
     expect(text).toMatch(/opt-in/i);
@@ -172,16 +178,21 @@ describe("help describes the app that shipped, not the one that is planned", () 
     expect(text).toMatch(/127\.0\.0\.1/);
   });
 
-  it("/settings names all THREE sources too, with the conditions in the bridge's own sentence", () => {
+  it("/settings names all FIVE sources too, with the conditions in the bridge's own sentence", () => {
     // CHANGELOG and VYUHA-STATE both said "Help for /live and for Settings
     // names the three sources"; the Settings entry named only the bridge, so
     // the claim was true of one screen out of two. The conditions have to sit
     // in the SAME sentence as the bridge — a reader who stops at the first full
     // stop must not have read a price claim with no consent attached to it.
+    // P-5: five since v4.2, and the title said three until fix wave 4.
     const text = body("/settings");
     expect(text).toMatch(/end-of-day bhavcopy/i);
     expect(text).toMatch(/a mark you type/i);
     expect(text).toMatch(/openalgo/i);
+    expect(text, "/settings no longer names Upstox as a source").toMatch(/upstox/i);
+    expect(text, "/settings no longer names Angel One as a source").toMatch(/angel one/i);
+    // The count is stated in prose too, so it must be the count of the list.
+    expect(text, "/settings states a source count that is not five").toMatch(/one of its five sources/);
 
     const bridgeSentence = text
       .split(/(?<=[.!?])\s+/)
@@ -414,18 +425,29 @@ describe("help describes the v4.2 Angel One price source", () => {
       // C-2 + C-3 (owner rulings, 2026-09-07). "each morning" was the calendar
       // promise B-7 removed from the sheet, in softer words: a machine left
       // shut opens no session that morning, and one relaunched at noon opens
-      // one then. Help states the same four triggers the sheet does.
+      // one then. Help states the same five triggers the sheet does — the
+      // fifth added by owner ruling D-1 (2026-09-08), because
+      // `liveFeedInstanceKey()` in lib/quotes/registry.ts keys the adapter
+      // instance on the selected account (invariant 8), so switching account
+      // rebuilds it and signs in again on the next poll.
       for (const trigger of [
         "at most once a day while Vyuha stays open",
         "again after a relaunch",
         "after Angel One's 5 AM IST session flush",
         "when you re-save the credentials",
+        "and again when you switch the selected account, including to or from All accounts",
       ]) {
         expect(text, `${href} does not name the trigger: ${trigger}`).toContain(trigger);
       }
       expect(text, `${href} still promises a sign-in on a calendar schedule`).not.toMatch(/each morning/i);
       expect(text, `${href} does not state the refused-sign-in ceiling`).toMatch(
         /tries at most three times and then stops until you re-save the credentials/,
+      );
+      // C-1 (owner ruling, round 4): the SECOND ceiling. A login that was
+      // accepted and later reported invalid is a different failure, and help
+      // that names only the first under-states what is sent.
+      expect(text, `${href} does not state the session-invalid ceiling`).toContain(
+        "If Angel One reports an accepted session invalid, Vyuha signs in at most three times in a row without a priced answer in between, and then stops until you re-save the credentials or relaunch Vyuha.",
       );
       // C-4: the SECRET is not what travels — a one-time code derived from it is.
       expect(text, `${href} implies the TOTP secret itself is sent`).toMatch(

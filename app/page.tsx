@@ -7,7 +7,7 @@ import { TelegramRunner } from "@/components/system/telegram-runner";
 import { AutoPullRunner } from "@/components/system/auto-pull-runner";
 import { BreachBanner } from "@/components/risk/breach-banner";
 import { ReviewOpenCard } from "@/components/review/review-open-card";
-import { scanBreaches } from "@/lib/jobs/auto-mtm";
+import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
 import { getDashboardTrades } from "@/lib/queries/trades";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
@@ -82,7 +82,7 @@ export default function DashboardPage() {
         <AutoMtmRunner />
         <TelegramRunner />
         <AutoPullRunner />
-        <BreachBanner breaches={scanBreaches()} />
+        <BreachBanner breaches={scanBreachesForSelectedAccount()} />
         <ReviewOpenCard />
         <DashboardClient
           workspace={asWorkspace(settings?.workspace)}

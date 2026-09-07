@@ -370,6 +370,32 @@ describe("the one-instance comment quotes the sheet that shipped", () => {
       "caps a refused login at three attempts",
     );
   });
+
+  /**
+   * D-1 (owner ruling, 2026-09-08) — THE ACCOUNT SWITCH IS THE FIFTH TRIGGER,
+   * AND THIS COMMENT IS WHERE THE CODE ADMITS IT.
+   *
+   * The key below already carries the selected account, so switching account
+   * rebuilds the instance and the next poll signs in again — and resets the
+   * refused-login count with it. The sheet named four triggers and not that
+   * one. The comment quotes the sheet, so it must quote the fifth clause too:
+   * a reader who "restores" the four-trigger quote here is the person who
+   * would next delete the trigger from the sheet.
+   */
+  it("names the account switch as a sign-in trigger, the way the sheet now does", () => {
+    const src = flatten("lib/quotes/registry.ts");
+    expect(src, "the memo comment does not quote the fifth trigger").toContain(
+      "and again when the selected account is switched",
+    );
+    // …and the comment must not be the only place it is true: the key really
+    // does mix the account in, which is what makes the sentence a fact.
+    const raw = readFileSync(path.join(process.cwd(), "lib/quotes/registry.ts"), "utf8");
+    const at = raw.indexOf("async function liveFeedInstanceKey(");
+    expect(at, "liveFeedInstanceKey() is gone — the trigger list has nothing to stand on").toBeGreaterThan(-1);
+    const body = raw.slice(at, raw.indexOf("\n}", at));
+    expect(body).toContain("getSelectedAccountId()");
+    expect(body).toMatch(/return \[[^\]]*\baccountId\b/);
+  });
 });
 
 describe("the capability catalogue", () => {
