@@ -4377,3 +4377,48 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
 - **Gate on `99aa027`:** `npm run verify` EXIT 0 — **357 files / 6,880 passed / 35 skipped**, `next build` compiled 12.0 s;
   `e2e/z-live-desk.spec.ts` 9/9 twice; seam pass `tests/seams-v42-fix2.test.ts` 20 tests over seven crossings, three
   defects found and fixed in the same wave; README 355 → 357 files, 6,821 → 6,880 tests. `package-lock.json` untouched.
+
+## 2026-09-08 — v4.2 fix wave 3 `2bacf06`: the settlement reference is the exchange's, not the contract's; a refused login stops after three; the sheet names four credentials
+
+- **C-1 (owner ruling):** ruling A-1 governs P&L MARKS. The /risk futures SETTLEMENT reference is not a mark — it is the price
+  the exchange delivers at (the underlying's cash-segment close), which is the map the option branch already read. Wave 2 had
+  moved it onto the contract rung (dead in production) → recorded close → `avgBuyPrice` (0 for a sell-to-open future until
+  covered; imports write no close) and the panel printed ₹0 notional and ₹0 STT on the one surface that warns about the STT
+  trap. Now: the underlying's cash mark → recorded close → SIDE-AWARE entry, each through `nonZero`; a missing reference stays
+  `null` and `settlement.ts` carries it as UNKNOWN (`notional`/`physicalStt`/`exitStt`/`sttJump` null, `unknownNotionalCount`,
+  totals skip it and every tile says "n unknown"). The `settlement.ts` contract comment had said "futures price for futures" —
+  the wave followed the doc; the doc was wrong. Rejected: keep the contract rung and only make the entry side-aware.
+- **C-2 (owner ruling):** `session()` re-sent client code + PIN + a fresh TOTP every 60 s after a refusal with no cap, for as
+  long as the desk polled — up to 1,440 transmissions a day on a wrong PIN, the pattern a broker lockout exists to catch, under
+  a sheet that said "at most once a day". Now `ANGELONE_MAX_LOGIN_ATTEMPTS = 3` consecutive refusals per instance, then the
+  adapter stops and reports `unreachable` (a connection IS saved — it was refused; `no-key` means none is) with the sentence
+  "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker."; a
+  re-save or relaunch rebuilds the instance (the memo key carries the row's `updated_at` + credential fingerprint) and resets
+  the count; a success resets it too. A refusal by Vyuha's own rate guard does not spend an attempt (nothing was sent). The cap
+  is NOT persisted, by design (three per launch). Upstox has no login path to cap. Rejected: reword only.
+- **C-4:** the sheet and PRIVACY item 3 named three credentials; `smartApiHeaders` sends the SmartAPI app key as `X-PrivateKey`
+  on the login and on every quote request — four. The sheet now names four, says the TOTP SECRET itself is never sent (only the
+  derived one-time code), and the disclosure test derives the credential list from `angelOneLogin()`'s own `creds.<field>`
+  reads, so a fifth field fails the test before it can ship undisclosed. The sign-in sentence names all four triggers (open
+  session, relaunch, the 5 AM IST flush, a re-save) and the three-try ceiling; `dailyReauth` dropped "each morning" ("there is
+  nothing for you to do"), since the claim is about the reader, not the clock.
+- **C-11 (owner ruling):** "or its entry price when no close is recorded" described the positions tracker, not the desk row
+  that "says so" — the desk has no entry rung and prints a dash. The sentence now says "or a dash" on nine surfaces + both
+  adapters' health tails; the A-1 bullet above was corrected. Rejected: give the desk an entry-price rung (a ₹0 unrealised
+  where a dash is honest).
+- **C-6 / C-7:** a withheld stored provider left the eod radio checked, a "your pick is blocked" line and no single-click exit
+  (an already-checked radio fires no `onChange`) — the block now carries "Keep end-of-day prices", which stores eod through the
+  normal path, and its health line carries the withheld reason. After every successful write the card re-asks the route
+  (`fetchStatus`/`refreshStatus`, state set in the promise callback, never in an effect — the first shape tripped
+  `react-hooks/set-state-in-effect`) and shows "Checking the feed…" until it answers, instead of the previous provider's
+  mount-time "Feed OK" (pre-existing since 4.1, made visible by wave 2's fresh block).
+- **Guards:** the `broker_connections` reverse scan now matches five read shapes (builder with optional namespace, `${…}` in a
+  `sql` template, a `schema.` table-map entry, `db.query.`, raw `from broker_connections`) with a rung-liveness assertion, and
+  `lib/backup.ts` / `lib/queries/account-delete.ts` join the named exemptions with their reasons (a dump is every row in every
+  account; a delete validates an explicit id because the request-cached selected account could be the one being removed);
+  planted readers in every shape proved the old literal blind and the new list sharp. Three passing seam tests lost their
+  "DEFECT / RED ON PURPOSE" titles. One assertion that could never fire (a raw "23330" no `inr()` output can contain) was removed.
+- **Gate on `2bacf06`:** `npm run verify` EXIT 0 — **358 files / 6,914 passed / 35 skipped**, `next build` compiled 15.3 s; seam
+  pass `tests/seams-v42-fix3.test.ts` 10 tests over six crossings (one defect: the STT tile lacked the "n unknown" note its two
+  neighbours got — fixed in the wave); README 357 → 358 files, 6,880 → 6,914 tests. **CI 34153510561 on `2bacf06`: SUCCESS 6/6.**
+  Round-4 audit owed over `99aa027..2bacf06`.

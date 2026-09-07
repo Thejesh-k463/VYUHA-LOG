@@ -27,9 +27,26 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE BUILT on main, gate GREEN, CI GREEN on `3a3e026` (34125653384, 6/6; 2026-09-07 evening IST); NOT audited, NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE + THREE FIX WAVES on main (`2bacf06`, 2026-09-08 IST); audit ladder 14 → 12 → 11 → round 4 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
 
-> **v4.2 is IN BUILD, not tagged.** Wave commit `c817b15` on `92c48cc` (CI 34124736781 was 4/6 on one STATE-heading pin,
+> **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
+> **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
+> instance per process, blocked consent reaches the screen, "Import → Connect broker", guard allowlists) → fix wave 2
+> **`99aa027`** (CI 34148759788 6/6; 13 + 3 seam items: `storedMarkFor()` on /risk, the performance report and the breach scan;
+> a release flag outranks a stored consent; the card folds the POST verdict; consent copy says what a derivative row shows;
+> "scrips" not "positions") → fix wave 3 **`2bacf06`** (CI 34153510561 6/6; 11 + 1 seam items: the futures SETTLEMENT
+> reference is the underlying's cash mark with null = unknown; refused Angel One logins stop after three; the sheet names four
+> credentials, four sign-in triggers and the cap; "or a dash"; guard scans match five read shapes). **Round-4 audit is the next
+> step** (six Fable auditors + skeptic over `99aa027..2bacf06`), then the bump. Gate on `2bacf06`: **`npm run verify` EXIT 0 —
+> 358 files / 6,914 passed / 35 skipped, `next build` compiled 15.3 s**; README counts say 6914 / 358; seam files
+> `tests/seams-v42{,-fix,-fix2,-fix3}.test.ts` (35 + 20 + 20 + 10 tests). Rulings: `06-ANSWERS.md` "v4.2 fix-wave rulings"
+> (A-1, A-2, A-11, B-7, C-1, C-2, C-11 + session decisions); measurements: `docs/DECISIONS.md` 2026-09-07 entries "v4.2 wave
+> audit" and "v4.2 fix-wave audit". Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
+> `scanBreaches` reads every account (pre-existing, needs an owner ruling); `PLANNED_NOTES.angelone` names a constant but is
+> unreachable for a live desk; `egressDescription` has no renderer; the generic account-isolation resolution scan still
+> matches prose for tables other than `broker_connections`.
+>
+> **The original wave (kept for the record):** wave commit `c817b15` on `92c48cc` (CI 34124736781 was 4/6 on one STATE-heading pin,
 > fixed by the one-line `3a3e026`, CI 34125653384 SUCCESS 6/6). The wave carries: the **Upstox** quote adapter
 > (`lib/quotes/upstox.ts`, reuses the stored Analytics token — `requiresDailyAuth: false`, one `/v3/market-quote/ltp`
 > call per 1–5 s sweep for ≤500 keys, `/ohlc` at most once a minute, `health()` makes no request) and the
@@ -51,9 +68,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > 9/9; `tests/seams-v42.test.ts` 33 tests (one confirmed seam defect, the holiday-blind stream window, fixed in
 > the wave). `package-lock.json` untouched; no dependency change. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md`
 > "v4.2 build-session rulings"; measurements: `docs/DECISIONS.md` 2026-09-07 "v4.2 wave"; session record:
-> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **Next:** CI on the wave sha → six-dimension audit + skeptic →
-> fix wave (own audit) → bump 4.2.0 (`CHANGELOG.md` 4.2.0 section is written at the bump; TERMS/REFUND
-> "Applies to" and the README "Now"/first quote already say 4.2.0) → the 11 release steps.
+> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **Next (after the three fix waves above):** round-4 audit over
+> `99aa027..2bacf06` → fix wave 4 if anything survives → bump 4.2.0 (`CHANGELOG.md` 4.2.0 section is written at the bump;
+> TERMS/REFUND "Applies to" and the README "Now"/first quote already say 4.2.0) → the 11 release steps.
 
 ## 2. Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
