@@ -4592,4 +4592,4 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
 - **Gate on this tree:** `npm run verify` EXIT 0 — **361 files / 7,005 passed / 35 skipped**, lint 0 errors (3 pre-existing
   warnings in files this wave did not touch), `next build` compiled 12.2 s. README: 360 → 361 files, 6,969 → 7,005 tests, screens
   49 unchanged. `package-lock.json` untouched. No `components/live/**` change (the `/live` harness stays 9/9 from `99aa027`). Every
-  file this wave touched is LF. Round-6 audit owed over this commit's diff.
+  file this wave touched is LF. **Fix wave 5 = `64bd2a1`; CI 34231889936: SUCCESS 6/6.** Round-6 audit owed over `be6b9eb..64bd2a1`.
