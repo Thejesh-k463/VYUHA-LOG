@@ -4755,3 +4755,50 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   tag; `fleet-tune` is deferred to its own session after 4.2.0 ships so the auditor and skeptic prompts stay byte-identical across
   rounds 8–10 and the ladder stays comparable; the "Live Desk v4.0 inputs" REMIND memory is retargeted to the §3 Positions-tab
   redesign and raised only when §3 is scheduled.
+
+### 2026-09-09 — v4.2.0 tagged on `b488dde`; release 3/3 on the first attempt; deep verify 3/3; draft awaits the owner
+
+- **The CHANGELOG date is the TAG day, and a docs-only re-date does NOT re-cut the installer.** At the pre-tag pause the owner
+  ruled "tag now" on the CI-green candidate and asked the 4.2.0 CHANGELOG section to carry the day it is actually tagged,
+  **2026-09-09** (**Rejected: keeping the bump day 2026-09-08** — the section would date a release that did not exist yet).
+  The re-date is commit **`b488dde`** ("docs(changelog): v4.2.0 section dated 2026-09-09") on `0597b32` (bump) on `784d5d6`
+  (record) on `abbdfd4` (fix wave 9), and it changes exactly `CHANGELOG.md:3` (`git diff --numstat` = `1 1`);
+  `tests/uninstall-claims` + `tests/readme-claims` 40/40 after it. **Rejected: rebuilding the installer for the new sha** —
+  `CHANGELOG.md` is not an input to `desktop:build`: neither `scripts/tauri-build.mjs` nor `tauri.conf.json` reads it (checked,
+  not assumed), so the installer built on `0597b32` remains the release-day local build and its bytes are unaffected by a
+  Markdown date. CI on `b488dde` = **34267807794 SUCCESS 6/6 attempt 1**; CI on `0597b32` = 34252796530 SUCCESS 6/6 attempt 1.
+- **Tag placed after CI 6/6 on the exact sha.** Pre-tag proofs on the tagged tree, in order: `npm ci` clean (769 packages, 32 s,
+  lock untouched — `git diff --numstat package-lock.json` empty afterwards, against exactly `2 2` on `abbdfd4`, the two root
+  version lines the bump edits by hand), `npm ls esbuild` resolves (0.25.12 top-level + 0.28.1 nested), `npm run desktop:build`
+  EXIT 0 with `desktop-dist/.next/BUILD_ID` at 2026-09-08 22:20:06 IST — after `0597b32` at 22:13:20 — and the bundle carrying
+  **two 4.2-only markers**, `angelone` in 72 files and `trading_holidays` (the bundled NSE holiday list) in 49; local
+  `Vyuha_4.2.0_x64-setup.exe` 35,626,375 bytes, signed, SHA-256
+  `28345AC3E22F8366E2600B6A4041A529291BD2DEEE3FFD0AFD19979F76FB84DA`. The release-steward walk ended with **no open finding** —
+  installer freshness was its one stop-the-line item and the build cleared it. Tag **`v4.2.0` (annotated) = `9da7bc8` →
+  `b488dde`**, pushed 2026-09-09 ~00:35 IST.
+- **Release run 34268619222 SUCCESS 3/3 on attempt 1** (macOS Intel, macOS Apple silicon, Windows x64) — **no re-run needed,
+  unlike 4.1.0**, whose Windows job needed a second attempt on a cold-runner hook timeout. Draft release `v4.2.0` (`isDraft`
+  true, `prerelease` false) with 9 assets: `latest.json` 3,571 B; `Vyuha_4.2.0_x64-setup.exe` 35,607,177 B + `.sig` 416 B;
+  `Vyuha_4.2.0_aarch64.dmg` 62,740,930; `Vyuha_4.2.0_x64.dmg` 65,528,285; `Vyuha_aarch64.app.tar.gz` 63,681,047 + `.sig` 404;
+  `Vyuha_x64.app.tar.gz` 66,185,429 + `.sig` 404.
+- **`npm run release:verify v4.2.0 -- --deep` EXIT 0 — 3/3.** Every `.sig` decodes to `4FF85F3BBE1DA21D` = `tauri.conf.json`
+  `plugins.updater.pubkey`, and each verifies over the PUBLISHED bytes (installer 34.0 MB, tarballs 60.7 / 63.1 MB, prehashed).
+- **Two SHA-256 values, two destinations, as for 4.0.0 and 4.1.0.** Client ZIP
+  `release-packages/Vyuha_4.2.0_Client_Package.zip` (36,403,642 B, 13 files: installer + `.sig`, START_HERE, CHECKSUMS,
+  WHATS_NEW, INSTALLATION_GUIDE, deck, both OpenAlgo guides, REFUND_POLICY, TERMS, PRIVACY, THIRD-PARTY-NOTICES) carries the
+  LOCAL installer, SHA-256 `28345AC3E22F8366E2600B6A4041A529291BD2DEEE3FFD0AFD19979F76FB84DA` — that is the **WDSI** sha. The
+  CI-built draft asset is a different binary, SHA-256
+  `eef3f18bdaaa02a1619d74dc2f9f647be02919b9a6ff3fd14480d58f4f9ed7ad` — that is the **winget** manifest at
+  `release-packages/winget/4.2.0` (three yaml files written with `npm run winget:manifest -- --sha <that>`; `winget validate` =
+  "Manifest validation succeeded"). The script **refuses to hash a local build** and prints the download command instead — a
+  good guard, and the reason the two values can never be swapped by accident. **winget submission stays HELD** by the standing
+  rule: microsoft/winget-pkgs #421585 is still OPEN.
+- **Owner actions owed** (the release is a DRAFT — `releases/latest` still resolves to v4.1.0 until Publish): publish the draft;
+  install `Vyuha_4.2.0_x64-setup.exe` from the client ZIP on a non-build machine; smoke-test Upstox + Angel One with his own
+  keys (standing ruling — a session never receives keys); submit the WDSI form (content handed over in the session's final
+  message). Only after his confirmation does STATE §2 read "PUBLISHED" and this log gain its PUBLISHED line. **Next after that:**
+  the §3 Positions-tab scope (the owner has not yet said "build" on the round-3 canvas), and `fleet-tune` in its own session
+  (ruled at round 9).
+- **Cost of this session** (Fable orchestrator, ~275k context at hand-off): ≈ **1.05 M subagent tokens across 14 launches** —
+  recon scout 54k, wave-8 builder 78k, ui auditor 55k, test-integrity auditor 95k, bump scout 65k, skeptic 109k, round-10
+  auditor 67k, ledger writer 92k, DECISIONS writer 122k, bump builder 144k, release steward 62k, plus the docs writers.

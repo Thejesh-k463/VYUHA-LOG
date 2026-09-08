@@ -27,9 +27,18 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE + NINE FIX WAVES on main (fix wave 9 = `abbdfd4` on `5bc4f8f`, 2026-09-08 IST late night); audit ladder 14 → 12 → 11 → 10 → 7 → 2 → 4 → 3 → 1 → 0; bump 4.2.0 IN PROGRESS; NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2.0 TAGGED on `b488dde` (tag `9da7bc8`, 2026-09-09 IST; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3); DRAFT awaits the owner's Publish + install + smoke test; v4.1.0 remains the PUBLISHED release
 
-> **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
+> **v4.2.0 is TAGGED, not published.** The GitHub release `v4.2.0` is a DRAFT with 9 assets, so `releases/latest` still resolves
+> to v4.1.0 until the owner presses Publish. Owed to him: publish the draft, install `Vyuha_4.2.0_x64-setup.exe` from the client
+> ZIP on a non-build machine, smoke-test Upstox + Angel One with his own keys (a session never receives keys), and submit the
+> WDSI form. **Two SHA-256 values, two destinations:** the client ZIP `release-packages/Vyuha_4.2.0_Client_Package.zip`
+> (36,403,642 B, 13 files) carries the LOCAL installer, `28345AC3E22F8366E2600B6A4041A529291BD2DEEE3FFD0AFD19979F76FB84DA` →
+> **WDSI**; the CI-built draft asset is `eef3f18bdaaa02a1619d74dc2f9f647be02919b9a6ff3fd14480d58f4f9ed7ad` → the **winget**
+> manifest at `release-packages/winget/4.2.0` (validated; submission HELD while microsoft/winget-pkgs #421585 is open).
+> Detail: `docs/DECISIONS.md` 2026-09-09 "v4.2.0 tagged on `b488dde`".
+>
+> **The audit and bump history (kept for the record).** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
 > instance per process, blocked consent reaches the screen, "Import → Connect broker", guard allowlists) → fix wave 2
 > **`99aa027`** (CI 34148759788 6/6; 13 + 3 seam items: `storedMarkFor()` on /risk, the performance report and the breach scan;
@@ -69,7 +78,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > test 1 → 3 → 1 after the skeptic)** — F1, the U-4 pin loosened to a `[\s\S]*?` bridge, so a mutant hoisting BOTH the revert and
 > the toast out of the refusal branch passed every pin → **fix wave 9 `abbdfd4`** (3 files, +5/−4, landed by the orchestrator: the
 > tight `setSeconds` anchor plus two comment corrections; CI 34251068803) → **round 10 (one scoped test-integrity auditor:
-> 12 → 0)** → **bump 4.2.0 IN PROGRESS**. Gate on the fix-wave-9 tree: **`npm run verify` EXIT 0
+> 12 → 0)** → **bump 4.2.0 `0597b32`** (CI 34252796530 SUCCESS 6/6 attempt 1) → **re-date `b488dde`** (the CHANGELOG 4.2.0
+> section carries the actual tag day 2026-09-09, owner ruling; `CHANGELOG.md:3` only, numstat 1 1; CHANGELOG is not an input to
+> `desktop:build`, so the installer was NOT rebuilt) → **TAG `v4.2.0` = `9da7bc8` → `b488dde`**. Gate on the fix-wave-9 tree: **`npm run verify` EXIT 0
 > — 361 files / 7,031 passed / 35 skipped, `next build` compiled 13.4 s**; README counts say 7031 / 361 / 49 screens; seam files
 > `tests/seams-v42{,-fix,-fix2,-fix3,-fix4,-fix5}.test.ts` (35 + 20 + 20 + 16 + 11 + 12 tests). Rulings: `06-ANSWERS.md` "v4.2
 > fix-wave rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11), "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave
@@ -109,9 +120,9 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > 9/9; `tests/seams-v42.test.ts` 33 tests (one confirmed seam defect, the holiday-blind stream window, fixed in
 > the wave). `package-lock.json` untouched; no dependency change. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md`
 > "v4.2 build-session rulings"; measurements: `docs/DECISIONS.md` 2026-09-07 "v4.2 wave"; session record:
-> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **Next (after the three fix waves above):** round-4 audit over
-> `99aa027..2bacf06` → fix wave 4 if anything survives → bump 4.2.0 (`CHANGELOG.md` 4.2.0 section is written at the bump;
-> TERMS/REFUND "Applies to" and the README "Now"/first quote already say 4.2.0) → the 11 release steps.
+> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **The path that was then planned — round-4 audit over
+> `99aa027..2bacf06` → fix waves → bump 4.2.0 → the 11 release steps — is now WALKED to the tag**; what remains is the owner's
+> Publish, install and smoke test, then the PUBLISHED commit.
 
 ## 2. Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
