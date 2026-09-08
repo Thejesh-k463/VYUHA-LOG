@@ -794,7 +794,7 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       // the revert standing when the GET failed, when the stored id is not
       // offered, and on every genuine 403/409, where the row still reads
       // `previous`. U-3 (fix wave 8): the adoption is FUNCTIONAL and applies
-      // only while the radio still sits on the reverted value. The GET above is
+      // only while the radio still sits on the reverted value. The GET below is
       // an await — a click that landed during it has already moved the radio,
       // and a stale `reconcilePick` verdict computed from a pick two gestures
       // old would paint over it.

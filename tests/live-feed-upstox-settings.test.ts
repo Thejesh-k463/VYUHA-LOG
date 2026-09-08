@@ -663,7 +663,7 @@ describe("the Upstox half of the adopted answer, and the refresh slider (fix wav
       body,
       "a refused refresh-seconds write leaves the slider on a value the database does not hold, or reverts a value it was never for (U-2/U-4)",
     ).toMatch(
-      /if \(!r\.ok\) \{[\s\S]*?setSeconds\(\(cur\) => \(cur === next \? previous : cur\)\);[\s\S]*?toast\.error\(r\.message \?\? "Could not save the refresh interval\."\);/,
+      /if \(!r\.ok\) \{[ \t]*\r?\n\s*setSeconds\(\(cur\) => \(cur === next \? previous : cur\)\);[\s\S]*?toast\.error\(r\.message \?\? "Could not save the refresh interval\."\);/,
     );
     expect(
       body,
