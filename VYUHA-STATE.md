@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE + SEVEN FIX WAVES on main (fix wave 7 = `9582d2f` on `1a3a833`, 2026-09-08 IST night); audit ladder 14 → 12 → 11 → 10 → 7 → 2 → 4 → 3; fix wave 8 + round 9 OWED; NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE + NINE FIX WAVES on main (fix wave 9 = `abbdfd4` on `5bc4f8f`, 2026-09-08 IST late night); audit ladder 14 → 12 → 11 → 10 → 7 → 2 → 4 → 3 → 1 → 0; bump 4.2.0 IN PROGRESS; NOT tagged; v4.1.0 remains the PUBLISHED release
 
 > **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
@@ -60,19 +60,24 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > server's stored pick via exported `reconcilePick()`; `saveSeconds()` reverts the slider on refusal; exact-gap and stalled-clock
 > pacing pins; `PACING_RECHECKS` exported; CI 34243191231 attempt 1 = 5/6 — macOS Playwright timed out in
 > `e2e/z-challan-ledger.spec.ts:203`, a spec outside the diff, Ubuntu 93/93 — **attempt 2 SUCCESS 6/6**, cold-runner flake; detail in
-> `docs/DECISIONS.md` "v4.2 round-6 audit") → **round 8 (scoped: ui 2, test 1 → 3 → 3): FIX WAVE 8 OWED** — U-3 the refusal
+> `docs/DECISIONS.md` "v4.2 round-6 audit") → **round 8 (scoped: ui 2, test 1 → 3 → 3)** — U-3 the refusal
 > re-ask runs with the radios enabled, so a later click can be overwritten by the stale answer (functional `setProvider` guard);
 > U-4 an earlier failed interval save can revert a later landed one (functional `setSeconds` guard); T-8 the stalled-clock test
-> would HANG vitest, not redden, on an unbounded loop (fixture throws after a literal 8 sleeps) — one Opus builder over the card +
-> its two settings tests + `tests/quotes-angelone.test.ts`, then round 9 (ui + test-integrity + skeptic), then the bump.
-> Gate on the fix-wave-7 tree: **`npm run verify` EXIT 0
-> — 361 files / 7,031 passed / 35 skipped, `next build` compiled 10.1 s**; README counts say 7031 / 361 / 49 screens; seam files
+> would redden the gate blaming its own fixture on an unbounded loop (fixture throws after a literal 8 sleeps) — all three landed
+> in **fix wave 8 `5bc4f8f`** (4 files, +57/−11, one Opus builder; CI 34247891366 attempt 1 = 5/6 on a Windows
+> `tests/backup-roundtrip.test.ts` cold-runner timeout outside the diff, **attempt 2 SUCCESS 6/6**) → **round 9 (scoped: ui 0,
+> test 1 → 3 → 1 after the skeptic)** — F1, the U-4 pin loosened to a `[\s\S]*?` bridge, so a mutant hoisting BOTH the revert and
+> the toast out of the refusal branch passed every pin → **fix wave 9 `abbdfd4`** (3 files, +5/−4, landed by the orchestrator: the
+> tight `setSeconds` anchor plus two comment corrections; CI 34251068803) → **round 10 (one scoped test-integrity auditor:
+> 12 → 0)** → **bump 4.2.0 IN PROGRESS**. Gate on the fix-wave-9 tree: **`npm run verify` EXIT 0
+> — 361 files / 7,031 passed / 35 skipped, `next build` compiled 13.4 s**; README counts say 7031 / 361 / 49 screens; seam files
 > `tests/seams-v42{,-fix,-fix2,-fix3,-fix4,-fix5}.test.ts` (35 + 20 + 20 + 16 + 11 + 12 tests). Rulings: `06-ANSWERS.md` "v4.2
 > fix-wave rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11), "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave
 > shape + session decisions) and **"v4.2 round-5 rulings"** (S-1, S-2 + the owner's no-collision addition, U-1/U-2, D-1, wave
 > shape); measurements: `docs/DECISIONS.md` 2026-09-07/08 entries "v4.2 wave audit", "v4.2 fix-wave audit", "v4.2 fix wave 3",
-> "v4.2 round-4 audit", "v4.2 round-5 audit", **"v4.2 round-6 audit"** (rounds 6–8 and waves 6–7 in one entry); rulings for
-> rounds 6–8: `06-ANSWERS.md` "v4.2 round-6 rulings", "round-7 rulings", "round-8 rulings". Known-open, recorded, NOT blockers
+> "v4.2 round-4 audit", "v4.2 round-5 audit", **"v4.2 round-6 audit"** (rounds 6–8 and waves 6–7 in one entry) and **"v4.2 fix
+> wave 8 `5bc4f8f` → round 9 → fix wave 9 `abbdfd4` → round 10"**; rulings for rounds 6–10: `06-ANSWERS.md` "v4.2 round-6
+> rulings", "round-7 rulings", "round-8 rulings", "v4.2 round-9 session rulings". Known-open, recorded, NOT blockers
 > (the round-6/7/8 items are listed in that DECISIONS entry): performance-page short-side sign (pre-existing);
 > a hand-edited non-statutory `stt_side` of `both` for `future` would diverge `charges.ts` from `exitStt` (M-1 limitation);
 > `runAutoMtm().breaches` is serialised by `/api/mtm/auto` and read by nobody; `PLANNED_NOTES.angelone` names a constant but is

@@ -4697,3 +4697,61 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   round 7 ≈ 0.26 M (three Fable auditors) + 0.09 M (skeptic); fix wave 7 ≈ 0.22 M (two Opus builders); round 8 ≈ 0.20 M (two
   Fable auditors) + 0.06 M (skeptic) — ≈ 1.83 M in subagents; the orchestrator reached ~300k context, which is why wave 8 was
   handed to a fresh session by ruling.
+
+## 2026-09-08 — v4.2 fix wave 8 `5bc4f8f` → round 9 (3 → 1) → fix wave 9 `abbdfd4` → round 10 (1 → 0); a loosened pin let the U-4 fix be hoisted out of its own branch; the stalled-clock symptom was a RangeError, not a hang
+
+- **Fix wave 8 `5bc4f8f`** (4 files, +57/−11, one Opus builder over the card, its two settings tests and
+  `tests/quotes-angelone.test.ts`): U-3 — `components/live/live-feed-card.tsx:802` takes the functional
+  `setProvider((cur) => (cur === previous ? reconcilePick(previous, fresh) : cur))`, with four pins moved to the new shape
+  (angelone-settings `:1304`/`:1543`/`:1562` plus a `.not.toMatch(/setProvider\(reconcilePick\(/)`, upstox `:526`) —
+  **red on revert 4 failed / 151 passed**. U-4 — `:872` takes `setSeconds((cur) => (cur === next ? previous : cur))`, the upstox
+  `:659` pin moved to `:666` (plus `.not.toMatch(/setSeconds\(previous\);/)`) while `:653` was deliberately NOT moved because the
+  pre-write shape is unchanged — **red on revert 1 / 154**. T-8 — the stalled-clock fixture throws after a LITERAL 8 sleeps,
+  proven by mutating `lib/quotes/angelone.ts:710` — which is a **`for` loop, not the `while` the round-8 entry above names** — to
+  `for (;;)`: red in 11 ms in-test, `angelone.ts` restored byte-identical afterwards. No new `it()`, so the README counts do not
+  move. Gate `npm run verify` EXIT 0 — **361 files / 7,031 passed / 35 skipped**, build 15.8 s, lint 0 errors (3 pre-existing
+  warnings).
+- **Correction to the round-8 entry above** (recorded here rather than rewritten there): its timer claim holds — a microtask-only
+  fake sleep starves every macrotask, so no timer-based `testTimeout` can fire — but the fixture's own `slept.push` reaches V8's
+  FixedArray cap (134,217,727) at ~113 M entries after ~7–8 s, so the symptom an unbounded loop actually produces is a **RED gate
+  blaming the fixture** (`RangeError: Invalid array length`), not the HUNG gate that entry describes. The literal-8 guard stands:
+  it reddens in milliseconds and names the loop instead of the fixture.
+- **CI on `5bc4f8f`: 34247891366 attempt 1 = 5/6** — Windows `tests/backup-roundtrip.test.ts` "previews an encrypted backup
+  without restoring it", `Test timed out in 5000ms` after 7,985 ms. Outside the diff, no flake history in this file or the ledger,
+  and vitest's `testTimeout` is still the 5 s default (4.1 raised only `hookTimeout`). `gh run rerun --failed` → **attempt 2
+  SUCCESS 6/6**. Ruled a cold-runner flake on ONE occurrence — no code or config change; if it reds twice more it earns a per-test
+  timeout.
+- **`ba2b71f`'s own run 34245189533 was 5/6:** macOS Playwright `apiRequestContext.post: read ECONNRESET` on
+  `POST http://localhost:3100/api/accounts` in `e2e/z-live-desk.spec.ts:614`, 92/93 passed — a DIFFERENT spec from the `9582d2f`
+  flake, so the "twice in one spec" rule did not trigger. The re-run was **cancelled** by the workflow's own
+  `concurrency: cancel-in-progress` (`.github/workflows/ci.yml:8-10`) when wave 8 pushed, and was left cancelled by ruling:
+  `ba2b71f`'s tree is a strict SUBSET of `5bc4f8f`'s, so `5bc4f8f`'s green run stands for both shas.
+- **Round 9 (scoped `ba2b71f..5bc4f8f`; ui-regressions + test-integrity on Fable, then the Fable skeptic): 3 → 1.**
+  ui-regressions 14 candidates → **0 confirmed** (`reconcilePick` is pure, `:697-706`; `ProviderId` is a string union; the new
+  writes are a strict subset of the old; seam C6b and the "exactly two re-asks" pins are green and enforcing; no e2e touches the
+  card). test-integrity 14 → **1: F1 — the U-4 pin at `tests/live-feed-upstox-settings.test.ts:666` had been LOOSENED** from an
+  anchored `if \(!r\.ok\) \{[ \t]*\r?\n\s*setSeconds\(previous\);` to a `[\s\S]*?` bridge, so a mutant that hoists BOTH the revert
+  and the toast out of the refusal branch passes every pin in both settings files while nothing behavioural covers `saveSeconds`.
+  The skeptic CONFIRMED it but narrower (the toast-inside hoist was already red), verified the tight anchor byte-exact against the
+  shipped CRLF card after `stripComments`, **REFUTED C13's premise** (the `:1557` index pin does catch a dead updater), and
+  recorded that **seam C6b never observes the adoption** — U-3 is enforced only by the two settings files.
+- **Fix wave 9 `abbdfd4`** (3 files, +5/−4), landed by **the orchestrator, not a builder** — a session decision (three lines, and
+  the skeptic had already verified the exact regex byte-for-byte; overrule in `06-ANSWERS.md` if wrong): the tight anchor
+  `if \(!r\.ok\) \{[ \t]*\r?\n\s*setSeconds\(\(cur\) => \(cur === next \? previous : cur\)\);`; the card's `:797` comment now
+  reads "The GET below"; the `quotes-angelone` comment corrected to the RangeError symptom. Proof: the hoisted mutant reads `true`
+  under the loose pin and `false` under the tight one, the shipped shape reads `true` under both; scoped run 202/202. Gate
+  `npm run verify` EXIT 0 — **361 / 7,031 / 35 skipped**, build 13.4 s. **CI 34251068803** — still running when this was written;
+  its result is recorded with the 4.2.0 bump.
+- **Round 10 (one Fable test-integrity auditor over the wave-9 diff, no skeptic — session decision, because the skeptic authored
+  the fix): 12 → 0.** The tight pin was re-derived at runtime against the CRLF card and an LF copy, 8 hoist/no-op mutants were
+  rejected and 11 comment-churn variants accepted, and the `RangeError` was reproduced standalone at 7.9 s, array length
+  112,813,858, with a 100 ms timer starved until after it.
+- **Recorded, not defects (new this session):** the revert kept INSIDE the branch with only the TOAST hoisted out (a toast on
+  every successful drag) passes both the loose and the tight pin; `saveSeconds` has source-shape coverage only; a `let previous`
+  with `previous = next` after the POST passes all three pins; seam C6b enforces ORDER (revert < toast < re-ask < return), not
+  adoption; `tests/backup-roundtrip.test.ts`'s encrypted-preview test runs ~8 s on a cold Windows runner against a 5 s default
+  `testTimeout` — one observation, not yet a pattern.
+- **Owner rulings:** `06-ANSWERS.md` "v4.2 round-9 session rulings" — the session runs the full path with ONE pause before the
+  tag; `fleet-tune` is deferred to its own session after 4.2.0 ships so the auditor and skeptic prompts stay byte-identical across
+  rounds 8–10 and the ladder stays comparable; the "Live Desk v4.0 inputs" REMIND memory is retargeted to the §3 Positions-tab
+  redesign and raised only when §3 is scheduled.
