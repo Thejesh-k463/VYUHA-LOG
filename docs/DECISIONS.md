@@ -4756,7 +4756,7 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   rounds 8–10 and the ladder stays comparable; the "Live Desk v4.0 inputs" REMIND memory is retargeted to the §3 Positions-tab
   redesign and raised only when §3 is scheduled.
 
-### 2026-09-09 — v4.2.0 tagged on `b488dde`; release 3/3 on the first attempt; deep verify 3/3; draft awaits the owner
+### 2026-09-09 — v4.2.0 tagged on `b488dde`; release 3/3 on the first attempt; deep verify 3/3; PUBLISHED 01:48 IST
 
 - **The CHANGELOG date is the TAG day, and a docs-only re-date does NOT re-cut the installer.** At the pre-tag pause the owner
   ruled "tag now" on the CI-green candidate and asked the 4.2.0 CHANGELOG section to carry the day it is actually tagged,
@@ -4793,11 +4793,23 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   "Manifest validation succeeded"). The script **refuses to hash a local build** and prints the download command instead — a
   good guard, and the reason the two values can never be swapped by accident. **winget submission stays HELD** by the standing
   rule: microsoft/winget-pkgs #421585 is still OPEN.
-- **Owner actions owed** (the release is a DRAFT — `releases/latest` still resolves to v4.1.0 until Publish): publish the draft;
-  install `Vyuha_4.2.0_x64-setup.exe` from the client ZIP on a non-build machine; smoke-test Upstox + Angel One with his own
-  keys (standing ruling — a session never receives keys); submit the WDSI form (content handed over in the session's final
-  message). Only after his confirmation does STATE §2 read "PUBLISHED" and this log gain its PUBLISHED line. **Next after that:**
-  the §3 Positions-tab scope (the owner has not yet said "build" on the round-3 canvas), and `fleet-tune` in its own session
+- **Owner actions DONE — v4.2.0 is PUBLISHED.** He published the draft at **2026-09-08T20:18:15Z = 2026-09-09 01:48 IST**
+  (`gh release view v4.2.0` → `isDraft` false); `gh api repos/Thejesh-k463/VYUHA-LOG/releases/latest` → **`v4.2.0`**, and
+  `releases/latest/download/latest.json` states version **4.2.0** for **six platforms** (darwin-aarch64, darwin-aarch64-app,
+  windows-x86_64, windows-x86_64-nsis, darwin-x86_64, darwin-x86_64-app). He installed `Vyuha_4.2.0_x64-setup.exe` from the
+  client ZIP on a **non-build laptop** and reports **both feeds working** — Upstox and Angel One smoke-tested with his own keys
+  (standing ruling — a session never receives keys). The **WDSI form is submitted**, carrying the client-ZIP installer sha
+  `28345AC3E22F8366E2600B6A4041A529291BD2DEEE3FFD0AFD19979F76FB84DA`. winget stays HELD by microsoft/winget-pkgs #421585 (OPEN).
+- **Post-release doc audit — 66 tool uses, four findings, all created by publication itself, none a build defect.** Everything
+  the auditor could re-derive matched the tree: README's 361 test files and 93 e2e flows in 29 specs are exact, every version
+  surface reads 4.2.0, the shas and CI run ids match the release, the line citations are byte-exact, both SHA-256 destinations
+  are consistent, mojibake counts are 0/0 across 8 files, the tree is clean with no untracked files, no probe processes survive
+  and nothing listens on :3100. The four findings: STATE §2 and §0 still said "draft awaits" (fixed by this record); the
+  `VYUHA-STATE.md:4` datestamp still said "verified … 2026-09-06" (→ 2026-09-09); and the winget manifest's
+  `ReleaseDate: 2026-09-08` was corrected to 2026-09-09 and re-validated (a gitignored file, so it shows in no diff).
+- **Owner has application fixes to raise next session — the list has not been given.** The next session ASKS for it first
+  (AskUserQuestion, ≤10 per group, before any feature code) and never guesses at its contents. **After those fixes:** the §3
+  Positions-tab scope (the owner has not yet said "build" on the round-3 canvas), and `fleet-tune` in its own session
   (ruled at round 9).
 - **Cost of this session** (Fable orchestrator, ~275k context at hand-off): ≈ **1.05 M subagent tokens across 14 launches** —
   recon scout 54k, wave-8 builder 78k, ui auditor 55k, test-integrity auditor 95k, bump scout 65k, skeptic 109k, round-10

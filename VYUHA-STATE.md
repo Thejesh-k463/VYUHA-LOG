@@ -1,7 +1,7 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything in §2 was verified against the repo and the live release on 2026-09-06, not recalled.
+Everything in §2 was verified against the repo and the live release on 2026-09-09, not recalled.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
@@ -27,16 +27,19 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2.0 TAGGED on `b488dde` (tag `9da7bc8`, 2026-09-09 IST; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3); DRAFT awaits the owner's Publish + install + smoke test; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585)
 
-> **v4.2.0 is TAGGED, not published.** The GitHub release `v4.2.0` is a DRAFT with 9 assets, so `releases/latest` still resolves
-> to v4.1.0 until the owner presses Publish. Owed to him: publish the draft, install `Vyuha_4.2.0_x64-setup.exe` from the client
-> ZIP on a non-build machine, smoke-test Upstox + Angel One with his own keys (a session never receives keys), and submit the
-> WDSI form. **Two SHA-256 values, two destinations:** the client ZIP `release-packages/Vyuha_4.2.0_Client_Package.zip`
+> **v4.2.0 is PUBLISHED.** The owner published the draft at **2026-09-08T20:18:15Z = 2026-09-09 01:48 IST** (`gh release view
+> v4.2.0` → `isDraft` false, 9 assets); `releases/latest` resolves to **v4.2.0** and its `latest.json` serves 4.2.0 for **six
+> platforms** (darwin-aarch64 and `-app`, darwin-x86_64 and `-app`, windows-x86_64 and `-nsis`). He installed
+> `Vyuha_4.2.0_x64-setup.exe` on a **non-build laptop** and smoke-tested **both feeds** — Upstox and Angel One, with his own keys
+> (a session never receives keys) — and the **WDSI form is submitted**. **Two SHA-256 values, two destinations:** the client ZIP `release-packages/Vyuha_4.2.0_Client_Package.zip`
 > (36,403,642 B, 13 files) carries the LOCAL installer, `28345AC3E22F8366E2600B6A4041A529291BD2DEEE3FFD0AFD19979F76FB84DA` →
-> **WDSI**; the CI-built draft asset is `eef3f18bdaaa02a1619d74dc2f9f647be02919b9a6ff3fd14480d58f4f9ed7ad` → the **winget**
+> **WDSI**; the CI-built release asset is `eef3f18bdaaa02a1619d74dc2f9f647be02919b9a6ff3fd14480d58f4f9ed7ad` → the **winget**
 > manifest at `release-packages/winget/4.2.0` (validated; submission HELD while microsoft/winget-pkgs #421585 is open).
 > Detail: `docs/DECISIONS.md` 2026-09-09 "v4.2.0 tagged on `b488dde`".
+>
+> **Next:** the owner's application fixes (list not yet given — ask first), then §3 Positions tab or the deferred fleet-tune.
 >
 > **The audit and bump history (kept for the record).** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
