@@ -568,13 +568,49 @@ async function fetchStatus(signal?: AbortSignal): Promise<FeedResponse | null> {
   }
 }
 
-async function post(body: Record<string, unknown>): Promise<FeedPostResult> {
-  const res = await fetch("/api/live/feed", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return res.json();
+/**
+ * The toast a write gets when it never reached the server at all. It states
+ * only what is knowable from a rejected `fetch`: the request did not get an
+ * answer. It deliberately does NOT say the write did not land — the request
+ * may have reached the route and only the response been lost, and a card that
+ * claims otherwise would be inventing a fact about the database.
+ */
+export const FEED_UNREACHABLE = "Vyuha could not reach its own server. Try again in a moment.";
+
+/**
+ * A WRITE THAT NEVER ANSWERS IS AN ANSWER (fix wave 6).
+ *
+ * `fetch` REJECTS when the network is down or the sidecar is restarting — it
+ * does not resolve with a not-ok response — and every write path here is
+ * shaped the same way: `store()` raises `pending` before its await and lowers
+ * it AFTER, the accept paths raise it and hand off to `store()`, and the radio
+ * calls `void pick()`, which swallows the rejection. So one dropped write left
+ * `pending` true for ever: every radio and both block buttons disabled, no
+ * toast, nothing on screen saying why, until the user reloaded the page.
+ *
+ * The rejection is therefore turned into the refusal the card ALREADY knows
+ * how to handle — `ok: false` plus a `message`, exactly the shape the route's
+ * own 409 carries — so the existing `!r.ok` branch lowers `pending`, puts the
+ * radio back, toasts and re-asks the route. No new branch, and no third re-ask
+ * call site (U-1: exactly two, one per outcome of the one write).
+ *
+ * The body is read INSIDE the `try`: a restarting sidecar answers 502 with
+ * HTML, so `res.json()` rejects even though the `fetch` resolved, and a bare
+ * `return res.json()` hands that rejection straight back out. `fetchStatus()`
+ * above already catches for the same reason, which is why the GET behind
+ * `refreshStatus()` cannot leave the card stuck either.
+ */
+export async function post(body: Record<string, unknown>): Promise<FeedPostResult> {
+  try {
+    const res = await fetch("/api/live/feed", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return (await res.json()) as FeedPostResult;
+  } catch {
+    return { ok: false, message: FEED_UNREACHABLE };
+  }
 }
 
 /**

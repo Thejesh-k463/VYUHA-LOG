@@ -9,6 +9,7 @@ import {
   ANGELONE_MAX_LOGIN_ATTEMPTS,
   ANGELONE_MAX_SESSION_INVALIDATIONS,
   ANGELONE_MAX_TOKENS_PER_CALL,
+  ANGELONE_MIN_REQUEST_GAP_MS,
   ANGELONE_RATE_LIMIT_PER_SECOND,
   ANGELONE_SESSION_INVALID_CAPPED_REASON,
   angelOneFeedErrorMessage,
@@ -102,6 +103,14 @@ function harness(
      * can be answered session-invalid while a cached token still prices.
      */
     searchImpl?: AngelSearchScrip;
+    /**
+     * HOW THE INJECTED `sleep` MOVES THE FAKE CLOCK (ruling T-1, fix wave 6).
+     *
+     * The default advances it by exactly the milliseconds asked for, which is
+     * the one thing a real timer does NOT promise: `setTimeout(1000)` is allowed
+     * to run at 999 ms. A fixture that returns less than `ms` is an early timer.
+     */
+    sleepAdvance?: (ms: number) => number;
   } = {},
 ): Harness {
   let clock = opts.startAt ?? T0;
@@ -116,7 +125,7 @@ function harness(
     now: () => clock,
     // The pacing IS the clock here: nothing waits on a real timer.
     sleep: async (ms) => {
-      clock += ms;
+      clock += opts.sleepAdvance ? opts.sleepAdvance(ms) : ms;
     },
     loginImpl: async () => {
       state.logins += 1;
@@ -373,6 +382,62 @@ describe("the two ceilings — both refuse, neither queues", () => {
     // unreachable while the pacing holds — which is the point: it catches a
     // pacing bug rather than being the binding limit.
     expect(ANGELONE_HOURLY_BUDGET).toBeGreaterThan(3600 * ANGELONE_RATE_LIMIT_PER_SECOND);
+  });
+});
+
+/* ── the pacing is MEASURED, not assumed (owner ruling T-1, fix wave 6) ──── */
+
+/**
+ * A TIMER THAT FIRES ONE MILLISECOND EARLY COST A WHOLE SWEEP.
+ *
+ * `slot()` slept `lastRequestAt + ANGELONE_MIN_REQUEST_GAP_MS - now()` and then
+ * asked `guard.take(now())` — but a timer is only ever a lower bound in
+ * PRINCIPLE and not in practice: `setTimeout(1000)` may run at 999 ms, and the
+ * guard trims its window only once a full second has passed. One millisecond
+ * short and the guard refused the request the sleep had just paid for; the batch
+ * loop in `snapshot()` reads a refusal as "drop this batch and every remaining
+ * one", so the poll returned an EMPTY map and the desk showed no price at all
+ * for that cycle. The refusal was correct — the guard is the safety net and it
+ * stays one. What was wrong is that the pacing never re-read the clock.
+ *
+ * The fixture below is what a real timer does: a long sleep may land a
+ * millisecond early, a 1 ms re-arm cannot land a whole millisecond early.
+ */
+describe("pacing re-reads the clock, so an early timer costs no sweep (ruling T-1)", () => {
+  const PRICED = { exchange: "NSE", tradingSymbol: "SBIN-EQ", symbolToken: "3045", ltp: 1005.9, close: 1016.1 };
+  const EARLY = (ms: number): number => (ms >= 2 ? ms - 1 : ms);
+
+  it("still sends the batch when the paced sleep fires one millisecond early", async () => {
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      respond: () => ({ fetched: [PRICED], unfetched: [] }),
+      sleepAdvance: EARLY,
+    });
+    const snap = await h.provider.snapshot([KEY("SBIN")]);
+
+    expect(h.sent.length, "the paced batch never reached the wire — one whole sweep unpriced").toBe(1);
+    expect([...snap.keys()], "the poll came back empty because the timer was 1 ms fast").toEqual(["NSE:SBIN"]);
+    expect(snap.get("NSE:SBIN")!.ltp).toBe(100590);
+
+    // AND THE GAP IS STILL HELD. The fix is to wait the remainder out, never to
+    // send early or to widen the guard: the login took the first slot, so the
+    // quote goes a FULL second after it and not 999 ms after it.
+    expect(h.sent[0].at - T0, "the request went out inside the pacing gap").toBeGreaterThanOrEqual(
+      ANGELONE_MIN_REQUEST_GAP_MS,
+    );
+    // Nothing was refused, so the desk is told nothing about a guard.
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.reason ?? "").not.toMatch(/rate guard/i);
+  });
+
+  it("keeps a 120-position book at three requests, a second apart, on the same early timer", async () => {
+    const tokens = Array.from({ length: 120 }, (_, i) => tokenOf(`S${i}`, "NSE", String(i)));
+    const h = harness({ tokens, sleepAdvance: EARLY });
+    await h.provider.snapshot(tokens.map((t) => KEY(t.symbol)));
+
+    expect(h.sent.length, "the sweep was truncated by an early timer, not by a real ceiling").toBe(3);
+    const gaps = h.sent.slice(1).map((s, i) => s.at - h.sent[i].at);
+    expect(gaps.every((g) => g >= ANGELONE_MIN_REQUEST_GAP_MS), `gaps ${gaps.join(",")}`).toBe(true);
   });
 });
 
@@ -823,6 +888,75 @@ describe("a poll that invalidates and still prices does not reset the count (rul
     );
     const health = (await h.provider.health()) as AngelOneHealth;
     expect(health.reason).toBe(ANGELONE_SESSION_INVALID_CAPPED_REASON);
+  });
+});
+
+/* ── the C-1 count is PER INVALIDATED SESSION, not per poll (fix wave 6) ─── */
+
+/**
+ * RECORDED AND PINNED, DELIBERATELY NOT CHANGED (owner ruling, fix wave 6).
+ *
+ * `invalidateSession()` is called from two places in ONE poll: the lookup that
+ * came back session-invalid, and the quote that came back session-invalid. Both
+ * increment `consecutiveSessionInvalidations`, so a poll in which BOTH surfaces
+ * answer 401 moves the count by two and the "at most three sessions" cap is
+ * reached inside the SECOND such poll rather than the third.
+ *
+ * That is the behaviour the owner ruled to keep: each increment corresponds to a
+ * session Angel One really did call invalid, the count is about SESSIONS and not
+ * about polls, and counting a poll once would spend one more accepted session —
+ * one more credential transmission — on evidence that is already in hand. This
+ * test exists so the arithmetic is a decision rather than an accident: a
+ * single-increment world caps on the FOURTH poll, and this asserts the THIRD.
+ *
+ * PROVEN BY MUTATION, not by revert — there is no fix here to take away.
+ */
+describe("the invalidation cap counts sessions, not polls", () => {
+  const KEYS = [KEY("SBIN"), KEY("TCS")];
+
+  it("counts each invalidated session in a poll, lookup and quote alike", async () => {
+    const h = harness({
+      // SBIN is cached, so the quote surface is reached even though the lookup
+      // for TCS dies first; both answer the not-entitled 401.
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      respond: () => {
+        throw new Error("Angel One quote: HTTP 401");
+      },
+      searchImpl: async () => {
+        throw new Error("Angel One symbol search: HTTP 401");
+      },
+    });
+
+    const errors: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      await h.provider
+        .snapshot(KEYS)
+        .then(() => errors.push("<no error>"))
+        .catch((e: unknown) => errors.push(e instanceof Error ? e.message : String(e)));
+      h.advance(3000);
+    }
+
+    // Poll 1: lookup 401 (1) + quote 401 (2). Poll 2: (3) + (4) — the cap is
+    // reached inside it, and nothing is sent from poll 3 on.
+    expect(errors.slice(0, 2), "both polls spent a session and neither could price").toEqual([
+      "<no error>",
+      "<no error>",
+    ]);
+    expect(
+      errors[2],
+      "two polls that each invalidated TWO sessions did not reach the three-session cap",
+    ).toBe(ANGELONE_SESSION_INVALID_CAPPED_REASON);
+    expect(h.logins, "a poll counted once would have bought a third sign-in").toBe(2);
+    expect(h.sent.length, "one quote attempt per session, and no session after the second poll").toBe(2);
+
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.ok).toBe(false);
+    expect(health.state).toBe("unreachable");
+    expect(health.reason).toBe(ANGELONE_SESSION_INVALID_CAPPED_REASON);
+    expect(
+      showConnectPrompt({ providerId: "angelone", healthState: health.state }, null),
+      "a capped feed must still reach the user",
+    ).toBe(true);
   });
 });
 

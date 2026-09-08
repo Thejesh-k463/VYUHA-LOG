@@ -6,6 +6,7 @@ import {
   ANGELONE_FEED_COPY,
   FEED_BLOCKED_HEALTH,
   FEED_CHECKING,
+  FEED_UNREACHABLE,
   KEEP_EOD_CTA,
   PROVIDERS,
   REVIEW_CONSENT_CTA,
@@ -17,6 +18,8 @@ import {
   foldFeedResponse,
   foldWriteResult,
   offeredProviders,
+  // The card's own writer, so a dropped write is driven rather than described.
+  post as feedWrite,
 } from "@/components/settings/live-feed-card";
 import {
   ANGELONE_BATCH_SIZE,
@@ -90,6 +93,7 @@ const NEW_STRINGS: [where: string, text: string][] = [
     "route refusal (no acknowledgement)",
     "Read what the Angel One feed does and accept it first — until then the desk stays on end-of-day prices.",
   ],
+  ["card toast (the write never answered)", FEED_UNREACHABLE],
 ];
 
 // ---------------------------------------------------------------------------
@@ -1307,5 +1311,131 @@ describe("a refused provider write re-asks the route, so the block stops quoting
       body.indexOf("await refreshStatus();"),
       "a re-ask sits before the write it is supposed to describe (U-1)",
     ).toBeGreaterThan(body.indexOf('const r = await post({ action: "provider", provider: next });'));
+  });
+});
+
+/**
+ * FIX WAVE 6 — A WRITE THAT NEVER ANSWERED FROZE THE WHOLE CARD.
+ *
+ * `fetch` REJECTS when the network is down or the sidecar is restarting; it
+ * does not resolve with a not-ok response. `post()` did not catch that, and
+ * every write path is shaped the same way: `store()` raises `pending` before
+ * the await and lowers it AFTER, the accept paths raise it and hand off to
+ * `store()`, and the radio's own handler is invoked as `void pick()` — which
+ * swallows the rejection. So one dropped write left `pending` true for ever:
+ * every radio and both block buttons disabled, no toast, nothing on screen
+ * saying why, until the user reloaded the page.
+ *
+ * The fix adds NO branch. The rejection is turned into the refusal shape the
+ * card already handles (`ok: false` + `message`, exactly what the route's 409
+ * carries), so the EXISTING `!r.ok` path lowers `pending`, reverts the radio,
+ * toasts and re-asks — which is why the U-1 pins above (two `refreshStatus()`
+ * call sites, in that order) must still be green beside this block.
+ *
+ * Driven for real: `post()` is exported and the global `fetch` is stubbed, so
+ * this is behaviour, not only shape. The shape pins are here too because they
+ * are what fails loudly if someone later moves the `await` back out of the
+ * `try` — `\r?\n` in anything spanning a line break (Windows CI checks the
+ * card out with CRLF).
+ */
+describe("a write whose fetch never answers is a refusal, not a frozen card (fix wave 6)", () => {
+  /** The body of the module-level `post()` helper. */
+  const postBody = (src: string) => {
+    const start = src.indexOf("async function post(body: Record<string, unknown>)");
+    expect(start, "post() is gone from the card").toBeGreaterThan(-1);
+    const end = src.indexOf("\n}", start);
+    expect(end, "post() has no closing brace at module scope").toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  const withFetch = async (impl: typeof fetch, run: () => Promise<void>) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    try {
+      await run();
+    } finally {
+      globalThis.fetch = original;
+    }
+  };
+
+  it("a REJECTED fetch is answered as a refusal instead of being raised at the caller", async () => {
+    await withFetch(
+      (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch,
+      async () => {
+        await expect(
+          feedWrite({ action: "provider", provider: "angelone" }),
+          "a dropped write still escapes post(), so pending is never lowered and the card freezes",
+        ).resolves.toEqual({ ok: false, message: FEED_UNREACHABLE });
+      },
+    );
+  });
+
+  it("a torn response is caught too — the body is read INSIDE the try", async () => {
+    // A restarting sidecar answers 502 with HTML, so `res.json()` rejects even
+    // though `fetch` resolved. `return res.json()` (unawaited) hands that
+    // rejection straight back out of the try.
+    await withFetch(
+      (() =>
+        Promise.resolve(
+          new Response("<html>502 Bad Gateway</html>", {
+            status: 502,
+            headers: { "content-type": "text/html" },
+          }),
+        )) as typeof fetch,
+      async () => {
+        await expect(feedWrite({ action: "ack", provider: "angelone" })).resolves.toEqual({
+          ok: false,
+          message: FEED_UNREACHABLE,
+        });
+      },
+    );
+  });
+
+  it("post() wraps its fetch in a try and returns the refusal shape from the catch", () => {
+    const body = postBody(stripComments(read(CARD)));
+    expect(body, "post() no longer wraps its fetch in a try").toMatch(/try \{[\s\S]*?await fetch\(/);
+    expect(
+      body,
+      "a rejected write escapes post(), so pending stays raised and the card freezes (fix wave 6)",
+    ).toMatch(/\}\s*catch\s*\{[\s\S]*?ok: false/);
+    expect(body, "the JSON body is returned unawaited, so a torn response escapes the catch").toMatch(
+      /return \(await res\.json\(\)\) as FeedPostResult;/,
+    );
+  });
+
+  it("the refusal it returns is the branch store() ALREADY has — no new branch, no third re-ask", () => {
+    const card = stripComments(read(CARD));
+    const start = card.indexOf("async function store(next: ProviderId)");
+    const body = card.slice(start, card.indexOf("\n  }", start));
+    expect(body.split("if (!r.ok) {").length - 1, "store() grew a second refusal branch").toBe(1);
+    expect(body, "store() catches the write itself instead of reading one answer").not.toMatch(/catch\b/);
+    expect(body.match(/setPending\(false\)/g)?.length ?? 0, "pending is lowered on one path only").toBe(1);
+    expect(card.match(/await refreshStatus\(\);/g)?.length ?? 0, "a third re-ask (U-1)").toBe(2);
+  });
+
+  it("every path through the accept handlers lowers pending", () => {
+    const card = stripComments(read(CARD));
+    for (const name of ["acceptUpstox", "acceptAngelOne"]) {
+      const start = card.indexOf(`async function ${name}()`);
+      expect(start, `${name}() is gone from the card`).toBeGreaterThan(-1);
+      const body = card.slice(start, card.indexOf("\n  }", start));
+      // Two paths only: the refused ack lowers it itself, and the accepted one
+      // hands off to `store()`, which lowers it after its own POST — a POST
+      // that can no longer reject.
+      expect(body.match(/setPending\(false\)/g)?.length ?? 0, `${name}() lowers pending more than once`).toBe(1);
+      expect(body, `${name}() no longer hands off to store()`).toMatch(/await store\("(upstox|angelone)"\)/);
+      expect(body, `${name}() returns without lowering pending or handing off`).toMatch(
+        /if \(!r\.ok\) \{\s*setPending\(false\);/,
+      );
+    }
+  });
+
+  it("the sentence it toasts is descriptive, and says nothing it cannot know", () => {
+    expect(BANNED.test(FEED_UNREACHABLE), FEED_UNREACHABLE).toBe(false);
+    expect(PRESCRIPTIVE_LANGUAGE.test(FEED_UNREACHABLE), FEED_UNREACHABLE).toBe(false);
+    // It never claims the write did not land — the request may have reached
+    // the server and only the answer been lost.
+    expect(FEED_UNREACHABLE).not.toMatch(/nothing (was|has been) (changed|saved|stored)/i);
+    expect(FEED_UNREACHABLE).toMatch(/could not reach/i);
   });
 });

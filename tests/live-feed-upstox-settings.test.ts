@@ -4,12 +4,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import {
   FEED_BLOCKED_HEALTH,
+  FEED_UNREACHABLE,
   PROVIDERS,
   REVIEW_CONSENT_CTA,
   UPSTOX_FEED_COPY,
   feedBlockState,
   feedHealthText,
   upstoxRowState,
+  // The card's own writer, so a dropped write is driven rather than described.
+  post as feedWrite,
 } from "@/components/settings/live-feed-card";
 import {
   LIVE_FEED_DISCLOSURE_VERSIONS,
@@ -81,6 +84,7 @@ const NEW_STRINGS: [where: string, text: string][] = [
     "route refusal (no acknowledgement)",
     "Read what the Upstox feed does and accept it first — until then the desk stays on end-of-day prices.",
   ],
+  ["card toast (the write never answered)", FEED_UNREACHABLE],
 ];
 
 // ---------------------------------------------------------------------------
@@ -532,4 +536,70 @@ describe("a refused Upstox write leaves the card describing the route, not the m
     expect(start, "acceptUpstox() is gone from the card").toBeGreaterThan(-1);
     return card.slice(start, card.indexOf("\n  }", start));
   };
+});
+
+/**
+ * FIX WAVE 6 — THE UPSTOX HALF OF THE CARD FREEZE.
+ *
+ * The same `post()` writes both providers, so this is the same defect seen
+ * from the Upstox side, and it is pinned here for the reason the U-1 twin is:
+ * whoever changes this card next reads whichever settings file names their
+ * provider. `acceptUpstox()` raises `pending` and hands off to `store()`,
+ * which lowers it AFTER its await — so a `fetch` that REJECTS (network down,
+ * sidecar restarting) skipped the lowering entirely and left every radio and
+ * both block buttons disabled until a page reload, with no toast at all.
+ *
+ * The rejection is now answered as the refusal shape the card already reads
+ * (`ok: false` + `message`), so the EXISTING `!r.ok` branch does the work. The
+ * full block, the accept-path pins and the copy scan live on the Angel One
+ * twin (`tests/live-feed-angelone-settings.test.ts`). Source-shape plus a real
+ * stubbed `fetch`; `\r?\n` in anything spanning a line break.
+ */
+describe("a write whose fetch never answers is a refusal, not a frozen card (fix wave 6)", () => {
+  const postBody = () => {
+    const card = stripComments(read(CARD));
+    const start = card.indexOf("async function post(body: Record<string, unknown>)");
+    expect(start, "post() is gone from the card").toBeGreaterThan(-1);
+    return card.slice(start, card.indexOf("\n}", start));
+  };
+
+  it("a REJECTED fetch is answered as a refusal instead of being raised at the caller", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new TypeError("Failed to fetch"))) as typeof fetch;
+    try {
+      await expect(
+        feedWrite({ action: "provider", provider: "upstox" }),
+        "a dropped write still escapes post(), so pending is never lowered and the card freezes",
+      ).resolves.toEqual({ ok: false, message: FEED_UNREACHABLE });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("post() wraps its fetch in a try and returns the refusal shape from the catch", () => {
+    const body = postBody();
+    expect(body, "post() no longer wraps its fetch in a try").toMatch(/try \{[\s\S]*?await fetch\(/);
+    expect(
+      body,
+      "a rejected write escapes post(), so pending stays raised and the card freezes (fix wave 6)",
+    ).toMatch(/\}\s*catch\s*\{[\s\S]*?ok: false/);
+    expect(body, "the JSON body is returned unawaited, so a torn response escapes the catch").toMatch(
+      /return \(await res\.json\(\)\) as FeedPostResult;/,
+    );
+  });
+
+  it("the Upstox accept path still lowers pending on both of its paths", () => {
+    const card = stripComments(read(CARD));
+    const start = card.indexOf("async function acceptUpstox()");
+    const body = card.slice(start, card.indexOf("\n  }", start));
+    expect(body.match(/setPending\(false\)/g)?.length ?? 0, "pending is lowered more than once").toBe(1);
+    expect(body, "the refused ack does not lower pending before it returns").toMatch(
+      /if \(!r\.ok\) \{\s*setPending\(false\);/,
+    );
+    expect(body, "the accepted sheet no longer hands off to store(), which lowers pending").toMatch(
+      /await store\("upstox"\)/,
+    );
+    // And the hand-off's own two re-asks are untouched by this wave (U-1).
+    expect(card.match(/await refreshStatus\(\);/g)?.length ?? 0, "a third re-ask (U-1)").toBe(2);
+  });
 });

@@ -626,6 +626,23 @@ export interface AngelOneProviderOptions {
   lookupsPerCycle?: number;
 }
 
+/**
+ * How many times `slot()` RE-READS the clock after sleeping the gap out
+ * (owner ruling T-1, v4.2 fix wave 6).
+ *
+ * A timer is a lower bound in principle and not in practice: `setTimeout(1000)`
+ * is allowed to run at 999 ms, and one millisecond was enough to make the
+ * per-second guard refuse the request the sleep had just paid for — after which
+ * `snapshot()` drops that batch AND every remaining one, so a whole sweep came
+ * back unpriced. Each pass sleeps the REMAINDER, so the first re-check settles
+ * it; the rest are a bound and not a policy, because a clock that never advances
+ * must not spin here. Nothing is added to the gap — the wait is measured against
+ * the clock instead of assumed from the timer — and the guard is left exactly
+ * what it was: the safety net that refuses rather than sends if the pacing is
+ * still wrong when the bound runs out.
+ */
+const PACING_RECHECKS = 4;
+
 export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): QuoteProvider {
   const readGate = opts.readGate ?? readGateFromDb;
   const now = opts.now ?? (() => Date.now());
@@ -681,11 +698,20 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
    * guards are what makes the ceilings TRUE: if the pacing is ever wrong, the
    * request is refused rather than sent, and the refusal reaches the user as a
    * gap plus a reason instead of as a broker-side ban.
+   *
+   * THE WAIT IS MEASURED, NOT ASSUMED (ruling T-1). The clock is re-read after
+   * each sleep and the REMAINDER slept again, because a timer may fire early and
+   * one millisecond short made the guard refuse a request the pacing had already
+   * paid for — costing the whole sweep, not one batch. See `PACING_RECHECKS`.
    */
   async function slot(): Promise<{ ok: true } | { ok: false; reason: string }> {
     if (lastRequestAt != null) {
-      const wait = lastRequestAt + ANGELONE_MIN_REQUEST_GAP_MS - now();
-      if (wait > 0) await sleep(wait);
+      const readyAt = lastRequestAt + ANGELONE_MIN_REQUEST_GAP_MS;
+      for (let i = 0; i < PACING_RECHECKS; i += 1) {
+        const wait = readyAt - now();
+        if (wait <= 0) break;
+        await sleep(wait);
+      }
     }
     const t = now();
     if (!guard.take(t)) {
