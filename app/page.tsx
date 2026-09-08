@@ -8,6 +8,7 @@ import { AutoPullRunner } from "@/components/system/auto-pull-runner";
 import { BreachBanner } from "@/components/risk/breach-banner";
 import { ReviewOpenCard } from "@/components/review/review-open-card";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 import { getDashboardTrades } from "@/lib/queries/trades";
 import { getSettings, getGlobalRisk } from "@/lib/queries/settings";
 import { getBucketCapital } from "@/lib/queries/bucket-capital";
@@ -82,7 +83,12 @@ export default function DashboardPage() {
         <AutoMtmRunner />
         <TelegramRunner />
         <AutoPullRunner />
-        <BreachBanner breaches={scanBreachesForSelectedAccount()} />
+        {/* U-2: the banner is told WHOSE breaches these are — the same
+            selection that scoped the scan — so its opt-in desktop notification
+            keeps one record per account and an account switch re-announces
+            nothing. `getSelectedAccountId()` is React-cached, so this is the
+            same read, not a second one that could disagree. */}
+        <BreachBanner breaches={scanBreachesForSelectedAccount()} accountId={getSelectedAccountId()} />
         <ReviewOpenCard />
         <DashboardClient
           workspace={asWorkspace(settings?.workspace)}

@@ -19,7 +19,40 @@ function breachHash(breaches: Breach[]): string {
   return breaches.map((b) => `${b.id}:${b.kind}:${b.level}`).sort().join("|");
 }
 
-export function BreachBanner({ breaches }: { breaches: Breach[] }) {
+/**
+ * U-2 — ONE RECORD PER ACCOUNT, not one record.
+ *
+ * The banners are account-scoped (invariant 8), so the set this component is
+ * handed changes with the account switcher. Against a single stored hash,
+ * Personal → Swing → Personal is three different sets and the opted-in
+ * notification fired on each — re-announcing breaches the user had already
+ * been shown. Keying the record by account is what makes "switching back shows
+ * nothing new" true: a hash that merely CONTAINED the account id would still
+ * be one record, and one record cannot remember two accounts. `0` is the
+ * All-accounts view and gets its own record like any other id, because the
+ * union genuinely is a different set.
+ */
+export function lastNotifiedKey(accountId: number): string {
+  // Parameterised the way every other `vyuha-` key is (AGENTS.md: a `:suffix`).
+  return `${LAST_HASH_KEY}:${accountId}`;
+}
+
+/** The dedup step: the hash to announce, or `null` if this exact set has
+ *  already been announced FOR THIS ACCOUNT on this device. Takes the store so
+ *  it can be tested without a DOM (vitest runs `environment: "node"`). */
+export function markNotified(
+  store: Pick<Storage, "getItem" | "setItem">,
+  accountId: number,
+  breaches: Breach[],
+): string | null {
+  const key = lastNotifiedKey(accountId);
+  const hash = breachHash(breaches);
+  if (store.getItem(key) === hash) return null;
+  store.setItem(key, hash);
+  return hash;
+}
+
+export function BreachBanner({ breaches, accountId }: { breaches: Breach[]; accountId: number }) {
   const [optIn, setOptIn] = React.useState(false);
   const [supported, setSupported] = React.useState(false);
 
@@ -33,12 +66,11 @@ export function BreachBanner({ breaches }: { breaches: Breach[] }) {
   }, []);
 
   // Fire a desktop notification for a NEW breach set only — and only if the
-  // user opted in on this device. Same set twice = silent.
+  // user opted in on this device. Same set twice, for the same account = silent
+  // (U-2: the record is per account, since the set is).
   React.useEffect(() => {
     if (!optIn || breaches.length === 0) return;
-    const hash = breachHash(breaches);
-    if (localStorage.getItem(LAST_HASH_KEY) === hash) return;
-    localStorage.setItem(LAST_HASH_KEY, hash);
+    if (markNotified(localStorage, accountId, breaches) === null) return;
     try {
       const stops = breaches.filter((b) => b.kind !== "target").length;
       const targets = breaches.length - stops;
@@ -50,7 +82,7 @@ export function BreachBanner({ breaches }: { breaches: Breach[] }) {
     } catch {
       /* notification blocked — banner below still shows everything */
     }
-  }, [optIn, breaches]);
+  }, [optIn, breaches, accountId]);
 
   async function enableNotifications() {
     if (!supported) return;

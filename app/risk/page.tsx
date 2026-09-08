@@ -51,6 +51,7 @@ import { SebiRadarPanel } from "@/components/risk/sebi-radar-panel";
 import { sebiRadar, type RadarPosition } from "@/lib/risk/sebi-radar";
 import { getActiveRadarRules } from "@/lib/queries/rule-packs";
 import { scanBreachesForSelectedAccount } from "@/lib/jobs/auto-mtm";
+import { getSelectedAccountId } from "@/lib/queries/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -339,7 +340,10 @@ export default function RiskPage() {
       <PageHeader title="Portfolio Risk" description="Live exposure across open positions — initial risk, open P&L and open risk at stop." />
       <div className="space-y-5 p-6">
         <ProGate>
-        <BreachBanner breaches={scanBreachesForSelectedAccount()} />
+        {/* U-2: same scan, same selection — and the selection is now said out
+            loud, so the banner's opt-in notification keeps one record per
+            account instead of re-announcing on every switch. */}
+        <BreachBanner breaches={scanBreachesForSelectedAccount()} accountId={getSelectedAccountId()} />
         {/* The page's ONE capital nudge — the cockpit, margin gauge and limits
             check below all show "—" for %-of-capital figures instead of a
             number computed on an invented base (invariant 6). */}

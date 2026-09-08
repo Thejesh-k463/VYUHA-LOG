@@ -699,6 +699,15 @@ export function LiveFeedCard({ current }: { current: Settings }) {
     if (!r.ok) {
       setProvider(previous); // the server refused — the card must not lie
       toast.error(r.message ?? "Could not switch the feed.");
+      // U-1: …and the REFUSAL is a write outcome too, so C-7's rule holds here
+      // as well — the card re-asks the route AFTER the revert. Without it the
+      // card keeps whatever the mount fetch said: the block goes on quoting
+      // "accept it first" for an acknowledgement the accept path has just made
+      // current, `feedBlockControl` keeps offering "Review and accept", and a
+      // fold that has already nulled `health` leaves the line at "Checking the
+      // feed…" for ever. The ask comes after the revert so the radio the user
+      // sees is the stored pick either way.
+      await refreshStatus();
       return;
     }
     // B-4: the write's own answer, not the mount fetch's. `router.refresh()`

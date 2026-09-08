@@ -102,10 +102,10 @@ Exactly four kinds, and only one of them is automatic:
    the client code, the PIN, the one-time code derived from the TOTP secret —
    the secret itself is never sent — and the SmartAPI app key, with nothing
    for you to click. If a sign-in is refused, Vyuha tries at most three times
-   and then stops until you re-save the credentials. If Angel One reports an
-   accepted session invalid, Vyuha signs in at most three times in a row
-   without a priced answer in between, and then stops until you re-save the
-   credentials or relaunch Vyuha. Against that
+   and then stops until you re-save the credentials or relaunch Vyuha. If
+   Angel One reports an accepted session invalid, Vyuha signs in at most three
+   times in a row without a priced answer in between, and then stops until you
+   re-save the credentials or relaunch Vyuha. Against that
    same host it looks up, once per symbol, the token Angel One prices by, and
    keeps that mapping on this machine. It then asks for prices in batches of at
    most 50 symbols, at most one request a second, every 3, 5 or 10 seconds
@@ -229,7 +229,8 @@ Exactly four kinds, and only one of them is automatic:
                                   instance and signs in again on the next
                                   poll. The trigger list IS that key's fields.
     • two ceilings, not one       A REFUSED sign-in stops after three attempts
-                                  until the credentials are re-saved (C-2). A
+                                  until the credentials are re-saved or Vyuha
+                                  is relaunched (C-2, P-3; round-5 D-1). A
                                   session that was ACCEPTED and is later
                                   reported invalid stops after three
                                   consecutive invalidations with no priced
@@ -250,7 +251,8 @@ Exactly four kinds, and only one of them is automatic:
                                   stored (owner ruling C-4).
     • three tries, then stop      a refused sign-in is retried at most three
                                   times before the adapter stops until the
-                                  credentials are re-saved, so a wrong PIN is
+                                  credentials are re-saved or Vyuha is
+                                  relaunched, so a wrong PIN is
                                   three refusals and not one per poll (owner
                                   ruling C-2).
     • the token look-up           Angel One prices by its own instrument token,

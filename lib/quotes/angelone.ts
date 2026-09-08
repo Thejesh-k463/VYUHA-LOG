@@ -149,10 +149,18 @@ export const ANGELONE_MAX_LOGIN_ATTEMPTS = 3;
 /**
  * What the desk is told once the cap is reached — VERBATIM, and the only
  * sentence this state produces. It names the three credentials and the screen
- * that holds them, because re-saving them is the ONLY thing that clears it.
+ * that holds them, because a wrong one is what usually put the user here.
+ *
+ * IT ALSO NAMES THE RELAUNCH (ruling D-1, v4.2 fix wave 5). This counter is an
+ * instance local, so it is cleared by a re-save AND by a relaunch (and by an
+ * account switch, which builds a fresh instance too) — the earlier "re-save is
+ * the ONLY thing that clears it" was simply false, and it sent a user whose
+ * credentials are correct to re-type them when closing the window would have
+ * done. The second-ceiling sentence below has always said both; this one says
+ * it in the same canonical words every copy surface uses.
  */
 export const ANGELONE_LOGIN_CAPPED_REASON =
-  "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker.";
+  "Angel One refused the login three times — re-save the client code, PIN and TOTP secret under Import → Connect broker. Signing in resumes when you re-save the credentials or relaunch Vyuha.";
 
 /**
  * The SAME cap, when the three failures were not answers at all (ruling P-3).
@@ -163,10 +171,12 @@ export const ANGELONE_LOGIN_CAPPED_REASON =
  * as pointless as three wrong PINs — but the sentence above would tell a user
  * whose credentials are perfectly good to re-save them, which is the one thing
  * that cannot help. This sentence says what actually happened and names the two
- * things that DO clear the cap.
+ * things that DO clear the cap — in the same canonical words as the sentence
+ * above it, so the two capped states differ in WHAT HAPPENED and never in what
+ * resumes signing in (ruling D-1, v4.2 fix wave 5).
  */
 export const ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON =
-  "Angel One could not be reached on three sign-in attempts — the credentials were not refused. Relaunching Vyuha or re-saving them under Import → Connect broker starts a fresh attempt.";
+  "Angel One could not be reached on three sign-in attempts — the credentials were not refused. Signing in resumes when you re-save the credentials or relaunch Vyuha; the credentials are saved under Import → Connect broker.";
 
 /**
  * Consecutive SESSION INVALIDATIONS after which this instance stops signing in
@@ -185,8 +195,15 @@ export const ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON =
  * failures that are not permanent (one bad response, a session that really did
  * expire mid-cycle), and nothing after that is evidence a fourth would differ.
  * A PRICED answer — any snapshot returning at least one row with a usable last
- * price — resets it, because that is proof the session works. The 05:00 IST
- * flush re-login is SCHEDULED, not an invalidation, and counts for nothing.
+ * price — resets it, because that is proof the session works, BUT ONLY WHEN
+ * NOTHING IN THAT SAME POLL WAS CALLED INVALID (ruling S-1, v4.2 fix wave 5).
+ * A poll can do both: the symbol lookup answers 401 and increments this count
+ * while the quote for an already-cached token is priced by the jwt minted
+ * before it. Counting that as proof reset the count on every single poll, so
+ * neither ceiling could ever fire and the credential went out at poll cadence
+ * — exactly the loop C-1 exists to stop, entered through the lookup instead of
+ * through the quote. The 05:00 IST flush re-login is SCHEDULED, not an
+ * invalidation, and counts for nothing.
  *
  * PER INSTANCE, exactly like C-2, and that is the reset: the registry keys its
  * memoised provider on the connection row's `updated_at` plus a fingerprint of
@@ -234,7 +251,7 @@ export const ANGELONE_CAPABILITIES: ProviderCapabilities = {
   // so "once a day" is true while that instance is, and a refused login stops
   // at three attempts instead of repeating every minute.
   egressDescription:
-    "Requests go to apiconnect.angelone.in — your own Angel One account, using the client code, PIN and TOTP secret you saved for imports: signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved, or when the selected account is switched; a refused login is retried at most three times, and after three sessions in a row that Angel One calls invalid no further sign-in is made until Vyuha is relaunched or the credentials are re-saved. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
+    "Requests go to apiconnect.angelone.in — your own Angel One account, using the client code, PIN and TOTP secret you saved for imports: signed in at most once a day while Vyuha stays open, again after a relaunch, after Angel One's 5 AM IST session flush, or when the credentials are re-saved, or when the selected account is switched. If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha. After three sessions in a row that Angel One calls invalid, with no priced answer in between, no further sign-in is made until Vyuha is relaunched or the credentials are re-saved. Only the exchange tokens of your open equity positions are sent, and no other host is contacted for prices.",
 };
 
 /* ─────────────────────────── the session, and its clock ─────────────────── */
@@ -640,8 +657,9 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
   let lastLoginFailureKind: AngelOneLoginFailureKind = "refused";
   /**
    * CONSECUTIVE session invalidations with NO PRICED QUOTE between them
-   * (ruling C-1). Reset by a priced snapshot, never persisted, and never moved
-   * by the 05:00 IST flush re-login — that one is scheduled, not a failure.
+   * (ruling C-1). Reset by a priced snapshot THAT INVALIDATED NOTHING ITSELF
+   * (ruling S-1), never persisted, and never moved by the 05:00 IST flush
+   * re-login — that one is scheduled, not a failure.
    */
   let consecutiveSessionInvalidations = 0;
   let lastError: string | null = null;
@@ -777,6 +795,11 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
   async function snapshot(keys: readonly QuoteKey[], _signal?: AbortSignal): Promise<QuoteMap> {
     const out: QuoteMap = new Map();
     if (keys.length === 0) return out;
+    // WHAT THE INVALIDATION COUNT WAS WHEN THIS POLL STARTED (ruling S-1).
+    // Read here, before anything in this poll can move it, so the reset at the
+    // bottom can tell "a price on a session nothing complained about" from "a
+    // price on a session Angel One called invalid moments earlier".
+    const invalidationsBefore = consecutiveSessionInvalidations;
     const gate = await readGate();
     if (gate.state !== "ready") throw new Error(gate.reason);
     lastCadence = angelOneCadenceSeconds(keys.length);
@@ -851,11 +874,17 @@ export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): Quot
       }
     }
     lastUnfetched = unfetched;
-    // A PRICE IS THE PROOF THE SESSION WORKS (ruling C-1). One priced row is
-    // enough and nothing less will do: an empty `fetched`, or an answer that is
-    // all `unfetched`, says nothing about the session, so it must not clear a
-    // count that exists to stop a credential being re-sent for ever.
-    if (out.size > 0) consecutiveSessionInvalidations = 0;
+    // A PRICE IS THE PROOF THE SESSION WORKS (ruling C-1), AND ONLY IF THIS
+    // POLL INVALIDATED NOTHING (ruling S-1). One priced row is enough and
+    // nothing less will do: an empty `fetched`, or an answer that is all
+    // `unfetched`, says nothing about the session, so it must not clear a count
+    // that exists to stop a credential being re-sent for ever. Neither may a
+    // poll that priced a CACHED token while the symbol lookup was answered
+    // 401 — that mixture is the loop itself: invalidate, price, reset, sign in
+    // again, for ever, with no cap able to fire.
+    if (out.size > 0 && consecutiveSessionInvalidations === invalidationsBefore) {
+      consecutiveSessionInvalidations = 0;
+    }
     return out;
   }
 

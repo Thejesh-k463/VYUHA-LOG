@@ -77,9 +77,15 @@ const ACCOUNT_SWITCH_TRIGGER =
 /**
  * C-2. The refused-login ceiling, byte for byte. Before it, a wrong PIN was one
  * refusal PER POLL against the broker's own auth endpoint.
+ *
+ * D-1 (owner ruling, 2026-09-08 round 5): it names the RELAUNCH too. The
+ * counter is an instance local of the adapter (`lib/quotes/angelone.ts`), so a
+ * relaunch clears it exactly as a re-save does — and the sibling ceiling two
+ * sentences later already said so. A clause that names only the re-save tells a
+ * capped user the one thing they must do is the one thing they need not do.
  */
 const ANGEL_RETRY_SENTENCE =
-  "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.";
+  "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha.";
 
 /**
  * C-1 (owner ruling, round 4). The SECOND ceiling, byte for byte, and a
@@ -509,6 +515,35 @@ describe("the phrases the v4.2 fix wave disproved appear on no surface", () => {
       expect(text, `${rel} does not name the account-switch trigger (D-1)`).toContain(ACCOUNT_SWITCH_TRIGGER);
       expect(text, `${rel} does not state the session-invalid ceiling (C-1)`).toContain(
         ANGEL_SESSION_INVALID_SENTENCE,
+      );
+    }
+  });
+
+  /**
+   * D-1 (owner ruling, 2026-09-08 round 5). BOTH CEILINGS RESUME THE SAME TWO
+   * WAYS.
+   *
+   * `consecutiveLoginFailures` and `consecutiveSessionInvalidations` are both
+   * instance locals of the Angel One adapter, so a relaunch clears either one
+   * exactly as a re-save does. The sheet said so of the second ceiling and not
+   * of the first, and the other four surfaces copied the sheet — a user capped
+   * on a refused sign-in was told to re-save credentials that are not wrong.
+   *
+   * The pair is read OUT OF THE SHEET rather than restated, so a test that
+   * agreed with itself cannot pass while the two clauses disagree.
+   */
+  it("every surface states the refused-sign-in ceiling, and BOTH ceilings on the sheet name the relaunch", () => {
+    for (const rel of SURFACES) {
+      expect(flatten(rel), `${rel} does not state the refused-sign-in ceiling (D-1)`).toContain(
+        ANGEL_RETRY_SENTENCE,
+      );
+    }
+    const sheet = ANGELONE_FEED_ITEMS.map((i) => i.body).join(" ");
+    const ceilings = sheet.match(/[^.]*at most three times[^.]*\./g) ?? [];
+    expect(ceilings.length, "the sheet no longer states exactly two three-attempt ceilings").toBe(2);
+    for (const clause of ceilings) {
+      expect(clause.trim(), `a ceiling clause names only the re-save: ${clause.trim()}`).toContain(
+        "re-save the credentials or relaunch Vyuha",
       );
     }
   });

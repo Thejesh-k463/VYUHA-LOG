@@ -440,8 +440,12 @@ describe("help describes the v4.2 Angel One price source", () => {
         expect(text, `${href} does not name the trigger: ${trigger}`).toContain(trigger);
       }
       expect(text, `${href} still promises a sign-in on a calendar schedule`).not.toMatch(/each morning/i);
-      expect(text, `${href} does not state the refused-sign-in ceiling`).toMatch(
-        /tries at most three times and then stops until you re-save the credentials/,
+      // D-1 (owner ruling, 2026-09-08 round 5): the refused-sign-in ceiling
+      // names the RELAUNCH too. `consecutiveLoginFailures` is an instance local
+      // of the Angel One adapter, so a relaunch clears it exactly as a re-save
+      // does — which is what the session-invalid ceiling below already said.
+      expect(text, `${href} does not state the refused-sign-in ceiling`).toContain(
+        "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha.",
       );
       // C-1 (owner ruling, round 4): the SECOND ceiling. A login that was
       // accepted and later reported invalid is a different failure, and help

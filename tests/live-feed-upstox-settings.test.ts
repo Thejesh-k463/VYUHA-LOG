@@ -480,3 +480,56 @@ describe("accepting the Upstox sheet writes the pick before it re-asks the route
     );
   });
 });
+
+/**
+ * U-1 (round 5) — THE UPSTOX HALF OF THE REFUSED-WRITE STALENESS.
+ *
+ * `acceptUpstox()` hands off to `store("upstox")`, whose POST can be refused
+ * (409, no Upstox connection saved for the selected account). Before this
+ * wave the refusal branch reverted the radio and toasted and stopped there, so
+ * the card kept the mount-time `feed.blockedReason` — the "accept it first"
+ * sentence, already untrue by then — and the fold's nulled `health` was never
+ * replaced, leaving the health line at "Checking the feed…". C-7's rule ("after
+ * every write the card re-asks") now covers this outcome too. The full block,
+ * and the order pin, live on the Angel One twin.
+ *
+ * Source-shape: no DOM harness in this repo. `\r?\n` throughout — the Windows
+ * CI job checks the card out with CRLF.
+ */
+describe("a refused Upstox write leaves the card describing the route, not the mount (U-1)", () => {
+  const storeBody = () => {
+    const card = stripComments(read(CARD));
+    const start = card.indexOf("async function store(next: ProviderId)");
+    expect(start, "store() is gone from the card").toBeGreaterThan(-1);
+    return card.slice(start, card.indexOf("\n  }", start));
+  };
+
+  it("the refusal branch re-asks the route after it puts the radio back", () => {
+    const body = storeBody();
+    const at = body.indexOf("if (!r.ok) {");
+    expect(at, "store() no longer has a refusal branch").toBeGreaterThan(-1);
+    const refusal = body.slice(at, body.indexOf("\n    }", at));
+    expect(
+      refusal,
+      "the refused write never re-asks, so the block keeps the mount-time reason and the health line never resolves (U-1)",
+    ).toMatch(/setProvider\(previous\);[\s\S]*?await refreshStatus\(\);\r?\n\s*return;/);
+  });
+
+  it("both outcomes of the one write re-ask, and nothing asks before it", () => {
+    const card = stripComments(read(CARD));
+    expect(
+      card.match(/await refreshStatus\(\);/g)?.length ?? 0,
+      "the card makes a number of re-asks other than one per write outcome",
+    ).toBe(2);
+    expect(
+      acceptUpstoxBody(card),
+      "acceptUpstox() re-asks the route before its own write — that GET describes the provider being replaced (U-1)",
+    ).not.toMatch(/refreshStatus\(\)/);
+  });
+
+  const acceptUpstoxBody = (card: string) => {
+    const start = card.indexOf("async function acceptUpstox()");
+    expect(start, "acceptUpstox() is gone from the card").toBeGreaterThan(-1);
+    return card.slice(start, card.indexOf("\n  }", start));
+  };
+});

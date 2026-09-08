@@ -3,7 +3,7 @@ import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import { createEodBhavcopyProvider, EOD_CAPABILITIES } from "./eod-bhavcopy";
 import { createManualProvider, MANUAL_CAPABILITIES } from "./manual";
 import { createMockProvider, MOCK_CAPABILITIES } from "./mock";
-import { isFeedAckCurrent, type LiveFeedDisclosureId } from "@/lib/domain/live-feed-disclosure";
+import { isFeedAckCurrent, parseFeedAcks, type LiveFeedDisclosureId } from "@/lib/domain/live-feed-disclosure";
 import { clampRefreshSeconds, createOpenAlgoProvider, OPENALGO_CAPABILITIES } from "./openalgo";
 import { createUpstoxProvider, UPSTOX_CAPABILITIES } from "./upstox";
 import { ANGELONE_CAPABILITIES, createAngelOneProvider } from "./angelone";
@@ -392,15 +392,33 @@ export async function resolveLiveFeed(): Promise<LiveFeedState> {
  * rebuilds the instance and therefore opens another session on the next poll —
  * which is why the account is disclosed as a trigger (D-1) and why adding a
  * field here without adding a clause to `ANGELONE_FEED_ITEMS` in
- * lib/domain/live-feed-disclosure.ts under-states the egress.
+ * lib/domain/live-feed-disclosure.ts under-states the egress. THE LIST IS PER
+ * PROVIDER, because the key is (v4.2 fix wave 5, owner ruling S-2). ANGEL ONE's
+ * fields are its own id, the selected account, the database file, the
+ * `angelone` entry of `live_feed_ack_json` and its own `broker_connections`
+ * rows — which is the sheet's five triggers and no sixth. UPSTOX's are the same
+ * with its own ack entry, its own rows and the refresh slider it really reads.
+ * OPENALGO's are its own id, account, database file, its own rows, the slider,
+ * and the `openalgo_enabled` / `openalgo_ack_version` pair — its own consent,
+ * which no broker key ever sees.
  *
- * IT IS A CACHE, AND A CACHE MUST EXPIRE. The key carries everything that would
- * make the stored session the WRONG session: the provider id, the account the
- * connection is read through (invariant 8), the acknowledgement column, the
- * OpenAlgo consent pair, the refresh slider, and a fingerprint of the broker
- * connection rows themselves (id, `updated_at` and a digest of the stored
- * ciphertext). So a regenerated token, a re-saved PIN, a new consent, a changed
- * slider or a switched account all build a NEW instance and drop the old one —
+ * NO TWO PROVIDERS SHARE A FIELD, and that is the fix S-2 asked for. The WHOLE
+ * ack column and the OpenAlgo consent pair used to sit in EVERY memoised
+ * provider's key, so switching the OpenAlgo integration off — a gesture no
+ * consent surface names — rebuilt a live Angel One instance, signed the account
+ * in again on the next poll and put both ceilings back to zero. A user may hold
+ * an OpenAlgo key, a broker's credentials, or both; each is its own item and
+ * keys on its own.
+ *
+ * IT IS A CACHE, AND A CACHE MUST EXPIRE. Each key carries everything that
+ * would make the stored session the WRONG session: the provider id, the account
+ * the connection is read through (invariant 8), that provider's own consent,
+ * the refresh slider WHERE THE ADAPTER READS IT (`createProvider()` hands it to
+ * Upstox and to OpenAlgo and not to Angel One, whose cadence is the
+ * open-position count — ruling 4.2-4), and a fingerprint of that provider's own
+ * broker connection rows (id, `updated_at` and a digest of the stored
+ * ciphertext). So a regenerated token, a re-saved PIN, that feed's own new
+ * consent or a switched account all build a NEW instance and drop the old one —
  * a single slot, never a map, because the desk runs one feed at a time and a
  * map of live sessions is a leak.
  *
@@ -447,8 +465,14 @@ function credentialDigest(...parts: (string | null | undefined)[]): string {
 /**
  * Everything that decides WHICH instance this is. `@/lib/db` is imported
  * lazily, like everything else in this module.
+ *
+ * EXPORTED FOR THE TESTS, and for one reason only: ruling D-1 makes this key's
+ * field list the sign-in trigger list a customer is shown, so
+ * `tests/quotes-registry.test.ts` asserts the key STRING a real database
+ * produces rather than re-deriving the composition from the source text. No
+ * production caller outside `getLiveFeedProvider()` may use it.
  */
-async function liveFeedInstanceKey(id: ProviderId, refreshSeconds: number): Promise<string> {
+export async function liveFeedInstanceKey(id: ProviderId, refreshSeconds: number): Promise<string> {
   const { db } = await import("@/lib/db");
   const { settings, brokerConnections } = await import("@/lib/db/schema");
   const { getSelectedAccountId } = await import("@/lib/queries/accounts");
@@ -490,16 +514,31 @@ async function liveFeedInstanceKey(id: ProviderId, refreshSeconds: number): Prom
         .join(",") || "none";
   }
 
+  // THIS FEED'S OWN CONSENT, and no other feed's (v4.2 fix wave 5, S-2). The
+  // brokers read ONE entry of `live_feed_ack_json` — `liveFeedAckGate()` reads
+  // the same one — so the whole column must not be the key, or acknowledging
+  // Upstox's sheet would re-key Angel One. OpenAlgo's consent is its own pair
+  // of columns and belongs to nobody else.
+  const consent: string[] = [];
+  if (id === "angelone" || id === "upstox") consent.push(`ack:${parseFeedAcks(row?.ack)[id] ?? ""}`);
+  if (id === "openalgo") {
+    consent.push(`oaOn:${row?.openalgoEnabled ? 1 : 0}`, `oaAck:${row?.openalgoAckVersion ?? ""}`);
+  }
+  // THE SLIDER IS A FIELD ONLY WHERE THE ADAPTER READS IT: `createProvider()`
+  // passes `refreshSeconds` to Upstox and to OpenAlgo and NOT to Angel One,
+  // whose cadence is the open-position count (ruling 4.2-4). A field the
+  // adapter cannot read would rebuild the session — an undisclosed sign-in —
+  // for a value that changes nothing about the instance.
+  const cadence = id === "angelone" ? [] : [`refresh:${refreshSeconds}`];
+
   return [
     id,
-    refreshSeconds,
     accountId,
     // Two temp databases in one process are two different books; keying on the
     // file keeps a test's instance out of the next test's database.
     process.env.VYUHA_DB_PATH ?? "",
-    row?.ack ?? "",
-    row?.openalgoEnabled ? 1 : 0,
-    row?.openalgoAckVersion ?? "",
+    ...cadence,
+    ...consent,
     credentials,
   ].join("|");
 }

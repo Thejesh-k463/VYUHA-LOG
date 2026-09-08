@@ -728,7 +728,7 @@ describe("X5 — the SSR desk and the next caller share ONE Angel One session", 
     expect(c.logins()).toBe(2);
   });
 
-  it("X5c  a new acknowledgement, and an explicit reset, each drop the shared instance", async () => {
+  it("X5c  the other broker's acknowledgement keeps the shared instance; only an explicit reset drops it (S-2)", async () => {
     selectAccount(BOOK_DERIV);
     connectAngelOne("api-key-1");
     setFeed("angelone", disclosure.withFeedAck(null, "angelone"));
@@ -736,11 +736,16 @@ describe("X5 — the SSR desk and the next caller share ONE Angel One session", 
     const base = await registry.getLiveFeedProvider();
     expect(await registry.getLiveFeedProvider()).toBe(base);
 
-    // A consent written through the REAL route handler.
+    // A consent for the OTHER broker, written through the REAL route handler.
+    // Until fix wave 5 this dropped the Angel One instance (the whole ack JSON
+    // sat in every provider's key) — an undisclosed sign-in and both ceilings
+    // cleared. Ruling S-2 (2026-09-08 round 5) scopes the key per provider, so
+    // the Upstox acknowledgement leaves Angel One's session exactly where it is.
     expect((await post({ action: "ack", provider: "upstox" })).status).toBe(200);
     const afterAck = await registry.getLiveFeedProvider();
-    expect(afterAck).not.toBe(base);
+    expect(afterAck, "acknowledging the Upstox sheet rebuilt the Angel One instance (S-2)").toBe(base);
 
+    // The explicit reset is still the drop half of the contract.
     registry.resetLiveFeedProviderCache();
     expect(await registry.getLiveFeedProvider()).not.toBe(afterAck);
   });

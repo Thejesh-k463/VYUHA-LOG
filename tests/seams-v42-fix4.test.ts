@@ -715,11 +715,20 @@ describe("S3 — every gesture that rebuilds the Angel One instance is named on 
     expect(afterResave, "a re-saved credential kept the session minted from the old one").not.toBe(before);
     expect(SIGN_IN_ITEM.body).toContain("when you re-save the credentials");
 
-    setFeed("angelone", withFeedAck(withFeedAck(null, "upstox"), "angelone"));
-    expect(await registry.getLiveFeedProvider()).not.toBe(afterResave);
-    // The refresh slider is the fifth key field and needs no clause: the card
-    // renders a derived cadence line INSTEAD of the slider under an Angel One
-    // pick (ruling 4.2-4), so no user gesture moves it while this feed runs.
+    // The OTHER broker's acknowledgement, written WITHOUT `setFeed()` (whose
+    // cache reset would decide the outcome by itself): since fix wave 5 the
+    // Angel One key carries only ITS OWN ack entry (ruling S-2), so adding the
+    // Upstox entry changes neither the key nor the instance — it is not a
+    // trigger, and the sheet rightly does not name it.
+    const keyBefore = await registry.liveFeedInstanceKey("angelone", 3);
+    expect(keyBefore, "the Angel One key no longer carries its own ack entry").toContain("ack:1");
+    t.db.update(t.schema.settings).set({ liveFeedAckJson: withFeedAck(withFeedAck(null, "upstox"), "angelone") }).run();
+    expect(await registry.liveFeedInstanceKey("angelone", 3), "the Upstox acknowledgement re-keyed Angel One (S-2)").toBe(keyBefore);
+    expect(await registry.getLiveFeedProvider(), "the Upstox acknowledgement rebuilt the Angel One instance (S-2)").toBe(afterResave);
+    // The refresh slider is NOT in the Angel One key since fix wave 5 (ruling
+    // S-2: the key is per provider and carries only what that adapter reads);
+    // the card renders a derived cadence line INSTEAD of the slider under an
+    // Angel One pick (ruling 4.2-4), so it needs no clause either way.
   });
 
   it("S3b  the sheet, PRIVACY, help ×3, both READMEs and the egress sentence all name the account switch", () => {

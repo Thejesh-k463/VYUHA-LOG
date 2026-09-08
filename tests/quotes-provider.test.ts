@@ -340,21 +340,26 @@ describe("the live feed is one instance per process, not one per caller", () => 
     20_000,
   );
 
-  it("builds a NEW instance when the slider, the consent or the connection row changes", async () => {
+  it("keeps the instance across the slider and the OTHER broker's consent; rebuilds it when the connection row changes (S-2)", async () => {
     registry.resetLiveFeedProviderCache();
     const base = await registry.getLiveFeedProvider();
     expect(await registry.getLiveFeedProvider(), "nothing changed, so nothing is rebuilt").toBe(base);
 
+    // Since fix wave 5 the memo key is PER PROVIDER (ruling S-2, 2026-09-08):
+    // Angel One never reads the slider (its cadence is the open-position count,
+    // ruling 4.2-4), so the slider is not in its key and moving it is not a
+    // sign-in. Before this wave it was — an undisclosed trigger.
     t.db.update(t.schema.settings).set({ liveFeedRefreshSeconds: 5 }).run();
     const afterSlider = await registry.getLiveFeedProvider();
-    expect(afterSlider).not.toBe(base);
+    expect(afterSlider, "the slider rebuilt an Angel One instance that never reads it (S-2)").toBe(base);
 
     // A SECOND sheet accepted into the same column (migration 0069 holds both
-    // brokers) is a new consent, so the cached instance is dropped.
+    // brokers) is the OTHER broker's consent: the Angel One key carries only
+    // its own ack entry, so this instance — and its session — stay put.
     t.db.update(t.schema.settings).set({ liveFeedAckJson: UPSTOX_ACK }).run();
     const afterAck = await registry.getLiveFeedProvider();
-    expect(afterAck).not.toBe(afterSlider);
-    expect(await registry.getLiveFeedProvider(), "and the new one is then reused").toBe(afterAck);
+    expect(afterAck, "the Upstox acknowledgement rebuilt the Angel One instance (S-2)").toBe(base);
+    expect(await registry.getLiveFeedProvider(), "and it is still reused").toBe(afterAck);
 
     // A re-saved credential — the case a stale jwt would survive.
     t.db

@@ -1235,3 +1235,77 @@ describe("a withheld stored provider can be cleared from the block itself (C-6)"
     expect(PRESCRIPTIVE_LANGUAGE.test(KEEP_EOD_CTA), KEEP_EOD_CTA).toBe(false);
   });
 });
+
+/**
+ * U-1 (round 5) — A REFUSED PROVIDER WRITE LEFT THE BLOCK SAYING WHAT IT SAID
+ * AT MOUNT.
+ *
+ * Wave 4 removed the pre-store GET (the ordering defect above), which was also
+ * the only thing that ever refreshed `status` on the path that ends in a
+ * refusal: accept the sheet → the ack POST answers with the two radio states
+ * and NO `feed` → `store()` POSTs the provider → the route answers 409 (no
+ * connection saved for THIS account) → `store()` reverted the radio, toasted,
+ * and returned. `status.feed.blockedReason` was still the mount-time "accept
+ * it first" sentence, so `feedBlockControl` went on offering "Review and
+ * accept" for an acknowledgement that is already current, and the fold's
+ * nulled `health` was never replaced — the health line stayed at "Checking the
+ * feed…" for ever. Clicking again looped: ack ok → 409 → the same stale
+ * sentence.
+ *
+ * THE RULE, C-7 applied to the other outcome: after EVERY write the card
+ * re-asks the route. The refusal branch therefore re-asks too, AFTER the
+ * revert, so the block states the route's CURRENT reason and the health line
+ * resolves. Two call sites, one per outcome, and still no GET before a write.
+ *
+ * Source-shape, for the reason the block above gives: vitest runs
+ * `environment: "node"` and the repo ships no DOM harness, so `store()` cannot
+ * be driven. `\r?\n` in every multi-line pattern — the Windows CI job checks
+ * the card out with CRLF.
+ */
+describe("a refused provider write re-asks the route, so the block stops quoting the mount (U-1)", () => {
+  /** The body of `store(next)` — the one declaration that takes a parameter. */
+  const storeBody = (src: string) => {
+    const start = src.indexOf("async function store(next: ProviderId)");
+    expect(start, "store() is gone from the card").toBeGreaterThan(-1);
+    const end = src.indexOf("\n  }", start);
+    expect(end, "store() has no closing brace at the component's indent").toBeGreaterThan(start);
+    return src.slice(start, end);
+  };
+
+  it("the refusal branch reverts, says so, and THEN re-asks the route", () => {
+    const body = storeBody(stripComments(read(CARD)));
+    const at = body.indexOf("if (!r.ok) {");
+    expect(at, "store() no longer has a refusal branch").toBeGreaterThan(-1);
+    const refusal = body.slice(at, body.indexOf("\n    }", at));
+
+    expect(refusal, "the refused write does not put the radio back").toMatch(/setProvider\(previous\);/);
+    expect(
+      refusal,
+      "the refused write never re-asks the route, so the block keeps the reason it was given at mount (U-1)",
+    ).toMatch(/await refreshStatus\(\);/);
+    // Order: revert → say it → re-ask → return. The re-ask must not come
+    // before the revert (the card would paint the old pick over a fresh
+    // answer) and must not come after `return` (dead code).
+    expect(refusal, "the re-ask does not follow the revert and the toast").toMatch(
+      // `[ \t]*` before each break: `stripComments` leaves the trailing space
+      // where a `//` comment stood, and blank lines where a block of them did.
+      /setProvider\(previous\);[ \t]*\r?\n\s*toast\.error\(r\.message \?\? "Could not switch the feed\."\);[ \t]*\r?\n\s*await refreshStatus\(\);[ \t]*\r?\n\s*return;/,
+    );
+  });
+
+  it("exactly two re-asks in the card: one per write outcome, and neither before a write", () => {
+    const card = stripComments(read(CARD));
+    // Call sites only — the declaration reads `async function refreshStatus() {`.
+    expect(
+      card.match(/await refreshStatus\(\);/g)?.length ?? 0,
+      "the card re-asks the route somewhere other than the two outcomes of its one write",
+    ).toBe(2);
+    // Both of them are inside store(), after its POST.
+    const body = storeBody(card);
+    expect(body.match(/await refreshStatus\(\);/g)?.length ?? 0).toBe(2);
+    expect(
+      body.indexOf("await refreshStatus();"),
+      "a re-ask sits before the write it is supposed to describe (U-1)",
+    ).toBeGreaterThan(body.indexOf('const r = await post({ action: "provider", provider: next });'));
+  });
+});

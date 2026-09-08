@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE + FOUR FIX WAVES on main (`3b478ea`, 2026-09-08 IST); audit ladder 14 → 12 → 11 → 10 → round 5 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE + FIVE FIX WAVES on main (fix wave 5 on `be6b9eb`/`dd729ed`, 2026-09-08 IST evening); audit ladder 14 → 12 → 11 → 10 → 7 → round 6 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
 
 > **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
@@ -42,17 +42,29 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > sentence says "refused" or "could not reach"; the sheet, PRIVACY, help, READMEs, `egressDescription` and the card blurb name the
 > FIFTH sign-in trigger (account switch); the Funds tile counts only take-delivery unknowns; the footer renders 0.15% from the
 > constant; the / and /risk breach banners are scoped to the selected account (EOD job unscoped, by ruling); the consent accept
-> paths store before they re-ask; README screens 46 → 49 disk-gated). **Round-5 audit is the next step** (six Fable auditors +
-> skeptic over `2bacf06..3b478ea`), then the bump. Gate on `3b478ea`: **`npm run verify` EXIT 0 — 360 files / 6,969 passed /
-> 35 skipped, `next build` compiled 10.7 s**; README counts say 6969 / 360 / 49 screens; seam files
-> `tests/seams-v42{,-fix,-fix2,-fix3,-fix4}.test.ts` (35 + 20 + 20 + 10 + 11 tests). Rulings: `06-ANSWERS.md` "v4.2 fix-wave
-> rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11) and "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave shape +
-> session decisions); measurements: `docs/DECISIONS.md` 2026-09-07/08 entries "v4.2 wave audit", "v4.2 fix-wave audit", "v4.2
-> fix wave 3", "v4.2 round-4 audit". Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
+> paths store before they re-ask; README screens 46 → 49 disk-gated) → fix wave 4b **`dd729ed`** (one CRLF-tolerant pin;
+> **CI 34160531101 SUCCESS 6/6**) → docs-only `be6b9eb` → **round-5 audit over `2bacf06..dd729ed`: 111 candidates → 7 confirmed
+> → 7 after the skeptic** (money 0, schema 0, security 2, ui 2, test 0, docs 3) → **fix wave 5** (this commit; 7 + 1 seam items:
+> the C-1 counter resets only on a poll that invalidated nothing — a lookup 401 beside a priced row no longer re-sends the
+> credential every poll; the feed memo key is PER PROVIDER, so the OpenAlgo switch, the slider and the other broker's consent no
+> longer rebuild a live Angel One instance (undisclosed sign-in + both ceilings cleared) and OpenAlgo/broker keys never merge or
+> collide; the card re-asks the route after a refused write; the breach notification record is per account
+> (`vyuha-breach-last-notified:<id>`); the first-cap clause says "or relaunch Vyuha" on every surface and in both capped
+> constants; three older tests that pinned the pre-S-2 key shape moved to the ruled one). **Round-6 audit is the next step**
+> (six Fable auditors + skeptic over the fix-wave-5 diff), then the bump. Gate on the fix-wave-5 tree: **`npm run verify` EXIT 0
+> — 361 files / 7,005 passed / 35 skipped, `next build` compiled 12.2 s**; README counts say 7005 / 361 / 49 screens; seam files
+> `tests/seams-v42{,-fix,-fix2,-fix3,-fix4,-fix5}.test.ts` (35 + 20 + 20 + 16 + 11 + 12 tests). Rulings: `06-ANSWERS.md` "v4.2
+> fix-wave rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11), "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave
+> shape + session decisions) and **"v4.2 round-5 rulings"** (S-1, S-2 + the owner's no-collision addition, U-1/U-2, D-1, wave
+> shape); measurements: `docs/DECISIONS.md` 2026-09-07/08 entries "v4.2 wave audit", "v4.2 fix-wave audit", "v4.2 fix wave 3",
+> "v4.2 round-4 audit", **"v4.2 round-5 audit"**. Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
 > a hand-edited non-statutory `stt_side` of `both` for `future` would diverge `charges.ts` from `exitStt` (M-1 limitation);
 > `runAutoMtm().breaches` is serialised by `/api/mtm/auto` and read by nobody; `PLANNED_NOTES.angelone` names a constant but is
 > unreachable for a live desk; `egressDescription` has no renderer; the generic account-isolation resolution scan still
-> matches prose for tables other than `broker_connections`.
+> matches prose for tables other than `broker_connections`; S-1's precondition (Angel One answering 401 on the lookup surface
+> while pricing quotes) is evidenced nowhere in the repo — the fix bounds it if it ever occurs; `resolveLiveFeed()`'s
+> `blockedReason` can only speak about consent, so the card's block never names a missing connection (the toast does); an
+> upgraded install's un-suffixed breach-notification record is orphaned (one notification per account, once, after this build).
 >
 > **The original wave (kept for the record):** wave commit `c817b15` on `92c48cc` (CI 34124736781 was 4/6 on one STATE-heading pin,
 > fixed by the one-line `3a3e026`, CI 34125653384 SUCCESS 6/6). The wave carries: the **Upstox** quote adapter

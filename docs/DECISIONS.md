@@ -4526,3 +4526,70 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   `\r\n}` — only an anchor that names the character BEFORE the newline is strict. Rule: a source-shape regex that spans a line
   break writes `\r?\n`, as `tests/readme-claims.test.ts` already did. Fix-wave 4b = **`dd729ed`** (that one line + docs);
   **CI 34160531101 on `dd729ed`: SUCCESS 6/6.** The round-5 audit target is `2bacf06..dd729ed`.
+
+## 2026-09-08 — v4.2 round-5 audit (`2bacf06..dd729ed`): 7 confirmed → 7 after the skeptic → fix wave 5; the C-1 counter resets only on a poll that invalidated nothing; the feed memo key is per provider
+
+- **The audit.** Six Fable auditors over the 28-file fix-wave-4 diff generated 111 candidates and refuted 104: money 0/15,
+  schema-migrations 0/13, security-gating-consent 2/16, ui-regressions 2/18, test-integrity 0/22, docs-claims 3/27 — the first
+  round of this release with no money and no test-integrity finding. The Fable skeptic killed none (7 → 7), narrowed U-2 to "every
+  switch that changes the set, opt-in only", and could not verify S-1's precondition (see below). Owner rulings: `06-ANSWERS.md`
+  "v4.2 round-5 rulings". Cost: audit ≈ 0.72 M subagent tokens (auditors) + 0.11 M (skeptic); fix wave 5 ≈ 0.49 M (four Opus
+  builders) + 0.22 M (Opus seam tester).
+- **S-1 — the C-1 counter reset ignored where the invalidation came from.** `lib/quotes/angelone.ts` `snapshot()` invalidates the
+  session on a lookup answered session-invalid (`searchScrip` 401/AG8001, `:805-808`) but the quote loop still prices cached tokens
+  with the poll's local `token`, and `if (out.size > 0) consecutiveSessionInvalidations = 0` then erased the invalidation it had
+  just counted — credentials at poll cadence with neither ceiling firing. The mechanism is confirmed line by line; the precondition
+  (401 on the order-surface lookup while the quote surface answers 200, persistently) is evidenced nowhere in the repo — DECISIONS
+  records per-endpoint entitlement in the quote direction only. Ruled: **a priced answer resets the counter only when no
+  `invalidateSession()` ran during that poll** (`invalidationsBefore` captured at the top of `snapshot()`); rejected: not invalidating
+  on a lookup-only 401 (changes what "session invalid" means), record-only. Test: a lookup-401 fixture over `[SBIN, TCS]` with one
+  cached token that prices — `expected 10 to be 3` on the pre-fix code; the positive reset case uses a non-session lookup failure
+  (HTTP 500) for the clean poll because a successful lookup resolves the symbol for good. `tests/quotes-angelone.test.ts` 40 → 43.
+- **S-2 — the feed memo key is PER PROVIDER.** `liveFeedInstanceKey()` carried the whole `live_feed_ack_json`, `openalgoEnabled`,
+  `openalgoAckVersion` and `refreshSeconds` for EVERY provider, so the OpenAlgo Integrations switch (`settings-form.tsx:250/286`)
+  rebuilt a live Angel One instance: an undisclosed sign-in with BOTH ceilings cleared — and ruling D-1 (round 4) defines the
+  sheet's trigger list as this key's fields. Ruled (owner addition verbatim: "make sure OPEN ALGO keys doesn't merge, collide or
+  disturb the original broker keys … a user can have either Open algo key or broker or Both"): **angelone = id · accountId ·
+  VYUHA_DB_PATH · `ack:<angelone entry>` · own rows; upstox = id · accountId · path · `refresh:<s>` · `ack:<upstox entry>` · own
+  rows; openalgo = id · accountId · path · `refresh:<s>` · `oaOn:` · `oaAck:` · own rows.** `refreshSeconds` is in the key only
+  where `createProvider()` hands it to the adapter (Upstox and OpenAlgo; Angel One's cadence is the open-position count, 4.2-4) —
+  this also removes the latent slider trigger recorded in round 5's union. The function is now exported so tests assert the key
+  STRING a real database produces rather than re-deriving it from source text. Rejected: naming the OpenAlgo toggle on every surface
+  (six triggers); record-only. **Three older tests pinned the pre-S-2 shape and were moved to the ruled one by the orchestrator**
+  (`tests/seams-v42-fix.test.ts` X5c — the Upstox ack now KEEPS the Angel One instance; `tests/seams-v42-fix4.test.ts` S3a — its
+  `setFeed()` helper resets the cache, which had made the "new ack rebuilds" line vacuous: rewritten to assert on the key string
+  without the helper; `tests/quotes-provider.test.ts` — slider and the other broker's consent keep the instance, a re-saved row
+  rebuilds it). `tests/quotes-registry.test.ts` 20 → 32.
+- **U-1 — the refused write re-asks.** `store()`'s `!r.ok` branch is `setProvider(previous)` → `toast.error` → `await
+  refreshStatus()` → return; the card now has exactly two `refreshStatus()` call sites, one per outcome of its one write, none
+  before it (the wave-4 order stands). Without it the block kept the mount-time "accept it first" sentence and "Review and accept"
+  after an ack-ok → provider-409, and the fold's nulled `health` left "Checking the feed…" for ever. Pinned by source shape (no DOM
+  harness); the route side is driven on a real DB in `tests/seams-v42-fix5.test.ts` C6a. Pre-existing and recorded, not fixed:
+  `resolveLiveFeed()`'s `blockedReason` can only speak about consent, so the block never names the missing connection the route
+  refuses a pick for — the toast does.
+- **U-2 — the breach notification record is per account.** `breach-banner.tsx` exports `lastNotifiedKey(accountId)`
+  (`vyuha-breach-last-notified:<id>` — the seam tester caught the first cut's `-<id>`, which broke the `:suffix` convention every
+  other parameterised `vyuha-` key follows) and `markNotified(store, accountId, breaches)`; both pages pass
+  `accountId={getSelectedAccountId()}` beside the scoped scan (the same React-`cache`d read, invariant 8). Deliberately NOT
+  handled: an upgraded install's un-suffixed record is orphaned, so the first render per account after this build may fire ONE
+  notification for a set already shown — once, versus once per switch for ever; migrating a device-local dedup record was not worth
+  the code. `tests/breach-scan-scope.test.ts` 9 → 16.
+- **D-1 — the first-cap clause names the relaunch.** Canonical sentence, byte-identical on the sheet, PRIVACY #3, README, client
+  README and both help entries: "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the
+  credentials or relaunch Vyuha." (the root README and both help entries had carried paraphrases; all five now match, which the
+  cross-surface guard requires). `ANGELONE_LOGIN_CAPPED_REASON` and `ANGELONE_LOGIN_UNREACHABLE_CAPPED_REASON` both end "Signing in
+  resumes when you re-save the credentials or relaunch Vyuha"; the header comment's "re-saving them is the ONLY thing that clears
+  it" was false (both counters are instance locals). No disclosure-version bump (`LIVE_FEED_DISCLOSURE_VERSIONS` still `{ upstox:
+  "1", angelone: "1" }` — never shipped). The new cross-surface test reads BOTH ceiling clauses out of the sheet with
+  `/[^.]*at most three times[^.]*\./g` (exactly 2) and proves each names the relaunch — a mutation of the second clause alone
+  reddens it, so it cannot agree with itself.
+- **D-2 / D-3 — STATE.** The fix-3 seam file has 16 tests, not 10 (wave 4 added six); STATE named `3b478ea` as HEAD and
+  `2bacf06..3b478ea` as the round-5 range with no 4b verdict. Both corrected in this commit's STATE §2.
+- **Seam pass:** `tests/seams-v42-fix5.test.ts`, 12 tests over seven crossings (A↔D clause + S-1 semantics through the adapter;
+  B↔D the five triggers ARE the Angel One key's user-changeable fields, asserted on the key string; B↔A the counters survive an
+  OpenAlgo toggle on the same instance; the owner's three configurations through the route; pages↔banner account id; route 409 ↔
+  the card's re-ask; the `vyuha-` key). One defect (the `:suffix`), fixed before the gate.
+- **Gate on this tree:** `npm run verify` EXIT 0 — **361 files / 7,005 passed / 35 skipped**, lint 0 errors (3 pre-existing
+  warnings in files this wave did not touch), `next build` compiled 12.2 s. README: 360 → 361 files, 6,969 → 7,005 tests, screens
+  49 unchanged. `package-lock.json` untouched. No `components/live/**` change (the `/live` harness stays 9/9 from `99aa027`). Every
+  file this wave touched is LF. Round-6 audit owed over this commit's diff.

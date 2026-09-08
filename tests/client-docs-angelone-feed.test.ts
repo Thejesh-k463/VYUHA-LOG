@@ -136,8 +136,13 @@ describe("PRIVACY.md discloses exactly one Angel One host, in item 3", () => {
     );
     // C-2. The refused-login ceiling: a wrong PIN is three refusals against the
     // broker's auth endpoint, not one per poll.
+    // D-1 (owner ruling, 2026-09-08 round 5): and it names the RELAUNCH, like
+    // the session-invalid ceiling in the sentence above. Both counters are
+    // instance locals of the adapter, so a relaunch clears either one exactly
+    // as a re-save does; naming only the re-save sends a capped buyer to
+    // re-enter credentials that were never wrong.
     expect(para, "item 3 does not state the refused-sign-in ceiling").toContain(
-      "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials.",
+      "If a sign-in is refused, Vyuha tries at most three times and then stops until you re-save the credentials or relaunch Vyuha.",
     );
     expect(para, "the disclosure does not mention the token look-up").toMatch(
       /looks up, once per symbol, the token Angel One prices by/,
