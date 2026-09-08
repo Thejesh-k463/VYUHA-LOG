@@ -523,7 +523,9 @@ describe("a refused Upstox write leaves the card describing the route, not the m
       // Fix wave 7 put the ADOPTION between the answer and the return: the
       // route stores the row before it builds the body, so a refusal the card
       // synthesised from a dropped answer can be a write that landed.
-      /setProvider\(previous\);[\s\S]*?const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);\r?\n\s*return;/,
+      // Fix wave 8 (U-3) made the adoption functional and guarded on the
+      // reverted value, so a click that landed during the GET stands.
+      /setProvider\(previous\);[\s\S]*?const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(\(cur\) => \(cur === previous \? reconcilePick\(previous, fresh\) : cur\)\);[ \t]*\r?\n\s*return;/,
     );
   });
 
@@ -652,11 +654,20 @@ describe("the Upstox half of the adopted answer, and the refresh slider (fix wav
     expect(body, "saveSeconds() does not remember the value it is replacing").toMatch(
       /const previous = seconds;[ \t]*\r?\n\s*setSeconds\(next\);/,
     );
+    // U-4 (fix wave 8): the revert is FUNCTIONAL and guarded on `next`. The
+    // POST is an await; a drag that landed during it has already moved the
+    // slider, and a bare `setSeconds(previous)` would drag it back to a value
+    // two gestures old — the same class of bug the revert exists to prevent,
+    // pointed the other way.
     expect(
       body,
-      "a refused refresh-seconds write leaves the slider on a value the database does not hold (U-2)",
+      "a refused refresh-seconds write leaves the slider on a value the database does not hold, or reverts a value it was never for (U-2/U-4)",
     ).toMatch(
-      /if \(!r\.ok\) \{[ \t]*\r?\n\s*setSeconds\(previous\);[\s\S]*?toast\.error\(r\.message \?\? "Could not save the refresh interval\."\);/,
+      /if \(!r\.ok\) \{[\s\S]*?setSeconds\(\(cur\) => \(cur === next \? previous : cur\)\);[\s\S]*?toast\.error\(r\.message \?\? "Could not save the refresh interval\."\);/,
     );
+    expect(
+      body,
+      "the refused slider write still reverts unconditionally, so a drag made during the POST is undone (U-4)",
+    ).not.toMatch(/setSeconds\(previous\);/);
   });
 });

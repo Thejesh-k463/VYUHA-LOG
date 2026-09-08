@@ -475,6 +475,14 @@ describe("pacing re-reads the clock, so an early timer costs no sweep (ruling T-
       // A STALLED CLOCK: every sleep resolves, and no time passes.
       sleepAdvance: (ms) => {
         slept.push(ms);
+        // T-8 (fix wave 8): the fixture itself is bounded. Without this, an
+        // unbounded pacing loop does not FAIL this test — it hangs it, and the
+        // only signal is vitest's 5 s timeout, which reads like a slow machine
+        // rather than like the one defect the test exists to catch. The bound
+        // is a LITERAL 8, deliberately not `2 * PACING_RECHECKS`: it has to
+        // stay true if the ruled constant is ever widened, and it has to stop
+        // the loop even if the constant is what was broken.
+        if (slept.length > 8) throw new Error("pacing loop is unbounded: 9 sleeps against a stalled clock");
         return 0;
       },
     });

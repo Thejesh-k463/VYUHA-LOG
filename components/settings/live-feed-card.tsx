@@ -793,9 +793,13 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       // on the row the route reports whenever this build offers it — leaving
       // the revert standing when the GET failed, when the stored id is not
       // offered, and on every genuine 403/409, where the row still reads
-      // `previous`.
+      // `previous`. U-3 (fix wave 8): the adoption is FUNCTIONAL and applies
+      // only while the radio still sits on the reverted value. The GET above is
+      // an await — a click that landed during it has already moved the radio,
+      // and a stale `reconcilePick` verdict computed from a pick two gestures
+      // old would paint over it.
       const fresh = await refreshStatus();
-      setProvider(reconcilePick(previous, fresh));
+      setProvider((cur) => (cur === previous ? reconcilePick(previous, fresh) : cur));
       return;
     }
     // B-4: the write's own answer, not the mount fetch's. `router.refresh()`
@@ -861,7 +865,11 @@ export function LiveFeedCard({ current }: { current: Settings }) {
     setSeconds(next);
     const r = await post({ action: "refresh-seconds", seconds: next });
     if (!r.ok) {
-      setSeconds(previous);
+      // U-4 (fix wave 8): functional, and only while the slider still shows the
+      // value this write was for — a drag that landed during the POST has moved
+      // it on, and a bare `setSeconds(previous)` would drag it back to a value
+      // two gestures old.
+      setSeconds((cur) => (cur === next ? previous : cur));
       toast.error(r.message ?? "Could not save the refresh interval.");
     }
   }

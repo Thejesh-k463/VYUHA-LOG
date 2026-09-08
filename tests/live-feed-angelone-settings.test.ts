@@ -1301,7 +1301,7 @@ describe("a refused provider write re-asks the route, so the block stops quoting
     expect(refusal, "the re-ask does not follow the revert and the toast").toMatch(
       // `[ \t]*` before each break: `stripComments` leaves the trailing space
       // where a `//` comment stood, and blank lines where a block of them did.
-      /setProvider\(previous\);[ \t]*\r?\n\s*toast\.error\(r\.message \?\? "Could not switch the feed\."\);[ \t]*\r?\n\s*const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);[ \t]*\r?\n\s*return;/,
+      /setProvider\(previous\);[ \t]*\r?\n\s*toast\.error\(r\.message \?\? "Could not switch the feed\."\);[ \t]*\r?\n\s*const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(\(cur\) => \(cur === previous \? reconcilePick\(previous, fresh\) : cur\)\);[ \t]*\r?\n\s*return;/,
     );
   });
 
@@ -1540,7 +1540,10 @@ describe("a refused write adopts the route's own answer for the radio (fix wave 
     const refusal = refusalBranch(cardSrc());
     const revert = refusal.indexOf("setProvider(previous);");
     const reask = refusal.indexOf("await refreshStatus();");
-    const adopt = refusal.indexOf("setProvider(reconcilePick(");
+    // U-3 (fix wave 8): the adoption is the FUNCTIONAL `setProvider`, so this
+    // is the call site to find — the bare `setProvider(reconcilePick(…))` it
+    // replaced is exactly what must no longer be there.
+    const adopt = refusal.indexOf("setProvider((cur) =>");
     const ret = refusal.indexOf("return;");
     expect(revert, "the refused write does not put the radio back").toBeGreaterThan(-1);
     expect(reask, "the refused write no longer re-asks the route (U-1)").toBeGreaterThan(-1);
@@ -1557,10 +1560,26 @@ describe("a refused write adopts the route's own answer for the radio (fix wave 
     expect(reask).toBeGreaterThan(revert);
   });
 
-  it("the adoption is the one pure helper, called with the previous pick and the fresh answer", () => {
-    expect(refusalBranch(cardSrc()), "the branch adopts something other than the helper's verdict").toMatch(
-      /const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);/,
+  it("the adoption is the one pure helper, applied FUNCTIONALLY and only to the reverted value (U-3)", () => {
+    const refusal = refusalBranch(cardSrc());
+    // U-3 (fix wave 8). `refreshStatus()` is an await, and a radio click that
+    // lands during it moves the pick. The old shape passed `reconcilePick`'s
+    // verdict to `setProvider` as a VALUE computed from a pick two gestures
+    // old, so the later click was silently painted over. The functional form
+    // with the `cur === previous` guard adopts only while the radio still sits
+    // where the revert put it.
+    expect(
+      refusal,
+      "the branch adopts something other than the helper's verdict, guarded on the reverted value (U-3)",
+    ).toMatch(
+      /const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(\(cur\) => \(cur === previous \? reconcilePick\(previous, fresh\) : cur\)\);/,
     );
+    // And the value form it replaced is GONE: a click that landed during the
+    // GET must not be overwritten by an answer computed before it (U-3).
+    expect(
+      refusal,
+      "the adoption still assigns the helper's verdict unconditionally, so a click made during the re-ask is overwritten (U-3)",
+    ).not.toMatch(/setProvider\(reconcilePick\(/);
   });
 
   it("it adds no re-ask and no second refusal branch", () => {
