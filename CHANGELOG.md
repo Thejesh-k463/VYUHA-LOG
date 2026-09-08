@@ -1,5 +1,158 @@
 # Changelog
 
+## v4.2.0 — 2026-09-08
+
+*The release where the Live Desk can be priced from broker credentials you
+already saved. Two native quote sources join the bridge that arrived in v4.1.0
+— Upstox, on the read-only Analytics token the import already uses, and Angel
+One, which signs itself in from the secret you enrolled — each behind its own
+consent sheet, each talking only to your own broker's API, and each pricing
+equity positions only, with every derivative row saying so in words rather than
+showing a stale number. Around them: a bundled NSE holiday list that the desk
+clock, the mark door, the stream window and the 15:31 reopen all consult, so a
+day the exchange was shut no longer carries the previous session's price under
+its date; the OpenAlgo disclosure re-accepted once, because one of its items
+stopped being true; and data quality that no longer counts an open derivative
+as a mark you forgot. Two migrations, 0069 and 0070, and no dependency
+changes.*
+
+- **Upstox can price the Live Desk, on the token you already have.**
+  `UPSTOX_FEED_ENABLED` in `lib/quotes/types.ts` is `true`, and **Settings →
+  Live feed** gains Upstox as a source. It asks for **no new credential and no
+  daily sign-in**: it reuses the **Analytics token** you saved under **Import →
+  Connect broker**, which Upstox issues read-only and for about a year
+  (`requiresDailyAuth: false`). While the desk is open Vyuha makes **one
+  `/v3/market-quote/ltp` call per sweep** to `api.upstox.com` for the
+  instrument keys of the open positions of the account you have selected — **at
+  most 500 of them** — and `/v3/market-quote/ohlc` **at most once a minute** for
+  the previous close each row's change is computed against. Checking the
+  connection makes **no request at all**: `health()` reports on the credential
+  it already holds. The row stays greyed until the token is saved, and it
+  prices nothing until you pick it.
+
+- **One token, two jobs.** The desk source and the Upstox trade pull read the
+  **same** Analytics token, and generating a fresh one at
+  `account.upstox.com` revokes the old one — so a regeneration stops the import
+  and the desk source in the same moment, and pasting the new token back under
+  **Import → Connect broker** restores both. It is stated here because one
+  quiet afternoon otherwise reads as two separate faults.
+
+- **Angel One can price the Live Desk too, and signs itself in.**
+  `ANGELONE_FEED_ENABLED` is `true`, and the source talks to
+  `apiconnect.angelone.in` — already the host the Angel One trade pull uses, so
+  **no new network host is added for it**. It reuses the **client code, PIN and
+  TOTP secret** saved for imports: Vyuha derives a one-time code from the
+  enrolled secret rather than sending the secret itself, so the sign-in is
+  **unattended**. Angel One clears every session at **05:00 IST** whatever the
+  token's own expiry says, so the re-login is scheduled against that flush, and
+  otherwise happens at most once a day while Vyuha stays open, after a
+  relaunch, when the credentials are re-saved, and when the selected account is
+  switched. **A refused sign-in is retried at most three times and then
+  stopped** until you re-save the credentials **or relaunch Vyuha**; three
+  sessions in a row that Angel One calls invalid, with no priced answer between
+  them, stop it the same way and say so on screen. The adapter carries a
+  surface pin that **refuses any order call** — this is a quote client and
+  nothing else.
+
+- **Angel One's tokens are resolved once and remembered.** Angel One prices by
+  its own exchange token, not by a ticker, so Vyuha resolves each symbol lazily
+  through `searchScrip` on the login host — at most five lookups per poll cycle
+  — and caches the answer in `angelone_instrument_tokens` (**migration 0070**),
+  keyed by exchange and symbol, so the second day of the same book asks for
+  nothing. A symbol it cannot resolve is skipped and reported, never guessed.
+
+- **Angel One's refresh is set by the size of your book, not by a slider.**
+  Angel One allows about one request a second, so the interval is arithmetic:
+  quotes go in **batches of 50 scrips at about one request a second**, and the
+  cadence is **3 seconds up to 50 scrips, 5 seconds from 51 to 200, 10 seconds
+  from 201 to 500** — counted in scrips, because two positions in one scrip are
+  one price to ask for. Under this source the 1–5 second slider is hidden and
+  replaced by **one line on screen stating the interval, the number of calls
+  each refresh takes and why** — a number you cannot change is worse than a
+  number you can, unless the screen says where it came from. Every other source
+  keeps the slider exactly as it was.
+
+- **Both are switched on behind their own consent sheet, and the answer is one
+  column.** Each feed has its own sheet (`lib/domain/live-feed-disclosure.ts`,
+  each at version "1") naming the host, the credentials it reuses, what a
+  request carries, what it does not, every trigger that signs in, and the caps
+  above. Being offered is not being allowed to run: the source resolver and
+  `/api/live/feed` both re-check the acknowledgement, so a feed whose sheet has
+  not been accepted is refused rather than quietly polled. The acknowledgements
+  are stored in **one column**, `settings.live_feed_ack_json` (**migration
+  0069**), and that column is **redacted from backups** — a journal restored on
+  another machine asks there rather than arriving pre-consented.
+
+- **Equities this release, and the rows say so.** The Upstox and Angel One
+  sources price **equity** positions. A futures or options row shows the
+  position's recorded close, or a dash when there is none, and carries the
+  label **"Not priced by this feed"** — a derivative's premium is not its
+  underlying's price, and a stale number presented as a fresh one is the thing
+  this label exists to prevent.
+
+- **PRIVACY item 3 gains exactly one host: `api.upstox.com`.**
+  `docs/client/PRIVACY.md` is widened rather than joined by a fifth item — the
+  poll still goes to a broker you already connected, only once you switch it
+  on — so "Exactly four kinds, and only one of them is automatic" and "There is
+  no fifth thing" both stay literally true. Angel One's host was already listed
+  for the trade pull.
+
+- **The desk knows the exchange's holidays.** `lib/data/nse-holidays.json`
+  ships with the app — NSE's own cash-market **trading** holidays, 19 trading
+  rows for 2026, with clearing holidays deliberately absent because a clearing
+  holiday is a day the market is **open**. `isExchangeHoliday` and
+  `isTradingDayIst` in `lib/domain/trading-day.ts` are read by **the desk
+  clock, the persist-mark door, the stream window and the 15:31 reopen**, so a
+  Diwali or an Independence Day no longer stores the previous session's price
+  under that day's date. A date outside the listed year is **unknown, not a
+  holiday**, so weekday behaviour survives a stale file, and a year-guard test
+  goes red the moment the app's own IST year passes the list.
+
+- **The OpenAlgo disclosure is re-accepted once.**
+  `OPENALGO_DISCLOSURE_VERSION` moves from `"2"` to `"3"`, and because the
+  check compares with `===`, a stored `"2"` is refused with no extra code. The
+  reason is item 6: it used to say exchange holidays were not modelled, and a
+  person accepted that a weekday the exchange was shut still got a mark. That
+  is no longer true — the mark door refuses with a "holiday" reason — and a
+  consent sentence that has become false about what is written to your journal
+  is a new version, not a copy fix. Nothing new is sent and nothing new is
+  kept.
+
+- **Data quality no longer counts an open derivative as unmarked.** The mark
+  writer skips derivative rows by design, so every open option and future was
+  being reported as a mark you had failed to record — a permanent red count for
+  doing nothing wrong. `lib/analytics/data-quality.ts` now counts only the rows
+  a mark can exist for.
+
+- **Nine fix waves behind it, audited ten times; every fix proven red on
+  revert before it was kept** — what each round found, and what was ruled not a
+  defect, is recorded in `docs/DECISIONS.md`.
+
+- **No dependency was added, removed or upgraded.** The only lines this release
+  changes in `package.json` and `package-lock.json` are version numbers.
+
+- **The uninstaller still warns and copies first (unchanged since v3.8.0).**
+  Before the "Delete the application data" option can act, the uninstaller
+  names the journal database and the licence key, copies both (they live in
+  `vyuha.sqlite`), the sidecar's pre-migration `backups\` snapshots and your
+  attachments to `Documents\Vyuha-backup-<date>`, and asks; Cancel keeps
+  everything in place, and if that copy cannot be made — a full disk, a
+  OneDrive files-on-demand placeholder — the uninstall stops with nothing
+  removed. Ticking the box erases the data folder only once that copy exists.
+
+- **Not in this release, stated plainly:** neither broker source places an
+  order, and neither ever will from this screen — the pins that refuse it are
+  part of the adapters. **Options and futures are not priced by these feeds**;
+  contract-keyed marks are deferred rather than approximated, because the
+  underlying's price is not the contract's. Telegram notices for a stop or a
+  target are still **cut** and become their own release after this one — that
+  word stays out of every Pro description until the feature exists. There is
+  still **no `openalgo-charts` pilot**; `lightweight-charts` stays where it is.
+  Kelly still takes the win rate and payoff **you** supply — nothing is
+  inferred from your journal yet. The holiday list is bundled and refreshed by
+  hand once per release: **nothing fetches a calendar**, and no host is
+  contacted for one.
+
 ## v4.1.0 — 2026-09-07
 
 *The release where the Live Desk can be priced by a bridge you already run. The
