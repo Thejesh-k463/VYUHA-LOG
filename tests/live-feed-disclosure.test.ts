@@ -225,8 +225,9 @@ describe("the Angel One consent sheet", () => {
     // The five things the old sentence promised or omitted: a relaunch, a
     // credential re-save, the 5 AM IST flush and an account switch each open
     // another session, and the ceiling holds only while this process stays up.
-    // Every one of them is a field of `liveFeedInstanceKey()` in
-    // lib/quotes/registry.ts (D-1) — that key IS the trigger list.
+    // Re-save and account switch are fields of `liveFeedInstanceKey()` in
+    // lib/quotes/registry.ts (D-1); the other three are the memo's process
+    // lifetime and the adapter's session clock, not key fields (round 6 F-2).
     for (const trigger of [
       "at most once a day while Vyuha stays open",
       "again after a relaunch",

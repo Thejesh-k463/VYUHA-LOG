@@ -4586,10 +4586,114 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
 - **D-2 / D-3 — STATE.** The fix-3 seam file has 16 tests, not 10 (wave 4 added six); STATE named `3b478ea` as HEAD and
   `2bacf06..3b478ea` as the round-5 range with no 4b verdict. Both corrected in this commit's STATE §2.
 - **Seam pass:** `tests/seams-v42-fix5.test.ts`, 12 tests over seven crossings (A↔D clause + S-1 semantics through the adapter;
-  B↔D the five triggers ARE the Angel One key's user-changeable fields, asserted on the key string; B↔A the counters survive an
+  B↔D the two sheet triggers that are user gestures — credential re-save and account switch — ARE the Angel One key's
+  user-changeable fields, asserted on the key string (the other three — once a day while Vyuha stays open, relaunch, the 05:00
+  IST flush — are process-lifetime and session-clock rules the key does not carry; corrected by round 6 F-2); B↔A the counters survive an
   OpenAlgo toggle on the same instance; the owner's three configurations through the route; pages↔banner account id; route 409 ↔
   the card's re-ask; the `vyuha-` key). One defect (the `:suffix`), fixed before the gate.
 - **Gate on this tree:** `npm run verify` EXIT 0 — **361 files / 7,005 passed / 35 skipped**, lint 0 errors (3 pre-existing
   warnings in files this wave did not touch), `next build` compiled 12.2 s. README: 360 → 361 files, 6,969 → 7,005 tests, screens
   49 unchanged. `package-lock.json` untouched. No `components/live/**` change (the `/live` harness stays 9/9 from `99aa027`). Every
   file this wave touched is LF. **Fix wave 5 = `64bd2a1`; CI 34231889936: SUCCESS 6/6.** Round-6 audit owed over `be6b9eb..64bd2a1`.
+
+## 2026-09-08 — v4.2 round-6 audit (`be6b9eb..64bd2a1`): 137 candidates → 3 confirmed → 2 after the skeptic → fix wave 6 `1a3a833`; the pacing slot measures its gap against the clock; the card's write helper survives a rejected fetch; round 7 over the fix wave found the fix's own regression
+
+- **Round 6** (six Fable auditors, Fable skeptic; orchestrator on Fable, the session the owner opened): money 21/0, schema 17/0,
+  security 23/0, ui 19/0, test-integrity 25/1, docs 32/2 → **3 confirmed → 2 after the skeptic.** The first round of this
+  release with no money, schema, security or UI finding. Both round-5 security fixes (S-1, S-2) and both UI fixes (U-1, U-2)
+  were proven complete; the D-1 clause is byte-identical on six surfaces (seven occurrences, one distinct string); the orchestrator
+  ran the five revert-to-red proofs the test-integrity auditor's guard blocked — S-1 + D-1 constants 11 red, S-2 14 red, U-2 4
+  red, U-1 5 red, D-1 sheet 3 red, tree clean after each.
+- **Survivors:** F-1 (docs, cosmetic) — STATE §2 named `be6b9eb`/`dd729ed` in the sha slot and the docs-only `bd967fb` put
+  `64bd2a1` + CI 34231889936 into DECISIONS only, the round-5 D-3 shape again (the skeptic showed the convention: a wave commit's
+  own STATE names its parent, and the docs-only follow-up owes the sha — this entry's commit pays it). F-2 (docs, cosmetic) —
+  this file's round-5 seam line said "the five triggers ARE the Angel One key's user-changeable fields"; seam C2a proves TWO
+  (re-save, account switch); the other three sheet triggers (once a day while open, relaunch, 05:00 IST flush) are process
+  lifetime and session clock, not key fields. Corrected in that line, in the PRIVACY.md auditor appendix and in the
+  `live-feed-disclosure` test comment — same commit as this entry.
+- **T-1 (test-integrity → UNVERIFIABLE as a flake, mechanism CONFIRMED):** `tests/quotes-provider.test.ts:330` failed once in the
+  auditor's two parallel ten-file runs (`undefined.ltp` — an empty snapshot map), then 0/3 for the skeptic. The auditor's
+  hourly-budget hypothesis was refuted (4,000 vs three requests); the skeptic named the only wall-clock path: `slot()` slept to
+  EXACTLY `lastRequestAt + 1000` and `guard.take()` trims its window only at `>= 1000`, so a timer firing one millisecond early
+  made the guard refuse and `snapshot()` returned an EMPTY map for the whole sweep. A pre-existing hole, not the wave's.
+- **Recorded, not defects (round 6):** the seam key regex `[-:]\d+$` in fix5 C7a accepts both shapes — `breach-scan-scope:338`
+  is the pin that enforces `:`; the banner writes localStorage directly (pre-existing pattern, no same-document reader); the
+  PRIVACY auditor appendix cites ruling ids (inside an HTML comment, not rendered); the card's `post()` did not catch a rejected
+  fetch (pre-existing, FIXED in wave 6 by ruling); the two trailing `refreshStatus()` GETs run with `pending` false (pre-existing
+  race, unchanged); a lookup 401 and a quote 401 in one poll each count one invalidation, so the cap can fire after two sessions
+  (conservative; PINNED in wave 6 by ruling); one feed slot means re-picking Angel One after OpenAlgo within a day is a second
+  sign-in the sheet's "once a day while Vyuha stays open" does not literally name (owner: record only, sheet unchanged, Angel One
+  disclosure version stays "1"); the skeptic's tooling ran the full suite once by accident on `bd967fb` — 7,005 / 0 / 35.
+- **Owner rulings** (`06-ANSWERS.md` "v4.2 round-6 rulings", two groups of four + one): F-1/F-2 docs-only by the orchestrator, no
+  round-7 code audit over prose; T-1 FIX in 4.2 (clock re-read, no margin constant); the card freeze FIX in 4.2 in the same
+  wave; the double increment RECORD + PIN; the sheet clause RECORD ONLY; no seam pass (the two builders' file sets exchange no
+  value — recorded as a session decision).
+- **Fix wave 6 = `1a3a833`** (two Opus builders, 6 files +412/−16): `lib/quotes/angelone.ts` `slot()` computes `readyAt` once,
+  re-reads `now()` after each sleep and sleeps the remainder, bounded by module-private `PACING_RECHECKS = 4` (a bound, not a
+  margin); two tests drive an early-firing fake timer (`sleepAdvance: ms >= 2 ? ms - 1 : ms`) — red on revert ("the paced batch
+  never reached the wire — one whole sweep unpriced: expected +0 to be 1"); the double-increment pin caps on the THIRD doubly
+  invalidated poll, mutation-proven (lookup-side `invalidateSession()` → non-counting clear: "expected '<no error>' to be 'Angel
+  One reported the session invalid three times in a row…'"). `components/settings/live-feed-card.tsx` `post()` wraps the fetch
+  AND the body read in a try; the catch returns the route's refusal shape `{ ok: false, message: FEED_UNREACHABLE }` ("Vyuha could
+  not reach its own server. Try again in a moment." — deliberately silent on whether the write landed) so the EXISTING `!r.ok`
+  branch lowers `pending`, reverts, toasts and re-asks; no third `refreshStatus()` call site; behavioural tests (rejecting fetch;
+  502 HTML body) + source-shape pins in both settings tests — 5 red on revert. `refreshStatus()` unchanged (`fetchStatus()`
+  already catches). Gate: `npm run verify` EXIT 0 — **361 files / 7,019 passed / 35 skipped**, build 13.5 s, lint 0 errors (3
+  pre-existing warnings). README 7005 → 7019 in six places, same commit. Tests: quotes-angelone 43 → 46, live-feed-angelone-settings
+  78 → 85, live-feed-upstox-settings 43 → 47. **CI 34238099682 on `1a3a833`: SUCCESS 6/6.**
+- **Round 7 (scoped, the fix wave's own audit: money 15/0, ui 17/2, test-integrity 22/2 → 4 → 4 after the skeptic):** U-1 — a
+  REGRESSION wave 6 introduced: the refusal branch reverts the radio and re-asks, but never adopts the answer; the route writes the
+  row (`route.ts:371`) BEFORE awaiting the response, so a write that landed with a lost response leaves the radio on the OLD feed
+  while `status.feed.stored`, the health line and the desk run the NEW one until reload (before wave 6 the same input froze the
+  card with the radio on the value that had landed — right radio, dead card). U-2 — `saveSeconds()` never reverts the slider on
+  `!r.ok` (pre-existing; wave 6 only made it visible with a toast; the route clamps and cannot refuse, so only a rejected fetch
+  reaches it). T-1 — the wave-6 pacing assertions are `>=`, so the REJECTED design (single sleep + a 5 ms margin, sending at
+  T0+1004) passes them; the ruled fix lands exactly on the gap (999 + 1), so exact equality separates the two. T-2 —
+  `PACING_RECHECKS` is unpinned: every provider fixture in `tests/` settles in one pass, so an unbounded `while` is green.
+  Recorded, not defects (round 7): with the double increment pinned the sheet's "three sessions in a row" is an upper bound the
+  counter can beat (it counts invalidation answers); a backwards clock jump can make `slot()` sleep up to four full gaps
+  (bounded, no worse than the old single wrong sleep); `markNow()` and `saveSeconds()` are freed by the same `post()` fix
+  without their own pins; a successful `markNow()` refreshes the router but not the status line (pre-existing). **Owner ruling
+  ("v4.2 round-7 rulings"): all four, two Opus builders, then a SCOPED round 8 (ui + test-integrity + skeptic).**
+- **Fix wave 7 = `9582d2f`** (two Opus builders, 6 files +362/−25): `refreshStatus()` returns the `FeedResponse | null` it fetched;
+  new exported pure `reconcilePick(previous, status, offeredIds?)` returns the server's stored pick only when the GET answered and
+  the id is one the card offers (the `feedBlockState` predicate), else `previous`; the refusal branch keeps the pinned
+  `setProvider(previous)` → toast → `await refreshStatus()` and adds one statement `setProvider(reconcilePick(previous, fresh))`
+  — no third `refreshStatus()` call site, seam C6b green; four helper cases + five source-shape pins (order by index revert →
+  toast → re-ask → adopt → return), 6 red on revert. `saveSeconds()` captures `previous` and reverts on `!r.ok` — 1 red on revert.
+  The two wave-6 pacing assertions moved from `>=` to exact equality (a 5 ms margin mutation reads 1004 vs 1000, red); a
+  stalled-clock test (`sleepAdvance` returns 0 and counts) pins `PACING_RECHECKS` sleeps of the full remainder, the guard's
+  refusal and its verbatim sentence (bound-6 mutation reads 6 vs 4, red; `expect(PACING_RECHECKS).toBe(4)` anchors the literal so
+  the pair cannot move together); `PACING_RECHECKS` exported (one token). Gate: `npm run verify` EXIT 0 — **361 files / 7,031
+  passed / 35 skipped**, build 10.1 s, lint 0 errors (3 pre-existing warnings). README 7019 → 7031 (six places). Tests:
+  quotes-angelone 46 → 47, live-feed-angelone-settings 85 → 94, live-feed-upstox-settings 47 → 49. **CI 34243191231 attempt 1:
+  5/6** — `Playwright e2e (macos-14)` timed out at `e2e/z-challan-ledger.spec.ts:203` ("deleting every challan returns the
+  calculator to the typed figure", `page.waitForLoadState` 90 s) after flows 1–34 passed; the spec is outside the diff and the
+  Ubuntu job ran all 93 green — the cold-runner shape of 4.1's release day; the failed job was re-run on the same run
+  (`gh run rerun 34243191231 --failed`) — **attempt 2: SUCCESS 6/6**, the macOS Playwright job green on the same sha; a
+  cold-runner flake, exactly the 4.1 release-day shape.
+- **Round 8 (scoped, the fix wave's own audit: ui 18/2, test-integrity 24/1 → 3 → 3 after the skeptic):** U-3 — `store()` lowers
+  `pending` (`:780`) BEFORE the refusal re-ask (`:797`), so every radio is clickable during that GET; the route reads the row
+  first (`route.ts:283-284`) and then runs the EFFECTIVE provider's health probe (`:310`) — for OpenAlgo an untimed `/funds` POST
+  (`openalgo.ts:456`, no AbortSignal anywhere under `lib/quotes`); a later click that lands (ok path folds `stored`) is then
+  overwritten when the stale GET answers and `:798` adopts the pre-write row; the ok path never sets `provider` from status, so
+  the radio stays wrong until the next click. The recorded "two trailing GETs with `pending` false" race touched only `status`,
+  which the next GET repaired; wave 7's adoption gave that window a new effect on `provider`, which nothing repairs. U-4 —
+  `saveSeconds()` is not under `pending` (the range input has no `disabled`); drag 2→3→4 = A (previous 2, POST 3) and B (previous
+  3, POST 4); A resolving `!r.ok` AFTER B's ok runs `setSeconds(2)` last → slider 2, DB 4 (before wave 7 the slider stayed at 4 =
+  DB). T-8 — the stalled-clock test's fake `sleep` is a plain async arrow (microtask only); an unbounded `while` at
+  `angelone.ts:710` would spin microtasks for ever and vitest's timer-based `testTimeout` never fires (skeptic's `node -e`: 3 M
+  microtask sleeps, a 50 ms timer never fired) — a HUNG gate, not a red one. Fixes ruled ("v4.2 round-8 rulings"): functional
+  updates `setProvider((cur) => cur === previous ? reconcilePick(previous, fresh) : cur)` and `setSeconds((cur) => cur === next ?
+  previous : cur)`, and a fixture that throws after a LITERAL 8 sleeps (the throw rejects `slot()`'s `await sleep`, which has no
+  try/catch, so the test reddens in milliseconds; with the bound intact the count reaches 4, never 9). Residuals the skeptic named,
+  recorded not defects: a later click that is ITSELF refused reverts to `previous` and passes the U-3 guard (same class,
+  narrower); the A-fails-then-B-fails slider ordering ends on B's `previous` (pre-existing, unchanged by the guard); a lost
+  response stays structurally indistinguishable from a refusal at the card (a route idempotency token would remove the guess —
+  not 4.2). **Fix wave 8 OWED** (one Opus builder over the card + its two settings tests + `tests/quotes-angelone.test.ts`; the
+  order pins that quote `setProvider(reconcilePick(previous, fresh));` move to the functional form in the same commit) → round 9
+  (ui + test-integrity + skeptic) → bump 4.2.0. **Cost of this session** (Fable orchestrator, the session the owner opened):
+  round-6 audit ≈ 0.69 M subagent tokens (six Fable auditors) + 0.08 M (skeptic); fix wave 6 ≈ 0.23 M (two Opus builders);
+  round 7 ≈ 0.26 M (three Fable auditors) + 0.09 M (skeptic); fix wave 7 ≈ 0.22 M (two Opus builders); round 8 ≈ 0.20 M (two
+  Fable auditors) + 0.06 M (skeptic) — ≈ 1.83 M in subagents; the orchestrator reached ~300k context, which is why wave 8 was
+  handed to a fresh session by ruling.

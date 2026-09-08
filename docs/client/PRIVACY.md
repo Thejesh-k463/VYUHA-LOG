@@ -227,7 +227,9 @@ Exactly four kinds, and only one of them is automatic:
                                   switching account — including to or from the
                                   aggregate "All accounts" view — rebuilds the
                                   instance and signs in again on the next
-                                  poll. The trigger list IS that key's fields.
+                                  poll. Re-save and account switch are that
+                                  key's fields; the other three triggers are
+                                  the process lifetime and the session clock.
     • two ceilings, not one       A REFUSED sign-in stops after three attempts
                                   until the credentials are re-saved or Vyuha
                                   is relaunched (C-2, P-3; round-5 D-1). A

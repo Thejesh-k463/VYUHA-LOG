@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2 WAVE + FIVE FIX WAVES on main (fix wave 5 on `be6b9eb`/`dd729ed`, 2026-09-08 IST evening); audit ladder 14 → 12 → 11 → 10 → 7 → round 6 NOT yet run; NOT tagged; v4.1.0 remains the PUBLISHED release
+## 2. Current state — v4.2 WAVE + SEVEN FIX WAVES on main (fix wave 7 = `9582d2f` on `1a3a833`, 2026-09-08 IST night); audit ladder 14 → 12 → 11 → 10 → 7 → 2 → 4 → 3; fix wave 8 + round 9 OWED; NOT tagged; v4.1.0 remains the PUBLISHED release
 
 > **v4.2 is IN AUDIT, not tagged.** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
@@ -50,14 +50,30 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > longer rebuild a live Angel One instance (undisclosed sign-in + both ceilings cleared) and OpenAlgo/broker keys never merge or
 > collide; the card re-asks the route after a refused write; the breach notification record is per account
 > (`vyuha-breach-last-notified:<id>`); the first-cap clause says "or relaunch Vyuha" on every surface and in both capped
-> constants; three older tests that pinned the pre-S-2 key shape moved to the ruled one). **Round-6 audit is the next step**
-> (six Fable auditors + skeptic over the fix-wave-5 diff), then the bump. Gate on the fix-wave-5 tree: **`npm run verify` EXIT 0
-> — 361 files / 7,005 passed / 35 skipped, `next build` compiled 12.2 s**; README counts say 7005 / 361 / 49 screens; seam files
+> constants; three older tests that pinned the pre-S-2 key shape moved to the ruled one). **Fix wave 5 = `64bd2a1`; CI
+> 34231889936 SUCCESS 6/6** → docs-only `bd967fb` → **round-6 audit over `be6b9eb..64bd2a1`: 137 candidates → 3 confirmed → 2
+> after the skeptic** (money 0, schema 0, security 0, ui 0; test 1 — a flake whose mechanism was a one-millisecond pacing hole;
+> docs 2 — STATE/DECISIONS prose, fixed in the record commit) → **fix wave 6 `1a3a833`** (CI 34238099682 SUCCESS 6/6: the Angel One
+> pacing slot re-reads the clock after each sleep, bounded by `PACING_RECHECKS = 4`; the lookup+quote double increment PINNED; the
+> feed card's `post()` catches a rejected fetch and returns the route's refusal shape so the existing branch recovers; gate
+> 361 / 7,019 / 35) → **round 7 (scoped: money 0, ui 2, test 2 → 4 → 4)** → **fix wave 7 `9582d2f`** (the refusal branch adopts the
+> server's stored pick via exported `reconcilePick()`; `saveSeconds()` reverts the slider on refusal; exact-gap and stalled-clock
+> pacing pins; `PACING_RECHECKS` exported; CI 34243191231 attempt 1 = 5/6 — macOS Playwright timed out in
+> `e2e/z-challan-ledger.spec.ts:203`, a spec outside the diff, Ubuntu 93/93 — **attempt 2 SUCCESS 6/6**, cold-runner flake; detail in
+> `docs/DECISIONS.md` "v4.2 round-6 audit") → **round 8 (scoped: ui 2, test 1 → 3 → 3): FIX WAVE 8 OWED** — U-3 the refusal
+> re-ask runs with the radios enabled, so a later click can be overwritten by the stale answer (functional `setProvider` guard);
+> U-4 an earlier failed interval save can revert a later landed one (functional `setSeconds` guard); T-8 the stalled-clock test
+> would HANG vitest, not redden, on an unbounded loop (fixture throws after a literal 8 sleeps) — one Opus builder over the card +
+> its two settings tests + `tests/quotes-angelone.test.ts`, then round 9 (ui + test-integrity + skeptic), then the bump.
+> Gate on the fix-wave-7 tree: **`npm run verify` EXIT 0
+> — 361 files / 7,031 passed / 35 skipped, `next build` compiled 10.1 s**; README counts say 7031 / 361 / 49 screens; seam files
 > `tests/seams-v42{,-fix,-fix2,-fix3,-fix4,-fix5}.test.ts` (35 + 20 + 20 + 16 + 11 + 12 tests). Rulings: `06-ANSWERS.md` "v4.2
 > fix-wave rulings" (A-1, A-2, A-11, B-7, C-1, C-2, C-11), "v4.2 round-4 rulings" (M-1, C-1, P-3, D-1, breach scope, D-2, wave
 > shape + session decisions) and **"v4.2 round-5 rulings"** (S-1, S-2 + the owner's no-collision addition, U-1/U-2, D-1, wave
 > shape); measurements: `docs/DECISIONS.md` 2026-09-07/08 entries "v4.2 wave audit", "v4.2 fix-wave audit", "v4.2 fix wave 3",
-> "v4.2 round-4 audit", **"v4.2 round-5 audit"**. Known-open, recorded, NOT blockers: performance-page short-side sign (pre-existing);
+> "v4.2 round-4 audit", "v4.2 round-5 audit", **"v4.2 round-6 audit"** (rounds 6–8 and waves 6–7 in one entry); rulings for
+> rounds 6–8: `06-ANSWERS.md` "v4.2 round-6 rulings", "round-7 rulings", "round-8 rulings". Known-open, recorded, NOT blockers
+> (the round-6/7/8 items are listed in that DECISIONS entry): performance-page short-side sign (pre-existing);
 > a hand-edited non-statutory `stt_side` of `both` for `future` would diverge `charges.ts` from `exitStt` (M-1 limitation);
 > `runAutoMtm().breaches` is serialised by `/api/mtm/auto` and read by nobody; `PLANNED_NOTES.angelone` names a constant but is
 > unreachable for a live desk; `egressDescription` has no renderer; the generic account-isolation resolution scan still
