@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.2.0 — 2026-09-08
+## v4.2.0 — 2026-09-09
 
 *The release where the Live Desk can be priced from broker credentials you
 already saved. Two native quote sources join the bridge that arrived in v4.1.0
