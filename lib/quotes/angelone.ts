@@ -641,7 +641,7 @@ export interface AngelOneProviderOptions {
  * what it was: the safety net that refuses rather than sends if the pacing is
  * still wrong when the bound runs out.
  */
-const PACING_RECHECKS = 4;
+export const PACING_RECHECKS = 4;
 
 export function createAngelOneProvider(opts: AngelOneProviderOptions = {}): QuoteProvider {
   const readGate = opts.readGate ?? readGateFromDb;

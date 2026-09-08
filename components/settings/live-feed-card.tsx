@@ -664,6 +664,47 @@ export function foldWriteResult(prev: FeedResponse | null, r: FeedPostResult): F
   return next == null ? next : { ...next, health: null };
 }
 
+/**
+ * WHICH PICK THE RADIO ENDS ON AFTER A REFUSED WRITE (fix wave 7, U-1).
+ *
+ * Fix wave 6 made a write that never answered a REFUSAL — `ok: false` plus
+ * FEED_UNREACHABLE — because a rejected `fetch` or a torn body says nothing
+ * about whether the request reached the route. It can have: the route stores
+ * `liveFeedProvider` BEFORE it awaits `resolveLiveFeed()` for the response
+ * body, so the row can already hold the new pick while the card is handed a
+ * refusal. `store()` then reverted the radio and re-asked the route — and read
+ * nothing back. The GET answered `feed.stored = <new>`, so the block cleared
+ * (stored === effective), the health line and the desk's own pricing described
+ * the NEW feed, and the radio alone said OLD, until the next click or a reload.
+ *
+ * So the answer is adopted, and only where adopting it is safe:
+ *
+ *   • the GET failed (`null`, or a body with no `feed`) — nothing was learned,
+ *     and the revert to `previous` stands;
+ *   • the stored value is not a radio this build offers — the same predicate
+ *     `feedBlockState`/`feedBlockControl` apply, because a withheld id travels
+ *     in a backup envelope (C-6) and checking a radio that is not on screen
+ *     would leave the card describing a control it does not render;
+ *   • otherwise the row's own value wins.
+ *
+ * For a genuine 403/409 the route stored nothing, so `feed.stored` IS
+ * `previous` and this returns `previous` unchanged — the adoption is a no-op on
+ * every real refusal, and only moves the radio where the write actually landed.
+ *
+ * PURE, so it is unit-tested rather than described; `offeredIds` is injected by
+ * those tests exactly as it is for the two block helpers above.
+ */
+export function reconcilePick(
+  previous: ProviderId,
+  status: FeedResponse | null,
+  offeredIds?: readonly string[],
+): ProviderId {
+  const stored = status?.feed?.stored;
+  if (stored == null) return previous;
+  const offered = offeredIds ?? PROVIDERS.map((p) => p.id);
+  return offered.includes(stored) ? (stored as ProviderId) : previous;
+}
+
 export function LiveFeedCard({ current }: { current: Settings }) {
   const router = useRouter();
   const [provider, setProvider] = React.useState<ProviderId>(
@@ -692,9 +733,14 @@ export function LiveFeedCard({ current }: { current: Settings }) {
   // The SAME ask, after a write (C-7): the POST bodies carry no health, so the
   // card would otherwise go on describing the provider that was effective at
   // mount. A plain fetch in an event handler — never a second effect.
-  async function refreshStatus() {
+  // It RETURNS what it fetched as well as storing it (fix wave 7): the refusal
+  // branch has to read the row the route reports, and a second GET to learn it
+  // would be a third re-ask for one write. The ok path ignores the value, so
+  // nothing else changes.
+  async function refreshStatus(): Promise<FeedResponse | null> {
     const j = await fetchStatus();
     if (j) setStatus(j);
+    return j;
   }
 
   const health = status?.health;
@@ -741,9 +787,15 @@ export function LiveFeedCard({ current }: { current: Settings }) {
       // "accept it first" for an acknowledgement the accept path has just made
       // current, `feedBlockControl` keeps offering "Review and accept", and a
       // fold that has already nulled `health` leaves the line at "Checking the
-      // feed…" for ever. The ask comes after the revert so the radio the user
-      // sees is the stored pick either way.
-      await refreshStatus();
+      // feed…" for ever. The ask comes after the revert, and its ANSWER is then
+      // adopted (fix wave 7): a refusal the card synthesised from a dropped
+      // response can be a write that landed, and `reconcilePick` puts the radio
+      // on the row the route reports whenever this build offers it — leaving
+      // the revert standing when the GET failed, when the stored id is not
+      // offered, and on every genuine 403/409, where the row still reads
+      // `previous`.
+      const fresh = await refreshStatus();
+      setProvider(reconcilePick(previous, fresh));
       return;
     }
     // B-4: the write's own answer, not the mount fetch's. `router.refresh()`
@@ -798,10 +850,20 @@ export function LiveFeedCard({ current }: { current: Settings }) {
     await store("angelone");
   }
 
+  // U-2 (fix wave 7): the slider moves first — it has to, or the control lags
+  // the thumb — so a refused write has to move it back. It used to toast and
+  // leave the slider where the user dragged it, so the screen stated an
+  // interval the database does not hold, and the desk went on polling at the
+  // old one. The same shape as the provider revert above; no re-ask, because
+  // this write changes nothing the block or the health line describes.
   async function saveSeconds(next: number) {
+    const previous = seconds;
     setSeconds(next);
     const r = await post({ action: "refresh-seconds", seconds: next });
-    if (!r.ok) toast.error(r.message ?? "Could not save the refresh interval.");
+    if (!r.ok) {
+      setSeconds(previous);
+      toast.error(r.message ?? "Could not save the refresh interval.");
+    }
   }
 
   async function markNow() {

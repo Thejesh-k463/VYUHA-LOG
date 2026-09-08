@@ -10,9 +10,12 @@ import {
   UPSTOX_FEED_COPY,
   feedBlockState,
   feedHealthText,
+  // What the refusal branch does with the answer it re-asked for (fix wave 7).
+  reconcilePick,
   upstoxRowState,
   // The card's own writer, so a dropped write is driven rather than described.
   post as feedWrite,
+  type FeedResponse,
 } from "@/components/settings/live-feed-card";
 import {
   LIVE_FEED_DISCLOSURE_VERSIONS,
@@ -516,7 +519,12 @@ describe("a refused Upstox write leaves the card describing the route, not the m
     expect(
       refusal,
       "the refused write never re-asks, so the block keeps the mount-time reason and the health line never resolves (U-1)",
-    ).toMatch(/setProvider\(previous\);[\s\S]*?await refreshStatus\(\);\r?\n\s*return;/);
+    ).toMatch(
+      // Fix wave 7 put the ADOPTION between the answer and the return: the
+      // route stores the row before it builds the body, so a refusal the card
+      // synthesised from a dropped answer can be a write that landed.
+      /setProvider\(previous\);[\s\S]*?const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);\r?\n\s*return;/,
+    );
   });
 
   it("both outcomes of the one write re-ask, and nothing asks before it", () => {
@@ -601,5 +609,54 @@ describe("a write whose fetch never answers is a refusal, not a frozen card (fix
     );
     // And the hand-off's own two re-asks are untouched by this wave (U-1).
     expect(card.match(/await refreshStatus\(\);/g)?.length ?? 0, "a third re-ask (U-1)").toBe(2);
+  });
+});
+
+/**
+ * FIX WAVE 7 — THE UPSTOX HALF OF THE ADOPTED ANSWER (U-1), AND THE SLIDER (U-2).
+ *
+ * U-1: `acceptUpstox()` hands off to `store("upstox")`, whose POST can come
+ * back a refusal the CARD synthesised — fix wave 6 turns a rejected `fetch` or
+ * a torn body into `ok: false` + FEED_UNREACHABLE, and neither of those says
+ * the write failed. The route stores `liveFeedProvider` BEFORE it awaits
+ * `resolveLiveFeed()` for the body, so the row can already read `upstox` while
+ * the card reverts the radio to the old pick and re-asks. The reply is now
+ * adopted through one pure helper. The full block lives on the Angel One twin.
+ *
+ * U-2: the 1–5 s slider is an UPSTOX-side control (Angel One's interval is
+ * arithmetic, ruling 4.2-4), and `saveSeconds()` moved it before the write and
+ * left it moved when the write was refused — the screen then claimed a setting
+ * the database does not hold. Same shape as the provider revert, one line.
+ */
+describe("the Upstox half of the adopted answer, and the refresh slider (fix wave 7)", () => {
+  const cardSrc = () => stripComments(read(CARD));
+
+  it("adopts a stored Upstox pick the build offers, and stands on the revert otherwise", () => {
+    const landed: FeedResponse = {
+      ok: true,
+      feed: { stored: "upstox", effective: "upstox", refreshSeconds: 3 },
+    };
+    // The write landed and only its answer was lost: the row says upstox.
+    expect(reconcilePick("eod", landed), "a landed write leaves the radio on the old pick").toBe("upstox");
+    // The GET failed: nothing was learned, so the revert stands.
+    expect(reconcilePick("eod", null)).toBe("eod");
+    // The build does not offer it (a withheld id travels in a backup envelope).
+    expect(reconcilePick("eod", landed, ["manual", "eod"])).toBe("eod");
+  });
+
+  it("the refused slider write puts the slider back before it says anything", () => {
+    const src = cardSrc();
+    const start = src.indexOf("async function saveSeconds(next: number)");
+    expect(start, "saveSeconds() is gone from the card").toBeGreaterThan(-1);
+    const body = src.slice(start, src.indexOf("\n  }", start));
+    expect(body, "saveSeconds() does not remember the value it is replacing").toMatch(
+      /const previous = seconds;[ \t]*\r?\n\s*setSeconds\(next\);/,
+    );
+    expect(
+      body,
+      "a refused refresh-seconds write leaves the slider on a value the database does not hold (U-2)",
+    ).toMatch(
+      /if \(!r\.ok\) \{[ \t]*\r?\n\s*setSeconds\(previous\);[\s\S]*?toast\.error\(r\.message \?\? "Could not save the refresh interval\."\);/,
+    );
   });
 });

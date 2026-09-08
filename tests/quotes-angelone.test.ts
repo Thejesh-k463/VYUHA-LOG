@@ -18,6 +18,7 @@ import {
   createAngelOneProvider,
   createHourlyBudget,
   isAngelSessionInvalid,
+  PACING_RECHECKS,
   planAngelOneBatches,
   quoteFromAngelOne,
   type AngelOneGateState,
@@ -419,12 +420,15 @@ describe("pacing re-reads the clock, so an early timer costs no sweep (ruling T-
     expect([...snap.keys()], "the poll came back empty because the timer was 1 ms fast").toEqual(["NSE:SBIN"]);
     expect(snap.get("NSE:SBIN")!.ltp).toBe(100590);
 
-    // AND THE GAP IS STILL HELD. The fix is to wait the remainder out, never to
-    // send early or to widen the guard: the login took the first slot, so the
-    // quote goes a FULL second after it and not 999 ms after it.
-    expect(h.sent[0].at - T0, "the request went out inside the pacing gap").toBeGreaterThanOrEqual(
-      ANGELONE_MIN_REQUEST_GAP_MS,
-    );
+    // AND THE GAP IS HELD TO THE MILLISECOND — which is the whole assertion
+    // (round-7 finding). `toBeGreaterThanOrEqual` cannot tell the ruled fix from
+    // the design that was REJECTED: one sleep plus a `+5 ms` margin also lands
+    // past the gap, at T0+1004, and would satisfy every check in this file. The
+    // ruled fix MEASURES the wait against the clock and adds nothing to it, so
+    // the re-armed sleep lands ON `readyAt`: the login took the first slot at
+    // T0, sleep(1000) landed at T0+999, sleep(1) landed at T0+1000. Exactly the
+    // gap — not 999, and not a millisecond more than the pacing owes.
+    expect(h.sent[0].at - T0, "the request did not go out ON the pacing gap").toBe(ANGELONE_MIN_REQUEST_GAP_MS);
     // Nothing was refused, so the desk is told nothing about a guard.
     const health = (await h.provider.health()) as AngelOneHealth;
     expect(health.reason ?? "").not.toMatch(/rate guard/i);
@@ -437,7 +441,71 @@ describe("pacing re-reads the clock, so an early timer costs no sweep (ruling T-
 
     expect(h.sent.length, "the sweep was truncated by an early timer, not by a real ceiling").toBe(3);
     const gaps = h.sent.slice(1).map((s, i) => s.at - h.sent[i].at);
-    expect(gaps.every((g) => g >= ANGELONE_MIN_REQUEST_GAP_MS), `gaps ${gaps.join(",")}`).toBe(true);
+    // EXACTLY the gap, for the reason given above. Every token here is cached,
+    // so no lookup takes a slot and each batch is paced off the one before it:
+    // the three requests sit one second apart to the millisecond. A margin of
+    // any size would read 1004 here and a `>=` check would wave it through.
+    expect(gaps, `the paced gaps are not the gap itself — ${gaps.join(",")}`).toEqual([
+      ANGELONE_MIN_REQUEST_GAP_MS,
+      ANGELONE_MIN_REQUEST_GAP_MS,
+    ]);
+  });
+
+  /**
+   * THE BOUND IS A BOUND — asserted, not described (round-7 finding).
+   *
+   * `PACING_RECHECKS` was stated in prose and in a comment only: an unbounded
+   * `while (wait > 0)` passes every other test in this file, because no fixture
+   * makes a sleep return WITHOUT advancing the clock and the 1 ms re-arm always
+   * settles it. A clock that does not advance is not hypothetical — a suspended
+   * laptop, a stopped VM clock or a `sleep` that resolves immediately all look
+   * like this — and the difference between the two loops there is a hang inside
+   * a poll versus a refused request the desk is told about.
+   *
+   * So: stall the clock outright, count the sleeps, and pin the whole chain the
+   * bound exists to protect — the loop gives up after the bound, the guard
+   * refuses because the gap really has not passed, nothing is sent, and the
+   * refusal reaches `health()` naming the guard.
+   */
+  it("gives up after PACING_RECHECKS on a stalled clock and lets the guard refuse", async () => {
+    const slept: number[] = [];
+    const h = harness({
+      tokens: [tokenOf("SBIN", "NSE", "3045")],
+      respond: () => ({ fetched: [PRICED], unfetched: [] }),
+      // A STALLED CLOCK: every sleep resolves, and no time passes.
+      sleepAdvance: (ms) => {
+        slept.push(ms);
+        return 0;
+      },
+    });
+
+    const snap = await h.provider.snapshot([KEY("SBIN")]);
+
+    // The ruled bound, so a widening is a decision and not a drift.
+    expect(PACING_RECHECKS, "the ruled bound moved").toBe(4);
+    // The login slot sleeps NOTHING — `lastRequestAt` is null on an instance's
+    // first request — and every token is cached, so no lookup takes a slot
+    // either. Every sleep counted here belongs to the one quote slot.
+    expect(h.logins, "the login took the first slot without pacing").toBe(1);
+    expect(slept.length, "the pacing loop is not bounded by PACING_RECHECKS").toBe(PACING_RECHECKS);
+    expect(slept, "each pass sleeps the REMAINDER, which never shrinks while the clock is stopped").toEqual(
+      Array.from({ length: PACING_RECHECKS }, () => ANGELONE_MIN_REQUEST_GAP_MS),
+    );
+
+    // AND THE SAFETY NET HOLDS. The bound ran out with the gap still unpaid, so
+    // the guard refuses: nothing goes to Angel One inside its second, the batch
+    // loop drops the sweep rather than queueing it, and no row is priced.
+    expect(h.sent.length, "a request went to Angel One inside the one-second gap").toBe(0);
+    expect(snap.size, "a batch that was never sent priced something anyway").toBe(0);
+
+    // And the desk is told WHICH ceiling stopped it — the sentence `slot()`
+    // returns is the one `health()` publishes.
+    const health = (await h.provider.health()) as AngelOneHealth;
+    expect(health.ok).toBe(false);
+    expect(health.state).toBe("unreachable");
+    expect(health.reason, "the refusal did not reach the health pill, or not in its own words").toBe(
+      `Vyuha's own rate guard stopped this request: at most ${ANGELONE_RATE_LIMIT_PER_SECOND} request per second goes to Angel One. Nothing was sent.`,
+    );
   });
 });
 

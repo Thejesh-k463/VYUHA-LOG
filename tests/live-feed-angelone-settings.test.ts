@@ -18,8 +18,11 @@ import {
   foldFeedResponse,
   foldWriteResult,
   offeredProviders,
+  // What the refusal branch does with the answer it re-asked for (fix wave 7).
+  reconcilePick,
   // The card's own writer, so a dropped write is driven rather than described.
   post as feedWrite,
+  type FeedResponse,
 } from "@/components/settings/live-feed-card";
 import {
   ANGELONE_BATCH_SIZE,
@@ -1009,7 +1012,10 @@ describe("the health line describes the feed that runs NOW, not the one that ran
       /void fetchStatus\(ac\.signal\)\.then\(\(j\) => \{/,
     );
     expect(card, "the write paths do not share the mount fetch").toMatch(
-      /async function refreshStatus\(\) \{\s*const j = await fetchStatus\(\);/,
+      // Fix wave 7: it also RETURNS what it fetched, so the refusal branch can
+      // adopt the answer instead of discarding it (U-1). Its other caller —
+      // the ok path — is unchanged and reads nothing back.
+      /async function refreshStatus\(\): Promise<FeedResponse \| null> \{\s*const j = await fetchStatus\(\);/,
     );
     // U-1: the re-ask is made AFTER the write it describes, by `store()`, and
     // by nothing that runs before one. The count this line used to assert
@@ -1287,13 +1293,15 @@ describe("a refused provider write re-asks the route, so the block stops quoting
       refusal,
       "the refused write never re-asks the route, so the block keeps the reason it was given at mount (U-1)",
     ).toMatch(/await refreshStatus\(\);/);
-    // Order: revert → say it → re-ask → return. The re-ask must not come
-    // before the revert (the card would paint the old pick over a fresh
-    // answer) and must not come after `return` (dead code).
+    // Order: revert → say it → re-ask → ADOPT THE ANSWER (fix wave 7) →
+    // return. The re-ask must not come before the revert (the card would paint
+    // the old pick over a fresh answer) and must not come after `return` (dead
+    // code); the adoption sits between the answer and the return, which is the
+    // only place it can read one.
     expect(refusal, "the re-ask does not follow the revert and the toast").toMatch(
       // `[ \t]*` before each break: `stripComments` leaves the trailing space
       // where a `//` comment stood, and blank lines where a block of them did.
-      /setProvider\(previous\);[ \t]*\r?\n\s*toast\.error\(r\.message \?\? "Could not switch the feed\."\);[ \t]*\r?\n\s*await refreshStatus\(\);[ \t]*\r?\n\s*return;/,
+      /setProvider\(previous\);[ \t]*\r?\n\s*toast\.error\(r\.message \?\? "Could not switch the feed\."\);[ \t]*\r?\n\s*const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);[ \t]*\r?\n\s*return;/,
     );
   });
 
@@ -1437,5 +1445,147 @@ describe("a write whose fetch never answers is a refusal, not a frozen card (fix
     // the server and only the answer been lost.
     expect(FEED_UNREACHABLE).not.toMatch(/nothing (was|has been) (changed|saved|stored)/i);
     expect(FEED_UNREACHABLE).toMatch(/could not reach/i);
+  });
+});
+
+/**
+ * FIX WAVE 7 (U-1) — THE REFUSED WRITE ASKED THE ROUTE AND THREW THE ANSWER AWAY.
+ *
+ * Fix wave 6 made a dropped write a REFUSAL (`ok: false` + FEED_UNREACHABLE),
+ * which is honest: `fetch` rejecting says nothing about whether the request
+ * reached the route. But the route writes `liveFeedProvider` BEFORE it awaits
+ * `resolveLiveFeed()` for the response body (`app/api/live/feed/route.ts`), so
+ * the write CAN have landed with only its answer lost. In that case the
+ * refusal branch reverted the radio to `previous`, re-asked the route — and
+ * nothing read the reply. The GET came back with `feed.stored` already the NEW
+ * provider, so `stored === effective` cleared the block, the health line and
+ * the desk's pricing both described the NEW feed, and the radio alone said OLD,
+ * until the next click or a reload.
+ *
+ * The answer is now adopted, and only when it is safe to: the GET arrived AND
+ * the stored value is a radio this build offers — the same predicate
+ * `feedBlockState`/`feedBlockControl` apply, so a withheld id sitting in the
+ * column (it travels in a backup envelope, C-6) leaves the revert standing
+ * rather than checking a radio that is not on screen. For a real 403/409 the
+ * route stored nothing, so `feed.stored` IS `previous` and adopting it is a
+ * no-op — the fix is safe on every refusal, not only the lost one.
+ *
+ * The decision is a PURE function, so it is driven for real below; the wiring
+ * around it is source-shape, for the reason every other pin on this card is
+ * (vitest runs `environment: "node"`; there is no DOM harness). `\r?\n` in
+ * anything spanning a line break — the Windows CI job checks the card out with
+ * CRLF.
+ */
+describe("a refused write adopts the route's own answer for the radio (fix wave 7)", () => {
+  const cardSrc = () => stripComments(read(CARD));
+  const storeBody = (src: string) => {
+    const start = src.indexOf("async function store(next: ProviderId)");
+    expect(start, "store() is gone from the card").toBeGreaterThan(-1);
+    return src.slice(start, src.indexOf("\n  }", start));
+  };
+  const refusalBranch = (src: string) => {
+    const body = storeBody(src);
+    const at = body.indexOf("if (!r.ok) {");
+    expect(at, "store() no longer has a refusal branch").toBeGreaterThan(-1);
+    return body.slice(at, body.indexOf("\n    }", at));
+  };
+
+  /** What the GET says when the row already holds `stored`. */
+  const answer = (stored: string, effective = stored): FeedResponse => ({
+    ok: true,
+    feed: { stored, effective, refreshSeconds: 3 },
+  });
+
+  it("adopts the stored pick when the answer arrived and the card offers that radio", () => {
+    // The write LANDED and only the response was lost — the row reads angelone.
+    expect(
+      reconcilePick("eod", answer("angelone")),
+      "a landed write leaves the radio on the pick the user has just moved off",
+    ).toBe("angelone");
+    expect(reconcilePick("upstox", answer("angelone"))).toBe("angelone");
+  });
+
+  it("stands on the revert when the GET failed, or answered without a feed", () => {
+    expect(reconcilePick("eod", null), "an unanswered GET is not evidence of anything").toBe("eod");
+    expect(reconcilePick("eod", { ok: true }), "a body with no feed verdict says nothing").toBe("eod");
+  });
+
+  it("stands on the revert when the stored value is not a radio this build offers", () => {
+    // A withheld id travels in a backup envelope and the acknowledgement does
+    // not (C-6): adopting it would check a radio that is not on screen.
+    expect(reconcilePick("eod", answer("angelone"), ["manual", "eod", "openalgo"])).toBe("eod");
+    expect(reconcilePick("eod", answer("dhan"))).toBe("eod");
+    // The default offered list is the one the picker renders, not a literal.
+    expect(reconcilePick("eod", answer("angelone"), PROVIDERS.map((p) => p.id))).toBe("angelone");
+  });
+
+  it("is a no-op on a genuine refusal, where the route stored nothing", () => {
+    // 403/409: the row still holds the old pick, so the answer IS `previous`.
+    expect(reconcilePick("eod", answer("eod")), "a real refusal must not move the radio").toBe("eod");
+    expect(reconcilePick("upstox", answer("upstox", "eod"))).toBe("upstox");
+  });
+
+  it("the re-ask RETURNS what it fetched, so the branch has an answer to adopt", () => {
+    // Still sets it — `refreshStatus()`'s other caller (the ok path) is
+    // unchanged and reads nothing back.
+    expect(
+      cardSrc(),
+      "refreshStatus() swallows the status it fetched, so the refusal branch has nothing to adopt (U-1)",
+    ).toMatch(
+      /async function refreshStatus\(\): Promise<FeedResponse \| null> \{\s*const j = await fetchStatus\(\);\s*if \(j\) setStatus\(j\);\s*return j;/,
+    );
+  });
+
+  it("the refusal branch adopts the answer AFTER the re-ask, and before it returns", () => {
+    const refusal = refusalBranch(cardSrc());
+    const revert = refusal.indexOf("setProvider(previous);");
+    const reask = refusal.indexOf("await refreshStatus();");
+    const adopt = refusal.indexOf("setProvider(reconcilePick(");
+    const ret = refusal.indexOf("return;");
+    expect(revert, "the refused write does not put the radio back").toBeGreaterThan(-1);
+    expect(reask, "the refused write no longer re-asks the route (U-1)").toBeGreaterThan(-1);
+    expect(
+      adopt,
+      "the refused write re-asks the route and ignores the reply, so a landed write leaves the radio on the old pick (U-1)",
+    ).toBeGreaterThan(-1);
+    // Order by index, as C6b does: the adoption cannot precede the answer it
+    // adopts, and cannot sit after `return` (dead code).
+    expect(adopt, "the branch adopts an answer it has not asked for yet").toBeGreaterThan(reask);
+    expect(ret, "the adoption sits after the return — dead code").toBeGreaterThan(adopt);
+    // The revert stays where it is: it is what stands when the GET fails or
+    // the stored value is not offered.
+    expect(reask).toBeGreaterThan(revert);
+  });
+
+  it("the adoption is the one pure helper, called with the previous pick and the fresh answer", () => {
+    expect(refusalBranch(cardSrc()), "the branch adopts something other than the helper's verdict").toMatch(
+      /const fresh = await refreshStatus\(\);[ \t]*\r?\n\s*setProvider\(reconcilePick\(previous, fresh\)\);/,
+    );
+  });
+
+  it("it adds no re-ask and no second refusal branch", () => {
+    const src = cardSrc();
+    expect(src.match(/await refreshStatus\(\);/g)?.length ?? 0, "a third re-ask (U-1)").toBe(2);
+    expect(storeBody(src).split("if (!r.ok) {").length - 1, "store() grew a second refusal branch").toBe(1);
+  });
+
+  it("the comment beside the revert no longer claims something the code does not do", () => {
+    // The pre-fix comment said the ask comes after the revert "so the radio the
+    // user sees is the stored pick either way" — which was exactly what did NOT
+    // happen. A comment kept beside a sentence it no longer describes is worse
+    // than none (the same rule the VERIFY-CIRCULAR pin states in the copy test).
+    const src = read(CARD);
+    const start = src.indexOf("async function store(next: ProviderId)");
+    // The COMMENTS, flattened: the claim spans three wrapped `//` lines, so a
+    // pattern over the raw text would pass on any wrapping and prove nothing.
+    const flat = src
+      .slice(start, src.indexOf("\n  }", start))
+      .replace(/\s*\/\/\s*/g, " ")
+      .replace(/\s+/g, " ");
+    expect(flat, "the helper is not called at all").toContain("reconcilePick");
+    expect(
+      flat,
+      "the branch still claims the radio ends on the stored pick while reverting to the old one",
+    ).not.toContain("the radio the user sees is the stored pick either way");
   });
 });
