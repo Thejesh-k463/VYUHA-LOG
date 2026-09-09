@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.3.0 WAVE 1 COMMITTED 2026-09-09 IST evening (`265d684` on `1159a34`; `npm run verify` EXIT 0 — 369 files / 7,207 passed / 35 skipped; CI 34335816805 in progress at hand-off; NOT audited, NOT bumped, NOT tagged). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+## 2. Current state — v4.3.0 WAVE 1 COMMITTED 2026-09-09 IST evening (`265d684` on `1159a34`; `npm run verify` EXIT 0 — 369 files / 7,207 passed / 35 skipped; **CI 34336204805 SUCCESS 6/6 on `521dc99` = `265d684` + this file** — `265d684`'s own run 34335816805 was cancelled at 4/6 by cancel-in-progress when the docs commit pushed; NOT audited, NOT bumped, NOT tagged). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
 
 > **What `265d684` is:** the owner's six-item application-fix list from ten screenshots of the installed 4.2.0, each verified
 > against the code before its ruling (`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings"). The file that makes each true:
