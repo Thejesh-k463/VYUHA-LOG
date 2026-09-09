@@ -37,7 +37,12 @@ import {
   type BetaPosition,
   type StressPosition,
 } from "@/lib/risk/portfolio";
-import { getReturnsMap } from "@/lib/queries/price-history";
+import { getLatestCloseMap, getReturnsMap } from "@/lib/queries/price-history";
+// PURE, and deliberately not from `components/risk/spot-mark-editor` — that
+// module is `"use client"`, so Next hands this server render a throwing
+// `registerClientReference` stub for every export of it, and calling
+// `resolveSpotRef()` below threw on any book with an open F&O position.
+import { resolveSpotRef, type SpotRef } from "@/lib/risk/spot-ref";
 import { VarPanel } from "@/components/risk/var-panel";
 import { estimateMargin, type MarginPositionInput } from "@/lib/risk/margin";
 import { makeMtfResolver } from "@/lib/queries/mtf-margins";
@@ -282,6 +287,18 @@ export default function RiskPage() {
   const marginRates = getMarginConfig().map((r) => ({ broker: r.broker, segment: r.segment, marginPct: r.marginPct }));
 
   // Physical-settlement / expiry obligations (IND-7) — open F&O positions only.
+  //
+  // R7: when nothing has been TYPED for an underlying, the newest end-of-day
+  // close on record answers instead of nothing at all. `getLatestCloseMap()`
+  // had zero callers — every close the bhavcopy importer had already stored
+  // sat unread while the panel printed "spot?" over an option whose moneyness
+  // the book could in fact resolve. A typed mark still wins (`resolveSpotRef`),
+  // and the chip states which of the two it is, so an EOD-derived ITM is never
+  // read as a number the user typed. The map is prices only, so the close's own
+  // date is not carried — `getLatestCloseMap()` would have to return it, and
+  // lib/queries/price-history.ts is not this wave's to change.
+  const eodCloses = getLatestCloseMap();
+  const spotRefs: Record<string, SpotRef> = {};
   const settlementInputs: SettlementInput[] = trades
     .filter((t) => t.isOpen && DERIVATIVE_SEGMENTS.has(t.segment))
     .map((t) => {
@@ -302,9 +319,16 @@ export default function RiskPage() {
       // reference stays null = unknown, never 0 (invariant 6).
       const nonZero = (n: number | null | undefined) => (n != null && n > 0 ? n : null);
       const cashMark = nonZero(spot.get(t.symbol.toUpperCase()));
+      // TYPED MARK ▸ NEWEST EOD CLOSE ▸ unknown (R7) — for the option branch,
+      // whose chip states the source. The futures branch keeps its own chain
+      // (cash mark ▸ recorded close ▸ side-aware entry, ruling C-1): it has no
+      // chip to say where its delivery price came from, and changing what it
+      // prices with is not this wave's ruling.
+      const optionRef = resolveSpotRef(t.symbol, spot, eodCloses);
+      if (t.instrumentType === "option") spotRefs[t.symbol.trim().toUpperCase()] = optionRef;
       const refPrice =
         t.instrumentType === "option"
-          ? spot.get(t.symbol.toUpperCase()) ?? null
+          ? optionRef.value
           : cashMark ?? nonZero(t.closingPrice) ?? nonZero(side === "long" ? t.avgBuyPrice : t.avgSellPrice);
       return {
         id: t.id,
@@ -371,7 +395,12 @@ export default function RiskPage() {
           capitals={{ equity: equityCapital, active: activeCapital, all: equityCapital + activeCapital }}
         />
         <SebiRadarPanel report={radar} />
-        <ExpiryObligations summary={settlement} />
+        {/* The page resolves the reference price (it owns the database) and
+            hands it down; the chip writes a new one through
+            `POST /api/risk/spot` and `router.refresh()`, NOT through a server
+            action handed down from here — an action would remount the cockpit
+            below and reset its open row (AGENTS.md, R7). */}
+        <ExpiryObligations summary={settlement} spotRefs={spotRefs} />
         <MarginPanel summary={marginSummary} rates={marginRates} />
         <MtfDriftCard drift={mtfDriftRows} bundleAsOf={MTF_BUNDLE_AS_OF} stale={mtfStale} />
         {exposures.length > 0 && (

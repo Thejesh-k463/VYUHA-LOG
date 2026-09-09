@@ -25,9 +25,13 @@
  */
 
 import { todayIstIso } from "@/lib/domain/trading-day";
-import type { NormalizedTrade, ProductHint } from "@/lib/engine/types";
+import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
+// The SAME FIFO the Zerodha tradebook and the Dhan GTR parser pair with — a
+// catch-up window spans days, and a Monday buy closed on Wednesday is one
+// position. Forking that arithmetic here is how two sources start disagreeing.
+import { pairLegs, type Leg } from "@/lib/import/pair-legs";
 import { totp } from "@/lib/totp";
 
 /** One row from GET /v2/positions (the fields we consume). */
@@ -45,6 +49,47 @@ export interface DhanPositionRow {
   netQty: number;
   realizedProfit?: number;
   unrealizedProfit?: number;
+  drvExpiryDate?: string | null;
+  drvOptionType?: string | null;
+  drvStrikePrice?: number | null;
+}
+
+/**
+ * One row from GET /v2/trades/{from-date}/{to-date}/{page} — Dhan's own trade
+ * HISTORY (dhanhq.co/docs/v2/statements/, field list verified 2026-09-09).
+ *
+ * `/positions` is today only, so a connection last pulled five days ago used
+ * to lose four days outright: the pull fetched today, stamped `lastPullAt` and
+ * the gap never came back. This endpoint is fill-level and dated, which is
+ * what makes the catch-up possible.
+ */
+export interface DhanTradeRow {
+  dhanClientId?: string;
+  orderId?: string;
+  exchangeOrderId?: string;
+  /** The exchange's own id for the fill — the dedup key across pages. */
+  exchangeTradeId?: string;
+  transactionType: string; // BUY | SELL
+  exchangeSegment: string; // NSE_EQ | BSE_EQ | NSE_FNO | MCX_COMM | …
+  productType: string; // CNC | INTRADAY | MARGIN | MTF | CO | BO
+  orderType?: string;
+  tradingSymbol: string;
+  customSymbol?: string;
+  securityId?: string;
+  tradedQuantity: number;
+  tradedPrice: number;
+  isin?: string | null;
+  instrument?: string;
+  /** Charges Dhan actually levied on this fill, stated per row. */
+  sebiTax?: number;
+  stt?: number;
+  brokerageCharges?: number;
+  serviceTax?: number; // GST
+  exchangeTransactionCharges?: number;
+  stampDuty?: number;
+  createTime?: string;
+  updateTime?: string;
+  exchangeTime?: string;
   drvExpiryDate?: string | null;
   drvOptionType?: string | null;
   drvStrikePrice?: number | null;
@@ -106,6 +151,13 @@ function drvExpiryIso(v: string | null | undefined): string | null {
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
+/** The fields `canonicalDerivativeName` reads — stated identically by a
+ *  position row and a trade-history fill. */
+export type DhanDerivativeFacts = Pick<
+  DhanPositionRow,
+  "tradingSymbol" | "exchangeSegment" | "drvExpiryDate" | "drvOptionType" | "drvStrikePrice"
+>;
+
 /** A derivative segment as Dhan names it. Currency segments are deliberately
  *  NOT included: Vyuha has no currency segment vocabulary, so those rows keep
  *  their raw symbol and the equity fallback until that vocabulary exists. */
@@ -128,8 +180,11 @@ function isDerivativeSegment(segment: string): boolean {
  *
  * Returns null when the row is not a derivative, or when the stated fields are
  * incomplete (the caller then keeps the raw symbol and says so).
+ *
+ * Typed on the FACTS it reads, not on one row shape: a position row and a
+ * trade-history fill state the same drv* fields, and one mapping serves both.
  */
-export function canonicalDerivativeName(r: DhanPositionRow): string | null {
+export function canonicalDerivativeName(r: DhanDerivativeFacts): string | null {
   if (!isDerivativeSegment(r.exchangeSegment)) return null;
   const underlying = String(r.tradingSymbol ?? "").split("-")[0]!.trim().toUpperCase();
   const iso = drvExpiryIso(r.drvExpiryDate);
@@ -233,6 +288,254 @@ export function normalizeDhanPositions(rows: DhanPositionRow[], today: string): 
   }
 
   return out;
+}
+
+/**
+ * The widest catch-up window a pull will ever ask Dhan for, in days.
+ *
+ * A connection last pulled a year ago is CLAMPED to this, not refused: 90 days
+ * of fills is a handful of pages, while a year would be a page loop against a
+ * statement endpoint, and the long history has always been a file import
+ * (AGENTS.md — the API exists for MTF and today's book, files for the rest).
+ */
+export const DHAN_MAX_PULL_RANGE_DAYS = 90;
+
+/**
+ * The page ceiling for one history walk. Dhan's `/v2/trades/{from}/{to}/{page}`
+ * is paged from 0 and states no total, so the loop's real stop is the first
+ * EMPTY page; this cap is the stop an endpoint that never empties cannot
+ * outrun. 50 pages is far beyond any 90-day retail book.
+ */
+export const DHAN_TRADES_MAX_PAGES = 50;
+
+/** ISO date ± n days, on the calendar — no timezone arithmetic. */
+function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The window a pull should ask for, given when this connection last pulled.
+ *
+ * `from` is the IST DAY of the last pull, INCLUSIVE — re-fetching that day is
+ * cheap and the commit pipeline de-duplicates, whereas excluding it would drop
+ * every fill that happened after the pull ran. Null when there is nothing to
+ * catch up on (never pulled, unreadable stamp, or already pulled today —
+ * today's book is what `/positions` is for).
+ */
+export function catchUpRange(
+  lastPullAt: string | null | undefined,
+  today: string = todayIstIso(),
+): { from: string; to: string } | null {
+  if (!lastPullAt) return null;
+  const t = Date.parse(lastPullAt);
+  if (!Number.isFinite(t)) return null;
+  const day = todayIstIso(new Date(t));
+  if (day >= today) return null;
+  const floor = addDaysIso(today, -DHAN_MAX_PULL_RANGE_DAYS);
+  return { from: day < floor ? floor : day, to: today };
+}
+
+/** "2026-09-07 10:15:00" (or an ISO instant) → "2026-09-07"; null when Dhan
+ *  states no readable time on the fill. */
+function tradeDateOf(r: DhanTradeRow): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(r.exchangeTime ?? r.createTime ?? r.updateTime ?? "").trim());
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+/** "HH:MM" of the fill, for the execution ladder; null when unstated. */
+function tradeTimeOf(r: DhanTradeRow): string | null {
+  const m = /[T ](\d{2}):(\d{2})/.exec(String(r.exchangeTime ?? r.createTime ?? "").trim());
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/** The charge components Dhan states on a fill, in ChargeBreakdown's names. */
+function fillCharges(r: DhanTradeRow) {
+  return {
+    brokerage: num(r.brokerageCharges),
+    gst: num(r.serviceTax),
+    sttCtt: num(r.stt),
+    sebi: num(r.sebiTax),
+    exchangeTxn: num(r.exchangeTransactionCharges),
+    stampDuty: num(r.stampDuty),
+  };
+}
+
+type FillCharges = ReturnType<typeof fillCharges>;
+
+/**
+ * Dated fills → normalized trades, FIFO-paired per symbol + product.
+ *
+ * A LEG is a scrip-DAY, not a fill — the same unit the Zerodha tradebook and
+ * the Dhan GTR parser use, and for the same reason: feeding `pairLegs` raw
+ * fills makes a book that fills 11 + 2 + 3 shares at a time report hundreds of
+ * positions nobody took. Every individual fill still survives in `executions`,
+ * so a staged ladder rebuilds exactly. Pairing across days is what makes a
+ * catch-up honest: a Monday buy and a Wednesday sell are ONE closed position,
+ * not an open long plus a phantom short.
+ *
+ * A row with no readable side, quantity, price or date is REFUSED and counted,
+ * never coerced (AGENTS.md — a zero-share trade is worse than no trade).
+ */
+export function normalizeDhanTrades(rows: DhanTradeRow[]): { trades: NormalizedTrade[]; refused: number } {
+  type Group = {
+    symbol: string;
+    productRaw: string;
+    segment: string;
+    isin: string | null;
+    notes: string[];
+    /** Keyed `date|side` — one leg per scrip-day-side. */
+    legs: Map<string, Leg>;
+    fills: Array<Execution & { charges: FillCharges }>;
+  };
+  const groups = new Map<string, Group>();
+  let refused = 0;
+
+  for (const r of rows) {
+    const rawSymbol = String(r.tradingSymbol ?? "").trim();
+    const qty = num(r.tradedQuantity);
+    const price = num(r.tradedPrice);
+    const rawSide = String(r.transactionType ?? "").toUpperCase();
+    const side: Leg["side"] | null = rawSide.startsWith("B") ? "buy" : rawSide.startsWith("S") ? "sell" : null;
+    const date = tradeDateOf(r);
+    if (!rawSymbol || !side || !date || qty <= 0 || price <= 0) {
+      refused++;
+      continue;
+    }
+
+    // The SAME derivative naming as the positions path, built from Dhan's own
+    // drv* fields — never parsed out of the hyphenated symbol's shape.
+    const canonical = canonicalDerivativeName(r);
+    const symbol = canonical ?? rawSymbol;
+    const productRaw = String(r.productType ?? "");
+    const key = `${symbol}|${productRaw.toUpperCase()}`;
+
+    let g = groups.get(key);
+    if (!g) {
+      const notes: string[] = [];
+      if (productHintOf(productRaw) === "mtf") notes.push("Product stated by the Dhan API as MTF — not inferred.");
+      if (!canonical && isDerivativeSegment(r.exchangeSegment)) {
+        notes.push(
+          `Dhan marked ${rawSymbol} as F&O but stated no usable expiry/strike — imported with its raw name; check its segment.`,
+        );
+      }
+      g = {
+        symbol,
+        productRaw,
+        segment: String(r.exchangeSegment ?? ""),
+        isin: (r.isin ?? null) || null,
+        notes,
+        legs: new Map(),
+        fills: [],
+      };
+      groups.set(key, g);
+    }
+    if (!g.isin && r.isin) g.isin = r.isin;
+
+    // MTF has no counterpart in pairLegs' product union; the group key keeps it
+    // separate and Dhan's stated productType supplies the hint further down.
+    const hint = productHintOf(productRaw);
+    const legProduct: Leg["product"] = hint === "intraday" ? "intraday" : hint === "delivery" ? "delivery" : "unknown";
+
+    const legKey = `${date}|${side}`;
+    const existing = g.legs.get(legKey);
+    if (existing) {
+      existing.qty += qty;
+      existing.value = r2(existing.value + qty * price);
+    } else {
+      g.legs.set(legKey, {
+        symbol: g.symbol,
+        side,
+        date,
+        qty,
+        value: r2(qty * price),
+        // Charges ride on the FILLS (Dhan states them per fill, in components)
+        // and are re-summed per position below; the leg's scalar would only
+        // round the same money twice.
+        charges: 0,
+        exchange: exchangeOf(r.exchangeSegment),
+        product: legProduct,
+      });
+    }
+    g.fills.push({ side, qty, price, date, time: tradeTimeOf(r), charges: fillCharges(r) });
+  }
+
+  const trades: NormalizedTrade[] = [];
+  for (const g of groups.values()) {
+    for (const pos of pairLegs([...g.legs.values()])) {
+      // Each position sees only the fills inside its own window, so a staged
+      // ladder is rebuilt from its own executions. Approximate for re-entered
+      // symbols (the Zerodha tradebook makes the same trade-off); totals stay
+      // exact because every fill lands in exactly one window.
+      const inWindow = g.fills.filter(
+        (f) =>
+          (pos.buyDate == null || (f.date ?? "") >= pos.buyDate) &&
+          (pos.sellDate == null || (f.date ?? "") <= pos.sellDate),
+      );
+      const executions: Execution[] = inWindow.map((f) => ({ side: f.side, qty: f.qty, price: f.price, date: f.date, time: f.time }));
+      const sum = inWindow.reduce<FillCharges>(
+        (a, f) => ({
+          brokerage: a.brokerage + f.charges.brokerage,
+          gst: a.gst + f.charges.gst,
+          sttCtt: a.sttCtt + f.charges.sttCtt,
+          sebi: a.sebi + f.charges.sebi,
+          exchangeTxn: a.exchangeTxn + f.charges.exchangeTxn,
+          stampDuty: a.stampDuty + f.charges.stampDuty,
+        }),
+        { brokerage: 0, gst: 0, sttCtt: 0, sebi: 0, exchangeTxn: 0, stampDuty: 0 },
+      );
+      const total = r2(sum.brokerage + sum.gst + sum.sttCtt + sum.sebi + sum.exchangeTxn + sum.stampDuty);
+      // Only when Dhan actually stated charges. A zero total means the payload
+      // carried none, and reporting 0 as a FACT would override the rate card
+      // with a number the broker never sent.
+      const reportedCharges: Partial<ChargeBreakdown> | null =
+        total > 0
+          ? {
+              brokerage: r2(sum.brokerage),
+              gst: r2(sum.gst),
+              sttCtt: r2(sum.sttCtt),
+              sebi: r2(sum.sebi),
+              exchangeTxn: r2(sum.exchangeTxn),
+              stampDuty: r2(sum.stampDuty),
+              total,
+            }
+          : null;
+
+      trades.push({
+        broker: "dhan",
+        tradingsymbol: pos.symbol,
+        isin: g.isin,
+        buyQty: pos.buyQty,
+        avgBuyPrice: pos.buyQty > 0 ? r2(pos.buyValue / pos.buyQty) : 0,
+        buyValue: pos.buyValue,
+        sellQty: pos.sellQty,
+        avgSellPrice: pos.sellQty > 0 ? r2(pos.sellValue / pos.sellQty) : 0,
+        sellValue: pos.sellValue,
+        closingPrice: null,
+        // Only a CLOSED position has a knowable P&L; an opening sell has no
+        // purchase anywhere in the window and `basisUnknown` says why.
+        grossPnl: pos.kind === "closed" ? r2(pos.sellValue - pos.buyValue) : 0,
+        unrealisedPnl: 0,
+        buyDate: pos.buyDate,
+        sellDate: pos.sellDate,
+        entryTime: executions.find((e) => e.side === "buy")?.time ?? null,
+        exitTime: [...executions].reverse().find((e) => e.side === "sell")?.time ?? null,
+        // STATED by Dhan, not inferred from the calendar or the charges.
+        productHint: productHintOf(g.productRaw),
+        exchangeHint: exchangeOf(g.segment),
+        sourceFile: "dhan-api",
+        executions: executions.length > 0 ? executions : null,
+        reportedCharges,
+        basisUnknown: pos.basisUnknown,
+        importNotes: [...g.notes, ...pos.notes].length > 0 ? [...g.notes, ...pos.notes] : null,
+      });
+    }
+  }
+
+  return { trades, refused };
 }
 
 export interface DhanCredentials {
@@ -532,6 +835,38 @@ export async function fetchDhanPositions(creds: DhanCredentials, onMinted?: (tok
   return Array.isArray(data) ? data : [];
 }
 
+/**
+ * Every fill Dhan states in [from, to], walking its pages from 0.
+ *
+ * Stops at the FIRST EMPTY page (the endpoint states no total) or at
+ * DHAN_TRADES_MAX_PAGES, whichever comes first. Fills are de-duplicated by
+ * `exchangeTradeId` — the exchange's own id for the fill — because a paged
+ * statement re-served across a page boundary would otherwise double a
+ * position's quantity, and a doubled quantity is a wrong book, not a warning.
+ * A row with no id falls back to a composite of the facts that identify it.
+ */
+export async function fetchDhanTrades(
+  creds: DhanCredentials,
+  range: { from: string; to: string },
+  onMinted?: (token: string) => void,
+): Promise<DhanTradeRow[]> {
+  const out: DhanTradeRow[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < DHAN_TRADES_MAX_PAGES; page++) {
+    const data = await dhanGet<DhanTradeRow[] | null>(`/trades/${range.from}/${range.to}/${page}`, creds, onMinted);
+    const rows = Array.isArray(data) ? data : [];
+    if (rows.length === 0) break;
+    for (const r of rows) {
+      const id = String(r.exchangeTradeId ?? "").trim();
+      const key = id || [r.orderId, r.tradingSymbol, r.transactionType, r.tradedQuantity, r.tradedPrice, r.exchangeTime ?? r.createTime].join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 export async function fetchDhanHoldings(creds: DhanCredentials, onMinted?: (token: string) => void): Promise<DhanHoldingRow[]> {
   const data = await dhanGet<DhanHoldingRow[] | null>("/holdings", creds, onMinted);
   return Array.isArray(data) ? data : [];
@@ -543,18 +878,42 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
     label: "Dhan API (today's positions, states MTF outright)",
     broker: "dhan",
     kind: "api",
-    async fetchTrades() {
+    /**
+     * No range: today's `/positions`, byte-identical to every build before
+     * v4.2.1 — that is the daily pull and it must not change shape.
+     *
+     * With a range: the trade HISTORY for [from, to] as well, so a connection
+     * last pulled five days ago no longer loses four of them. Today is taken
+     * from `/positions` in BOTH cases and history fills dated today are
+     * dropped: the two sources state the same day in different shapes, a
+     * position row carries no `exchangeTradeId` to dedupe against, and
+     * `/positions` is the only source that states MTF and the broker's mark.
+     */
+    async fetchTrades(opts: { from?: string; to?: string } = {}) {
       const today = todayIstIso();
-      return normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
+      const history: NormalizedTrade[] = [];
+      if (opts.from) {
+        const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted);
+        history.push(...normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today)).trades);
+      }
+      const positions = normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
+      return [...history, ...positions];
     },
   };
 }
 
-/** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects. */
-export function toParsedFile(trades: NormalizedTrade[]): ParsedFile {
+/** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects.
+ *  `range` is the catch-up window when one was fetched — the warnings must say
+ *  which days this pull covered, or a five-day catch-up reads like a daily one. */
+export function toParsedFile(trades: NormalizedTrade[], range?: { from: string; to: string } | null): ParsedFile {
   const mtf = trades.filter((t) => t.productHint === "mtf").length;
   const warnings: string[] = [];
 
+  if (range) {
+    warnings.push(
+      `Catch-up pull: fills from ${range.from} to ${range.to} were read from Dhan's trade history (the last pull was older than the previous trading day). Today's book still comes from /v2/positions, and re-pulled fills are de-duplicated on commit.`,
+    );
+  }
   if (trades.length === 0) {
     warnings.push(
       "Dhan returned no positions — /v2/positions covers the current trading day's book, so it is empty outside market hours with nothing carried forward.",

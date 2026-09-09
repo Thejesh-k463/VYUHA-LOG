@@ -34,6 +34,48 @@ export function pct(value: number | null | undefined, decimals = 2): string {
   return `${value >= 0 ? "" : ""}${value.toFixed(decimals)}%`;
 }
 
+/**
+ * The sign a rupee figure wears — and the ONLY sign a percentage printed
+ * BESIDE it may wear (R8).
+ *
+ * The Open P&L tile chose the two independently — `inrCompact(unrealised)`
+ * next to `openPnlPct >= 0 ? "+" : ""` — and printed "-₹17 · +0.00%": one
+ * loss stated twice, with two different signs, because the percentage of
+ * capital rounded up to a non-negative zero while the rupee figure did not.
+ * They are not two facts. Zero rupees is unsigned; a negative rupee whose
+ * percentage rounds away still prints "-0.00%", which is the honest reading
+ * (a loss too small to show, never a gain).
+ *
+ * ASCII "-", because that is the glyph `inrCompact()` already emits — a
+ * U+2212 here would make the two halves disagree typographically instead.
+ */
+export function signOf(rupees: number | null | undefined): "" | "+" | "-" {
+  if (rupees == null || Number.isNaN(rupees) || rupees === 0) return "";
+  return rupees > 0 ? "+" : "-";
+}
+
+/** A percentage that BORROWS the rupee figure's sign, never states its own.
+ *  The magnitude is absolute so the borrowed sign is the only one. */
+export function signedPct(
+  rupees: number | null | undefined,
+  value: number | null | undefined,
+  decimals = 2,
+): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return `${signOf(rupees)}${Math.abs(value).toFixed(decimals)}%`;
+}
+
+/** "₹x · y%" as ONE string, both halves signed once from the rupee value. */
+export function formatSignedPair(
+  rupees: number | null | undefined,
+  value: number | null | undefined,
+  decimals = 2,
+): string {
+  const money =
+    rupees == null || Number.isNaN(rupees) ? "—" : `${signOf(rupees)}${inrCompact(Math.abs(rupees))}`;
+  return `${money} · ${signedPct(rupees, value, decimals)}`;
+}
+
 export function signedClass(value: number | null | undefined): string {
   if (value == null || value === 0) return "text-muted-foreground";
   return value > 0 ? "text-profit" : "text-loss";

@@ -5,7 +5,7 @@ import { brokerConnections, settings } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
-import { DHAN_TOTP_ACK_VERSION, dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { DHAN_TOTP_ACK_VERSION, catchUpRange, dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
@@ -17,6 +17,7 @@ import {
   openAlgoConnectionId,
   toParsedFile as openAlgoToParsedFile,
 } from "@/lib/import/api/openalgo";
+import { brokerLabel, findRivalConnection } from "@/lib/import/broker-identity";
 import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
@@ -480,6 +481,27 @@ export async function POST(req: Request) {
       }
     }
 
+    // ONE connection per broker CLIENT (v4.2.1, owner ruling R4a). The unique
+    // index is (account_id, broker), so the same Dhan Client ID could be saved
+    // under two accounts — and then both pull the same tradebook into two
+    // books, because the dedup hash carries no account id. The check spans
+    // every account deliberately (lib/import/broker-identity.ts) and runs
+    // BEFORE any write: a refusal that stored the row first would be no
+    // refusal at all. The identity is the credential this save would END with
+    // — the typed key, or the stored one it is keeping.
+    const rival = findRivalConnection({
+      broker,
+      apiKey: apiKey || existing?.apiKey || null,
+      authJson: authPlain ?? existing?.authJson ?? null,
+      accountId,
+    });
+    if (rival) {
+      const message = `This ${brokerLabel(broker)} client is already connected in account "${rival.accountName}". Vyuha keeps one connection per broker client so a book is never imported twice.`;
+      // `error` is the seam's field; `message` is what every existing client
+      // renders. One string, so they can never disagree.
+      return NextResponse.json({ ok: false, error: message, message }, { status: 409 });
+    }
+
     // Encrypted at rest (v2.99.80). A broken vault REFUSES the save rather
     // than quietly storing a live credential in plaintext. A kept key is the
     // stored CIPHERTEXT carried over byte-for-byte — never decrypted here.
@@ -696,7 +718,14 @@ export async function POST(req: Request) {
             }
           },
         );
-        parsed = dhanToParsedFile(await source.fetchTrades({}));
+        // CATCH-UP (v4.2.1): `/positions` is TODAY's book, so a connection
+        // last pulled days ago lost every day in between — the pull fetched
+        // today, stamped lastPullAt, and the gap never came back. The stored
+        // stamp becomes the window [its IST day, today], clamped to
+        // DHAN_MAX_PULL_RANGE_DAYS. Null (never pulled, or pulled already
+        // today) leaves this pull byte-identical to every build before.
+        const range = catchUpRange(conn.lastPullAt, todayIstIso());
+        parsed = dhanToParsedFile(await source.fetchTrades(range ?? {}), range);
       } else if (broker === "upstox") {
         // apiKey holds the year-long read-only Analytics token. normalize is
         // called directly so the unparseable-symbol notes reach the screen.

@@ -30,6 +30,9 @@ import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalg
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
 import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components/import/broker-connect-gate";
 import { writeStored } from "@/components/layout/use-stored-value";
+// Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
+// trading-day walk-back, so the gap line cannot invent a second calendar.
+import { previousTradingDay, todayIstIso } from "@/lib/domain/trading-day";
 import {
   Dialog,
   DialogContent,
@@ -150,10 +153,65 @@ function tokenExpired(c: ConnStatus, now = Date.now()): boolean {
   return Number.isFinite(t) && t < now;
 }
 
-/** ISO → the user's own locale and zone; the server sends UTC ISO. */
-function formatTs(iso: string): string {
+/** Fixed three-letter months. NOT ICU's `month: "short"`: en-IN renders
+ *  September as "Sept" (and that abbreviation changed with CLDR 42), so the
+ *  stamp would drift with the runtime's ICU data. */
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The IST parts of an instant. `hour12: false` + 2-digit fields give a
+ *  24-hour clock; the month is taken NUMERICALLY and named from MON_SHORT. */
+const IST_PARTS = new Intl.DateTimeFormat("en-IN", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Kolkata",
+});
+
+/**
+ * A UTC ISO instant → `05 Sep 2026, 23:24 IST`.
+ *
+ * The server sends UTC ISO and this used to be `new Date(t).toLocaleString()`,
+ * which printed "5/9/2026, 11:24:54 pm": neither the date order nor the zone
+ * is stated, and both matter — a token's death time read as 9 May on a US
+ * machine. One explicit IST format serves BOTH surfaces that say it (the
+ * expired-token pop-up and the EXPIRED chip in the connection header), the
+ * same convention as components/live/desk-format.ts. A non-timestamp is
+ * returned untouched rather than rendered as "Invalid Date".
+ *
+ * Keeps the name the neighbouring source-shape pins anchor on
+ * (tests/broker-connect-ui.test.ts) — only what it PRODUCES changed.
+ */
+export function formatTs(iso: string): string {
   const t = Date.parse(iso);
-  return Number.isFinite(t) ? new Date(t).toLocaleString() : iso;
+  if (!Number.isFinite(t)) return iso;
+  const p: Record<string, string> = {};
+  for (const part of IST_PARTS.formatToParts(new Date(t))) p[part.type] = part.value;
+  const mon = MON_SHORT[Number(p.month) - 1] ?? p.month;
+  return `${p.day} ${mon} ${p.year}, ${p.hour}:${p.minute} IST`;
+}
+
+/**
+ * The one line under the pull buttons when the last pull is older than the
+ * previous trading day: the next pull will fetch a RANGE, not just today, and
+ * saying so is the difference between "nothing happened" and "the gap is
+ * coming". A statement of fact — no advice verb (SEBI copy rule).
+ *
+ * Null when there is nothing to say: never pulled, pulled since the previous
+ * trading day, or an unreadable stamp.
+ */
+export function pullGapNotice(lastPullAt: string | null | undefined, now: Date = new Date()): string | null {
+  if (!lastPullAt) return null;
+  const t = Date.parse(lastPullAt);
+  if (!Number.isFinite(t)) return null;
+  // The IST day of the pull, through the ONE +5:30 definition (todayIstIso) —
+  // 2026-09-04T19:00Z is already 5 Sep in India.
+  const day = todayIstIso(new Date(t));
+  if (day >= previousTradingDay(todayIstIso(now))) return null;
+  const [y, m, d] = day.split("-");
+  return `Pulls missed since ${d} ${MON_SHORT[Number(m) - 1] ?? m} ${y} — the next pull fetches the gap.`;
 }
 
 /**
@@ -417,6 +475,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     .filter((c) => c.broker === active)
     .sort((a, b) => a.accountId - b.accountId);
   const conn = brokerConns[0] ?? null;
+  /** R6 — one line when the next pull will fetch a GAP, not just today.
+   *  DERIVED at render time from the row's own lastPullAt (never state, never
+   *  an effect), so it disappears by itself the moment a pull lands. */
+  const gapNotice = pullGapNotice(conn?.lastPullAt);
   /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
   const saveTargetConn =
     saveAccountId > 0
@@ -1113,6 +1175,15 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
             </>
           )}
         </div>
+
+        {/* The catch-up line: the last pull is older than the previous trading
+            day, so the next pull fetches the range since then rather than only
+            today's book. A statement of fact, under the buttons that will do it. */}
+        {gapNotice && (
+          <p className="text-xs text-muted-foreground" data-testid="pull-gap">
+            {gapNotice}
+          </p>
+        )}
 
         {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}
 

@@ -65,6 +65,8 @@ const LOOPBACK = /^(?:127\.0\.0\.1|localhost|\[?::1\]?|0\.0\.0\.0)$/;
  *  files is still checked against ALLOWED_HOSTS, so the constants that feed
  *  the call stay pinned. file → why. */
 const DYNAMIC_URL_CALL_SITES: Record<string, string> = {
+  "components/risk/spot-mark-editor.tsx":
+    "v4.3 spot-mark chip on /risk posts to SPOT_MARK_ENDPOINT, the literal SAME-ORIGIN path /api/risk/spot pinned by tests/spot-mark.test.ts; no host, no egress.",
   "components/system/command-palette.tsx":
     "Search v1 (v3.8) fetches searchUrl(q, cats) from use-search-session.ts — a SAME-ORIGIN relative path pinned to the literal /api/search prefix by tests/search-palette.test.ts; no host, no egress.",
   "components/system/search-panel.tsx":

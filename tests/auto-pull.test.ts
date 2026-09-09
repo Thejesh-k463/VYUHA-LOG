@@ -234,3 +234,101 @@ describe("the real Dhan pull — reuse the stored token, PERSIST a mint (finder 
     expect(raw).not.toBe("minted-jwt");
   });
 });
+
+/**
+ * R6 (v4.2.1) — the CATCH-UP sweep. `/v2/positions` is today's book only, so a
+ * sweep after a gap (laptop closed for a week) fetched one day, stamped
+ * `lastPullAt` and lost the rest for ever. The sweep now hands the adapter the
+ * window [last pull's IST day, today] — and paste-mode Dhan is STILL skipped,
+ * because a 24-hour token cannot be used unattended whatever the window is.
+ */
+describe("the Dhan catch-up window (R6)", () => {
+  const ENROLLED = { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 };
+  const jwt = (expSec: number) => ["e30", Buffer.from(JSON.stringify({ exp: expSec })).toString("base64url"), "sig"].join(".");
+  const alive = () => jwt(Math.floor(Date.now() / 1000) + 3600);
+
+  /** A Dhan row with a chosen last_pull_at. Plaintext columns read fine
+   *  through readSecret — the documented compatibility path. */
+  function addDhanPulledAt(lastPullAt: string | null, authJson: Record<string, unknown> | null = ENROLLED) {
+    t.sqlite
+      .prepare(
+        "INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json, last_pull_at) VALUES (1, 'dhan', '1000000009', ?, ?, ?)",
+      )
+      .run(alive(), authJson ? JSON.stringify(authJson) : null, lastPullAt);
+  }
+
+  /** Records every api.dhan.co pathname; every endpoint answers an empty book. */
+  function stubPaths() {
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      paths.push(u.pathname);
+      const body = u.host === "auth.dhan.co" ? { accessToken: "minted-jwt" } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    return paths;
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("a last pull five days back asks for [that day, today] — from the stamp, not from today", async () => {
+    // WED_0720_IST is 2026-09-02 IST; five days back is 2026-08-28.
+    addDhanPulledAt("2026-08-28T05:30:00.000Z");
+    const paths = stubPaths();
+
+    await job.runAutoPull(WED_0720_IST); // the REAL pullOne
+
+    // Red on revert: with `fetchTrades({})` there is no /trades call at all —
+    // the four missed days were never asked for.
+    expect(paths.filter((p) => p.startsWith("/v2/trades/"))).toEqual([
+      "/v2/trades/2026-08-28/2026-09-02/0",
+    ]);
+    // …and today's book still comes from /positions, exactly as before.
+    expect(paths).toContain("/v2/positions");
+  });
+
+  it("reads the IST day of the stamp, never the UTC one", async () => {
+    // 2026-08-27T19:00Z is already 28 Aug in India.
+    addDhanPulledAt("2026-08-27T19:00:00.000Z");
+    const paths = stubPaths();
+    await job.runAutoPull(WED_0720_IST);
+    expect(paths.filter((p) => p.startsWith("/v2/trades/"))).toEqual([
+      "/v2/trades/2026-08-28/2026-09-02/0",
+    ]);
+  });
+
+  it("a connection that has never pulled asks for no window at all — today's book, as before", async () => {
+    addDhanPulledAt(null);
+    const paths = stubPaths();
+    await job.runAutoPull(WED_0720_IST);
+    expect(paths).toEqual(["/v2/positions"]);
+  });
+
+  it("a connection already pulled today asks for no window either", async () => {
+    addDhanPulledAt("2026-09-02T01:00:00.000Z"); // 06:30 IST the same day
+    const paths = stubPaths();
+    await job.runAutoPull(WED_0720_IST);
+    expect(paths).toEqual(["/v2/positions"]);
+  });
+
+  it("never asks for a window wider than the 90-day cap", async () => {
+    addDhanPulledAt("2024-01-01T05:30:00.000Z");
+    const paths = stubPaths();
+    await job.runAutoPull(WED_0720_IST);
+    // 2026-09-02 minus 90 days.
+    expect(paths.filter((p) => p.startsWith("/v2/trades/"))).toEqual([
+      "/v2/trades/2026-06-04/2026-09-02/0",
+    ]);
+  });
+
+  it("paste-mode Dhan is STILL skipped — a catch-up window is no reason to use a 24-hour token unattended", async () => {
+    addDhanPulledAt("2026-08-28T05:30:00.000Z", null); // no PIN + TOTP enrolment
+    const paths = stubPaths();
+
+    const out = await job.runAutoPull(WED_0720_IST);
+
+    expect(paths).toEqual([]); // the network was never touched
+    expect(out.summary.map((e) => [e.broker, e.status])).toEqual([["dhan", "notEligible"]]);
+    expect(out.summary[0]!.detail).toMatch(/pasted 24-hour tokens/i);
+  });
+});

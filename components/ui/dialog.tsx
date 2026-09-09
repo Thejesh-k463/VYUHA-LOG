@@ -72,7 +72,7 @@ function DialogTitle({ className, ...props }: React.ComponentPropsWithoutRef<typ
 }
 
 function DialogDescription({ className, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>) {
-  return <DialogPrimitive.Description className={cn("text-xs text-muted-foreground", className)} {...props} />;
+  return <DialogPrimitive.Description className={cn("text-sm text-foreground/90", className)} {...props} />;
 }
 
 export { Dialog, DialogTrigger, DialogClose, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription };

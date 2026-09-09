@@ -990,6 +990,7 @@ describe("S7 — every reader of broker_connections resolves the selected accoun
     // its reason; anything else appearing here is an unscoped reader.
     expect(unscoped).toEqual([
       "lib/backup.ts",
+      "lib/import/broker-identity.ts",
       "lib/jobs/auto-pull.ts",
       "lib/queries/account-delete.ts",
       "lib/vault.ts",

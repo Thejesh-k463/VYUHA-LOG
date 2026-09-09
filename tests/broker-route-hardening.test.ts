@@ -23,6 +23,28 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+
+/**
+ * The R4a seam (builder B4's lib/import/broker-identity.ts). Only
+ * `findRivalConnection` is replaced — `brokerLabel` stays REAL, so the 409's
+ * sentence is pinned against the broker label the app actually renders.
+ * `seam.spy` observes the input and the database at the moment the question is
+ * asked, which is how "before the write" is proven rather than assumed.
+ */
+const seam = vi.hoisted(() => ({
+  rival: null as { accountId: number; accountName: string } | null,
+  spy: null as ((input: unknown) => void) | null,
+}));
+vi.mock("@/lib/import/broker-identity", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/import/broker-identity")>();
+  return {
+    ...actual,
+    findRivalConnection: (input: unknown) => {
+      seam.spy?.(input);
+      return seam.rival;
+    },
+  };
+});
 process.env.VYUHA_VAULT_PROVIDER = "machine";
 
 let t: TempDb;
@@ -372,5 +394,74 @@ describe("item 9 — masking a credential for the audit log", () => {
     await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: "tok-1" });
     await post({ action: "save", broker: "dhan", apiKey: "", accessToken: "tok-2" });
     expect(lastAuditSummary()).toMatch(/key kept/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R4a (v4.2.1) — ONE connection per broker client. The seam is
+// lib/import/broker-identity.ts (builder B4); what is under test HERE is the
+// route's half: it asks BEFORE it writes, it answers 409 with the sentence,
+// and a refusal stores nothing. `findRivalConnection` is mocked so this test
+// pins the ROUTE, not the identity rule (which has its own tests).
+// ---------------------------------------------------------------------------
+
+describe("R4a — a broker client already connected in another account", () => {
+  beforeEach(() => {
+    seam.rival = null;
+  });
+
+  it("refuses the save with 409 and the exact sentence, and writes NOTHING", async () => {
+    seam.rival = { accountId: SWING, accountName: "Swing" };
+    const res = await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: fakeJwt(2_000_000_000) });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { ok: boolean; error?: string; message?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe(
+      'This Dhan client is already connected in account "Swing". Vyuha keeps one connection per broker client so a book is never imported twice.',
+    );
+    // The field every existing client renders carries the same string.
+    expect(body.message).toBe(body.error);
+    // Red on revert: without the check this row exists and both accounts pull
+    // the same tradebook into two books.
+    expect(rows()).toHaveLength(0);
+  });
+
+  it("is asked BEFORE the write, with the account the save would land on and the credential it would end with", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    seam.spy = (input) => {
+      seen.push(input as Record<string, unknown>);
+      // The row must not exist yet at the moment the question is asked.
+      expect(rows()).toHaveLength(0);
+    };
+    seam.rival = { accountId: SWING, accountName: "Swing" };
+    await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: fakeJwt(2_000_000_000) });
+    seam.spy = null;
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ broker: "dhan", apiKey: CLIENT, accountId: PRIMARY });
+  });
+
+  it("saves exactly as before when there is no rival", async () => {
+    seam.rival = null;
+    const res = await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: fakeJwt(2_000_000_000) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).ok).toBe(true);
+    expect(rows()).toHaveLength(1);
+    expect(decrypt(rows()[0]!.api_key)).toBe(CLIENT);
+  });
+
+  it("a re-save that KEEPS the stored key is checked on that stored key, not on an empty one", async () => {
+    // Save once (no rival), then re-save with an empty key box.
+    await post({ action: "save", broker: "dhan", apiKey: CLIENT, accessToken: fakeJwt(2_000_000_000) });
+    const seen: Array<Record<string, unknown>> = [];
+    seam.spy = (input) => void seen.push(input as Record<string, unknown>);
+    await post({ action: "save", broker: "dhan", accessToken: fakeJwt(2_000_000_000) });
+    seam.spy = null;
+    // The stored CIPHERTEXT is handed over — readSecret reads either form —
+    // so a kept key is never compared as "".
+    expect(seen).toHaveLength(1);
+    expect(String(seen[0]!.apiKey ?? "")).not.toBe("");
+    expect(decrypt(String(seen[0]!.apiKey))).toBe(CLIENT);
   });
 });

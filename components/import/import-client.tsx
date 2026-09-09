@@ -91,6 +91,9 @@ interface PreviewResp {
     /** The file states broker figures AND carries trades the account's book
      *  already holds: the commit stores the figures and skips the rows. */
     supersededByBook?: boolean;
+    /** v4.2.1 (R5): open positions in this account these rows would close,
+     *  FIFO. Optional — absent from a preview built before it existed. */
+    autoClose?: { closes: number; positions: { symbol: string; qty: number }[] };
     reconciliation?: { reported: Record<string, number>; computed: Record<string, number> };
     crossSource?: { collisions: { symbol: string; kind: string; detail: string }[]; symbols: string[]; risky: boolean; message: string | null };
   };
@@ -514,6 +517,20 @@ export function ImportClient({
               </p>
               {openingSellNote(p.shape.openingSells) && (
                 <p className="text-xs text-muted-foreground">{openingSellNote(p.shape.openingSells)}</p>
+              )}
+              {/* R5: rows that close positions this account already holds. A
+                  plain statement of what the commit will do — the realised P&L
+                  lands on the existing row, not on a second open position. */}
+              {(p.autoClose?.closes ?? 0) > 0 && (
+                <p data-testid="preview-auto-close" className="text-sm">
+                  Will close {p.autoClose!.closes} open position
+                  {p.autoClose!.closes === 1 ? "" : "s"} already held in this account, oldest first
+                  {p.autoClose!.positions.length > 0 && (
+                    <> ({p.autoClose!.positions.slice(0, 5).map((c) => `${c.symbol} ${c.qty}`).join(", ")}
+                    {p.autoClose!.positions.length > 5 ? `, and ${p.autoClose!.positions.length - 5} more` : ""})</>
+                  )}
+                  .
+                </p>
               )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <Stat label="Positions" value={String(p.summary.total)} />

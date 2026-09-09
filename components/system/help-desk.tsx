@@ -37,23 +37,23 @@ export function HelpDesk({ entries, groups }: { entries: HelpEntry[]; groups: { 
           if (items.length === 0) return null;
           return (
             <section key={g.label}>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</h3>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</h3>
               <div className="grid gap-3 lg:grid-cols-2">
                 {items.map((e) => (
                   <Card key={e.href} className="p-0">
                     <CardHeader className="flex-row items-start justify-between gap-2 pb-2">
                       <div>
-                        <CardTitle className="text-sm">{e.title}</CardTitle>
-                        <p className="mt-0.5 text-xs italic text-muted-foreground">{e.answers}</p>
+                        <CardTitle className="text-base">{e.title}</CardTitle>
+                        <p className="mt-0.5 text-sm italic text-muted-foreground">{e.answers}</p>
                       </div>
                       <Link
                         href={e.href}
-                        className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-card-hover"
+                        className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-sm hover:bg-card-hover"
                       >
                         Open <ArrowRight className="size-3" />
                       </Link>
                     </CardHeader>
-                    <CardContent className="space-y-1.5 pt-0 text-xs text-muted-foreground">
+                    <CardContent className="space-y-1.5 pt-0 text-sm text-foreground/90">
                       {e.body.map((b, i) => (
                         <p key={i}>{b}</p>
                       ))}

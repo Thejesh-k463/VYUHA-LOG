@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { assessDataQuality, type QualityTrade, type QualityInputs, type QualityReport } from "@/lib/analytics/data-quality";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  assessDataQuality,
+  crossAccountIssues,
+  type DuplicateConnectionGroup,
+  type DuplicateTradeGroup,
+  type QualityTrade,
+  type QualityInputs,
+  type QualityReport,
+} from "@/lib/analytics/data-quality";
+import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
+
+// The fix path is a server action; `revalidatePath` needs a request scope that
+// a unit test does not have, and it is not what is under test here.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 /**
  * B1 — the Data Quality Center's job is to say which numbers elsewhere in the
@@ -234,5 +247,275 @@ describe("data quality — remediation", () => {
     const issue = find(r, "unknown_basis")!;
     expect(issue.count).toBe(300); // the real number is still reported
     expect(issue.ids!.length).toBe(100); // only the list is truncated
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * B4 (v4.2.1) — the two CROSS-ACCOUNT issues, and the one-click fix.
+ *
+ * The dedup hash carries no account id (lib/import/dedup.ts) and the unique
+ * index that enforces it is per account (`trades_account_broker_dedup_uq`), so
+ * one broker record imported into two accounts is stored twice and the
+ * All-accounts view sums both copies. Neither fact is visible to a
+ * single-account read, which is why both are resolved outside the pure module
+ * and handed in already grouped and already MASKED.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const connGroup = (p: Partial<DuplicateConnectionGroup> = {}): DuplicateConnectionGroup => ({
+  broker: "dhan",
+  brokerLabel: "Dhan",
+  maskedIdentity: "110…••••",
+  accounts: [
+    { id: 1, name: "Primary" },
+    { id: 2, name: "Swing" },
+  ],
+  ...p,
+});
+
+const tradeGroup = (p: Partial<DuplicateTradeGroup> = {}): DuplicateTradeGroup => ({
+  broker: "dhan",
+  brokerLabel: "Dhan",
+  dedupHash: "a1b2c3d4e5f6a1b2c3d4",
+  symbol: "TCS",
+  qty: 10,
+  buyDate: "2026-07-01",
+  sellDate: "2026-07-09",
+  rows: 2,
+  ids: [11, 22],
+  accounts: [
+    { id: 1, name: "Primary", rows: 1 },
+    { id: 2, name: "Swing", rows: 1 },
+  ],
+  ...p,
+});
+
+const dupTradeIssues = (r: QualityReport) => r.issues.filter((x) => x.code.startsWith("duplicate_trades:"));
+const dupConnIssues = (r: QualityReport) => r.issues.filter((x) => x.code.startsWith("duplicate_connection:"));
+
+describe("data quality — trades duplicated across accounts", () => {
+  it("raises ONE issue for a (broker, dedupHash) group held in two accounts, naming both", () => {
+    const r = assessDataQuality(inputs({ duplicateTradeGroups: [tradeGroup()] }));
+    const dup = dupTradeIssues(r);
+
+    // One issue per duplicated RECORD — the unit a user can act on.
+    expect(dup).toHaveLength(1);
+    // …carrying the ROW count (both copies), not the number of accounts.
+    expect(dup[0].count).toBe(2);
+    expect(dup[0].severity).toBe("critical");
+    expect(dup[0].detail).toContain("Primary");
+    expect(dup[0].detail).toContain("Swing");
+    expect(dup[0].title).toContain("TCS");
+    expect(dup[0].href).toBe("/data-quality#duplicates");
+    expect(dup[0].ids).toEqual([11, 22]);
+    expect(r.affected).toBe(2);
+  });
+
+  it("says nothing about a sole copy", () => {
+    const sole = tradeGroup({ rows: 1, ids: [11], accounts: [{ id: 1, name: "Primary", rows: 1 }] });
+    expect(dupTradeIssues(assessDataQuality(inputs({ duplicateTradeGroups: [sole] })))).toHaveLength(0);
+    expect(dupTradeIssues(assessDataQuality(inputs({ duplicateTradeGroups: [] })))).toHaveLength(0);
+    expect(dupTradeIssues(assessDataQuality(inputs()))).toHaveLength(0);
+  });
+
+  it("gives every group its own code, because the screen keys on it", () => {
+    const r = assessDataQuality(
+      inputs({
+        duplicateTradeGroups: [
+          tradeGroup(),
+          tradeGroup({ dedupHash: "ffffffffffffffffffff", symbol: "INFY", ids: [33, 44] }),
+        ],
+      }),
+    );
+    const codes = dupTradeIssues(r).map((x) => x.code);
+    expect(codes).toHaveLength(2);
+    expect(new Set(codes).size).toBe(2);
+  });
+
+  it("counts a critical duplicate against the score", () => {
+    const clean = assessDataQuality(inputs()).score;
+    const dirty = assessDataQuality(inputs({ duplicateTradeGroups: [tradeGroup()] })).score;
+    expect(dirty).toBeLessThan(clean);
+  });
+});
+
+describe("data quality — one broker client connected in several accounts", () => {
+  it("raises one issue per duplicated identity, naming the accounts and the count", () => {
+    const r = assessDataQuality(inputs({ duplicateConnections: [connGroup()] }));
+    const dup = dupConnIssues(r);
+
+    expect(dup).toHaveLength(1);
+    expect(dup[0].count).toBe(2); // accounts holding it
+    expect(dup[0].severity).toBe("warning"); // nothing is wrong in the numbers YET
+    expect(dup[0].title).toContain("2 accounts");
+    expect(dup[0].detail).toContain("Primary");
+    expect(dup[0].detail).toContain("Swing");
+    expect(dup[0].href).toBe("/data-quality#duplicates");
+  });
+
+  it("shows only the masked identity it was handed", () => {
+    const r = assessDataQuality(inputs({ duplicateConnections: [connGroup({ maskedIdentity: "110…••••" })] }));
+    const text = JSON.stringify(dupConnIssues(r));
+    expect(text).toContain("110…••••");
+    expect(text).not.toContain("1100112233");
+  });
+
+  it("says nothing about a client in one account only", () => {
+    const sole = connGroup({ accounts: [{ id: 1, name: "Primary" }] });
+    expect(dupConnIssues(assessDataQuality(inputs({ duplicateConnections: [sole] })))).toHaveLength(0);
+    expect(dupConnIssues(assessDataQuality(inputs()))).toHaveLength(0);
+  });
+
+  it("is exported on its own, so the screen can resolve the two without re-deriving the report", () => {
+    const issues = crossAccountIssues({ duplicateConnections: [connGroup()], duplicateTradeGroups: [tradeGroup()] });
+    expect(issues.map((x) => x.severity)).toEqual(["warning", "critical"]);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * The fix, against a real migrated database.
+ *
+ * ONE temp database, one per file (AGENTS.md): lib/db caches its connection on
+ * globalThis, so the query modules are imported dynamically AFTER the helper
+ * has set VYUHA_DB_PATH.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+let t: TempDb;
+let actions: typeof import("@/app/data-quality/actions");
+let identity: typeof import("@/lib/import/broker-identity");
+
+const PRIMARY = 1;
+const SWING = 2;
+const SHARED_HASH = "shared-dedup-hash";
+
+beforeAll(async () => {
+  t = await openTempDb("data-quality", { seed: true });
+  actions = await import("@/app/data-quality/actions");
+  identity = await import("@/lib/import/broker-identity");
+  t.db.insert(t.schema.accounts).values({ id: SWING, name: "Swing", isDefault: false }).run();
+});
+
+afterAll(() => t?.cleanup());
+
+/** Both copies of ONE broker record, one per account — what a user gets by
+ *  importing the same file into two accounts. */
+function seedDuplicate(hash = SHARED_HASH) {
+  t.db
+    .insert(t.schema.trades)
+    .values([
+      tradeRow({ accountId: PRIMARY, broker: "dhan", symbol: "TCS", tradingsymbol: "TCS", dedupHash: hash, buyQty: 10, sellQty: 10, buyDate: "2026-07-01", sellDate: "2026-07-09" }),
+      tradeRow({ accountId: SWING, broker: "dhan", symbol: "TCS", tradingsymbol: "TCS", dedupHash: hash, buyQty: 10, sellQty: 10, buyDate: "2026-07-01", sellDate: "2026-07-09" }),
+    ])
+    .run();
+}
+
+const tradesIn = (accountId: number) =>
+  t.db.select().from(t.schema.trades).all().filter((r) => r.accountId === accountId);
+
+const deleteAudits = () =>
+  t.db.select().from(t.schema.auditLog).all().filter((a) => a.entity === "trade" && a.action === "delete");
+
+beforeEach(() => {
+  t.db.delete(t.schema.trades).run();
+  t.db.delete(t.schema.auditLog).run();
+  // The All-accounts view is where a cross-account duplicate is visible.
+  t.db.update(t.schema.settings).set({ selectedAccountId: 0 }).run();
+});
+
+describe("the duplicate scan reads every account", () => {
+  it("groups the two copies and counts the rows per account", () => {
+    seedDuplicate();
+    const groups = identity.listDuplicateTradeGroups();
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].rows).toBe(2);
+    expect(groups[0].symbol).toBe("TCS");
+    expect(groups[0].dedupHash).toBe(SHARED_HASH);
+    expect(groups[0].accounts).toEqual([
+      { id: PRIMARY, name: "Primary", rows: 1 },
+      { id: SWING, name: "Swing", rows: 1 },
+    ]);
+  });
+
+  it("says nothing about a sole copy", () => {
+    t.db.insert(t.schema.trades).values(tradeRow({ accountId: PRIMARY, broker: "dhan", dedupHash: "only-here" })).run();
+    expect(identity.listDuplicateTradeGroups()).toEqual([]);
+    expect(identity.findDuplicateTradeGroup("dhan", "only-here")).toBeNull();
+  });
+});
+
+describe("removeDuplicateCopy — the copy in ONE named account", () => {
+  it("deletes that account's rows, leaves the other, and audits each one", async () => {
+    seedDuplicate();
+    const doomed = tradesIn(SWING).map((r) => r.id);
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: SWING });
+
+    expect(res.ok).toBe(true);
+    expect(res.removed).toBe(1);
+    expect(tradesIn(SWING)).toHaveLength(0);
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+
+    // One audit row per deleted trade, written by the existing delete path.
+    const audits = deleteAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].entityId).toBe(doomed[0]);
+    expect(audits[0].source).toBe("data-quality");
+  });
+
+  it("refuses account 0 — the aggregate view is a view, not a place", async () => {
+    seedDuplicate();
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: 0 });
+
+    expect(res.ok).toBe(false);
+    // The refusal must be ITS OWN — "that account holds no copy" would be true
+    // of id 0 by accident, and the accident is not the rule (invariant 9).
+    expect(res.message).toContain("All accounts is a view, not an account");
+    expect(res.removed).toBe(0);
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+    expect(tradesIn(SWING)).toHaveLength(1);
+    expect(deleteAudits()).toHaveLength(0);
+  });
+
+  it("refuses a group that is NOT duplicated across accounts, so a stale screen cannot delete the sole copy", async () => {
+    t.db.insert(t.schema.trades).values(tradeRow({ accountId: PRIMARY, broker: "dhan", dedupHash: SHARED_HASH })).run();
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: PRIMARY });
+
+    expect(res.ok).toBe(false);
+    expect(res.removed).toBe(0);
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+    expect(deleteAudits()).toHaveLength(0);
+  });
+
+  it("refuses an account that holds no copy of the record", async () => {
+    seedDuplicate();
+    t.db.insert(t.schema.accounts).values({ id: 3, name: "Options", isDefault: false }).onConflictDoNothing().run();
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: 3 });
+
+    expect(res.ok).toBe(false);
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+    expect(tradesIn(SWING)).toHaveLength(1);
+  });
+
+  it("removing the second copy leaves the first: the record survives once", async () => {
+    seedDuplicate();
+    expect((await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: SWING })).ok).toBe(true);
+
+    const again = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: PRIMARY });
+    expect(again.ok).toBe(false);
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+    expect(identity.listDuplicateTradeGroups()).toEqual([]);
+  });
+
+  it("says which view can remove it when another single account is selected", async () => {
+    seedDuplicate();
+    t.db.update(t.schema.settings).set({ selectedAccountId: PRIMARY }).run();
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: SHARED_HASH, accountId: SWING });
+
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain("Swing");
+    expect(tradesIn(SWING)).toHaveLength(1);
   });
 });

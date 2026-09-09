@@ -3,6 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CalendarClock, ShieldCheck, PackageCheck } from "lucide-react";
 import { inr, inrCompact, fmtDate } from "@/lib/format";
+// This panel renders on the SERVER, so only the COMPONENT may come from the
+// `"use client"` editor module — every export of a client module reached from
+// the server layer is a throwing `registerClientReference` stub, and reading
+// `UNKNOWN_SPOT` from there is what took /risk down. The values are pure and
+// live in lib/risk (tests/client-value-imports.test.ts guards the shape).
+import { SpotMarkEditor } from "@/components/risk/spot-mark-editor";
+import { UNKNOWN_SPOT, type SpotRef } from "@/lib/risk/spot-ref";
 import {
   DEFAULT_SETTLEMENT_RATES,
   type SettlementSummary,
@@ -56,8 +63,30 @@ function Stat({ label, value, tone, note }: { label: string; value: string; tone
   );
 }
 
-export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
+/**
+ * The two doors that resolve moneyness, named in the panel's own words (R7).
+ *
+ * The previous sentence named ONE of them ("Enter the underlying spot in the
+ * bulk-MTM box below") and said nothing about the end-of-day close the page now
+ * falls back to — so a row showing an EOD-derived ITM looked like it had been
+ * typed. Pinned as a constant so a change to it is a deliberate edit of
+ * `tests/spot-mark.test.ts` in the same commit. Plain description only: no
+ * verb here tells anyone what to do with a position.
+ */
+export const SPOT_DOOR_NOTE =
+  "Option moneyness rests on the underlying's cash price. Type it on the row's spot chip, or paste it in the bulk-MTM box below — both store the same dated mark under the underlying's symbol. With no typed mark, the newest end-of-day close on record is used and the chip says so; a typed mark takes precedence over it. With neither, obligations are shown conditionally.";
+
+export function ExpiryObligations({
+  summary,
+  spotRefs,
+}: {
+  summary: SettlementSummary;
+  /** Per-UNDERLYING reference price and where it came from, keyed by
+   *  upper-cased `trades.symbol` — resolved by the page, which owns the DB. */
+  spotRefs?: Readonly<Record<string, SpotRef>>;
+}) {
   const { obligations } = summary;
+  const spotFor = (symbol: string): SpotRef => spotRefs?.[symbol.trim().toUpperCase()] ?? UNKNOWN_SPOT;
   const hasDanger = obligations.some((o) => o.warn === "danger");
   // Positions that WILL settle but whose reference price the book does not
   // know: excluded from both ₹ totals, and said so rather than counted as ₹0.
@@ -172,13 +201,18 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
                         </td>
                         <td className="px-2 py-2">
                           {o.kind === "stock_option" ? (
-                            o.moneyness === "ITM" ? (
-                              <Badge variant="warning">ITM{o.intrinsicPerUnit != null ? ` +${o.intrinsicPerUnit}` : ""}</Badge>
-                            ) : o.moneyness === "OTM" ? (
-                              <Badge variant="secondary">OTM</Badge>
-                            ) : (
-                              <Badge variant="outline">spot?</Badge>
-                            )
+                            /* The verdict, and the number it rests on. The
+                               reference used to be a dead `spot?` badge even
+                               when the panel HAD resolved moneyness, so an ITM
+                               read as a fact with no stated source (R7). */
+                            <div className="flex flex-col items-start gap-1">
+                              {o.moneyness === "ITM" ? (
+                                <Badge variant="warning">ITM{o.intrinsicPerUnit != null ? ` +${o.intrinsicPerUnit}` : ""}</Badge>
+                              ) : o.moneyness === "OTM" ? (
+                                <Badge variant="secondary">OTM</Badge>
+                              ) : null}
+                              <SpotMarkEditor symbol={o.symbol} spot={spotFor(o.symbol)} />
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
@@ -235,8 +269,7 @@ export function ExpiryObligations({ summary }: { summary: SettlementSummary }) {
               stock option or any stock future left open at expiry devolves into share delivery and a delivery-STT
               charge on the whole notional, plus exercise STT (
               {`${pctText(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)}% of intrinsic`}) — computed as far more than the
-              STT of squaring off. Enter the underlying spot in the bulk-MTM box below to resolve option moneyness;
-              otherwise obligations are shown conditionally. Delivery STT and the futures square-off STT are read from
+              STT of squaring off. {SPOT_DOOR_NOTE} Delivery STT and the futures square-off STT are read from
               your charge config; exercise STT is a fixed statutory rate (Finance Act 2026, in force 1 April 2026) and
               is not editable.
             </p>

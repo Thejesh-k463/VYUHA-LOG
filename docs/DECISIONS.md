@@ -4814,3 +4814,74 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
 - **Cost of this session** (Fable orchestrator, ~275k context at hand-off): ≈ **1.05 M subagent tokens across 14 launches** —
   recon scout 54k, wave-8 builder 78k, ui auditor 55k, test-integrity auditor 95k, bump scout 65k, skeptic 109k, round-10
   auditor 67k, ledger writer 92k, DECISIONS writer 122k, bump builder 144k, release steward 62k, plus the docs writers.
+
+## 2026-09-09 — v4.3.0 wave 1: the owner's application-fix list (six items from ten screenshots of the installed 4.2.0), verified against the code before any question was asked; every ruling in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings" + "v4.3.0 rulings — Option Strategies catalogue"
+
+**Why 4.3.0 and not 4.2.1.** The fixes alone were a patch. The owner's answer on the Option Strategies catalogue (≈35 shapes, a
+user-selected shelf with undo/redo/restore, an Options Help Desk) needs one settings column for the shelf — migration 0071 —
+and by the release-scope ruling a migration makes it a minor. The import money path also changes (auto-close). Wave 1 (this
+entry) carries NO migration; wave 2 (the catalogue) carries 0071.
+
+**What the screenshots proved, mechanism by mechanism (four Opus explorers, file:line in the ledger):** the doubled BEL/VBL legs
+were the same Dhan client connected under two accounts — dedup is `(accountId, broker, dedupHash)` so one book pulls into both;
+Marksans and the closed options stayed open because `is_open` is set once per imported row and no later SELL ever matched an
+earlier BUY (FIFO existed only inside one parsed file); nothing after the 5 Sept token expiry could be pulled because the Dhan
+adapter read today's `/positions` only and `lastPullAt` was display-only. Not a defect: the "v4.1" footer in some screenshots
+(older captures; the install runs 4.2).
+
+**Decisions taken inside the wave (builders' deviations, adopted):**
+- **Dhan catch-up pull (B2).** `GET /v2/trades/{from}/{to}/{page}` is public (dhanhq.co/docs/v2/statements, verified 2026-09-09).
+  `DHAN_MAX_PULL_RANGE_DAYS = 90` and `DHAN_TRADES_MAX_PAGES = 50` bound a runaway window; **history fills dated today are
+  dropped so `/positions` stays the sole source for today** — it is the only source that states MTF and the broker's own mark,
+  and a `/positions` row carries no `exchangeTradeId`, so the spec's cross-source id dedupe was not expressible. Per-fill charges
+  attach only when Dhan states a non-zero total (a reported 0 would override the rate card). History fills fold into scrip-day legs
+  through the existing `pairLegs` FIFO, the same unit the file parsers use. The IST stamp uses a NUMERIC month part mapped through a
+  fixed array: ICU's `en-IN` `month:"short"` renders September as "Sept" and drifts with ICU updates (`desk-format.ts:93` still has
+  that trap — recorded, not fixed). `formatTs` keeps its name because `tests/broker-connect-ui.test.ts` pins it by source shape.
+- **Auto-close FIFO at import (B3, money path).** Runs inside `commitParsedFile`'s existing transaction, per row, AFTER the dedup
+  guard (a skipped duplicate never matches — pinned by a mutant that moved the guard, which hit the UNIQUE index). Matching needs
+  the same account, broker, segment, exchange AND tradingsymbol — charges are per broker × segment × exchange (invariant 3) and a
+  cross-broker close could not be made idempotent. **Charges are pro-rated, never re-priced:** the lot's reported entry charges are
+  the broker's truth; the closing leg carries its own pro-rata plus the lot's pro-rata, component by component, so every paisa is
+  counted once (conservation asserted exactly; agreement with `closePosition` within the statutory rupee rounding, ≤ ₹2 measured).
+  Four lot classes are excluded: `staged` (quantities live in legs), `acquisition` (basis unknown, invariant 6), `eq_mtf`
+  (interest accrues on a per-position funded amount only `closePosition` prices), and rows already stating both legs. A close
+  collapses two identities into one row; the incoming row's hash is stored on the first artifact written and the other identity is
+  recovered by re-hashing the row's own legs (residual: a DD-MM-YYYY parser hashed its raw date — the stored hash covers that file).
+  `commitManualTrade` is untouched. Preview gains `autoClose?: { closes, positions[] }` (additive).
+- **Broker identity (B4).** Dhan → `apiKey` (that column IS the client ID); **Zerodha → `auth_json.kiteUserId`, not `apiKey`** — a
+  Kite api_key belongs to the developer APP and can log in several clients, so an api_key comparison would refuse a genuinely
+  different second account for ever; Angel One → `clientCode` for the same reason; Upstox/OpenAlgo → `apiKey`. Constant-time
+  compare, kind-tagged; the plaintext never enters a message, issue, audit row or return value (grouping keys are sha-256; masks
+  re-state `route.ts`'s `mask`/`maskId` character for character, pinned by seam S4). The `(accountId, broker)` unique index is
+  untouched. **Issue (a) "same client connected in N accounts" has NO one-click fix** — disconnecting is a `broker_connections`
+  write that lives only in the broker route; the Data Quality section links to Import → Disconnect. The duplicate-copy removal is a
+  server action on the report page (precedent `app/trades/actions.ts`); it re-derives the group from the DB so a stale screen can
+  never delete a sole copy, and refuses account 0.
+- **Spot chip (B5 → B6 → B7).** The typed door is `writeTypedMark`, not `saveMtmPrices` (the latter rewrites SL/TSL/targets across
+  matching positions — a chip must never touch stops). B5 threaded a server action as a prop; **B6 replaced it with
+  `POST /api/risk/spot`** per the AGENTS.md rule (a server action revalidates and remounts the cockpit's client state). The route
+  writes the CASH key when the held tradingsymbol is a contract key — `getSpotMap()` skips `OPT `/`FUT ` rows, so carrying the
+  contract key would file the spot where moneyness cannot read it (proven red on revert). **B6 then found that B5's page called two
+  VALUES imported from a `"use client"` module during the server render** — Next's flight loader rewrites such exports into stubs
+  that throw at request time, so `/risk` would have thrown for any book with an open F&O position while vitest AND `next build`
+  stayed green. B7 moves the pure helpers into `lib/risk/spot-ref.ts` and adds `tests/client-value-imports.test.ts`, a repo-wide
+  guard: a server module may import only Uppercase (component) names from a client module. EOD-close fallback reads
+  `getLatestCloseMap()` (its first caller); the close's DATE is not surfaced yet (the map returns prices only).
+- **Signs (B5 + seam S-1).** One rule in `lib/format.ts`: the percentage borrows the rupee's sign; zero is unsigned; ASCII `-`
+  because `inrCompact` already emits it. Four cockpit sites moved; the seam tester found a fifth (`+₹0` on the per-position row at
+  zero) fixed by the orchestrator with its own pin. **Eight other files still sign a percentage independently beside a rupee**
+  (`app/reports/{rom,monthly,performance}`, `components/cash/ledger-import.tsx`, `components/risk/{greeks-panel,var-panel,
+  mtf-drift-card}.tsx`) — the owner ruled "same formatter everywhere"; they are wave 2 (the seam file pins `rom/page.tsx:20` as
+  unchanged THIS wave, so that pin moves with them). Naming hazard recorded: `lib/format.ts signedPct` (rupees, percent, ASCII) vs
+  `components/live/desk-format.ts signedPct` (ppm, U+2212) — no file imports both today.
+- **Splash and type (B1).** Tagline at 13.5 px (the orchestrator overrode the builder's literal 11 px: it is the highlighted line),
+  gradient text whose BASE stop is the light foreground so it reads with animation off, `prefers-reduced-motion` stops the sweep;
+  no `@supports` fallback for `background-clip: text` (WebView2 supports it). `DialogDescription` base → `text-sm text-foreground/90`
+  (the repo's only prior opacity convention, `restriction-form.tsx`); the one caller that re-applies `text-xs` is the mono filename in
+  `delete-import-dialog.tsx:53`, pinned as the sole exemption; `import-help.tsx:92`'s `text-sm` is now redundant, left alone.
+- **Guards that had to learn the new module:** `tests/account-isolation.test.ts` (whole-DB reader owners) and
+  `tests/seams-v42-fix2.test.ts` S7a (unscoped readers of `broker_connections`) both name `lib/import/broker-identity.ts` — the
+  rival check spans every account by definition; an account filter would hide the row that makes a second connection a duplicate.
+- **Deferred by ruling:** pricing the underlying of open option rows through the live feed (widens the symbols sent to
+  Upstox/Angel One; consent-sheet copy + disclosure bump) — queued after 4.3.0.

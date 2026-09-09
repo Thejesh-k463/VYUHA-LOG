@@ -479,6 +479,9 @@ describe("account-scoped table registry", () => {
     // row's own account, and the aggregate view must not hide another book's
     // eligible broker. Documented at the call site.
     "lib/jobs/auto-pull.ts": "daily auto-pull sweeps every account's connections by design",
+    // The rival check spans every account by definition: an account filter
+    // would hide the very row that makes a second connection a duplicate.
+    "lib/import/broker-identity.ts": "the rival check spans every account by definition",
     // Re-encrypts plaintext secrets in place, keyed on the row id. An account
     // filter here would leave another book's key readable on disk.
     "lib/vault.ts": "the plaintext-secret sweep re-encrypts every row by id",

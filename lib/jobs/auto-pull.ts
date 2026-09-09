@@ -7,7 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { toIst } from "@/lib/domain/trading-day";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
-import { dhanImportSource, dhanTotpEnrolled, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import { catchUpRange, dhanImportSource, dhanTotpEnrolled, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 
 // Opt-in auto-pull on launch (v3.6, WS3) — the auto-MTM render-guard pattern,
@@ -161,7 +161,14 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
           }
         },
       );
-      parsed = dhanToParsedFile(await source.fetchTrades({}));
+      // CATCH-UP (v4.2.1): `/positions` is TODAY's book, so a sweep that ran
+      // after a gap — a laptop closed for a week, auto-pull enabled late —
+      // used to stamp lastPullAt over days it never fetched. `catchUpRange`
+      // turns the stored stamp into [lastPullAt IST day, today], clamped to
+      // DHAN_MAX_PULL_RANGE_DAYS; null (never pulled, or already pulled
+      // today) leaves the daily pull byte-identical to what it always did.
+      const range = catchUpRange(conn.lastPullAt, today);
+      parsed = dhanToParsedFile(await source.fetchTrades(range ?? {}), range);
     } else if (conn.broker === "upstox") {
       parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
     } else {

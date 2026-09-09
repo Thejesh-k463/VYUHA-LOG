@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@/components/ui/dialog";
-import { inr, inrCompact, num } from "@/lib/format";
+import { inr, inrCompact, num, formatSignedPair, signedPct, signOf } from "@/lib/format";
 import { KpiDetailDialog, type KpiDetail } from "@/components/kpi-card";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
@@ -162,9 +162,12 @@ export function RiskCockpitClient({
               note: "This is the plan you entered with. Open Risk @ SL shows what's actually still exposed right now.",
             }}
           />
+          {/* ONE sign for one fact (R8): the ₹ half and the % half used to choose
+              their signs independently and printed "-₹17 · +0.00%" on a loss whose
+              percentage of capital rounded away. `formatSignedPair` signs both. */}
           <Tile
             label="Open P&L"
-            value={capitalKnown ? `${inrCompact(e.unrealised)} · ${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%` : inrCompact(e.unrealised)}
+            value={capitalKnown ? formatSignedPair(e.unrealised, e.openPnlPct) : inrCompact(e.unrealised)}
             valueCls={e.unrealised >= 0 ? "text-profit" : "text-loss"}
             detail={{
               title: "Open P&L — unrealised, on paper",
@@ -172,7 +175,8 @@ export function RiskCockpitClient({
               rows: [
                 { label: "Unrealised P&L", value: inrCompact(e.unrealised), tone: e.unrealised >= 0 ? "profit" : "loss" },
                 capitalKnown
-                  ? { label: "As % of capital", value: `${e.openPnlPct >= 0 ? "+" : ""}${e.openPnlPct.toFixed(2)}%`, tone: e.openPnlPct >= 0 ? ("profit" as const) : ("loss" as const) }
+                  // Same one fact as the row above it — same sign, same tone (R8).
+                  ? { label: "As % of capital", value: signedPct(e.unrealised, e.openPnlPct), tone: e.unrealised >= 0 ? ("profit" as const) : ("loss" as const) }
                   : { label: "As % of capital", value: "—", hint: "set capital in Settings" },
                 { label: "Invested", value: inrCompact(e.invested) },
                 { label: "Return on invested", value: e.invested ? `${((e.unrealised / e.invested) * 100).toFixed(2)}%` : "—" },
@@ -457,7 +461,10 @@ function PositionRow({
   onTrailBreakeven: () => void;
   trailing: boolean;
 }) {
-  const impactCls = p.runningImpactPct >= 0 ? "bg-profit/15 text-profit" : "bg-loss/15 text-loss";
+  // `runningImpactPct` IS `p.unrealised / capital` and is printed directly above
+  // the rupee figure it restates, so its sign and its colour come from that
+  // figure — not from its own rounded-to-2dp self, which reads -0 as positive (R8).
+  const impactCls = p.unrealised >= 0 ? "bg-profit/15 text-profit" : "bg-loss/15 text-loss";
   const isShort = p.side === "short";
   const inProfit = isShort ? p.mtm <= p.entry : p.mtm >= p.entry;
   const alreadyAtBreakeven = p.trailingSl != null && Math.abs(p.trailingSl - p.entry) < 1e-6;
@@ -479,10 +486,10 @@ function PositionRow({
         </div>
         <div className="w-28 text-right">
           <span className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums ${impactCls}`}>
-            {capitalKnown ? `${p.runningImpactPct >= 0 ? "+" : ""}${p.runningImpactPct.toFixed(2)}%` : "—"}
+            {capitalKnown ? signedPct(p.unrealised, p.runningImpactPct) : "—"}
           </span>
           <div className={`mt-1 text-[10px] font-medium tabular-nums ${p.unrealised >= 0 ? "text-profit" : "text-loss"}`}>
-            {p.unrealised >= 0 ? "+" : ""}{inrCompact(p.unrealised)}
+            {signOf(p.unrealised)}{inrCompact(Math.abs(p.unrealised))}
           </div>
         </div>
         <div className="w-28 text-right">
@@ -514,8 +521,10 @@ function PositionRow({
             <Detail k="Invested" v={inrCompact(p.invested)} />
             <Detail
               k="Return"
-              v={`${p.returnPct >= 0 ? "+" : ""}${p.returnPct.toFixed(2)}% (${inrCompact(p.unrealised)})`}
-              cls={p.returnPct >= 0 ? "text-profit" : "text-loss"}
+              // The percentage sits BESIDE its own rupee figure here too, so it
+              // borrows that figure's sign rather than choosing one (R8).
+              v={`${signedPct(p.unrealised, p.returnPct)} (${inrCompact(p.unrealised)})`}
+              cls={p.unrealised >= 0 ? "text-profit" : "text-loss"}
             />
             <Detail k="Original SL" v={p.originalSl == null ? "—" : num(p.originalSl, 2)} />
             <Detail k="Trailing SL" v={p.trailingSl == null ? "—" : num(p.trailingSl, 2)} />

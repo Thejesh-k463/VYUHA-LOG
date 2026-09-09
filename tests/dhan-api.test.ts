@@ -9,6 +9,7 @@ import {
 } from "@/lib/import/api/dhan";
 import { classify } from "@/lib/engine/classify";
 import { totp } from "@/lib/totp";
+import { todayIstIso } from "@/lib/domain/trading-day";
 
 const row = (p: Partial<DhanPositionRow>): DhanPositionRow => ({
   tradingSymbol: "TCS",
@@ -696,22 +697,270 @@ describe("read-only by surface", () => {
     // that this code path CANNOT trade. Enforced by the module surface — this
     // pin makes adding an order method a CI failure, not a review comment.
     expect(Object.keys(dhan).sort()).toEqual([
+      "DHAN_MAX_PULL_RANGE_DAYS",
       "DHAN_TOTP_ACK_VERSION",
+      "DHAN_TRADES_MAX_PAGES",
       "canonicalDerivativeName",
+      "catchUpRange",
       "dhanAuthUrl",
       "dhanImportSource",
       "dhanTotpEnrolled",
       "exchangeOf",
       "fetchDhanHoldings",
       "fetchDhanPositions",
+      "fetchDhanTrades",
       "jwtExpiresAt",
       "jwtLooksUnexpired",
       "markOf",
       "mintDhanAccessToken",
       "normalizeDhanPositions",
+      "normalizeDhanTrades",
       "productHintOf",
       "resolveDhanAccessToken",
       "toParsedFile",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R6 (v4.2.1) — the CATCH-UP pull. `/v2/positions` is the current day's book,
+// so a connection last pulled five days ago silently lost four days: the pull
+// button fetched today, stamped lastPullAt, and the gap never came back. Dhan
+// publishes a trade-history endpoint (GET /v2/trades/{from}/{to}/{page},
+// dhanhq.co/docs/v2/statements/, verified 2026-09-09) and this is it wired in.
+// ---------------------------------------------------------------------------
+
+describe("catchUpRange — what a pull should ask for, given the last one", () => {
+  const TODAY = "2026-09-09";
+
+  it("asks from the IST DAY of the last pull, inclusive, to today", () => {
+    expect(dhan.catchUpRange("2026-09-04T10:00:00Z", TODAY)).toEqual({ from: "2026-09-04", to: TODAY });
+    // 19:00Z is already the next day in India — the one +5:30 definition.
+    expect(dhan.catchUpRange("2026-09-04T19:00:00Z", TODAY)).toEqual({ from: "2026-09-05", to: TODAY });
+  });
+
+  it("returns null when there is no gap to fetch", () => {
+    expect(dhan.catchUpRange(null, TODAY)).toBeNull();
+    expect(dhan.catchUpRange(undefined, TODAY)).toBeNull();
+    expect(dhan.catchUpRange("not-a-date", TODAY)).toBeNull();
+    // Already pulled today: today's book is what /positions is for.
+    expect(dhan.catchUpRange("2026-09-09T03:00:00Z", TODAY)).toBeNull();
+  });
+
+  it("never asks for a window wider than the 90-day cap", () => {
+    expect(dhan.DHAN_MAX_PULL_RANGE_DAYS).toBe(90);
+    // A connection last pulled a year ago is clamped to the cap, not refused:
+    // the rest of that history is a file import, which is what files are for.
+    expect(dhan.catchUpRange("2025-09-09T10:00:00Z", TODAY)).toEqual({ from: "2026-06-11", to: TODAY });
+    const span =
+      (Date.parse(TODAY) - Date.parse(dhan.catchUpRange("2025-09-09T10:00:00Z", TODAY)!.from)) / 86_400_000;
+    expect(span).toBe(90);
+  });
+});
+
+describe("fetchTrades({from,to}) — the paged trade history", () => {
+  const stored = () => fakeJwt(Math.floor(Date.now() / 1000) + 3600);
+  const creds = () => ({ clientId: CLIENT, accessToken: stored() });
+
+  const trade = (p: Partial<dhan.DhanTradeRow>): dhan.DhanTradeRow => ({
+    exchangeTradeId: "TR-1",
+    orderId: "OR-1",
+    transactionType: "SELL",
+    exchangeSegment: "NSE_EQ",
+    productType: "CNC",
+    tradingSymbol: "TCS",
+    tradedQuantity: 10,
+    tradedPrice: 3500.5,
+    exchangeTime: "2026-09-07 10:15:00",
+    ...p,
+  });
+
+  /** Stub api.dhan.co: `/positions` answers `positions`, `/trades/{f}/{t}/{p}`
+   *  answers `pages[p] ?? []`. Every pathname is recorded in order. */
+  function stub(pages: dhan.DhanTradeRow[][], positions: DhanPositionRow[] = []) {
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = new URL(url);
+      paths.push(u.pathname);
+      if (u.pathname === "/v2/positions") return jsonResponse(200, positions);
+      const m = /^\/v2\/trades\/[\d-]+\/[\d-]+\/(\d+)$/.exec(u.pathname);
+      if (m) return jsonResponse(200, pages[Number(m[1])] ?? []);
+      return jsonResponse(404, { errorMessage: `unexpected path ${u.pathname}` });
+    });
+    return paths;
+  }
+
+  it("requests page 0, then 1, and stops at the first empty page", async () => {
+    const paths = stub([[trade({ exchangeTradeId: "A" })], []]);
+    await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(paths.filter((p) => p.includes("/trades/"))).toEqual([
+      "/v2/trades/2026-09-05/2026-09-09/0",
+      "/v2/trades/2026-09-05/2026-09-09/1",
+    ]);
+    // Today's book still comes from /positions, exactly as before.
+    expect(paths).toContain("/v2/positions");
+  });
+
+  it("makes NO /trades request at all when no range is given", async () => {
+    const paths = stub([[trade({})]], []);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({});
+    expect(paths).toEqual(["/v2/positions"]);
+    expect(out).toEqual([]);
+  });
+
+  it("stops at the page cap rather than looping on an endpoint that never empties", async () => {
+    expect(dhan.DHAN_TRADES_MAX_PAGES).toBe(50);
+    const never = new Proxy([] as dhan.DhanTradeRow[][], {
+      get: (_t, k) => (typeof k === "string" && /^\d+$/.test(k) ? [trade({ exchangeTradeId: `T${k}` })] : undefined),
+    });
+    const paths = stub(never);
+    await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-06-11", to: "2026-09-09" });
+    expect(paths.filter((p) => p.includes("/trades/"))).toHaveLength(dhan.DHAN_TRADES_MAX_PAGES);
+  });
+
+  it("maps a SELL fill to a sell execution with its quantity, price and STATED charges", async () => {
+    stub([
+      [
+        trade({
+          exchangeTradeId: "S-1",
+          transactionType: "SELL",
+          tradingSymbol: "TCS",
+          tradedQuantity: 4,
+          tradedPrice: 3500,
+          isin: "INE467B01029",
+          brokerageCharges: 20,
+          serviceTax: 3.6,
+          stt: 14,
+          sebiTax: 0.14,
+          exchangeTransactionCharges: 4.2,
+          stampDuty: 0,
+          exchangeTime: "2026-09-07 10:15:00",
+        }),
+      ],
+      [],
+    ]);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(out).toHaveLength(1);
+    const t = out[0]!;
+    expect(t.broker).toBe("dhan");
+    expect(t.tradingsymbol).toBe("TCS");
+    expect(t.isin).toBe("INE467B01029");
+    expect(t.sellQty).toBe(4);
+    expect(t.avgSellPrice).toBe(3500);
+    expect(t.sellValue).toBe(14000);
+    expect(t.buyQty).toBe(0);
+    expect(t.sellDate).toBe("2026-09-07");
+    expect(t.executions).toEqual([{ side: "sell", qty: 4, price: 3500, date: "2026-09-07", time: "10:15" }]);
+    // Charges the broker ACTUALLY levied are stated per fill here — they are
+    // stored as truth, never recomputed (AGENTS.md, reportedCharges).
+    expect(t.reportedCharges).toMatchObject({
+      brokerage: 20,
+      gst: 3.6,
+      sttCtt: 14,
+      sebi: 0.14,
+      exchangeTxn: 4.2,
+      stampDuty: 0,
+      total: 41.94,
+    });
+    // A sell with no purchase in the window has an unknowable cost basis.
+    expect(t.basisUnknown).toBe(true);
+    expect(t.grossPnl).toBe(0);
+  });
+
+  it("pairs a buy and a later sell into ONE closed position across days", async () => {
+    stub([
+      [
+        trade({ exchangeTradeId: "B", transactionType: "BUY", tradedQuantity: 5, tradedPrice: 100, exchangeTime: "2026-09-05 09:30:00" }),
+        trade({ exchangeTradeId: "S", transactionType: "SELL", tradedQuantity: 5, tradedPrice: 110, exchangeTime: "2026-09-07 14:00:00" }),
+      ],
+      [],
+    ]);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      buyQty: 5, sellQty: 5, buyDate: "2026-09-05", sellDate: "2026-09-07", grossPnl: 50, basisUnknown: false,
+    });
+  });
+
+  it("dedupes a fill by exchangeTradeId when it comes back on two pages", async () => {
+    const dup = trade({ exchangeTradeId: "SAME", transactionType: "BUY", tradedQuantity: 3, tradedPrice: 200 });
+    stub([[dup], [{ ...dup }], []]);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(out).toHaveLength(1);
+    // Red on revert: without the dedupe this is 6 shares for ₹1,200.
+    expect(out[0]!.buyQty).toBe(3);
+    expect(out[0]!.buyValue).toBe(600);
+  });
+
+  it("counts a fill ONCE when the history and today's positions both state it", async () => {
+    const today = todayIstIso();
+    const position: DhanPositionRow = {
+      tradingSymbol: "INFY", positionType: "LONG", exchangeSegment: "NSE_EQ", productType: "MTF",
+      buyAvg: 1500, buyQty: 2, sellAvg: 0, sellQty: 0, netQty: 2,
+    };
+    stub(
+      [
+        [
+          trade({
+            exchangeTradeId: "TODAY-1", transactionType: "BUY", tradingSymbol: "INFY", productType: "MTF",
+            tradedQuantity: 2, tradedPrice: 1500, exchangeTime: `${today} 09:20:00`,
+          }),
+        ],
+        [],
+      ],
+      [position],
+    );
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-06-11", to: today });
+    const infy = out.filter((t) => t.tradingsymbol === "INFY");
+    expect(infy).toHaveLength(1);
+    expect(infy[0]!.buyQty).toBe(2);
+    // …and the surviving row is the POSITIONS one — the only source that
+    // states MTF outright, which is why this integration exists.
+    expect(infy[0]!.productHint).toBe("mtf");
+  });
+
+  it("names an F&O fill from Dhan's own drv* fields, never from the symbol's shape", async () => {
+    stub([
+      [
+        trade({
+          exchangeTradeId: "F-1", transactionType: "BUY", exchangeSegment: "NSE_FNO", productType: "MARGIN",
+          tradingSymbol: "NIFTY-Sep2026-25000-CE", tradedQuantity: 75, tradedPrice: 120,
+          drvExpiryDate: "2026-09-24", drvOptionType: "CALL", drvStrikePrice: 25000,
+          exchangeTime: "2026-09-07 11:00:00",
+        }),
+      ],
+      [],
+    ]);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(out[0]!.tradingsymbol).toBe("OPT NIFTY 24 Sep 2026 25000 CE");
+    expect(out[0]!.exchangeHint).toBe("NSE");
+  });
+
+  it("refuses a fill with no readable side, quantity, price or date rather than coercing it", async () => {
+    stub([
+      [
+        trade({ exchangeTradeId: "X1", transactionType: "", tradedQuantity: 5, tradedPrice: 10 }),
+        trade({ exchangeTradeId: "X2", tradedQuantity: 0 }),
+        trade({ exchangeTradeId: "X3", tradedPrice: 0 }),
+        trade({ exchangeTradeId: "X4", exchangeTime: undefined, createTime: undefined }),
+      ],
+      [],
+    ]);
+    const out = await dhan.dhanImportSource(creds()).fetchTrades({ from: "2026-09-05", to: "2026-09-09" });
+    expect(out).toEqual([]);
+    expect(dhan.normalizeDhanTrades([]).refused).toBe(0);
+  });
+});
+
+describe("toParsedFile — a catch-up pull says which days it covered", () => {
+  it("names the window, and keeps the no-range warnings byte-identical", () => {
+    const withRange = toParsedFile([], { from: "2026-09-04", to: "2026-09-09" });
+    expect(withRange.warnings[0]).toBe(
+      "Catch-up pull: fills from 2026-09-04 to 2026-09-09 were read from Dhan's trade history (the last pull was older than the previous trading day). Today's book still comes from /v2/positions, and re-pulled fills are de-duplicated on commit.",
+    );
+    // Without a range NOTHING about the wording changes — the daily pull is
+    // the same pull it always was.
+    expect(toParsedFile([]).warnings).toEqual(withRange.warnings.slice(1));
+    expect(toParsedFile([], null).warnings).toEqual(withRange.warnings.slice(1));
   });
 });
