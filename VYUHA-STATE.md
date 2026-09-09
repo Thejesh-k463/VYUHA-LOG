@@ -27,7 +27,37 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585)
+## 2. Current state — v4.3.0 WAVE 1 COMMITTED 2026-09-09 IST evening (`265d684` on `1159a34`; `npm run verify` EXIT 0 — 369 files / 7,207 passed / 35 skipped; CI 34335816805 in progress at hand-off; NOT audited, NOT bumped, NOT tagged). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+
+> **What `265d684` is:** the owner's six-item application-fix list from ten screenshots of the installed 4.2.0, each verified
+> against the code before its ruling (`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings"). The file that makes each true:
+> splash tagline + strap removal `src-tauri/loading/index.html` (`tests/splash-copy.test.ts`) · Help Desk + every dialog one
+> type step larger `components/system/help-desk.tsx`, `components/ui/dialog.tsx` (`tests/typography-scale.test.ts`) · IST
+> expiry stamp + "Pulls missed since" line `components/import/broker-connect.tsx` (`tests/broker-connect-copy.test.ts`) · Dhan
+> catch-up pull `GET /v2/trades/{from}/{to}/{page}` since `lastPullAt`, 90-day / 50-page caps, today stays `/positions`
+> `lib/import/api/dhan.ts`, `lib/jobs/auto-pull.ts`, `app/api/import/broker/route.ts` (`tests/dhan-api.test.ts`,
+> `tests/auto-pull.test.ts`) · 409 on the same broker client in a second account `lib/import/broker-identity.ts`
+> (`tests/broker-identity.test.ts`, `tests/broker-route-hardening.test.ts`) · Data Quality cross-account duplicate connections +
+> trade groups with one-click "remove the copy" `lib/analytics/data-quality.ts`, `app/data-quality/actions.ts`,
+> `components/quality/duplicate-fix.tsx` (`tests/data-quality.test.ts`) · **FIFO auto-close at import** — money path —
+> `lib/import/close-open-lots.ts`, `lib/import/commit.ts` (`tests/auto-close-fifo.test.ts`, nine cases + a dedup-order mutant) ·
+> `/risk` "spot?" chip → editor via `POST /api/risk/spot` (`app/api/risk/spot/route.ts`) + EOD-close fallback, pure helpers in
+> `lib/risk/spot-ref.ts` (`tests/spot-mark.test.ts`) · **new repo-wide guard `tests/client-value-imports.test.ts`** — a server
+> module may import only component names from a `"use client"` module (Next stubs value imports to THROW at request time; vitest
+> and `next build` cannot see it) · sign rule `lib/format.ts` `signOf`/`signedPct`/`formatSignedPair` (`tests/risk-signs.test.ts`)
+> · seam file `tests/seams-v43.test.ts` (23). **No migration in wave 1.** `package-lock.json` untouched.
+>
+> **Why the version is 4.3.0, not 4.2.1:** the owner's Option Strategies ruling (a user-selected shelf persisted in a settings
+> column = migration 0071) makes the release a minor by his own scope ruling. **Wave 2** (not started): the ≈35-shape data-driven
+> catalogue, the shelf/picker with undo/redo/restore, the Options Help Desk (FREE, highlighted; the rest PRO), the SEBI loss-study
+> disclosure, the underlying leg read-only, the eight remaining independent-sign sites — research pack
+> `VYUHA-LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md`, rulings in 06-ANSWERS "v4.3.0 rulings — Option Strategies
+> catalogue". **Owed before the tag:** the six-dimension audit + skeptic over `1159a34..265d684`, wave 2 with its own seam pass
+> and audit, the bump, the 11 release steps, the owner's laptop smoke test (catch-up pull over the 5 Sept gap, duplicate removal,
+> auto-close of the stale Dhan rows, the spot chip, both feeds). Every deviation a builder took is in `docs/DECISIONS.md`
+> "2026-09-09 — v4.3.0 wave 1"; the next session starts from `NEXT-SESSION-CONTINUATION.md` §0.
+
+## 2-prev. v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585) — still the live release
 
 > **v4.2.0 is PUBLISHED.** The owner published the draft at **2026-09-08T20:18:15Z = 2026-09-09 01:48 IST** (`gh release view
 > v4.2.0` → `isDraft` false, 9 assets); `releases/latest` resolves to **v4.2.0** and its `latest.json` serves 4.2.0 for **six
