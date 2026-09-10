@@ -1,7 +1,7 @@
 import { RISK_LIST_CAP, CappedNote } from "@/components/ui/capped-note";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { num } from "@/lib/format";
+import { num, signOf } from "@/lib/format";
 import type { PortfolioGreeks } from "@/lib/analytics/greeks";
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
@@ -13,7 +13,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
   );
 }
 
-const signed = (v: number) => (v >= 0 ? "+" : "");
+// R8 at a NON-percentage site. A Greek is a signed QUANTITY, not a percentage,
+// so there is no rupee figure beside it to borrow a sign from — but the
+// zero-unsigned half of the ruling still applies: a net delta of 0 is flat, not
+// a long. So the sign comes from `signOf()` and the magnitude from `num()`,
+// which keeps the en-IN grouping the deleted local `signed` relied on
+// (`num()` prints its own "-", hence Math.abs on the magnitude).
 
 export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; latestVix?: number | null }) {
   return (
@@ -29,16 +34,16 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat
             label="Net delta"
-            value={`${signed(greeks.delta)}${num(greeks.delta, 0)}`}
+            value={`${signOf(greeks.delta)}${num(Math.abs(greeks.delta), 0)}`}
             tone={greeks.delta >= 0 ? "text-profit" : "text-loss"}
           />
           <Stat label="Net gamma" value={num(greeks.gamma, 4)} />
           <Stat
             label="Theta / day"
-            value={`${signed(greeks.thetaPerDay)}${num(greeks.thetaPerDay, 0)}`}
+            value={`${signOf(greeks.thetaPerDay)}${num(Math.abs(greeks.thetaPerDay), 0)}`}
             tone={greeks.thetaPerDay >= 0 ? "text-profit" : "text-loss"}
           />
-          <Stat label="Vega (per 1% IV)" value={`${signed(greeks.vega)}${num(greeks.vega, 0)}`} />
+          <Stat label="Vega (per 1% IV)" value={`${signOf(greeks.vega)}${num(Math.abs(greeks.vega), 0)}`} />
         </div>
 
         <div className="overflow-x-auto">
@@ -62,10 +67,10 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
                     {g.ivSource === "market" && <span className="ml-1 text-[10px] text-warning">VIX</span>}
                     {g.ivSource === "default" && <span className="ml-1 text-[10px] text-warning">est.</span>}
                   </td>
-                  <td className={`px-2 py-1.5 text-right tabular-nums ${g.delta >= 0 ? "text-profit" : "text-loss"}`}>{signed(g.delta)}{num(g.delta, 0)}</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${g.delta >= 0 ? "text-profit" : "text-loss"}`}>{signOf(g.delta)}{num(Math.abs(g.delta), 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{num(g.gamma, 4)}</td>
-                  <td className={`px-2 py-1.5 text-right tabular-nums ${g.thetaPerDay >= 0 ? "text-profit" : "text-loss"}`}>{signed(g.thetaPerDay)}{num(g.thetaPerDay, 0)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{signed(g.vega)}{num(g.vega, 0)}</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${g.thetaPerDay >= 0 ? "text-profit" : "text-loss"}`}>{signOf(g.thetaPerDay)}{num(Math.abs(g.thetaPerDay), 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{signOf(g.vega)}{num(Math.abs(g.vega), 0)}</td>
                 </tr>
               ))}
             </tbody>

@@ -63,10 +63,21 @@ const ACTIONS: Command[] = [
 type KeywordMap = ReadonlyMap<string, string>;
 let keywordCache: KeywordMap | null = null;
 
-function buildCommands(keywords: KeywordMap | null): Command[] {
+/**
+ * The 40 option structures (v4.3 wave 2) reach the palette through the SAME
+ * lazy import as the keyword registry — they are help content, not screens, so
+ * they must not be in this file's module graph at page load either. Each one
+ * navigates to its deep-link anchor on the help desk, `/help#options-<id>`.
+ * They join the pool only once something has been typed: they are found by
+ * name, and an empty palette is a list of places, not of reading.
+ */
+let optionsCache: Command[] | null = null;
+
+function buildCommands(keywords: KeywordMap | null, options: Command[] | null): Command[] {
   return [
     ...NAV_ITEMS.map((n) => ({ label: n.label, group: n.group, href: n.href, keywords: keywords?.get(n.href) ?? n.label.toLowerCase() })),
     ...ACTIONS,
+    ...(options ?? []),
   ];
 }
 
@@ -129,6 +140,7 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
   const [cats, setCats] = React.useState<SourceKey[]>([]);
   const [hits, setHits] = React.useState<Hits | null>(null);
   const [keywords, setKeywords] = React.useState<KeywordMap | null>(keywordCache);
+  const [optionCmds, setOptionCmds] = React.useState<Command[] | null>(optionsCache);
 
   // Close resets the query so every open starts fresh (no setState-in-effect needed).
   const close = React.useCallback(() => {
@@ -158,30 +170,43 @@ export function CommandPalette({ workspace = "both", accountId = 0 }: { workspac
     };
   }, [close]);
 
-  // Keywords: one lazy import per session, on the first open.
+  // Keywords AND the option structures: one lazy import pair per session, on
+  // the first open. Neither registry is in this file's module graph until then.
   React.useEffect(() => {
-    if (!open || keywords) return;
+    if (!open || (keywords && optionCmds)) return;
     let live = true;
-    import("@/lib/domain/help-content").then((m) => {
+    Promise.all([import("@/lib/domain/help-content"), import("@/lib/domain/options-help")]).then(([m, opts]) => {
       keywordCache = new Map(NAV_ITEMS.map((n) => [n.href, deriveKeywords(m.HELP_ENTRIES, n.href, n.label)]));
-      if (live) setKeywords(keywordCache);
+      optionsCache = opts.OPTIONS_HELP.map((e) => ({
+        label: e.name,
+        group: "Options",
+        href: `/help#${opts.optionsAnchorId(e.id)}`,
+        keywords: [e.id.replace(/-/g, " "), e.style, ...e.keywords].join(" ").toLowerCase(),
+      }));
+      if (!live) return;
+      setKeywords(keywordCache);
+      setOptionCmds(optionsCache);
     });
     return () => {
       live = false;
     };
-  }, [open, keywords]);
+  }, [open, keywords, optionCmds]);
 
   const q = query.trim();
   const ql = q.toLowerCase();
   const commands = React.useMemo(() => {
-    const pool = commandsFor(buildCommands(keywords), workspace);
+    // The option structures belong to the F&O book, so an equity-only
+    // workspace does not offer them — the same rule the /strategies screen
+    // itself follows.
+    const opts = ql && screenVisible("/strategies", workspace) ? optionCmds : null;
+    const pool = commandsFor(buildCommands(keywords, opts), workspace);
     if (!ql) return pool;
     return pool
       .map((c) => ({ c, r: rank(c, ql) }))
       .filter((x) => x.r >= 0)
       .sort((a, b) => a.r - b.r)
       .map((x) => x.c);
-  }, [ql, workspace, keywords]);
+  }, [ql, workspace, keywords, optionCmds]);
 
   // ── Search (debounced, aborted on change) ────────────────────────────────
   const searching = open && q.length >= MIN_QUERY;

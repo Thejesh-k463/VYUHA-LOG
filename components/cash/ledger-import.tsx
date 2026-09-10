@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { inr } from "@/lib/format";
+import { inr, signedNumber } from "@/lib/format";
 import { Upload, TriangleAlert } from "lucide-react";
 
 interface Mtf {
@@ -165,7 +165,10 @@ export function LedgerImport() {
                   <div>
                     <div className="text-[0.6875rem] text-muted-foreground">vs estimate</div>
                     <div className="font-mono text-sm tabular-nums">
-                      {m.deltaPct == null ? "—" : `${m.deltaPct > 0 ? "+" : ""}${m.deltaPct}%`}
+                      {/* R8: the "Difference" ₹ cell beside this states the SAME fact, so the
+                          percentage borrows its sign rather than choosing one — a broker
+                          overcharge that rounds to 0.0% still reads as an overcharge. */}
+                      {m.deltaPct == null ? "—" : `${signedNumber(m.deltaPct, { from: m.delta })}%`}
                     </div>
                   </div>
                 </div>

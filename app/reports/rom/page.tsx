@@ -9,7 +9,7 @@ import { getMarginRates } from "@/lib/queries/margin";
 import { getPlaybooks } from "@/lib/queries/playbooks";
 import { romReport, capitalEfficiencyVerdict, type RomTrade, type RomGroup } from "@/lib/analytics/rom";
 import { SEGMENT_LABELS, type Segment } from "@/lib/domain/constants";
-import { inr, num } from "@/lib/format";
+import { inr, num, signedPct } from "@/lib/format";
 import { TriangleAlert, Info } from "lucide-react";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -17,7 +17,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 export const dynamic = "force-dynamic";
 
 const pnlCls = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
-const pct = (v: number | null, dp = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(dp)}%`);
+// R8 — every percentage on this page is P&L ÷ capital blocked, so it BORROWS
+// the sign of the rupee P&L it is printed beside (`signedPct`) instead of
+// choosing its own (the deleted local `pct` printed "+" for v >= 0, so a zero
+// P&L read "+0.00%" beside a plain "₹0"). ROM is null-safe via signedPct.
 
 function GroupTable({ rows, empty }: { rows: RomGroup[]; empty: string }) {
   if (rows.length === 0) return <EmptyState variant="journal" title={empty} />;
@@ -41,10 +44,10 @@ function GroupTable({ rows, empty }: { rows: RomGroup[]; empty: string }) {
             <ReportTd align="right">{g.trades}</ReportTd>
             <ReportTd align="right" className={pnlCls(g.netPnl)}>{inr(g.netPnl, { decimals: 0 })}</ReportTd>
             <ReportTd align="right" muted>{inr(g.totalCapital, { decimals: 0 })}</ReportTd>
-            <ReportTd align="right" className={g.romPct != null ? pnlCls(g.romPct) : ""}>{pct(g.romPct)}</ReportTd>
-            <ReportTd align="right" className={g.romPerDayPct != null ? pnlCls(g.romPerDayPct) : ""}>{pct(g.romPerDayPct, 3)}</ReportTd>
+            <ReportTd align="right" className={g.romPct != null ? pnlCls(g.romPct) : ""}>{signedPct(g.netPnl, g.romPct)}</ReportTd>
+            <ReportTd align="right" className={g.romPerDayPct != null ? pnlCls(g.romPerDayPct) : ""}>{signedPct(g.netPnl, g.romPerDayPct, 3)}</ReportTd>
             <ReportTd align="right" className={g.annualisedDisplayPct != null ? pnlCls(g.annualisedDisplayPct) : ""}>
-              {pct(g.annualisedDisplayPct, 1)}
+              {signedPct(g.netPnl, g.annualisedDisplayPct, 1)}
               {g.annualisedIsExtrapolation && <span className="ml-1 text-[10px] text-warning" title="Linear extrapolation left the meaningful range — capped">*</span>}
             </ReportTd>
             <ReportTd align="right" muted>{num(g.avgDaysHeld, 1)}</ReportTd>
@@ -137,15 +140,15 @@ export default function RomReportPage() {
             />
             <KpiCard
               label="ROM"
-              value={pct(o.romPct)}
+              value={signedPct(o.netPnl, o.romPct)}
               valueClassName={o.romPct != null ? pnlCls(o.romPct) : ""}
               sub="P&L ÷ capital blocked"
             />
             <KpiCard
               label="ROM / day"
-              value={pct(o.romPerDayPct, 3)}
+              value={signedPct(o.netPnl, o.romPerDayPct, 3)}
               valueClassName={o.romPerDayPct != null ? pnlCls(o.romPerDayPct) : ""}
-              sub={o.annualisedDisplayPct != null ? `${pct(o.annualisedDisplayPct, 0)}${o.annualisedIsExtrapolation ? "*" : ""} annualised` : "—"}
+              sub={o.annualisedDisplayPct != null ? `${signedPct(o.netPnl, o.annualisedDisplayPct, 0)}${o.annualisedIsExtrapolation ? "*" : ""} annualised` : "—"}
             />
           </section>
 
@@ -229,8 +232,8 @@ export default function RomReportPage() {
                         <ReportTd align="right" className={pnlCls(r.netPnl)}>{inr(r.netPnl, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" muted>{inr(r.capital, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" muted>{r.daysHeld}</ReportTd>
-                        <ReportTd align="right" className={r.romPct != null ? pnlCls(r.romPct) : ""}>{pct(r.romPct)}</ReportTd>
-                        <ReportTd align="right" className={r.romPerDayPct != null ? pnlCls(r.romPerDayPct) : ""}>{pct(r.romPerDayPct, 3)}</ReportTd>
+                        <ReportTd align="right" className={r.romPct != null ? pnlCls(r.romPct) : ""}>{signedPct(r.netPnl, r.romPct)}</ReportTd>
+                        <ReportTd align="right" className={r.romPerDayPct != null ? pnlCls(r.romPerDayPct) : ""}>{signedPct(r.netPnl, r.romPerDayPct, 3)}</ReportTd>
                         <ReportTd className="text-[0.6875rem] text-muted-foreground">
                           {r.basis}
                           {r.rateAssumed && <span className="ml-1 text-warning">⚠ assumed</span>}

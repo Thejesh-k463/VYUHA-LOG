@@ -9,6 +9,8 @@
 // NOT do" is part of the description wherever the product deliberately refuses
 // something, because those refusals are design, not gaps.
 
+import { OPTIONS_HELP, searchOptionsHelp, type OptionsHelpEntry } from "@/lib/domain/options-help";
+
 export interface HelpEntry {
   href: string;
   title: string;
@@ -87,9 +89,15 @@ export const HELP_ENTRIES: HelpEntry[] = [
     title: "Option Strategies",
     answers: "What do my open option legs add up to?",
     body: [
-      "Groups open legs by underlying and expiry, recognises the structure (straddle, strangle, spread, iron condor…), and draws the exact expiry payoff with breakevens and max profit/loss.",
+      // v4.3 wave 2. The old sentence said "by underlying and expiry", which
+      // described a grouping the catalogue no longer uses: expiry became a LEG
+      // attribute so a calendar stays one position instead of splitting in two.
+      "Groups your open legs per underlying symbol, carrying expiry as an attribute of each leg rather than as a second grouping key — so a calendar or a diagonal stays one position instead of splitting into two.",
+      "Recognises the structure against a catalogue of 40 named shapes — verticals, straddles, strangles, condors, butterflies, ratios, backspreads, calendars, synthetics, the box and the jade lizard among them — and draws the exact expiry payoff with breakevens, max profit and max loss. On a group carrying more than one expiry the curve is drawn at the nearest one, the far legs are valued at intrinsic only, and the card states that instead of printing a confident max profit.",
+      "A shelf of your own saved shapes sits beside the recognised ones, so a structure you trade repeatedly is named the way you name it. The shelf is Pro; the grouping, the recognition and the payoff are free.",
+      "Every one of the 40 shapes is written up in the Options section of the Help Desk — the legs, how the payoff is computed, who uses it and what it risks — free on every tier, and each card here links straight to its entry.",
     ],
-    keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven"],
+    keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven", "catalogue", "shapes", "butterfly", "calendar", "synthetic", "jade lizard", "shelf"],
   },
   {
     href: "/options-journal",
@@ -513,8 +521,37 @@ export const HELP_ENTRIES: HelpEntry[] = [
   },
 ];
 
+/**
+ * ONE search over BOTH registries (v4.3 wave 2).
+ *
+ * The help desk grew a second kind of entry — the 40 option structures in
+ * `lib/domain/options-help.ts`, which are not screens and deliberately carry no
+ * href (a ghost href would fail the join against NAV_ITEMS above). Rather than
+ * leave the desk and the palette to search two registries and merge them by
+ * hand in two places, `searchHelp(query)` returns the TYPED UNION of both, in
+ * one order: screens first, then structures.
+ *
+ * The two-argument form is unchanged — it is what the screen grid filters with,
+ * and it still returns `HelpEntry[]`.
+ */
+export type HelpHit =
+  | { kind: "screen"; entry: HelpEntry }
+  | { kind: "options"; entry: OptionsHelpEntry };
+
 /** Case-insensitive search across title, answers, body and keywords. */
-export function searchHelp(entries: HelpEntry[], query: string): HelpEntry[] {
+export function searchHelp(query: string): HelpHit[];
+export function searchHelp(entries: HelpEntry[], query: string): HelpEntry[];
+export function searchHelp(a: HelpEntry[] | string, b?: string): HelpEntry[] | HelpHit[] {
+  if (typeof a === "string") {
+    return [
+      ...searchScreens(HELP_ENTRIES, a).map((entry) => ({ kind: "screen", entry }) as const),
+      ...searchOptionsHelp(OPTIONS_HELP, a).map((entry) => ({ kind: "options", entry }) as const),
+    ];
+  }
+  return searchScreens(a, b ?? "");
+}
+
+function searchScreens(entries: HelpEntry[], query: string): HelpEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return entries;
   return entries.filter((e) =>

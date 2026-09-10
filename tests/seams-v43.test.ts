@@ -35,7 +35,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * 9 | removeDuplicateCopy(broker,hash,acc)| app/data-quality/actions.ts:33 (B4)           | lib/import/commit.ts lot book (B3)            | row ids scoped to ONE account    | S5 · B4's delete must not touch account A
  *10 | trades.is_open after an auto-close  | lib/import/commit.ts applyLotCloses (B3)      | lib/analytics/positions.ts:97 (B5, /risk)     | boolean column → OpenPosition[]  | S6 · a closed lot leaves the risk open set
  *11 | pct(value, decimals)                | lib/format.ts:32 (B5, pre-existing)           | every % surface outside B5                    | percent (NOT ppm), no "+" sign   | S7 · pct() is byte-identical in behaviour
- *12 | app/reports/rom/page.tsx local pct  | app/reports/rom/page.tsx:20 (unowned)         | — (recorded divergence, not fixed this wave)  | percent, WITH a "+"              | S7 · rom keeps its own helper (recorded)
+ *12 | signedPct(rupees, pct, decimals)     | lib/format.ts:59 (B5)                         | app/reports/rom/page.tsx:47 (B6, wave 2)      | percent, sign BORROWED from ₹    | S7 · rom's local pct is gone (wave 2)
  *13 | the splash tagline + struck phrases | src-tauri/loading/index.html:73 (B1)          | tests/positioning-copy.test.ts STRUCK scan    | literal sentence, UTF-8          | S8 · the splash crosses the positioning scan
  *14 | every new user-facing string        | all five builders' files                      | the SEBI copy rule                            | prose                            | S9 · no advice verb entered the wave
  *
@@ -697,16 +697,22 @@ describe("S7 · pct() is byte-identical in behaviour after B5 added three neighb
     expect(pct(1.23).startsWith("+")).toBe(false);
   });
 
-  it("app/reports/rom/page.tsx still runs its OWN pct — recorded, not fixed this wave", () => {
+  it("app/reports/rom/page.tsx no longer runs its OWN pct — CLOSED in wave 2 (B6)", () => {
     const src = read("app/reports/rom/page.tsx");
     const imp = /import \{([^}]*)\} from "@\/lib\/format";/.exec(src);
     expect(imp, "rom stopped importing from lib/format at all").not.toBeNull();
     const imported = imp![1].split(",").map((s) => s.trim()).filter(Boolean).sort();
-    // If `pct` ever appears here, this divergence has been FIXED and the
-    // rendered percentages on /reports/rom change (rom prints "+1.23%",
-    // lib/format prints "1.23%") — which is a wave, not a silent edit.
-    expect(imported).toEqual(["inr", "num"]);
-    expect(/const pct = \(v: number \| null, dp = 2\)/.test(src), "rom's local helper is gone").toBe(true);
+    // The divergence recorded in wave 1 is FIXED: rom's percentages are ROM
+    // (P&L ÷ capital blocked), printed beside the rupee P&L in the same row,
+    // so they borrow that rupee sign via signedPct instead of stating their
+    // own — and a zero P&L no longer reads "+0.00%" beside a plain "₹0".
+    expect(imported).toContain("signedPct");
+    expect(/const pct = \(v: number \| null, dp = 2\)/.test(src), "rom's local pct is back").toBe(false);
+    // `\r?\n`: Windows CI checks this file out CRLF.
+    expect(src).toMatch(/signedPct\(g\.netPnl, g\.romPct\)/);
+    expect(src).toMatch(/const pnlCls = [^\r\n]*\r?\n\/\/ R8/);
+    // `pct` itself is untouched for every other caller (row 11 above).
+    expect(pct(1.23)).toBe("1.23%");
   });
 });
 

@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { HelpDesk } from "@/components/system/help-desk";
 import { HELP_ENTRIES } from "@/lib/domain/help-content";
+import { OPTIONS_HELP } from "@/lib/domain/options-help";
 import { NAV_GROUPS, NAV_ITEMS } from "@/components/layout/nav-config";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,10 @@ export default function HelpPage() {
     <>
       <PageHeader title="Help Desk" description="What every part of Vyuha does, what it answers, and what it deliberately won't do." />
       <div className="p-6">
-        <HelpDesk entries={HELP_ENTRIES} groups={groups} />
+        {/* The Options catalogue is a SECOND kind of entry — 40 structures, not
+            screens, so they carry no href and never reach the NAV join above.
+            They render as their own highlighted section at the top of the desk. */}
+        <HelpDesk entries={HELP_ENTRIES} groups={groups} options={OPTIONS_HELP} />
       </div>
     </>
   );

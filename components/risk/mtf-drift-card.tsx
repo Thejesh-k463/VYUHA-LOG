@@ -1,7 +1,7 @@
 import { RISK_LIST_CAP, CappedNote } from "@/components/ui/capped-note";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { inr } from "@/lib/format";
+import { inr, signedNumber } from "@/lib/format";
 import type { MtfDriftRow } from "@/lib/risk/mtf-drift";
 
 /**
@@ -63,7 +63,10 @@ export function MtfDriftCard({
                       <td className="px-2 py-1.5 text-right tabular-nums">{d.storedOwnPct}%</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{d.currentPct}%</td>
                       <td className={`px-2 py-1.5 text-right tabular-nums ${d.deltaPct > 0 ? "text-warning" : "text-profit"}`}>
-                        {d.deltaPct > 0 ? "+" : ""}{d.deltaPct} pts
+                        {/* R8 at a NON-percentage site: this is a percentage-POINT delta with no
+                            rupee figure stating the same fact (the top-up column is a different
+                            one), so it keeps its OWN sign — signedNumber, zero unsigned. */}
+                        {signedNumber(d.deltaPct)} pts
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
                         {d.topUpAtCurrent > 0 ? inr(d.topUpAtCurrent, { decimals: 0 }) : "—"}

@@ -27,7 +27,26 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.3.0 WAVE 1 AUDITED (round 1: 12 → 12 → FIX WAVE 1 built 2026-09-10; `npm run verify` EXIT 0 — 371 files / 7,272 passed / 35 skipped; the fix-wave commit sha and its CI are recorded in `docs/DECISIONS.md` "2026-09-10 — v4.3.0 audit round 1" and the ledger once pushed; NOT re-audited, NOT bumped, NOT tagged). Wave 1 = `265d684` on `1159a34` (its tree's CI 34336204805 SUCCESS 6/6 on `521dc99`). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+## 2. Current state — v4.3.0 WAVE 2 BUILT 2026-09-10 IST evening (`npm run verify` EXIT 0 — **378 files / 7,598 passed / 35 skipped**; wave 1 `265d684` → audit round 1 (12 → 12) → fix wave `beaea48` + CRLF cap `786d288` (CI 34465570290 6/6) → audit round 2 (6 → 6) → fix wave `6198c8b` (CI 34467572963 6/6) → wave 2 = the commit on top of `6198c8b` whose sha and CI are in the ledger; **wave 2 NOT yet audited, NOT bumped, NOT tagged**). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+
+> **Wave 2 — what changed, the file that makes each true** (`docs/DECISIONS.md` "2026-09-10 — v4.3.0 wave 2"): the 40-row
+> `StrategyDef` catalogue + `matchStrategy` + per-symbol grouping with split-on-match-failure + UL legs + §7 nearest-expiry with a
+> separate `notComputed` discriminator + §6 cap labels `lib/analytics/strategy-catalogue.ts`, `lib/analytics/strategies.ts`
+> (`tests/strategy-catalogue.test.ts`, `tests/strategies.test.ts`; the 16 legacy names pinned byte-identical) · **migration 0071**
+> `strategy_shelf_json` (a preference: travels in backups, in `BASELINE_SETTINGS_FIELDS`) + `lib/domain/strategy-shelf.ts`
+> (envelope `{v:1,selected}`, the 8-tile `DEFAULT_SHELF`, the repo's first undo/redo reducer) (`tests/strategy-shelf.test.ts`) ·
+> `POST /api/strategies/shelf` (Pro-only, zod union, one audit row, re-read response) `app/api/strategies/shelf/route.ts` +
+> `PRO_FEATURES` `/strategies` **partial** (`tests/strategies-shelf-route.test.ts`, `tests/pro-gating.test.ts`) · the screen:
+> `getOpenUnderlyingPositions()` `lib/queries/trades.ts`, `withholdForFree` before the RSC payload (free = "Custom (n legs)" +
+> ProLock, name never on the wire), shelf strip / browse drawer / undo / redo / restore, the accent "How this works" link
+> `app/strategies/page.tsx`, `components/strategies/*` (`tests/strategies-page.test.ts`, `tests/strategies-copy.test.ts`) · the
+> **Options Help Desk**: 40 four-part entries FREE, highlighted section atop `/help`, `#options-<id>` anchors, union search +
+> palette `lib/domain/options-help.ts`, `lib/domain/help-content.ts`, `components/system/help-desk.tsx`,
+> `components/system/command-palette.tsx` (`tests/options-help.test.ts`) · SEBI F&O line once on `/strategies` and once atop
+> the Options help (`SEBI_FNO_FACTS`, no URL) · the nine remaining independent-sign sites → `lib/format.ts` `signedNumber`
+> (`tests/risk-signs.test.ts`; the `seams-v43` rom pin flipped) · seam file `tests/seams-v43-wave2.test.ts` (49 + 4). **Owed before
+> the tag:** the six-dimension audit + skeptic over wave 2, fix waves with their own audits, the bump (0071 paragraph, CHANGELOG,
+> README "Now", chips), the 11 release steps, the owner's laptop smoke test.
 
 > **Fix wave 1 (audit round 1, 2026-09-10) — what changed, the file that makes each true:** the lot identity model — a lot keeps
 > its born-with `dedupHash`, consuming SELLs become `dedup-alias:` notes, `lotIdentityHashes` / `isLotIdentityFrozen` /
@@ -62,14 +81,15 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > · seam file `tests/seams-v43.test.ts` (23). **No migration in wave 1.** `package-lock.json` untouched.
 >
 > **Why the version is 4.3.0, not 4.2.1:** the owner's Option Strategies ruling (a user-selected shelf persisted in a settings
-> column = migration 0071) makes the release a minor by his own scope ruling. **Wave 2** (not started): the ≈35-shape data-driven
-> catalogue, the shelf/picker with undo/redo/restore, the Options Help Desk (FREE, highlighted; the rest PRO), the SEBI loss-study
-> disclosure, the underlying leg read-only, the eight remaining independent-sign sites — research pack
+> column = migration 0071) makes the release a minor by his own scope ruling. **Wave 2 is BUILT** (paragraph above): the 40-shape
+> data-driven catalogue, the shelf/picker with undo/redo/restore, the Options Help Desk (FREE, highlighted; the rest PRO), the
+> SEBI loss-study disclosure, the underlying leg read-only, the sign sites — research pack
 > `VYUHA-LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md`, rulings in 06-ANSWERS "v4.3.0 rulings — Option Strategies
-> catalogue". **Owed before the tag:** the six-dimension audit + skeptic over `1159a34..265d684`, wave 2 with its own seam pass
-> and audit, the bump, the 11 release steps, the owner's laptop smoke test (catch-up pull over the 5 Sept gap, duplicate removal,
-> auto-close of the stale Dhan rows, the spot chip, both feeds). Every deviation a builder took is in `docs/DECISIONS.md`
-> "2026-09-09 — v4.3.0 wave 1"; the next session starts from `NEXT-SESSION-CONTINUATION.md` §0.
+> catalogue" + "v4.3.0 wave-2 pre-build rulings". **Owed before the tag:** the six-dimension audit + skeptic over wave 2 and its
+> fix waves, the bump, the 11 release steps, the owner's laptop smoke test (catch-up pull over the 5 Sept gap, duplicate removal,
+> auto-close of the stale Dhan rows, the spot chip, the strategy screen with his own option book, both feeds). Every deviation a
+> builder took is in `docs/DECISIONS.md` "2026-09-09 — v4.3.0 wave 1", "2026-09-10 — v4.3.0 audit round 1", "… audit round 2"
+> and "… wave 2"; the next session starts from `NEXT-SESSION-CONTINUATION.md` §0.
 
 ## 2-prev. v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585) — still the live release
 

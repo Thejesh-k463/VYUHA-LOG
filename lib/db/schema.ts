@@ -913,6 +913,18 @@ export const settings = sqliteTable("settings", {
   // SETTINGS_MACHINE_COLUMNS (lib/backup-format.ts) and outside the settings
   // baseline — a restored backup must never inherit somebody's acceptance.
   liveFeedAckJson: text("live_feed_ack_json"),
+  // Option strategy shelf (v4.3, migration 0071) — the ids this person keeps
+  // out of the full catalogue, as a versioned envelope
+  // `{"v":1,"selected":[…]}`, read only through `parseShelf()`
+  // (lib/domain/strategy-shelf.ts), which discards an alien version rather than
+  // half-reading it. NOT machine state, and deliberately the opposite call to
+  // liveFeedAckJson above: a consent is a statement a person made on a machine,
+  // whereas a shelf is a PREFERENCE — the same kind of thing as theme or
+  // density. So it TRAVELS in a backup (absent from SETTINGS_MACHINE_COLUMNS)
+  // and it sits in BASELINE_SETTINGS_FIELDS, so "back to my defaults" returns
+  // the shelf the user saved. Null = the DEFAULT_SHELF eight; storing a copy of
+  // them would freeze this release's list into every upgraded database.
+  strategyShelfJson: text("strategy_shelf_json"),
   selectedAccountId: integer("selected_account_id").notNull().default(0), // 0 = all accounts
   updatedAt: text("updated_at").notNull().default(now),
 });

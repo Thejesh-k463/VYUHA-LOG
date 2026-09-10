@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { BASELINE_SETTINGS_FIELDS, pickBaselineSettings, diffAgainstBaseline, buildBaseline } from "@/lib/domain/settings-baseline";
+// PURE (no DB) — safe to import statically beside openTempDb; see its header.
+import { SETTINGS_MACHINE_COLUMNS } from "@/lib/backup-format";
 
 /**
  * "My Default Settings". The property that matters most: a restore returns
@@ -28,6 +30,17 @@ describe("the preference/state split (pure)", () => {
     for (const forbidden of ["pnlRolledIn", "licenseKey", "trialStartedAt", "clockHighWaterMark", "lastAutoMtmDate", "selectedAccountId", "goLiveDate", "onboardingCompletedAt", "updatedAt", "id"]) {
       expect(fields, `${forbidden} is state, not a preference`).not.toContain(forbidden);
     }
+  });
+
+  it("the option strategy shelf (v4.3, migration 0071) is a preference on BOTH lists", () => {
+    // One choice, two lists, and they have to agree: a shelf is a CHOICE about
+    // the workspace (like theme and density), so "back to my defaults" returns
+    // it AND a backup carries it. Putting it in SETTINGS_MACHINE_COLUMNS would
+    // blank it on every dump and reset the user's shelf on every restore, with
+    // nothing on screen to say so — which is why the exclusion is pinned here
+    // rather than left to the reader of two separate files.
+    expect(BASELINE_SETTINGS_FIELDS as readonly string[]).toContain("strategyShelfJson");
+    expect(SETTINGS_MACHINE_COLUMNS as readonly string[]).not.toContain("strategyShelfJson");
   });
 
   it("picks only baseline fields from a full row", () => {

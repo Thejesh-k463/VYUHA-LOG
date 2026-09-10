@@ -1,0 +1,334 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  OPTIONS_HELP,
+  OPTIONS_HELP_FOOTER,
+  OPTIONS_STRATEGY_IDS,
+  OPTIONS_STYLES,
+  optionsAnchorId,
+  rupeesInLakh,
+  searchOptionsHelp,
+  sebiRealityLine,
+  type OptionsHelpEntry,
+} from "@/lib/domain/options-help";
+import { searchHelp, type HelpHit } from "@/lib/domain/help-content";
+import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
+
+/**
+ * THE OPTIONS HELP DESK (v4.3 wave 2, B5).
+ *
+ * Forty structures, described and never prescribed. Four things are asserted
+ * here that nothing else in the estate can assert:
+ *
+ *  1. THE ID LIST IS THE CLASSIFIER'S. Help that names a shape the classifier
+ *     cannot produce — or misses one it can — is help for a different app.
+ *     The list is joined in both directions, and against B1's own module the
+ *     moment that file is on disk.
+ *  2. EVERY ENTRY HAS ALL FOUR PARTS. A missing `payoff` is not a shorter
+ *     card, it is an undescribed structure.
+ *  3. THE COPY RULE, STRICTLY, SCOPED TO THIS FILE. `tests/help-content.test.ts`
+ *     scopes its own SEBI gate to the Upstox sentences on purpose — run over
+ *     the whole registry it reports refusals ("names no trade to take") as
+ *     offenders. That gate is NOT widened here; this one is a second, strict
+ *     gate over `lib/domain/options-help.ts` alone, where every sentence was
+ *     written to it.
+ *  4. THE ANCHORS EXIST. B4's strategy cards deep-link to `/help#options-<id>`;
+ *     an anchor that is not rendered is a link into the middle of a page.
+ */
+
+const ROOT = path.resolve(__dirname, "..");
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const MODULE = "lib/domain/options-help.ts";
+const DESK = "components/system/help-desk.tsx";
+const PALETTE = "components/system/command-palette.tsx";
+
+const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+const parts = (e: OptionsHelpEntry) => [e.what, e.payoff, e.whoUses, e.risk];
+const prose = (e: OptionsHelpEntry) => parts(e).join(" ");
+
+describe("the catalogue and the help describe ONE list of shapes", () => {
+  it("carries exactly 40 entries, one per frozen id, with no duplicates", () => {
+    expect(OPTIONS_STRATEGY_IDS).toHaveLength(40);
+    expect(OPTIONS_HELP).toHaveLength(40);
+    const ids = OPTIONS_HELP.map((e) => e.id);
+    expect(new Set(ids).size, "a duplicate id would render two cards on one anchor").toBe(40);
+  });
+
+  it("every frozen id has an entry, and no entry describes a shape not on the list", () => {
+    const ids = new Set(OPTIONS_HELP.map((e) => e.id));
+    const missing = OPTIONS_STRATEGY_IDS.filter((id) => !ids.has(id));
+    expect(missing, `ids with no help entry: ${missing.join(", ")}`).toEqual([]);
+    const frozen = new Set(OPTIONS_STRATEGY_IDS);
+    const ghosts = OPTIONS_HELP.filter((e) => !frozen.has(e.id)).map((e) => e.id);
+    expect(ghosts, `help for shapes the catalogue does not name: ${ghosts.join(", ")}`).toEqual([]);
+  });
+
+  it("is in the catalogue's own order", () => {
+    expect(OPTIONS_HELP.map((e) => e.id)).toEqual([...OPTIONS_STRATEGY_IDS]);
+  });
+
+  /**
+   * B1 owns `lib/analytics/strategy-catalogue.ts` this wave. Until it lands the
+   * list here is the contract; the moment it lands this compares the two by
+   * TEXT (no import, so a half-written module cannot redden the help desk).
+   */
+  it("matches B1's STRATEGY_IDS once that module is on disk", () => {
+    const rel = "lib/analytics/strategy-catalogue.ts";
+    if (!fs.existsSync(path.join(ROOT, rel))) {
+      expect(OPTIONS_STRATEGY_IDS, "the frozen list is the contract until B1 lands").toHaveLength(40);
+      return;
+    }
+    const src = read(rel);
+    const block = /STRATEGY_IDS[^=]*=\s*\[([\s\S]*?)\]/.exec(src);
+    expect(block, "STRATEGY_IDS is no longer an array literal in " + rel).not.toBeNull();
+    const theirs = [...block![1].matchAll(/["'`]([a-z0-9-]+)["'`]/g)].map((m) => m[1]);
+    expect(theirs, "B1's list and the help desk's list have drifted").toEqual([...OPTIONS_STRATEGY_IDS]);
+  });
+
+  it("marks exactly the five beginner rows of §4 (1, 2, 5, 6, 10)", () => {
+    expect(OPTIONS_HELP.filter((e) => e.beginner).map((e) => e.id)).toEqual([
+      "long-call",
+      "long-put",
+      "covered-call",
+      "protective-put",
+      "bull-call-spread",
+    ]);
+  });
+
+  it("every entry carries a style the section can render", () => {
+    for (const e of OPTIONS_HELP) expect(OPTIONS_STYLES, e.id).toContain(e.style);
+    // Every style is used — an empty group would render as a missing heading.
+    for (const s of OPTIONS_STYLES) {
+      expect(OPTIONS_HELP.some((e) => e.style === s), `no entry has style ${s}`).toBe(true);
+    }
+  });
+});
+
+describe("every entry is actually written", () => {
+  it("has all four parts, each a real paragraph, and at least 60 words in all", () => {
+    const short: string[] = [];
+    const thin: string[] = [];
+    for (const e of OPTIONS_HELP) {
+      const labels = ["what", "payoff", "whoUses", "risk"];
+      parts(e).forEach((p, i) => {
+        if (typeof p !== "string" || words(p) < 10) thin.push(`${e.id}.${labels[i]} (${words(p ?? "")} words)`);
+      });
+      if (words(prose(e)) < 60) short.push(`${e.id} (${words(prose(e))} words)`);
+    }
+    expect(thin, `parts that are missing or one-liners:\n${thin.join("\n")}`).toEqual([]);
+    expect(short, `entries under the 60-word floor:\n${short.join("\n")}`).toEqual([]);
+  });
+
+  it("averages about 120 words an entry — a card, not a pamphlet", () => {
+    const counts = OPTIONS_HELP.map((e) => words(prose(e)));
+    const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+    expect(Math.min(...counts), "shortest entry").toBeGreaterThanOrEqual(60);
+    expect(avg, `avg ${avg.toFixed(1)} words`).toBeGreaterThan(100);
+    expect(avg, `avg ${avg.toFixed(1)} words`).toBeLessThan(180);
+  });
+
+  it("every entry has keywords the search can reach it by", () => {
+    for (const e of OPTIONS_HELP) expect(e.keywords.length, e.id).toBeGreaterThan(2);
+  });
+});
+
+/**
+ * THE COPY RULE. Descriptive only. The nouns do the work — this is the owner's
+ * own register from the Meridian risk card (§1.4 of the research), and §6's
+ * list of words that must not appear on an option payoff surface.
+ */
+describe("SEBI copy rule — strict, and scoped to options-help.ts alone", () => {
+  const BANNED =
+    /\b(should|must|recommend(s|ed|ation|ations)?|suggest(s|ed|ion|ions)?|consider(s|ed|ing)?|advice|advise[sd]?|tips?|opportunit\w*|guarantee\w*|expected|ideal|best|safe|buy|buys|buying|sell|sells|selling|seller|target|will|shall)\b/i;
+
+  it("no entry, in any of its four parts, uses the vocabulary of advice", () => {
+    const offenders: string[] = [];
+    for (const e of OPTIONS_HELP) {
+      for (const p of parts(e)) {
+        const m = BANNED.exec(p);
+        if (m) offenders.push(`${e.id}: "${m[0]}" in "${p.slice(0, 90)}…"`);
+      }
+    }
+    expect(offenders, `prescriptive vocabulary in the options catalogue:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("the section's SEBI line is held to the same rule", () => {
+    expect(BANNED.test(sebiRealityLine(SEBI_FNO_FACTS))).toBe(false);
+  });
+
+  it("the gate can fire — it is not a dead regex", () => {
+    expect(BANNED.test("A trader should buy this spread when the trend is best.")).toBe(true);
+    expect(BANNED.test("Consider the recommended target for a guaranteed profit.")).toBe(true);
+    expect(BANNED.test("This shape is a safe opportunity you must not sell."), "the scan is dead").toBe(true);
+    // …and it does not fire on the register the entries ARE written in.
+    expect(BANNED.test("A trader who expects a large move uses this volatility shape.")).toBe(false);
+    expect(BANNED.test("Max loss is the debit, computed at underlying = 0.")).toBe(false);
+  });
+
+  it("states the caps in the catalogue's own nouns", () => {
+    // §4 rows whose max profit or max loss is unbounded, and §6's zero-price cap.
+    const UNLIMITED = [
+      "long-call",
+      "short-call",
+      "protective-put",
+      "covered-put",
+      "long-straddle",
+      "short-straddle",
+      "long-strangle",
+      "short-strangle",
+      "call-ratio-spread",
+      "call-backspread",
+      "synthetic-long-stock",
+      "synthetic-short-stock",
+      "split-strike-combo",
+      "strip-strap",
+      "guts",
+    ];
+    const ZERO_FLOOR = [
+      "long-put",
+      "short-put",
+      "covered-call",
+      "protective-call",
+      "long-straddle",
+      "put-ratio-spread",
+      "put-backspread",
+      "synthetic-long-stock",
+      "synthetic-short-stock",
+      "jade-lizard",
+    ];
+    const by = (id: string) => OPTIONS_HELP.find((e) => e.id === id)!;
+    for (const id of UNLIMITED) {
+      expect(by(id).payoff, `${id} has an unbounded side and does not say Unlimited`).toContain("Unlimited");
+    }
+    for (const id of ZERO_FLOOR) {
+      expect(prose(by(id)), `${id} caps at the price floor and does not say where`).toContain(
+        "computed at underlying = 0",
+      );
+    }
+    // A bounded shape claims neither.
+    expect(prose(by("iron-condor"))).not.toContain("Unlimited");
+  });
+
+  it("carries exactly ONE STT-on-exercise sentence per entry, on intrinsic value", () => {
+    for (const e of OPTIONS_HELP) {
+      const hits = prose(e).match(/STT/g) ?? [];
+      expect(hits.length, `${e.id} states STT ${hits.length} times — it is one sentence per entry`).toBe(1);
+      expect(prose(e), `${e.id} does not say what the STT is charged ON`).toMatch(/STT on intrinsic value/);
+    }
+  });
+
+  it("names no URL anywhere — SEBI_FNO_FACTS publishes none and none is invented", () => {
+    const src = read(MODULE);
+    expect(src, "a URL was invented for the SEBI figures").not.toMatch(/https?:\/\/|www\.|sebi\.gov\.in/);
+    expect(sebiRealityLine(SEBI_FNO_FACTS)).not.toMatch(/https?:\/\//);
+    const desk = read(DESK);
+    // lastIndexOf: the footer constant is also named in the import block at the
+    // top of the file, and slicing to THAT would read an empty section.
+    const section = desk.slice(desk.indexOf('id="options-help"'), desk.lastIndexOf("OPTIONS_HELP_FOOTER"));
+    expect(section.length, "the options section is no longer in the desk").toBeGreaterThan(200);
+    expect(section, "a URL was hand-written into the options section").not.toMatch(/https?:\/\//);
+  });
+});
+
+describe("the SEBI line is computed from SEBI_FNO_FACTS, never typed out", () => {
+  it("prints this study's own numbers", () => {
+    const line = sebiRealityLine(SEBI_FNO_FACTS);
+    expect(line).toContain(`${SEBI_FNO_FACTS.lossMakingPct}%`);
+    expect(line).toContain(SEBI_FNO_FACTS.period);
+    expect(line).toContain(rupeesInLakh(SEBI_FNO_FACTS.avgNetLoss));
+    expect(line).toContain(SEBI_FNO_FACTS.sourceNote);
+    // What the record actually holds today, so a silent edit to it is visible here.
+    expect(line).toContain("91.1%");
+    expect(line).toContain("₹1.2 L");
+    expect(line).toContain("FY2024");
+  });
+
+  it("moves with the record — a revised study rewrites the sentence", () => {
+    const moved = sebiRealityLine({
+      period: "FY2031",
+      lossMakingPct: 12.5,
+      avgNetLoss: 250000,
+      sourceNote: "A later study.",
+    });
+    expect(moved).toContain("12.5%");
+    expect(moved).toContain("₹2.5 L");
+    expect(moved).toContain("FY2031");
+    expect(moved, "a literal survived the record change").not.toContain("91.1");
+    expect(moved, "a literal survived the record change").not.toContain("1.2 L");
+  });
+
+  it("the desk renders that function, not a copy of its numbers", () => {
+    const src = read(DESK);
+    expect(src).toContain("sebiRealityLine(SEBI_FNO_FACTS)");
+    expect(src, "a SEBI figure was hard-coded into the JSX").not.toMatch(/91\.1|1\.2 L|₹1,20,000/);
+  });
+
+  it("the footer states the four exclusions in the register of §6", () => {
+    expect(OPTIONS_HELP_FOOTER).toMatch(/Intrinsic value only/);
+    expect(OPTIONS_HELP_FOOTER).toMatch(/no volatility, no time value, no charges/);
+    expect(OPTIONS_HELP_FOOTER).toMatch(/Not a forecast and not advice/);
+  });
+});
+
+describe("deep-link anchors", () => {
+  it("every anchor is options-<id>, and every one is unique", () => {
+    const anchors = OPTIONS_HELP.map((e) => optionsAnchorId(e.id));
+    expect(new Set(anchors).size).toBe(40);
+    for (const e of OPTIONS_HELP) expect(optionsAnchorId(e.id)).toBe(`options-${e.id}`);
+    expect(optionsAnchorId("iron-condor")).toBe("options-iron-condor");
+  });
+
+  it("the desk renders the anchor on the card, clear of the sticky header", () => {
+    const src = read(DESK);
+    expect(src, "the strategy card carries no id — /help#options-<id> lands nowhere").toContain(
+      "id={optionsAnchorId(e.id)}",
+    );
+    expect(src, "no scroll-margin — the sticky header covers the card it jumped to").toMatch(/scroll-mt-\d+/);
+  });
+
+  it("the highlighted section is a section, badged and free, not a muted group", () => {
+    const src = read(DESK);
+    expect(src).toContain('id="options-help"');
+    expect(src, "the accent border is what makes it visible").toMatch(/border-accent/);
+    expect(src, "the Free badge is the owner's ask").toContain(">Free<");
+    expect(src, "no route out to the strategies screen").toContain('href="/strategies"');
+    expect(src, "the section header dropped to the chrome scale").not.toMatch(/id="options-help"[^>]*text-xs/);
+  });
+});
+
+describe("search reaches the structures", () => {
+  it("searchHelp('iron condor') returns the options entry", () => {
+    const hits = searchHelp("iron condor");
+    const isOption = (h: HelpHit): h is Extract<HelpHit, { kind: "options" }> => h.kind === "options";
+    const opt = hits.filter(isOption).map((h) => h.entry.id);
+    expect(opt, "the union search does not reach the catalogue").toContain("iron-condor");
+  });
+
+  it("the two-argument form is untouched — it still returns screens only", () => {
+    const screens = searchHelp([{ href: "/x", title: "X", answers: "a", body: ["iron condor"], keywords: [] }], "iron");
+    expect(screens.map((e) => e.href)).toEqual(["/x"]);
+  });
+
+  it("finds a structure by name, by id and by keyword", () => {
+    expect(searchOptionsHelp(OPTIONS_HELP, "jade").map((e) => e.id)).toContain("jade-lizard");
+    expect(searchOptionsHelp(OPTIONS_HELP, "bull call spread").map((e) => e.id)).toContain("bull-call-spread");
+    expect(searchOptionsHelp(OPTIONS_HELP, "backspread").map((e) => e.id)).toEqual([
+      "call-backspread",
+      "put-backspread",
+    ]);
+    expect(searchOptionsHelp(OPTIONS_HELP, "  ")).toHaveLength(40);
+    expect(searchOptionsHelp(OPTIONS_HELP, "zzzznotaword")).toEqual([]);
+  });
+
+  it("the palette loads them through the SAME lazy import, never at module evaluation", () => {
+    const src = read(PALETTE);
+    expect(src).toContain('import("@/lib/domain/options-help")');
+    expect(src, "options-help entered the palette's module graph at page load").not.toMatch(
+      /^import[^\n]*from "@\/lib\/domain\/options-help"/m,
+    );
+    expect(src, "the option commands do not deep-link to the help desk").toContain(
+      "`/help#${opts.optionsAnchorId(e.id)}`",
+    );
+  });
+});

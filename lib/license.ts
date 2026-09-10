@@ -275,6 +275,14 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   { href: "/review", label: "Trade Review Desk" },
   { href: "/reports/scaling", label: "Scaling Quality & Trade Replay" },
   // Options seller
+  // v4.3 — the 40-shape catalogue (owner ruling, wave 2). `partial` for the
+  // same reason /live is: the sixteen shapes the pre-v4.3 if-chain already
+  // named stay free — they are the journal NAMING what the user already
+  // traded, which invariant 7 protects — and what is sold is the other
+  // twenty-four plus the shelf and the picker. So app/strategies/page.tsx must
+  // check `getEntitlement()` and gate the CAPABILITY; a whole-page <ProGate>
+  // there would take away a name the free build has always printed.
+  { href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker", partial: true },
   { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },
   { href: "/reports/expiry", label: "Expiry Analytics — expiry-day vs other-day edge" },
   { href: "/reports/rom", label: "Return on Margin — what your capital actually earned" },

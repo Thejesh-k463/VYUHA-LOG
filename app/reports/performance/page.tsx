@@ -22,7 +22,7 @@ import { computeBenchmark, type ReturnByDate } from "@/lib/analytics/benchmark";
 import { getBenchmarkCloses, getBenchmarkMeta, DEFAULT_BENCHMARK } from "@/lib/queries/benchmark";
 import { BenchmarkPanel } from "@/components/reports/benchmark-panel";
 import { toPaise, toRupees } from "@/lib/money";
-import { inr } from "@/lib/format";
+import { inr, signedNumber } from "@/lib/format";
 import { metricDetail, metricGlossary } from "@/lib/domain/metric-help";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -47,7 +47,11 @@ function cellColor(ret: number | undefined): string {
     ? `color-mix(in oklab, var(--color-profit) ${a}%, transparent)`
     : `color-mix(in oklab, var(--color-loss) ${a}%, transparent)`;
 }
-const sign = (v: number) => (v >= 0 ? "+" : "");
+// R8 — a percentage wears ONE sign and zero is unsigned; `signedNumber`
+// from @/lib/format replaces the deleted local `sign` (which printed "+" for
+// v >= 0, so a flat book read "+0%"). Values here are already r2()'d by
+// lib/analytics/performance.ts and printed raw, so no `decimals` is passed
+// where the site did not round — "12.5%" stays "12.5%".
 const cls = (v: number | null) => (v == null ? "" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
 export default function PerformancePage() {
@@ -288,16 +292,16 @@ export default function PerformancePage() {
               </Card>
             )}
             <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              <KpiCard label="Total return" value={capitalKnown ? `${sign(p.totalReturnPct)}${p.totalReturnPct}%` : "—"} valueClassName={capitalKnown ? cls(p.totalReturnPct) : ""} sub={capitalKnown ? `${inr(p.endEquity - p.startEquity, { decimals: 0 })} on ${inr(p.startEquity, { decimals: 0 })}${undated.length > 0 ? " · dated only" : ""}` : setCapitalNudge} detail={metricDetail("totalReturn", { note: noCapitalNote })} />
-              <KpiCard label="XIRR (money-weighted)" value={xirrPct == null ? "—" : `${sign(xirrPct)}${xirrPct}%`} valueClassName={cls(xirrPct)} sub={!capitalKnown ? setCapitalNudge : xirrDays >= 30 ? `over ${Math.round(xirrDays / 30)} mo · ledger-derived` : "<30d — unstable"} detail={metricDetail("xirr", { note: noCapitalNote })} />
-              <KpiCard label="TWR (time-weighted)" value={twr == null ? "—" : `${sign(twr.twrPct)}${twr.twrPct}%`} valueClassName={cls(twr?.twrPct ?? null)} sub={twr == null ? (capitalKnown ? "no history" : setCapitalNudge) : twr.annualizedPct == null ? "cumulative · <30d" : `${sign(twr.annualizedPct)}${twr.annualizedPct}% annualised · flow-neutral`} detail={metricDetail("twr", { note: noCapitalNote })} />
-              <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={!capitalKnown ? setCapitalNudge : p.cagrPct == null ? "<30d window" : "annualised"} detail={metricDetail("cagr", { note: noCapitalNote })} />
+              <KpiCard label="Total return" value={capitalKnown ? `${signedNumber(p.totalReturnPct, { from: p.endEquity - p.startEquity })}%` : "—"} valueClassName={capitalKnown ? cls(p.totalReturnPct) : ""} sub={capitalKnown ? `${inr(p.endEquity - p.startEquity, { decimals: 0 })} on ${inr(p.startEquity, { decimals: 0 })}${undated.length > 0 ? " · dated only" : ""}` : setCapitalNudge} detail={metricDetail("totalReturn", { note: noCapitalNote })} />
+              <KpiCard label="XIRR (money-weighted)" value={xirrPct == null ? "—" : `${signedNumber(xirrPct)}%`} valueClassName={cls(xirrPct)} sub={!capitalKnown ? setCapitalNudge : xirrDays >= 30 ? `over ${Math.round(xirrDays / 30)} mo · ledger-derived` : "<30d — unstable"} detail={metricDetail("xirr", { note: noCapitalNote })} />
+              <KpiCard label="TWR (time-weighted)" value={twr == null ? "—" : `${signedNumber(twr.twrPct)}%`} valueClassName={cls(twr?.twrPct ?? null)} sub={twr == null ? (capitalKnown ? "no history" : setCapitalNudge) : twr.annualizedPct == null ? "cumulative · <30d" : `${signedNumber(twr.annualizedPct)}% annualised · flow-neutral`} detail={metricDetail("twr", { note: noCapitalNote })} />
+              <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${signedNumber(p.cagrPct)}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={!capitalKnown ? setCapitalNudge : p.cagrPct == null ? "<30d window" : "annualised"} detail={metricDetail("cagr", { note: noCapitalNote })} />
               <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} valueClassName={capitalKnown ? cls(p.sharpe) : ""} sub={!capitalKnown ? setCapitalNudge : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} detail={metricDetail("sharpe", { vars: rfVars, also: ["sortino"], note: noCapitalNote })} />
               <KpiCard label="Calmar" value={!capitalKnown || p.calmar == null ? "—" : p.calmar.toFixed(2)} sub={capitalKnown ? "CAGR ÷ max DD" : setCapitalNudge} detail={metricDetail("calmar", { note: noCapitalNote })} />
-              <KpiCard label="Max drawdown" value={capitalKnown ? `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : `₹ from peak · ${setCapitalNudge} for %`} detail={metricDetail("maxDrawdown", { note: capitalKnown ? undefined : "Without configured capital the % of equity cannot be computed, so this card shows the ₹ fall from peak — a peak-to-trough difference that needs no base and is exact." })} />
+              <KpiCard label="Max drawdown" value={capitalKnown ? /* hard "-": maxDrawdownPct is a positive magnitude by construction (r2(Math.abs(maxDdFrac)*100)) */ `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : `₹ from peak · ${setCapitalNudge} for %`} detail={metricDetail("maxDrawdown", { note: capitalKnown ? undefined : "Without configured capital the % of equity cannot be computed, so this card shows the ₹ fall from peak — a peak-to-trough difference that needs no base and is exact." })} />
               <KpiCard label="Volatility" value={capitalKnown ? `${p.volatilityPct}%` : "—"} sub={capitalKnown ? "annualised" : setCapitalNudge} detail={metricDetail("volatility", { note: noCapitalNote })} />
               <KpiCard label="Positive days" value={`${capitalKnown ? p.positiveDaysPct : upDayPct}%`} sub={`${p.tradingDays} trading days`} detail={metricDetail("positiveDays")} />
-              <KpiCard label="Best / worst day" value={capitalKnown ? `${sign(p.bestDayPct)}${p.bestDayPct}% / ${p.worstDayPct}%` : `${inr(bestDayNet, { decimals: 0 })} / ${inr(worstDayNet, { decimals: 0 })}`} sub={capitalKnown ? `avg up ${p.avgWinDayPct}% · dn ${p.avgLossDayPct}%` : `₹ · ${setCapitalNudge} for %`} detail={metricDetail("bestWorstDay", { note: capitalKnown ? undefined : "Without configured capital the % form is withheld; the ₹ extremes shown need no base and are exact." })} />
+              <KpiCard label="Best / worst day" value={capitalKnown ? `${signedNumber(p.bestDayPct)}% / ${signedNumber(p.worstDayPct)}%` : `${inr(bestDayNet, { decimals: 0 })} / ${inr(worstDayNet, { decimals: 0 })}`} sub={capitalKnown ? `avg up ${p.avgWinDayPct}% · dn ${p.avgLossDayPct}%` : `₹ · ${setCapitalNudge} for %`} detail={metricDetail("bestWorstDay", { note: capitalKnown ? undefined : "Without configured capital the % form is withheld; the ₹ extremes shown need no base and are exact." })} />
             </section>
 
             {/* Expected-capital goals (v3.6). Rendered only when a goal
@@ -380,7 +384,7 @@ export default function PerformancePage() {
             <Card>
               <CardHeader className="flex-row items-center justify-between">
                 <CardTitle>Equity curve</CardTitle>
-                <Badge variant="secondary">{capitalKnown ? `Max DD -${p.maxDrawdownPct}%` : `Max DD ${inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })}`}</Badge>
+                <Badge variant="secondary">{capitalKnown ? /* hard "-": positive magnitude by construction, same as the KPI card */ `Max DD -${p.maxDrawdownPct}%` : `Max DD ${inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })}`}</Badge>
               </CardHeader>
               <CardContent>{curve.length > 0 ? <EquityCurve data={curve} /> : null}</CardContent>
             </Card>
@@ -454,11 +458,11 @@ export default function PerformancePage() {
                             const ret = byYM.get(`${y}-${i + 1}`);
                             return (
                               <ReportTd key={i} className="px-1 py-1 text-center tabular-nums" style={{ background: cellColor(ret) }}>
-                                {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
+                                {ret == null ? "" : signedNumber(ret, { decimals: 1 })}
                               </ReportTd>
                             );
                           })}
-                          <ReportTd align="right" className={`font-semibold ${cls(yt)}`}>{sign(yt)}{yt.toFixed(1)}%</ReportTd>
+                          <ReportTd align="right" className={`font-semibold ${cls(yt)}`}>{signedNumber(yt, { decimals: 1 })}%</ReportTd>
                         </ReportTr>
                       );
                     })}
@@ -480,11 +484,11 @@ export default function PerformancePage() {
               <CardContent className="space-y-4">
                 {bench ? (
                   <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                    <KpiCard label="Alpha (annual)" value={`${sign(bench.alphaAnnualPct)}${bench.alphaAnnualPct}%`} valueClassName={cls(bench.alphaAnnualPct)} sub="excess vs β·market" detail={metricDetail("alpha", { vars: rfVars })} />
+                    <KpiCard label="Alpha (annual)" value={`${signedNumber(bench.alphaAnnualPct)}%`} valueClassName={cls(bench.alphaAnnualPct)} sub="excess vs β·market" detail={metricDetail("alpha", { vars: rfVars })} />
                     <KpiCard label="Beta" value={bench.beta.toFixed(2)} sub={bench.beta > 1 ? "amplified vs index" : bench.beta < 0 ? "inverse to index" : "tracks index"} detail={metricDetail("beta")} />
                     <KpiCard label="Correlation" value={bench.correlation.toFixed(2)} sub={`R² ${bench.rSquared.toFixed(2)}`} detail={metricDetail("correlation")} />
-                    <KpiCard label="Portfolio (window)" value={`${sign(bench.portfolioReturnPct)}${bench.portfolioReturnPct}%`} valueClassName={cls(bench.portfolioReturnPct)} sub="over overlap" detail={metricDetail("benchmarkWindow", { note: "This card: your book's chained return over the overlapping days." })} />
-                    <KpiCard label={`${DEFAULT_BENCHMARK} (window)`} value={`${sign(bench.benchmarkReturnPct)}${bench.benchmarkReturnPct}%`} valueClassName={cls(bench.benchmarkReturnPct)} sub="over overlap" detail={metricDetail("benchmarkWindow", { note: `This card: ${DEFAULT_BENCHMARK}'s chained return over the same overlapping days.` })} />
+                    <KpiCard label="Portfolio (window)" value={`${signedNumber(bench.portfolioReturnPct)}%`} valueClassName={cls(bench.portfolioReturnPct)} sub="over overlap" detail={metricDetail("benchmarkWindow", { note: "This card: your book's chained return over the overlapping days." })} />
+                    <KpiCard label={`${DEFAULT_BENCHMARK} (window)`} value={`${signedNumber(bench.benchmarkReturnPct)}%`} valueClassName={cls(bench.benchmarkReturnPct)} sub="over overlap" detail={metricDetail("benchmarkWindow", { note: `This card: ${DEFAULT_BENCHMARK}'s chained return over the same overlapping days.` })} />
                   </section>
                 ) : (
                   <p className="text-sm text-muted-foreground">

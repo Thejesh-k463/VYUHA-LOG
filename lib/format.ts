@@ -76,6 +76,33 @@ export function formatSignedPair(
   return `${money} · ${signedPct(rupees, value, decimals)}`;
 }
 
+/**
+ * A number that wears exactly ONE sign, with ZERO UNSIGNED (R8).
+ *
+ * `signedPct` is for the percentage printed beside a rupee figure and always
+ * re-rounds. Most report surfaces hand us a value their analytics module has
+ * ALREADY rounded (`r2()` in lib/analytics/performance.ts) and print it raw,
+ * so re-rounding here would turn "12.5%" into "12.50%" — a display change
+ * nobody asked for. So `decimals` is OPTIONAL: omit it and the caller's own
+ * rounding survives untouched, and the only difference from the local
+ * `sign(v) => v >= 0 ? "+" : ""` helpers this replaces is that zero stops
+ * claiming to be a gain (`+0%` → `0%`).
+ *
+ * `opts.from` is the R8 borrow: pass the RUPEE figure the number is printed
+ * beside and the sign comes from it, so the pair can never state one fact with
+ * two signs (a rupee loss whose percentage rounds away still reads "-").
+ */
+export function signedNumber(
+  value: number | null | undefined,
+  opts?: { from?: number | null | undefined; decimals?: number },
+): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const source = opts && "from" in opts ? opts.from : value;
+  const magnitude =
+    opts?.decimals == null ? String(Math.abs(value)) : Math.abs(value).toFixed(opts.decimals);
+  return `${signOf(source)}${magnitude}`;
+}
+
 export function signedClass(value: number | null | undefined): string {
   if (value == null || value === 0) return "text-muted-foreground";
   return value > 0 ? "text-profit" : "text-loss";

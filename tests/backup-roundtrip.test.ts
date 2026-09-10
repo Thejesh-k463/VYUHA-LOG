@@ -753,3 +753,32 @@ describe("the Atlas cache is DERIVED, so a restore drops it", () => {
     expect(after.lastLiveMarkDate).toBe("2026-09-06");
   });
 });
+
+describe("the option strategy shelf (v4.3, migration 0071) is a PREFERENCE and TRAVELS", () => {
+  it("survives a dump and comes back on restore — it is not blanked as machine state", () => {
+    // The opposite call to live_feed_ack_json (0069) and to the backfill pair
+    // above, and the difference is the whole point: a consent is a statement a
+    // PERSON made on a MACHINE, while a shelf is a CHOICE about the workspace,
+    // like theme or density. Backing up on one machine and restoring on
+    // another must hand back the shelf the user built — so this column is
+    // deliberately absent from SETTINGS_MACHINE_COLUMNS, and if somebody adds
+    // it there this test goes red instead of the loss being noticed months
+    // later by a user whose shelf silently reset to the default eight.
+    const mine = '{"v":1,"selected":["iron-condor","long-put"]}';
+    t.db.update(t.schema.settings).set({ strategyShelfJson: mine }).run();
+
+    const dump = backup.dumpDatabase(false);
+    const dumped = (dump.tables.settings as Record<string, unknown>[])[0];
+    expect(dumped.strategyShelfJson, "the shelf did not travel in the dump").toBe(mine);
+
+    // Lose it the way a fresh install would have it: null.
+    t.db.update(t.schema.settings).set({ strategyShelfJson: null }).run();
+
+    expect(backup.restoreDatabase(dump).ok).toBe(true);
+    const after = t.db.select().from(t.schema.settings).all()[0];
+    expect(after.strategyShelfJson, "the shelf did not come back from the backup").toBe(mine);
+
+    // Leave the row as the rest of the file found it.
+    t.db.update(t.schema.settings).set({ strategyShelfJson: null }).run();
+  });
+});

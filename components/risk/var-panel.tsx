@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { inr, num } from "@/lib/format";
+import { inr, num, signOf } from "@/lib/format";
 import type { PortfolioVar, BetaExposure, StressResult } from "@/lib/risk/portfolio";
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
@@ -14,7 +14,11 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
 }
 
 const pnl = (v: number) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
-const signed = (v: number) => (v >= 0 ? "+" : "");
+// R8 at a NON-percentage site. These are stress-test rupee P&Ls rendered with
+// `num()` rather than `inr()`; the sign is taken ONCE from `signOf()` and the
+// magnitude printed absolute, so a zero-impact scenario reads "0", not "+0".
+// The percentages on this panel (coverage %, β coverage %) are ratios of a
+// magnitude and stay deliberately unsigned.
 
 export function VarPanel({
   varResult,
@@ -86,10 +90,10 @@ export function VarPanel({
                 {stress.map((s) => (
                   <tr key={s.scenario.label} className="border-b border-rule">
                     <td className="px-2.5 py-1.5 font-medium">{s.scenario.label}</td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.deltaPnl)}`}>{signed(s.deltaPnl)}{num(s.deltaPnl, 0)}</td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.gammaPnl)}`}>{signed(s.gammaPnl)}{num(s.gammaPnl, 0)}</td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.vegaPnl)}`}>{signed(s.vegaPnl)}{num(s.vegaPnl, 0)}</td>
-                    <td className={`px-2.5 py-1.5 text-right tabular-nums font-semibold ${pnl(s.pnl)}`}>{signed(s.pnl)}{num(s.pnl, 0)}</td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.deltaPnl)}`}>{signOf(s.deltaPnl)}{num(Math.abs(s.deltaPnl), 0)}</td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.gammaPnl)}`}>{signOf(s.gammaPnl)}{num(Math.abs(s.gammaPnl), 0)}</td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${pnl(s.vegaPnl)}`}>{signOf(s.vegaPnl)}{num(Math.abs(s.vegaPnl), 0)}</td>
+                    <td className={`px-2.5 py-1.5 text-right tabular-nums font-semibold ${pnl(s.pnl)}`}>{signOf(s.pnl)}{num(Math.abs(s.pnl), 0)}</td>
                   </tr>
                 ))}
               </tbody>

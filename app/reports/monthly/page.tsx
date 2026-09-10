@@ -15,7 +15,7 @@ import { disciplineByWeek } from "@/lib/analytics/discipline";
 import { weeklyScoreAverage } from "@/components/reports/weekly-score-average";
 import { db } from "@/lib/db";
 import { riskConfig } from "@/lib/db/schema";
-import { inr } from "@/lib/format";
+import { inr, signOf, signedNumber } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,7 +29,10 @@ export const dynamic = "force-dynamic";
 
 const RISK_FREE = 0.07;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const sign = (v: number) => (v >= 0 ? "+" : "");
+// R8 — signs come from @/lib/format (`signedNumber` for a figure that states
+// its own, `signOf` for a rupee figure whose magnitude is printed separately).
+// The deleted local `sign` printed "+" for v >= 0, so a flat month read
+// "+0%" / "+₹0"; zero is unsigned now.
 const cls = (v: number | null) => (v == null ? "" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-muted-foreground");
 
 export default function MonthlyReportPage() {
@@ -134,11 +137,11 @@ export default function MonthlyReportPage() {
           {/* Scorecard */}
           <section className="grid grid-cols-3 gap-3 md:grid-cols-4">
             <KpiCard label="Net P&L" valueNum={net} format="inr0" valueClassName={cls(net)} />
-            <KpiCard label="Total return" value={capitalKnown ? `${sign(p.totalReturnPct)}${p.totalReturnPct}%` : "—"} valueClassName={capitalKnown ? cls(p.totalReturnPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
+            <KpiCard label="Total return" value={capitalKnown ? `${signedNumber(p.totalReturnPct)}%` : "—"} valueClassName={capitalKnown ? cls(p.totalReturnPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
             <KpiCard label="Win rate" value={`${winRate}%`} sub={`${wins}/${closed.length} trades`} />
-            <KpiCard label="Max drawdown" value={capitalKnown ? `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : "₹ from peak · set capital for %"} />
+            <KpiCard label="Max drawdown" value={capitalKnown ? /* hard "-": maxDrawdownPct is a positive magnitude by construction (r2(Math.abs(maxDdFrac)*100)) */ `-${p.maxDrawdownPct}%` : inr(p.maxDrawdownAmt > 0 ? -p.maxDrawdownAmt : 0, { decimals: 0 })} valueClassName="text-loss" sub={capitalKnown ? inr(p.maxDrawdownAmt, { decimals: 0 }) : "₹ from peak · set capital for %"} />
             <KpiCard label="Sharpe" value={!capitalKnown || p.sharpe == null ? "—" : p.sharpe.toFixed(2)} sub={!capitalKnown ? "set capital in Settings" : `Sortino ${p.sortino == null ? "—" : p.sortino.toFixed(2)}`} />
-            <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${sign(p.cagrPct)}${p.cagrPct}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
+            <KpiCard label="CAGR" value={!capitalKnown || p.cagrPct == null ? "—" : `${signedNumber(p.cagrPct)}%`} valueClassName={capitalKnown ? cls(p.cagrPct) : ""} sub={capitalKnown ? undefined : "set capital in Settings"} />
             <KpiCard label="Charges paid" valueNum={charges} format="inr0" valueClassName="text-grad-gold" />
             <KpiCard label="Discipline score" value={discipline.display} sub={`weekly average · ${discipline.coverage}`} />
           </section>
@@ -169,7 +172,7 @@ export default function MonthlyReportPage() {
                         const ret = byYM.get(`${y}-${i + 1}`);
                         return (
                           <ReportTd key={i} className={`px-1 py-1 text-center tabular-nums ${ret == null ? "" : cls(ret)}`}>
-                            {ret == null ? "" : `${ret > 0 ? "+" : ""}${ret.toFixed(1)}`}
+                            {ret == null ? "" : signedNumber(ret, { decimals: 1 })}
                           </ReportTd>
                         );
                       })}
@@ -218,7 +221,7 @@ export default function MonthlyReportPage() {
                         <ReportTd align="right">{Math.round(m.winRate * 1000) / 10}%</ReportTd>
                         <ReportTd align="right" className={`font-medium ${cls(m.net)}`}>{inr(m.net, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right" className={cls(m.momNet)}>
-                          {m.momNet == null ? "—" : `${sign(m.momNet)}${inr(m.momNet, { decimals: 0 })}`}
+                          {m.momNet == null ? "—" : `${signOf(m.momNet)}${inr(Math.abs(m.momNet), { decimals: 0 })}`}
                         </ReportTd>
                         <ReportTd align="right" className="text-grad-gold">{inr(m.charges, { decimals: 0 })}</ReportTd>
                         <ReportTd align="right">{m.chargeDragPct == null ? "—" : `${m.chargeDragPct}%`}</ReportTd>

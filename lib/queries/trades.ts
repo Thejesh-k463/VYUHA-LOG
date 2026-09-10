@@ -207,21 +207,68 @@ const STRATEGY_LEG_FIELDS = [
 
 export type StrategyLegRow = Pick<Trade, (typeof STRATEGY_LEG_FIELDS)[number]>;
 
-export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
-  const accountId = getSelectedAccountId();
+/**
+ * The open-option-leg predicate, account scope included (invariant 8), shared
+ * by both readers below so the "symbols that already have an option leg"
+ * restriction and the legs themselves can never describe different books.
+ */
+const openOptionLegWhere = (accountId: number) => {
   const isLeg = and(
     eq(trades.isOpen, true),
     eq(trades.instrumentType, "option"),
     isNotNull(trades.strike),
     inArray(trades.optionType, ["CE", "PE"]),
   );
+  return accountId > 0 ? and(isLeg, eq(trades.accountId, accountId)) : isLeg;
+};
+
+export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
+  const accountId = getSelectedAccountId();
   // Projected to the 8 columns /strategies reads, of 75. Same WHERE, same
-  // ORDER BY — leg order inside each group is unchanged, which matters because
-  // `classifyStrategy` reads legs[0] and legs[1] POSITIONALLY and a reorder can
-  // rename a strategy on screen.
+  // ORDER BY, so leg order inside each group is unchanged.
   return db.select(pickCols(STRATEGY_LEG_FIELDS)).from(trades)
-    .where(accountId > 0 ? and(isLeg, eq(trades.accountId, accountId)) : isLeg)
+    .where(openOptionLegWhere(accountId))
     .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all() as StrategyLegRow[];
+});
+
+/**
+ * Open UNDERLYING positions — equity and futures — for the symbols that already
+ * carry an open option leg (research note Q4).
+ *
+ * WHY IT EXISTS: without the underlying there is no covered call and no
+ * protective put, and a covered call is the single most-held retail option
+ * position in India. `buildStrategies` takes a `kind: "UL"` leg beside the
+ * option legs; the page renders them read-only.
+ *
+ * WHY THE RESTRICTION IS IN SQL, as a subquery on the same predicate: the whole
+ * point of the 25k-row work above is that this screen never materialises the
+ * book. Reading every open equity row and filtering in JS would undo it on
+ * exactly the books it was measured against — an options book with one open
+ * option leg also holds every equity position the user has ever left open.
+ * Same account scope on BOTH halves of the statement, so an "All accounts"
+ * view widens the legs and the underlyings together and a single-account view
+ * narrows both.
+ */
+const UNDERLYING_LEG_FIELDS = [
+  "symbol", "instrumentType", "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice",
+] as const satisfies readonly (keyof Trade)[];
+
+export type UnderlyingLegRow = Pick<Trade, (typeof UNDERLYING_LEG_FIELDS)[number]>;
+
+export const getOpenUnderlyingPositions = cache((): UnderlyingLegRow[] => {
+  const accountId = getSelectedAccountId();
+  const withAnOptionLeg = db
+    .select({ symbol: trades.symbol })
+    .from(trades)
+    .where(openOptionLegWhere(accountId));
+  const isUnderlying = and(
+    eq(trades.isOpen, true),
+    inArray(trades.instrumentType, ["equity", "future"]),
+    inArray(trades.symbol, withAnOptionLeg),
+  );
+  return db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)
+    .where(accountId > 0 ? and(isUnderlying, eq(trades.accountId, accountId)) : isUnderlying)
+    .orderBy(desc(trades.sellDate), desc(trades.createdAt), desc(trades.id)).all() as UnderlyingLegRow[];
 });
 
 const ARJUN_FIELDS = [

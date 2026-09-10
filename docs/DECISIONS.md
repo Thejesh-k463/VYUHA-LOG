@@ -5012,6 +5012,99 @@ Rulings: none needed — no finding carried a design choice the owner had not al
 - **Gate:** scoped — the ten owned/adjacent files 182/182, the import/golden-books/dhan-api/account-isolation sweep 289 + 138
   (35 skipped, the private-fixture suites), eslint clean; `tsc` reported one error in B4's in-flight `app/strategies/page.tsx`
   and none in this wave's files. The whole-tree `npm run verify` runs once at the wave-2 commit; CI is this commit's gate.
-  Builder cost 176k; auditors ≈ 0.51 M; skeptic 78k. Two builders saw transient reds while a concurrent builder was
+  Builder cost 176k; auditors ≈ 0.51 M; skeptic 78k. Landed as **`6198c8b`**, CI 34467572963 SUCCESS 6/6.
+
+## 2026-09-10 — v4.3.0 wave 2: the 40-shape Option Strategies catalogue, the shelf (migration 0071), the Options Help Desk, the sign sites
+
+**Rulings:** `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 rulings — Option Strategies catalogue" (2026-09-09) and "v4.3.0
+wave-2 pre-build rulings" (2026-09-10: **40 rows** = research §4 rows 1–37 + 39 + 40 + 41; the free tier sees **"Custom (n
+legs)" + a Pro chip with the name withheld server-side**). Research: `13-OPTION-STRATEGY-CATALOGUE.md` §4–§7. Plan: an Opus
+planner (99k) — six builders in two waves, 46 paths, zero duplicates, README single-owner because `tests/readme-claims.test.ts:118`
+counts files on disk; then a seam pass (49 tests / 23 mutations) and one small fix builder for its four defects.
+
+- **B1 engine + catalogue** (`lib/analytics/strategy-catalogue.ts` NEW, `lib/analytics/strategies.ts`; 181k): 40 literal
+  `StrategyDef` rows (`id, name, style, beginner, tier, net, patterns[], maxProfit/maxLoss/breakevens docs, sources, legacyFree`),
+  frozen kebab ids exported as `STRATEGY_IDS` (a row whose §4 line covers two shapes — short butterfly, strip/strap, guts — is ONE
+  id with pattern VARIANTS); `matchStrategy` (normalise → GCD ratio → deterministic sort → specificity) replaces the 11-shape
+  if-chain and its positional `legs[0]` reads; `OptionLeg.kind: "CE" | "PE" | "UL"`, a UL leg valued at S; the group key is the
+  SYMBOL with **split on match failure**; `expiries[]` + `nearestExpiry`; §7 multi-expiry at the nearest expiry with far legs at
+  intrinsic and a **separate `notComputed: {maxProfit, maxLoss}` discriminator** — `maxProfit/maxLoss === null` still means
+  UNBOUNDED and nothing else (the planner's risk 3: overloading null would print "Unlimited" for a calendar); `capLabel` per
+  §6 with the literal "Computed at underlying = 0". **The 16 legacy display strings are pinned byte-identical** (`Bull Call
+  Spread`, not `Bull call spread` — the free tier keys on them) and single-expiry renders are pinned against goldens taken from
+  the OLD module (`git show HEAD:…` run through tsx) — ten fixes red on revert, e.g. `expected 'Custom (4 legs)' to be 'Iron
+  Condor'`, `expected 'At expiry' to be 'Computed at underlying = 0'`, `expected -105 to be 15` (UL payoff). Recorded: `netPremium`
+  now includes a UL leg's entry cash (a covered call reads net DEBIT arithmetically) — the screen labels from the catalogue `net`,
+  not `isCredit`; the box spread carries only §4's long box; the diagonal is `net: "either"`; an unrelated Sept/Oct pair that
+  happens to match a calendar/diagonal is named as one (accepted limitation, in the module header).
+- **B2 migration 0071 + shelf domain** (106k): `drizzle/0071_settings-strategy-shelf.sql` (`ALTER TABLE settings ADD COLUMN
+  strategy_shelf_json text;`, 0069-style header), journal idx 71 `when 1788800500000` (+100000 from 0070), `schema.ts`
+  `strategyShelfJson` — a PREFERENCE, not machine state: travels in backups, joins `BASELINE_SETTINGS_FIELDS`, is NOT in
+  `SETTINGS_MACHINE_COLUMNS`, and its name clears `tests/backup-format.test.ts:124`'s `CONSENT_LIKE` regex; `lib/domain/strategy-shelf.ts`
+  (pure): envelope `{ v: 1, selected: string[] }` (alien shape/version → defaults; unknown ids dropped; order kept), `DEFAULT_SHELF` =
+  the 8 core tiles (long call, long put, bull call spread, bear put spread, bull put spread, bear call spread, long straddle, iron
+  condor), `ShelfState` / `ShelfPostResult` declared HERE so the route (B3) and the screen (B4) import one contract, and the
+  repo's FIRST undo/redo reducer (`shelfReducer`, depth `SHELF_UNDO_DEPTH` 50, laws pinned: undo∘do = identity, redo after undo,
+  a new action clears the redo stack). `parseShelf` takes `validIds` as a parameter (no catalogue import in a pure domain module).
+  Red on revert: `SqliteError: no such column: "strategy_shelf_json"`, `expected 60 to be 50`, "the shelf did not travel in the
+  dump: expected null to be '{"v":1,…'". The 0070 mentions that move at the BUMP: `docs/client/INSTALLATION_GUIDE.md:150`
+  ("Two database upgrades … 0069/0070" → three), CHANGELOG, STATE.
+- **B3 shelf route + Pro** (116k): `POST /api/strategies/shelf` — zod discriminated union `{action:"set", selected}` |
+  `{action:"restore"}`; `getEntitlement()` checked BEFORE parse (free → 403, no write, no audit — the shelf and picker are Pro by
+  ruling); ids validated against `STRATEGY_IDS`, ≤ 40, no duplicates; one `db.update(settings)` + exactly one `recordAudit`; the
+  response is the RE-READ row (`expected null not to be null` when `restore` was made to write null — session decision: `restore`
+  writes the EXPLICIT 8-id envelope, friendlier to the backup round-trip than null-means-defaults); no account scope (single-row
+  table, stated in the doc comment); the egress guard allowlists the same-origin path. `lib/license.ts` `PRO_FEATURES` gains
+  `{ href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker", partial: true }`.
+- **B4 the screen** (184k): `lib/queries/trades.ts` `getOpenUnderlyingPositions()` — equity/future rows restricted IN SQL to
+  symbols with an open option leg via a shared `openOptionLegWhere(accountId)` (the 25k-row projection kept; the false positional
+  caveat deleted; `expected ['TCS','RELIANCE'] to deeply equal ['RELIANCE']` on revert); `app/strategies/page.tsx` reads
+  `getEntitlement().pro`, carries no `<ProGate>`, and runs `withholdForFree(groups, pro)` **before the RSC payload** — for a
+  free user every non-legacy match becomes `displayName "Custom (n legs)"`, `strategyId null`, `proWithheld true`, proven on the
+  SERIALISED props (`expected '[{"key":"NIFTY",…' not to contain 'call-ratio-spread'`); picker rows ship only when Pro; SEBI line
+  once (`sebiRealityLine(SEBI_FNO_FACTS)`), "before charges" + ONE STT-on-exercise sentence at page level. Islands under
+  `components/strategies/`: `StrategiesClient` (reducer + POST + FOLD the `ShelfPostResult`, never a server action, never an
+  initialiser re-run; the free build never posts), `ShelfStrip` / `ShelfLockedStrip`, `BrowseDrawer` (40 by style,
+  restore/undo/redo), `StrategyCard` (`ProLock` chip, cap labels, the §7 note, the accent "How this works" → `/help#options-<id>`).
+  Every value the server page reads lives in the pure `strategy-copy.ts`. `LazyMount` + `PayoffChart` stay in the page file
+  (`tests/render-windowing.test.ts` pins them there).
+- **B5 Options Help Desk** (180k): `lib/domain/options-help.ts` — 40 entries × four parts (what · payoff in words · who uses it by
+  style with a beginner flag on §4 rows 1, 2, 5, 6, 10 · risk line), 111–150 words each (avg 131), one STT-on-intrinsic sentence per
+  relevant entry, `optionsAnchorId(id)` → `options-<id>`, `searchOptionsHelp`, `sebiRealityLine(facts)` (91.1 % · ₹1.2 L · FY2024
+  · the source note; NO URL exists and none was invented); `searchHelp(query)` gains a union overload (screens then structures)
+  without adding any href to `HELP_ENTRIES` (the NAV_ITEMS join at `tests/help-content.test.ts:25-31` is untouched); the command
+  palette imports both registries in the SAME first-open lazy `Promise.all`, never at module eval; the `/strategies` help entry no
+  longer says "by underlying and expiry". The Help Desk renders a **highlighted "Options" section at the top** (`border-2
+  border-accent/60 border-l-8`, `Free` + `40 structures` badges, "Open Option Strategies" link, SEBI line once, styles grouped,
+  `id={optionsAnchorId(e.id)}` + `scroll-mt-20` per card, four labelled parts, a beginner chip; chips are `<span>`s inside `<p>`,
+  the React #418 precedent). A STRICT vocabulary gate scoped to `options-help.ts` ONLY (proven on three planted sentences) — the
+  Upstox-scoped gate at `help-content.test.ts:314` was NOT widened. Red on revert, e.g. `ids with no help entry: guts`,
+  `prescriptive vocabulary in the options catalogue: long-call: "should"`, `the union search does not reach the catalogue`.
+- **B6 the sign sites** (119k): `lib/format.ts` gains `signedNumber(value, { from?, decimals? })` (one sign, zero unsigned,
+  `decimals` optional so an upstream `r2()` keeps its own rounding); per site — rom (ROM beside the row's ₹ P&L → borrows,
+  `signedPct` ×8, local `pct` deleted), monthly (stand-alone `signedNumber`; the drawdown's hard `-` kept with a by-construction
+  comment; the RUPEE `momNet` via `signOf` + `inr(abs)`; the returns MATRIX at :175 was a ninth site the pin caught), performance
+  (:291 borrows from `endEquity − startEquity`; the rest stand alone), ledger-import (borrows from the ₹ difference beside it),
+  greeks (a signed quantity, not a percentage: `signOf` + `num(abs)`, zero unsigned — decided at the site), var (stress ₹ via
+  `num`, the two coverage percentages left unsigned), mtf-drift ("pts", keeps its own sign via `signedNumber`). Behaviour change
+  everywhere: `+0…` → `0…`. The `tests/seams-v43.test.ts` S7 pin flipped in the same change (rom now imports `signedPct`; the
+  local helper is gone). Recorded, not fixed: `greeks.delta >= 0 ? "text-profit" : "text-loss"` colours a zero Greek green — a
+  colour, not a sign.
+- **Seam pass** (`tests/seams-v43-wave2.test.ts`, 49 tests, 23 mutations red on both sides, 12 files restored sha1-identical; 213k):
+  client components rendered with `react-dom/server`, the route called with a real `Request`, the server page executed and its
+  RSC props inspected. Four DEFECTS, all in B4's card, fixed by one builder (135k): (1) `maxLoss` is the MINIMUM payoff and can be
+  POSITIVE — a married put (400 INFY @1450 + 1500 PE @30) printed "Max loss ₹8,000" in loss red for a worst case that is a GAIN;
+  now a pure `figureDescriptor(which, value, cap)` picks heading/tone/sub-label from the SIGN ("Worst case" + gain tone + "a gain at
+  every price"; "Highest outcome" + loss tone when `maxProfit < 0`; neutral at 0; no tone for "Not computed"; never "Unlimited"
+  twice) — `expected … to contain '|Worst case|₹8,000|a gain at every pr…'` on revert; (2) a covered call printed the "Net credit"
+  chip beside "Net premium −₹4,56,750" — the tile now shows `optionNetPremium(group)` (non-UL legs only) plus an "Underlying entry
+  ₹X (read-only)" line; (3) "1 legs" → `legCountLabel`; (4) an unbounded tile printed "Unlimited" as value AND sub-label. The
+  orchestrator first asked for the heading "Best case"; that superlative trips the house vocabulary gate and the builder had
+  exempted it BY VALUE — the orchestrator renamed it "Highest outcome" instead, so the footer stays the gate's only exemption.
+- **Gate on the wave tree:** `npm run verify` EXIT 0 — **378 files / 7,598 passed / 35 skipped**, lint 0 errors (the 3 pre-existing
+  warnings), `next build` compiled 12.5 s. README re-measured (7598 / 378). `package-lock.json` untouched. Subagent cost for wave
+  2 ≈ 1.5 M (planner 99k, B1 181k, B2 106k, B3 116k, B4 184k, B5 180k, B6 119k, seam 213k, card fixes 135k). Bump-commit items
+  carried forward: INSTALLATION_GUIDE 0071 paragraph, CHANGELOG `## v4.3.0`, README "Now" line, landing chip, deck/brochure chips,
+  TERMS/REFUND "Applies to". Two builders saw transient reds while a concurrent builder was
   mid-write in a shared-consumer file; both were green on re-run with the files at rest — a reason to keep one `verify` at
   the end, after every builder has reported.

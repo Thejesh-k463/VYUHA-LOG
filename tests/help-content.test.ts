@@ -796,3 +796,47 @@ describe("no surface says the feed row appears only after a credential (A-12)", 
     expect(offenders, `${rel} says the row is absent until connected:\n${offenders.join("\n")}`).toEqual([]);
   });
 });
+
+/**
+ * v4.3 wave 2 — THE /strategies ENTRY DESCRIBES THE WAVE-2 SCREEN.
+ *
+ * The old sentence said the screen "groups open legs by underlying and expiry".
+ * Wave 2 groups per SYMBOL and carries expiry as a leg attribute, precisely so
+ * a calendar or a diagonal stays one position instead of splitting into two —
+ * a help entry still describing the old grouping would send a reader looking
+ * for two cards that no longer exist. Three more facts the entry either states
+ * or gets wrong silently: the catalogue is 40 shapes, the user shelf is Pro,
+ * and the Options help is free.
+ */
+describe("help describes the v4.3 Option Strategies screen", () => {
+  const strategies = () => HELP_ENTRIES.find((e) => e.href === "/strategies")!;
+  const text = () => strategies().body.join(" ");
+
+  it("no longer claims expiry is a grouping key", () => {
+    expect(text(), "the entry still describes the pre-wave-2 grouping").not.toMatch(
+      /by underlying and expiry/i,
+    );
+    expect(text(), "the per-symbol grouping is not stated").toMatch(/per underlying symbol/i);
+    expect(text(), "expiry-as-a-leg-attribute is not stated").toMatch(/expiry as an attribute of each leg/i);
+    expect(text(), "the reason the grouping changed is not stated").toMatch(/calendar or a diagonal stays one position/i);
+  });
+
+  it("names the size of the catalogue and where the write-ups live", () => {
+    expect(text(), "the catalogue size is not stated").toMatch(/catalogue of 40 named shapes/i);
+    expect(text(), "the Options help section is not pointed at").toMatch(/Options section of the Help Desk/i);
+  });
+
+  it("states the tier split — the shelf is Pro, the rest is free", () => {
+    expect(text(), "the user shelf is not described").toMatch(/shelf of your own saved shapes/i);
+    expect(text(), "the shelf's tier is not stated").toMatch(/The shelf is Pro/);
+    expect(text(), "what stays free is not stated").toMatch(/grouping, the recognition and the payoff are free/i);
+    expect(text(), "the Options help's tier is not stated").toMatch(/free on every tier/i);
+  });
+
+  it("carries no href for an options structure — the NAV join above would fail on one", () => {
+    // Options entries live in lib/domain/options-help.ts and deliberately have
+    // no href; this pins that none leaked into HELP_ENTRIES as a ghost screen.
+    const ghosts = HELP_ENTRIES.filter((e) => e.href.includes("#"));
+    expect(ghosts.map((e) => e.href)).toEqual([]);
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { formatSignedPair, signOf, signedPct, inrCompact } from "@/lib/format";
+import { formatSignedPair, signOf, signedNumber, signedPct, inrCompact } from "@/lib/format";
 
 /**
  * R8 — the percentage sign FOLLOWS the rupee value.
@@ -119,5 +119,107 @@ describe("risk-cockpit-client uses the shared formatter", () => {
 
   it("the Open P&L tile's value is the pair formatter", () => {
     expect(src).toMatch(/formatSignedPair\(e\.unrealised, e\.openPnlPct\)/);
+  });
+});
+
+// ===========================================================================
+// v4.3.0 wave 2 — the eight INDEPENDENT-sign sites B5 listed but did not own.
+//
+// Wave 1 applied R8 at five cockpit sites. Every other surface still carried a
+// private `pct` / `sign` / `signed` helper of the shape `v >= 0 ? "+" : ""`,
+// which is the exact construct that printed "-₹17 · +0.00%": a sign chosen
+// from the percentage rather than from the rupee fact underneath it, and a
+// zero that claims to be a gain. All eight now go through @/lib/format.
+// ===========================================================================
+
+describe("signedNumber — one sign, zero unsigned, the caller's own rounding", () => {
+  it("signs itself when no rupee figure is named", () => {
+    expect(signedNumber(12.5)).toBe("+12.5");
+    expect(signedNumber(-12.5)).toBe("-12.5");
+  });
+
+  it("leaves zero UNSIGNED — the whole behaviour change at these sites", () => {
+    expect(signedNumber(0)).toBe("0");
+    expect(signedNumber(-0)).toBe("0");
+    expect(signedNumber(0, { decimals: 2 })).toBe("0.00");
+  });
+
+  it("keeps the caller's rounding when decimals are omitted", () => {
+    // p.totalReturnPct is already r2()'d upstream and printed raw: "12.5%",
+    // never "12.50%". Signing it must not re-round it.
+    expect(signedNumber(12.5)).toBe("+12.5");
+    expect(signedNumber(12.5, { decimals: 2 })).toBe("+12.50");
+    expect(signedNumber(-1.239, { decimals: 1 })).toBe("-1.2");
+  });
+
+  it("BORROWS the rupee figure's sign when one is named (R8)", () => {
+    // The ledger card's "Difference" ₹ and "vs estimate" % are one fact.
+    expect(signedNumber(0.001, { from: -17 })).toBe("-0.001");
+    expect(signedNumber(0, { from: -17 })).toBe("-0");
+    expect(signedNumber(4, { from: 17 })).toBe("+4");
+    expect(signedNumber(4, { from: 0 })).toBe("4");
+    expect(signedNumber(4, { from: null })).toBe("4");
+  });
+
+  it("is an em dash for a figure that does not exist", () => {
+    expect(signedNumber(null)).toBe("—");
+    expect(signedNumber(undefined)).toBe("—");
+    expect(signedNumber(Number.NaN)).toBe("—");
+  });
+
+  it("agrees with signOf over the whole sign matrix", () => {
+    for (const v of [-1234.5, -0.004, 0, 0.004, 1234.5]) {
+      const s = signedNumber(v);
+      const seen = s.startsWith("-") ? "-" : s.startsWith("+") ? "+" : "";
+      expect(seen, `signedNumber(${v}) = "${s}"`).toBe(signOf(v));
+    }
+  });
+});
+
+/**
+ * Source-shape pins. A formatter nobody calls fixes nothing, and a local
+ * helper left in place grows the independent sign straight back.
+ */
+const SIGN_SITES: { rel: string; imports: RegExp }[] = [
+  { rel: "app/reports/rom/page.tsx", imports: /signedPct/ },
+  { rel: "app/reports/monthly/page.tsx", imports: /signedNumber/ },
+  { rel: "app/reports/performance/page.tsx", imports: /signedNumber/ },
+  { rel: "components/cash/ledger-import.tsx", imports: /signedNumber/ },
+  { rel: "components/risk/greeks-panel.tsx", imports: /signOf/ },
+  { rel: "components/risk/var-panel.tsx", imports: /signOf/ },
+  { rel: "components/risk/mtf-drift-card.tsx", imports: /signedNumber/ },
+];
+
+const srcOf = (rel: string) => fs.readFileSync(path.join(process.cwd(), ...rel.split("/")), "utf8");
+
+describe.each(SIGN_SITES)("$rel signs through @/lib/format", ({ rel, imports }) => {
+  const src = srcOf(rel);
+
+  it("has no `? \"+\" :` of its own left", () => {
+    // `\r?\n` nowhere needed: every one of these sat on a single line.
+    const own = src.match(/\?\s*"\+"\s*:/g) ?? [];
+    expect(own, `independent sign choices still in ${rel}: ${own.join(" | ")}`).toEqual([]);
+  });
+
+  it("declares no local pct/sign/signed helper", () => {
+    const local = src.match(/const (pct|sign|signed) = \(/g) ?? [];
+    expect(local, `local sign helpers still in ${rel}: ${local.join(" | ")}`).toEqual([]);
+  });
+
+  it("imports the shared helper it needs", () => {
+    const imp = /import \{([^}]*)\} from "@\/lib\/format";/.exec(src);
+    expect(imp, `${rel} imports nothing from lib/format`).not.toBeNull();
+    expect(imp![1]).toMatch(imports);
+  });
+});
+
+describe("the drawdown keeps a HARD minus, and says why at the site", () => {
+  // performance.ts returns maxDrawdownPct = r2(Math.abs(maxDdFrac) * 100) — a
+  // positive MAGNITUDE by construction, so signOf() would print "+".
+  it("both drawdown sites carry the by-construction comment", () => {
+    for (const rel of ["app/reports/monthly/page.tsx", "app/reports/performance/page.tsx"]) {
+      const src = srcOf(rel);
+      expect(src, `${rel} lost the hard-minus justification`).toMatch(/positive magnitude by construction/);
+    }
   });
 });

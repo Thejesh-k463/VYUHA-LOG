@@ -280,6 +280,19 @@ describe("egress guard — the zero-telemetry claim is enforced, not asserted", 
     }
   });
 
+  it("the v4.3 strategy-shelf door is same-origin only — it names no host and opens no socket", () => {
+    // The shelf write is a route handler + client `fetch` + `router.refresh()`
+    // (AGENTS.md), and the whole point of that shape is that the write never
+    // leaves the machine. The route file is asserted to exist AND to contain
+    // no outbound call of any kind, so the day someone "enriches" the shelf
+    // from a vendor catalogue, this reddens before the privacy copy in
+    // lib/domain/help-content.ts becomes untrue.
+    const file = "app/api/strategies/shelf/route.ts";
+    const src = readFileSync(path.join(root, file), "utf8");
+    expect(auditJsSource(file, src), "the shelf route must add no egress").toEqual([]);
+    expect(stripComments(src), "the shelf route must name no absolute URL").not.toMatch(/https?:\/\//i);
+  });
+
   it("every allowlist entry is still earned — no stale hosts linger", () => {
     // Both directions, the metric-help style: an entry nothing references any
     // more is an egress permission nobody is using, which is how scope creeps.
@@ -326,6 +339,11 @@ describe("the guard itself catches what it claims to (fixture self-test)", () =>
     const clean = [
       `await fetch("/api/settings", { method: "POST" });`,
       "await fetch(`/api/trades/${id}`);",
+      // v4.3 — the strategy shelf's door. Same-origin, so it is NOT egress and
+      // needs no host entry above; pinned here so a later "tighten the guard"
+      // that started flagging relative paths would fail loudly instead of
+      // quietly demanding a host for one of the app's own route handlers.
+      `await fetch("/api/strategies/shelf", { method: "POST" });`,
       "await fetch(`https://api.dhan.co/v2${p}`);",
       `await fetch("http://127.0.0.1:5000/api/v1/ping");`,
       `// await fetch("https://telemetry.evil.example/v1/track")`,

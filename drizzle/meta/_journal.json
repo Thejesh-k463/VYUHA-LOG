@@ -498,6 +498,13 @@
       "when": 1788800400000,
       "tag": "0070_angelone-instrument-tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1788800500000,
+      "tag": "0071_settings-strategy-shelf",
+      "breakpoints": true
     }
   ]
 }

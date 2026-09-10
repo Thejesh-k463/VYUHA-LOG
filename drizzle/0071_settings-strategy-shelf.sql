@@ -1,0 +1,39 @@
+-- v4.3 — `settings.strategy_shelf_json`: WHICH option strategies this person
+-- keeps on the shelf, out of the full catalogue.
+--
+-- ONE COLUMN FOR THE WHOLE SHELF, ON PURPOSE. The value is a versioned JSON
+-- envelope — `{"v":1,"selected":["long-call","iron-condor"]}` — not a column
+-- per strategy and not a join table. The catalogue
+-- (`lib/analytics/strategy-catalogue.ts`) grows every time someone adds a
+-- structure; a column per id would make the schema grow with it, and a join
+-- table would buy referential integrity over a list of string ids that live in
+-- code, not in the database. The envelope's `v` is what protects a future
+-- shape: `parseShelf()` (lib/domain/strategy-shelf.ts) discards an alien
+-- version rather than half-reading it, exactly as `bhavcopy_backfill_progress`
+-- (0066) does.
+--
+-- NULLABLE, AND NULL IS THE HONEST DEFAULT. An upgraded install has never
+-- picked a shelf, and null means "the eight defaults" — a stored copy of the
+-- defaults would freeze this release's list into every database and a later
+-- change to DEFAULT_SHELF would then be invisible to everyone who upgraded.
+--
+-- A PREFERENCE, NOT MACHINE STATE. This is the opposite call to 0069's
+-- `live_feed_ack_json`, and the reason is the whole difference between the two
+-- columns: a consent is a statement a PERSON made on a MACHINE, while a shelf
+-- is a CHOICE about how this person likes their workspace — the same kind of
+-- thing as `theme`, `density` or `default_buy_orders`. So it TRAVELS in a
+-- backup (it is NOT in `SETTINGS_MACHINE_COLUMNS`, lib/backup-format.ts) and it
+-- belongs to "My Default Settings" (`BASELINE_SETTINGS_FIELDS`,
+-- lib/domain/settings-baseline.ts): restoring your own backup on a new machine
+-- should hand back the shelf you built, and "back to my defaults" should return
+-- the shelf you saved. It grants nothing, enables no host and carries no
+-- credential, so none of the consent reasoning above applies to it.
+--
+-- NO MONEY, NO DENOMINATOR. A list of strategy ids: invariant 1 and invariant 6
+-- both have nothing to own here.
+--
+-- NOT ACCOUNT-SCOPED. `settings` is a single-row table; invariants 8/9 have
+-- nothing to own here.
+--
+-- Hand-written, no drizzle-kit snapshot (AGENTS.md: 0027+), journal entry added.
+ALTER TABLE `settings` ADD COLUMN `strategy_shelf_json` text;

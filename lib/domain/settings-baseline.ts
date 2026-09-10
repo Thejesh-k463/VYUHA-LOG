@@ -47,6 +47,14 @@ export const BASELINE_SETTINGS_FIELDS = [
   "defaultBuyOrders",
   "defaultSellOrders",
   "autoMtmEnabled",
+  // Option strategy shelf (v4.3, migration 0071) — which structures out of the
+  // catalogue this person keeps in front of them, as a versioned envelope. A
+  // CHOICE about the workspace, like theme and density: "back to my defaults"
+  // should hand back the shelf they saved. Null in the baseline means the
+  // DEFAULT_SHELF eight, which is also what the column means, so an install
+  // whose baseline predates this field is untouched (diffAgainstBaseline skips
+  // a field the baseline never recorded).
+  "strategyShelfJson",
 ] as const;
 
 export type BaselineSettingsField = (typeof BASELINE_SETTINGS_FIELDS)[number];
