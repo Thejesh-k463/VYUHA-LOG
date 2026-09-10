@@ -5264,4 +5264,57 @@ tree by the time the skeptic read it; U-1 downgraded from "broken feature" to a 
   Pro control (`aria-label="Remove Jade Lizard from the shelf"`) and the lapsed-trial negative read the same constant; proven by
   changing the control's string alone: `1 failed | 54 passed` — the negative stayed green under the wrong string, the vacuity the
   control closes. U-1 remains pinned by SOURCE SHAPE (no jsdom harness; the `committedAt` guard is reasoned, not observed); U-2's
-  pixels not observed (no `/help` e2e). Six `it(` blocks added (README 7626 → 7632). Gate line and sha: STATE §2 / the ledger.
+  pixels not observed (no `/help` e2e). Six `it(` blocks added (README 7626 → 7632). Gate: `npm run verify` EXIT 0 — 378 files /
+  7,632 passed / 35 skipped, lint 0 errors (3 pre-existing warnings), build 9.8 s. **Commit `34db076`, CI 34523410516 SUCCESS 6/6.**
+
+## 2026-09-11 — v4.3.0 audit round 5 (scoped) over fix wave 4 `f167e6c..34db076` → fix wave 5 (one builder)
+
+**The audit** (scoped by the round-4 ruling to money + ui-regressions + test-integrity, three Fable auditors launched while CI
+34523410516 ran — SUCCESS 6/6): money 10 → **0** — the auditor calibrated its oracle by replaying the OLD de-dup guard over the
+same 60,000-position fuzz (110 duplicates reproduced) and the shipped `be >= cHi − 0.005` guard over ~40k random + ~98k targeted
+positions (0 duplicates, 0 missing; the one unproven corner is a crossing EXACTLY on a half-paisa `cHi` with a tiny positive float
+sign — measure-zero for lot-sized 2-decimal inputs); ui 15 → **2**; test-integrity 19 → **1** → Fable skeptic **3 → 3**, severities
+re-set (U-1 medium regression; U-2 rare but a PERMANENT lost write, not transient; T-1 low-medium, "a pin that cannot go red on
+the part that matters"). Ruling: `06-ANSWERS.md` "v4.3.0 audit-round-5 ruling" — one builder, then a scoped round 6.
+
+- **R5-U-1 (regression introduced by fix wave 4, medium)** `strategies-client.tsx`: the refusal revert `cur === next ?
+  committed.current : cur` replaced the WHOLE history object with the committed ref, whose `past`/`future` are ALWAYS `[]`
+  (`foldShelfPost` is `{ ...h, present }`; the seed is `initShelfHistory`), so one refused tick after N accepted ticks disabled
+  Undo/Redo — the exact reset the component's own header says the architecture exists to avoid; fix wave 3's `previous` target
+  had carried the stack. Driven through the real reducer + fold outside React: `before true 3` → `after false 0`. Fix: revert to
+  `{ ...history, present: committed.current.present }` — `past`/`future` from the gesture's PRE-TICK closure (not from `cur`,
+  which already carries the pre-tick present pushed onto `past` — a phantom undo step onto an optimistic state), `present` from
+  the confirmed ref.
+- **R5-U-2 (rare, permanent)** same file: tick A accepted-but-slow, tick B refused-and-fast, B's reply first → revert to the
+  mount-seed `committed` → screen pre-A; A's late `ok` advanced `committed` but the `latest` guard returned before the fold AND
+  before `router.refresh()` → screen pre-A, store post-A, cache never purged, and the next tick posts the screen's list, erasing A.
+  The round-4 residual covered only a stale REFUSAL. Fix: a stale accepted reply always fires `router.refresh()` and re-syncs a
+  screen still sitting on the pre-advance confirmed selection by a VALUE comparison of `selected`; the recorded residual becomes
+  a tick C fired between B's revert and A's late acceptance (posts pre-A + C).
+- **R5-T-1 (test gap)** `tests/strategies-page.test.ts` pinned the ref's seed and the revert literal but nothing pinned the ADVANCE
+  (`committed.current = foldShelfPost(committed.current, r)` under `mine > committedAt.current`) — a build that never advances the
+  ref (every refusal reverting to the mount seed, R4-U-1 in a new coat) passes the whole suite. Fix: the advance pinned by shape
+  and by position (before the refusal branch).
+- **Recorded, not defects (round 5):** the money auditor's `toBeCloseTo(33311.335, 1)` accepts either neighbour — the
+  `toHaveLength(1)` is the real pin; the fix-wave-4 comment "r2 moves a value by at most 0.005, exactly the slack" overstates the
+  tightness (the admitted true-crossing band is up to `[cHi − 0.01, cHi)`, harmless because the Set folds it); the seam file's
+  second `toContain(SHELF_REMOVE_TAIL)` is subsumed by the full-label assertion; the U-2 test comment about "the same letters" is
+  wrong prose over a right assertion; DECISIONS' "nine files inside its set" for fix wave 4 counts code/test paths — the commit
+  touched 12 (+ README, STATE, this file).
+- **Fix wave 5 (one Opus builder, 105k; two files — `strategies-client.tsx`, `tests/strategies-page.test.ts`; the seam file
+  needed no edit and stayed green):** U-1 — the refusal revert is `{ ...history, present: committed.current.present }` (the
+  gesture's pre-tick closure keeps `past`/`future`; the confirmed ref supplies `present`); a behavioural test drives the real
+  reducer + fold outside React (three accepted ticks, one refused → `canUndo` stays true, `past.length` 3, `present` = the
+  store) — its revert expression is DUPLICATED from the component (a closure + ref inside a `"use client"` island cannot be
+  imported), so the source-shape pin is what ties the copy to the shipped line; red on revert `one refused tick disabled Undo for
+  the whole session: expected false to be true`. U-2 — `before = committed.current.present` and `advanced = r.ok && mine >
+  committedAt.current` captured before the advance; the stale branch re-syncs a screen still on the pre-advance selection by
+  VALUE (`sameSelection`, a module-level pure helper local to the island — deliberately not an export of the pure shelf module)
+  and ALWAYS `router.refresh()`es when the reply advanced the store; red on revert `the store moved and the client router cache
+  still holds the shelf before it: expected … to contain 'router.refresh()'`. The residual, recorded in the code: a tick C fired
+  between B's revert and A's late acceptance posts pre-A + C — only an if-match/version on the POST (the route, outside this
+  wave) could refuse it. T-1 — the advance pinned by shape (`const advanced = r.ok && mine > committedAt.current` …
+  `committed.current = foldShelfPost(committed.current, r)`) and by ORDER (its index before the refusal branch; a plant that
+  moved it below went red: `expected 10184 to be less than 8180`). Two `it(` added (README 7632 → 7634). No jsdom harness: the
+  `latest`/`committedAt` interleavings are reasoned and pinned, not observed (same caveat as fix wave 4). Gate line, sha and CI:
+  STATE §2 / the ledger.

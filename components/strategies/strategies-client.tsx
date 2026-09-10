@@ -45,7 +45,10 @@ import { StrategyCard } from "./strategy-card";
  * tick posts the stale eight and the first tick is gone from the database. So
  * the refresh follows a SUCCESSFUL fold, exactly as
  * `components/settings/charge-editor.tsx:79` and `live-feed-card.tsx:813` do
- * after theirs. A refusal stored nothing and refreshes nothing.
+ * after theirs. A refusal stored nothing and refreshes nothing. A reply that is
+ * ACCEPTED but already STALE refreshes too, and re-syncs a screen still sitting
+ * on the shelf it superseded — the store moved, whoever's tick was latest
+ * (R5-U-2, in `run`).
  *
  * NO EFFECT ANYWHERE. Everything on this screen is derived at render from
  * `history.present` and the props — the rule AGENTS.md states after the Trades
@@ -126,11 +129,50 @@ export function StrategiesClient({
       // screen — and recorded even when this reply is stale, because a write
       // the route ACCEPTED is where a newer tick's refusal has to land. Drop it
       // only if a newer confirmation has already been folded in.
-      if (r.ok && mine > committedAt.current) {
+      const before = committed.current.present;
+      const advanced = r.ok && mine > committedAt.current;
+      if (advanced) {
         committedAt.current = mine;
         committed.current = foldShelfPost(committed.current, r);
       }
-      if (mine !== latest.current) return;
+      if (mine !== latest.current) {
+        // R5-U-2. A STALE `ok` IS STILL A WRITE THAT HAPPENED — and returning
+        // here without doing anything about it lost it permanently. Tick A
+        // accepted but slow, tick B refused and fast: B answers first, reverts
+        // the strip to `committed` (still the mount seed) and the screen is
+        // back before A. A's `ok` then lands stale — it moves `committed`, and
+        // used to stop there. Screen pre-A, store post-A, and the client router
+        // cache never purged: the next tick posts the SCREEN's list, which no
+        // longer contains A, and A is gone from the database.
+        //
+        // So, on the reply that moved the store: purge the cache (the store
+        // moved — the same argument as the ok path's refresh, which this reply
+        // never reaches), and put the screen on the shelf the route confirmed
+        // IF it is still sitting on the one this reply superseded. Both halves
+        // compare BY VALUE: `useState` and `useRef` seed two different objects
+        // from the same server prop, so identity is false at mount even when
+        // the two say the same shelf. A screen that has moved on since — a
+        // later tick, a later fold — is left exactly where it is.
+        //
+        // RESIDUAL, recorded rather than fixed: a tick C fired in the window
+        // between B's revert and A's late `ok` posts the pre-A shelf plus C,
+        // which erases A in the store before this branch ever runs. Nothing on
+        // the client can see that; only a write that carried the shelf it was
+        // editing FROM (an if-match version) could refuse it at the route.
+        //
+        // A stale REFUSAL still stays silent (fix wave 4's decision): the newer
+        // tick's body carries the older tick's change, so a toast for it would
+        // contradict a newer acceptance.
+        if (advanced) {
+          setHistory((cur) =>
+            sameSelection(cur.present, before) && !sameSelection(cur.present, committed.current.present)
+              ? { ...cur, present: committed.current.present }
+              : cur,
+          );
+          router.refresh();
+        }
+        return;
+      }
       if (!r.ok) {
         toast.error(r.error);
         // PUT THE STRIP BACK. A 403, a 400 or an unreachable route stored
@@ -147,7 +189,19 @@ export function StrategiesClient({
         // is ACCEPTED the older "nothing was stored" would be a false alarm.
         // A stale refusal's state is decided by the newer tick's reply, which
         // reverts to `committed` — the same shelf, reached one step later.
-        setHistory((cur) => (cur === next ? committed.current : cur));
+        //
+        // R5-U-1: THE PRESENT COMES BACK, THE HISTORY DOES NOT MOVE. Reverting
+        // to the whole of `committed.current` reset Undo: `foldShelfPost` is
+        // `{ ...h, present }`, so that ref's `past`/`future` are empty by
+        // construction — it records the STORE, not this session — and one
+        // refused tick after five accepted ones left the user with nothing to
+        // undo, which is the very thing the header of this file says a write on
+        // this screen must never do. `past`/`future` therefore come from the
+        // gesture's PRE-TICK `history`, and NOT from `cur`: `cur === next` is
+        // the optimistic state, whose `past` already carries the tick being
+        // refused — undoing from there would land on a shelf the store never
+        // held.
+        setHistory((cur) => (cur === next ? { ...history, present: committed.current.present } : cur));
         return;
       }
       // The screen takes the route's re-read, and the client router cache is
@@ -201,6 +255,23 @@ export function StrategiesClient({
       )}
     </div>
   );
+}
+
+/**
+ * Do two shelves say the same thing? BY VALUE, and order matters (the strip
+ * renders in the order it was built, so a re-ordered selection is a different
+ * shelf — `shelfJsonEquivalent` says the same about the stored column).
+ *
+ * Local and tiny on purpose. `lib/domain/strategy-shelf.ts` keeps its own
+ * private copy for the reducer's no-op guard; exporting that one would widen a
+ * pure module's surface for a comparison this file makes in exactly one place,
+ * and the two can drift only by both being wrong about what "the same shelf"
+ * means. Identity is not an option here: `useState` and `useRef` each build
+ * their own `ShelfState` from the same server prop, so `a === b` is false at
+ * mount for two objects that hold the identical list.
+ */
+function sameSelection(a: ShelfState, b: ShelfState): boolean {
+  return a.selected.length === b.selected.length && a.selected.every((id, i) => id === b.selected[i]);
 }
 
 /**
