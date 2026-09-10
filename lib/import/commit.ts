@@ -30,7 +30,9 @@ import {
   AUTO_CLOSE_NOTE,
   lotIdentityHashes,
   planLotCloses,
+  splitByRemainder,
   withLotCloseNote,
+  withScaledRemainderNote,
   type IncomingRow,
   type LotClose,
   type OpenLot,
@@ -596,22 +598,48 @@ function applyLotCloses(
 ): AppliedClose[] {
   const applied: AppliedClose[] = [];
 
-  for (const c of closes) {
+  // M-1 (round 2): the INCOMING row's own money is split across the slices it
+  // closed BY REMAINDER too. The target is the quantity these closes actually
+  // consumed; every slice but the last takes its rounded share and the last
+  // takes what is left, so one sale split over two lots can never levy a paisa
+  // the broker never charged (`splitChargesByRemainder`, lib/import/api/dhan.ts,
+  // is the same rule on the fills side).
+  const consumedShare = row.qty > 0 ? closes.reduce((s, c) => s + c.qty, 0) / row.qty : 0;
+  const exitValueTarget = r2(row.value * consumedShare);
+  const exitPartTarget = {} as Record<ChargePart, number>;
+  const exitPartGiven = {} as Record<ChargePart, number>;
+  for (const k of CHARGE_PARTS) {
+    exitPartTarget[k] = r2((b.charges[k] ?? 0) * consumedShare);
+    exitPartGiven[k] = 0;
+  }
+  let exitValueGiven = 0;
+
+  for (let i = 0; i < closes.length; i++) {
+    const c = closes[i];
     const lotRow = book.rows.get(c.lotId);
     if (!lotRow) continue;
+    const lastSlice = i === closes.length - 1;
 
     // Exit leg: the incoming row's own money, apportioned by quantity. The
     // file's stated value is the truth, so it is split rather than recomputed
     // from price × qty.
     const exitShare = row.qty > 0 ? c.qty / row.qty : 0;
-    const exitValue = r2(row.value * exitShare);
+    const exitValue = lastSlice ? r2(exitValueTarget - exitValueGiven) : r2(row.value * exitShare);
+    exitValueGiven = r2(exitValueGiven + exitValue);
 
     // Charges: the lot's share moves onto the close, the exit's share joins it.
+    // The lot's component is ONE split — what the slice takes and what the
+    // reduced row keeps — so the two always sum to what the lot was billed.
     const parts = {} as Record<ChargePart, number>;
+    const keepParts = {} as Record<ChargePart, number>;
     let chargesTotal = 0;
     for (const k of CHARGE_PARTS) {
-      const fromLot = r2((lotRow[k] ?? 0) * c.lotShare);
-      const fromExit = r2((b.charges[k] ?? 0) * exitShare);
+      const { slice: fromLot, keep } = splitByRemainder(lotRow[k] ?? 0, c.lotShare);
+      keepParts[k] = keep;
+      const fromExit = lastSlice
+        ? r2(exitPartTarget[k] - exitPartGiven[k])
+        : r2((b.charges[k] ?? 0) * exitShare);
+      exitPartGiven[k] = r2(exitPartGiven[k] + fromExit);
       parts[k] = r2(fromLot + fromExit);
       chargesTotal = r2(chargesTotal + parts[k]);
     }
@@ -674,12 +702,10 @@ function applyLotCloses(
       // hash and the user's journal fields) and the slice that closed is
       // inserted beside it.
       const keep = 1 - c.lotShare;
-      const keepParts = {} as Record<ChargePart, number>;
+      // `keepParts` was decided with the slice above, by remainder — never
+      // rounded a second time off the same component (M-1, round 2).
       let keepTotal = 0;
-      for (const k of CHARGE_PARTS) {
-        keepParts[k] = r2((lotRow[k] ?? 0) * keep);
-        keepTotal = r2(keepTotal + keepParts[k]);
-      }
+      for (const k of CHARGE_PARTS) keepTotal = r2(keepTotal + keepParts[k]);
       const keepGross = r2(lotRow.grossPnl * keep);
       const openSide = isShort
         ? { sellQty: r2(lotRow.sellQty - c.qty), sellValue: r2(lotRow.sellValue - c.openValue) }
@@ -1680,7 +1706,17 @@ export function commitParsedFile(
           // is flagged rather than reported as an all-profit trade.
           acquisition: tRow.basisUnknown ? "unknown" : null,
           suggestedBasisPrice: tRow.suggestedBasisPrice ?? null,
-          importNotes: noteLines.length ? noteLines.join(" | ") : null,
+          // S-1 (round 2): a row SCALED DOWN because part of it closed lots is
+          // stored under the WHOLE execution's hash, so its hash no longer
+          // describes its own legs. Freeze it — otherwise the Paytm re-key,
+          // which re-runs on every restore, re-hashes it from the scaled legs
+          // and hands it the identity a genuine sale of that size would carry.
+          importNotes:
+            keepShare < 1
+              ? withScaledRemainderNote(noteLines.length ? noteLines.join(" | ") : null, bRow.dedup)
+              : noteLines.length
+                ? noteLines.join(" | ")
+                : null,
         })
         .returning({ id: tradesTable.id })
         .get();

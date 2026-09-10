@@ -57,7 +57,13 @@ export interface DuplicateTradeGroup {
   brokerLabel: string;
   dedupHash: string;
   symbol: string;
-  qty: number;
+  /**
+   * The record's own quantity, or NULL when no row in the group still states
+   * it — every copy was merged into a lot by an auto-close, and a merged row's
+   * quantity belongs to the lot, not to this record. Rendered "—" (invariant 6:
+   * a figure nothing states is never borrowed from a different execution).
+   */
+  qty: number | null;
   buyDate: string | null;
   sellDate: string | null;
   /** Trade rows in the group, across every account holding it. */
@@ -191,7 +197,7 @@ export function crossAccountIssues(i: Pick<QualityInputs, "duplicateConnections"
       code: `duplicate_trades:${g.broker}:${g.dedupHash.slice(0, 12)}`,
       severity: "critical",
       title: `${g.symbol} held in ${g.accounts.length} accounts as the same ${g.brokerLabel} record`,
-      detail: `${g.rows} rows carry one ${g.brokerLabel} record (${g.qty} × ${g.symbol}${when ? `, ${when}` : ""}) in ${nameList(g.accounts.map((a) => a.name))}. The All-accounts view counts every copy.`,
+      detail: `${g.rows} rows carry one ${g.brokerLabel} record (${g.qty ?? "—"} × ${g.symbol}${when ? `, ${when}` : ""}) in ${nameList(g.accounts.map((a) => a.name))}. The All-accounts view counts every copy.`,
       count: g.rows,
       href: DUPLICATES_HREF,
       ids: g.ids.slice(0, 100),

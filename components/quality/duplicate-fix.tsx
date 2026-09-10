@@ -57,7 +57,9 @@ export interface DuplicateFixGroup {
   brokerLabel: string;
   dedupHash: string;
   symbol: string;
-  qty: number;
+  /** Null when no row in the group states it — printed "—", never borrowed
+   *  from a merged lot (U-2, invariant 6). */
+  qty: number | null;
   buyDate: string | null;
   sellDate: string | null;
   rows: number;
@@ -109,8 +111,14 @@ export function DuplicateFix({
       if (res.ok) toast.success(res.message);
       else toast.error(res.message);
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Nothing was removed.");
+    } catch {
+      // U-1 (round 2): NEVER the thrown message. `removeDuplicateCopy` is a
+      // server action, and a production build replaces a server-side error's
+      // message with React's redaction boilerplate ("An error occurred in the
+      // Server Components render…"), so the toast showed the user a paragraph
+      // about digests instead of what happened to their data. The action's own
+      // refusals arrive as `res.ok === false` above, with their real sentence.
+      toast.error("Nothing was removed. Reload the page and try again.");
     } finally {
       setBusy(false);
     }
@@ -161,7 +169,7 @@ export function DuplicateFix({
                   <p className="font-medium">{g.symbol}</p>
                   <Badge variant="outline">{g.rows} rows</Badge>
                   <span className="text-muted-foreground">
-                    {g.brokerLabel} · qty {g.qty}
+                    {g.brokerLabel} · qty {g.qty ?? "—"}
                     {dates(g) ? ` · ${dates(g)}` : ""}
                   </span>
                 </div>
@@ -219,7 +227,7 @@ export function DuplicateFix({
             <DialogDescription>
               {target
                 ? `${target.account.rows} row${target.account.rows === 1 ? "" : "s"} of ${target.group.symbol} ` +
-                  `(${target.group.brokerLabel}, qty ${target.group.qty}) leave ${target.account.name}. ` +
+                  `(${target.group.brokerLabel}, qty ${target.group.qty ?? "—"}) leave ${target.account.name}. ` +
                   `The copy in ${target.group.accounts
                     .filter((a) => a.id !== target.account.id)
                     .map((a) => a.name)

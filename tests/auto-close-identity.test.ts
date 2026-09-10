@@ -206,3 +206,68 @@ describe("S-2 — rerunDataFixesAfterRestore leaves a frozen lot alone", () => {
     expect(rowsOf(ACC)).toHaveLength(before);
   });
 });
+
+// ───── S-1 (round 2): the row an OVER-CONSUMING execution leaves behind ─────
+
+describe("S-1 — a scaled-down remainder is frozen too", () => {
+  const ACC = 623;
+  const ISIN = "INE000A01026";
+  const SYM = "PAYTMOVER";
+  const buys = () => parsed([buyRow(SYM, 40, 100, "2026-04-01", { isin: ISIN })], "paytm");
+  // 100 sold against a book holding 40: 40 closes the lot, 60 is left over and
+  // is written as its own row — scaled, but stored under the WHOLE file row's
+  // hash, because that is the record the file states.
+  const sells = () => parsed([sellRow(SYM, 100, 120, "2026-05-01", { isin: ISIN })], "paytm");
+  let remainderHash = "";
+
+  it("the sale over-consumes the book: 40 closes, 60 is left as its own row", () => {
+    newAccount(ACC, "identity-s1-remainder");
+    expect(commit.commitParsedFile(buys(), "paytm-buys.csv", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC).added).toBe(1);
+
+    const rows = rowsOf(ACC);
+    expect(rows).toHaveLength(2);
+    const remainder = rows.find((r) => r.isOpen)!;
+    expect(remainder.sellQty, "the part of the sale that closed nothing").toBe(60);
+    expect(remainder.buyQty).toBe(0);
+    remainderHash = remainder.dedupHash;
+
+    expect(isLotIdentityFrozen(remainder), "its hash no longer describes its own legs").toBe(true);
+    expect(lotIdentityHashes(remainder), "and it gains no SECOND identity from saying so")
+      .toEqual([remainderHash]);
+  });
+
+  it("the restore re-key leaves it alone — it does not become a 60-share sale", async () => {
+    // Imported dynamically like every other module here: the temp-db helper
+    // must set VYUHA_DB_PATH before anything in the graph binds a connection.
+    const { dedupHash } = await import("@/lib/import/dedup");
+    // What a genuine, separate 60-share sale of this scrip would be called.
+    const genuine60 = dedupHash({
+      broker: "paytm",
+      tradingsymbol: SYM,
+      isin: ISIN,
+      buyQty: 0,
+      avgBuyPrice: 0,
+      buyValue: 0,
+      sellQty: 60,
+      avgSellPrice: 120,
+      sellValue: 7200,
+      buyDate: null,
+      sellDate: "2026-05-01",
+    });
+
+    expect(dataFixes.rerunDataFixesAfterRestore(t.sqlite).length).toBeGreaterThan(0);
+    const remainder = rowsOf(ACC).find((r) => r.isOpen)!;
+    expect(remainder.dedupHash, "the remainder's hash survives the restore re-key").toBe(remainderHash);
+    expect(remainder.dedupHash, "and never becomes the identity of a sale that never happened")
+      .not.toBe(genuine60);
+  });
+
+  it("so the sell file still de-duplicates after the restore", () => {
+    const before = rowsOf(ACC).length;
+    const again = commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC);
+    expect(again.added).toBe(0);
+    expect(again.skipped).toBe(1);
+    expect(rowsOf(ACC)).toHaveLength(before);
+  });
+});

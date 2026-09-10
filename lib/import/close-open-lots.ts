@@ -122,20 +122,66 @@ export function isLotIdentityFrozen(row: { dedupHash: string; importNotes: strin
 }
 
 /**
+ * Written to `import_notes` on the row an execution left OVER: the file said
+ * 100, 40 of it closed lots this account held, and this row is the other 60.
+ *
+ * A separate sentence from `AUTO_CLOSE_NOTE` on purpose (S-1, round 2): the
+ * legacy leg-rehash fallback in `commit.ts` fires on the auto-close sentence,
+ * and re-hashing THIS row's legs would produce exactly the hash a genuine
+ * 60-share sale carries — a guess that would then swallow a real file.
+ */
+export const PARTIAL_CLOSE_NOTE =
+  "Part of this execution closed open positions this account already held; this row is what was left of it.";
+
+/** Append `sentence` once and `hash` once as an alias. Order is preserved. */
+function withIdentityNote(importNotes: string | null, sentence: string, hash: string): string {
+  const parts = (importNotes ?? "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.includes(sentence)) parts.push(sentence);
+  const alias = `${DEDUP_ALIAS_PREFIX}${hash}`;
+  if (!parts.includes(alias)) parts.push(alias);
+  return parts.join(" | ");
+}
+
+/**
  * The `import_notes` a lot carries after an execution consumed part or all of
  * it: the provenance sentence once, plus one alias per consuming execution.
  * Idempotent — a lot eaten by three sells ends with three aliases and one
  * sentence, in the order the sells arrived.
  */
 export function withLotCloseNote(importNotes: string | null, closingHash: string): string {
-  const parts = (importNotes ?? "")
-    .split("|")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!parts.includes(AUTO_CLOSE_NOTE)) parts.push(AUTO_CLOSE_NOTE);
-  const alias = `${DEDUP_ALIAS_PREFIX}${closingHash}`;
-  if (!parts.includes(alias)) parts.push(alias);
-  return parts.join(" | ");
+  return withIdentityNote(importNotes, AUTO_CLOSE_NOTE, closingHash);
+}
+
+/**
+ * The `import_notes` a SCALED-DOWN remainder row carries (S-1, round 2).
+ *
+ * Its `dedup_hash` is the WHOLE execution's — the file stated 100 shares — but
+ * its legs state only what was left, so the hash no longer describes them and
+ * anything that re-derives one from the legs must leave it alone. Stating the
+ * row's OWN hash as an alias is what freezes it: `lotIdentityHashes` de-dupes,
+ * so the row gains no second identity, and `isLotIdentityFrozen` says yes.
+ */
+export function withScaledRemainderNote(importNotes: string | null, ownHash: string): string {
+  return withIdentityNote(importNotes, PARTIAL_CLOSE_NOTE, ownHash);
+}
+
+/**
+ * Split ONE money component between a slice and what is left, BY REMAINDER —
+ * the wave's own rule (`splitChargesByRemainder`, lib/import/api/dhan.ts).
+ *
+ * The slice takes its share rounded to the paisa and the remainder takes
+ * `total − slice`, so the two ALWAYS sum to `total`. Rounding both halves
+ * independently does not: a SEBI fee of ₹0.01 on a lot sold half was stored as
+ * 0.01 + 0.01 = ₹0.02 levied against ₹0.01 charged, and ₹1.25 split 50/50 came
+ * to ₹1.26 (round-2 audit M-1, 2026-09-10). Applied per COMPONENT, never to a
+ * total: the totals are the sums of the components at rest.
+ */
+export function splitByRemainder(total: number, share: number): { slice: number; keep: number } {
+  const slice = r2(total * share);
+  return { slice, keep: r2(total - slice) };
 }
 
 /** An open position the book already holds, as this module needs to see it. */

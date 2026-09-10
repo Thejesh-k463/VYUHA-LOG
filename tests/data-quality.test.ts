@@ -743,9 +743,16 @@ describe("what a cross-account duplicate group SAYS it is", () => {
     expect(issue.detail).not.toContain("2026-09-01");
   });
 
-  it("falls back to the first row when NO row's own identity is the group — both books merged the sale", () => {
-    // Nothing here stands alone under HASH_B, so there is no better row to read;
-    // the group is still reported, and still offers no delete.
+  /**
+   * U-2 (round 2) — EVERY book merged the sale, so no row here describes it.
+   *
+   * Both accounts hold a lot the sale was folded into: one 60 bought on the
+   * 1st, one 25 bought on the 2nd. The group is real (both books account for
+   * that sale) but nothing in it states the sale's own quantity or dates, and
+   * borrowing a merged lot's printed "60 × INFY, 2026-09-01" beside a sentence
+   * saying each copy closed a position — a different execution entirely.
+   */
+  function seedTwoMergedLots() {
     t.db
       .insert(t.schema.trades)
       .values([
@@ -753,10 +760,34 @@ describe("what a cross-account duplicate group SAYS it is", () => {
         tradeRow({ accountId: SWING, broker: "dhan", symbol: "INFY", tradingsymbol: "INFY", dedupHash: HASH_C, importNotes: withLotCloseNote(null, HASH_B), buyQty: 25, sellQty: 0, buyDate: "2026-09-02" }),
       ])
       .run();
+  }
+
+  it("reports the quantity as UNKNOWN when NO row's own identity is the group — it borrows no lot's", () => {
+    seedTwoMergedLots();
 
     const group = identity.findDuplicateTradeGroup("dhan", HASH_B)!;
-    expect({ qty: group.qty, buyDate: group.buyDate }).toEqual({ qty: 60, buyDate: "2026-09-01" });
-    expect(group.accounts.every((a) => a.removable)).toBe(false);
+    // Still a real duplicate, still named and still linked — and still no delete.
+    expect(group.symbol).toBe("INFY");
+    expect(group.brokerLabel).toBeTruthy();
+    expect(group.rows).toBe(2);
+    expect(group.accounts.map((a) => a.removable)).toEqual([false, false]);
+    // Invariant 6: nothing here states the sale's quantity or its dates.
+    expect({ qty: group.qty, buyDate: group.buyDate, sellDate: group.sellDate }).toEqual({
+      qty: null,
+      buyDate: null,
+      sellDate: null,
+    });
+  });
+
+  it("and the sentence prints “—”, never a merged lot's 60 shares or its buy date", () => {
+    seedTwoMergedLots();
+    const [issue] = crossAccountIssues({ duplicateTradeGroups: identity.listDuplicateTradeGroups() });
+
+    expect(issue.detail).toContain("(— × INFY)");
+    expect(issue.detail).not.toContain("60 × INFY");
+    expect(issue.detail).not.toContain("25 × INFY");
+    expect(issue.detail).not.toContain("2026-09-01");
+    expect(issue.detail).not.toContain("2026-09-02");
   });
 });
 
@@ -783,9 +814,29 @@ describe("the DuplicateFix card", () => {
 
   it("U-1 — `busy` is cleared in a finally, so a thrown action cannot brick the dialog", () => {
     const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
-    expect(code).toMatch(/} catch \([\s\S]{0,200}?toast\.error\(/);
+    expect(code).toMatch(/} catch [\s\S]{0,200}?toast\.error\(/);
     expect(code).toMatch(/} finally \{\r?\n\s*setBusy\(false\);\r?\n\s*\}/);
     // …and never the bare unwound form that left it true for ever.
     expect(code).not.toMatch(/await removeDuplicateCopy\(\{[\s\S]*?\}\);\r?\n\s*setBusy\(false\);/);
+  });
+
+  it("U-1 (round 2) — the catch toasts a FIXED sentence, never the thrown message", () => {
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    // `removeDuplicateCopy` is a server action: a production build replaces a
+    // server-side error's message with React's redaction boilerplate, so
+    // `err.message` shows the user a paragraph about digests. The span cap is
+    // CRLF-safe by margin (a 400-char cap went red on the Windows checkout,
+    // CI 34464285189).
+    expect(code).toMatch(/} catch [\s\S]{0,300}?toast\.error\("Nothing was removed\.[^"]*"\);/);
+    expect(code).not.toMatch(/err instanceof Error/);
+    // Nothing between `catch` and the toast reads a message off the throw.
+    expect(code).not.toMatch(/} catch [\s\S]{0,300}?\.message/);
+    // The action's own refusals still arrive as data, with their real sentence.
+    expect(code).toMatch(/if \(res\.ok\) toast\.success\(res\.message\);\r?\n\s*else toast\.error\(res\.message\);/);
+  });
+
+  it("U-2 — a group with no stated quantity prints “—” rather than a borrowed one", () => {
+    expect(src).toMatch(/qty \{g\.qty \?\? "—"\}/);
+    expect(src).toMatch(/qty: number \| null;/);
   });
 });

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
-import { planLotCloses, type IncomingRow, type OpenLot } from "@/lib/import/close-open-lots";
+import { planLotCloses, splitByRemainder, type IncomingRow, type OpenLot } from "@/lib/import/close-open-lots";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
@@ -142,6 +142,26 @@ describe("planLotCloses — the decision, with no database in sight", () => {
   });
 });
 
+describe("splitByRemainder — one component, two parts, never a paisa invented", () => {
+  it("the slice takes its rounded share and the remainder takes what is LEFT", () => {
+    // The two figures the round-2 audit named: independent rounding turned
+    // ₹1.25 sold half into ₹1.26, and a ₹0.01 SEBI fee into ₹0.02.
+    expect(splitByRemainder(1.25, 0.5)).toEqual({ slice: 0.63, keep: 0.62 });
+    expect(splitByRemainder(0.01, 0.5)).toEqual({ slice: 0.01, keep: 0 });
+    expect(splitByRemainder(20, 0.4)).toEqual({ slice: 8, keep: 12 });
+    expect(splitByRemainder(0.01, 1), "a whole take leaves nothing behind").toEqual({ slice: 0.01, keep: 0 });
+    expect(splitByRemainder(0, 0.5)).toEqual({ slice: 0, keep: 0 });
+  });
+
+  it("holds for EVERY paise figure a 50/50 split can meet", () => {
+    for (let paise = 0; paise <= 500; paise++) {
+      const total = r2(paise / 100);
+      const { slice, keep } = splitByRemainder(total, 0.5);
+      expect(r2(slice + keep), `${total} split in half`).toBe(total);
+    }
+  });
+});
+
 // ─────────────────────── case 1: partial close of a long ────────────────────
 
 describe("1 — long 100 open, incoming SELL 40", () => {
@@ -197,11 +217,16 @@ describe("1 — long 100 open, incoming SELL 40", () => {
     expect(shorts).toEqual([]);
   });
 
-  it("the charges are conserved: entry + exit, no paisa counted twice", () => {
+  it("the charges are conserved: entry + exit, EXACTLY, no paisa counted twice", () => {
     const rows = rowsOf(ACC);
     const total = r2(rows.reduce((s, r) => s + r.chargesTotal, 0));
-    expect(total).toBeCloseTo(r2(entryCharges + exitCharges), 1);
+    // M-1 (round 2): exact, not toBeCloseTo(…, 1). A tolerance of half a rupee
+    // cannot see the defect this pins — the slice and the remainder rounding
+    // the same component independently and both keeping the paisa.
+    expect(total, "entry + exit, to the paisa").toBe(r2(entryCharges + exitCharges));
     const closed = rows.find((r) => !r.isOpen)!;
+    const open = rows.find((r) => r.isOpen)!;
+    expect(r2(closed.chargesTotal + open.chargesTotal)).toBe(total);
     expect(closed.chargesTotal).toBeCloseTo(r2(entryCharges * 0.4 + exitCharges), 1);
   });
 
@@ -480,5 +505,121 @@ describe("8 — a basis-unknown SELL dated today (Dhan /positions)", () => {
     expect(rows[0].buyQty).toBe(0);
     expect(rows[1].isOpen).toBe(true);
     expect(rows[1].sellQty).toBe(0);
+  });
+});
+
+// ───── case 9 (M-1, round 2): one component, one split, no invented paisa ────
+
+/** The charge columns a close apportions, in the order commit.ts lists them. */
+const CHARGE_COLUMNS = [
+  "brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty",
+  "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges",
+] as const;
+
+describe("9 — a lot sold in HALF: the charges split by remainder, never twice", () => {
+  const HALF = 612;
+  const REF = 613;
+
+  it("an odd-paisa component goes whole to the slice and the remainder keeps 0", () => {
+    newAccount(HALF, "case-9-half");
+    newAccount(REF, "case-9-ref");
+    commit.commitParsedFile(parsed([buyRow("HDFCBANK", 100, 100, "2026-04-01")]), "buys.csv", null, HALF);
+    const entry = { ...rowsOf(HALF)[0] };
+    // The component this case exists for: SEBI's ₹10 per crore on a ₹10,000
+    // buy is ₹0.01, and 0.01 is the one figure a 50/50 split cannot halve.
+    expect(entry.sebi, "an odd paisa is what a 50/50 split cannot halve").toBe(0.01);
+
+    // The SAME sale committed where nothing is open — its own, unsplit bill.
+    const sale = () => parsed([sellRow("HDFCBANK", 50, 120, "2026-05-01")]);
+    commit.commitParsedFile(sale(), "sells.csv", null, REF);
+    const exit = { ...rowsOf(REF)[0] };
+
+    commit.commitParsedFile(sale(), "sells.csv", null, HALF);
+    const open = rowsOf(HALF).find((r) => r.isOpen)!;
+    const closed = rowsOf(HALF).find((r) => !r.isOpen)!;
+    expect(open.buyQty).toBe(50);
+
+    expect(open.sebi, "₹0.01 halved is not ₹0.01 twice").toBe(0);
+    expect(closed.sebi, "the whole paisa moved onto the slice, with the exit's own").toBe(
+      r2(entry.sebi + exit.sebi),
+    );
+    for (const k of CHARGE_COLUMNS) {
+      expect(r2((open[k] ?? 0) + (closed[k] ?? 0)), `${k} conserved to the paisa`).toBe(
+        r2((entry[k] ?? 0) + (exit[k] ?? 0)),
+      );
+    }
+    expect(r2(open.chargesTotal + closed.chargesTotal), "the totals follow the components").toBe(
+      r2(entry.chargesTotal + exit.chargesTotal),
+    );
+  });
+});
+
+// ───── case 10 (T-1): the SAME-FILE exclusions, with the excluded row FIRST ──
+
+describe("10 — a row this file just wrote is a lot only when it may be one", () => {
+  const UNKNOWN = 614;
+  const MTF = 615;
+  const today = todayIstIso();
+
+  it("a basis-unknown SELL is never a short lot the BUY BEHIND IT in the same file covers", () => {
+    newAccount(UNKNOWN, "case-10-unknown");
+    // The order is the point: the sell is written first, so only
+    // `lotFromNewRow`'s basisUnknown clause stops it entering the book.
+    const oneFile = () =>
+      parsed([
+        trade({
+          tradingsymbol: "GRANULES",
+          sellQty: 40,
+          avgSellPrice: 250,
+          sellValue: 10000,
+          sellDate: today,
+          basisUnknown: true,
+        } as Partial<NormalizedTrade> & { tradingsymbol: string }),
+        buyRow("GRANULES", 40, 240, "2026-09-10"),
+      ]);
+
+    expect(commit.previewParsedFile(oneFile(), null, UNKNOWN).autoClose?.closes ?? 0).toBe(0);
+    const res = commit.commitParsedFile(oneFile(), "positions-and-fills.csv", null, UNKNOWN);
+    expect(res.added, "two rows, because neither closed the other").toBe(2);
+
+    const rows = rowsOf(UNKNOWN).sort((a, b) => a.id - b.id);
+    expect(rows, "the buy did NOT cover the unpriced sale").toHaveLength(2);
+    expect(rows[0].acquisition, "the sale's basis is still unknown (invariant 6)").toBe("unknown");
+    expect(rows[0].isOpen).toBe(true);
+    expect(rows[0].buyQty).toBe(0);
+    expect(rows[1].isOpen, "the buy is its own open lot, not a cover").toBe(true);
+    expect(rows[1].buyQty).toBe(40);
+    expect(rows[1].sellQty).toBe(0);
+  });
+
+  it("an eq_mtf BUY first, then a SELL of it in the same file, closes nothing", () => {
+    newAccount(MTF, "case-10-mtf");
+    // Two independent clauses refuse this pairing — `lotFromNewRow`'s eq_mtf
+    // exclusion and `incomingFromParsed`'s — because only closePosition prices
+    // a funded position's accrued interest. This pins the BEHAVIOUR; it does
+    // not isolate either clause, and deleting one alone leaves it green.
+    const mtfBuy = trade({
+      tradingsymbol: "SBIN",
+      buyQty: 50,
+      avgBuyPrice: 200,
+      buyValue: 10000,
+      buyDate: "2026-09-01",
+      productHint: "mtf",
+    });
+    const mtfSell = trade({
+      tradingsymbol: "SBIN",
+      sellQty: 50,
+      avgSellPrice: 220,
+      sellValue: 11000,
+      sellDate: "2026-09-05",
+      productHint: "mtf",
+    });
+
+    const res = commit.commitParsedFile(parsed([mtfBuy, mtfSell]), "mtf.csv", null, MTF);
+    expect(res.added).toBe(2);
+    const rows = rowsOf(MTF).sort((a, b) => a.id - b.id);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.segment === "eq_mtf")).toBe(true);
+    expect(rows.every((r) => r.isOpen), "neither row closed the other").toBe(true);
   });
 });

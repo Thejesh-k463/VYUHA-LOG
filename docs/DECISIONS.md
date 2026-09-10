@@ -4963,7 +4963,55 @@ adapter read today's `/positions` only and `lastPullAt` was display-only. Not a 
 - **Gate on the wave tree:** `npm run verify` EXIT 0 — **371 files / 7,272 passed / 35 skipped**, lint 0 errors (3 pre-existing
   warnings), `next build` compiled 11.7 s. README re-measured (7272 / 371). `package-lock.json` untouched. Builder cost: F1
   161k, F2 153k, F3 202k, seam 240k, D1 85k, D2 92k; audit 0.72 M (six auditors) + skeptic 127k.
+- **Commits and CI:** the fix wave is **`beaea48`** (21 paths, code + docs in one commit); its CI 34464285189 ran 5/6 — the
+  Windows job alone went red on ONE source-shape pin whose `[\s\S]{0,400}?` span is 398 chars on LF and 408 on the CRLF
+  checkout (`tests/data-quality.test.ts:769`); **`786d288`** widened the cap to 800 (proved: the 400 cap fails and the 800 cap
+  passes on the CRLF-converted source), fixed the client install guide's "three live API pulls" (four) and STATE's scenario
+  count; its CI **34465570290 = SUCCESS 6/6**. Lesson added to the CRLF rule: a bounded span cap must carry a margin of at least
+  one byte per line it can cross, or the Windows job reddens what every other job passes.
 - **Process note:** the rtk wrapper once summarised a vitest run holding 4 failures as all-pass; every count above was read
-  from the RAW summary line via `rtk proxy npx vitest run …`. Two builders saw transient reds while a concurrent builder was
+  from the RAW summary line via `rtk proxy npx vitest run …`.
+
+## 2026-09-10 — v4.3.0 audit round 2 over the fix wave `4fe1b96..beaea48` → fix wave 2
+
+**Round:** six Fable auditors on the COMMITTED range while the wave-2 builders worked in other files (money 14 candidates → 1,
+schema 14 → 1, security 18 → 0, ui 12 → 2, test-integrity 20 → 1, docs 26 → 5) → Fable skeptic **6 → 6** on the code
+findings; the four docs record errors (a 22-vs-20 candidate count, 21 paths not 20, six scenario blocks not seven, the install
+guide's "three live API pulls") were fixed by hand and the fifth (this entry's missing sha/CI ids) is the bullet above.
+Rulings: none needed — no finding carried a design choice the owner had not already settled; one session decision below.
+
+- **M-1 (money, low).** `applyLotCloses` rounded a lot component's slice AND its kept remainder independently (`r2(x × share)` twice),
+  so an exact-half paisa rounded up twice: 1.25 × 0.5 → 0.63 + 0.63 = 1.26; SEBI ₹0.01 on a ₹10,000 lot sold half → ₹0.02 stored.
+  The wave's own D1 rule now applies here: pure `splitByRemainder(total, share)` in `lib/import/close-open-lots.ts` — slice =
+  r2(share), remainder = total − slice; the INCOMING row's components and value are handed to the slices by the same rule against
+  the consumed-quantity target, so a sale split over two lots cannot levy an unbilled paisa. `tests/auto-close-fifo.test.ts`
+  case 1's `toBeCloseTo(…, 1)` (±₹0.05 — the size of the leak) is now `toBe`. Red on revert: "₹0.01 halved is not ₹0.01 twice:
+  expected 0.01 to be +0". Recorded residual: conservation across the `applyLotCloses` → `scaleBuilt(b, keepShare)` boundary
+  (closes vs the kept remainder ROW) can still differ by a paisa on an exact-half boundary.
+- **S-1 (schema, low; Paytm restore only).** An over-consumption remainder row (`scaleTrade(t, keepShare)`, inserted with the full
+  row's hash and no auto-close marker) was not frozen, so the Paytm restore re-key rehashed it from its scaled legs — and that
+  new hash is exactly what a genuine separate sale of that size would hash to, so a later real row would be silently deduped.
+  Now a remainder written with `keepShare < 1` carries `withScaledRemainderNote`: a DISTINCT sentence (`PARTIAL_CLOSE_NOTE`,
+  "Part of this execution closed open positions this account already held; this row is what was left of it.") plus a
+  `dedup-alias:` of its OWN hash — alias present ⇒ frozen; `lotIdentityHashes` de-dupes ⇒ no second identity; the sentence
+  differs from `AUTO_CLOSE_NOTE` on purpose so `knownHashes`' legacy leg-rehash never mints the scaled sale's hash. Red on
+  revert: "the remainder's hash survives the restore re-key: expected '8be6…' to be '6052…'".
+- **U-1 (ui, cosmetic).** `duplicate-fix.tsx` toasted `err.message` from a thrown SERVER ACTION; Next redacts that message in a
+  production build to boilerplate ("The specific message is omitted in production builds…", `create-error-handler.js:113`), so
+  the fixed sentence was unreachable. The toast is now a fixed sentence; try/catch/finally intact; the pin's span cap is 300 with
+  margin.
+- **U-2 (ui, cosmetic).** When EVERY book auto-closed the sale, `toGroup` borrowed a merged BUY lot's quantity and dates for the
+  group ("100 × INFY" beside the note that each copy closed a position). **Session decision:** with no self-describing row the
+  group reports `qty: null` and no dates; the card and the Data Quality sentence print "—" (invariant 6 in spirit: never invent a
+  figure); symbol and broker are kept. Red on revert: "expected '2 rows carry one Dhan record (60 × IN…' to contain '(— × INFY)'".
+- **T-1 (test coverage).** `lotFromNewRow`'s exclusions had no SAME-FILE fixture (every basis-unknown fixture committed the BUY in a
+  separate file or placed the sell-only row last). `tests/auto-close-fifo.test.ts` case 10 now commits `[unknownSell, buyRow]` in
+  one file (the sale is never a short the BUY covers: "two rows, because neither closed the other: expected 1 to be 2") and an
+  eq_mtf-first file. Recorded: the eq_mtf clause is refused by two independent clauses (`lotFromNewRow` + `incomingFromParsed`), so
+  deleting either alone stays green — the MTF test pins behaviour, not the clause.
+- **Gate:** scoped — the ten owned/adjacent files 182/182, the import/golden-books/dhan-api/account-isolation sweep 289 + 138
+  (35 skipped, the private-fixture suites), eslint clean; `tsc` reported one error in B4's in-flight `app/strategies/page.tsx`
+  and none in this wave's files. The whole-tree `npm run verify` runs once at the wave-2 commit; CI is this commit's gate.
+  Builder cost 176k; auditors ≈ 0.51 M; skeptic 78k. Two builders saw transient reds while a concurrent builder was
   mid-write in a shared-consumer file; both were green on re-run with the files at rest — a reason to keep one `verify` at
   the end, after every builder has reported.

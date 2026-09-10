@@ -354,18 +354,24 @@ function toGroup(rows: DupRow[], hash: string, names: Map<number, string>): Dupl
   // the SALE that closed it. Reading the facts off whichever row happened to be
   // first therefore reported "60 × INFY, 2026-09-01" as the record held twice,
   // when the record is a 40-share sale on 2026-09-05. Describe the group from a
-  // row whose OWN hash IS the group's, and fall back only when no such row is
-  // here (every book merged the sale) — a group with no self-describing row is
-  // still a real duplicate and must still be reported.
-  const first = rows.find((r) => r.identityHashes[0] === hash) ?? rows[0];
+  // row whose OWN hash IS the group's, and when there is none (every book
+  // merged the sale) report the quantity and the dates as UNKNOWN rather than
+  // borrow another record's: falling back to `rows[0]` printed "100 × INFY"
+  // beside a sentence saying each copy closed a position, which is a different
+  // execution entirely (U-2, round 2). Invariant 6 — a figure nothing in the
+  // group states is not invented; the screen and the sentence print "—". The
+  // group is still a real duplicate and is still reported, symbol and broker
+  // included: every row here trades the same symbol in the same book.
+  const first = rows.find((r) => r.identityHashes[0] === hash);
+  const describes = first ?? rows[0];
   return {
-    broker: first.broker,
-    brokerLabel: brokerLabel(first.broker),
+    broker: describes.broker,
+    brokerLabel: brokerLabel(describes.broker),
     dedupHash: hash,
-    symbol: first.symbol,
-    qty: first.qty,
-    buyDate: first.buyDate,
-    sellDate: first.sellDate,
+    symbol: describes.symbol,
+    qty: first ? first.qty : null,
+    buyDate: first ? first.buyDate : null,
+    sellDate: first ? first.sellDate : null,
     rows: rows.length,
     ids: rows.map((r) => r.id).sort((a, b) => a - b),
     accounts: [...byAccount.entries()]
