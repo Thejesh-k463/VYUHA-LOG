@@ -203,4 +203,26 @@ describe("the gap line is rendered from that one function", () => {
     const code = src.split(/\r?\n/).filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
     expect(code).not.toMatch(/toLocaleString\(/);
   });
+
+  /**
+   * D-1 (2026-09-10) — DHAN ONLY. The line promises that "the next pull fetches
+   * the gap", and only Dhan's puller widens a pull to a range
+   * (`catchUpRange`, lib/import/api/dhan.ts). On Zerodha, Angel One, Upstox and
+   * OpenAlgo tabs it stated a catch-up that does not happen. The session ruling
+   * was to gate the render on the active tab, not to reword the sentence — so
+   * the sentence itself is still pinned verbatim above.
+   */
+  it("renders only on the Dhan tab — every other broker fetches its own window", async () => {
+    const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
+    const code = src.split(/\r?\n/).filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
+
+    // The value the `pull-gap` block renders is null off the Dhan tab, so the
+    // block cannot render there at all.
+    expect(code).toMatch(/const gapNotice = active === "dhan" \? pullGapNotice\(conn\?\.lastPullAt\) : null;/);
+    // …and it is still the ONE derivation the render reads.
+    expect(code.match(/pullGapNotice\(conn/g)).toHaveLength(1);
+    expect(code).toMatch(/\{gapNotice && \(/);
+    // Never re-derived unconditionally beside it.
+    expect(code).not.toMatch(/const gapNotice = pullGapNotice\(/);
+  });
 });

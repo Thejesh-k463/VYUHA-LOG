@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { NormalizedTrade } from "@/lib/engine/types";
 import type { ParsedFile } from "@/lib/import/types";
 import { planLotCloses, type IncomingRow, type OpenLot } from "@/lib/import/close-open-lots";
+import { todayIstIso } from "@/lib/domain/trading-day";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -364,5 +365,120 @@ describe("6 — a sale in account B and an open lot in account A", () => {
     // Account B keeps the old behaviour: a sale with no lot of its own.
     expect(rowsOf(B)).toHaveLength(1);
     expect(rowsOf(B)[0].isOpen).toBe(true);
+  });
+});
+
+// ──────────── case 7 (M-2): a BUY and a later SELL in the SAME file ─────────
+
+describe("7 — one file holding [BUY TCS 100 on the 7th, SELL TCS 100 on the 9th]", () => {
+  const ACC = 609;
+  // Exactly the shape a Dhan catch-up pull produces: a history BUY dated
+  // earlier in the window, and today's /positions SELL, in one parsed file.
+  const oneFile = () =>
+    parsed([buyRow("TCS", 100, 100, "2026-09-07"), sellRow("TCS", 100, 120, "2026-09-09")]);
+
+  it("the preview already says the file closes one position", () => {
+    newAccount(ACC, "case-7");
+    const p = commit.previewParsedFile(oneFile(), null, ACC);
+    expect(p.autoClose?.closes).toBe(1);
+    expect(p.autoClose?.positions).toEqual([{ symbol: "TCS", qty: 100 }]);
+  });
+
+  it("commits as ONE closed row with realised P&L — not an open long beside an open short", () => {
+    const res = commit.commitParsedFile(oneFile(), "dhan-pull.csv", null, ACC);
+    const rows = rowsOf(ACC);
+    expect(rows, "two source rows, one position").toHaveLength(1);
+
+    const r = rows[0];
+    expect(r.isOpen).toBe(false);
+    expect(r.buyQty).toBe(100);
+    expect(r.sellQty).toBe(100);
+    expect(r.buyDate).toBe("2026-09-07");
+    expect(r.sellDate).toBe("2026-09-09");
+    expect(r.grossPnl).toBe(2000); // (120 − 100) × 100
+    expect(r.netPnl).toBe(r2(2000 - r.chargesTotal));
+
+    // One row was added to the book; the sell became its closing leg.
+    expect(res.added).toBe(1);
+    expect(res.skipped).toBe(0);
+    expect(res.total).toBe(2);
+    // The import's net is the book's net — the open row's charges are not
+    // counted once as an open row and again inside the close.
+    expect(res.netPnl).toBe(r.netPnl);
+    expect(res.warnings?.join(" | ")).toMatch(/1 open position in this account was closed by this file/);
+  });
+
+  it("and it wrote the same audit trail a cross-file close writes", () => {
+    const closed = rowsOf(ACC)[0];
+    const audit = t.db.select().from(t.schema.auditLog).all()
+      .filter((a) => a.entity === "trade" && a.action === "close" && a.entityId === closed.id);
+    expect(audit).toHaveLength(1);
+    expect(audit[0].summary).toMatch(/TCS closed 100 @ 120 by import/);
+  });
+
+  it("re-importing the very same file changes nothing", () => {
+    const before = rowsOf(ACC).map((r) => [r.id, r.buyQty, r.sellQty, r.isOpen]);
+    const again = commit.commitParsedFile(oneFile(), "dhan-pull.csv", null, ACC);
+    expect(again.added).toBe(0);
+    expect(again.skipped).toBe(2);
+    expect(rowsOf(ACC).map((r) => [r.id, r.buyQty, r.sellQty, r.isOpen])).toEqual(before);
+  });
+});
+
+// ──────── case 8 (M-3): a sell-only row whose cost basis is unknown ─────────
+
+describe("8 — a basis-unknown SELL dated today (Dhan /positions)", () => {
+  const WITH_LOT = 610;
+  const NO_LOT = 611;
+  const today = todayIstIso();
+  // Constructed here rather than imported from the adapter: this pins what
+  // COMMIT does with the shape, whoever produces it.
+  const unknownSell = (qty: number) =>
+    parsed([
+      trade({
+        tradingsymbol: "MARKSANS",
+        sellQty: qty,
+        avgSellPrice: 250,
+        sellValue: r2(qty * 250),
+        sellDate: today,
+        basisUnknown: true,
+      } as Partial<NormalizedTrade> & { tradingsymbol: string }),
+    ]);
+
+  it("closes an OPEN lot the account holds, dated today — basisUnknown does not exclude it", () => {
+    newAccount(WITH_LOT, "case-8-lot");
+    commit.commitParsedFile(parsed([buyRow("MARKSANS", 50, 200, "2026-08-01")]), "buys.csv", null, WITH_LOT);
+    expect(commit.previewParsedFile(unknownSell(50), null, WITH_LOT).autoClose?.closes).toBe(1);
+
+    commit.commitParsedFile(unknownSell(50), "positions.json", null, WITH_LOT);
+    const rows = rowsOf(WITH_LOT);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].isOpen).toBe(false);
+    expect(rows[0].sellDate, "the close is dated by the incoming row").toBe(today);
+    expect(rows[0].buyDate).toBe("2026-08-01");
+    expect(rows[0].grossPnl).toBe(2500); // (250 − 200) × 50
+    expect(rows[0].acquisition, "the basis was known all along — the book held it").toBeNull();
+  });
+
+  it("with NO lot it is stored basis-unknown, and a later BUY never 'covers' it", () => {
+    newAccount(NO_LOT, "case-8-none");
+    expect(commit.commitParsedFile(unknownSell(50), "positions.json", null, NO_LOT).added).toBe(1);
+    const [stored] = rowsOf(NO_LOT);
+    expect(stored.isOpen).toBe(true);
+    expect(stored.acquisition).toBe("unknown");
+
+    // A purchase must NOT read that row as a short lot: its cost basis is
+    // unknown, so pairing against it would fabricate a P&L (invariant 6).
+    expect(commit.previewParsedFile(parsed([buyRow("MARKSANS", 50, 240, "2026-09-10")]), null, NO_LOT)
+      .autoClose?.closes).toBe(0);
+    const res = commit.commitParsedFile(parsed([buyRow("MARKSANS", 50, 240, "2026-09-10")]), "buys.csv", null, NO_LOT);
+    expect(res.added, "the buy is its own open row").toBe(1);
+    const rows = rowsOf(NO_LOT).sort((a, b) => a.id - b.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].acquisition).toBe("unknown");
+    expect(rows[0].isOpen, "still an unpaired sale").toBe(true);
+    expect(rows[0].buyQty).toBe(0);
+    expect(rows[1].isOpen).toBe(true);
+    expect(rows[1].sellQty).toBe(0);
   });
 });

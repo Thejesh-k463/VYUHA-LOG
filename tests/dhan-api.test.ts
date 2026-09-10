@@ -7,6 +7,7 @@ import {
   fetchDhanPositions, dhanTotpEnrolled, DHAN_TOTP_ACK_VERSION,
   type DhanPositionRow,
 } from "@/lib/import/api/dhan";
+import { dedupHash } from "@/lib/import/dedup";
 import { classify } from "@/lib/engine/classify";
 import { totp } from "@/lib/totp";
 import { todayIstIso } from "@/lib/domain/trading-day";
@@ -962,5 +963,244 @@ describe("toParsedFile — a catch-up pull says which days it covered", () => {
     // the same pull it always was.
     expect(toParsedFile([]).warnings).toEqual(withRange.warnings.slice(1));
     expect(toParsedFile([], null).warnings).toEqual(withRange.warnings.slice(1));
+  });
+});
+
+// ===========================================================================
+// M-1 (audit round 1, 2026-09-10) — a fill's charges belong to ONE position.
+//
+// Both books below are the skeptic's own probes. Summing every fill inside a
+// position's [buyDate, sellDate] window double-counted charges wherever two
+// windows overlapped (₹44 stored from ₹22 charged, ₹66 from ₹44), and listed
+// fills a position never consumed — which is what commit.ts's
+// stagedFromExecutions turns into trade_legs summing 200 on a 100-share row.
+// ===========================================================================
+describe("normalizeDhanTrades — every fill lands in exactly ONE position (M-1)", () => {
+  const fill = (
+    id: string,
+    side: "BUY" | "SELL",
+    qty: number,
+    price: number,
+    date: string,
+    brokerage = 11,
+  ): dhan.DhanTradeRow => ({
+    exchangeTradeId: id,
+    orderId: `O-${id}`,
+    transactionType: side,
+    exchangeSegment: "NSE_EQ",
+    productType: "CNC",
+    tradingSymbol: "TCS",
+    tradedQuantity: qty,
+    tradedPrice: price,
+    exchangeTime: `${date} 10:00:00`,
+    brokerageCharges: brokerage,
+  });
+
+  it("splits one buy fill between the closed and the open row PRO-RATA, never twice (probe 1)", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      fill("B", "BUY", 200, 100, "2026-09-01"),
+      fill("S", "SELL", 100, 110, "2026-09-02"),
+    ]);
+    expect(trades).toHaveLength(2);
+    const closed = trades.find((t) => t.buyQty > 0 && t.sellQty > 0)!;
+    const open = trades.find((t) => t.sellQty === 0)!;
+
+    // ₹22 was charged; ₹22 is what the two rows carry BETWEEN them.
+    expect(closed.reportedCharges!.total! + open.reportedCharges!.total!).toBe(22);
+    // The buy fill's ₹11 splits by the quantity each row took (100 / 100); the
+    // sell fill's ₹11 is the closed row's alone.
+    expect(closed.reportedCharges!.total).toBe(16.5);
+    expect(open.reportedCharges!.total).toBe(5.5);
+
+    // …and neither row lists a share it never took.
+    expect(closed.executions).toEqual([
+      { side: "buy", qty: 100, price: 100, date: "2026-09-01", time: "10:00" },
+      { side: "sell", qty: 100, price: 110, date: "2026-09-02", time: "10:00" },
+    ]);
+    expect(open.executions).toEqual([
+      { side: "buy", qty: 100, price: 100, date: "2026-09-01", time: "10:00" },
+    ]);
+  });
+
+  it("gives each closed position its OWN FIFO pair of fills, not the date window (probe 2)", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      fill("B1", "BUY", 100, 100, "2026-09-01"),
+      fill("B2", "BUY", 100, 100, "2026-09-02"),
+      fill("S1", "SELL", 100, 110, "2026-09-03"),
+      fill("S2", "SELL", 100, 110, "2026-09-04"),
+    ]);
+    expect(trades).toHaveLength(2);
+    const [p1, p2] = trades;
+    expect(p1).toMatchObject({ buyQty: 100, buyDate: "2026-09-01", sellDate: "2026-09-03" });
+    expect(p2).toMatchObject({ buyQty: 100, buyDate: "2026-09-02", sellDate: "2026-09-04" });
+
+    // ₹44 charged, ₹44 stored — ₹22 on each pair, not ₹33 on each.
+    expect(p1.reportedCharges!.total).toBe(22);
+    expect(p2.reportedCharges!.total).toBe(22);
+    expect(p1.reportedCharges!.total! + p2.reportedCharges!.total!).toBe(44);
+
+    // The list commit.ts reads: two fills, and the buy side sums to buyQty.
+    expect(p1.executions).toHaveLength(2);
+    expect(p1.executions!.map((e) => e.date)).toEqual(["2026-09-01", "2026-09-03"]);
+    expect(p2.executions!.map((e) => e.date)).toEqual(["2026-09-02", "2026-09-04"]);
+    expect(p1.executions!.filter((e) => e.side === "buy").reduce((s, e) => s + e.qty, 0)).toBe(p1.buyQty);
+  });
+
+  it("conserves the charge total over a re-entered symbol, and every row's executions sum to its own quantity", () => {
+    const rows = [
+      fill("B1", "BUY", 200, 100, "2026-09-01", 11),
+      fill("S1", "SELL", 50, 105, "2026-09-02", 7),
+      fill("B2", "BUY", 100, 102, "2026-09-03", 13),
+      fill("S2", "SELL", 150, 108, "2026-09-04", 9),
+      fill("S3", "SELL", 120, 109, "2026-09-05", 5),
+    ];
+    const { trades } = dhan.normalizeDhanTrades(rows);
+    const stored = trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
+    // ₹45 charged, ₹45 stored — no tolerance at all: a fill's last take carries
+    // the remainder, so the split rows sum to the fills' own charges (D1).
+    expect(Math.round(stored * 100) / 100).toBe(45);
+
+    for (const t of trades) {
+      const ex = t.executions ?? [];
+      expect(ex.filter((e) => e.side === "buy").reduce((s, e) => s + e.qty, 0)).toBe(t.buyQty);
+      expect(ex.filter((e) => e.side === "sell").reduce((s, e) => s + e.qty, 0)).toBe(t.sellQty);
+    }
+  });
+
+  // D1 (seam audit, 2026-09-10) — a THREE-way split is where a per-share
+  // pro-rata rounds the same rupee three times: ₹11 × 100/300 = 3.67 stored
+  // thrice is ₹11.01, so ₹44 charged came out as ₹44.01. Conservation is
+  // EXACT, not ±₹0.01: the last take of a fill carries the remainder.
+  it("splits one buy fill THREE ways to the paisa — ₹44 charged is ₹44 stored, exactly (D1)", () => {
+    const { trades } = dhan.normalizeDhanTrades([
+      fill("B", "BUY", 300, 100, "2026-09-01"),
+      fill("S1", "SELL", 100, 110, "2026-09-02"),
+      fill("S2", "SELL", 100, 111, "2026-09-03"),
+      fill("S3", "SELL", 100, 112, "2026-09-04"),
+    ]);
+    expect(trades).toHaveLength(3);
+
+    const stored = trades.reduce((s, t) => s + (t.reportedCharges?.total ?? 0), 0);
+    expect(
+      Math.round(stored * 100) / 100,
+      "the stored charges must equal the ₹44 Dhan levied on its four fills, to the paisa",
+    ).toBe(44);
+    // Two takes get the rounded share, the LAST take the remainder — never a
+    // fourth rounded copy of the same rupee.
+    expect(trades.map((t) => t.reportedCharges!.total).sort((a, b) => b! - a!)).toEqual([14.67, 14.67, 14.66]);
+    // The same rule per COMPONENT, not just on the total.
+    const brokerage = trades.reduce((s, t) => s + (t.reportedCharges?.brokerage ?? 0), 0);
+    expect(Math.round(brokerage * 100) / 100).toBe(44);
+  });
+});
+
+// ===========================================================================
+// M-3 (audit round 1, 2026-09-10) — a SELL-ONLY /positions row.
+//
+// The user sold today what they held from before any import. The row is in
+// TODAY's book, so the sale is today's by definition; leaving sellDate null
+// wrote a closed trade with no exit date (or a phantom short), and tomorrow's
+// catch-up re-fetch of the same sale hashed differently and landed twice.
+// ===========================================================================
+describe("normalizeDhanPositions — a sell-only row (M-3)", () => {
+  const TODAY = "2026-09-09";
+  const sellOnlyRow = () =>
+    row({ tradingSymbol: "TCS", productType: "CNC", sellQty: 10, sellAvg: 3500.5, netQty: -10, realizedProfit: 1200 });
+
+  it("dates the sale TODAY and states that its cost basis is unknown", () => {
+    const [t] = normalizeDhanPositions([sellOnlyRow()], TODAY);
+    expect(t.sellDate).toBe(TODAY);
+    expect(t.buyDate).toBeNull();
+    expect(t.buyQty).toBe(0);
+    expect(t.sellQty).toBe(10);
+    expect(t.avgSellPrice).toBe(3500.5);
+    expect(t.sellValue).toBe(35005);
+    expect(t.basisUnknown).toBe(true);
+    expect(t.importNotes?.join(" ")).toMatch(/cost basis/i);
+  });
+
+  it("hashes IDENTICALLY to the same sale arriving as a history fill dated today", () => {
+    const [pos] = normalizeDhanPositions([sellOnlyRow()], TODAY);
+    const { trades } = dhan.normalizeDhanTrades([
+      {
+        exchangeTradeId: "S-TODAY",
+        transactionType: "SELL",
+        exchangeSegment: "NSE_EQ",
+        productType: "CNC",
+        tradingSymbol: "TCS",
+        tradedQuantity: 10,
+        tradedPrice: 3500.5,
+        exchangeTime: `${TODAY} 14:45:00`,
+      },
+    ]);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].sellDate).toBe(TODAY);
+    // This equality is the dedup that stops tomorrow's catch-up window (which
+    // is inclusive of the stamp day) from writing the sale a second time.
+    expect(dedupHash(pos)).toBe(dedupHash(trades[0]));
+  });
+
+  it("leaves a BUY-ONLY row byte-identical", () => {
+    expect(
+      normalizeDhanPositions(
+        [row({ tradingSymbol: "INFY", productType: "MTF", buyQty: 40, buyAvg: 1500, netQty: 40, unrealizedProfit: 6000 })],
+        TODAY,
+      ),
+    ).toStrictEqual([
+      {
+        broker: "dhan",
+        tradingsymbol: "INFY",
+        isin: null,
+        buyQty: 40,
+        avgBuyPrice: 1500,
+        buyValue: 60000,
+        sellQty: 0,
+        avgSellPrice: 0,
+        sellValue: 0,
+        closingPrice: 1650,
+        grossPnl: 0,
+        unrealisedPnl: 6000,
+        buyDate: TODAY,
+        sellDate: null,
+        productHint: "mtf",
+        exchangeHint: "NSE",
+        sourceFile: "dhan-api",
+        entryTime: null,
+        exitTime: null,
+        importNotes: ["Product stated by the Dhan API as MTF — not inferred."],
+      },
+    ]);
+  });
+
+  it("leaves a same-day ROUND TRIP row byte-identical", () => {
+    expect(
+      normalizeDhanPositions(
+        [row({ productType: "INTRADAY", buyQty: 100, buyAvg: 3300, sellQty: 100, sellAvg: 3345, netQty: 0, realizedProfit: 4500 })],
+        TODAY,
+      ),
+    ).toStrictEqual([
+      {
+        broker: "dhan",
+        tradingsymbol: "TCS",
+        isin: null,
+        buyQty: 100,
+        avgBuyPrice: 3300,
+        buyValue: 330000,
+        sellQty: 100,
+        avgSellPrice: 3345,
+        sellValue: 334500,
+        closingPrice: null,
+        grossPnl: 4500,
+        unrealisedPnl: 0,
+        buyDate: TODAY,
+        sellDate: TODAY,
+        productHint: "intraday",
+        exchangeHint: "NSE",
+        sourceFile: "dhan-api",
+        entryTime: null,
+        exitTime: null,
+        importNotes: null,
+      },
+    ]);
   });
 });

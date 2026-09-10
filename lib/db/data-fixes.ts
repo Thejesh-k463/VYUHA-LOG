@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { dedupHash, PAYTM_BROKER } from "@/lib/import/dedup";
+import { isLotIdentityFrozen } from "@/lib/import/close-open-lots";
 
 /**
  * Data fixes — one-shot row rewrites that SQL alone cannot express.
@@ -52,6 +53,7 @@ interface StoredTradeKeyRow {
   buy_date: string | null;
   sell_date: string | null;
   dedup_hash: string;
+  import_notes: string | null;
 }
 
 /**
@@ -73,7 +75,7 @@ function applyPaytmDedupIsin(sqlite: Database.Database): DataFixResult {
   const rows = sqlite
     .prepare(
       `SELECT id, account_id, broker, tradingsymbol, isin, buy_qty, avg_buy_price, buy_value_paise,
-              sell_qty, avg_sell_price, sell_value_paise, buy_date, sell_date, dedup_hash
+              sell_qty, avg_sell_price, sell_value_paise, buy_date, sell_date, dedup_hash, import_notes
          FROM trades
         WHERE broker = ? AND isin IS NOT NULL AND trim(isin) <> ''
         ORDER BY id`,
@@ -89,6 +91,13 @@ function applyPaytmDedupIsin(sqlite: Database.Database): DataFixResult {
   );
 
   for (const r of rows) {
+    // S-2: a lot an import auto-closed no longer answers to its own legs — its
+    // hash is FROZEN at what the file that created it said, and every consuming
+    // execution is an alias beside it (lib/import/close-open-lots.ts). Re-keying
+    // it from the CURRENT legs (a 100 lot reduced to 60) would silently
+    // disconnect that file, and this fix re-runs on every restore, so the buy
+    // file would import again as a phantom open lot.
+    if (isLotIdentityFrozen({ dedupHash: r.dedup_hash, importNotes: r.import_notes })) continue;
     const next = dedupHash({
       broker: r.broker,
       tradingsymbol: r.tradingsymbol,

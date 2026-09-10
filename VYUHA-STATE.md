@@ -27,7 +27,20 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.3.0 WAVE 1 COMMITTED 2026-09-09 IST evening (`265d684` on `1159a34`; `npm run verify` EXIT 0 — 369 files / 7,207 passed / 35 skipped; **CI 34336204805 SUCCESS 6/6 on `521dc99` = `265d684` + this file** — `265d684`'s own run 34335816805 was cancelled at 4/6 by cancel-in-progress when the docs commit pushed; NOT audited, NOT bumped, NOT tagged). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+## 2. Current state — v4.3.0 WAVE 1 AUDITED (round 1: 12 → 12 → FIX WAVE 1 built 2026-09-10; `npm run verify` EXIT 0 — 371 files / 7,272 passed / 35 skipped; the fix-wave commit sha and its CI are recorded in `docs/DECISIONS.md` "2026-09-10 — v4.3.0 audit round 1" and the ledger once pushed; NOT re-audited, NOT bumped, NOT tagged). Wave 1 = `265d684` on `1159a34` (its tree's CI 34336204805 SUCCESS 6/6 on `521dc99`). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+
+> **Fix wave 1 (audit round 1, 2026-09-10) — what changed, the file that makes each true:** the lot identity model — a lot keeps
+> its born-with `dedupHash`, consuming SELLs become `dedup-alias:` notes, `lotIdentityHashes` / `isLotIdentityFrozen` /
+> `withLotCloseNote` in `lib/import/close-open-lots.ts` (`tests/auto-close-identity.test.ts`) · same-file FIFO: rows a file
+> inserts join the book so a later SELL in the same file closes them, preview == commit (`lib/import/commit.ts`,
+> `tests/auto-close-fifo.test.ts` now 21) · the Paytm restore re-key skips frozen rows (`lib/db/data-fixes.ts`) · Dhan history
+> charges allocated per fill by FIFO consumption with exact remainder splitting, `allocateFills` (`lib/import/api/dhan.ts`,
+> `tests/dhan-api.test.ts`) · a sell-only `/positions` row is dated today with `basisUnknown` · Data Quality: only PLAIN copies
+> are removable, grouping by every identity hash, the group described by its own row (`lib/analytics/data-quality.ts`,
+> `lib/import/broker-identity.ts`, `app/data-quality/actions.ts`, `tests/data-quality.test.ts`) · dialog try/finally, spot-chip
+> focus restore, Dhan-only gap line · `tests/client-value-imports.test.ts` sees default imports, barrels and awaited dynamic
+> imports · seam file `tests/seams-v43-fix1.test.ts` (11). Rulings: 06-ANSWERS "v4.3.0 audit-round-1 rulings" and "v4.3.0
+> wave-2 pre-build rulings" (40 catalogue rows; free tier sees "Custom (n legs)" + a Pro chip).
 
 > **What `265d684` is:** the owner's six-item application-fix list from ten screenshots of the installed 4.2.0, each verified
 > against the code before its ruling (`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings"). The file that makes each true:
@@ -40,7 +53,8 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > (`tests/broker-identity.test.ts`, `tests/broker-route-hardening.test.ts`) · Data Quality cross-account duplicate connections +
 > trade groups with one-click "remove the copy" `lib/analytics/data-quality.ts`, `app/data-quality/actions.ts`,
 > `components/quality/duplicate-fix.tsx` (`tests/data-quality.test.ts`) · **FIFO auto-close at import** — money path —
-> `lib/import/close-open-lots.ts`, `lib/import/commit.ts` (`tests/auto-close-fifo.test.ts`, nine cases + a dedup-order mutant) ·
+> `lib/import/close-open-lots.ts`, `lib/import/commit.ts` (`tests/auto-close-fifo.test.ts`, 15 tests = 4 planner + 7 scenarios with
+> sub-cases; the dedup-guard-order mutant was run once at build time, not pinned) ·
 > `/risk` "spot?" chip → editor via `POST /api/risk/spot` (`app/api/risk/spot/route.ts`) + EOD-close fallback, pure helpers in
 > `lib/risk/spot-ref.ts` (`tests/spot-mark.test.ts`) · **new repo-wide guard `tests/client-value-imports.test.ts`** — a server
 > module may import only component names from a `"use client"` module (Next stubs value imports to THROW at request time; vitest

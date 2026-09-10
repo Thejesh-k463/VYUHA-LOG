@@ -1,13 +1,20 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   assessDataQuality,
   crossAccountIssues,
+  isPlainDuplicateCopy,
+  NO_PLAIN_COPY_NOTE,
   type DuplicateConnectionGroup,
   type DuplicateTradeGroup,
   type QualityTrade,
   type QualityInputs,
   type QualityReport,
 } from "@/lib/analytics/data-quality";
+// PURE (no DB, no React), so a static import here cannot bind lib/db before
+// openTempDb() sets VYUHA_DB_PATH.
+import { withLotCloseNote } from "@/lib/import/close-open-lots";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
 
 // The fix path is a server action; `revalidatePath` needs a request scope that
@@ -283,8 +290,8 @@ const tradeGroup = (p: Partial<DuplicateTradeGroup> = {}): DuplicateTradeGroup =
   rows: 2,
   ids: [11, 22],
   accounts: [
-    { id: 1, name: "Primary", rows: 1 },
-    { id: 2, name: "Swing", rows: 1 },
+    { id: 1, name: "Primary", rows: 1, removable: true },
+    { id: 2, name: "Swing", rows: 1, removable: true },
   ],
   ...p,
 });
@@ -311,7 +318,7 @@ describe("data quality — trades duplicated across accounts", () => {
   });
 
   it("says nothing about a sole copy", () => {
-    const sole = tradeGroup({ rows: 1, ids: [11], accounts: [{ id: 1, name: "Primary", rows: 1 }] });
+    const sole = tradeGroup({ rows: 1, ids: [11], accounts: [{ id: 1, name: "Primary", rows: 1, removable: true }] });
     expect(dupTradeIssues(assessDataQuality(inputs({ duplicateTradeGroups: [sole] })))).toHaveLength(0);
     expect(dupTradeIssues(assessDataQuality(inputs({ duplicateTradeGroups: [] })))).toHaveLength(0);
     expect(dupTradeIssues(assessDataQuality(inputs()))).toHaveLength(0);
@@ -368,6 +375,54 @@ describe("data quality — one broker client connected in several accounts", () 
   it("is exported on its own, so the screen can resolve the two without re-deriving the report", () => {
     const issues = crossAccountIssues({ duplicateConnections: [connGroup()], duplicateTradeGroups: [tradeGroup()] });
     expect(issues.map((x) => x.severity)).toEqual(["warning", "critical"]);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * M-5 (v4.3.0, ruling 2026-09-10) — REMOVING A COPY MUST NOT DELETE A MERGED
+ * LOT.
+ *
+ * After R5's auto-close a row can be BOTH one account's copy of a record and
+ * the row that closed a lot that account was holding: it keeps its own hash and
+ * carries the consumed execution's hash as an alias. "Remove the copy in
+ * <account>" on such a row is data loss. Only a PLAIN single-source row is
+ * removable, and the rule is one function, read by the button and re-read by
+ * the server action.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const HASH_A = "1".repeat(40);
+const HASH_B = "2".repeat(40);
+
+describe("isPlainDuplicateCopy — the removability rule, all three clauses", () => {
+  it("passes a plain single-source row: own hash, no alias, no auto-close", () => {
+    expect(isPlainDuplicateCopy({ identityHashes: [HASH_A], autoClosed: false }, HASH_A)).toBe(true);
+  });
+
+  it("refuses a row that joins the group only through an ALIAS — its own record is elsewhere", () => {
+    expect(isPlainDuplicateCopy({ identityHashes: [HASH_A, HASH_B], autoClosed: true }, HASH_B)).toBe(false);
+  });
+
+  it("refuses a MERGED LOT even on its own hash — the row stands for two records", () => {
+    expect(isPlainDuplicateCopy({ identityHashes: [HASH_A, HASH_B], autoClosed: true }, HASH_A)).toBe(false);
+  });
+
+  it("refuses a row the importer marked auto-closed even when no alias survived", () => {
+    // Clause 3 is not clause 2: the alias derivation is best effort, the mark
+    // is a fact the importer wrote.
+    expect(isPlainDuplicateCopy({ identityHashes: [HASH_A], autoClosed: true }, HASH_A)).toBe(false);
+  });
+
+  it("refuses a row whose own hash is some other record entirely", () => {
+    expect(isPlainDuplicateCopy({ identityHashes: [HASH_A], autoClosed: false }, HASH_B)).toBe(false);
+  });
+});
+
+describe("the sentence a group with no plain copy carries", () => {
+  it("states what the rows are and where the pull ends — and advises nothing (SEBI copy rule)", () => {
+    expect(NO_PLAIN_COPY_NOTE).toMatch(/Import → Disconnect/);
+    expect(NO_PLAIN_COPY_NOTE).toMatch(/closed a position/);
+    expect(NO_PLAIN_COPY_NOTE).not.toMatch(/\b(recommend|recommended|should|must|consider|suggest)\b/i);
+    expect(NO_PLAIN_COPY_NOTE).not.toMatch(/\b(buy|sell)\b/i);
   });
 });
 
@@ -431,8 +486,8 @@ describe("the duplicate scan reads every account", () => {
     expect(groups[0].symbol).toBe("TCS");
     expect(groups[0].dedupHash).toBe(SHARED_HASH);
     expect(groups[0].accounts).toEqual([
-      { id: PRIMARY, name: "Primary", rows: 1 },
-      { id: SWING, name: "Swing", rows: 1 },
+      { id: PRIMARY, name: "Primary", rows: 1, removable: true },
+      { id: SWING, name: "Swing", rows: 1, removable: true },
     ]);
   });
 
@@ -517,5 +572,218 @@ describe("removeDuplicateCopy — the copy in ONE named account", () => {
     expect(res.ok).toBe(false);
     expect(res.message).toContain("Swing");
     expect(tradesIn(SWING)).toHaveLength(1);
+  });
+});
+
+/* ── M-5, against the database: the merged lot and the plain copy ─────────── */
+
+/**
+ * Primary bought TCS in one import and sold it in a later one, so the sale was
+ * auto-closed into the lot: ONE row, born with the buy file's hash (`HASH_A`),
+ * carrying the sale's hash (`HASH_B`) as an alias. The same sale was also
+ * imported on its own into Swing, where it sits as a plain single-source row
+ * under `HASH_B`.
+ *
+ * `HASH_B` is therefore held in two accounts — and exactly one of the two rows
+ * may go.
+ */
+function seedMergedLotAndPlainCopy() {
+  t.db
+    .insert(t.schema.trades)
+    .values([
+      tradeRow({
+        accountId: PRIMARY,
+        broker: "dhan",
+        symbol: "TCS",
+        dedupHash: HASH_A,
+        importNotes: withLotCloseNote(null, HASH_B),
+        buyQty: 10,
+        sellQty: 10,
+        buyDate: "2026-07-01",
+        sellDate: "2026-07-09",
+      }),
+      tradeRow({
+        accountId: SWING,
+        broker: "dhan",
+        symbol: "TCS",
+        dedupHash: HASH_B,
+        importNotes: null,
+        buyQty: 0,
+        sellQty: 10,
+        sellDate: "2026-07-09",
+      }),
+    ])
+    .run();
+}
+
+describe("a cross-account duplicate whose other copy is a MERGED LOT", () => {
+  it("is a group at all — the scan reads ALIAS hashes, not just own hashes", () => {
+    seedMergedLotAndPlainCopy();
+    const groups = identity.listDuplicateTradeGroups();
+
+    // Grouping on own hashes alone finds nothing here: the two rows do not
+    // share a `dedup_hash` at all.
+    expect(groups).toHaveLength(1);
+    expect(groups[0].dedupHash).toBe(HASH_B);
+    expect(groups[0].accounts.map((a) => a.id)).toEqual([PRIMARY, SWING]);
+  });
+
+  it("offers ONLY the plain copy: the merged lot is never removable", () => {
+    seedMergedLotAndPlainCopy();
+    const group = identity.findDuplicateTradeGroup("dhan", HASH_B)!;
+
+    expect(group.accounts.find((a) => a.id === PRIMARY)!.removable).toBe(false);
+    expect(group.accounts.find((a) => a.id === SWING)!.removable).toBe(true);
+    // The ids a fix would take, per account — the merged lot's is not among them.
+    expect(identity.duplicateTradeIdsIn("dhan", HASH_B, PRIMARY)).toEqual([]);
+    expect(identity.duplicateTradeIdsIn("dhan", HASH_B, SWING)).toHaveLength(1);
+  });
+
+  it("the ACTION refuses the merged lot even when asked for it directly, and deletes nothing", async () => {
+    seedMergedLotAndPlainCopy();
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: HASH_B, accountId: PRIMARY });
+
+    expect(res.ok).toBe(false);
+    expect(res.removed).toBe(0);
+    expect(res.message).toContain("merged lot");
+    expect(tradesIn(PRIMARY)).toHaveLength(1);
+    expect(tradesIn(SWING)).toHaveLength(1);
+    expect(deleteAudits()).toHaveLength(0);
+  });
+
+  it("removes the plain copy, and the merged lot survives with both its identities", async () => {
+    seedMergedLotAndPlainCopy();
+
+    const res = await actions.removeDuplicateCopy({ broker: "dhan", dedupHash: HASH_B, accountId: SWING });
+
+    expect(res.ok).toBe(true);
+    expect(res.removed).toBe(1);
+    expect(tradesIn(SWING)).toHaveLength(0);
+    const lot = tradesIn(PRIMARY);
+    expect(lot).toHaveLength(1);
+    expect(lot[0].dedupHash).toBe(HASH_A);
+    expect(lot[0].importNotes).toContain(HASH_B);
+    expect(identity.listDuplicateTradeGroups()).toEqual([]);
+  });
+});
+
+/* ── D2: a group is described by the record it IS, not by its first row ──── */
+
+const HASH_C = "3".repeat(40);
+
+/**
+ * The same sale in two books — and the row that comes FIRST is not the record.
+ *
+ * Primary bought 100 INFY on 2026-09-01 and later sold 40, so the sale was
+ * auto-closed into that lot: what is left in Primary is a 60-share REMAINDER,
+ * born with the buy file's hash (`HASH_A`) and carrying the sale's hash
+ * (`HASH_B`) as an alias. Swing imported that same 40-share sale on its own,
+ * where it is a plain single-source row under `HASH_B`.
+ *
+ * The group is keyed on `HASH_B` — a 40-share sale dated 2026-09-05 — and the
+ * remainder lot is its first row. The lot's quantity and dates belong to the
+ * BUY, so a group described from `rows[0]` tells the user that "60 × INFY,
+ * 2026-09-01" is held twice: a different execution entirely, reported as a
+ * critical issue.
+ */
+function seedRemainderLotAndPlainSale() {
+  t.db
+    .insert(t.schema.trades)
+    .values([
+      tradeRow({
+        accountId: PRIMARY,
+        broker: "dhan",
+        symbol: "INFY",
+        tradingsymbol: "INFY",
+        dedupHash: HASH_A,
+        importNotes: withLotCloseNote(null, HASH_B),
+        buyQty: 60,
+        sellQty: 0,
+        buyDate: "2026-09-01",
+        sellDate: null,
+      }),
+      tradeRow({
+        accountId: SWING,
+        broker: "dhan",
+        symbol: "INFY",
+        tradingsymbol: "INFY",
+        dedupHash: HASH_B,
+        importNotes: null,
+        buyQty: 0,
+        sellQty: 40,
+        buyDate: null,
+        sellDate: "2026-09-05",
+      }),
+    ])
+    .run();
+}
+
+describe("what a cross-account duplicate group SAYS it is", () => {
+  it("takes its facts from the row whose OWN identity is the group, not from the first row", () => {
+    seedRemainderLotAndPlainSale();
+    const group = identity.findDuplicateTradeGroup("dhan", HASH_B)!;
+
+    // The remainder lot really is first in the group — the defect's precondition.
+    expect(group.ids[0]).toBe(tradesIn(PRIMARY)[0].id);
+    expect(group.symbol).toBe("INFY");
+    expect({ qty: group.qty, buyDate: group.buyDate, sellDate: group.sellDate }).toEqual({
+      qty: 40,
+      buyDate: null,
+      sellDate: "2026-09-05",
+    });
+  });
+
+  it("the sentence the user reads names the sale, not the lot that survived it", () => {
+    seedRemainderLotAndPlainSale();
+    const [issue] = crossAccountIssues({ duplicateTradeGroups: identity.listDuplicateTradeGroups() });
+
+    expect(issue.detail).toContain("(40 × INFY, 2026-09-05)");
+    expect(issue.detail).not.toContain("60 × INFY");
+    expect(issue.detail).not.toContain("2026-09-01");
+  });
+
+  it("falls back to the first row when NO row's own identity is the group — both books merged the sale", () => {
+    // Nothing here stands alone under HASH_B, so there is no better row to read;
+    // the group is still reported, and still offers no delete.
+    t.db
+      .insert(t.schema.trades)
+      .values([
+        tradeRow({ accountId: PRIMARY, broker: "dhan", symbol: "INFY", tradingsymbol: "INFY", dedupHash: HASH_A, importNotes: withLotCloseNote(null, HASH_B), buyQty: 60, sellQty: 0, buyDate: "2026-09-01" }),
+        tradeRow({ accountId: SWING, broker: "dhan", symbol: "INFY", tradingsymbol: "INFY", dedupHash: HASH_C, importNotes: withLotCloseNote(null, HASH_B), buyQty: 25, sellQty: 0, buyDate: "2026-09-02" }),
+      ])
+      .run();
+
+    const group = identity.findDuplicateTradeGroup("dhan", HASH_B)!;
+    expect({ qty: group.qty, buyDate: group.buyDate }).toEqual({ qty: 60, buyDate: "2026-09-01" });
+    expect(group.accounts.every((a) => a.removable)).toBe(false);
+  });
+});
+
+/* ── the screen, pinned on its source (vitest has no DOM here) ───────────── */
+
+describe("the DuplicateFix card", () => {
+  const src = readFileSync(path.join(process.cwd(), "components", "quality", "duplicate-fix.tsx"), "utf8");
+
+  it("M-5 — a button is rendered only for a REMOVABLE account", () => {
+    expect(src).toMatch(/\.filter\(\(a\) => a\.removable\)[\s\S]{0,400}?Remove the copy in \{a\.name\}/);
+    // The unfiltered map is gone: every account no longer gets a button.
+    expect(src).not.toMatch(/\{g\.accounts\.map\(\(a\) => \(\r?\n\s*<Button/);
+  });
+
+  it("M-5 — a group with no plain copy states why, and links to Import instead", () => {
+    expect(src).toMatch(/g\.accounts\.some\(\(a\) => a\.removable\)/);
+    expect(src).toMatch(/\{NO_PLAIN_COPY_NOTE\}/);
+    expect(src).toMatch(/import \{ NO_PLAIN_COPY_NOTE \} from "@\/lib\/analytics\/data-quality"/);
+    // The copy is not re-typed in JSX — one sentence, in the pure module.
+    expect(src).not.toMatch(/No copy of this record stands alone/);
+  });
+
+  it("U-1 — `busy` is cleared in a finally, so a thrown action cannot brick the dialog", () => {
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    expect(code).toMatch(/} catch \([\s\S]{0,200}?toast\.error\(/);
+    expect(code).toMatch(/} finally \{\r?\n\s*setBusy\(false\);\r?\n\s*\}/);
+    // …and never the bare unwound form that left it true for ever.
+    expect(code).not.toMatch(/await removeDuplicateCopy\(\{[\s\S]*?\}\);\r?\n\s*setBusy\(false\);/);
   });
 });

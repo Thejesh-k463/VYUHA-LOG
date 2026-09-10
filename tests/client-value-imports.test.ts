@@ -40,6 +40,30 @@ import { describe, expect, it } from "vitest";
  * `import * as ns from "<client module>"` is flagged too — a namespace import
  * pulls every export, lowercase ones included, and would drive straight through
  * the name rule.
+ *
+ * T-1 (2026-09-10) — THREE SHAPES THE FIRST SCANNER NEVER LOOKED AT. It read
+ * only the brace list and the `* as` slot of an `import … from`, so each of
+ * these reached the server layer unexamined:
+ *
+ *  1. THE DEFAULT SLOT. `import helper from "@/components/x"` has no braces at
+ *     all. A default export is very often the component, which is why the rule
+ *     is the same one: a PascalCase default binding passes, a lowercase or
+ *     SCREAMING_SNAKE one is a value and is an offender.
+ *  2. A RE-EXPORT CHAIN THROUGH A BARREL. `components/x/index.ts` carrying
+ *     `export { resolveSpotRef } from "./chip"` is not itself a client module,
+ *     so a server file importing that name from the barrel resolved to a
+ *     module the old scanner cleared. The name is chased through
+ *     `export { … } from`, `export * from` and `export * as ns from` until it
+ *     lands on a real module; landing on a `"use client"` one is the offence,
+ *     however many barrels it crossed.
+ *  3. `await import("@/components/…")`. A dynamic import of a client module is
+ *     legal — `next/dynamic(() => import("…"))` is exactly how a client
+ *     component is code-split, and that form is NOT flagged. What is flagged is
+ *     an AWAITED one whose binding is then read as a value:
+ *     `const { resolveSpotRef } = await import(…)` and
+ *     `(await import(…)).resolveSpotRef` both hold the same throwing stub a
+ *     static import would have. Flagged for review rather than assumed fatal —
+ *     the awaited module object is the one shape where a human has to look.
  */
 
 const root = process.cwd();
@@ -137,7 +161,112 @@ export interface Offender {
   line: number;
   name: string;
   from: string;
+  /** The `"use client"` module the name actually comes from, when the
+   *  specifier the file wrote is a barrel that re-exports it (T-1). */
+  origin?: string;
 }
+
+/* ── re-export chains (T-1) ──────────────────────────────────────────────── */
+
+/** `export { a, b as c } from "…"`, `export * from "…"`, `export * as ns from "…"`. */
+const REEXPORT_RE = /^[ \t]*export\b([^;]*?)\bfrom\s*["']([^"']+)["']/gm;
+
+/** Named specifiers of a brace list, as `[localName, exportedName]` pairs.
+ *  Inline `type` specifiers are erased before any loader sees them. */
+function specifiers(braceBody: string): [string, string][] {
+  const out: [string, string][] = [];
+  for (const piece of braceBody.split(",")) {
+    const s = piece.trim();
+    if (!s || /^type\b/.test(s)) continue;
+    const parts = s.split(/\s+as\s+/).map((x) => x.trim());
+    if (!parts[0]) continue;
+    out.push([parts[0], parts[1] ?? parts[0]]);
+  }
+  return out;
+}
+
+/** Does `mod` itself export `name`? Used to decide whether an `export * from`
+ *  is the path a name actually travelled. */
+function moduleExports(mod: string, name: string, sources: ReadonlyMap<string, string>): boolean {
+  const raw = sources.get(mod);
+  if (!raw) return false;
+  const src = blankComments(raw);
+  if (name === "default" && /^[ \t]*export\s+default\b/m.test(src)) return true;
+  const decl = new RegExp(`^[ \\t]*export\\s+(?:async\\s+)?(?:const|let|var|function|class|interface|type|enum)\\s+${name}\\b`, "m");
+  if (decl.test(src)) return true;
+  for (const m of src.matchAll(/^[ \t]*export\s*\{([^}]*)\}/gm)) {
+    if (specifiers(m[1]).some(([, exported]) => exported === name)) return true;
+  }
+  return false;
+}
+
+/**
+ * Follow `name` out of `mod` through every `export … from` it carries, and
+ * return the `"use client"` module it ultimately comes from — or null.
+ *
+ * `seen` closes the cycle two barrels re-exporting each other would otherwise
+ * open.
+ */
+export function reexportOrigin(
+  mod: string,
+  name: string,
+  sources: ReadonlyMap<string, string>,
+  seen: Set<string> = new Set(),
+): string | null {
+  const memo = `${mod}:${name}`;
+  if (seen.has(memo)) return null;
+  seen.add(memo);
+  const raw = sources.get(mod);
+  if (!raw) return null;
+  const src = blankComments(raw);
+
+  for (const m of src.matchAll(REEXPORT_RE)) {
+    const clause = m[1];
+    if (/^\s*type\b/.test(clause)) continue; // `export type { … } from …`
+    const target = resolveSpecifier(m[2], mod, sources);
+    if (!target) continue;
+    const targetIsClient = isClientModule(sources.get(target)!);
+
+    const braces = /\{([\s\S]*)\}/.exec(clause);
+    if (braces) {
+      for (const [local, exported] of specifiers(braces[1])) {
+        if (exported !== name) continue;
+        if (targetIsClient) return target;
+        const deeper = reexportOrigin(target, local, sources, seen);
+        if (deeper) return deeper;
+      }
+      continue;
+    }
+
+    // `export * as ns from "…"` — one namespace binding, every export inside it.
+    const nsAs = /^\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*$/.exec(clause);
+    if (nsAs) {
+      if (nsAs[1] !== name) continue;
+      if (targetIsClient) return target;
+      continue;
+    }
+
+    // `export * from "…"` — every name flows through, so follow only the one
+    // the target actually has.
+    if (/^\s*\*\s*$/.test(clause)) {
+      if (targetIsClient) {
+        if (moduleExports(target, name, sources)) return target;
+        continue;
+      }
+      if (moduleExports(target, name, sources)) continue; // its own, not a client's
+      const deeper = reexportOrigin(target, name, sources, seen);
+      if (deeper) return deeper;
+    }
+  }
+  return null;
+}
+
+/* ── dynamic imports (T-1) ───────────────────────────────────────────────── */
+
+/** `const { a } = await import("…")` / `const ns = await import("…")`. */
+const DYN_BINDING_RE = /\b(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*await\s+import\s*\(\s*["']([^"']+)["']\s*\)/g;
+/** `(await import("…")).name`. */
+const DYN_MEMBER_RE = /\(\s*await\s+import\s*\(\s*["']([^"']+)["']\s*\)\s*\)\s*\.\s*([A-Za-z_$][\w$]*)/g;
 
 /**
  * An import statement, however many lines its brace list spans. `[^;]` can
@@ -152,17 +281,23 @@ export function scan(sources: ReadonlyMap<string, string>): Offender[] {
   for (const [rel, raw] of sources) {
     if (isClientModule(raw)) continue; // a client module may import anything
     const src = blankComments(raw);
+    const lineAt = (offset: number) => src.slice(0, offset).split(/\r?\n/).length;
+
     for (const m of src.matchAll(IMPORT_RE)) {
       const [clause, spec] = [m[1], m[2]];
       if (/^\s*type\b/.test(clause)) continue; // `import type { … } from …`
       const target = resolveSpecifier(spec, rel, sources);
-      if (!target || !isClientModule(sources.get(target)!)) continue;
+      if (!target) continue;
+      const targetIsClient = isClientModule(sources.get(target)!);
       const startLine = src.slice(0, m.index).split(/\r?\n/).length;
       const lineOf = (offsetInMatch: number) =>
         startLine + m[0].slice(0, offsetInMatch).split(/\r?\n/).length - 1;
+      /** Where this NAME really comes from: the module itself when it is a
+       *  client one, else whatever a barrel re-exports it from (T-1). */
+      const originOf = (name: string) => (targetIsClient ? target : reexportOrigin(target, name, sources));
 
       const ns = /\*\s*as\s+[A-Za-z_$][\w$]*/.exec(clause);
-      if (ns) {
+      if (ns && targetIsClient) {
         offenders.push({
           key: `${rel}:* as`,
           file: rel,
@@ -171,6 +306,23 @@ export function scan(sources: ReadonlyMap<string, string>): Offender[] {
           from: spec,
         });
       }
+
+      // The DEFAULT slot — `import helper from …`, `import helper, { … } from …`.
+      const def = /^\s*([A-Za-z_$][\w$]*)\s*(?:,|\s*$)/.exec(clause);
+      if (def && !isComponentName(def[1])) {
+        const origin = originOf("default");
+        if (origin) {
+          offenders.push({
+            key: `${rel}:${def[1]}`,
+            file: rel,
+            line: lineOf(Math.max(0, m[0].indexOf(def[1]))),
+            name: def[1],
+            from: spec,
+            origin: targetIsClient ? undefined : origin,
+          });
+        }
+      }
+
       const braces = /\{([\s\S]*)\}/.exec(clause);
       if (!braces) continue;
       let cursor = m[0].indexOf("{");
@@ -181,15 +333,47 @@ export function scan(sources: ReadonlyMap<string, string>): Offender[] {
         if (!s || /^type\b/.test(s)) continue; // inline `type X` specifier
         const name = s.split(/\s+as\s+/)[0].trim();
         if (!name || isComponentName(name)) continue;
-        offenders.push({ key: `${rel}:${name}`, file: rel, line: at >= 0 ? lineOf(at) : startLine, name, from: spec });
+        const origin = originOf(name);
+        if (!origin) continue;
+        offenders.push({
+          key: `${rel}:${name}`,
+          file: rel,
+          line: at >= 0 ? lineOf(at) : startLine,
+          name,
+          from: spec,
+          origin: targetIsClient ? undefined : origin,
+        });
       }
+    }
+
+    // `await import("<client module>")` whose result is read as a value.
+    // A bare `dynamic(() => import("…"))` is untouched: nothing is awaited and
+    // nothing is taken off the module object.
+    for (const m of src.matchAll(DYN_BINDING_RE)) {
+      const target = resolveSpecifier(m[2], rel, sources);
+      if (!target || !isClientModule(sources.get(target)!)) continue;
+      const line = lineAt(m.index!);
+      if (m[1].startsWith("{")) {
+        for (const [local] of specifiers(m[1].slice(1, -1).replace(/:/g, " as "))) {
+          if (isComponentName(local)) continue;
+          offenders.push({ key: `${rel}:${local}`, file: rel, line, name: local, from: m[2] });
+        }
+      } else {
+        offenders.push({ key: `${rel}:await import`, file: rel, line, name: `await import → ${m[1]}`, from: m[2] });
+      }
+    }
+    for (const m of src.matchAll(DYN_MEMBER_RE)) {
+      const target = resolveSpecifier(m[1], rel, sources);
+      if (!target || !isClientModule(sources.get(target)!)) continue;
+      if (isComponentName(m[2])) continue;
+      offenders.push({ key: `${rel}:${m[2]}`, file: rel, line: lineAt(m.index!), name: m[2], from: m[1] });
     }
   }
   return offenders;
 }
 
 const describeOffender = (o: Offender) =>
-  `${o.file}:${o.line} imports \`${o.name}\` from "${o.from}" ("use client") — Next turns it into a throwing client reference`;
+  `${o.file}:${o.line} imports \`${o.name}\` from "${o.from}"${o.origin ? ` (re-exported from "${o.origin}", "use client")` : ` ("use client")`} — Next turns it into a throwing client reference`;
 
 /* ── the guard ───────────────────────────────────────────────────────────── */
 
@@ -271,6 +455,121 @@ describe("the scanner itself", () => {
       ["components/risk/panel.tsx", 'import { resolveSpotRef } from "./chip";'],
     ]);
     expect(scan(serverSibling).map((o) => o.name)).toEqual(["resolveSpotRef"]);
+  });
+
+  /* ── T-1: the three shapes the first scanner never looked at ───────────── */
+
+  const CLIENT_DEFAULT = ['"use client";', "export default function chipHelper() {}"].join("\n");
+
+  it("fires on a lowercase DEFAULT import — the slot has no braces to read", () => {
+    const map = new Map([
+      ["components/risk/chip.tsx", CLIENT_DEFAULT],
+      ["app/risk/page.tsx", 'import chipHelper from "@/components/risk/chip";'],
+    ]);
+    expect(scan(map).map((o) => o.name)).toEqual(["chipHelper"]);
+  });
+
+  it("fires on a SCREAMING_SNAKE default, and on the default beside a brace list", () => {
+    const map = (page: string) =>
+      new Map([
+        ["components/risk/chip.tsx", [CLIENT_DEFAULT, "export function SpotMarkEditor() {}"].join("\n")],
+        ["app/risk/page.tsx", page],
+      ]);
+    expect(scan(map('import CHIP_DEFAULTS from "@/components/risk/chip";')).map((o) => o.name)).toEqual([
+      "CHIP_DEFAULTS",
+    ]);
+    expect(
+      scan(map('import helper, { SpotMarkEditor } from "@/components/risk/chip";')).map((o) => o.name),
+    ).toEqual(["helper"]);
+  });
+
+  it("passes a PascalCase default — that is the component the slot usually holds", () => {
+    const map = new Map([
+      ["components/risk/chip.tsx", '"use client";\nexport default function Chip() {}'],
+      ["app/risk/page.tsx", 'import Chip from "@/components/risk/chip";'],
+      ["app/risk/layout.tsx", 'import type Chip from "@/components/risk/chip";'],
+    ]);
+    expect(scan(map)).toEqual([]);
+  });
+
+  it("follows `export { … } from` through a barrel that is NOT itself a client module", () => {
+    const map = new Map([
+      ["components/risk/chip.tsx", CLIENT],
+      ["components/risk/index.ts", 'export { resolveSpotRef, SpotMarkEditor } from "./chip";'],
+      ["app/risk/page.tsx", 'import { resolveSpotRef, SpotMarkEditor } from "@/components/risk";'],
+    ]);
+    const found = scan(map);
+    expect(found.map((o) => o.name)).toEqual(["resolveSpotRef"]);
+    expect(found[0].origin).toBe("components/risk/chip.tsx");
+    expect(found[0].file).toBe("app/risk/page.tsx");
+  });
+
+  it("follows a RENAMED re-export, and a chain of two barrels", () => {
+    const map = new Map([
+      ["components/risk/chip.tsx", CLIENT],
+      ["components/risk/index.ts", 'export { resolveSpotRef as spotRef } from "./chip";'],
+      ["components/index.ts", 'export { spotRef } from "./risk";'],
+      ["app/risk/page.tsx", 'import { spotRef } from "@/components";'],
+    ]);
+    expect(scan(map).map((o) => `${o.name}@${o.origin}`)).toEqual(["spotRef@components/risk/chip.tsx"]);
+  });
+
+  it("follows `export * from` only for a name the client module really exports", () => {
+    const base = (page: string) =>
+      new Map([
+        ["components/risk/chip.tsx", CLIENT],
+        ["components/risk/index.ts", 'export * from "./chip";\nexport const gridGap = 4;'],
+        ["app/risk/page.tsx", page],
+      ]);
+    expect(scan(base('import { resolveSpotRef } from "@/components/risk";')).map((o) => o.name)).toEqual([
+      "resolveSpotRef",
+    ]);
+    // `gridGap` is the barrel's OWN export — nothing client about it.
+    expect(scan(base('import { gridGap } from "@/components/risk";'))).toEqual([]);
+    // …and a component still passes, however it travelled.
+    expect(scan(base('import { SpotMarkEditor } from "@/components/risk";'))).toEqual([]);
+  });
+
+  it("terminates on a barrel cycle instead of recursing for ever", () => {
+    const map = new Map([
+      ["components/a/index.ts", 'export * from "../b";'],
+      ["components/b/index.ts", 'export * from "../a";'],
+      ["app/risk/page.tsx", 'import { whatever } from "@/components/a";'],
+    ]);
+    expect(scan(map)).toEqual([]);
+  });
+
+  it("flags an AWAITED dynamic import whose binding is read as a value", () => {
+    const dyn = (body: string) =>
+      new Map([
+        ["components/risk/chip.tsx", CLIENT],
+        ["app/risk/page.tsx", body],
+      ]);
+    expect(
+      scan(dyn('const { resolveSpotRef } = await import("@/components/risk/chip");')).map((o) => o.name),
+    ).toEqual(["resolveSpotRef"]);
+    expect(
+      scan(dyn('const price = (await import("@/components/risk/chip")).resolveSpotRef();')).map((o) => o.name),
+    ).toEqual(["resolveSpotRef"]);
+    // A renamed destructure is judged on the EXPORT name, not the binding.
+    expect(
+      scan(dyn('const { resolveSpotRef: fn } = await import("@/components/risk/chip");')).map((o) => o.name),
+    ).toEqual(["resolveSpotRef"]);
+    // The whole module object, held as a value — the namespace shape again.
+    expect(scan(dyn('const mod = await import("@/components/risk/chip");')).map((o) => o.name)).toEqual([
+      "await import → mod",
+    ]);
+  });
+
+  it("leaves `next/dynamic(() => import(…))` alone — nothing is awaited, nothing is read", () => {
+    const map = new Map([
+      ["components/risk/chip.tsx", CLIENT],
+      [
+        "app/risk/page.tsx",
+        'const Chip = dynamic(() => import("@/components/risk/chip"), { ssr: false });\nconst { SpotMarkEditor } = await import("@/components/risk/chip");',
+      ],
+    ]);
+    expect(scan(map)).toEqual([]);
   });
 
   it("does not read a commented-out import, or a `use client` that is not the first statement", () => {

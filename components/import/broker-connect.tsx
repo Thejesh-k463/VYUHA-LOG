@@ -477,8 +477,13 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   const conn = brokerConns[0] ?? null;
   /** R6 — one line when the next pull will fetch a GAP, not just today.
    *  DERIVED at render time from the row's own lastPullAt (never state, never
-   *  an effect), so it disappears by itself the moment a pull lands. */
-  const gapNotice = pullGapNotice(conn?.lastPullAt);
+   *  an effect), so it disappears by itself the moment a pull lands.
+   *
+   *  D-1 (2026-09-10): DHAN ONLY. `catchUpRange` (lib/import/api/dhan.ts) is
+   *  the sole caller that widens a pull to a range; every other broker fetches
+   *  its own default window whatever the last pull says, so on their tabs this
+   *  line promised a catch-up that does not happen. */
+  const gapNotice = active === "dhan" ? pullGapNotice(conn?.lastPullAt) : null;
   /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
   const saveTargetConn =
     saveAccountId > 0

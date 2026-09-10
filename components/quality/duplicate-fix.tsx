@@ -13,6 +13,11 @@
  * which copy goes is the whole decision, and it is the user's. The server
  * re-derives the group before it deletes anything, so a screen left open
  * cannot remove the last remaining copy.
+ *
+ * M-5 (2026-09-10): only a PLAIN copy gets a button. R5's auto-close makes a
+ * row stand for two broker records at once — the lot it kept and the execution
+ * it swallowed — so "remove the copy in <account>" on such a row deletes a
+ * merged lot. `removable` is resolved server-side and re-checked by the action.
  */
 
 import * as React from "react";
@@ -31,12 +36,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toaster";
+import { NO_PLAIN_COPY_NOTE } from "@/lib/analytics/data-quality";
 import { removeDuplicateCopy } from "@/app/data-quality/actions";
 
 export interface DuplicateFixAccount {
   id: number;
   name: string;
   rows: number;
+  /**
+   * M-5 — this account's copy is a PLAIN single-source row, so removing it
+   * removes nothing else. Resolved server-side by `isPlainDuplicateCopy`
+   * (lib/analytics/data-quality.ts); a merged lot is never removable and never
+   * gets a button.
+   */
+  removable: boolean;
 }
 
 export interface DuplicateFixGroup {
@@ -80,18 +93,27 @@ export function DuplicateFix({
   const [target, setTarget] = React.useState<Target | null>(null);
   const [busy, setBusy] = React.useState(false);
 
+  // U-1 — `busy` is cleared in a `finally`. Without it a thrown action left
+  // `busy` true for ever: Confirm disabled, Cancel disabled, and
+  // `onOpenChange` refusing to close, so the dialog could only be escaped by
+  // reloading the page. Same shape as spot-mark-editor.tsx's `save()`.
   async function run(t: Target) {
     setBusy(true);
-    const res = await removeDuplicateCopy({
-      broker: t.group.broker,
-      dedupHash: t.group.dedupHash,
-      accountId: t.account.id,
-    });
-    setBusy(false);
-    setTarget(null);
-    if (res.ok) toast.success(res.message);
-    else toast.error(res.message);
-    router.refresh();
+    try {
+      const res = await removeDuplicateCopy({
+        broker: t.group.broker,
+        dedupHash: t.group.dedupHash,
+        accountId: t.account.id,
+      });
+      setTarget(null);
+      if (res.ok) toast.success(res.message);
+      else toast.error(res.message);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Nothing was removed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (groups.length === 0 && connections.length === 0) return null;
@@ -146,20 +168,36 @@ export function DuplicateFix({
                 <p className="mt-1 text-muted-foreground">
                   Held in {g.accounts.map((a) => `${a.name} (${a.rows})`).join(", ")}.
                 </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {g.accounts.map((a) => (
-                    <Button
-                      key={a.id}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setTarget({ group: g, account: a })}
-                    >
-                      Remove the copy in {a.name}
+                {/* M-5 — ONLY PLAIN COPIES GET A BUTTON. After R5's auto-close
+                    a row can be one account's copy of this record AND the row
+                    that closed a lot that account was holding, and removing it
+                    would take the merged lot with it. A group with no plain
+                    copy is stated and linked, never offered a delete. */}
+                {g.accounts.some((a) => a.removable) ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {g.accounts
+                      .filter((a) => a.removable)
+                      .map((a) => (
+                        <Button
+                          key={a.id}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => setTarget({ group: g, account: a })}
+                        >
+                          Remove the copy in {a.name}
+                        </Button>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-muted-foreground">{NO_PLAIN_COPY_NOTE}</p>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/import">Open Import</Link>
                     </Button>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -5,7 +5,14 @@ import { db } from "@/lib/db";
 import { accounts, brokerConnections, trades } from "@/lib/db/schema";
 import { readSecret, secretsEqual } from "@/lib/vault";
 import { BROKER_LABELS, type Broker } from "@/lib/domain/constants";
-import type { DuplicateConnectionGroup, DuplicateTradeGroup } from "@/lib/analytics/data-quality";
+import {
+  isPlainDuplicateCopy,
+  type DuplicateConnectionGroup,
+  type DuplicateTradeGroup,
+} from "@/lib/analytics/data-quality";
+// The identity half of R5/S-1 — PURE (no DB, no React), so reading it here
+// costs the Data Quality page nothing but the rule itself.
+import { isLotIdentityFrozen, lotIdentityHashes } from "@/lib/import/close-open-lots";
 
 /**
  * WHO a broker connection belongs to, and where else that same client already
@@ -285,6 +292,10 @@ interface DupRow {
   qty: number;
   buyDate: string | null;
   sellDate: string | null;
+  /** Own hash FIRST, then every alias the row also stands for (M-5). */
+  identityHashes: string[];
+  /** An auto-close (R5) assembled or reduced this row. */
+  autoClosed: boolean;
 }
 
 const dupColumns = {
@@ -292,6 +303,7 @@ const dupColumns = {
   accountId: trades.accountId,
   broker: trades.broker,
   dedupHash: trades.dedupHash,
+  importNotes: trades.importNotes,
   symbol: trades.symbol,
   buyQty: trades.buyQty,
   sellQty: trades.sellQty,
@@ -299,7 +311,7 @@ const dupColumns = {
   sellDate: trades.sellDate,
 };
 
-const toDupRow = (r: { id: number; accountId: number; broker: string; dedupHash: string; symbol: string; buyQty: number; sellQty: number; buyDate: string | null; sellDate: string | null }): DupRow => ({
+const toDupRow = (r: { id: number; accountId: number; broker: string; dedupHash: string; importNotes: string | null; symbol: string; buyQty: number; sellQty: number; buyDate: string | null; sellDate: string | null }): DupRow => ({
   id: r.id,
   accountId: r.accountId,
   broker: r.broker,
@@ -308,19 +320,48 @@ const toDupRow = (r: { id: number; accountId: number; broker: string; dedupHash:
   qty: r.buyQty > 0 ? r.buyQty : r.sellQty,
   buyDate: r.buyDate,
   sellDate: r.sellDate,
+  identityHashes: lotIdentityHashes({ dedupHash: r.dedupHash, importNotes: r.importNotes }),
+  autoClosed: isLotIdentityFrozen({ dedupHash: r.dedupHash, importNotes: r.importNotes }),
 });
 
-/** Fold rows that share one (broker, dedupHash) into a group, or null when
- *  they all sit in ONE account — a sole copy is not a duplicate. */
-function toGroup(rows: DupRow[], names: Map<number, string>): DuplicateTradeGroup | null {
-  const byAccount = new Map<number, number>();
-  for (const r of rows) byAccount.set(r.accountId, (byAccount.get(r.accountId) ?? 0) + 1);
+/** Is this row one account's PLAIN copy of `hash`? The one rule the button and
+ *  the server action both read (lib/analytics/data-quality.ts). */
+const isPlainCopyOf = (r: DupRow, hash: string) => isPlainDuplicateCopy(r, hash);
+
+/**
+ * Fold rows that stand for one (broker, hash) into a group, or null when they
+ * all sit in ONE account — a sole copy is not a duplicate.
+ *
+ * `hash` is the GROUP's hash, not `rows[0].dedupHash`: a row may belong here
+ * through an alias, and it is the group's hash that decides which rows are
+ * removable.
+ */
+function toGroup(rows: DupRow[], hash: string, names: Map<number, string>): DuplicateTradeGroup | null {
+  const byAccount = new Map<number, { rows: number; removable: boolean }>();
+  for (const r of rows) {
+    const a = byAccount.get(r.accountId) ?? { rows: 0, removable: true };
+    a.rows += 1;
+    // Every row this account holds in the group is deleted together, so one
+    // merged lot makes the whole account's copy unremovable.
+    a.removable = a.removable && isPlainCopyOf(r, hash);
+    byAccount.set(r.accountId, a);
+  }
   if (byAccount.size < 2) return null;
-  const first = rows[0];
+  // WHICH ROW DESCRIBES THE GROUP. Rows are bucketed under every hash they
+  // stand for, so a row can be in here through an ALIAS — and an alias-matched
+  // row is some OTHER record: after an auto-close the surviving lot states the
+  // BUY's quantity and dates (100 bought, 60 left), while the group is keyed on
+  // the SALE that closed it. Reading the facts off whichever row happened to be
+  // first therefore reported "60 × INFY, 2026-09-01" as the record held twice,
+  // when the record is a 40-share sale on 2026-09-05. Describe the group from a
+  // row whose OWN hash IS the group's, and fall back only when no such row is
+  // here (every book merged the sale) — a group with no self-describing row is
+  // still a real duplicate and must still be reported.
+  const first = rows.find((r) => r.identityHashes[0] === hash) ?? rows[0];
   return {
     broker: first.broker,
     brokerLabel: brokerLabel(first.broker),
-    dedupHash: first.dedupHash,
+    dedupHash: hash,
     symbol: first.symbol,
     qty: first.qty,
     buyDate: first.buyDate,
@@ -329,24 +370,33 @@ function toGroup(rows: DupRow[], names: Map<number, string>): DuplicateTradeGrou
     ids: rows.map((r) => r.id).sort((a, b) => a - b),
     accounts: [...byAccount.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([id, n]) => ({ id, name: nameOf(names, id), rows: n })),
+      .map(([id, a]) => ({ id, name: nameOf(names, id), rows: a.rows, removable: a.removable })),
   };
 }
 
-/** Every (broker, dedupHash) present in two or more accounts. */
+/**
+ * Every (broker, identity hash) present in two or more accounts.
+ *
+ * Grouped on EVERY hash a row stands for, not just its own: after an
+ * auto-close, account A's lot keeps its buy hash and carries the consuming
+ * sale's hash as an alias, while account B holds that same sale as a plain
+ * row. Grouping on own hashes alone reports no duplicate at all (M-5).
+ */
 export function listDuplicateTradeGroups(): DuplicateTradeGroup[] {
   const rows = db.select(dupColumns).from(trades).all().map(toDupRow);
   const names = accountNames();
-  const byKey = new Map<string, DupRow[]>();
+  const byKey = new Map<string, { hash: string; rows: DupRow[] }>();
   for (const r of rows) {
-    const key = `${r.broker}${SEP}${r.dedupHash}`;
-    const list = byKey.get(key);
-    if (list) list.push(r);
-    else byKey.set(key, [r]);
+    for (const hash of new Set(r.identityHashes)) {
+      const key = `${r.broker}${SEP}${hash}`;
+      const bucket = byKey.get(key);
+      if (bucket) bucket.rows.push(r);
+      else byKey.set(key, { hash, rows: [r] });
+    }
   }
   const out: DuplicateTradeGroup[] = [];
-  for (const list of byKey.values()) {
-    const g = toGroup(list, names);
+  for (const bucket of byKey.values()) {
+    const g = toGroup(bucket.rows, bucket.hash, names);
     if (g) out.push(g);
   }
   return out.sort((a, b) => a.symbol.localeCompare(b.symbol) || a.dedupHash.localeCompare(b.dedupHash));
@@ -361,25 +411,38 @@ export function listDuplicateTradeGroups(): DuplicateTradeGroup[] {
  * is data loss, not a fix. Null means "not duplicated across accounts".
  */
 export function findDuplicateTradeGroup(broker: string, dedupHash: string): DuplicateTradeGroup | null {
+  // Filtered in JS, not in SQL: an ALIAS lives in `import_notes` and no index
+  // reaches it, and the group is not the group unless the alias-matched rows
+  // are in it (M-5).
   const rows = db
     .select(dupColumns)
     .from(trades)
-    .where(and(eq(trades.broker, broker), eq(trades.dedupHash, dedupHash)))
+    .where(eq(trades.broker, broker))
     .all()
-    .map(toDupRow);
+    .map(toDupRow)
+    .filter((r) => r.identityHashes.includes(dedupHash));
   if (rows.length === 0) return null;
-  return toGroup(rows, accountNames());
+  return toGroup(rows, dedupHash, accountNames());
 }
 
-/** The rows of one group that live in ONE account — the exact ids a fix
- *  removes. Empty when that account holds no copy. */
+/**
+ * The rows of one group that live in ONE account AND may be removed — the
+ * exact ids a fix deletes. Empty when that account holds no copy, or holds one
+ * that is not a plain single-source row.
+ *
+ * The removability rule is applied HERE as well as on the button: a screen
+ * rendered before an auto-close ran would otherwise still name a merged lot,
+ * and that delete is data loss (M-5).
+ */
 export function duplicateTradeIdsIn(broker: string, dedupHash: string, accountId: number): number[] {
   if (!Number.isInteger(accountId) || accountId <= 0) return [];
   return db
-    .select({ id: trades.id })
+    .select(dupColumns)
     .from(trades)
-    .where(and(eq(trades.broker, broker), eq(trades.dedupHash, dedupHash), eq(trades.accountId, accountId)))
+    .where(and(eq(trades.broker, broker), eq(trades.accountId, accountId)))
     .all()
+    .map(toDupRow)
+    .filter((r) => r.identityHashes.includes(dedupHash) && isPlainCopyOf(r, dedupHash))
     .map((r) => r.id)
     .sort((a, b) => a - b);
 }

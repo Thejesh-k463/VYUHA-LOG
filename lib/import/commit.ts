@@ -26,7 +26,15 @@ import { referenceVsBookNote, relabelledFromWarnings, type ImportShape } from "@
 import { getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
-import { planLotCloses, type IncomingRow, type LotClose, type OpenLot } from "./close-open-lots";
+import {
+  AUTO_CLOSE_NOTE,
+  lotIdentityHashes,
+  planLotCloses,
+  withLotCloseNote,
+  type IncomingRow,
+  type LotClose,
+  type OpenLot,
+} from "./close-open-lots";
 import { recordAudit } from "@/lib/audit";
 import { getMarginPct } from "@/lib/queries/margin";
 import { getSymbolsByIsin } from "@/lib/queries/instruments";
@@ -322,12 +330,11 @@ function supersededByBookNow(tx: TxLike, parsed: ParsedFile, accountId: number):
 type TradeRow = typeof tradesTable.$inferSelect;
 
 /**
- * Written to `import_notes` on every row an auto-close touched. It is the row's
- * provenance (a derived fact says so — invariant 6) AND the marker that lets a
- * re-import recognise the two single-sided rows this row was assembled from.
+ * Re-exported from the pure half (`close-open-lots.ts`), where it now lives
+ * beside `lotIdentityHashes` — `lib/db/data-fixes.ts` needs the same vocabulary
+ * and cannot import this `server-only` module.
  */
-export const AUTO_CLOSE_NOTE =
-  "Closed automatically against an open position this account already held (FIFO, oldest lot first).";
+export { AUTO_CLOSE_NOTE };
 
 /** The charge components that travel with a closed slice, alongside the total. */
 const CHARGE_PARTS = [
@@ -370,6 +377,40 @@ function lotFromRow(r: TradeRow): OpenLot | null {
 }
 
 /**
+ * M-2 — the open lot a row THIS FILE has just created leaves behind.
+ *
+ * Wave 1 built the FIFO book once, from the rows the account already held, and
+ * never fed a freshly written row back into it. So one Dhan pull holding a
+ * catch-up history BUY (7 Sept) and today's `/positions` SELL committed as an
+ * open long AND an open short in the same symbol, with no P&L anywhere — the
+ * exact shape R5 exists to prevent, produced by one file instead of two.
+ *
+ * The exclusions mirror `lotFromRow` fact for fact, read off the parsed row
+ * instead of the stored one, so a row cannot become a lot here that would not
+ * have been a lot after a restart: staged (quantities live in trade_legs),
+ * basis-unknown (invariant 6 — that row is stored `acquisition: "unknown"` and
+ * is never a short a later BUY may cover), eq_mtf, and anything already
+ * stating both legs.
+ */
+function lotFromNewRow(id: number, accountId: number, t: NormalizedTrade, b: BuiltRow): OpenLot | null {
+  if (!b.isOpen || stagedFromExecutions(t) || t.basisUnknown || b.classification.segment === "eq_mtf") return null;
+  const base = {
+    id,
+    accountId,
+    broker: t.broker,
+    tradingsymbol: t.tradingsymbol,
+    segment: b.classification.segment,
+    exchange: b.classification.exchange,
+    charges: b.charges.total,
+  };
+  if (t.buyQty > 0 && t.sellQty === 0)
+    return { ...base, side: "long" as const, qty: t.buyQty, price: t.avgBuyPrice, value: t.buyValue, date: normalizeDate(t.buyDate) };
+  if (t.sellQty > 0 && t.buyQty === 0)
+    return { ...base, side: "short" as const, qty: t.sellQty, price: t.avgSellPrice, value: t.sellValue, date: normalizeDate(t.sellDate) };
+  return null;
+}
+
+/**
  * The incoming row as an execution that could close a lot — null when it is not
  * one-sided (a row that already states both legs is a closed pair and is left
  * exactly as it is).
@@ -396,15 +437,16 @@ function incomingFromParsed(t: NormalizedTrade, b: BuiltRow, accountId: number):
 }
 
 /**
- * The dedup hashes of the two single-sided rows an auto-closed row was made
- * from — so re-importing EITHER source file de-duplicates against it.
+ * LEGACY ONLY (rows written by v4.2.1/4.3.0-wave-1) — the dedup hashes of the
+ * two single-sided rows an auto-closed row was made from, recovered by
+ * re-hashing the row's own legs.
  *
- * A close collapses two identities (the lot's row and the incoming execution)
- * into one row that can store only one `dedup_hash`. The stored hash is the
- * incoming execution's; the lot's is recovered here, from the row's own buy/sell
- * legs, which the close leaves untouched. Best effort by construction: a parser
- * that emitted `DD-MM-YYYY` hashed its raw date while the row stores the ISO
- * one, and then only the stored hash protects that file.
+ * That reconstruction is why S-1 was a defect: it only holds while the legs
+ * still say what the source files said, and a second sale moves them. Rows
+ * written from v4.3.0 wave 2 onward state their aliases outright
+ * (`withLotCloseNote`), and `knownHashes` calls this ONLY for a row that has
+ * none — a derived hash is a guess, and a guess must never out-vote a fact or
+ * be offered beside one.
  */
 function autoCloseAliasHashes(r: TradeRow): string[] {
   if (!r.importNotes?.includes(AUTO_CLOSE_NOTE)) return [];
@@ -419,8 +461,10 @@ function autoCloseAliasHashes(r: TradeRow): string[] {
 function knownHashes(rows: TradeRow[]): Set<string> {
   const set = new Set<string>();
   for (const r of rows) {
-    set.add(r.dedupHash);
-    for (const alias of autoCloseAliasHashes(r)) set.add(alias);
+    const ids = lotIdentityHashes(r);
+    for (const h of ids) set.add(h);
+    // Only a row that states no alias falls back to the legacy reconstruction.
+    if (ids.length === 1) for (const alias of autoCloseAliasHashes(r)) set.add(alias);
   }
   return set;
 }
@@ -455,8 +499,18 @@ function applyRemaindersToBook(book: LotBook, remainders: { lotId: number; qty: 
   }
 }
 
-/** A hash for the second and later slices of one incoming row — the row's own
- *  hash can be stored on exactly ONE row (account+broker+hash is unique). */
+/**
+ * The own-hash of a closed SLICE inserted beside a partly-consumed lot.
+ *
+ * The incoming row's own hash is never stored on a close artifact (S-1): it
+ * belongs to the untouched remainder of that row when there is one, and to
+ * nothing at all when the row was wholly a closing leg — either way the
+ * execution is recognised on re-import through the ALIAS on the lot it
+ * consumed. A slice still needs an own hash of its own that no other row can
+ * produce, because (account_id, broker, dedup_hash) is UNIQUE; deriving it from
+ * (row, lot) makes it unique by construction, since one row consumes one lot at
+ * most once per plan and a repeat of that row never gets past dedup.
+ */
 function sliceHash(rowKey: string, lotId: number): string {
   return createHash("sha1").update(`${rowKey}|auto-close|${lotId}`).digest("hex");
 }
@@ -503,6 +557,8 @@ function scaleBuilt(b: BuiltRow, share: number): BuiltRow {
 export interface AppliedClose {
   /** The row that now holds the realised P&L. */
   tradeId: number;
+  /** The open lot that was reduced or consumed — `tradeId` when it went whole. */
+  lotId: number;
   symbol: string;
   tradingsymbol: string;
   qty: number;
@@ -523,6 +579,12 @@ export interface AppliedClose {
  * legs, attachments and the user's own journal fields survive) — the same
  * columns closePosition writes. A lot consumed in PART is reduced in place and
  * the consumed slice is inserted as its own closed row.
+ *
+ * Identity (S-1): the lot's `dedup_hash` is NEVER rewritten — it is the hash of
+ * the file that created the lot and must keep answering for that file however
+ * many executions later eat the position. The consuming execution's hash is
+ * added to the lot as an ALIAS instead (`withLotCloseNote`), on the reduced row
+ * and on the row consumed whole alike.
  */
 function applyLotCloses(
   tx: typeof db,
@@ -530,10 +592,9 @@ function applyLotCloses(
   closes: LotClose[],
   row: IncomingRow,
   b: BuiltRow,
-  opts: { fileName: string; batchId: number; takesRowHash: boolean },
+  opts: { fileName: string; batchId: number },
 ): AppliedClose[] {
   const applied: AppliedClose[] = [];
-  let rowHashUsed = !opts.takesRowHash;
 
   for (const c of closes) {
     const lotRow = book.rows.get(c.lotId);
@@ -571,7 +632,10 @@ function applyLotCloses(
     const netPnl = r2(grossPnl - chargesTotal);
     const realisedPct = buyValue > 0 ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
     const rMultiple = lotRow.riskAmount && lotRow.riskAmount > 0 ? r2(netPnl / lotRow.riskAmount) : lotRow.rMultiple;
-    const notes = [lotRow.importNotes, AUTO_CLOSE_NOTE].filter(Boolean).join(" | ");
+    // The lot's provenance, plus THIS execution's hash as an alias of the lot's
+    // identity. Idempotent, so a lot eaten by three sells says so three times
+    // and carries the sentence once.
+    const notes = withLotCloseNote(lotRow.importNotes, row.key);
 
     const before = { isOpen: true, buyQty: lotRow.buyQty, sellQty: lotRow.sellQty, netPnl: lotRow.netPnl };
     let closedId: number;
@@ -593,12 +657,18 @@ function applyLotCloses(
           rMultiple,
           ...parts,
           importNotes: notes,
-          ...(rowHashUsed ? {} : { dedupHash: row.key }),
           updatedAt: sql`(datetime('now'))`,
         })
         .where(eq(tradesTable.id, lotRow.id))
         .run();
-      rowHashUsed = true;
+      // The in-memory row follows the write: a later row of the SAME file may
+      // read it back (M-2), and it must not still look open.
+      lotRow.isOpen = false;
+      lotRow.buyQty = buyQty;
+      lotRow.sellQty = sellQty;
+      lotRow.netPnl = netPnl;
+      lotRow.chargesTotal = chargesTotal;
+      lotRow.importNotes = notes;
     } else {
       // Part of the lot went. The open row is REDUCED (keeping its id, its
       // hash and the user's journal fields) and the slice that closed is
@@ -623,6 +693,11 @@ function applyLotCloses(
           unrealisedPnl: r2(lotRow.unrealisedPnl * keep),
           mtfFundedAmount: lotRow.mtfFundedAmount != null ? r2(lotRow.mtfFundedAmount * keep) : null,
           ...keepParts,
+          // S-1: the reduced row keeps its OWN hash (the file that created it
+          // still describes 100 shares) and gains the consuming sell as an
+          // alias — wave 1 wrote no note here at all, so a re-import of that
+          // sell had nothing to recognise.
+          importNotes: notes,
           updatedAt: sql`(datetime('now'))`,
         })
         .where(eq(tradesTable.id, lotRow.id))
@@ -658,12 +733,11 @@ function applyLotCloses(
           ...parts,
           sourceFile: opts.fileName,
           importBatchId: opts.batchId,
-          dedupHash: rowHashUsed ? sliceHash(row.key, lotRow.id) : row.key,
+          dedupHash: sliceHash(row.key, lotRow.id),
           importNotes: notes,
         })
         .returning({ id: tradesTable.id })
         .get();
-      rowHashUsed = true;
       closedId = inserted!.id;
 
       // The in-memory row follows the write, so a second slice off the same lot
@@ -674,6 +748,9 @@ function applyLotCloses(
       lotRow.sellValue = isShort ? openSide.sellValue! : lotRow.sellValue;
       lotRow.grossPnl = keepGross;
       lotRow.chargesTotal = keepTotal;
+      lotRow.netPnl = r2(keepGross - keepTotal);
+      lotRow.unrealisedPnl = r2(lotRow.unrealisedPnl * keep);
+      lotRow.importNotes = notes;
       for (const k of CHARGE_PARTS) lotRow[k] = keepParts[k];
     }
 
@@ -687,7 +764,7 @@ function applyLotCloses(
       source: "import",
     });
 
-    applied.push({ tradeId: closedId, symbol: lotRow.symbol, tradingsymbol: lotRow.tradingsymbol, qty: c.qty, netPnl });
+    applied.push({ tradeId: closedId, lotId: lotRow.id, symbol: lotRow.symbol, tradingsymbol: lotRow.tradingsymbol, qty: c.qty, netPnl });
   }
 
   return applied;
@@ -824,6 +901,12 @@ export function previewParsedFile(
   // The same book the commit will match against, planned but never written.
   const book = lotBookFrom(existingRows);
   const closePlan: { symbol: string; qty: number }[] = [];
+  // M-2: rows this file would ADD are lots for the rows after them, exactly as
+  // in the commit. Nothing is written here, so the ids are stand-ins — they
+  // only have to sort AFTER every stored id, which is what a fresh AUTOINCREMENT
+  // id does, so a date tie breaks the same way in both halves.
+  let nextPreviewId = existingRows.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+  const newLotSymbols = new Map<number, string>();
 
   const rows: PreviewRow[] = [];
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, openCount = 0, openingSells = 0;
@@ -836,12 +919,36 @@ export function previewParsedFile(
     // R5: what this row would CLOSE. A duplicate is skipped before matching, so
     // it is planned here exactly as the commit will decide it.
     if (!isDuplicate) {
+      let keepShare = 1;
       const incoming = incomingFromParsed(t, b, accountId);
       if (incoming) {
         const plan = planLotCloses(book.lots, [incoming]);
         applyRemaindersToBook(book, plan.remainders);
         for (const c of plan.closes) {
-          closePlan.push({ symbol: book.rows.get(c.lotId)?.symbol ?? c.tradingsymbol, qty: c.qty });
+          closePlan.push({
+            symbol: book.rows.get(c.lotId)?.symbol ?? newLotSymbols.get(c.lotId) ?? c.tradingsymbol,
+            qty: c.qty,
+          });
+        }
+        if (plan.closes.length > 0) {
+          const unmatchedQty = plan.untouched[0]?.qty ?? 0;
+          keepShare = incoming.qty > 0 ? unmatchedQty / incoming.qty : 0;
+        }
+      }
+      // M-2: whatever of this row would LAND is a lot for the rows after it —
+      // the same call the commit makes, on the same scaled row, so the two
+      // halves plan identically.
+      if (keepShare > 0) {
+        const newLot = lotFromNewRow(
+          nextPreviewId,
+          accountId,
+          keepShare === 1 ? t : scaleTrade(t, keepShare),
+          keepShare === 1 ? b : scaleBuilt(b, keepShare),
+        );
+        if (newLot) {
+          book.lots.push(newLot);
+          newLotSymbols.set(nextPreviewId, b.classification.symbol);
+          nextPreviewId++;
         }
       }
     }
@@ -1432,6 +1539,9 @@ export function commitParsedFile(
 
     let added = 0, skipped = 0, netPnl = 0, openCount = 0, openingSells = 0;
     const seenInThisFile = new Set<string>();
+    // M-2: lot id → the net P&L this import has already claimed for it as an
+    // OPEN row, for lots created by an earlier row of this same file.
+    const sameFileNet = new Map<number, number>();
 
     // ── The book wins over the reference ───────────────────────────────────
     // Decided ONCE, before any row is written, and against the account as it
@@ -1472,15 +1582,23 @@ export function commitParsedFile(
           const applied = applyLotCloses(tx as unknown as typeof db, book, plan.closes, incoming, b, {
             fileName,
             batchId,
-            // The row's own dedup hash can live on exactly one row. It goes to
-            // the remainder when there is one, and to the closing leg when the
-            // row was consumed whole — either way a re-import finds it and
-            // skips, so nothing closes twice.
-            takesRowHash: unmatchedQty <= 0,
           });
           applyRemaindersToBook(book, plan.remainders);
           autoClosed.push(...applied);
           for (const a of applied) netPnl = r2(netPnl + a.netPnl);
+          // M-2: when the lot was created by an EARLIER row of this same file,
+          // its open-row net is already in this import's running total and the
+          // close has just restated it — so take the stale figure back out and
+          // put whatever is left open back in. A lot the book already held was
+          // never counted here, so it is left alone.
+          for (const a of applied) {
+            const stale = sameFileNet.get(a.lotId);
+            if (stale === undefined) continue;
+            const left = book.rows.get(a.lotId);
+            const fresh = left?.isOpen ? left.netPnl : 0;
+            netPnl = r2(netPnl - stale + fresh);
+            sameFileNet.set(a.lotId, fresh);
+          }
           keepShare = incoming.qty > 0 ? unmatchedQty / incoming.qty : 0;
           // Wholly a closing leg: it is NOT also a new open position.
           if (keepShare <= 0) continue;
@@ -1568,6 +1686,22 @@ export function commitParsedFile(
         .get();
       added++;
       netPnl = r2(netPnl + bRow.netPnl);
+
+      // M-2: this row joins the FIFO book, so a LATER row of the same file can
+      // close it. Read back rather than reconstructed — `applyLotCloses`
+      // pro-rates the lot's charges component by component off the stored row,
+      // and paise round at the column (invariant 1).
+      if (inserted) {
+        const newLot = lotFromNewRow(inserted.id, accountId, tRow, bRow);
+        if (newLot) {
+          const storedRow = tx.select().from(tradesTable).where(eq(tradesTable.id, inserted.id)).get();
+          if (storedRow) {
+            book.lots.push(newLot);
+            book.rows.set(inserted.id, storedRow);
+            sameFileNet.set(inserted.id, bRow.netPnl);
+          }
+        }
+      }
 
       // Preserve the entry ladder from a tradebook export. The parent row keeps
       // the aggregate the rest of the app reads; the legs give the position its

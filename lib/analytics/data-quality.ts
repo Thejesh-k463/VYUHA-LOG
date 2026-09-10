@@ -64,8 +64,62 @@ export interface DuplicateTradeGroup {
   rows: number;
   /** The row ids, for `affected`. */
   ids: number[];
-  accounts: { id: number; name: string; rows: number }[];
+  /**
+   * One entry per account holding the group. `removable` is the ONLY thing the
+   * screen and the server action may act on — see `isPlainDuplicateCopy`.
+   */
+  accounts: { id: number; name: string; rows: number; removable: boolean }[];
 }
+
+/**
+ * A stored row's IDENTITY, as the duplicate scan needs to weigh it (M-5).
+ *
+ * A row can stand for more than one broker record: an auto-close (R5) folds an
+ * incoming execution into the open lot it closed, so the surviving row keeps
+ * its own dedup hash AND carries the consumed execution's hash as an alias
+ * (`lotIdentityHashes` in lib/import/close-open-lots.ts). Grouping on the own
+ * hash alone therefore MISSES a duplicate; deleting on it alone destroys a
+ * merged lot.
+ */
+export interface DuplicateRowIdentity {
+  /** Every hash that stands for this row: its OWN first, then its aliases. */
+  identityHashes: readonly string[];
+  /** True when an auto-close assembled or reduced this row. */
+  autoClosed: boolean;
+}
+
+/**
+ * MAY THIS ROW BE REMOVED as one account's copy of `groupHash`? (M-5, ruling
+ * 2026-09-10 — only PLAIN copies get the button; a merged lot is never
+ * removable.)
+ *
+ * Three clauses, and each one alone is enough to refuse:
+ *
+ *  1. The row's OWN hash is the group hash. A row that joins the group only
+ *     through an alias is some OTHER record here; its own record is elsewhere.
+ *  2. It carries no aliases. A row with an alias stands for two broker records
+ *     at once, and only one of them is the duplicate — deleting the row deletes
+ *     the other as well.
+ *  3. No auto-close touched it. Clause 2 already catches every alias an
+ *     auto-close writes; this clause is stated separately because the alias
+ *     derivation is best-effort by construction, and a row the importer MARKED
+ *     as merged is not a plain single-source row whatever its hashes say.
+ *
+ * A group with no plain copy is reported and linked, never offered a delete —
+ * `NO_PLAIN_COPY_NOTE`.
+ */
+export function isPlainDuplicateCopy(row: DuplicateRowIdentity, groupHash: string): boolean {
+  const [own, ...aliases] = row.identityHashes;
+  return own === groupHash && aliases.length === 0 && !row.autoClosed;
+}
+
+/**
+ * What a cross-account duplicate group says when NO copy of it is plain.
+ * Descriptive only (SEBI copy rule): it states what the rows are and where the
+ * duplicate pull itself is ended, and offers nothing destructive.
+ */
+export const NO_PLAIN_COPY_NOTE =
+  "No copy of this record stands alone: each one also carries an execution that closed a position in its own book, so removing one would delete that record too. The duplicate pull itself ends at Import → Disconnect.";
 
 export interface QualityInputs {
   trades: QualityTrade[];

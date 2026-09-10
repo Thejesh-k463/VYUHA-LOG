@@ -7,7 +7,7 @@ Exact charges. Honest analytics. Desktop app today; a web platform is in develop
 
 [![CI](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml/badge.svg)](https://github.com/Thejesh-k463/VYUHA-LOG/actions/workflows/ci.yml)
 [![Latest tag](https://img.shields.io/github/v/tag/Thejesh-k463/VYUHA-LOG?label=version&color=2dd4bf)](https://github.com/Thejesh-k463/VYUHA-LOG/tags)
-[![Tests](https://img.shields.io/badge/tests-7207%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-7272%20passing-2ea44f)](tests)
 [![E2E](https://img.shields.io/badge/e2e-93%20flows-2ea44f)](e2e)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](#-get-it)
 [![Telemetry](https://img.shields.io/badge/telemetry-none-black)](#-your-data-your-choice-of-home)
@@ -538,7 +538,7 @@ Most journals tell you your P&L. **Vyuha tells you why.**
 |:--:|:--:|:--:|
 | **10,501** | **7** | **0.69%** |
 | per-stock MTF margins bundled | brokers' MTF lists compared<br/>(Sahi has none — it offers no MTF delivery) | charge-engine error vs a real broker report |
-| **7207** | **49** | **0** |
+| **7272** | **49** | **0** |
 | tests, 93 end-to-end flows | screens in the desktop app | bytes of *your data* uploaded without your say-so |
 
 </div>
@@ -607,7 +607,7 @@ forever.** Your own record of your trading is never held hostage.
 ### 🔌 Connect a broker — and Angel One connects itself
 <img src="docs/screenshots/broker-connect.png" alt="Connect broker — Zerodha, Dhan and Angel One tabs with the Angel One credential fields" width="900" />
 
-- **Three live API pulls.** Zerodha (today's executions with fill times), Dhan (the only Dhan source that states **MTF** outright), and **Angel One** — the one that needs no daily attention, because each pull mints its own login code from your TOTP secret.
+- **Four live API pulls.** Zerodha (today's executions with fill times), Dhan (the only Dhan source that states **MTF** outright), **Upstox**, and **Angel One** — the one that needs no daily attention, because each pull mints its own login code from your TOTP secret.
 - **Credentials are encrypted at rest**, bound to this machine, redacted from backups, and sent nowhere except the broker. A broken vault refuses to save a credential rather than quietly storing it in the clear.
 - Pasting the 6-digit authenticator **code** where the **secret** belongs is caught at save with an explanation — not discovered the next morning as a cryptic login failure.
 - **Dhan connects the way the form promises (v3.8).** Re-saving an enrolment no longer demands the Client ID again — the stored key stays on the server side and no plaintext leaves it; a 401 with enrolment present re-mints once and retries; an enrolment that is stored but unreadable says exactly that. Every connection row wears a **mode pill** — *PIN + TOTP · mints its own token* vs *pasted token · expires …* — with a one-time note when a pasted token expires, and in All-accounts view "Save connection" names the account it will write to rather than picking one silently.
@@ -891,7 +891,7 @@ lib/
   queries/   the ONLY layer that touches the database (server-only)
   domain/    shared constants and vocabulary
 drizzle/     migrations, applied in order at startup
-tests/       7207 unit + integration tests across 369 files (+ tests/load: 16 load cases, run separately)
+tests/       7272 unit + integration tests across 371 files (+ tests/load: 16 load cases, run separately)
 e2e/         93 Playwright flows through the real app, in 29 specs
 docs/
   client/    what a BUYER gets — install guide, getting-started deck
@@ -912,7 +912,7 @@ lines.
 
 ## 🧪 Built like an engine, not a spreadsheet
 
-- **7207 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
+- **7272 tests.** Most run over pure, DB-free modules — charge engine, classification, MTF interest, capital gains, VaR, Greeks, settlement, discipline, ITR turnover, breach detection, MAE/MFE… A handful deliberately do not: backup/restore and multi-account isolation are exercised against a real migrated SQLite file, because the failures worth catching there (a wiped attachment directory, a half-applied restore, one account's rows leaking into another's tax pack) cannot occur in a mock.
 - **Load-tested.** 16 load cases in [`tests/load`](tests/load/README.md) (`npm run test:load`, deliberately outside `npm test`) drive the app at ten-thousand-trade scale — cross-source duplicate detection, delete-at-scale, staged-leg depth, Lenses grouping, backup/restore. The first batch of seven found **five real defects**, the second batch found more, and the third (C8, 2026-08-21) found a **quadratic in the import pairing engine that no other case could see, because none of them imported it** — all fixed and pinned, each measured before/after in that README: a quadratic duplicate filter (8 s → 20 ms), a `too many SQL variables` throw on a whole-account delete, a staged rebuild with zero transactions, a per-batch re-filter in Lenses, a restore that derived its scrypt key twice, and a FIFO lot walk that cost 15.9× for 4× the legs (50,000 legs on one symbol: 775 ms → 63 ms, byte-identical output).
 - Charges reconciled against **real broker files**; MTF math verified against **Dhan/Zerodha/Groww's own documentation**.
 - Next.js (App Router) + TypeScript · Tailwind v4 · Drizzle ORM / better-sqlite3 · Recharts · TanStack Table · Tauri 2 desktop shell with a bundled-Node sidecar.
@@ -928,7 +928,7 @@ lines.
 | `npm run setup` | `db:migrate` + `seed` in one go |
 | `npm run db:generate` / `db:migrate` | Generate / apply Drizzle migrations |
 | `npm run db:studio` | Inspect the DB in Drizzle Studio |
-| `npm test` | Vitest unit + integration suite (7207 tests) |
+| `npm test` | Vitest unit + integration suite (7272 tests) |
 | `npm run test:e2e` | Playwright e2e — 93 flows incl. the Dhan transaction report, Lenses grouping and drill-down, delete-by-scope, unpriced-sale quarantine, status/outcome views, the backup export→restore round trip and account switching |
 | `npm run test:load` | 16 load/stress cases (`tests/load`, `.load.ts`) — outside `npm test` by construction and run in CI as its own required `load` job (v3.8); results append to a gitignored trend file |
 | `npm run demo` | Serve the app on localhost:3214 against a throwaway, freshly-seeded demo database — the real journal is never opened (`-- --fresh` rebuilds it) |
@@ -998,7 +998,7 @@ VYUHA-LOG/
     jobs/         # MTF accrual, auto-MTM
     db/           # Drizzle schema, migrations, seed
   src-tauri/      # Rust desktop shell
-  tests/          # 7207 Vitest unit + integration tests (+ tests/load)
+  tests/          # 7272 Vitest unit + integration tests (+ tests/load)
 ```
 Convention: business logic lives in pure modules with zero DB/React imports, unit-tested first,
 then wrapped by thin server-only query layers.

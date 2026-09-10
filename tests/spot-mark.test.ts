@@ -291,6 +291,34 @@ describe("the editor component", () => {
     expect(pure).not.toMatch(/next\/navigation/);
   });
 
+  /**
+   * U-2 — Save, Cancel and Escape all unmount the `<Input>` and remount the
+   * chip `<button>`. Focus fell to `<body>`: a keyboard user was returned to
+   * the top of the document and had to tab the whole obligations table again.
+   * Every close path now goes through ONE door that arms a ref-callback
+   * restore — no `useEffect`, so the file's no-effect rule above still holds.
+   */
+  it("U-2 — the chip carries a ref, and closing focuses it back", () => {
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    expect(code).toMatch(/<button\r?\n\s*ref=\{attachChip\}/);
+    expect(code).toMatch(/const attachChip = \(el: HTMLButtonElement \| null\) =>/);
+    expect(code).toMatch(/restoreFocus\.current = false;\r?\n\s*el\.focus\(\);/);
+  });
+
+  it("U-2 — Save, Cancel and Escape leave through that ONE door, not by flipping state", () => {
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    // Save, on a stored mark.
+    expect(code).toMatch(/if \(res\.ok\) \{\r?\n\s*closeEditor\(\);/);
+    // Escape, from the input.
+    expect(code).toMatch(/if \(e\.key === "Escape"\) closeEditor\(\);/);
+    // Cancel.
+    expect(code).toMatch(/onClick=\{\(\) => closeEditor\(\)\}[\s\S]{0,80}?Cancel/);
+    // Exactly ONE `setEditing(false)` survives, and it is inside closeEditor —
+    // a fourth close path added later cannot quietly skip the restore.
+    expect(code.match(/setEditing\(false\)/g)).toHaveLength(1);
+    expect(code).toMatch(/function closeEditor\(\) \{\r?\n\s*restoreFocus\.current = true;\r?\n\s*setEditing\(false\);/);
+  });
+
   it("calls no effect at all (AGENTS.md: derive, never set state in one)", () => {
     expect(src.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/useEffect\s*\(/);
     // …and nothing silenced the rule instead of deriving.

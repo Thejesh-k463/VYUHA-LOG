@@ -145,6 +145,37 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
   const label = spotChipLabel(spot);
   const title = sourceTitle(spot, symbol);
 
+  /**
+   * U-2 — WHERE THE KEYBOARD GOES WHEN THE EDITOR CLOSES.
+   *
+   * Save, Cancel and Escape all unmount the `<Input>` and remount the chip
+   * `<button>`. Focus then falls to `<body>`: a keyboard user is returned to
+   * the top of the document and has to tab the whole obligations table again,
+   * and a screen reader announces nothing at all. So every close path sets
+   * `restoreFocus`, and the chip's own ref callback — which runs the instant
+   * the button is back in the DOM, after the state flip — consumes it.
+   *
+   * A ref, not state (it renders nothing) and NOT a `useEffect` keyed on
+   * `editing`: this file derives rather than syncs (AGENTS.md, and the header
+   * above).
+   */
+  const restoreFocus = React.useRef(false);
+  const chipRef = React.useRef<HTMLButtonElement | null>(null);
+
+  const attachChip = (el: HTMLButtonElement | null) => {
+    chipRef.current = el;
+    if (el && restoreFocus.current) {
+      restoreFocus.current = false;
+      el.focus();
+    }
+  };
+
+  /** The ONE way out of the editor — see `restoreFocus` above. */
+  function closeEditor() {
+    restoreFocus.current = true;
+    setEditing(false);
+  }
+
   async function save() {
     const price = Number(draft.trim());
     if (!Number.isFinite(price) || price <= 0) {
@@ -157,7 +188,7 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
       // write. The refresh is what re-reads the resolved moneyness on THIS row.
       const res = await submitSpotMark(symbol, price, () => router.refresh());
       if (res.ok) {
-        setEditing(false);
+        closeEditor();
         setDraft("");
         toast.success(`${symbol} spot stored.`);
       } else {
@@ -178,6 +209,7 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
     );
     return (
       <button
+        ref={attachChip}
         type="button"
         onClick={() => {
           setDraft(spot.value == null ? "" : String(spot.value));
@@ -204,7 +236,7 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
             e.preventDefault();
             void save();
           }
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Escape") closeEditor();
         }}
         placeholder={`${symbol} spot`}
         aria-label={`Underlying spot for ${symbol}`}
@@ -219,7 +251,7 @@ export function SpotMarkEditor({ symbol, spot }: { symbol: string; spot: SpotRef
         size="sm"
         className="h-7 px-2 text-[11px]"
         disabled={busy}
-        onClick={() => setEditing(false)}
+        onClick={() => closeEditor()}
       >
         Cancel
       </Button>

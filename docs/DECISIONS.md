@@ -4885,3 +4885,85 @@ adapter read today's `/positions` only and `lastPullAt` was display-only. Not a 
   rival check spans every account by definition; an account filter would hide the row that makes a second connection a duplicate.
 - **Deferred by ruling:** pricing the underlying of open option rows through the live feed (widens the symbols sent to
   Upstox/Angel One; consent-sheet copy + disclosure bump) — queued after 4.3.0.
+
+## 2026-09-10 — v4.3.0 audit round 1 over `1159a34..265d684` → fix wave 1 (three builders + two seam-defect fixes)
+
+**Round:** six Fable `vyuha-auditor`s (money 20 candidates / 5, schema 14 / 2, security 22 / 0, ui 20 / 2, test-integrity
+16 / 1, docs 33 / 3) → 12 unique confirmed (the money and schema auditors both found the lost lot hash) → Fable skeptic
+**12 → 12**, every money finding reproduced through the real `commitParsedFile` on a migrated temp database. Rulings:
+`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 audit-round-1 rulings". The seam pass over the fix wave
+(`tests/seams-v43-fix1.test.ts`, 11 tests / 5 seams, every one red on either side's revert) found two more, both fixed here.
+
+- **M-4 = S-1, the lot identity model (money, silent wrong number).** Wave 1's `applyLotCloses` REPLACED a fully-consumed
+  lot's `dedupHash` with the SELL's `row.key`, and the buy alias was rebuilt from the row's already-reduced quantity, so buy
+  100 → sell 40 → sell 60 → re-import the buy file created a phantom open 100 lot (`added 1`). **Ruling: a lot keeps its
+  born-with hash for ever; every consuming SELL's hash becomes an alias in `import_notes` (`dedup-alias:` segments), on the
+  row consumed whole AND on the reduced-but-open row (which previously got no note); an inserted closed slice takes
+  `sliceHash(row.key, lotId)`, so `(accountId, broker, dedupHash)` stays unique.** The vocabulary is pure, in
+  `lib/import/close-open-lots.ts`: `lotIdentityHashes(row)` (own hash first, then aliases; non-sha1 segments are prose and
+  ignored), `isLotIdentityFrozen(row)`, `withLotCloseNote(notes, hash)`; `AUTO_CLOSE_NOTE` moved there (commit.ts
+  re-exports it) so `lib/db/data-fixes.ts` can share it without importing a `server-only` module. `knownHashes` reads the
+  helper and falls back to the legacy leg-rehash ONLY for a row that states no alias — a guess must not stand beside a fact.
+  Red on revert: `expected 1 to be +0` ("re-importing the BUY file adds NOTHING"). **Recorded residual:** rows closed by the
+  wave-1 code (never shipped — 4.2.0 has no auto-close) keep the swapped hash and no alias; the leg-rehash fallback recovers
+  them only while the legs still say what the file said; no migration re-keys them (none this wave by ruling).
+- **S-2, the restore re-key (schema).** `rerunDataFixesAfterRestore` re-ran the Paytm re-key over every Paytm row from CURRENT
+  `buy_qty/buy_value`, so a lot reduced in place by auto-close lost its buy-file identity on every restore. Fix: the re-key
+  selects `import_notes` and skips frozen rows. Red on revert: "a frozen lot's hash survives the restore re-key".
+- **M-2, same-file FIFO (money).** The FIFO `book` was built from pre-transaction rows only; a Dhan catch-up pull whose history
+  held Monday's BUY and whose `/positions` held today's SELL committed as an open long + an open short. **Session decision:
+  fixed on the commit side** (`lotFromNewRow` mirrors `lotFromRow`'s four exclusions off the parsed row; the committed row is
+  read back and pushed into `book.lots`; preview makes the identical call on the identically scaled row so both halves plan
+  the same; `sameFileNet` takes a same-file lot's stale open-row net back out of `CommitResult.netPnl`); the adapter-side
+  pairing alternative was rejected as Dhan-only. Red on revert: "two source rows, one position: expected […(2)] to have a
+  length of 1". Not a defect: `shape.open` still counts a row the same file then auto-closes (preview and commit agree).
+- **M-3, the sell-only `/positions` row (money).** `normalizeDhanPositions` gave a sell-only row (`sellQty > 0 && buyQty === 0`)
+  `sellDate: null` and no basis flag → a closed trade with no exit date (`classifyTerm(buy, null)` = ST; dropped from monthly
+  charges), or a phantom SHORT lot a later BUY "covered" with fabricated P&L, and tomorrow's dated history copy hashed
+  differently → a second SELL row. **Ruling: `sellDate = today` (it is in TODAY's positions), `basisUnknown = true`, one
+  note; a buy-only or round-trip row is byte-identical to before.** Pinned: the row's `dedupHash` EQUALS the same sale arriving
+  as a history fill dated today (`expected '218c…' to be 'b4ba…'` on revert). The commit side was already right and is now
+  pinned by two mutants (drop `r.acquisition` from `lotFromRow` → `expected 1 to be +0`; `basisUnknown` refusing to close →
+  `expected +0 to be 1`). **Recorded residual (outside the ruling):** a PARTIAL `/positions` row (buy 100, sell 40, net 60)
+  still carries `sellDate: null`.
+- **M-1, Dhan history charges (money, silent wrong number).** `normalizeDhanTrades` summed `reportedCharges` over every fill
+  whose date fell inside a position's `[buyDate, sellDate]` window, so overlapping windows counted a fill more than once
+  (₹44 stored from ₹22 of fills; ₹66 from ₹44) and `executions` listed two buys on a 100-share row → `stagedFromExecutions`
+  wrote `trade_legs` summing 200 against a parent of 100. **Ruling: each fill's charges land in exactly ONE position, by the
+  same FIFO consumption `pairLegs` uses for quantity; a split fill is pro-rated by the quantity each position took.** New pure
+  `allocateFills(fills, positions)` in `lib/import/api/dhan.ts`; the false "every fill lands in exactly one window" comment
+  is gone. **Seam defect D1 (fixed in this wave):** the first cut r2-rounded each component PER SHARE, so one fill split three
+  ways stored ₹44.01 against ₹44.00 levied; `splitChargesByRemainder` gives every take but the last its r2 share and the
+  LAST take `target − sum(earlier)` per component — conservation is exact, and the re-entered-symbol test tightened from
+  `≤ 0.01 × rows` to an exact figure. Red on revert: `expected 44.01 to be 44`. Recorded: allocation is exact whenever a symbol
+  does not re-enter on the same day; with same-day re-entry the per-position split is approximate, the totals still exact.
+- **M-5, copy removal (data loss, recoverable).** Data Quality offered "Remove the copy in <account>" for EVERY account of a
+  cross-account group; after a merge, account A's row was also its BUY record. **Ruling: only PLAIN copies get the button.**
+  `isPlainDuplicateCopy(row, groupHash)` in `lib/analytics/data-quality.ts` = own hash === group hash AND no aliases AND
+  not auto-closed (fed by `lotIdentityHashes` + `isLotIdentityFrozen`); grouping buckets each row under EVERY identity hash,
+  so a SELL merged into A's lot (alias) and plain in B is still a group with only B removable; `duplicateTradeIdsIn`
+  returns plain ids only; the server action refuses a non-removable holder before deleting. Seam S3 proved the old
+  predicate deleted A's merged lot. **Seam defect D2 (fixed):** `toGroup` read the group's display facts off `rows[0]`
+  whatever its own identity, so a group keyed on a 40-share sale described the 60-share remainder lot ("60 × INFY,
+  2026-09-01") — now `rows.find(own hash === group hash) ?? rows[0]`.
+- **U-1** `duplicate-fix.tsx` `run()` gained try/catch/finally (a thrown action left `busy` true for ever: confirm, Cancel and
+  `onOpenChange` all dead). **U-2** the spot chip restores keyboard focus on Save/Cancel/Escape via a ref callback, not an
+  effect (the file's "calls no effect at all" pin stays green). **D-1** the "Pulls missed since" line renders only on the Dhan
+  tab — only Dhan's pull calls `catchUpRange`, though every broker stamps `lastPullAt` (session decision; a reword for the
+  other brokers was rejected). **T-1** `tests/client-value-imports.test.ts` now also inspects the default-import slot, `export …
+  from` re-export chains through non-client barrels, and awaited dynamic imports whose binding is read as a value; the repo
+  scan still reports ZERO offenders, `KNOWN` still empty. **D-2** README "Three live API pulls" → four (Upstox). **D-3** STATE
+  said `auto-close-fifo` had "nine cases + a dedup-order mutant"; it had 15 `it()` and no mutant — the mutant was run once
+  at build time, and now the M-3 halves are pinned by mutants that live in the file.
+- **Seam pass** (`tests/seams-v43-fix1.test.ts`): S1 charges/executions F2→F1 (every paisa once; legs never outrun the parent);
+  S2 the sell-only row F2→F1 (closes dated today; unknown-basis, never a short; next pull skipped by hash equality); S3
+  identity → Data Quality F1→F3 (the alias makes the group; only plain removable; the action refuses A and A's lot survives
+  with both hashes); S4 one pull, one row + preview plan == commit deed; S5 the restore re-key keeps the group resolvable.
+  Nothing mocked but `globalThis.fetch`; every date seam runs at 00:30 IST where the IST and UTC days disagree.
+- **Gate on the wave tree:** `npm run verify` EXIT 0 — **371 files / 7,272 passed / 35 skipped**, lint 0 errors (3 pre-existing
+  warnings), `next build` compiled 11.7 s. README re-measured (7272 / 371). `package-lock.json` untouched. Builder cost: F1
+  161k, F2 153k, F3 202k, seam 240k, D1 85k, D2 92k; audit 0.72 M (six auditors) + skeptic 127k.
+- **Process note:** the rtk wrapper once summarised a vitest run holding 4 failures as all-pass; every count above was read
+  from the RAW summary line via `rtk proxy npx vitest run …`. Two builders saw transient reds while a concurrent builder was
+  mid-write in a shared-consumer file; both were green on re-run with the files at rest — a reason to keep one `verify` at
+  the end, after every builder has reported.

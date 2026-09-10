@@ -29,9 +29,13 @@
  * 4. PARTIAL QUANTITIES, both ways: one sale may consume several lots, and one
  *    lot may be consumed by several sales. Money is apportioned by the share
  *    of the lot actually taken, exactly the way `pair-legs.ts` splits a lot.
- * 5. NEVER a row against itself, and never a row from the same file against
- *    another row of that file — the caller passes lots the BOOK already holds,
- *    which is what makes this cross-import rather than a second pairing pass.
+ * 5. NEVER a row against itself. The planner matches only against the lots the
+ *    CALLER passes, and never against another incoming row — so a row can
+ *    never close itself, and ordering inside `incomingRows` is the caller's
+ *    decision. (v4.3.0 M-2: the caller now folds a row it has just WRITTEN
+ *    into that lot list, so a BUY and a later SELL in one file pair up; this
+ *    module still sees only "lots" and "incoming", and does not know or care
+ *    which file a lot came from.)
  * 6. A row that already states both legs (a closed pair) is not an incoming
  *    execution at all and never reaches here; the caller filters it out.
  *
@@ -41,6 +45,98 @@
 
 /** Round to the paisa. Money crosses this module as rupees. */
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// ───────────────────────── a lot's IDENTITY (v4.3.0 S-1) ────────────────────
+//
+// A close collapses two identities — the lot's row and the incoming execution —
+// into one row, and a row can store exactly ONE `dedup_hash`
+// (`trades_account_broker_dedup_uq` is (account_id, broker, dedup_hash)).
+//
+// Wave 1 stored the INCOMING row's hash and recovered the lot's by re-hashing
+// the row's own legs. That is not recoverable once the legs move: buy 100,
+// sell 40, sell 60 leaves a row whose legs say 60, so the buy file's hash
+// (which says 100) is derivable from nothing, and re-importing the buy added a
+// phantom open 100 lot (skeptic probe, 2026-09-10).
+//
+// So identity is now FROZEN and ADDITIVE: the lot keeps the hash it was born
+// with for ever, and every hash that also stands for it — one per consuming
+// execution — is recorded as an ALIAS in `import_notes`, which is the only
+// free-text column that travels with the row through backup, restore and the
+// data fixes. Dedup, the restore re-key and Data Quality all read identity
+// through `lotIdentityHashes`, so there is exactly one answer to "which files
+// does this row already account for".
+
+/** Marks one alias hash inside `import_notes`. Segments are joined by " | ". */
+export const DEDUP_ALIAS_PREFIX = "dedup-alias:";
+
+/**
+ * Written to `import_notes` on every row an auto-close touched — the reduced
+ * lot, the row consumed whole and the slice inserted beside it. It is the
+ * row's provenance (a derived fact says so — invariant 6) and, for rows
+ * written BEFORE aliases existed, the marker that a re-import uses to recover
+ * the second identity by re-hashing the legs.
+ */
+export const AUTO_CLOSE_NOTE =
+  "Closed automatically against an open position this account already held (FIFO, oldest lot first).";
+
+/** A dedup hash is a sha1 hex digest — anything else in the notes is prose. */
+const HASH_RE = /^[0-9a-f]{40}$/;
+
+/**
+ * EVERY hash that stands for this stored row: its own first, then its aliases,
+ * de-duplicated and in a stable order.
+ *
+ * The single door for import dedup (`commit.ts`), the restore re-key
+ * (`lib/db/data-fixes.ts`) and the Data Quality report. Pure and total: a row
+ * with no notes answers with just its own hash.
+ */
+export function lotIdentityHashes(row: { dedupHash: string; importNotes: string | null }): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (h: string) => {
+    if (!h || seen.has(h)) return;
+    seen.add(h);
+    out.push(h);
+  };
+  push(row.dedupHash);
+  for (const seg of (row.importNotes ?? "").split("|")) {
+    const s = seg.trim();
+    if (!s.startsWith(DEDUP_ALIAS_PREFIX)) continue;
+    const h = s.slice(DEDUP_ALIAS_PREFIX.length).trim().toLowerCase();
+    if (HASH_RE.test(h)) push(h);
+  }
+  return out;
+}
+
+/**
+ * Has this row's identity been frozen by an auto-close?
+ *
+ * A frozen row's `dedup_hash` no longer describes its own legs, so anything
+ * that RE-DERIVES a hash from the legs (the Paytm ISIN re-key, re-run on every
+ * restore) must leave it alone — re-keying it would silently disconnect the
+ * file that created it and let that file import again (S-2).
+ */
+export function isLotIdentityFrozen(row: { dedupHash: string; importNotes: string | null }): boolean {
+  const notes = row.importNotes ?? "";
+  return notes.includes(DEDUP_ALIAS_PREFIX) || notes.includes(AUTO_CLOSE_NOTE);
+}
+
+/**
+ * The `import_notes` a lot carries after an execution consumed part or all of
+ * it: the provenance sentence once, plus one alias per consuming execution.
+ * Idempotent — a lot eaten by three sells ends with three aliases and one
+ * sentence, in the order the sells arrived.
+ */
+export function withLotCloseNote(importNotes: string | null, closingHash: string): string {
+  const parts = (importNotes ?? "")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.includes(AUTO_CLOSE_NOTE)) parts.push(AUTO_CLOSE_NOTE);
+  const alias = `${DEDUP_ALIAS_PREFIX}${closingHash}`;
+  if (!parts.includes(alias)) parts.push(alias);
+  return parts.join(" | ");
+}
 
 /** An open position the book already holds, as this module needs to see it. */
 export interface OpenLot {

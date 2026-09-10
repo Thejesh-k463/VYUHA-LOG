@@ -62,6 +62,20 @@ export async function removeDuplicateCopy(input: {
     return { ok: false, message: "That account holds no copy of this record. Nothing was removed.", removed: 0 };
   }
 
+  // M-5 — ONLY A PLAIN COPY MAY GO, AND THE BUTTON IS NOT TRUSTED FOR IT.
+  // After R5's auto-close a row can be BOTH one account's copy of this record
+  // and the row that closed a lot that account was holding; deleting it takes
+  // the merged lot with it. `isPlainDuplicateCopy` is the one rule, re-derived
+  // here from the database because the screen that submitted this was rendered
+  // before the last import ran.
+  if (!holder.removable) {
+    return {
+      ok: false,
+      message: `The copy in ${holder.name} is a merged lot — it also records an execution that closed a position in that book. Nothing was removed.`,
+      removed: 0,
+    };
+  }
+
   // `deleteTradesByIds` scopes on the SELECTED account and refuses ids outside
   // it. Said here first, because its own refusal ("those trades are not in the
   // account you are viewing") does not say which view would work.
