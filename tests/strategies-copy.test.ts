@@ -85,12 +85,22 @@ function copyOf(file: string): string {
  * `\bsell\b` — so "Try selling the wing" walked straight through a gate whose
  * whole job is that sentence. `tests/options-help.test.ts:143` bans
  * `buys|buying|sells|selling|seller|must|will` for the SAME copy rule on the
- * same 40 shapes; the two lists now agree, and this one is the wider of them.
- * `must` and `will` are the other half of prescription: a screen that states
- * what a structure IS never needs either.
+ * same 40 shapes, and the inflections were added here to match it.
+ *
+ * R4-T-1: that comment then CLAIMED to be the wider of the two, and it was not.
+ * The claim was never checked, and the lists had diverged in BOTH directions —
+ * help had `tips?`, `shall`, `suggestion(s)` and the whole `guarantee\w*` family
+ * that this one lacked, while this one had `buyer(s)`, `sellers`, `safest`,
+ * `safety` and `safely` that help lacked. A gate documented as a superset of
+ * another gate has to BE one, or the two screens are held to two different copy
+ * rules while both greens say otherwise. This regex is now the UNION of the two
+ * lists, so the claim is true by construction: every word either gate refuses,
+ * this one refuses. `must`, `will` and `shall` are the other half of
+ * prescription — a screen that states what a structure IS never needs any of
+ * them — and a "tip" is advice wearing a friendlier noun.
  */
 const BANNED =
-  /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|must|will|consider(s|ed|ing)?|buy(s|ing|er|ers)?|sell(s|ing|er|ers)?|target|expected|guaranteed|safe(st|ty|ly)?|ideal|best|opportunit\w*)\b/i;
+  /\b(recommend(s|ed|ation|ations)?|suggest(s|ed|ion|ions)?|advice|advise[sd]?|tips?|should|shall|must|will|consider(s|ed|ing)?|buy(s|ing|er|ers)?|sell(s|ing|er|ers)?|target|expected|guarantee\w*|safe(st|ty|ly)?|ideal|best|opportunit\w*)\b/i;
 
 describe("the /strategies vocabulary gate (§6)", () => {
   it.each(files().map((f) => path.relative(ROOT, f).replace(/\\/g, "/")))(
@@ -129,8 +139,38 @@ describe("the /strategies vocabulary gate (§6)", () => {
       "The seller keeps the premium",
       "You must roll this before expiry",
       "This position will be profitable above 24,000",
+      // R4-T-1: every one of these walked through THIS gate while the options
+      // help desk refused the identical sentence — the divergence the comment
+      // above claimed did not exist.
+      "One tip: widen the wing",
+      "A few tips before expiry",
+      "The wing shall be rolled on Thursday",
+      "Our suggestion is the 24,000 strike",
+      "Two suggestions for the far leg",
+      "A guarantee on the downside",
+      "The floor guarantees the premium",
+      "Guaranteeing the credit is the point",
     ]) {
       expect(BANNED.test(bad), bad).toBe(true);
+    }
+  });
+
+  it("is a genuine SUPERSET of the options help gate — in both directions (R4-T-1)", () => {
+    // `tests/options-help.test.ts` holds a strict gate over `lib/domain/
+    // options-help.ts` for the SAME copy rule on the SAME forty shapes, and the
+    // comment on this regex says this one is the wider of the two. It says so
+    // here, executably, by naming what each list had that the other did not.
+    // Reverting the union to either original list fails this test.
+    for (const helpOnly of ["tip", "tips", "shall", "suggestion", "suggestions", "guarantee", "guarantees", "guaranteeing"]) {
+      expect(BANNED.test(`A ${helpOnly} for the reader`), `the help gate refuses "${helpOnly}" and this one does not`).toBe(true);
+    }
+    for (const copyOnly of ["buyer", "buyers", "sellers", "safest", "safety", "safely"]) {
+      expect(BANNED.test(`A ${copyOnly} for the reader`), `the union dropped "${copyOnly}"`).toBe(true);
+    }
+    // The union widens what is REFUSED, never what is allowed: the register the
+    // screens are actually written in still passes.
+    for (const ok of ["Max loss is the debit, computed at underlying = 0.", "Two legs, one expiry."]) {
+      expect(BANNED.test(ok), ok).toBe(false);
     }
   });
 

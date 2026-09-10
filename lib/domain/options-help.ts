@@ -651,11 +651,26 @@ export function searchOptionsHelp(entries: OptionsHelpEntry[], query: string): O
 }
 
 /**
+ * The id of the desk's Options SECTION heading — where `helpHref(null)` sends a
+ * Custom card, and the one `options-…` fragment that names no entry.
+ */
+export const OPTIONS_SECTION_ANCHOR = "options-help";
+
+/**
  * The strategy id a `/help#…` fragment points at, or null when it points
  * somewhere else. Accepts the fragment with or without its leading `#`.
+ *
+ * R4-U-2: the section heading is "somewhere else". A bare prefix strip read
+ * `options-help` as the entry id "help", and while no entry carries that id —
+ * so the render was never wrong — the desk's scroll effect is keyed on this
+ * value and fired on the heading. That effect exists for a card the reader's
+ * own search had filtered OUT of the DOM; a heading is never filtered out, and
+ * the browser's fragment navigation reaches it unaided (which is what the
+ * heading's own `scroll-mt-20` is for).
  */
 export function optionsHashTarget(hash: string): string | null {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (raw === OPTIONS_SECTION_ANCHOR) return null;
   const prefix = optionsAnchorId("");
   if (!raw.startsWith(prefix)) return null;
   const id = raw.slice(prefix.length);

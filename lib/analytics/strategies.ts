@@ -326,8 +326,17 @@ export function computeStrategy(
   const pnlAtMaxK = payoffAt(legs, maxK);
   if ((pnlAtMaxK < 0 && upSlope > 0) || (pnlAtMaxK > 0 && upSlope < 0)) {
     const be = r2(maxK - pnlAtMaxK / upSlope);
-    // The scan already reports any crossing inside the range, to the same paisa.
-    if (Number.isFinite(be) && be > maxK && !breakevens.some((x) => Math.abs(x - be) < 0.005)) {
+    // ONLY when the crossing is at or beyond the chart's right edge (R4-M-1).
+    // `cHi` is itself a vertex and the payoff is a straight line from the top
+    // strike to it, so every crossing strictly below `cHi` is the scan's by
+    // construction — and the two paths reach it by different float routes, so a
+    // crossing on an `x.xx5` boundary rounds to neighbouring paise and got
+    // listed TWICE (a 0.005 de-duplication cannot see a 0.01 gap, and widening
+    // it would swallow two genuine crossings a paisa apart). The guard is `>=`,
+    // not `>`: the scan's `a.pnl >= 0 && b.pnl < 0` cannot see `b.pnl === 0`, so
+    // a crossing landing exactly on `cHi` is the analytic value's alone. `r2`
+    // moves a value by at most 0.005, which is exactly the slack allowed here.
+    if (Number.isFinite(be) && be > maxK && be >= cHi - 0.005) {
       breakevens.push(be);
     }
   }

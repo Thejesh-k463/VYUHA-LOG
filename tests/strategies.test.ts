@@ -375,3 +375,53 @@ describe("a breakeven beyond the chart's right edge is still a breakeven (M-1)",
     expect(s.breakevens).toEqual([]);
   });
 });
+
+describe("one crossing is listed once, whichever path found it (R4-M-1)", () => {
+  /**
+   * The analytic rescue above and the vertex scan can both see the SAME
+   * crossing, and they reach it by different float paths: the scan interpolates
+   * between two vertices, the rescue divides a total P&L by a total slope. Both
+   * are then `r2()`-rounded, so a true crossing sitting on an `x.xx5` boundary
+   * rounds to neighbouring paise 0.01 apart — and the 0.005 de-duplication that
+   * was supposed to catch it cannot, because 0.01 is not < 0.005. The card then
+   * printed one breakeven twice.
+   *
+   * The fix is not a wider tolerance (which would swallow two genuine crossings
+   * a paisa apart). The vertex list ALREADY ends at `cHi`, and the payoff is a
+   * straight line from the top strike to it, so every crossing BELOW `cHi` is
+   * the scan's by construction. The rescue is needed only at or beyond `cHi` —
+   * and `at` is not academic: the scan's `(a.pnl >= 0 && b.pnl < 0)` test cannot
+   * see `b.pnl === 0`, so a crossing landing exactly on `cHi` belongs to the
+   * rescue alone.
+   */
+  it("a long underlying against a short call: the crossing inside the range is the scan's, once", () => {
+    const s = computeStrategy("X", "2026-09-25", [
+      { optionType: "CE", strike: 10950, side: "short", premium: 2080.15, qty: 1 },
+      { kind: "UL", strike: 0, side: "long", premium: 26550.94, qty: 3 } as OptionLeg,
+    ]);
+    // The true crossing is 33311.335 — the exact half-paisa that split the two
+    // roundings into [33311.33, 33311.34].
+    expect(s.breakevens, "the same crossing is listed twice").toHaveLength(1);
+    expect(s.breakevens[0]).toBeCloseTo(33311.335, 1);
+  });
+
+  it("an all-options position whose upper crossing sits inside the range keeps ONE breakeven", () => {
+    const s = computeStrategy("NIFTY", "2026-09-25", [
+      leg("PE", 21200, "long", 821.92, 50),
+      leg("CE", 23350, "long", 61.97, 50),
+      leg("CE", 28850, "short", 1265.2, 150),
+    ]);
+    expect(s.breakevens, "the same crossing is listed twice").toHaveLength(1);
+    expect(s.breakevens[0]).toBeCloseTo(33055.855, 1);
+  });
+
+  it("a crossing landing EXACTLY on the chart's right edge is still reported, once", () => {
+    // Premium = 15 % of the strike puts the breakeven on cHi to the rupee
+    // (pad = max(spread × 0.6, 20000 × 0.15, 50) = 3000). `pnl(cHi)` is 0, which
+    // the scan's strict `b.pnl < 0` / `b.pnl > 0` tests both miss — so the guard
+    // on the analytic value has to be `>= cHi - 0.005`, never `> cHi`.
+    const s = computeStrategy("NIFTY", "2026-09-25", [leg("CE", 20000, "long", 3000, 50)]);
+    expect(s.breakevens, "the crossing on the edge belongs to the analytic rescue").toEqual([23000]);
+    expect(s.payoff[60].price).toBe(23000);
+  });
+});

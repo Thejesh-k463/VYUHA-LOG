@@ -81,6 +81,28 @@ export function StrategiesClient({
   const latest = React.useRef(0);
 
   /**
+   * THE LAST SERVER-CONFIRMED SHELF — the only state a refusal may revert to.
+   *
+   * R4-U-1. This used to be a `previous` snapshotted inside the gesture, which
+   * is the right answer for ONE write in flight and the wrong one for two. Tick
+   * A and tick B, both refused: A's reply is stale and returns without touching
+   * anything, and B's revert then landed on A's snapshot — A's OPTIMISTIC
+   * state, a shelf the store never held. The strip showed A ticked while the
+   * database still held the shelf from before A.
+   *
+   * `useRef` keeps its FIRST argument, so the seed here is the server prop this
+   * island mounted on — which is the stored shelf by definition. After that it
+   * moves only when the route says the store moved.
+   */
+  const committed = React.useRef(initShelfHistory(shelf));
+  /**
+   * …and WHICH write moved it. Replies can land out of order, so an older `ok`
+   * must not overwrite a newer one's record — the same reason `latest` exists,
+   * asked of the confirmations rather than of the renders.
+   */
+  const committedAt = React.useRef(0);
+
+  /**
    * One user gesture: reduce, render, write, fold.
    *
    * The reduction happens OUTSIDE the state updater on purpose — a `fetch`
@@ -93,9 +115,6 @@ export function StrategiesClient({
     // A no-op (unticking what was never ticked, undo with no history) must not
     // spend a round-trip either.
     if (next === history) return;
-    // The state to go back to if the route refuses. Taken BEFORE the optimistic
-    // render, because after it there is nothing left holding the old shelf.
-    const previous = history;
     setHistory(next);
     const mine = ++latest.current;
     const body =
@@ -103,6 +122,14 @@ export function StrategiesClient({
         ? { action: "restore" as const }
         : { action: "set" as const, selected: next.present.selected };
     void postShelf(body).then((r) => {
+      // WHERE THE STORE IS NOW, recorded before anything is decided about the
+      // screen — and recorded even when this reply is stale, because a write
+      // the route ACCEPTED is where a newer tick's refusal has to land. Drop it
+      // only if a newer confirmation has already been folded in.
+      if (r.ok && mine > committedAt.current) {
+        committedAt.current = mine;
+        committed.current = foldShelfPost(committed.current, r);
+      }
       if (mine !== latest.current) return;
       if (!r.ok) {
         toast.error(r.error);
@@ -113,12 +140,14 @@ export function StrategiesClient({
         // tick that landed in the meantime is not overwritten by this revert
         // (`live-feed-card.tsx` store()/saveSeconds(), fix wave 8).
         //
-        // RESIDUAL, recorded rather than fixed: tick A is accepted and tick B
-        // is then refused — `cur` is B's state, so the revert lands on A's
-        // state, not on the state before A. That is the stored shelf, which is
-        // the right place to land; it is stated here so nobody reads it as a
-        // bug later.
-        setHistory((cur) => (cur === next ? previous : cur));
+        // RESIDUAL, recorded rather than fixed: a refusal that is already STALE
+        // (`mine !== latest`) returns above without a toast, so two refused
+        // ticks state one error rather than two. That is deliberate — the newer
+        // tick's body carries the older tick's change too, so if the newer one
+        // is ACCEPTED the older "nothing was stored" would be a false alarm.
+        // A stale refusal's state is decided by the newer tick's reply, which
+        // reverts to `committed` — the same shelf, reached one step later.
+        setHistory((cur) => (cur === next ? committed.current : cur));
         return;
       }
       // The screen takes the route's re-read, and the client router cache is

@@ -232,14 +232,22 @@ describe("the page is wired the way the estate requires", () => {
   });
 
   it("a refusal puts the strip back — the screen never keeps what the store refused (U-3)", () => {
-    expect(client, "the snapshot is taken BEFORE the optimistic setHistory").toMatch(
-      /const previous = history;\r?\n[\s\S]*?setHistory\(next\);/,
+    // R4-U-1: the state to go back to is the last SERVER-CONFIRMED shelf, held
+    // in a ref, NOT a `previous` snapshotted per gesture. With two ticks in
+    // flight and both refused, `previous` was tick A's OPTIMISTIC state, so the
+    // revert landed the strip on a shelf the store never held.
+    expect(client, "the revert target is not the last server-confirmed shelf").toMatch(
+      /const committed = React\.useRef\(initShelfHistory\(shelf\)\);/,
+    );
+    expect(client, "the ref is not seeded from the server prop at mount").toMatch(
+      /committed[\s\S]{0,400}?initShelfHistory\(shelf\)/,
     );
     const refusal = refusalBranch(client);
     expect(refusal, "a functional update, so a later successful tick is not overwritten").toContain(
-      "setHistory((cur) => (cur === next ? previous : cur));",
+      "setHistory((cur) => (cur === next ? committed.current : cur));",
     );
     expect(refusal, "the error is still stated").toContain("toast.error(r.error)");
+    expect(client, "a `previous` snapshot is what this fix removed").not.toContain("const previous = history;");
   });
 
   it("states what the free build is really denied, not a bundling claim that is false (G-1)", () => {

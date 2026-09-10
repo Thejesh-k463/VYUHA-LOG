@@ -129,7 +129,15 @@ export function HelpDesk({
           className="rounded-lg border-2 border-accent/60 border-l-8 bg-accent/[0.04] p-4"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <h2 id="options-help" className="text-base font-semibold tracking-wide text-foreground">
+            {/* The HEADING is an anchor too — `helpHref(null)` sends every
+                Custom card here — so it needs the same scroll-margin the cards
+                carry, or the sticky PageHeader sits over the word it jumped to
+                (R4-U-2). Nothing scrolls it in JS: the browser's own fragment
+                navigation reaches a heading that is always in the DOM. */}
+            <h2
+              id="options-help"
+              className="scroll-mt-20 text-base font-semibold tracking-wide text-foreground"
+            >
               Options
             </h2>
             <span className={cn(badgeVariants({ variant: "accent" }))}>Free</span>

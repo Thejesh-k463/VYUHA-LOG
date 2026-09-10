@@ -736,6 +736,13 @@ describe("S8 — B1's id list is what the route refuses on, and a refusal stores
 });
 
 describe("S9 — one entitlement, both halves: the route refuses and the page locks", () => {
+  /**
+   * The tail of the shelf tile's remove-button label (`Remove ${name} from the
+   * shelf`, `components/strategies/shelf-strip.tsx:43`). One statement of it,
+   * used by the positive control and the lapsed-trial negative both.
+   */
+  const SHELF_REMOVE_TAIL = "from the shelf";
+
   it("lib/license.ts carries /strategies as a PARTIAL feature (never a whole-page gate)", () => {
     const entry = PRO_FEATURES.find((f) => f.href === "/strategies");
     expect(entry).toBeDefined();
@@ -802,6 +809,37 @@ describe("S9 — one entitlement, both halves: the route refuses and the page lo
     expect(text).not.toContain(STRATEGY_COPY.shelfLocked);
   });
 
+  /**
+   * THE CONTROL FOR THE NEGATIVE BELOW (R4-T-2).
+   *
+   * The lapsed-trial test proves the locked strip carries no control that could
+   * call `run()` by asserting the rendered HTML does NOT contain the tail of the
+   * remove button's aria-label (`Remove ${name} from the shelf`,
+   * `components/strategies/shelf-strip.tsx:43`). Nothing asserted that string
+   * was EVER rendered, so rewording the label — "remove from shelf", "take off
+   * the shelf" — would have made the negative pass while the control it stands
+   * for had vanished. The string is stated ONCE, here, and asserted in both
+   * directions: present on a Pro strip with a tile on it, absent on the locked
+   * one. A reworded label now fails HERE, loudly, instead of quietly there.
+   */
+  it("a Pro strip with a tile on it DOES render the remove control the lapsed strip must not", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StrategiesClient, {
+        groups: [],
+        charts: {},
+        shelf: { selected: ["jade-lizard"] },
+        picker: CATALOGUE.map((d) => ({ id: d.id, name: d.name, style: d.style, beginner: d.beginner })),
+        pro: true,
+      }),
+    );
+    expect(html, "the remove button's label is not the one the negative below looks for").toContain(
+      `aria-label="Remove ${getStrategyDef("jade-lizard")!.name} ${SHELF_REMOVE_TAIL}"`,
+    );
+    expect(html, "the tile the free build must never get is not on the Pro strip either").toContain(
+      SHELF_REMOVE_TAIL,
+    );
+  });
+
   it("a LAPSED trial on a Pro shelf: locked strip, no Pro name in the props, and nothing that could post", async () => {
     // Every free-build case above starts from a shelf a free build could have
     // built. This one stores a shape only Pro can pick and THEN takes the
@@ -830,7 +868,7 @@ describe("S9 — one entitlement, both halves: the route refuses and the page lo
     // NOTHING ON THIS ISLAND CAN CALL `run()`: the locked strip has no remove
     // control and the picker is not rendered at all, so the 403 below is a
     // refusal the free build can never even trigger from the screen.
-    expect(html, "a tile the user could unselect").not.toContain("from the shelf");
+    expect(html, "a tile the user could unselect").not.toContain(SHELF_REMOVE_TAIL);
     for (const control of [STRATEGY_COPY.browseOpen, STRATEGY_COPY.restoreDefaults, STRATEGY_COPY.undo]) {
       expect(text, control).not.toContain(control);
     }

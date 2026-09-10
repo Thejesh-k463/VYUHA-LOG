@@ -5188,10 +5188,13 @@ blank, not a wrong figure, and its lines predate the wave, U-3 self-heals on the
 - **Records** corrected at their sources: `a00ddd0` is 46 paths (not 41: continuation §0, ledger); the seam file is 53 tests
   (49 at the seam pass + 4 card-fix pins: this file's wave-2 entry, ledger); STATE row 12 (`~/.claude/settings.json:236`) was
   already applied by the operator — closed.
-- **Measured, a tooling trap:** under Git Bash (MSYS) `grep -c $'\r$'` reports EVERY line of an LF-only file as CRLF (5110/5110
-  on this file, which `git ls-files --eol` shows as `i/lf w/lf`), so earlier "all CRLF" claims about this file were that grep,
-  not the bytes. Count line endings with Python over bytes (`b.count(b'\r\n')`) or `git ls-files --eol`; `core.autocrlf=true`
-  keeps the index LF either way, so a uniformly-LF working copy diffs only the edited lines.
+- **Measured, a tooling trap (re-measured after the round-4 docs auditor disputed the direction):** in this shell a bare `grep -c
+  $'\r$'` is rewritten by the rtk hook and reports EVERY line as CRLF on both an LF file (this one: 5203/5203) and a CRLF file
+  (`VYUHA-STATE.md`: 2174/2174); the real binary `/usr/bin/grep -c $'\r$'` reports **0 on both** (text mode strips the CR before
+  the anchor). So the command is untrustworthy in EITHER direction and earlier "all CRLF" claims about this file were that grep,
+  not the bytes (`git ls-files --eol` → `i/lf w/lf`). Count line endings with Python over bytes (`b.count(b'\r\n')`) or
+  `git ls-files --eol`; `core.autocrlf=true` keeps the index LF either way, so a uniformly-LF working copy diffs only the edited
+  lines.
 - **Recorded, not defects (round 3, do not re-find):** the drawer's style order (first-seen) differs from the help's
   `OPTIONS_STYLES` order — both commented as deliberate; the drawer's disclosure carries no `aria-expanded` where four others do;
   `inr(-0)` prints "-₹0.00" (pre-existing `Intl`; `signOf` treats −0 as unsigned); the 61-sample payoff series draws a strike
@@ -5201,3 +5204,64 @@ blank, not a wrong figure, and its lines predate the wave, U-3 self-heals on the
   docs-only run 34473538772 lost the macOS Playwright job with no report produced — a cold-runner signature, judged on
   `a00ddd0`; `06-ANSWERS.md:258` "today's 11 legacy names" counted shapes — the ruling table above records the 16; U-1/U-3/U-4
   are pinned by source shape, not a driven click (no jsdom harness; `/help` and `/strategies` have no e2e spec).
+
+## 2026-09-11 — v4.3.0 audit round 4 over fix wave 3 `cad41b0..f167e6c` → fix wave 4 (one builder)
+
+**The audit** (six Fable auditors, launched while CI 34518836233 ran — it finished SUCCESS 6/6): money 16 → 1, schema 14 → 0,
+security 17 → 0, ui 16 → 2, test-integrity 24 → 2, docs 30 → 3 (117 → 8) → Fable skeptic **8 → 5**: the three docs items
+(the grep-trap sentence's direction, §2 vs §0 disagreeing on round 4, the §0 date label) were already corrected in the working
+tree by the time the skeptic read it; U-1 downgraded from "broken feature" to a minor transient race. Ruling: `06-ANSWERS.md`
+"v4.3.0 audit-round-4 ruling" — one builder fixes all five, then a scoped round 5 (money + ui + test-integrity + skeptic).
+
+- **R4-M-1 (money, cosmetic)** `lib/analytics/strategies.ts`: the round-3 analytic breakeven was de-duplicated against the vertex
+  scan by `|x − be| < 0.005` AFTER both were `r2()`-rounded by different float paths; at an exact `x.xx5` boundary they round to
+  neighbours 0.01 apart and the breakeven is listed twice (`[33311.33, 33311.34]`; the card printed "33311 / 33311"; 13 of
+  60,000 fuzzed lot-sized positions). The scan already covers `[maxK, cHi]`, so the analytic value is needed only at or beyond
+  `cHi`. Fix: push it only when `be >= cHi − 0.005` (`>=` because the scan's `(a.pnl >= 0 && b.pnl < 0)` misses an exact zero AT
+  `cHi`); comment corrected.
+- **R4-U-1 (ui, minor transient)** `strategies-client.tsx`: two ticks A then B in flight and BOTH refused — A's reply was dropped
+  by the `latest` guard (no toast, no revert) and B's refusal reverted to `previous` = A's OPTIMISTIC state, so the strip showed
+  A ticked while the DB held the pre-A shelf; the round-3 residual comment documented only A-ok-then-B-refused. Self-heals on
+  the next accepted tick (the route takes the full list). Fix: a `committed` ref = the last SERVER-CONFIRMED history (seeded at
+  mount, updated on every successful fold); a refused LATEST reply reverts to `committed.current` under the functional guard;
+  the residual is now the true remaining case (a stale refusal's state is decided by the newer tick's reply).
+- **R4-U-2 (ui, cosmetic)** the U-2 link `/help#options-help` lands the section heading under the sticky `PageHeader` (the h2
+  carried no `scroll-mt-20`; the cards do), and `optionsHashTarget("#options-help")` returned `"help"` so the round-3 scroll
+  effect fired on the heading too. Fix: `scroll-mt-20` on the h2; `optionsHashTarget` returns null for the section heading id.
+- **R4-T-1 (test, cosmetic)** the round-3 `BANNED` widening claimed to be a superset of the help gate; it was not (help−copy =
+  `tip|tips|shall|suggestion|suggestions|guarantee|guarantees|guaranteeing`; copy−help = `buyer|buyers|sellers|safest|safety|
+  safely`). Fix: `BANNED` = the UNION; the comment and the round-3 T-1 line above ("a superset of the help gate") are corrected
+  by this entry — the superset is true only from fix wave 4 onward.
+- **R4-T-2 (test, cosmetic)** the lapsed-trial seam test's `not.toContain("from the shelf")` (the tail of the strip's remove
+  aria-label) had no positive control anywhere in `tests/`, so a reworded label would make it pass vacuously. Fix: a positive
+  control in the same seam file (a Pro render with a non-empty shelf contains the string).
+- **Recorded, not defects (round 4, do not re-find):** the seam file is now 54 tests (53 + the lapsed-trial case) — the next
+  record must not copy "53" as current; the free island's `if (!pro) return;` early return is unpinned (defence in depth behind
+  the server 403 and the absent controls, both pinned); every accepted tick re-fetches the full `/strategies` RSC payload via
+  `router.refresh()` (the charge-editor pattern; a cost, not a regression); `router.refresh()` clears the client cache "for the
+  current route" per Next's docs — whether a `/settings` baseline restore evicts a cached `/strategies` payload is a property of
+  the 2026-09 `staleTimes` grant shared by every settings write, not of this wave; `lib/license.ts`'s `/strategies` label has no
+  "(… stay free)" parenthetical the way `/lenses` and `/live` do (pre-existing); `strategy-copy.ts` cites `live-feed-card.tsx:603`
+  for the initialiser scar that sits at `:621` inside the same function; the 250 ms hash poll runs for the life of `/help` and
+  relies on `useSyncExternalStore` bailing out on an unchanged snapshot string (not observed in a browser).
+- **Fix wave 4 (one Opus builder, 136k; nine files inside its set, `strategy-copy.ts` byte-identical after a temporary plant):**
+  M-1 — the analytic breakeven is pushed only when `be >= cHi − 0.005`: `0.005` is not a tolerance, it is exactly `r2()`'s maximum
+  displacement, which is why widening it would swallow two genuine crossings a paisa apart; red on revert `the same crossing is
+  listed twice: expected [ 33311.33, 33311.34 ] to have a length of 1 but got 2` (and the all-options case `[33055.86, 33055.85]`);
+  the exact-at-`cHi` case (premium = 15 % of strike) still `[23000]` once. U-1 — `committed` ref seeded by `useRef(initShelfHistory
+  (shelf))` and advanced on every ACCEPTED reply via `foldShelfPost(committed.current, r)` under a `committedAt` guard so an older
+  out-of-order `ok` cannot overwrite a newer record; the refusal branch reverts `setHistory((cur) => (cur === next ?
+  committed.current : cur))`; **a STALE refusal stays silent** (session decision: the newer tick's body carries the older tick's
+  change, so a toast for it would contradict a newer acceptance — the residual comment now says exactly this); red on revert `a
+  functional update, so a later successful tick is not overwritten: expected … to contain 'setHistory((cur) => (cur === next ? c…'`.
+  U-2 — `scroll-mt-20` on the h2; `OPTIONS_SECTION_ANCHOR = "options-help"` exported from `options-help.ts` and `optionsHashTarget`
+  returns null for it (a heading is never filtered out, so the browser's own fragment navigation reaches it); red on revert `the
+  section heading is read as an entry id: expected 'help' to be null` and `the sticky page header covers the heading the link
+  jumped to: expected … to contain 'scroll-mt-20'`. T-1 — `BANNED` = the union (`tips?`, `shall`, `suggest(…|ion|ions)`,
+  `guarantee\w*` added), eight planted sentences, a superset test enumerating both difference sets (it will NOT notice a future
+  widening of the help gate — the comment says so); proven on a real plant in `strategy-copy.ts` (`expected [ 'tip' ] to deeply
+  equal []`, plant removed); no shipped sentence tripped it. T-2 — `SHELF_REMOVE_TAIL` stated once in the S9 describe, a positive
+  Pro control (`aria-label="Remove Jade Lizard from the shelf"`) and the lapsed-trial negative read the same constant; proven by
+  changing the control's string alone: `1 failed | 54 passed` — the negative stayed green under the wrong string, the vacuity the
+  control closes. U-1 remains pinned by SOURCE SHAPE (no jsdom harness; the `committedAt` guard is reasoned, not observed); U-2's
+  pixels not observed (no `/help` e2e). Six `it(` blocks added (README 7626 → 7632). Gate line and sha: STATE §2 / the ledger.

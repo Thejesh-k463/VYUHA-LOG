@@ -297,6 +297,35 @@ describe("deep-link anchors", () => {
     expect(src, "no route out to the strategies screen").toContain('href="/strategies"');
     expect(src, "the section header dropped to the chrome scale").not.toMatch(/id="options-help"[^>]*text-xs/);
   });
+
+  /**
+   * R4-U-2. `/help#options-help` is where a Custom card's "How this works"
+   * lands (`helpHref(null)`), and two things were wrong at that anchor.
+   *
+   * The h2 carried no scroll-margin while every CARD did, so the sticky
+   * `PageHeader` (`components/layout/page-header.tsx:15`) sat over the heading
+   * the reader had just jumped to — the exact defect `scroll-mt-20` was added
+   * to the cards for.
+   *
+   * And `optionsHashTarget` read that fragment as the entry id "help", because
+   * it strips the `options-` prefix and returns whatever is left. Nothing has
+   * the id "help", so `visibleOptions` shrugged — but the desk's SCROLL EFFECT
+   * fired on it, calling `scrollIntoView` on the section heading for a link the
+   * browser's own fragment navigation already handles. The effect exists for
+   * cards the search filtered OUT; the heading is never filtered out.
+   */
+  it("the section heading is a scroll target of the BROWSER's, not of the effect (R4-U-2)", () => {
+    expect(optionsHashTarget("#options-help"), "the section heading is read as an entry id").toBeNull();
+    expect(optionsHashTarget("options-help"), "the bare fragment is read the same way").toBeNull();
+    // …and every real entry still resolves, including one whose id starts with
+    // the same letters the section id does.
+    expect(optionsHashTarget("#options-long-call")).toBe("long-call");
+
+    const src = read(DESK);
+    const h2 = /<h2[^>]*id="options-help"[^>]*>/.exec(src)?.[0] ?? "";
+    expect(h2, 'the desk renders no <h2 id="options-help">').not.toBe("");
+    expect(h2, "the sticky page header covers the heading the link jumped to").toContain("scroll-mt-20");
+  });
 });
 
 describe("search reaches the structures", () => {
