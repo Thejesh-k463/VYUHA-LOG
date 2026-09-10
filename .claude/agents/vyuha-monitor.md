@@ -37,7 +37,7 @@ auto-updating), and which licences renew soon.
 
 ## Procedure
 
-Run from the repo root `"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1"` (quote it — the
+Run from the repo root `"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL"` (quote it — the
 path has a space).
 
 1. `gh auth status 2>&1 | head -3` — if it is not authenticated, skip steps 2, 4 and say so.

@@ -7,12 +7,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/probe-guard.mjs\"",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL/.claude/hooks/probe-guard.mjs\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/lockfile-guard.mjs\"",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL/.claude/hooks/lockfile-guard.mjs\"",
             "timeout": 10
           }
         ]
@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1/.claude/hooks/session-line.mjs\"",
+            "command": "node \"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL/.claude/hooks/session-line.mjs\"",
             "timeout": 10
           }
         ]

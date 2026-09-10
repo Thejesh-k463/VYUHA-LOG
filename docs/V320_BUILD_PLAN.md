@@ -1,5 +1,7 @@
 # v3.2.0 BUILD PLAN — decided 2026-08-30
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 Synthesised from two independent research batches (Batch 1: deep-analytics market
 research, 16 agents; Batch 2: Nexus Journal teardown, 14 agents), each with an
 adversarial critic, plus ten owner decisions taken 2026-08-30.

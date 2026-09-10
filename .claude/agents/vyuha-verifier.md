@@ -40,7 +40,7 @@ deleted test, not a smaller suite.
 
 ## Procedure
 
-1. `cd` to the repo root: `"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1"` (quote it — the
+1. `cd` to the repo root: `"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL"` (quote it — the
    path has a space). Confirm with `git rev-parse --show-toplevel`.
 2. Record the starting point: `git status --short | wc -l`, `git rev-parse --short HEAD`,
    `git describe --tags --abbrev=0`, and `node -e "console.log(require('./package.json').version)"`.

@@ -3254,7 +3254,7 @@ tests green, red-on-revert **"expected 200 to be 400"**.
 - **Cut order if not green by Monday: Atlas → broker feeds → Lab extras → attribution** (Q3), with
   the owner's own condition: *"store and record perfectly what is left to build and upgrade, so we
   won't redo what is already done."* That is why
-  `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md` exists and is updated at
+  `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md` exists and is updated at
   every wave boundary; a wave's row states DONE / IN PROGRESS / LEFT plus the evidence that
   justifies it. **Rejected: cutting by whatever happens to be unfinished at the deadline** — it
   loses the record of what was already proven.
@@ -3855,7 +3855,7 @@ nothing already answered there was re-asked. Each line names the rejected altern
 - **Q30 no `openalgo-charts` pilot in 4.1**; `lightweight-charts` stays at 5.2.0 and 4.1 changes no
   dependency. *Rejected: a flagged pilot* — the first dependency since 3.9 plus a lockfile hand-merge for a
   package without a sustained 2.x line. A layer-by-layer teardown of the repo was commissioned the same
-  afternoon (`VYUHA-LIVE-DESK-RESEARCH/11-OPENALGO-CHARTS-TEARDOWN.md`) to inform the post-4.2 decision.
+  afternoon (`VYUHA/LIVE-DESK-RESEARCH/11-OPENALGO-CHARTS-TEARDOWN.md`) to inform the post-4.2 decision.
 - **4.1 extras: only the small in-repo §10 items ride** — render `lockedInProfitP` (computed in
   `lib/live/heat.ts`, never rendered), the Q52 sha256 digest beside the index map's `asOf`, and the two
   `/live` e2e gap seeds (a free context; ≥ 40 positions). *Rejected: journal-derived Kelly and the five
@@ -4186,7 +4186,7 @@ one orchestrator wave (`fe04728`) with 11 new tests. One owner pop-up.
 
 ## 2026-09-07 — v4.2 wave: Upstox + Angel One quote adapters, equities only, no new host but `api.upstox.com`; a bundled NSE holiday list with a year guard
 
-Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v4.2 pre-build rulings" and
+Owner rulings for this wave live in `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v4.2 pre-build rulings" and
 "v4.2 build-session rulings"); the facts below are what the build measured or deliberately chose.
 
 - **The premise of ruling 4.2-3 was wrong and the owner re-ruled the same evening.** "Derivative contracts
@@ -4324,7 +4324,7 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   returned 200 afterwards; the second full run passed). `e2e/z-live-desk.spec.ts` 9/9 twice (builder B3, then the orchestrator
   after the last `components/live/*` edit). Seam pass `tests/seams-v42-fix.test.ts`: 20 tests over six crossings, each red with
   either side reverted; one confirmed defect (X6b, above). README file count 352 → 355; six "tests" claims 6,726 → 6,821.
-  `package-lock.json` untouched. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 fix-wave rulings".
+  `package-lock.json` untouched. Rulings: `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 fix-wave rulings".
 - **Process:** a heredoc through the shell hook and a PowerShell here-string both failed as a commit message (the first was
   mangled, the second was passed as a pathspec); the message went through a file and `git commit -F`. A recursive shell grep
   over the whole tree hung (known: use the Grep tool). SendMessage is unavailable in this harness, so a builder cannot be
@@ -4815,7 +4815,7 @@ Owner rulings for this wave live in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` ("v
   recon scout 54k, wave-8 builder 78k, ui auditor 55k, test-integrity auditor 95k, bump scout 65k, skeptic 109k, round-10
   auditor 67k, ledger writer 92k, DECISIONS writer 122k, bump builder 144k, release steward 62k, plus the docs writers.
 
-## 2026-09-09 — v4.3.0 wave 1: the owner's application-fix list (six items from ten screenshots of the installed 4.2.0), verified against the code before any question was asked; every ruling in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings" + "v4.3.0 rulings — Option Strategies catalogue"
+## 2026-09-09 — v4.3.0 wave 1: the owner's application-fix list (six items from ten screenshots of the installed 4.2.0), verified against the code before any question was asked; every ruling in `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings" + "v4.3.0 rulings — Option Strategies catalogue"
 
 **Why 4.3.0 and not 4.2.1.** The fixes alone were a patch. The owner's answer on the Option Strategies catalogue (≈35 shapes, a
 user-selected shelf with undo/redo/restore, an Options Help Desk) needs one settings column for the shelf — migration 0071 —
@@ -4891,7 +4891,7 @@ adapter read today's `/positions` only and `lastPullAt` was display-only. Not a 
 **Round:** six Fable `vyuha-auditor`s (money 20 candidates / 5, schema 14 / 2, security 22 / 0, ui 20 / 2, test-integrity
 16 / 1, docs 33 / 3) → 12 unique confirmed (the money and schema auditors both found the lost lot hash) → Fable skeptic
 **12 → 12**, every money finding reproduced through the real `commitParsedFile` on a migrated temp database. Rulings:
-`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 audit-round-1 rulings". The seam pass over the fix wave
+`VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 audit-round-1 rulings". The seam pass over the fix wave
 (`tests/seams-v43-fix1.test.ts`, 11 tests / 5 seams, every one red on either side's revert) found two more, both fixed here.
 
 - **M-4 = S-1, the lot identity model (money, silent wrong number).** Wave 1's `applyLotCloses` REPLACED a fully-consumed
@@ -5016,7 +5016,7 @@ Rulings: none needed — no finding carried a design choice the owner had not al
 
 ## 2026-09-10 — v4.3.0 wave 2: the 40-shape Option Strategies catalogue, the shelf (migration 0071), the Options Help Desk, the sign sites
 
-**Rulings:** `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 rulings — Option Strategies catalogue" (2026-09-09) and "v4.3.0
+**Rulings:** `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.3.0 rulings — Option Strategies catalogue" (2026-09-09) and "v4.3.0
 wave-2 pre-build rulings" (2026-09-10: **40 rows** = research §4 rows 1–37 + 39 + 40 + 41; the free tier sees **"Custom (n
 legs)" + a Pro chip with the name withheld server-side**). Research: `13-OPTION-STRATEGY-CATALOGUE.md` §4–§7. Plan: an Opus
 planner (99k) — six builders in two waves, 46 paths, zero duplicates, README single-owner because `tests/readme-claims.test.ts:118`

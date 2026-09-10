@@ -1,5 +1,7 @@
 # Opener for the v3.8.0 build session — copy-paste after `/clear`
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 Read VYUHA-STATE.md (repo root) first — verified 2026-09-03: v3.7.1 is PUBLISHED, mirrored,
 WDSI-submitted, installed clean on a non-build machine; no open release actions. Live Desk
 slid to v4.0.

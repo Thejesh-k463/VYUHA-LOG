@@ -366,7 +366,7 @@ describe("no surface says /funds is sent once, because the desk sends it on ever
   });
 
   it("VYUHA-STATE.md — the v4.1.0 state block only", () => {
-    const hits = overstatedFundsClaims(currentSection("VYUHA-STATE.md", "## 2. Current state — v4.1.0"));
+    const hits = overstatedFundsClaims(currentSection("VYUHA-STATE.md", "## 2-hist. v4.1.0"));
     expect(hits, `VYUHA-STATE §2 states a /funds count without the desk's connect:\n${hits.join("\n")}`).toEqual([]);
   });
 

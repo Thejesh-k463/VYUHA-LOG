@@ -20,7 +20,7 @@ import graph fails only at `next build`.
 
 Task for the agent:
 
-1. Run the gate once from `"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1"`, capturing to
+1. Run the gate once from `"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL"`, capturing to
    `verify.log`, and echo the exit code yourself — the harness's "[exited with code 0]" is
    the wrapper, not the command.
 2. Report `Test Files N passed` and `Tests N passed`, and compare both to the newest

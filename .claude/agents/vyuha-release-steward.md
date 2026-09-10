@@ -49,7 +49,7 @@ that were not true. You produce the evidence the operator needs before deciding 
 
 ## Procedure — the 11 steps as checks
 
-Repo root: `"T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1"` (quote it — the path has a space).
+Repo root: `"T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL"` (quote it — the path has a space).
 
 1. **Gate.** Do not run it yourself unless the prompt says to (it is 5-8 minutes and belongs
    to `vyuha-verifier`). Report the last recorded counts from `VYUHA-STATE.md` section 2 with

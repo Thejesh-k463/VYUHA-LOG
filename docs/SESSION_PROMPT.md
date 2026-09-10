@@ -1,5 +1,7 @@
 # Session prompt
 
+> ⛔ PARTLY SUPERSEDED 2026-09-10 — the standing RULES in this file still apply; the ready-to-paste "Next session" block (v2.99.100, 1,962 tests, migration 0049, the candidates list) is HISTORY. Open a session from `VYUHA-STATE.md` §0 START HERE; if anything here disagrees with §0, §0 wins.
+
 Copy-paste openers for a new Claude Code session in this repo. Two variants; pick
 with one question:
 

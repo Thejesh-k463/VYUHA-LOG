@@ -1,11 +1,13 @@
 # NEXT SESSION PROMPT — v3.9.1 patch → v4.0 "Live Desk" (desktop) → Vyuha Web Platform
 
-> **STATUS 2026-09-05:** research pack delivered at `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/`
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
+> **STATUS 2026-09-05:** research pack delivered at `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/`
 > — see `00-INDEX.md` (map), `08-BUILD-PROMPTS/V391-BUILD-PROMPT.md`, `06-ANSWERS.md` (owner rulings),
 > `09-BUILD-LEDGER.md` (done vs left). **v3.9.1 built** on `main`, uncommitted — not yet gated or tagged.
 
 Written 2026-09-05 (Saturday) from the owner's dictated brief. Paste this whole file as the first
-message of the next **VYUHA-TRADE JOURNAL** session (repo: `T:/Thejesh/CLAUDE-CODE/VYUHA-TRADE JOURNAL-V1`).
+message of the next **VYUHA-TRADE JOURNAL** session (repo: `T:/Thejesh/CLAUDE-CODE/VYUHA/TRADE-JOURNAL`).
 Owner's instruction to the session: **"Explore, Analyze, Orchestrate, and then code."**
 Use **ULTRATHINK** for every research and analysis step. Do not miss a single point in this file.
 
@@ -262,7 +264,7 @@ what "intelligence" may say without becoming investment advice).
 
 ## 5. Artifacts to produce (combined pack; choose the best-suited files — these are the minimum)
 
-Location: `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/` (a neutral folder — other sessions
+Location: `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/` (a neutral folder — other sessions
 clean untracked files inside repos) plus published artifact links for anything visual.
 1. `00-INDEX.md` — what each file is, the converged recommendation, decisions open (irreversible
    ones first), the deadline plan.
@@ -299,7 +301,7 @@ clean untracked files inside repos) plus published artifact links for anything v
 ## 7. Standing rules that survive (unchanged)
 
 AGENTS.md invariants; fixtures schema-only, real exports gitignored in `tests/fixtures/private/`
-and in "T:/Thejesh/CLAUDE-CODE/BROKER FILES FOR TESTING/" (read-only, never quoted); scope
+and in "T:/Thejesh/CLAUDE-CODE/VYUHA/BROKER-FILES-FOR-TESTING/" (read-only, never quoted); scope
 searches to `app/ components/ lib/ e2e/ tests/`, no adjacent refactors; SEBI-safe copy, no outcome
 claims; macOS never advertised; client package rebuilt every release; WDSI details unprompted;
 commit + push finished work (`origin` = owner's private GitHub); VYUHA owns ports 3100/3011/3007;

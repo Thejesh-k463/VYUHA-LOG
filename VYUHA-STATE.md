@@ -1,12 +1,108 @@
 # VYUHA — PROJECT STATE
 
 Flagship project. Read this file first in any new session; it is the map, not the territory.
-Everything in §2 was verified against the repo and the live release on 2026-09-09, not recalled.
+Everything in §2 was verified against the repo and the live release on 2026-09-10, not recalled;
+§0 below is the reconciliation record of the same day.
 
 **This file deliberately does not repeat `AGENTS.md` or `docs/DECISIONS.md`.** Those are
 canonical and kept current; copying them here would create two truths that drift apart.
 This file tells you *where the answer lives*, *what state the project is in*, and *what is
 left to do*.
+
+---
+
+## §0 START HERE — reconciled 2026-09-10 IST evening at `e0378eb` (pre-pass HEAD) by the handoff-hygiene pass; the commit that landed this block is the next one in `git log`
+
+**Read order, every session, in this order and no other:**
+
+1. **This §0.** It outranks every other document. *If any document disagrees with §0, §0 wins and the other document is the bug — fix it in the same turn.* **Memory is not authoritative; it forks by cwd** (hub copy vs the project copy) and rots; it now carries pointers and durable traps only.
+2. `VYUHA/LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md` §0 — research-pack specifics for the item you are picking up (audit known-inputs, ruling tables, ledger pointers). It points back here.
+3. Re-derive before asserting: `git log --oneline -3` · `git tag --sort=-creatordate | head -1` · `package.json` `"version"` · `gh run list --limit 3` · the RAW vitest line (§0.3).
+4. `AGENTS.md` before any code change (on conflict AGENTS.md wins over this file; the code wins over both). Owner rulings: `06-ANSWERS.md` newest table LAST, `docs/DECISIONS.md` newest entry FIRST — binding, never re-ask one.
+5. §3 of this file for where any other answer lives.
+
+**The one-line state (verified 2026-09-10):** published release = **v4.2.0** (tag `9da7bc8` → `b488dde`). v4.3.0 wave 1 (`265d684`) audited twice, fix waves `beaea48` / `786d288` / `6198c8b` CI 6/6. **v4.3.0 wave 2 = `a00ddd0`** — CI run 34472737988 SUCCESS 6/6, seam-tested, **NOT audited, NOT bumped, NOT tagged**. `e0378eb` on top is docs-only. Gate at hand-off: EXIT 0, 378 files / 7,598 passed / 35 skipped. Estate paths moved under `T:/Thejesh/CLAUDE-CODE/VYUHA/` on 2026-09-10 (sweep record: `docs/owner/HANDOFF-HYGIENE-2026-09-10.md`).
+
+### §0.1 Pickup table — one row per open item
+
+| # | Item | Status | Resume from EXACTLY here | Closed when |
+|---|---|---|---|---|
+| 1 | Six-dimension audit + skeptic over wave 2 (`6198c8b..a00ddd0`) | BUILT, CI 6/6, seam file `tests/seams-v43-wave2.test.ts`; NOT audited | `vyuha-audit` skill; the known-inputs list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1 (do not re-find them; do not re-run the seam pass) | audit ladder reaches 0 open findings; every fix wave has its own audit; CI 6/6 on the last fix commit; §0.3 V1–V5 all PASS |
+| 2 | Bump 4.3.0 + the 11 release steps | NOT started; waits on row 1 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (the bump recipe incl. the 0071 install-guide paragraph) → `08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §7 → `release` skill → `vyuha-release-steward` | owner says **"tag"**; tag `v4.3.0` pushed; release run 3/3; `release:verify v4.3.0 -- --deep` 3/3; `releases/latest` → 4.3.0; client ZIP built; winget manifest with the CI asset sha; WDSI form handed over unprompted |
+| 3 | Owner laptop smoke test of 4.3.0 | waits on row 2 | the six-item list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (last sentence) — signatures in §0.3 V6 | owner confirms all six on a non-build machine with his own keys |
+| 4 | winget submission | HELD | `release-packages/winget/<version>`; §8.2 | microsoft/winget-pkgs #421585 merged, then the manifest is submitted |
+| 5 | Live feed pricing the UNDERLYING of open option rows | DEFERRED by ruling to after 4.3.0 | `06-ANSWERS.md` row "underlying of open option rows" (line ~226) | the owner names its release; ships with its own audit |
+| 6 | §3 Positions-tab redesign (`/live` Charts / Positions tabs) | NOT built; the owner has not said "build" on the round-3 canvas | `NEXT-SESSION-CONTINUATION.md` §3 (plan, constraints, open questions); §8.00 here; the sector-mapping inputs memory fires FIRST (`vyuha-live-desk-v4-inputs`) | owner says "build" → sector files + sizing calc collected via pop-up → wave plan → `e2e/z-live-desk.spec.ts` + seam pass + audit |
+| 7 | Owner questions still open | see §0.4 | §0.4 | each answered in `06-ANSWERS.md` |
+| 8 | Ledger items still unbuilt after 4.2 (Q42b signed widget feed, Q51 cohort analytics, 06a Atlas answers → panel v3, Q18 Telegram alerts, journal-derived Kelly at ≥30 trades, openalgo-charts facade spike) | unscheduled | `NEXT-SESSION-CONTINUATION.md` §2.4 | each gets an owner "build" and its own release |
+| 9 | §8 backlog (first-run onboarding, Zerodha F&O grammar rows, option-seller depth round 3, B1/B2 funnel, demo-video recording, macOS notarisation, theme/skin collapse, parsers not built, `/trades` pagination, short-sell modelling, floating search) | unscheduled | §8.0 / §8.2 / §8.4 / §8.5 of this file | owner picks; each ships in its own release |
+| 10 | Q52 second half — the index map's sha256 beside `asOf` on `/instruments` | open | `AGENTS.md` § Bundled NSE index map, last sentence | `/instruments` shows the file digest |
+| 11 | Operator-owed: hook proposal (wave-guard under-firing) | awaits the operator | `~/.claude/coord/learnings/HOOK-PROPOSALS.md` | applied or rejected there |
+| 12 | Operator-owed: the global trust-repo path | awaits the operator (hook-gate denies agents; the classifier blocks `unlock`) | `~/.claude/settings.json` line 236 — replace `VYUHA-TRADE JOURNAL-V1` with `VYUHA\TRADE-JOURNAL` | the line names the new path |
+| 13 | `fleet-tune` | not due (last 2026-09-09) | its own session | weekly |
+
+### §0.2 What was left out of the pickup table deliberately
+
+Migration re-keying rows closed by never-shipped wave-1 code — **none needed** (4.2.0 has no auto-close; ruled). `VYUHA_KEY_ARCHIVE_DIR` — SET (06-ANSWERS). Angel `/quote` home test — PASSED 2026-09-07. Intraday bar import — NOT required (owner 2026-08-15; §8.4 note).
+
+### §0.3 Verification procedures for everything BUILT BUT UNVERIFIED — PASS and FAIL signatures
+
+**V1 — CI on `a00ddd0`.** `gh run view 34472737988` (or `gh run list --limit 5`). **PASS:** conclusion `success`, 6 of 6 jobs. **FAIL-A** — only the Windows job red, on a source-shape/span-cap expectation: a CRLF cap (398 LF vs 408 CRLF); widen the cap by one byte per line it can cross, touch no product code. **FAIL-B** — a job red with a timeout / network / cold-runner signature: re-run that job; never re-tag, never "fix" code for it. **FAIL-C** — the run shows `cancelled`: a later push to main cancelled it (`cancel-in-progress`); judge the run on the NEWEST sha, never call a cancelled run green. **FAIL-D** — HEAD `e0378eb` has no run or a red one: it is docs-only; the code run to judge is `a00ddd0`'s.
+
+**V2 — the gate.** `rtk proxy npm run verify` from the repo root (heavy: coord serialises it machine-wide; a coord **DENIED** means another session holds the lock — wait and retry, it is not a failure). **PASS:** exit 0 and the RAW vitest summary line reads `Test Files ≥ 378 passed`, `Tests ≥ 7,598 passed | 35 skipped`. Read the raw line, never the rtk summary. **FAIL-A** — counts SHRANK: a test file or glob was lost; a shrinking suite passes silently — find the missing file before anything else. **FAIL-B** — rtk summary green, raw line shows failures: the wrapper hid them (it did once, 4 failures); trust the raw line. **FAIL-C** — typecheck/lint/test green, `next build` red: a server-only import reached the client graph (AGENTS.md § Verify); fix the import, not the build config. **FAIL-D** — `tests/client-value-imports.test.ts` red: a server module value-imports from a `"use client"` module; Next throws at request time and nothing else can see it. **FAIL-E** — a doc guard red (`readme-claims`, `help-content`, `privacy-feed-disclosure`, `uninstall-claims`): prose drifted from code; fix the prose, not the expectation (the one deliberate expectation change was the `## 2-hist.` header rename in this pass).
+
+**V3 — migration 0071 on a real database.** Copy `%APPDATA%\in.vyuha.tradejournal\vyuha.sqlite` to `data\smoke-0071.sqlite` (PowerShell; never run against the live file), then `set VYUHA_DB_PATH=data\smoke-0071.sqlite&& npm run dev` and open `/strategies`. **PASS:** startup applies 0071 once; `PRAGMA table_info(settings)` lists `strategy_shelf_json`; `/strategies` shows the 8-tile default shelf; a second start applies nothing. **FAIL-A** — "duplicate column" at start: 0071 ran outside the journal; check `drizzle/meta/_journal.json`. **FAIL-B** — column present but the shelf is empty: `parseShelf` rejected the stored envelope (must be `{v:1,selected}`); inspect the value. **FAIL-C** — backup → restore loses the shelf: `BASELINE_SETTINGS_FIELDS` misses the column.
+
+**V4 — `/strategies` free vs Pro.** **PASS:** a free account sees "Custom (n legs)" + ProLock and the RSC payload (view-source / network tab) carries NO strategy name; a Pro account sees the name, shelf strip, browse drawer, undo/redo/restore. **FAIL-A** — a name in the free payload: `withholdForFree` ran after serialisation — a gating defect, audit dimension security-gating-consent. **FAIL-B** — Pro sees ProLock on the whole page: a consumer treats the new `PRO_FEATURES` `partial` entry as whole-page gating (`ENTITLEMENT_PATHS` changed in wave 2). **FAIL-C** — `tests/render-windowing.test.ts` red: `LazyMount` / `PayoffChart` left the page file.
+
+**V5 — Options Help Desk.** **PASS:** `/help` shows the highlighted Options section with 40 entries; `/help#options-<id>` scrolls to the entry; the command palette finds one by term. **FAIL-A** — fewer than 40 or a dead anchor: an `options-help.ts` id no longer matches the catalogue's `STRATEGY_IDS`. **FAIL-B** — `tests/options-help.test.ts` red on vocabulary: the strict scoped vocabulary gate; fix the copy, not the gate.
+
+**V6 — the owner's smoke test (row 3), item by item.** (a) Dhan catch-up pull over the 5 Sept gap — PASS: gap-dated rows appear once, "Pulls missed since" clears, the IST expiry stamp shows; FAIL-A duplicates → identity hash / `dedup-alias` path (money); FAIL-B no rows and the line persists → `lastPullAt` not advanced, the 90-day / 50-page cap, or an expired token (401 → the stamp). (b) Duplicate removal on Data Quality — PASS: only PLAIN copies are offered, one click removes one, the group shows its own row; FAIL: an aliased/frozen row offered → identity-hash grouping regression (money). (c) Auto-close of the stale Dhan rows (Marksans / BEL / VBL / SBIN) — PASS: FIFO closes, each lot keeps its born-with hash, a partial remainder is frozen with `PARTIAL_CLOSE_NOTE`; FAIL-A closed qty ≠ sold qty → remainder split; FAIL-B a lot's hash changed → identity model regression. (d) `/risk` spot chip — PASS: "spot?" opens the editor, `POST /api/risk/spot` stores it, the EOD-close fallback shows when no manual value; FAIL: focus lost after the dialog → the try/finally focus restore. (e) The strategy screen on his own option book — PASS: per-symbol grouping, split on match failure, UL leg read-only, "Highest outcome" label, a positive max loss labelled as a "Worst case" gain; NOT a defect: an unrelated Sept/Oct pair named as a calendar/diagonal (accepted, module header); FAIL: `netPremium` shown including a UL leg's entry cash without the "Underlying entry" line. (f) Both feeds with his own keys — PASS: quotes on `/live`; the consent sheet names five sign-in triggers; NOT a defect: Angel One stops after three refusals and the capped sentence says "refused"; FAIL: "could not reach" is network, retry before filing.
+
+### §0.4 Questions the owner still has to answer
+
+1. **"build"** on the Positions-tab round-3 canvas (row 6) — the one live design question.
+2. **"tag"** for 4.3.0 once row 1 is green — the release stops there by rule.
+3. When does the underlying-priced option row ship (row 5)? And which release gets the contract-keyed derivative-marks schema (06-ANSWERS "M1 … DEFERRED to its own release")?
+4. Theme vs accent-skin — collapse into one list or keep both (§8.5, the only open question there).
+5. Zerodha F&O symbol grammar — the 3–5 real tradingsymbol rows (§8.4) or drop the item.
+6. Q24 attribution link for the softened re-auth sentence — only if you ever want the attribution.
+7. `docs/SESSION_PROMPT.md` states Pro annual as ₹7,999 in one place and ₹9,999 in another; `docs/owner/MONETIZATION_PLAN.md` is the price authority — confirm which, and the stale line is deleted.
+8. When §3 opens: the sector-taxonomy files (Sentinel + Chartink Atlas), the position-sizing calculator, the "few tweaks".
+
+**Asked under a premise later found false (flagged — you were never given the real choice):** every pop-up in the `06-ANSWERS.md` table titled "v4.2.1 rulings" was framed as a PATCH release; you then ruled ONE release, 4.3.0 (a migration makes it a minor). The rulings stand and shipped in 4.3.0 waves 1–2. If any of them would have been answered differently for a minor (e.g. scope you would have added or split off), say so before row 2. The §8.4 "intraday bar import blocked on a data-source decision" was never a decision you owed — you had ruled intraday NOT required on 2026-08-15; struck, not re-asked.
+
+### §0.5 ⛔ SUPERSEDED CLAIMS ledger — each one also corrected AT ITS SOURCE on 2026-09-10
+
+| Where it still says it | The claim | The TRUTH | How established → fix applied |
+|---|---|---|---|
+| this file line 4 | "verified … on 2026-09-09" | verified 2026-09-10 | this pass → rewritten |
+| this file §3 routing table | DECISIONS 100 KB; CHANGELOG 152 KB / 61 sections; README 64 KB | 517 KB / 245 KB / 103 KB | `ls -l` → rows rewritten |
+| this file §3 | "What is v3.8/v3.9 building" = V380 plan; opener = NEXT_SESSION_V380 / SESSION_PROMPT | shipped v3.8.0 (09-04), v3.9.0 (09-05); the opener is §0 | `git tag` → rows rewritten |
+| this file §8.00 | continuation "Step 1b" | it is §3; no Step 1b exists | file headers → corrected |
+| this file §8.0 header | "Next releases — v3.9.0 … v4.0 reminder" | both shipped; list is the deferred-items record | `git tag` → header note |
+| this file §8.0 | "REMIND THE OWNER when v4.0 planning opens" | retargeted 2026-09-08 to §3 | 06-ANSWERS row ~205 → note |
+| this file §8.0a header | "v3.9.1 candidates" | v3.9.1 shipped 2026-09-05 | `git tag` → header note |
+| this file §8.1 | "v2.99.100 is PUBLISHED and is releases/latest" | v4.2.0 is | §2-published (`gh release view`) → note |
+| this file §8.4 (two places) + §8.5 | "Upstox file parsing is schema-verified only / values unverified" | DISCHARGED 2026-09-04 | AGENTS.md, `tests/golden-books.test.ts` → notes |
+| this file §8.4 | intraday bar import "blocked on a data-source decision" | ruled NOT required 2026-08-15 | same section → struck |
+| this file §8.5 | "Public launch is planned as 3.0.0" | 3.0.0 shipped 2026-08-29 | `git tag` → note |
+| this file §2-published "Next:" | "application fixes (list not yet given — ask first)" | list came 2026-09-09 → v4.3.0 wave 1 | §2 → note |
+| `docs/SESSION_PROMPT.md` ready-to-paste block | v2.99.100 published; 1,962 tests / 134 files; migration 0049; candidates list | v4.2.0; 378 / 7,598 / 35; migration 0071; §0 pickup table | gate + `drizzle/` → banner (rules kept) |
+| `docs/prompts/NEXT_SESSION_V380.md`, `…V390_V400.md`, `…V391_V400_LIVEDESK.md` | "v3.7.1 published, build 3.8" / "build 3.9.0" / "v3.9.1 built, uncommitted" | all shipped through v4.2.0 | `git tag` → banners |
+| `docs/V320…V380_BUILD_PLAN.md` | "AWAITING OWNER APPROVAL" / "IN BUILD" / "approved v3.7–v3.9 roadmap" | all shipped | `git tag` → banners on all six |
+| `NEXT-SESSION-CONTINUATION.md` line 6 | newest ruling table = "v4.2 build-session rulings" | "v4.3.0 audit-round-1 rulings" | 06-ANSWERS headers → corrected |
+| `NEXT-SESSION-CONTINUATION.md` §2 / §2.2 | "NEXT — v4.2.0" / "first thing in the 4.2 session" | shipped 2026-09-09 / done 2026-09-07 | `git tag`, 06-ANSWERS → headers |
+| `NEXT-SESSION-CONTINUATION.md` §4 | DECISIONS "400 KB" | 517 KB | `ls -l` → corrected |
+| `00-INDEX.md` lines 3, 30–31 | HEAD `3d7981e`, v3.9.0 published; "v3.9.1 first"; "v4.0 targeting Sun 2026-09-13" | HEAD `e0378eb`; v3.9.1–v4.2 shipped | `git log` → banner |
+| `08-BUILD-PROMPTS/V391-BUILD-PROMPT.md`, `V400-LIVE-DESK-BUILD-PROMPT.md` | HEAD `3d7981e`; "STOP unless v3.9.1 is published" | history; §4/§7/§9 of V400 remain procedure | `git log` → banners |
+| `06-ANSWERS.md` table "v4.2.1 rulings" | a v4.2.1 patch release | ONE release 4.3.0 (its own last row) | read → title note |
+| hub memory `vyuha-v430/v420/v390-build-state.md` + their index lines | three different "current" states | none is; the repo is | `git log` vs each → deleted, replaced by `vyuha-repo-is-authoritative.md` (both memory dirs) |
+| hub memory `vyuha-web-platform-research.md`, `vyuha-v390…` | pack at hub root; owner input files at hub root | `TESTING+RESEARCH/VYUHA-WEB-PLATFORM-RESEARCH/`; `TESTING+RESEARCH/RESEARCH FILES/` | `ls` → rewritten / path table |
+| hub memory `vyuha-wealth-planner-decision.md` | VYUHA v2.99.101; Atlas "phases 0–1, 49/49 tests" | Atlas state file says phase 6, 182/182 | read → rewritten without counts |
+| 42 files (73 path strings) across repo, Atlas, research packs, memory, coord config, scout agent | `VYUHA-TRADE JOURNAL-V1`, `VYUHA-LIVE-DESK-RESEARCH`, `VYUHA-ATLAS`, `BROKER FILES FOR TESTING`, `MTF FILES` paths | the `VYUHA/` tree (§0 one-line state) | sweep script, re-run = 0 → applied |
+| `~/.claude/settings.json` line 236 | trust-repo path `VYUHA-TRADE JOURNAL-V1` | `VYUHA\TRADE-JOURNAL` | hook-gate denies agents → **row 12, operator** |
+| `~/.claude/hooks/learn.mjs` line 220 comment; `skills/token-efficient-coding/SKILL.md` line 200 label | mention the old folder name | historical mentions, not paths | left as history |
 
 ---
 
@@ -62,7 +158,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > wave-2 pre-build rulings" (40 catalogue rows; free tier sees "Custom (n legs)" + a Pro chip).
 
 > **What `265d684` is:** the owner's six-item application-fix list from ten screenshots of the installed 4.2.0, each verified
-> against the code before its ruling (`VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings"). The file that makes each true:
+> against the code before its ruling (`VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2.1 rulings"). The file that makes each true:
 > splash tagline + strap removal `src-tauri/loading/index.html` (`tests/splash-copy.test.ts`) · Help Desk + every dialog one
 > type step larger `components/system/help-desk.tsx`, `components/ui/dialog.tsx` (`tests/typography-scale.test.ts`) · IST
 > expiry stamp + "Pulls missed since" line `components/import/broker-connect.tsx` (`tests/broker-connect-copy.test.ts`) · Dhan
@@ -84,14 +180,14 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > column = migration 0071) makes the release a minor by his own scope ruling. **Wave 2 is BUILT** (paragraph above): the 40-shape
 > data-driven catalogue, the shelf/picker with undo/redo/restore, the Options Help Desk (FREE, highlighted; the rest PRO), the
 > SEBI loss-study disclosure, the underlying leg read-only, the sign sites — research pack
-> `VYUHA-LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md`, rulings in 06-ANSWERS "v4.3.0 rulings — Option Strategies
+> `VYUHA/LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md`, rulings in 06-ANSWERS "v4.3.0 rulings — Option Strategies
 > catalogue" + "v4.3.0 wave-2 pre-build rulings". **Owed before the tag:** the six-dimension audit + skeptic over wave 2 and its
 > fix waves, the bump, the 11 release steps, the owner's laptop smoke test (catch-up pull over the 5 Sept gap, duplicate removal,
 > auto-close of the stale Dhan rows, the spot chip, the strategy screen with his own option book, both feeds). Every deviation a
 > builder took is in `docs/DECISIONS.md` "2026-09-09 — v4.3.0 wave 1", "2026-09-10 — v4.3.0 audit round 1", "… audit round 2"
 > and "… wave 2"; the next session starts from `NEXT-SESSION-CONTINUATION.md` §0.
 
-## 2-prev. v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585) — still the live release
+## 2-published. v4.2.0 PUBLISHED 2026-09-09 01:48 IST (tag `v4.2.0` = `9da7bc8` → `b488dde`; CI 34267807794 6/6; release run 34268619222 3/3; deep verify 3/3; `releases/latest` → v4.2.0; installed off the build machine, both feeds smoke-tested; WDSI submitted; winget HELD by #421585) — still the live release
 
 > **v4.2.0 is PUBLISHED.** The owner published the draft at **2026-09-08T20:18:15Z = 2026-09-09 01:48 IST** (`gh release view
 > v4.2.0` → `isDraft` false, 9 assets); `releases/latest` resolves to **v4.2.0** and its `latest.json` serves 4.2.0 for **six
@@ -103,7 +199,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > manifest at `release-packages/winget/4.2.0` (validated; submission HELD while microsoft/winget-pkgs #421585 is open).
 > Detail: `docs/DECISIONS.md` 2026-09-09 "v4.2.0 tagged on `b488dde`".
 >
-> **Next:** the owner's application fixes (list not yet given — ask first), then §3 Positions tab or the deferred fleet-tune.
+> **Next:** the owner's application fixes (list not yet given — ask first), then §3 Positions tab or the deferred fleet-tune. — ⛔ DONE: the six-item list came 2026-09-09 and became v4.3.0 wave 1 (§2 above); what is next now lives in §0.
 >
 > **The audit and bump history (kept for the record).** Wave commit `c817b15` on `92c48cc` → STATE fix `3a3e026` (CI 34125653384 6/6) → fix wave 1
 > **`8ae5dea`** (CI 34137371450 6/6; 16 items: A-1 derivative rows never read the underlying's cash mark, A-2 one live-feed
@@ -185,13 +281,13 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > `lib/analytics/data-quality.ts` no longer counts open derivatives as unmarked. Gate on the wave tree:
 > **`npm run verify` EXIT 0 — 352 files / 6,726 passed / 35 skipped, `next build` compiled**; `e2e/z-live-desk.spec.ts`
 > 9/9; `tests/seams-v42.test.ts` 33 tests (one confirmed seam defect, the holiday-blind stream window, fixed in
-> the wave). `package-lock.json` untouched; no dependency change. Rulings: `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md`
+> the wave). `package-lock.json` untouched; no dependency change. Rulings: `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md`
 > "v4.2 build-session rulings"; measurements: `docs/DECISIONS.md` 2026-09-07 "v4.2 wave"; session record:
-> `VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **The path that was then planned — round-4 audit over
+> `VYUHA/LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`. **The path that was then planned — round-4 audit over
 > `99aa027..2bacf06` → fix waves → bump 4.2.0 → the 11 release steps — is now WALKED to the tag**; what remains is the owner's
 > Publish, install and smoke test, then the PUBLISHED commit.
 
-## 2. Current state — v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
+## 2-hist. v4.1.0 PUBLISHED 2026-09-07 15:30 IST (tag `v4.1.0` = `c39675c`; CI 6/6 = 34102623205; release run 34103493298 3/3 on attempt 2; deep verify 3/3; `releases/latest` → v4.1.0, updater serves 4.1.0 for six platforms; installed off the build machine — owner: "working fine") · v4.0.0 PUBLISHED 2026-09-06 13:46 IST
 
 > **v4.1.0 IS PUBLISHED** (2026-09-07T10:00:03Z = 15:30 IST) and installed on a non-build machine by the owner;
 > WDSI form handed over (client-ZIP sha), winget submission is the owner's once he chooses. Nothing is owed on
@@ -208,7 +304,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > 341 / 6,400 / 35 (DECISIONS 2026-09-07). **winget for 4.1.0 is NOT submitted, by the standing rule** — #421585
 > (the 2.99.99 first submission) is still open since 2026-08-20; the validated manifest waits at
 > `release-packages/winget/4.1.0`. **Next: v4.2 (Upstox + Angel One quote adapters)** — six
-> owner rulings recorded 2026-09-07 in `VYUHA-LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 pre-build rulings"; two
+> owner rulings recorded 2026-09-07 in `VYUHA/LIVE-DESK-RESEARCH/06-ANSWERS.md` "v4.2 pre-build rulings"; two
 > owner inputs gate any Angel One code (the home-connection `/quote` test and the SmartAPI terms read). Base
 > commit `6631d21`; on top of it `66aa319` (the
 > wave), `4b55620` (the fix wave), `65dd329` (fix wave 2), `1ec6de1` (fix wave 3), `fe04728` (3b),
@@ -288,7 +384,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 >
 > **VERIFY (2026-09-07, the v4.1.0 BUMP tree on `0c60a1b`): `npm run verify` EXIT 0 — typecheck clean, lint 0 errors (1 pre-existing `react-hooks/incompatible-library` warning on the desk virtualiser), vitest 341 files / 6,400 passed / 35 skipped (6,435), `next build` compiled in 11.3 s; `npm ls esbuild` resolves; `package-lock.json` numstat 2 2. The FIRST gate on the bump tree was RED on four doc guards (`client-docs-version` ×2, `readme-claims` first-quote, `live-feed-copy` Q60 on the landing hero) — all four were the bump's own docs and were fixed before this run (DECISIONS 2026-09-07). Playwright on the fix-wave-3 tree: `e2e/z-live-desk.spec.ts` 9 passed (`components/live/**` unchanged since). Earlier gates: fix wave 3d/3e (`2b3cbfa`, `0c60a1b` — CI SUCCESS 34057976530) 341 / 6,400 / 35; fix wave 3c (`6c4713a`) 341 / 6,399 / 35; fix wave 3b (`fe04728`, CI 34056113744) 341 / 6,392 / 35; fix wave 3 (`1ec6de1`, CI SUCCESS 34054833245) 341 / 6,381 / 35; fix wave 2 (`65dd329`, CI SUCCESS 34051766379) 339 / 6,334 / 35; fix wave (`4b55620`, CI SUCCESS) 337 / 6,273 / 35; wave (`66aa319`, CI 6/6) 334 / 6,177 / 35. README counts 6400 / 341 / 93 flows in 29 specs, all re-measured on this tree (`find tests -name "*.test.ts" | wc -l` = 341: fix wave 3 added `tests/typed-mark-day-row.test.ts` and `tests/seams-v41-fix3.test.ts`).**
 
-## 2. Current state — v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
+## 2-hist. v4.0.0 PUBLISHED 2026-09-06 13:46 IST (tag `v4.0.0` = `4d4aec3`; CI 6/6; release 3/3; deep verify 3/3; installed off the build machine; WDSI submitted) · v3.9.1 PUBLISHED the same minute (tag `0e18b1d`; installed; WDSI submitted)
 
 > **v4.0.0 is PUBLISHED (2026-09-06 13:46 IST, `https://github.com/Thejesh-k463/VYUHA-LOG/releases/tag/v4.0.0`), installed on a non-build machine (owner-confirmed working), WDSI submitted. Nothing is owed on this release.**
 > Tag `v4.0.0` = `4d4aec3` (main: merge `98eaa63` → bump `16b1ec1` → audit fix wave `5938aa6` →
@@ -564,14 +660,14 @@ Upstox + Angel One adapters (Q21); the SEBI daily re-auth attribution (Q24 — s
 journal-derived Kelly inputs at ≥ 30 closed trades; `results_date` on `instruments` (Q-9); the
 sha256 half of Q52 (the index map's digest beside its `asOf` in the UI); the 06a Atlas questions
 (AQ1–AQ52), still unasked. The full ledger with per-wave evidence is
-`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`.
+`T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`.
 
 **Deadline (owner, Q1):** Monday 2026-09-07 for everything up to v4.2 — v3.9.1 tagged first, then
 the v4.0 → v4.1 → v4.2 ladder back to back (Q2, Q4).
 
 ---
 
-## 2. Current state — v3.8.0 PUBLISHED 2026-09-04 (tag `74e8d49`; CI 6/6; verify 254 files / 4,515 tests; 3/3 signatures deep-verified; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-04)
+## 2-hist. v3.8.0 PUBLISHED 2026-09-04 (tag `74e8d49`; CI 6/6; verify 254 files / 4,515 tests; 3/3 signatures deep-verified; installed clean on a non-build machine; WDSI submitted; owner-confirmed 2026-09-04)
 
 **Status:** branch `main` at `9007c2d` — the Dhan Client-ID hydration fix
 (`components/import/broker-connect.tsx` + `tests/import-hydration-guard.test.ts`) is COMMITTED,
@@ -632,7 +728,7 @@ pagination; short-sell modelling. **v4.0:** sector analytics + Live Desk (see §
 
 ---
 
-## 2. Current state — verified 2026-09-03 (v3.7.1 PUBLISHED, mirrored, installed clean on a non-build machine)
+## 2-hist. verified 2026-09-03 (v3.7.1 PUBLISHED, mirrored, installed clean on a non-build machine)
 
 **v3.7.1 "Review & Discipline" IS LIVE (owner-confirmed 2026-09-03):** published, `releases/latest`
 moved to v3.7.1, mirror pushed, and installed clean on a non-build machine and working.
@@ -933,7 +1029,7 @@ signature of variance. Re-run before believing one sweep.**
 and projection, because `perf:sweep` is NOT in CI and **none of these five routes has an e2e
 spec** — which is exactly how six breaches accumulated unnoticed for two releases.
 
-## 2. Superseded — v3.2.0 era (kept for the v3.3.0 build record)
+## 2-hist. v3.2.0 era — superseded (kept for the v3.3.0 build record)
 
 **2026-08-31 — v3.2.0 IS PUBLISHED, MIRRORED, AND INSTALLED ON A NON-BUILD MACHINE** (owner
 confirmed). The v3.2.0 owner-steps list below is therefore DISCHARGED except WDSI.
@@ -1514,20 +1610,20 @@ cost win in this repo.
 | Question | File |
 |---|---|
 | Can I change this? What will it break? | **`AGENTS.md`** — 10 invariants + conventions. Read before ANY code change. |
-| Why is this constant/threshold what it is? | **`docs/DECISIONS.md`** (100 KB, dated entries, newest at top) |
-| What shipped, when, and what broke | **`CHANGELOG.md`** (152 KB, 61 release sections) |
-| What does the product actually do / feature copy | `README.md` (64 KB) |
+| Why is this constant/threshold what it is? | **`docs/DECISIONS.md`** (517 KB on 2026-09-10 — grep, never read whole; dated entries, newest at top) |
+| What shipped, when, and what broke | **`CHANGELOG.md`** (245 KB on 2026-09-10; one section per release, newest at top) |
+| What does the product actually do / feature copy | `README.md` (103 KB on 2026-09-10) |
 | A broker file's exact columns + fingerprint | `docs/BROKER_FORMATS.md` |
 | What can be imported at all | `lib/import/registry-meta.ts` — **the only source of truth** |
 | Licensing, keys, revocation, refunds | `docs/owner/LICENSE_OPERATIONS.md` |
 | Pricing, packaging, launch plan | `docs/owner/MONETIZATION_PLAN.md` |
 | Signing, notarization, SmartScreen | `docs/owner/CODE_SIGNING.md` + `AGENTS.md` § Desktop build |
 | What a buyer receives | `docs/client/` |
-| How do I open a new session here? | `docs/SESSION_PROMPT.md` — short + full copy-paste openers |
-| What is v3.8/v3.9 building and why | **`docs/V380_BUILD_PLAN.md`** — the approved spec; §0 is verified facts, §3 the owner inputs owed |
-| The opener for the v3.8 build session | `docs/prompts/NEXT_SESSION_V380.md` |
-| What v3.9.1 / v4.0 "Live Desk" is, and every fact it was planned from | **`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/00-INDEX.md`** — research pack; `08-BUILD-PROMPTS/V391-BUILD-PROMPT.md` is the v3.9.1 opener, `06-ANSWERS.md` the owner rulings |
-| What is already built vs still left (so nothing is redone) | **`T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`** — owner ruling Q3; updated at every wave boundary |
+| How do I open a new session here? | **§0 START HERE** (top of this file), then `VYUHA/LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md` §0. `docs/SESSION_PROMPT.md` keeps the standing RULES (its ready-to-paste block is superseded, banner at its top) |
+| What v3.8 / v3.9 built and why (history) | `docs/V380_BUILD_PLAN.md` — shipped as v3.8.0 (2026-09-04) and v3.9.0 (2026-09-05); banner at its top |
+| The older session openers (history, never paste) | `docs/prompts/NEXT_SESSION_V380.md`, `NEXT_SESSION_V390_V400.md`, `NEXT_SESSION_V391_V400_LIVEDESK.md` — every one carries a supersession banner |
+| What v3.9.1 / v4.0 "Live Desk" was planned from | `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/00-INDEX.md` — research pack (its "next step" lines are history); `06-ANSWERS.md` holds EVERY owner ruling, newest table LAST — binding, never re-ask |
+| What is already built vs still left (so nothing is redone) | **`T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/09-BUILD-LEDGER.md`** — owner ruling Q3; updated at every wave boundary; §0's pickup table is the condensed view |
 
 `decision-log` (append a measured fact) and `prove-it` (verification before claiming
 done) are the **GLOBAL** skills at `C:\Users\theje\.claude\skills\` — there are no project
@@ -1745,7 +1841,7 @@ why selling stopped.
 
 ## 8. Open work and future upgrades
 
-### 8.00 Open Positions card redesign for `/live` (owner-driven, 2026-09-06; NOT built — awaiting the owner's design confirmation)
+### 8.00 Open Positions card redesign for `/live` (owner-driven, 2026-09-06; NOT built — awaiting the owner's "build" on the round-3 canvas; the same item as the continuation prompt's §3 and §0's pickup table — status lives THERE)
 
 Owner liked all four round-1 directions and asked for a blend on A's base (editorial ledger): the row gains
 quantity, the stop VALUE and its SOURCE chip (manual / ATR 21 × 2 / trail), and a state chip (at entry / at risk /
@@ -1753,8 +1849,8 @@ locked in); the header bars show absolute ₹ beside the percentage; C (position
 zone) becomes a per-position POP-UP; further additions were offered as numbered ideas (row strip, feed state, account
 chips, keyboard hints, results/corporate-action chips, a near-stop tint, a Sizing Lab hand-off for no-stop rows; and a
 collapsible Risk lens above the table). Canvas: `https://claude.ai/code/artifact/712bcb4e-4c97-4d22-8d1b-02bae8a79b0f`
-(page "Blend (round 2)"). Plan, constraints and open questions: `VYUHA-LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md`
-Step 1b. Ships as its own desk release after 4.2 unless pulled forward; the free/Pro map, SEBI copy rules and the
+(page "Blend (round 2)"). Plan, constraints and open questions: `VYUHA/LIVE-DESK-RESEARCH/NEXT-SESSION-CONTINUATION.md`
+§3 (there is no "Step 1b" — corrected 2026-09-10). Ships as its own desk release after 4.3.0 unless pulled forward; the free/Pro map, SEBI copy rules and the
 `/live` e2e harness apply unchanged. **Placement (owner): charts stay the Live Desk's main view; `/live` gains a
 "Charts" (default) / "Positions" (card) tab pair — nothing is replaced.**
 
@@ -1762,7 +1858,7 @@ Sections 8.1–8.5 were **recovered from the two build-session transcripts** (20
 and exist nowhere else in the repo. Claims marked *(verified)* were re-checked against the code
 on 2026-08-14; the rest are as recorded in conversation.
 
-### 8.0 Next releases — v3.9.0 "Trust the numbers" and the v4.0 reminder (added 2026-09-04)
+### 8.0 Next releases — v3.9.0 "Trust the numbers" and the v4.0 reminder (added 2026-09-04) — ⛔ SUPERSEDED 2026-09-10: v3.9.0 shipped 2026-09-05 and v4.0.0 on 2026-09-06; the bullet list below is kept ONLY as the record of what was deferred and is still unbuilt (see §0 pickup table row "STATE §8 backlog")
 
 Deferred OUT of v3.8.0 by the plan (`docs/V380_BUILD_PLAN.md` §2) and the 2026-09-04 rulings:
 
@@ -1784,14 +1880,14 @@ Deferred OUT of v3.8.0 by the plan (`docs/V380_BUILD_PLAN.md` §2) and the 2026-
   the v3.8 fix wave (`todayIstIso`, now :104 — v3.9 recon 2026-09-04 found this line stale); the 5
   size indices absent from `nse-index-map.json` with no recorded reason (owner question at v4.0).
 
-**v4.0 — Live Desk + sector analytics. REMIND THE OWNER when v4.0 planning opens:** ask via pop-up
+**v4.0 — Live Desk + sector analytics. ⛔ Retargeted 2026-09-08: v4.0–v4.2 shipped WITHOUT this; the reminder now fires when §3 (Positions tab, 8.00 above) is scheduled — see §0.** Then ask via pop-up
 for his TRADE-SENTINAL and Chartink Atlas sector/industry/index files (read those projects only,
 never write) for the sector-mapping / deeper-analysis feature, plus the position-sizing calculator
 and the tweaks he said he would share. The v3.8 sector taxonomy is the seed (data layer only —
 attribution needs cohort prices Vyuha does not store, which would reopen the egress question
 PRIVACY.md closes). Also owed: the macOS DMG test when a Mac is available; `VYUHA_KEY_ARCHIVE_DIR`.
 
-### 8.0a v3.9.1 candidates found by the web-platform research (2026-09-05, verified in 07-CROSS-CHECK)
+### 8.0a v3.9.1 candidates found by the web-platform research (2026-09-05, verified in 07-CROSS-CHECK) — ⛔ SUPERSEDED 2026-09-10: v3.9.1 shipped 2026-09-05; kept for the record
 
 - **Copy:** the brochure/landing "100% LOCAL & OFFLINE" and the hero lede "never sends a single trade
   off your machine" become a half-truth the day a hosted surface exists → "Vyuha Desktop: 100% local
@@ -1832,8 +1928,8 @@ licence keys, zero of them annual.** The featured SKU had never been sold end to
 VY-2026-002 annual, see the sale rows below. The finding is kept because it is what set the
 priority; it is no longer the state.)*
 
-- ✅ **v2.99.100 is PUBLISHED and is `releases/latest`** (2026-08-21T16:30:25Z, verified via `gh`
-  2026-08-24). The pairing-quadratic fix now reaches every buyer through the updater.
+- ✅ **v2.99.100 was PUBLISHED and was `releases/latest`** (2026-08-21T16:30:25Z, verified via `gh`
+  2026-08-24) — ⛔ SUPERSEDED: the published release is whatever §0 says (v4.2.0 on 2026-09-10). The pairing-quadratic fix now reaches every buyer through the updater.
 - ✅ **v2.99.98 was PUBLISHED** (2026-08-20 03:23Z; v2.99.95/.96/.97 all published before it). Publishing stays
   the owner's per-release decision. Older drafts still unpublished: v2.99.75/.55/.50/.40/.30.
 - ✅ **v2.99.99 was PUBLISHED and held `releases/latest` until v2.99.100** (2026-08-20 15:46:10Z; tag `51b664d` →
@@ -1950,13 +2046,14 @@ v2.99.96 and `docs/owner/DOC_AUDIT.md` now holds the per-release checklist, guar
 - ✅ **Broker files (Paytm, Zerodha, Upstox) — DELIVERED and verified 2026-08-20 (v2.99.98).**
   API client details were NOT supplied; the Kite pull is unchanged and an Upstox API pull was
   offered and deferred (would add a 4th `lib/import/api/*` client + the "3 API pulls" claim
-  cascade). Upstox file parsing is schema-verified only — the first populated export must be
-  re-verified. **Intraday data integration is NOT required** (owner, 2026-08-15).
+  cascade). Upstox file parsing was schema-verified only — ⛔ DISCHARGED 2026-09-04: `tests/golden-books.test.ts`
+  pins a populated export to the paisa (AGENTS.md, "Never invent a parser"). **Intraday data integration is NOT required** (owner, 2026-08-15).
 - **Zerodha F&O symbol grammar** — blocked on 3–5 real tradingsymbol rows the owner said he
   would supply; never delivered. The private tradebook on disk appears equity-only.
 - **Intraday bar import** — named repeatedly as *the* analytical ceiling: MAE/MFE, trade replay
-  and session edge are all EOD-bound. Blocked on a data-source decision that never came —
-  Kite historical API (~₹2k/mo, **breaks the no-cloud promise**) vs user-pasted CSV.
+  and session edge are all EOD-bound. ⛔ The "data-source decision" was never open: the owner
+  ruled intraday NOT required on 2026-08-15 (two bullets up). Struck 2026-09-10; re-raise only if
+  the owner reopens it.
 - **First-run onboarding flow** — was the explicit #1 next-cycle pick, since trial→paid is the
   bottleneck and nothing guides a fresh install through import → mark → first review. Never built.
 - **`v2.99.0` tag — checked 2026-08-14, KEEP it.** It points at `54c6a7c`, a real release commit
@@ -2029,9 +2126,10 @@ Reversal recorded in DECISIONS.md 2026-09-01. Positioning superseded 2026-09-05.
 - **Fixtures are schema-only.** Real exports live gitignored in `tests/fixtures/private/`; never
   commit or quote identifiers. **Label every claim VERIFIED (against a real file) or INFERRED.**
 - Scope searches to `app/`, `components/`, `lib/`, `e2e/`, `tests/`. No adjacent refactors.
-- ✅ Paytm Money reconciliation DONE 2026-08-20 (§7). The equivalent still-open one: Upstox file
-  values are unverified — its exports carried no rows — so re-verify on the first populated export.
-- Public launch is planned as **3.0.0** (gated on first-run onboarding, owner 2026-08-23).
+- ✅ Paytm Money reconciliation DONE 2026-08-20 (§7). Upstox file values — ⛔ DISCHARGED 2026-09-04
+  (`tests/golden-books.test.ts`, populated export met to the paisa).
+- Public launch was planned as **3.0.0** (gated on first-run onboarding, owner 2026-08-23) — ⛔ SUPERSEDED:
+  3.0.0 shipped 2026-08-29 and the product has been sold since; onboarding is still unbuilt (§8.4).
 
 ---
 

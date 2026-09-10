@@ -15,7 +15,7 @@
 // to THIS FILE asserts it, and asserts the gate can fire.
 //
 // Sources for the legs, the caps and the breakevens: the ranked catalogue in
-// VYUHA-LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md §4 (rows 1-42, less
+// VYUHA/LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md §4 (rows 1-42, less
 // the covered strangle and the ladders, which the v4.3 catalogue does not
 // carry), the zero-price cap in §6, and the multi-expiry rules in §7.
 //

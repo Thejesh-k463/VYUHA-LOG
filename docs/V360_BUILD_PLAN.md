@@ -1,5 +1,7 @@
 # V3.6.0 BUILD PLAN — "Navigate & Connect" (+ approved v3.7–v3.9 roadmap)
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 Owner-approved 2026-09-02 (all 11 decisions answered; recorded in DECISIONS.md 2026-09-02).
 Grounded in two multi-agent research waves (2026-09-01/02): five read-only code recon reports
 (capital architecture, broker-API layer, backlog verification, sidebar/nav, discipline + risk

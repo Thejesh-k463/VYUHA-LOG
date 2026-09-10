@@ -1,5 +1,7 @@
 # V3.8.0 "Trust the import" + V3.9.0 "Trust the numbers" — BUILD PLAN
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 **STATUS: OWNER-APPROVED 2026-09-03 (twelve decisions, all taken via pop-up, all recommended options).
 TAGGED v3.8.0 on 74e8d49 (2026-09-04) after three audit passes — PUBLISHED 2026-09-04 — installed clean off-build-machine, WDSI submitted.** Decisions and the research behind them are recorded in `docs/DECISIONS.md`
 2026-09-03. Live Desk slides to **v4.0** (owner decision).

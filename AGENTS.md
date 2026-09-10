@@ -217,7 +217,7 @@ optional size source, and they are different KINDS of fact:
 ```
 node scripts/build-nse-index-map.mjs \
   --src      "T:/Thejesh/CLAUDE-CODE/TRADE-SENTINAL/sentinel/NIFTY INDICES" \
-  --size-src "T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/_data/index-constituents-2026-09-06" \
+  --size-src "T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/index-constituents-2026-09-06" \
   [--as-of YYYY-MM-DD] [--captured-at YYYY-MM-DD]
 ```
 
@@ -237,7 +237,7 @@ classification data): `effective_at` = the list's own as-of, `captured_at` = the
 per size index, alongside the top-level `asOf`/`capturedAt` and a `provenance` block.
 
 **The source CSVs and their MANIFEST live OUTSIDE the repo** — raw vendor files are build inputs,
-not shipped assets: `T:/Thejesh/CLAUDE-CODE/VYUHA-LIVE-DESK-RESEARCH/_data/index-constituents-2026-09-06/`
+not shipped assets: `T:/Thejesh/CLAUDE-CODE/VYUHA/LIVE-DESK-RESEARCH/_data/index-constituents-2026-09-06/`
 (per-file source URL, fetch date, SHA-256 and row count). **Refresh is MANUAL, once per minor
 release** (Q52): re-download the lists on the owner's machine and re-run the script.
 **The app never contacts niftyindices.com** (Q59) — the fetch is build-time, on the owner's machine,

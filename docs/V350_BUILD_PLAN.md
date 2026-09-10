@@ -1,5 +1,7 @@
 # Vyuha v3.5.0 Build Plan — the Second Brain release
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 Status: **AWAITING OWNER APPROVAL** — no code lands until the owner signs off.
 Inputs: the 2026-08-31 ultracode audit (33→22 verified findings, 7 root causes),
 three real Zerodha workbooks (two FYs reconciled against Zerodha's own totals),

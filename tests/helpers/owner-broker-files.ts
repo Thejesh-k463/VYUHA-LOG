@@ -7,7 +7,7 @@ import path from "node:path";
  * file up by a pattern on the broker's own filename shape. Absent on CI and
  * on any other machine, so every consumer wraps itself in `describe.skipIf`.
  */
-export const OWNER_DIR = process.env.VYUHA_OWNER_FILES ?? "T:/Thejesh/CLAUDE-CODE/BROKER FILES FOR TESTING";
+export const OWNER_DIR = process.env.VYUHA_OWNER_FILES ?? "T:/Thejesh/CLAUDE-CODE/VYUHA/BROKER-FILES-FOR-TESTING";
 
 /**
  * Where an owner file may live. The filed exports sit in OWNER_DIR; anything

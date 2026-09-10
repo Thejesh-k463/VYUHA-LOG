@@ -1,7 +1,7 @@
 // v4.3.0 — the option strategy catalogue as DATA (PURE: no DB, no React — AGENTS.md invariant 2).
 //
 // 40 rows = rows 1–37 + 39 + 40 + 41 of §4 in
-// VYUHA-LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md.
+// VYUHA/LIVE-DESK-RESEARCH/13-OPTION-STRATEGY-CATALOGUE.md.
 // Row 38 (covered strangle) and row 42 (ladders) are deliberately NOT here.
 //
 // Three rules this file keeps, each one a way to ship a wrong name silently:

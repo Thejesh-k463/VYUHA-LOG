@@ -1,5 +1,7 @@
 # NEXT SESSION PROMPT — v3.9.0 "Trust the numbers" then v4.0 "Live Desk"
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 Paste everything below the line into a fresh session (after `/clear`). It encodes every lesson
 v3.8.0 paid for. Written 2026-09-04 by the v3.8 orchestrator.
 
@@ -109,7 +111,7 @@ accuracy rule (Opus builds, Fable orchestrates), not a spend rule.
 - Golden books: exact shapes are frozen; a row that goes to 0/0/0 is a stop-ship, never a re-pin;
   engine-mode charge pins carry `// DEFECT (by design until v3.9 reconciliation)` markers — item 1
   above is what retires them.
-- Owner files live in "T:\Thejesh\CLAUDE-CODE\BROKER FILES FOR TESTING\" and
+- Owner files live in "T:\Thejesh\CLAUDE-CODE\VYUHA\BROKER-FILES-FOR-TESTING\" and
   `tests/fixtures/private/` (gitignored): read-only, never copied, never pasted (name/UCC/PAN/
   email/mobile); redaction = `scripts/fixtures/redact-broker-export.mjs` (keeps every row, refuses
   any output whose detection or parse differs). Redaction does not scrub git history.

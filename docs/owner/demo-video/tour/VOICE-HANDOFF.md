@@ -48,7 +48,7 @@ Rules that matter:
 
 > Open Clipchamp on this computer. I need 13 text-to-speech audio files made
 > from the numbered blocks (T-0 through T-12) in the file
-> `T:\Thejesh\CLAUDE-CODE\VYUHA-TRADE JOURNAL-V1\docs\owner\demo-video\tour\NARRATION.md`.
+> `T:\Thejesh\CLAUDE-CODE\VYUHA\TRADE-JOURNAL\docs\owner\demo-video\tour\NARRATION.md`.
 > For each block: use Record & create → Text to speech, paste only that
 > block's paragraph text (never the heading or the italic timing line), set
 > language English, voice English (India) — pick one female voice and use the

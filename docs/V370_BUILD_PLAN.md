@@ -1,5 +1,7 @@
 # V3.7.0 BUILD PLAN — "Review & Discipline"
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 **STATUS: OWNER-APPROVED 2026-09-02 — all nine §8 questions answered YES. IN BUILD.**
 (Approval and the four recon findings that shaped it are recorded in `docs/DECISIONS.md` 2026-09-02.)
 Roadmap slot: `docs/V360_BUILD_PLAN.md` row 3 (owner decision #1, 2026-09-02). Binding prior

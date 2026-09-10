@@ -1,5 +1,7 @@
 # v3.3.0 — BUILD PLAN
 
+> ⛔ SUPERSEDED 2026-09-10 — this document is HISTORY. Current state, pickup table and next step: `VYUHA-STATE.md` §0 START HERE (repo root). If anything here disagrees with §0, §0 wins and this file is the bug.
+
 **Release shape changed 2026-08-31 (owner):** Phases 0–3 ship as **ONE v3.3.0 minor**. The
 separate v3.2.1 patch is cancelled — its work is Phase 0 below and is already code-complete on
 the working tree. Nothing in this plan was dropped by that change; only the number of releases.
