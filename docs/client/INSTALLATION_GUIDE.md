@@ -81,7 +81,7 @@ You have two paths — use either or both:
    **Angel One** (tradebook, P&L, and the tax P&L), **Upstox** (tradebook or P&L),
    **Paytm Money** (tradebook). A broker **PDF** can be opened too, but it only extracts the
    text for you to enter by hand — it does not import trades. Live **API pulls** work for
-   Zerodha, Dhan and Angel One (Import → Connect broker) — Angel One runs unattended from your
+   Zerodha, Dhan, Upstox and Angel One (Import → Connect broker) — Angel One runs unattended from your
    TOTP secret, and all API credentials are stored encrypted, bound to this machine, and sent
    nowhere except the broker itself. Any other broker's CSV/XLSX
    imports through the column mapper — Vyuha asks once and remembers.

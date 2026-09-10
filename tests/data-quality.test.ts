@@ -766,7 +766,9 @@ describe("the DuplicateFix card", () => {
   const src = readFileSync(path.join(process.cwd(), "components", "quality", "duplicate-fix.tsx"), "utf8");
 
   it("M-5 — a button is rendered only for a REMOVABLE account", () => {
-    expect(src).toMatch(/\.filter\(\(a\) => a\.removable\)[\s\S]{0,400}?Remove the copy in \{a\.name\}/);
+    // The span cap is CRLF-safe by margin: the gap is 398 chars on LF and 408 on the
+    // Windows CI checkout — a 400 cap went red there (CI 34464285189) while green here.
+    expect(src).toMatch(/\.filter\(\(a\) => a\.removable\)[\s\S]{0,800}?Remove the copy in \{a\.name\}/);
     // The unfiltered map is gone: every account no longer gets a button.
     expect(src).not.toMatch(/\{g\.accounts\.map\(\(a\) => \(\r?\n\s*<Button/);
   });

@@ -53,8 +53,8 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 > (`tests/broker-identity.test.ts`, `tests/broker-route-hardening.test.ts`) · Data Quality cross-account duplicate connections +
 > trade groups with one-click "remove the copy" `lib/analytics/data-quality.ts`, `app/data-quality/actions.ts`,
 > `components/quality/duplicate-fix.tsx` (`tests/data-quality.test.ts`) · **FIFO auto-close at import** — money path —
-> `lib/import/close-open-lots.ts`, `lib/import/commit.ts` (`tests/auto-close-fifo.test.ts`, 15 tests = 4 planner + 7 scenarios with
-> sub-cases; the dedup-guard-order mutant was run once at build time, not pinned) ·
+> `lib/import/close-open-lots.ts`, `lib/import/commit.ts` (`tests/auto-close-fifo.test.ts`, 15 tests at `265d684` = 4 planner + 11 across
+> six scenario blocks; the dedup-guard-order mutant was run once at build time, not pinned) ·
 > `/risk` "spot?" chip → editor via `POST /api/risk/spot` (`app/api/risk/spot/route.ts`) + EOD-close fallback, pure helpers in
 > `lib/risk/spot-ref.ts` (`tests/spot-mark.test.ts`) · **new repo-wide guard `tests/client-value-imports.test.ts`** — a server
 > module may import only component names from a `"use client"` module (Next stubs value imports to THROW at request time; vitest
