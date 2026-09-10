@@ -193,6 +193,9 @@ interface Fixture {
 const FIXTURES: Fixture[] = [
   // §4 1–4, singles
   { id: "long-call", legs: [ce(100, "long", 5)], maxProfit: null, maxLoss: -5, breakevens: [105] },
+  // Boundary (M-1): a premium above 15 % of the strike puts the breakeven past
+  // the chart pad, so the vertex scan alone never reaches it.
+  { id: "long-call", legs: [ce(1000, "long", 200)], maxProfit: null, maxLoss: -200, breakevens: [1200] },
   { id: "long-put", legs: [pe(100, "long", 5)], maxProfit: 95, maxLoss: -5, breakevens: [95] },
   { id: "short-call", legs: [ce(100, "short", 5)], maxProfit: 5, maxLoss: null, breakevens: [105] },
   { id: "short-put", legs: [pe(100, "short", 5)], maxProfit: 5, maxLoss: -95, breakevens: [95] },

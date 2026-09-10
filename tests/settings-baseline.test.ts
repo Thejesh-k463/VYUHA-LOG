@@ -1,8 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 import { BASELINE_SETTINGS_FIELDS, pickBaselineSettings, diffAgainstBaseline, buildBaseline } from "@/lib/domain/settings-baseline";
 // PURE (no DB) — safe to import statically beside openTempDb; see its header.
 import { SETTINGS_MACHINE_COLUMNS } from "@/lib/backup-format";
+import { DEFAULT_SHELF, defaultShelf, serializeShelf } from "@/lib/domain/strategy-shelf";
 
 /**
  * "My Default Settings". The property that matters most: a restore returns
@@ -136,5 +139,50 @@ describe("capture and restore (integration)", () => {
     expect(d.fields.sort()).toEqual(["accentSkin", "fyStartMonth"]);
     expect(d.capturedAt).toBeTruthy();
     expect(d.rateRows).toBeGreaterThan(0);
+  });
+});
+
+describe("the shelf field does not manufacture a phantom difference (S-1)", () => {
+  // `strategy_shelf_json` has two encodings of the same shelf: null (untouched)
+  // and the explicit eight that the shelf route's `restore` writes. Compared by
+  // JSON.stringify they differ, so a baseline saved on a fresh install listed
+  // `strategyShelfJson` under "Restoring would change:" while a restore would
+  // have changed nothing a user can see.
+  const base = (shelf: unknown) =>
+    buildBaseline({ theme: "dark", strategyShelfJson: shelf }, [], [], []);
+
+  it("null in the baseline vs the explicit default envelope is NOT a change", () => {
+    const b = base(null);
+    expect(diffAgainstBaseline({ theme: "dark", strategyShelfJson: serializeShelf(defaultShelf()) }, b)).toEqual([]);
+    // ...and the other way round, which is what a Restore-defaults leaves behind.
+    const b2 = base(serializeShelf(defaultShelf()));
+    expect(diffAgainstBaseline({ theme: "dark", strategyShelfJson: null }, b2)).toEqual([]);
+  });
+
+  it("a shelf the user really changed IS listed", () => {
+    const b = base(null);
+    const nine = serializeShelf({ selected: [...DEFAULT_SHELF, "short-strangle"] });
+    expect(diffAgainstBaseline({ theme: "dark", strategyShelfJson: nine }, b)).toEqual(["strategyShelfJson"]);
+    expect(diffAgainstBaseline({ theme: "dark", strategyShelfJson: serializeShelf({ selected: [] }) }, b)).toEqual([
+      "strategyShelfJson",
+    ]);
+  });
+
+  it("every other field still compares by value", () => {
+    const b = base(null);
+    expect(diffAgainstBaseline({ theme: "light", strategyShelfJson: null }, b)).toEqual(["theme"]);
+  });
+
+  it("names the field in English -- no raw column name reaches the user", () => {
+    // FIELD_LABELS is module-local in a client component; the pin reads the
+    // source rather than pulling React into a temp-db test file.
+    const src = fs.readFileSync(
+      path.join(process.cwd(), "components", "settings", "default-settings-card.tsx"),
+      "utf8",
+    );
+    expect(src).toContain('strategyShelfJson: "strategy shelf"');
+    for (const f of BASELINE_SETTINGS_FIELDS) {
+      expect(src, `${f} would print as a raw column name`).toContain(`${f}:`);
+    }
   });
 });

@@ -115,6 +115,56 @@ export function parseShelf(raw: string | null, validIds: readonly string[]): She
   return { selected: uniq(env.selected.filter((id): id is string => typeof id === "string" && allowed.has(id))) };
 }
 
+/**
+ * Read the SELECTION out of a stored column value, without a catalogue.
+ *
+ * Deliberately NOT `parseShelf`: that one validates ids and is the app's read
+ * path. This one answers a narrower question -- "what selection does this
+ * string encode?" -- and returns null for anything that is not a v1 envelope, so
+ * the caller can fall back to comparing the raw strings instead of pretending an
+ * unreadable value means the defaults.
+ */
+function shelfSelection(raw: string | null): string[] | null {
+  if (!raw) return [...DEFAULT_SHELF]; // null (and "") IS the default shelf
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const env = parsed as Partial<ShelfEnvelope>;
+  if (env.v !== SHELF_ENVELOPE_VERSION || !Array.isArray(env.selected)) return null;
+  if (!env.selected.every((id) => typeof id === "string")) return null;
+  return env.selected;
+}
+
+/**
+ * Do two stored column values mean the same shelf?
+ *
+ * The column has TWO encodings of "the eight defaults": null on an untouched
+ * install (the migration header and DEFAULT_SHELF both say so) and the explicit
+ * `{v:1,selected:[...8]}` that the shelf route's `restore` writes on purpose --
+ * friendlier to the backup round-trip. Comparing them as strings makes "My
+ * Default Settings" report a difference that a restore would not change, which
+ * is a phantom on a screen whose whole job is to say what WOULD change.
+ *
+ * Order is significant: the shelf renders in the order it was built, so a
+ * re-ordered selection is a real difference. Anything unreadable falls back to
+ * string equality rather than being folded into the defaults -- two different
+ * broken values are not "the same shelf".
+ *
+ * Pure and catalogue-free, like the rest of this module: it never asks whether
+ * an id exists, only whether the two sides say the same thing.
+ */
+export function shelfJsonEquivalent(a: string | null, b: string | null): boolean {
+  if (a === b) return true;
+  const sa = shelfSelection(a);
+  const sb = shelfSelection(b);
+  if (sa === null || sb === null) return a === b;
+  return sa.length === sb.length && sa.every((id, i) => id === sb[i]);
+}
+
 /** Write the persisted column. Always the current envelope version. */
 export function serializeShelf(state: ShelfState): string {
   const env: ShelfEnvelope = { v: SHELF_ENVELOPE_VERSION, selected: uniq(state.selected) };

@@ -313,13 +313,40 @@ export function computeStrategy(
     }
   }
 
+  // ...and the crossing those vertices CANNOT see. Above the highest strike the
+  // payoff is a straight line of slope `upSlope`, and that line can cross zero
+  // far beyond the chart's right edge: a 20000 CE bought at 4,000 breaks even at
+  // 24,000, well past maxK + pad. Scanning the vertices alone dropped it and the
+  // card printed a blank, which invariant 6 reserves for "no breakeven exists".
+  // The LOWER side needs no such rescue: vertex 0 is always in the list and the
+  // underlying cannot settle below it, so a crossing under the lowest strike is
+  // inside the scan by construction.
+  // Units: `payoffAt` is total rupees and `upSlope` is total rupees per price
+  // unit, so the quotient is a price.
+  const pnlAtMaxK = payoffAt(legs, maxK);
+  if ((pnlAtMaxK < 0 && upSlope > 0) || (pnlAtMaxK > 0 && upSlope < 0)) {
+    const be = r2(maxK - pnlAtMaxK / upSlope);
+    // The scan already reports any crossing inside the range, to the same paisa.
+    if (Number.isFinite(be) && be > maxK && !breakevens.some((x) => Math.abs(x - be) < 0.005)) {
+      breakevens.push(be);
+    }
+  }
+
   // Chart series: evenly sampled across a focused range (exact since piecewise-linear).
   // On a multi-expiry group this is research-note §7 option A — the curve is drawn
   // at the NEAREST expiry with the far legs at intrinsic, which understates a long
   // far leg and overstates a short one.
+  // Show that crossing: when a breakeven landed beyond the right edge, the chart
+  // stretches just past it. ONLY then -- a group whose breakevens already sat
+  // inside the range keeps its exact grid, and so do its goldens. The vertices
+  // above are deliberately NOT extended: max profit / max loss are read off them
+  // and must not move because the picture got wider.
+  const maxBe = breakevens.length ? Math.max(...breakevens) : 0;
+  const chartHi = maxBe > cHi ? maxBe * 1.05 : cHi;
+
   const N = 61;
   const payoff = Array.from({ length: N }, (_, i) => {
-    const price = cLo + ((cHi - cLo) * i) / (N - 1);
+    const price = cLo + ((chartHi - cLo) * i) / (N - 1);
     return { price: r2(price), pnl: r2(payoffAt(legs, price)) };
   });
 

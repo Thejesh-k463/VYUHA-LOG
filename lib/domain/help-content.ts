@@ -92,9 +92,17 @@ export const HELP_ENTRIES: HelpEntry[] = [
       // v4.3 wave 2. The old sentence said "by underlying and expiry", which
       // described a grouping the catalogue no longer uses: expiry became a LEG
       // attribute so a calendar stays one position instead of splitting in two.
-      "Groups your open legs per underlying symbol, carrying expiry as an attribute of each leg rather than as a second grouping key — so a calendar or a diagonal stays one position instead of splitting into two.",
+      "Groups your open legs per underlying symbol, carrying expiry as an attribute of each leg rather than as a second grouping key — so a calendar or a diagonal stays one position instead of splitting into two. A symbol whose legs together fit no single shape is split per expiry, so each expiry is read on its own.",
       "Recognises the structure against a catalogue of 40 named shapes — verticals, straddles, strangles, condors, butterflies, ratios, backspreads, calendars, synthetics, the box and the jade lizard among them — and draws the exact expiry payoff with breakevens, max profit and max loss. On a group carrying more than one expiry the curve is drawn at the nearest one, the far legs are valued at intrinsic only, and the card states that instead of printing a confident max profit.",
-      "A shelf of your own saved shapes sits beside the recognised ones, so a structure you trade repeatedly is named the way you name it. The shelf is Pro; the grouping, the recognition and the payoff are free.",
+      // v4.3 audit round 3 (D-1, D-2). This paragraph described an app that was
+      // never built: it advertised user-named shapes ("named the way you name
+      // it") when the shelf is a SELECTION of catalogue tiles, and it called the
+      // recognition free when `withholdForFree`
+      // (components/strategies/strategy-copy.ts) renames every non-`legacyFree`
+      // match to "Custom (n legs)" server-side for a free user. Both sentences
+      // were pinned BY VALUE in the test, which is how they passed a green gate;
+      // they are pinned by the catalogue's own counts now.
+      "The grouping, the payoff curve and the gross figures — labelled before charges — are free for every book, and the sixteen shapes Vyuha named before 4.3 keep their names on the free tier. The other twenty-four names are part of Vyuha Pro: on the free tier a group matching one of them reads as its leg count rather than as a name. The shelf is Pro too — a selection of catalogue tiles pinned above the named groups, with undo, redo and restore-defaults — and so is the picker that edits it. Nothing here carries a name of your own: a shelf tile is a shape from the catalogue.",
       "Every one of the 40 shapes is written up in the Options section of the Help Desk — the legs, how the payoff is computed, who uses it and what it risks — free on every tier, and each card here links straight to its entry.",
     ],
     keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven", "catalogue", "shapes", "butterfly", "calendar", "synthetic", "jade lizard", "shelf"],

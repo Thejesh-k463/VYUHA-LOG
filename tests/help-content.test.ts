@@ -6,6 +6,11 @@ import { OPENALGO_FEED_ENABLED } from "@/lib/quotes/types";
 import { SHIPPED_PROVIDER_IDS, allProviderCapabilities } from "@/lib/quotes/registry";
 import { CONNECTABLE_PROVIDER_IDS } from "@/lib/live/connect-prompt";
 import { NAV_ITEMS } from "@/components/layout/nav-config";
+// READ-ONLY import (v4.3 audit round 3, D-1): the shipped catalogue, so the
+// /strategies entry's free/Pro sentence is derived from `legacyFree` rather
+// than typed out beside it. `lib/analytics/strategy-catalogue.ts` is another
+// builder's file this wave and is not edited here.
+import { CATALOGUE } from "@/lib/analytics/strategy-catalogue";
 // READ-ONLY import (v4.2 fix wave, B-13): the label the Settings card renders.
 // Help that describes a control by a paraphrase cannot be found by its words,
 // so the two are pinned to ONE constant rather than to two strings that agree
@@ -819,6 +824,10 @@ describe("help describes the v4.3 Option Strategies screen", () => {
     expect(text(), "the per-symbol grouping is not stated").toMatch(/per underlying symbol/i);
     expect(text(), "expiry-as-a-leg-attribute is not stated").toMatch(/expiry as an attribute of each leg/i);
     expect(text(), "the reason the grouping changed is not stated").toMatch(/calendar or a diagonal stays one position/i);
+    // …and the other half of the grouping rule: an unmatchable symbol falls
+    // back to per-expiry sub-groups (the wave-2 ruling's "split on match
+    // failure"), which the entry did not state at all.
+    expect(text(), "the split-on-match-failure fallback is not stated").toMatch(/split per expiry/i);
   });
 
   it("names the size of the catalogue and where the write-ups live", () => {
@@ -826,11 +835,75 @@ describe("help describes the v4.3 Option Strategies screen", () => {
     expect(text(), "the Options help section is not pointed at").toMatch(/Options section of the Help Desk/i);
   });
 
-  it("states the tier split — the shelf is Pro, the rest is free", () => {
-    expect(text(), "the user shelf is not described").toMatch(/shelf of your own saved shapes/i);
+  /**
+   * v4.3 audit round 3, D-1 + D-2 — THE TIER SPLIT IS DERIVED, NOT TYPED.
+   *
+   * The two sentences this block used to pin BY VALUE were both false about the
+   * app that shipped, and pinning them by value is precisely why they passed a
+   * green gate:
+   *   - "the grouping, the recognition and the payoff are free" — `withholdForFree`
+   *     (components/strategies/strategy-copy.ts) renames every non-`legacyFree`
+   *     match to "Custom (n legs)" server-side for a free user, so 24 of the 40
+   *     names are withheld, not free;
+   *   - "a shelf of your own saved shapes … named the way you name it" — no
+   *     user-naming exists anywhere; the shelf is a `{v:1, selected: string[]}`
+   *     SELECTION of catalogue ids.
+   * The pins below read the boundary out of the catalogue itself, so moving a
+   * row's `legacyFree` flag reddens the copy instead of silently outdating it.
+   */
+  const NUMBER_WORDS: Record<number, string> = {
+    8: "eight",
+    11: "eleven",
+    16: "sixteen",
+    24: "twenty-four",
+    29: "twenty-nine",
+    32: "thirty-two",
+    40: "forty",
+  };
+  const spell = (n: number): string => {
+    const w = NUMBER_WORDS[n];
+    // A count with no word is a test that would quietly stop asserting.
+    if (!w) throw new Error(`no number word for ${n} — extend NUMBER_WORDS in this test`);
+    return w;
+  };
+
+  it("states the tier split in the catalogue's OWN counts, spelled out", () => {
+    const free = CATALOGUE.filter((d) => d.legacyFree).length;
+    const withheld = CATALOGUE.length - free;
+    expect(free, "no row is legacyFree — the free-tier boundary moved").toBeGreaterThan(0);
+    expect(withheld, "nothing is withheld — the Pro boundary moved").toBeGreaterThan(0);
+    expect(
+      text(),
+      `${free} names stay free but the entry does not say "${spell(free)}"`,
+    ).toMatch(new RegExp(`\\b${spell(free)}\\b`, "i"));
+    expect(
+      text(),
+      `${withheld} names are withheld on the free tier but the entry does not say "${spell(withheld)}"`,
+    ).toMatch(new RegExp(`\\b${spell(withheld)}\\b`, "i"));
     expect(text(), "the shelf's tier is not stated").toMatch(/The shelf is Pro/);
-    expect(text(), "what stays free is not stated").toMatch(/grouping, the recognition and the payoff are free/i);
     expect(text(), "the Options help's tier is not stated").toMatch(/free on every tier/i);
+    expect(text(), "the figures are gross — 'before charges' is not stated").toMatch(/before charges/i);
+  });
+
+  it("claims no shape-naming the app does not have", () => {
+    expect(text(), "the entry still advertises user-named shapes").not.toMatch(
+      /named the way you name it/i,
+    );
+    expect(text(), "the shelf is a pick of catalogue tiles, not saved shapes of your own").not.toMatch(
+      /your own saved shapes/i,
+    );
+    expect(text(), "the shelf must be described as a selection of catalogue tiles").toMatch(
+      /selection of catalogue tiles/i,
+    );
+  });
+
+  it("never calls the recognition free in the same breath — most of the names are withheld", () => {
+    // recognis|recogniz|recognit — "recognised", "recognizes" AND "recognition".
+    const both = (s: string) => /recogni[szt]/i.test(s) && /\bfree\b/i.test(s);
+    const offenders = text().split(/(?<=\.)\s+/).filter(both);
+    expect(offenders, `the entry claims recognition is free:\n${offenders.join("\n")}`).toEqual([]);
+    // The scan is not dead: this is the sentence that was there.
+    expect(both("The shelf is Pro; the grouping, the recognition and the payoff are free."), "the scan is dead").toBe(true);
   });
 
   it("carries no href for an options structure — the NAV join above would fail on one", () => {

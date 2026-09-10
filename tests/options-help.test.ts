@@ -7,9 +7,11 @@ import {
   OPTIONS_STRATEGY_IDS,
   OPTIONS_STYLES,
   optionsAnchorId,
+  optionsHashTarget,
   rupeesInLakh,
   searchOptionsHelp,
   sebiRealityLine,
+  visibleOptions,
   type OptionsHelpEntry,
 } from "@/lib/domain/options-help";
 import { searchHelp, type HelpHit } from "@/lib/domain/help-content";
@@ -329,6 +331,90 @@ describe("search reaches the structures", () => {
     );
     expect(src, "the option commands do not deep-link to the help desk").toContain(
       "`/help#${opts.optionsAnchorId(e.id)}`",
+    );
+  });
+});
+
+/**
+ * U-4 (v4.3 audit round 3) — A DEEP LINK MUST LAND EVEN INTO A FILTERED DESK.
+ *
+ * The palette pushes `/help#options-<id>`. When the reader is ALREADY on /help
+ * with a query typed, the desk rendered `searchOptionsHelp(options, q)` only:
+ * the named card was filtered out, its anchor was not in the DOM, and — a
+ * same-path hash push not being a remount — nothing scrolled and nothing on
+ * screen changed. `visibleOptions` adds the fragment's own entry back.
+ */
+describe("a deep link lands even when the search filtered its card out (U-4)", () => {
+  it("keeps the entry the fragment names when the query dropped it", () => {
+    // "backup" is a Help Desk word that appears in NO options entry — the
+    // filter that produced the defect.
+    expect(searchOptionsHelp(OPTIONS_HELP, "backup"), "the query hits an entry, so the case is untested").toEqual([]);
+    const shown = visibleOptions(OPTIONS_HELP, "backup", "#options-jade-lizard");
+    expect(shown.map((e) => e.id), "the deep link's anchor is not rendered").toEqual(["jade-lizard"]);
+  });
+
+  it("with no fragment the query alone decides — the server render is untouched", () => {
+    expect(visibleOptions(OPTIONS_HELP, "backup", "")).toEqual([]);
+    // Identity, not a copy: the empty desk renders exactly what it rendered before.
+    expect(visibleOptions(OPTIONS_HELP, "", "")).toBe(OPTIONS_HELP);
+  });
+
+  it("a fragment for something else changes nothing", () => {
+    expect(visibleOptions(OPTIONS_HELP, "backup", "#options-not-a-shape")).toEqual([]);
+    expect(visibleOptions(OPTIONS_HELP, "backup", "#options-")).toEqual([]);
+    expect(visibleOptions(OPTIONS_HELP, "backup", "#settings")).toEqual([]);
+    expect(visibleOptions(OPTIONS_HELP, "backup", "")).toEqual([]);
+    expect(optionsHashTarget("#options-iron-condor")).toBe("iron-condor");
+    expect(optionsHashTarget("options-iron-condor"), "the bare fragment is read too").toBe("iron-condor");
+    expect(optionsHashTarget("#help")).toBeNull();
+  });
+
+  it("catalogue order survives — the target is not appended after the hits", () => {
+    const shown = visibleOptions(OPTIONS_HELP, "iron condor", "#options-long-call");
+    expect(shown[0].id, "the target was appended instead of slotted in").toBe("long-call");
+    expect(shown.map((e) => e.id)).toContain("iron-condor");
+    // A hit the fragment also names is not duplicated.
+    const once = visibleOptions(OPTIONS_HELP, "iron condor", "#options-iron-condor");
+    expect(once.filter((e) => e.id === "iron-condor")).toHaveLength(1);
+  });
+
+  /**
+   * THE COSMETIC HALF of U-4 (round 3, B3b). With the card rendered the reader
+   * still saw nothing move: Next runs its own hash scroll at navigation commit,
+   * while the anchor is still absent from the DOM. So the desk scrolls to it
+   * itself, from an effect keyed on the TARGET ID — once per deep link, never
+   * once per keystroke in `q` — whose body only calls a DOM method, the one
+   * thing AGENTS.md leaves an effect free to do. `getElementById` returning
+   * null IS the "is that card among the rendered options" question, asked of
+   * the document after this render wrote it, so an unknown fragment no-ops.
+   */
+  it("scrolls the fragment's card into view, from an effect keyed on the target id alone", () => {
+    const src = read(DESK);
+    const m = /React\.useEffect\(\(\)\s*=>\s*\{([\s\S]{0,800}?)\},\s*\[([^\]]*)\]\s*\);/.exec(src);
+    expect(m, "the desk runs no effect — Next's hash scroll fires before the card exists").not.toBeNull();
+    const [, body, deps] = m!;
+    expect(body, "the effect never looks the anchor up in the document").toMatch(
+      /document\.getElementById\(optionsAnchorId\(/,
+    );
+    expect(body, "the effect does not scroll the card into view").toMatch(/scrollIntoView\(\{ block: "start" \}\)/);
+    expect(body, "the effect does not no-op on an empty or unknown fragment").toMatch(/if\s*\(!/);
+    const names = deps
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    expect(names, `the effect re-runs on [${deps}] — a keystroke in q would yank the page`).toHaveLength(1);
+    expect(src, `${names[0]} is not the id the fragment names`).toMatch(
+      new RegExp(String.raw`const\s+${names[0]}\s*=\s*optionsHashTarget\(hash\)`),
+    );
+  });
+
+  it("the desk reads the fragment through a store, never a setState in an effect", () => {
+    const src = read(DESK);
+    expect(src, "the desk still filters on the query alone").toContain("visibleOptions(options, q, hash)");
+    expect(src, "the fragment is not read as an external store").toContain("React.useSyncExternalStore");
+    expect(src, "no server snapshot — SSR would touch window").toMatch(/\(\)\s*=>\s*""/);
+    expect(src, "a setState in an effect is what broke the Trades filter").not.toMatch(
+      /useEffect\([\s\S]{0,200}?set[QH]/,
     );
   });
 });

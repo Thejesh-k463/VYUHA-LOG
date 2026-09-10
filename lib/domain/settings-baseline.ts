@@ -34,6 +34,8 @@
 // Rate tables (charge/margin/risk) ARE part of the baseline: the user chose
 // those numbers, and "back to my defaults" should mean the rates they trust.
 
+import { shelfJsonEquivalent } from "./strategy-shelf";
+
 export const BASELINE_SETTINGS_FIELDS = [
   "equityCapital",
   "activeCapital",
@@ -110,6 +112,9 @@ export function isBaseline(v: unknown): v is SettingsBaseline {
  * What a restore would change, for the confirmation line. Compares only the
  * baseline fields — state fields cannot differ because they are never stored.
  */
+/** A settings column read back as `unknown`: a string, or "no value stored". */
+const asShelfJson = (v: unknown): string | null => (typeof v === "string" ? v : v == null ? null : JSON.stringify(v));
+
 export function diffAgainstBaseline(
   current: Record<string, unknown>,
   baseline: SettingsBaseline,
@@ -122,6 +127,12 @@ export function diffAgainstBaseline(
     // (drizzle drops undefined from .set()). Without this, every upgraded
     // install shows a permanent phantom "differs from default".
     if (!(f in baseline.settings)) return false;
+    // One field has two encodings of the same value: `strategy_shelf_json` is
+    // null on an untouched install and the explicit eight after a shelf
+    // "Restore defaults". By string they differ; to the user they do not, and
+    // this line is what the user is shown as "would change". Every other field
+    // is compared by value, as before.
+    if (f === "strategyShelfJson") return !shelfJsonEquivalent(asShelfJson(a), asShelfJson(b));
     return JSON.stringify(a) !== JSON.stringify(b);
   });
 }

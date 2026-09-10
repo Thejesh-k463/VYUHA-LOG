@@ -10,8 +10,12 @@ import { STRATEGY_COPY, type PickerRow } from "./strategy-copy";
  * THE PICKER — the whole catalogue, grouped by the audience its row names.
  *
  * The rows arrive as a prop from the server page, already trimmed to four
- * fields, so this component never imports the catalogue itself: a free build
- * is sent no rows and bundles none.
+ * fields, so this component never imports the catalogue itself. That is a PROP
+ * boundary and not a bundling one: `strategy-copy.ts` value-imports
+ * `getStrategyDef` and `legKind`, so the whole 40-row catalogue is in the
+ * client chunk of every build, free included (the names are public on /help
+ * anyway). What a free build is not SENT is the rows in the RSC props — the
+ * picker for a shelf the route would refuse to store.
  *
  * OPEN/CLOSED IS LOCAL AND DERIVED FROM A CLICK, never from an effect keyed on
  * the selection. A `setState` inside a `useEffect` keyed on other state is the

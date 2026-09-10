@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
 import {
@@ -26,12 +27,25 @@ import { StrategyCard } from "./strategy-card";
  * drawer and (worse) whose UNDO HISTORY would reset on every tick. So: route
  * handler + `fetch`, exactly as the charge editor and the live-feed card do.
  *
- * AND THE ANSWER IS FOLDED, not re-fetched and not refreshed
- * (`components/settings/live-feed-card.tsx:603`). A route refresh does not
- * re-run an initialiser, so a strip initialised from the server prop would go
- * on printing the shelf that was there BEFORE the write. The route re-reads the
- * row it wrote, so its body IS the database; `foldShelfPost` is pure and
- * `tests/strategies-page.test.ts` drives it with a real route shape.
+ * THE ANSWER IS FOLDED, AND THEN THE CACHE IS PURGED — both, and they answer
+ * different questions.
+ *
+ * The FOLD is what keeps THIS screen right (`live-feed-card.tsx:603`): a route
+ * refresh does not re-run an initialiser, so a strip seeded from the server
+ * prop would go on printing the shelf that was there BEFORE the write. The
+ * route re-reads the row it wrote, so its body IS the database; `foldShelfPost`
+ * is pure and `tests/strategies-page.test.ts` drives it with a real route shape.
+ *
+ * The `router.refresh()` keeps the NEXT MOUNT right. `next.config.ts` holds the
+ * client router cache for 120s (`staleTimes: { dynamic: 120 }`) and Back reuses
+ * the page payload regardless; docs/DECISIONS.md:2038-2056 granted that on the
+ * condition that EVERY write path refresh after its write. Without it: tick a
+ * tile (the database now holds nine ids), navigate away with the sidebar and
+ * come back, and the island re-mounts on the CACHED eight-id prop — the next
+ * tick posts the stale eight and the first tick is gone from the database. So
+ * the refresh follows a SUCCESSFUL fold, exactly as
+ * `components/settings/charge-editor.tsx:79` and `live-feed-card.tsx:813` do
+ * after theirs. A refusal stored nothing and refreshes nothing.
  *
  * NO EFFECT ANYWHERE. Everything on this screen is derived at render from
  * `history.present` and the props — the rule AGENTS.md states after the Trades
@@ -57,6 +71,7 @@ export function StrategiesClient({
   pro: boolean;
 }) {
   const [history, setHistory] = React.useState(() => initShelfHistory(shelf));
+  const router = useRouter();
 
   /**
    * Which write is the latest. Two quick ticks can answer out of order, and
@@ -78,6 +93,9 @@ export function StrategiesClient({
     // A no-op (unticking what was never ticked, undo with no history) must not
     // spend a round-trip either.
     if (next === history) return;
+    // The state to go back to if the route refuses. Taken BEFORE the optimistic
+    // render, because after it there is nothing left holding the old shelf.
+    const previous = history;
     setHistory(next);
     const mine = ++latest.current;
     const body =
@@ -88,9 +106,27 @@ export function StrategiesClient({
       if (mine !== latest.current) return;
       if (!r.ok) {
         toast.error(r.error);
+        // PUT THE STRIP BACK. A 403, a 400 or an unreachable route stored
+        // nothing, and a tile left on screen after "Nothing was stored" is the
+        // screen and the database disagreeing in the one direction the user
+        // cannot see. The update is FUNCTIONAL and guarded on identity so a
+        // tick that landed in the meantime is not overwritten by this revert
+        // (`live-feed-card.tsx` store()/saveSeconds(), fix wave 8).
+        //
+        // RESIDUAL, recorded rather than fixed: tick A is accepted and tick B
+        // is then refused — `cur` is B's state, so the revert lands on A's
+        // state, not on the state before A. That is the stored shelf, which is
+        // the right place to land; it is stated here so nobody reads it as a
+        // bug later.
+        setHistory((cur) => (cur === next ? previous : cur));
         return;
       }
+      // The screen takes the route's re-read, and the client router cache is
+      // purged behind it: the store has moved, so every cached RSC payload of
+      // this route would seed the next mount from a shelf one tick old — and
+      // the tick after that would post it back. See the header.
       setHistory((cur) => foldShelfPost(cur, r));
+      router.refresh();
     });
   };
 

@@ -9,6 +9,7 @@ import {
   initShelfHistory,
   parseShelf,
   serializeShelf,
+  shelfJsonEquivalent,
   shelfReducer,
   type ShelfHistory,
   type ShelfState,
@@ -204,5 +205,48 @@ describe("migration 0071 — settings.strategy_shelf_json, on a really migrated 
     expect(parseShelf(back!.shelf, VALID)).toEqual(mine);
     // Leave the row as the rest of the file found it.
     t.db.update(t.schema.settings).set({ strategyShelfJson: null }).run();
+  });
+});
+
+describe("shelfJsonEquivalent — null and the explicit eight are ONE value (S-1)", () => {
+  // The column carries two encodings of "the eight defaults": null (an untouched
+  // install) and the explicit envelope the shelf route's `restore` writes. A
+  // by-string diff calls those different and "Restoring would change:" names a
+  // field nothing would change -- a phantom, and invariant 6 in miniature.
+  const explicitDefault = serializeShelf(defaultShelf());
+  const nine = serializeShelf({ selected: [...DEFAULT_SHELF, "short-strangle"] });
+
+  it("treats null and the explicit default envelope as the same value", () => {
+    expect(shelfJsonEquivalent(null, explicitDefault)).toBe(true);
+    expect(shelfJsonEquivalent(explicitDefault, null)).toBe(true);
+    expect(shelfJsonEquivalent(null, null)).toBe(true);
+  });
+
+  it("does NOT treat null as a shelf the user actually changed", () => {
+    expect(shelfJsonEquivalent(null, nine)).toBe(false);
+    expect(shelfJsonEquivalent(nine, null)).toBe(false);
+    // Emptying the shelf is a real choice and must read as a difference.
+    expect(shelfJsonEquivalent(null, serializeShelf({ selected: [] }))).toBe(false);
+  });
+
+  it("compares two envelopes by their selection, not their bytes", () => {
+    expect(shelfJsonEquivalent(nine, JSON.stringify(JSON.parse(nine)))).toBe(true);
+    expect(shelfJsonEquivalent(nine, '{ "v": 1, "selected": ' + JSON.stringify(JSON.parse(nine).selected) + " }")).toBe(true);
+    // Order is part of the preference -- the shelf renders in the order stored.
+    expect(shelfJsonEquivalent(explicitDefault, serializeShelf({ selected: [...DEFAULT_SHELF].reverse() }))).toBe(false);
+  });
+
+  it("falls back to string equality for anything that is not an envelope", () => {
+    expect(shelfJsonEquivalent("not json", null)).toBe(false);
+    expect(shelfJsonEquivalent("not json", "not json")).toBe(true);
+    expect(shelfJsonEquivalent("not json", "other junk")).toBe(false);
+    // A future version is not readable, so it is not equal to the defaults.
+    expect(shelfJsonEquivalent(null, '{"v":2,"selected":[]}')).toBe(false);
+  });
+
+  it("needs no catalogue: unknown ids are compared, never validated", () => {
+    const alien = serializeShelf({ selected: ["no-such-strategy"] });
+    expect(shelfJsonEquivalent(alien, alien)).toBe(true);
+    expect(shelfJsonEquivalent(alien, null)).toBe(false);
   });
 });

@@ -328,3 +328,50 @@ describe("underlying legs", () => {
     expect(s.capLabel.maxLoss).toBe("Computed at underlying = 0");
   });
 });
+
+describe("a breakeven beyond the chart's right edge is still a breakeven (M-1)", () => {
+  // The chart range is strikes ± a pad of max(spread × 0.6, maxStrike × 0.15, 50),
+  // and the vertex scan used to stop there. Any position still under water at that
+  // edge with a positive slope above the top strike lost its upper breakeven
+  // silently: `breakevens: []`, printed as "—" — the same blank a box spread earns
+  // for having none at all (invariant 6: a blank must mean "none exists").
+  const deepItm = [leg("CE", 20000, "long", 4000, 50)];
+
+  it("finds the deep-ITM long call's breakeven analytically (strike + premium)", () => {
+    const s = computeStrategy("NIFTY", "2026-09-25", deepItm);
+    expect(s.breakevens).toEqual([24000]);
+    expect(s.maxProfit).toBeNull(); // still unbounded above
+    expect(s.maxLoss).toBe(-200000); // the whole premium
+  });
+
+  it("widens the chart so the curve actually crosses zero", () => {
+    const s = computeStrategy("NIFTY", "2026-09-25", deepItm);
+    expect(s.payoff.length).toBe(61);
+    expect(s.payoff[60].price).toBeGreaterThanOrEqual(24000);
+    expect(s.payoff[60].pnl).toBeGreaterThan(0);
+  });
+
+  it("finds it on the short side too, with max loss still unbounded", () => {
+    const s = computeStrategy("NIFTY", "2026-09-25", [leg("CE", 20000, "short", 4000, 50)]);
+    expect(s.breakevens).toEqual([24000]);
+    expect(s.maxLoss).toBeNull();
+  });
+
+  it("leaves a position whose breakeven was already inside the range untouched", () => {
+    // 2999 is one rupee under the pad (20000 × 0.15 = 3000): the old vertex scan
+    // found this one, and it must still read exactly the same, chart included.
+    const s = computeStrategy("NIFTY", "2026-09-25", [leg("CE", 20000, "long", 2999, 50)]);
+    expect(s.breakevens).toEqual([22999]);
+    expect(s.payoff[60]).toEqual({ price: 23000, pnl: 50 });
+  });
+
+  it("still reports NO breakeven for a box spread, which genuinely has none", () => {
+    const box = [
+      leg("CE", 90, "long", 12), leg("PE", 90, "short", 1),
+      leg("CE", 100, "short", 5), leg("PE", 100, "long", 2),
+    ];
+    const s = computeStrategy("X", "2026-06-25", box);
+    expect(s.strategyId).toBe("box-spread");
+    expect(s.breakevens).toEqual([]);
+  });
+});

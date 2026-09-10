@@ -391,7 +391,9 @@ describe("S2 — a free build never ships the withheld name, on the card or in t
     expect(html).not.toContain("call-ratio-spread");
     expect(text).not.toContain("Call Ratio Spread");
     // The link falls back to the section top — there is no shape to deep-link.
-    expect(html).toContain('href="/help#options"');
+    // Taken from `helpHref` rather than written out, so the card and the
+    // fallback are one fact; S12 is where that fragment is proved to EXIST.
+    expect(html).toContain(`href="${helpHref(null)}"`);
   });
 });
 
@@ -596,9 +598,16 @@ describe("S12 — every card's 'How this works' href exists as an anchor in the 
     }
   });
 
-  it("helpHref falls back to the section top for an unnamed group, and that anchor exists too", () => {
-    expect(helpHref(null)).toBe("/help#options");
-    expect(deskHtml).toContain('id="options-help"');
+  it("helpHref falls back to the section top for an unnamed group, and THAT anchor exists too", () => {
+    // U-2. This used to assert the href literal `/help#options` and then, on
+    // the next line, that the desk rendered `id="options-help"` — two different
+    // ids, so the test agreed with itself while the link was dead. The id is
+    // now DERIVED from the href the code returns, which is the only form that
+    // can fail: a Custom card's link lands where the desk actually has a target.
+    const href = helpHref(null);
+    const id = href.split("#")[1];
+    expect(id, `${href} carries no fragment at all`).toBeTruthy();
+    expect(deskHtml, `the desk renders no id="${id}" for ${href}`).toContain(`id="${id}"`);
   });
 
   it("searchHelp('iron condor') returns the options entry, in the union form the palette reads", () => {
@@ -791,6 +800,43 @@ describe("S9 — one entitlement, both halves: the route refuses and the page lo
     expect(text).toContain("Bull Call Spread");
     expect(text).toContain(STRATEGY_COPY.browseOpen);
     expect(text).not.toContain(STRATEGY_COPY.shelfLocked);
+  });
+
+  it("a LAPSED trial on a Pro shelf: locked strip, no Pro name in the props, and nothing that could post", async () => {
+    // Every free-build case above starts from a shelf a free build could have
+    // built. This one stores a shape only Pro can pick and THEN takes the
+    // licence away — which is what an expired trial actually looks like, and
+    // the only path on which a withheld NAME is already sitting in the store.
+    await post({ action: "set", selected: ["jade-lizard"] });
+    ent.pro = false;
+
+    const props = propsOf(page.default() as React.ReactElement, StrategiesClient);
+    expect(props!.pro).toBe(false);
+    expect(props!.picker).toBeNull();
+    // The stored id survives — it is the user's own preference and a lapsed
+    // licence does not delete it. What must not cross the wire is the NAME.
+    expect(JSON.stringify(props!.shelf)).not.toContain(getStrategyDef("jade-lizard")!.name);
+
+    const html = renderToStaticMarkup(
+      React.createElement(
+        StrategiesClient,
+        props as unknown as React.ComponentProps<typeof StrategiesClient>,
+      ),
+    );
+    const text = textOf(html);
+    expect(text).toContain(STRATEGY_COPY.shelfLocked);
+    expect(text, "the locked strip lists no names").not.toContain("Jade Lizard");
+
+    // NOTHING ON THIS ISLAND CAN CALL `run()`: the locked strip has no remove
+    // control and the picker is not rendered at all, so the 403 below is a
+    // refusal the free build can never even trigger from the screen.
+    expect(html, "a tile the user could unselect").not.toContain("from the shelf");
+    for (const control of [STRATEGY_COPY.browseOpen, STRATEGY_COPY.restoreDefaults, STRATEGY_COPY.undo]) {
+      expect(text, control).not.toContain(control);
+    }
+
+    const refused = await post({ action: "set", selected: ["jade-lizard"] });
+    expect(refused.status).toBe(403);
   });
 });
 

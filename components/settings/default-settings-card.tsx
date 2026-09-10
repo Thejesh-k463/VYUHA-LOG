@@ -15,9 +15,11 @@ import { RotateCcw, Save } from "lucide-react";
 
 const FIELD_LABELS: Record<string, string> = {
   equityCapital: "equity capital", activeCapital: "F&O capital", theme: "theme",
-  accentSkin: "accent skin", baseCurrency: "currency", fyStartMonth: "FY start",
+  accentSkin: "accent skin", density: "density", workspace: "workspace",
+  baseCurrency: "currency", fyStartMonth: "FY start",
   colorblindSafe: "colorblind mode", defaultBuyOrders: "default buy orders",
   defaultSellOrders: "default sell orders", autoMtmEnabled: "auto-MTM",
+  strategyShelfJson: "strategy shelf",
 };
 
 export function DefaultSettingsCard() {

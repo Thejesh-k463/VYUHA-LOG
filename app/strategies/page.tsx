@@ -23,8 +23,9 @@ import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
  *
  * NOT WRAPPED IN A WHOLE-PAGE GATE, deliberately (invariant 7). The user's own
  * legs, their four figures and the payoff curve are their record and stay free;
- * the Pro capability is the CATALOGUE — the named shape beyond the eight that
- * this screen has always named, and the shelf and picker built on it.
+ * the Pro capability is the CATALOGUE — the named shape beyond the SIXTEEN this
+ * screen has always named (`legacyFree`, not the eight of `DEFAULT_SHELF`;
+ * owner ruling 2026-09-11), and the shelf and picker built on it.
  * `lib/license.ts` carries /strategies as `partial: true`, and
  * `tests/pro-gating.test.ts` holds both halves of that: this file must read
  * `getEntitlement`, and it must not carry a whole-page gate. (That guard reads
@@ -36,9 +37,13 @@ import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
  * locked chip on screen hides nothing at all. `withholdForFree` is pure and
  * `tests/strategies-page.test.ts` proves the absence on the SERIALISED result.
  *
- * THE PICKER'S 40 ROWS ARE SENT ONLY TO A PRO BUILD, for the same reason and
- * for one more: a free build has no use for them, and a payload nobody can act
- * on is weight on every page load.
+ * THE PICKER'S 40 ROWS ARE SENT ONLY TO A PRO BUILD — and the honest statement
+ * of what that buys is narrow. The rows are not a secret: every name is printed
+ * on /help for anyone, and `strategy-copy.ts` value-imports the catalogue into
+ * its client consumers, so all 40 rows sit in the client chunk of every build,
+ * free included. What the free RSC payload withholds is the picker a shelf is
+ * edited through and the MATCH (name and id) of the user's own structures —
+ * which is exactly what the ruling asks for and no more.
  */
 export const dynamic = "force-dynamic";
 

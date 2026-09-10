@@ -127,8 +127,13 @@ export async function POST(req: Request) {
   // The gate first, before the body is read: a free build must not be able to
   // learn what this route would have accepted, and must never reach the write.
   if (!getEntitlement().pro) {
+    // SIXTEEN, not eight (owner ruling 2026-09-11). `DEFAULT_SHELF` is eight
+    // ids and is the shelf's STARTING TILES, not the paywall boundary; the
+    // boundary is `legacyFree` — the sixteen shapes this journal named before
+    // 4.3, which stay free under invariant 7. `tests/strategies-shelf-route.test.ts`
+    // counts those rows in the catalogue and asserts this sentence spells it.
     return refuse(
-      "The strategy shelf is part of Vyuha Pro. Your journal, your trades and the eight default strategies stay free.",
+      "The strategy shelf is part of Vyuha Pro. Your journal, your trades and the sixteen shapes Vyuha already named before 4.3 stay free.",
       403,
     );
   }

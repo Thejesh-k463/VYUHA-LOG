@@ -62,9 +62,18 @@ export const STRATEGY_COPY = {
   /** The accented link on every card, and the anchor it lands on. */
   howThisWorks: "How this works",
 
-  /** The one line beside a `ProLock` where a named shape has been withheld. */
+  /**
+   * The one line beside a `ProLock` where a named shape has been withheld.
+   *
+   * SIXTEEN, not eight (owner ruling 2026-09-11). Eight is `DEFAULT_SHELF` —
+   * the tiles a new shelf starts with — and it is not this boundary. The
+   * boundary `withholdForFree` applies is `legacyFree`: the sixteen names this
+   * screen printed before 4.3, which invariant 7 does not let a release take
+   * away. `tests/strategies-copy.test.ts` counts those rows in the catalogue
+   * and asserts this sentence spells that number.
+   */
   proWithheldNote:
-    "Named shapes beyond the eight defaults are part of Vyuha Pro. Your legs, the four figures and the payoff curve stay free.",
+    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. Your legs, the four figures and the payoff curve stay free.",
 
   /** The shelf, for a free build: a locked strip and one line. */
   shelfLocked: "The strategy shelf and the 40-shape picker are part of Vyuha Pro.",
@@ -90,9 +99,19 @@ export function customName(legCount: number): string {
   return `Custom (${legCount} legs)`;
 }
 
-/** Where a card's "How this works" link lands: the strategy's own entry, or the section top. */
+/**
+ * Where a card's "How this works" link lands: the strategy's own entry, or the
+ * section top.
+ *
+ * THE SECTION TOP IS `options-help`, which is the id the desk's own heading
+ * carries (`components/system/help-desk.tsx`) — `#options` was an anchor no
+ * surface renders, so a Custom card's link opened /help and left the reader
+ * wherever the page happened to start. `tests/seams-v43-wave2.test.ts` (S12)
+ * derives the id FROM this href and asserts the rendered desk contains it, so
+ * a rename on either side is a red test rather than a dead link.
+ */
 export function helpHref(strategyId: string | null): string {
-  return strategyId ? `/help#${optionsAnchorId(strategyId)}` : "/help#options";
+  return strategyId ? `/help#${optionsAnchorId(strategyId)}` : "/help#options-help";
 }
 
 /**
@@ -145,12 +164,19 @@ export function withholdForFree(groups: readonly StrategyGroup[], pro: boolean):
 }
 
 /**
- * FOLD THE ROUTE'S OWN ANSWER — never a `router.refresh()` and never a second
- * fetch. `components/settings/live-feed-card.tsx:603` is the precedent and the
- * scar: an initialiser does NOT re-run after `router.refresh()`, so the panel
- * went on printing the state it had before the write. The shelf route already
- * RE-READS the row it just wrote, so its body is the database, and folding it
- * is what makes the strip and the store impossible to disagree.
+ * FOLD THE ROUTE'S OWN ANSWER — INSTEAD OF a second fetch, and ALONGSIDE the
+ * `router.refresh()` the caller fires, which is a different job.
+ * `components/settings/live-feed-card.tsx:603` is the precedent and the scar:
+ * an initialiser does NOT re-run after a refresh, so a panel that waited for
+ * one went on printing the state it had before the write. The shelf route
+ * already RE-READS the row it just wrote, so its body is the database, and
+ * folding it is what makes the strip and the store impossible to disagree.
+ *
+ * The scar is about the SCREEN, not about the cache. The refresh is still
+ * required — `next.config.ts` holds the client router cache for 120s on the
+ * condition that every write path purges it, and a stale payload re-seeds the
+ * strip on the next mount with a shelf the next tick would then overwrite
+ * (strategies-client.tsx's header states the sequence in full).
  *
  * It does NOT push an undo step: a server echo is not a user action, and
  * `shelfReducer` would otherwise make one Ctrl+Z undo the round-trip rather

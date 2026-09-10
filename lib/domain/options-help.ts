@@ -650,6 +650,48 @@ export function searchOptionsHelp(entries: OptionsHelpEntry[], query: string): O
   );
 }
 
+/**
+ * The strategy id a `/help#…` fragment points at, or null when it points
+ * somewhere else. Accepts the fragment with or without its leading `#`.
+ */
+export function optionsHashTarget(hash: string): string | null {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const prefix = optionsAnchorId("");
+  if (!raw.startsWith(prefix)) return null;
+  const id = raw.slice(prefix.length);
+  return id.length > 0 ? id : null;
+}
+
+/**
+ * WHAT THE DESK RENDERS: the search hits, PLUS the entry the URL fragment names
+ * when the search dropped it.
+ *
+ * v4.3 audit round 3, U-4. The command palette deep-links to
+ * `/help#options-<id>`. Landing on `/help` fresh that works — nothing is typed,
+ * so every card is on the page. But a same-path hash push does NOT remount the
+ * page, so when the reader is already on `/help` with something typed in the
+ * search box, the card the fragment names may have been filtered out: the
+ * anchor is simply not in the DOM and the browser scrolls nowhere. Including
+ * the target keeps the anchor real without touching the query the reader typed.
+ *
+ * Catalogue ORDER is preserved (the target is not appended at the end), and an
+ * empty hash returns exactly `searchOptionsHelp`'s own result — identity when
+ * the query is empty too, so the server render is unchanged.
+ */
+export function visibleOptions(
+  entries: OptionsHelpEntry[],
+  query: string,
+  hash: string,
+): OptionsHelpEntry[] {
+  const hits = searchOptionsHelp(entries, query);
+  const id = optionsHashTarget(hash);
+  if (id === null || hits.some((e) => e.id === id)) return hits;
+  if (!entries.some((e) => e.id === id)) return hits; // a fragment for no entry we have
+  const keep = new Set(hits.map((e) => e.id));
+  keep.add(id);
+  return entries.filter((e) => keep.has(e.id));
+}
+
 /** Entries of one style, in catalogue order. */
 export function optionsByStyle(entries: OptionsHelpEntry[], style: OptionsStyle): OptionsHelpEntry[] {
   return entries.filter((e) => e.style === style);

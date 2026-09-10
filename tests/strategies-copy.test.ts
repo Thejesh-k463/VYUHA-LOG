@@ -10,6 +10,7 @@ import {
   figureDescriptor,
   legCountLabel,
 } from "@/components/strategies/strategy-copy";
+import { CATALOGUE } from "@/lib/analytics/strategy-catalogue";
 import { OPTIONS_HELP_FOOTER } from "@/lib/domain/options-help";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { sebiRealityLine } from "@/lib/domain/options-help";
@@ -57,6 +58,14 @@ function files(): string[] {
  */
 const EXEMPT = [OPTIONS_HELP_FOOTER];
 
+/**
+ * The paywall sentence states its number in words, and the number is a COUNT
+ * of catalogue rows (G-2). Only the count the code actually has is spellable
+ * here: any other count is a loud failure rather than a sentence that quietly
+ * stops matching the boundary it describes.
+ */
+const FREE_COUNT_WORD: Record<number, string> = { 16: "sixteen" };
+
 function copyOf(file: string): string {
   let src = stripComments(fs.readFileSync(file, "utf8"));
   for (const e of EXEMPT) src = src.split(e).join(" ");
@@ -71,9 +80,17 @@ function copyOf(file: string): string {
  * another word character. `\btarget\b` is bare here, unlike the Live Desk's
  * `target price` — this screen has no user-recorded target to print, so any
  * "target" on it is Vyuha asserting one.
+ *
+ * T-1 (audit round 3): the two transaction verbs were bare — `\bbuy\b` and
+ * `\bsell\b` — so "Try selling the wing" walked straight through a gate whose
+ * whole job is that sentence. `tests/options-help.test.ts:143` bans
+ * `buys|buying|sells|selling|seller|must|will` for the SAME copy rule on the
+ * same 40 shapes; the two lists now agree, and this one is the wider of them.
+ * `must` and `will` are the other half of prescription: a screen that states
+ * what a structure IS never needs either.
  */
 const BANNED =
-  /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|consider(s|ed|ing)?|buy|sell|target|expected|guaranteed|safe(st|ty|ly)?|ideal|best|opportunit\w*)\b/i;
+  /\b(recommend(s|ed|ation|ations)?|suggest(s|ed)?|advice|advise[sd]?|should|must|will|consider(s|ed|ing)?|buy(s|ing|er|ers)?|sell(s|ing|er|ers)?|target|expected|guaranteed|safe(st|ty|ly)?|ideal|best|opportunit\w*)\b/i;
 
 describe("the /strategies vocabulary gate (§6)", () => {
   it.each(files().map((f) => path.relative(ROOT, f).replace(/\\/g, "/")))(
@@ -105,6 +122,13 @@ describe("the /strategies vocabulary gate (§6)", () => {
       "Max profit is guaranteed at expiry",
       "The ideal strike is 24,500",
       "Vyuha suggests a wider wing",
+      // T-1: every one of these passed the gate before the inflections were
+      // added, and each is the same instruction wearing a different ending.
+      "Try selling the wing",
+      "Buying the far leg caps the loss",
+      "The seller keeps the premium",
+      "You must roll this before expiry",
+      "This position will be profitable above 24,000",
     ]) {
       expect(BANNED.test(bad), bad).toBe(true);
     }
@@ -183,8 +207,19 @@ describe("the §6 / §7 sentences, by value", () => {
     expect(capNote("Unlimited")).toBeNull();
   });
 
-  it("the withheld-name chip explains what stays free (invariant 7)", () => {
+  it("the withheld-name chip counts the FREE boundary, and counts it from the code (G-2)", () => {
+    // The sentence used to say "the eight defaults". Eight is `DEFAULT_SHELF`,
+    // a different list entirely: the boundary `withholdForFree` applies is
+    // `legacyFree`, the names this screen printed before 4.3, and there are
+    // sixteen of them (owner ruling 2026-09-11). Counted here rather than
+    // written here, so a 17th legacy row reddens the sentence instead of
+    // silently contradicting it.
+    const free = CATALOGUE.filter((d) => d.legacyFree).length;
+    const word = FREE_COUNT_WORD[free];
+    expect(word, `${free} legacyFree rows — no spelled-out word is known for that count`).toBeDefined();
+    expect(STRATEGY_COPY.proWithheldNote).toContain(word);
     expect(STRATEGY_COPY.proWithheldNote).toMatch(/stay free/);
+    expect(STRATEGY_COPY.proWithheldNote, "DEFAULT_SHELF is a different list").not.toMatch(/\beight\b/i);
     expect(STRATEGY_COPY.shelfLocked).toMatch(/Vyuha Pro/);
   });
 

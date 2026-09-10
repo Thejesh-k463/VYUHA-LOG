@@ -14,12 +14,49 @@ import {
   OPTIONS_STYLES,
   OPTIONS_STYLE_LABEL,
   optionsAnchorId,
-  searchOptionsHelp,
+  optionsHashTarget,
   sebiRealityLine,
+  visibleOptions,
   type OptionsHelpEntry,
 } from "@/lib/domain/options-help";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { ArrowRight, Search, ShieldOff } from "lucide-react";
+
+/**
+ * THE URL FRAGMENT, READ AS AN EXTERNAL STORE (v4.3 audit round 3, U-4).
+ *
+ * `useSyncExternalStore`, never a `setState` in an effect: an effect keyed on
+ * other state is what broke the Trades view filter under the React Compiler
+ * (AGENTS.md), and the hash is not this component's state anyway — it belongs
+ * to the document. The server snapshot is `""`, so the server render and the
+ * first client render agree.
+ *
+ * Three signals, because the platform has no single "the fragment changed"
+ * event: `hashchange` (a link click, a typed fragment, `location.hash = …`),
+ * `popstate` (back/forward), and a coarse poll — because the command palette
+ * deep-links with `router.push("/help#options-<id>")` and, the path being the
+ * same one, the App Router moves that fragment with `history.pushState`, which
+ * fires neither event and re-renders nothing in this subtree. The poll notifies
+ * only when the string actually differs, so a still page re-renders nothing.
+ */
+const HASH_POLL_MS = 250;
+
+function subscribeHash(onChange: () => void): () => void {
+  let last = window.location.hash;
+  const fire = () => {
+    if (window.location.hash === last) return;
+    last = window.location.hash;
+    onChange();
+  };
+  window.addEventListener("hashchange", fire);
+  window.addEventListener("popstate", fire);
+  const timer = window.setInterval(fire, HASH_POLL_MS);
+  return () => {
+    window.removeEventListener("hashchange", fire);
+    window.removeEventListener("popstate", fire);
+    window.clearInterval(timer);
+  };
+}
 
 /** The four parts, in the order every entry states them. */
 const PARTS: { label: string; read: (e: OptionsHelpEntry) => string }[] = [
@@ -41,7 +78,29 @@ export function HelpDesk({
   const [q, setQ] = React.useState("");
   const hits = React.useMemo(() => searchHelp(entries, q), [entries, q]);
   const hitSet = React.useMemo(() => new Set(hits.map((h) => h.href)), [hits]);
-  const optionHits = React.useMemo(() => searchOptionsHelp(options, q), [options, q]);
+  // The fragment the reader was sent to, so its card is rendered even when the
+  // search they already had typed would have filtered it out — otherwise the
+  // anchor is not in the DOM and the deep link scrolls nowhere.
+  const hash = React.useSyncExternalStore(
+    subscribeHash,
+    () => window.location.hash,
+    () => "",
+  );
+  const optionHits = React.useMemo(() => visibleOptions(options, q, hash), [options, q, hash]);
+
+  // …and then SCROLL to it. Next runs its own hash scroll at navigation commit,
+  // when a card the search had filtered out is still absent from the DOM, so the
+  // reader saw nothing move even once the anchor was rendered. Keyed on the
+  // TARGET ID: once per deep link, not once per keystroke in `q`. The body only
+  // calls a DOM method — never a setState in an effect (AGENTS.md) — and
+  // `getElementById` returning null is the same "is that card on the page"
+  // question `visibleOptions` answers, asked of the document after this render
+  // wrote it, so an empty or unknown fragment no-ops. Cards carry `scroll-mt-20`.
+  const optionTarget = optionsHashTarget(hash);
+  React.useEffect(() => {
+    if (!optionTarget) return;
+    document.getElementById(optionsAnchorId(optionTarget))?.scrollIntoView({ block: "start" });
+  }, [optionTarget]);
 
   return (
     <div className="space-y-5">

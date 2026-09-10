@@ -5020,7 +5020,7 @@ Rulings: none needed — no finding carried a design choice the owner had not al
 wave-2 pre-build rulings" (2026-09-10: **40 rows** = research §4 rows 1–37 + 39 + 40 + 41; the free tier sees **"Custom (n
 legs)" + a Pro chip with the name withheld server-side**). Research: `13-OPTION-STRATEGY-CATALOGUE.md` §4–§7. Plan: an Opus
 planner (99k) — six builders in two waves, 46 paths, zero duplicates, README single-owner because `tests/readme-claims.test.ts:118`
-counts files on disk; then a seam pass (49 tests / 23 mutations) and one small fix builder for its four defects.
+counts files on disk; then a seam pass (49 tests / 23 mutations; 53 after the card-fix pins) and one small fix builder for its four defects.
 
 - **B1 engine + catalogue** (`lib/analytics/strategy-catalogue.ts` NEW, `lib/analytics/strategies.ts`; 181k): 40 literal
   `StrategyDef` rows (`id, name, style, beginner, tier, net, patterns[], maxProfit/maxLoss/breakevens docs, sources, legacyFree`),
@@ -5090,7 +5090,7 @@ counts files on disk; then a seam pass (49 tests / 23 mutations) and one small f
   everywhere: `+0…` → `0…`. The `tests/seams-v43.test.ts` S7 pin flipped in the same change (rom now imports `signedPct`; the
   local helper is gone). Recorded, not fixed: `greeks.delta >= 0 ? "text-profit" : "text-loss"` colours a zero Greek green — a
   colour, not a sign.
-- **Seam pass** (`tests/seams-v43-wave2.test.ts`, 49 tests, 23 mutations red on both sides, 12 files restored sha1-identical; 213k):
+- **Seam pass** (`tests/seams-v43-wave2.test.ts`, 49 tests at the seam pass — 53 once the card-fix builder's S1b/S4b pins landed, 23 mutations red on both sides, 12 files restored sha1-identical; 213k):
   client components rendered with `react-dom/server`, the route called with a real `Request`, the server page executed and its
   RSC props inspected. Four DEFECTS, all in B4's card, fixed by one builder (135k): (1) `maxLoss` is the MINIMUM payoff and can be
   POSITIVE — a married put (400 INFY @1450 + 1500 PE @30) printed "Max loss ₹8,000" in loss red for a worst case that is a GAIN;
@@ -5108,3 +5108,96 @@ counts files on disk; then a seam pass (49 tests / 23 mutations) and one small f
   TERMS/REFUND "Applies to". Two builders saw transient reds while a concurrent builder was
   mid-write in a shared-consumer file; both were green on re-run with the files at rest — a reason to keep one `verify` at
   the end, after every builder has reported.
+
+## 2026-09-11 — v4.3.0 audit round 3 over wave 2 `6198c8b..a00ddd0` → fix wave 3 (three builders + one follow-up)
+
+**The audit:** six Fable `vyuha-auditor`s in one message with §0's known inputs — money 27 → 1, schema 23 → 1, security 21 → 2,
+ui 25 → 4, test-integrity 19 → 1, docs 27 → 6 (142 candidates → 15 confirmed → **14 unique**, the "eight defaults" sentence
+found by two auditors) → Fable skeptic **14 → 14**, with three severities corrected: U-1 is WIDER than the auditor said (Next's
+own docs: browser Back reuses the page payload regardless of `staleTimes`, so the loss needs no 120 s window), M-1 is a false
+blank, not a wrong figure, and its lines predate the wave, U-3 self-heals on the next successful tick. Rulings: `06-ANSWERS.md`
+"v4.3.0 audit-round-3 rulings" (one wave, three builders; the copy says SIXTEEN; the SEBI citation stays without a link; the
+12 px accent link is accepted). The seam pass for the wave already existed (53 tests) and was not re-run.
+
+- **U-1 (data loss)** `components/strategies/strategies-client.tsx`: the shelf POST folded the response but never called
+  `router.refresh()`; `next.config.ts` `staleTimes: { dynamic: 120 }` was granted (entry "Invalidated if: a write path stops
+  calling router.refresh()") on the condition that EVERY write path purges the client router cache. Sequence: tick a tile
+  (DB = 9) → `<Link>` away and back → the cached RSC payload re-seeds the island with the old 8-id prop → the next tick posts
+  `set` from the stale 8 → the first tick is gone from the DB. Fix: `useRouter()`; `router.refresh()` immediately after the fold
+  on the `ok` path only — the repo's own precedent (`charge-editor.tsx:79`, `live-feed-card.tsx:813`). The fold keeps this screen
+  right; the refresh is what the next mount seeds from. The `strategy-copy.ts` comment that said "never a `router.refresh()`"
+  conflated the two — the scar it named is an initialiser re-running, which the fold answers. Pinned by source shape (refresh
+  adjacent to the fold; absent on the refusal branch); red on revert `expected … to match /import\s*\{[^}]*\buseRouter…/`.
+- **U-3** same file: `setHistory(next)` ran before the POST and a refusal left the optimistic tile on the strip under a toast
+  saying nothing was stored. Fix: snapshot `previous` before the optimistic set; on `!r.ok` put it back with the fix-wave-8
+  functional guard `setHistory((cur) => (cur === next ? previous : cur))` so a tick that landed meanwhile is not clobbered;
+  residual (in-line comment): A-accepted-then-B-refused ends on A's state, which IS the stored shelf. Red on revert: `the snapshot
+  is taken BEFORE the optimistic setHistory`.
+- **U-2** `helpHref(null)` returned `/help#options`, an id nothing carries; now `/help#options-help` (the desk's heading). The
+  seam test that "checked" it asserted the literal and then looked for a DIFFERENT id in the DOM — a check that agreed with
+  itself; it now derives the id from the returned href. Red on revert: `expected '/help#options' to be '/help#options-help'`.
+- **G-2 = D-3** three sites said "the eight defaults stay free"; the free boundary is `legacyFree` (16 rows), "eight" is
+  `DEFAULT_SHELF` (a different list) and the 2026-09-10 ruling's "11" counted SHAPES (the 16 are their long/short display names).
+  Owner: SIXTEEN. `proWithheldNote`, the 403 body and the page comment now say "the sixteen shapes Vyuha already named before
+  4.3"; the tests derive the count from `CATALOGUE.filter(d => d.legacyFree).length` through a `{16: "sixteen"}` map that throws
+  on any other count — never a value pin again.
+- **G-1** the 40-row catalogue (names, `patterns[]`, `legacyFree`) is in the client chunk of every build because
+  `strategy-copy.ts` value-imports it into `"use client"` consumers (`grep -o 'patterns:\[' .next/static/chunks/*.js` → 40),
+  while `browse-drawer.tsx` said "bundles none" and the page cited payload weight. The ruling only demands a clean RSC payload,
+  which holds (seam S9). Fixed in the COMMENTS: the boundary is the props, not the bundle; names are public on `/help` anyway.
+  Imports not restructured (session decision).
+- **T-1** `tests/strategies-copy.test.ts` `BANNED` banned bare `buy|sell` only, so "Try selling the wing" passed while
+  `tests/options-help.test.ts` refused it; widened to `must|will|buy(s|ing|er|ers)?|sell(s|ing|er|ers)?` (a superset of the
+  help gate), five planted sentences, proven on a real plant in `strategy-copy.ts`. No shipped sentence tripped it.
+- **M-1 (money — a false blank)** `lib/analytics/strategies.ts`: breakevens were scanned only across the chart vertices up to
+  `cHi = maxK + max(spread×0.6, maxK×0.15, 50)`, so a call whose premium exceeds 15 % of its strike (deep-ITM stock
+  replacement on a NIFTY book) returned `breakevens: []` and the card printed "—", indistinguishable from a box spread's true
+  "none". Threshold reproduced: 2999 → `[22999]`, 3001 → `[]`. Pre-existing lines (identical at `6198c8b`), in scope because
+  the rewrite routes far more positions through them. Fix: above the highest level the payoff is linear in `upSlope`, so when
+  `pnl(maxK)` and `upSlope` have opposite signs the crossing `maxK − pnl(maxK)/upSlope` (total ₹ over total ₹ per price unit
+  = a price) is added independently of the chart; the lower side is safe by construction (vertex 0 is always scanned). The chart
+  series stretches to `maxBe × 1.05` ONLY when a breakeven landed beyond the old right edge; the vertex list is NOT extended, so
+  `maxProfit`/`maxLoss`/`capLabel` and every golden are unmoved. Red on revert: `expected [] to deeply equal [ 24000 ]` (long and
+  short side); the catalogue property test gains one boundary fixture (`expected [] to include 1200`).
+- **S-1** `settings.strategy_shelf_json` has two encodings of the eight defaults — null (untouched install) and the explicit
+  envelope `restore` writes by the wave-2 decision — and `diffAgainstBaseline` compared by `JSON.stringify`, so "My Default
+  Settings" listed `strategyShelfJson` under "Restoring would change:" when nothing would, printing the raw column name because
+  `FIELD_LABELS` lacked it. Fix: pure `shelfJsonEquivalent(a, b)` in `lib/domain/strategy-shelf.ts` (no catalogue import; a v1
+  envelope compares by its order-sensitive `selected`, falsy raw ≡ `DEFAULT_SHELF`, an unreadable value falls back to string
+  equality) used for that one field; `FIELD_LABELS` gains `strategyShelfJson: "strategy shelf"` and the pre-existing missing
+  `density`/`workspace`, and the label test now walks every `BASELINE_SETTINGS_FIELDS` entry. Red on revert: `expected
+  [ 'strategyShelfJson' ] to deeply equal []`.
+- **D-1 / D-2** `lib/domain/help-content.ts` `/strategies` entry said "the recognition … free" (24 of 40 names are withheld on the
+  free tier) and promised "a shelf of your own saved shapes … named the way you name it" (no naming exists; the shelf is a
+  selection of catalogue ids). Both sentences were pinned BY VALUE in `tests/help-content.test.ts`, which is how they passed a
+  green gate. Rewritten to what ships (grouping with the split-per-expiry fallback, the curve and the gross figures free; the
+  sixteen names free; the other twenty-four, the shelf and the picker Pro; the Options help free); the pins now derive
+  "sixteen"/"twenty-four" from the catalogue's `legacyFree` count, refuse the naming claim, and refuse any sentence pairing
+  "recogni…" with "free" (a live plant proves the scan fires). Red on revert: `16 names stay free but the entry does not say
+  "sixteen"`.
+- **U-4** the palette pushes `/help#options-<id>`; already on `/help` with a non-matching search typed, the desk rendered cards
+  only from the filtered hits, so the anchor was not in the DOM. Fix: pure `optionsHashTarget(hash)` + `visibleOptions(entries,
+  query, hash)` in `lib/domain/options-help.ts` (the hits plus the targeted entry, in catalogue order; identity for an empty
+  hash, so the SSR render is byte-identical); the desk reads the fragment through `useSyncExternalStore` (server snapshot `""`;
+  no `setState` in an effect). Measured while building: for a same-path fragment the App Router uses `history.pushState`, which
+  fires neither `hashchange` nor `popstate` and re-renders nothing in the subtree — so the subscription also polls
+  `window.location.hash` every 250 ms (notifying only on change), and a DOM-only effect keyed on the target id scrolls the
+  card into view once it exists (Next's own hash scroll ran at commit, before the card rendered). Not observed in a browser
+  (no `/help` e2e harness); pure behaviour and wiring are red-on-revert. Red on revert: `the deep link's anchor is not rendered:
+  expected [] to deeply equal [ 'jade-lizard' ]`; `the desk runs no effect — Next's hash scroll fires before the card exists`.
+- **Records** corrected at their sources: `a00ddd0` is 46 paths (not 41: continuation §0, ledger); the seam file is 53 tests
+  (49 at the seam pass + 4 card-fix pins: this file's wave-2 entry, ledger); STATE row 12 (`~/.claude/settings.json:236`) was
+  already applied by the operator — closed.
+- **Measured, a tooling trap:** under Git Bash (MSYS) `grep -c $'\r$'` reports EVERY line of an LF-only file as CRLF (5110/5110
+  on this file, which `git ls-files --eol` shows as `i/lf w/lf`), so earlier "all CRLF" claims about this file were that grep,
+  not the bytes. Count line endings with Python over bytes (`b.count(b'\r\n')`) or `git ls-files --eol`; `core.autocrlf=true`
+  keeps the index LF either way, so a uniformly-LF working copy diffs only the edited lines.
+- **Recorded, not defects (round 3, do not re-find):** the drawer's style order (first-seen) differs from the help's
+  `OPTIONS_STYLES` order — both commented as deliberate; the drawer's disclosure carries no `aria-expanded` where four others do;
+  `inr(-0)` prints "-₹0.00" (pre-existing `Intl`; `signOf` treats −0 as unsigned); the 61-sample payoff series draws a strike
+  off the grid as a slightly cut corner (pre-existing, chart only); `withholdForFree` names a group `Custom (legs.length)` while
+  the engine's unmatched name uses the normalised count — a duplicate-row group can print two leg counts by tier; the security
+  auditor's lapsed-trial shape (a non-legacy id in a free user's stored shelf) is now a seam test, not a defect; `e0378eb`'s
+  docs-only run 34473538772 lost the macOS Playwright job with no report produced — a cold-runner signature, judged on
+  `a00ddd0`; `06-ANSWERS.md:258` "today's 11 legacy names" counted shapes — the ruling table above records the 16; U-1/U-3/U-4
+  are pinned by source shape, not a driven click (no jsdom harness; `/help` and `/strategies` have no e2e spec).

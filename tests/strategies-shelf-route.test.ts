@@ -3,7 +3,16 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 // Both pure (invariant 2) — no DB in either, so a static import here cannot
 // bind lib/db before openTempDb() sets VYUHA_DB_PATH.
 import { DEFAULT_SHELF, parseShelf, type ShelfPostResult } from "@/lib/domain/strategy-shelf";
-import { STRATEGY_IDS } from "@/lib/analytics/strategy-catalogue";
+import { CATALOGUE, STRATEGY_IDS } from "@/lib/analytics/strategy-catalogue";
+
+/**
+ * The 403's sentence names how many shapes stay free, in words (G-2). It used
+ * to say "the eight default strategies" — eight is `DEFAULT_SHELF`, which is
+ * the shelf's starting tiles and NOT the paywall boundary. The boundary is
+ * `legacyFree`, counted here from the catalogue so the sentence cannot drift
+ * away from the code that enforces it. An unknown count fails loudly.
+ */
+const FREE_COUNT_WORD: Record<number, string> = { 16: "sixteen" };
 
 /**
  * B3 — POST /api/strategies/shelf, against a real migrated temp database
@@ -186,6 +195,13 @@ describe("the Pro gate is on the server", () => {
       expect(status).toBe(403);
       expect(json.ok).toBe(false);
       expect(json.ok === false && json.error).toMatch(/Pro/);
+      // …and it states the free boundary correctly: the sixteen names this
+      // screen printed before 4.3 (`legacyFree`), never the eight defaults.
+      const free = CATALOGUE.filter((d) => d.legacyFree).length;
+      const word = FREE_COUNT_WORD[free];
+      expect(word, `${free} legacyFree rows — no spelled-out word is known for that count`).toBeDefined();
+      expect(json.ok === false && json.error).toContain(word);
+      expect(json.ok === false && json.error, "DEFAULT_SHELF is a different list").not.toMatch(/\beight\b/i);
       expect(storedJson()).toBe(beforeJson);
       expect(auditCount()).toBe(beforeAudit);
       // …and `restore` is not a back door into the same column.

@@ -126,7 +126,12 @@ describe("the card's seams", () => {
   it("every card links into /help, and a Custom group lands on the section top", () => {
     expect(helpHref("iron-condor")).toBe(`/help#${optionsAnchorId("iron-condor")}`);
     expect(helpHref("iron-condor")).toBe("/help#options-iron-condor");
-    expect(helpHref(null)).toBe("/help#options");
+    // U-2: the section top is the desk's own heading id, `options-help`.
+    // `/help#options` is an anchor NO surface renders — the link opened /help
+    // and left the reader at the top of it. That the id really exists in the
+    // rendered desk is proved in tests/seams-v43-wave2.test.ts (S12), where the
+    // id is derived from this very href.
+    expect(helpHref(null)).toBe("/help#options-help");
   });
 });
 
@@ -185,13 +190,72 @@ describe("the page is wired the way the estate requires", () => {
     expect(page).toContain('from "@/components/strategies/strategy-copy"');
   });
 
-  it("writes through the route and FOLDS the answer — never a server action, never a refresh", () => {
+  /**
+   * The refusal branch of `run`'s `.then` — everything between `if (!r.ok) {`
+   * and the fold that follows it. Read as a slice rather than matched with one
+   * regex so a failure names WHICH half moved.
+   */
+  const refusalBranch = (src: string): string => {
+    const from = src.indexOf("if (!r.ok) {");
+    const to = src.indexOf("setHistory((cur) => foldShelfPost");
+    expect(from, "the refusal branch is not where this test expects it").toBeGreaterThan(-1);
+    expect(to, "the ok path's fold is not where this test expects it").toBeGreaterThan(from);
+    return src.slice(from, to);
+  };
+
+  it("writes through the route and FOLDS the answer — never a server action", () => {
     expect(client).toContain('"use client"');
     expect(client).toContain('fetch("/api/strategies/shelf"');
     expect(client).toContain("foldShelfPost(");
     expect(client, "an action remounts the picker and resets its undo history").not.toContain('"use server"');
-    expect(client, "an initialiser does not re-run after a refresh").not.toContain("router.refresh()");
     expect(client, "no setState in an effect — derive instead").not.toContain("useEffect");
+  });
+
+  it("purges the router cache AFTER the fold — the condition staleTimes:120 was granted on (U-1)", () => {
+    // next.config.ts:25 keeps the client router cache for 120s, and
+    // docs/DECISIONS.md:2038-2056 made that conditional on EVERY write path
+    // calling router.refresh() after its write. Browser Back reuses the page
+    // payload regardless. Without the refresh: tick a tile (the DB holds 9),
+    // navigate away and back, and the island re-mounts on the CACHED 8-id prop
+    // — the next tick posts the stale 8 and the first tick is gone from the
+    // database. The fold keeps the screen right NOW; the refresh is what keeps
+    // the next mount's seed right.
+    expect(client).toMatch(/import\s*\{[^}]*\buseRouter\b[^}]*\}\s*from\s*"next\/navigation"/);
+    expect(client).toMatch(/const router = useRouter\(\);/);
+    expect(client, "the refresh follows the fold on the ok path").toMatch(
+      /setHistory\(\(cur\) => foldShelfPost\(cur, r\)\);\r?\n\s*router\.refresh\(\);/,
+    );
+  });
+
+  it("…and never on a refusal — nothing was stored, so nothing upstream is stale (U-1)", () => {
+    expect(refusalBranch(client)).not.toContain("router.refresh()");
+  });
+
+  it("a refusal puts the strip back — the screen never keeps what the store refused (U-3)", () => {
+    expect(client, "the snapshot is taken BEFORE the optimistic setHistory").toMatch(
+      /const previous = history;\r?\n[\s\S]*?setHistory\(next\);/,
+    );
+    const refusal = refusalBranch(client);
+    expect(refusal, "a functional update, so a later successful tick is not overwritten").toContain(
+      "setHistory((cur) => (cur === next ? previous : cur));",
+    );
+    expect(refusal, "the error is still stated").toContain("toast.error(r.error)");
+  });
+
+  it("states what the free build is really denied, not a bundling claim that is false (G-1)", () => {
+    // `strategy-copy.ts` VALUE-imports `getStrategyDef` and `legKind`, so the
+    // whole 40-row catalogue — names, patterns, legacyFree — is in the client
+    // chunk of every build, free included (`grep -o 'patterns:\[' on the built
+    // chunks returns 40). The ruling asks only that the RSC PAYLOAD be clean,
+    // and it is. Two comments claimed more than that: the drawer said a free
+    // build "bundles none" and the page cited payload weight.
+    const drawer = read("components/strategies/browse-drawer.tsx");
+    expect(drawer, "a free build bundles the catalogue exactly like every other build").not.toMatch(
+      /bundles none/,
+    );
+    expect(drawer).toContain("client chunk of every build");
+    expect(page, "weight is not why the rows are withheld").not.toMatch(/weight on every page load/);
+    expect(page).toContain("client chunk of every build");
   });
 
   it("keeps the shelf reducer, its undo/redo and the free refusal", () => {

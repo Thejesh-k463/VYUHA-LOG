@@ -21,13 +21,13 @@ left to do*.
 4. `AGENTS.md` before any code change (on conflict AGENTS.md wins over this file; the code wins over both). Owner rulings: `06-ANSWERS.md` newest table LAST, `docs/DECISIONS.md` newest entry FIRST — binding, never re-ask one.
 5. §3 of this file for where any other answer lives.
 
-**The one-line state (verified 2026-09-10):** published release = **v4.2.0** (tag `9da7bc8` → `b488dde`). v4.3.0 wave 1 (`265d684`) audited twice, fix waves `beaea48` / `786d288` / `6198c8b` CI 6/6. **v4.3.0 wave 2 = `a00ddd0`** — CI run 34472737988 SUCCESS 6/6, seam-tested, **NOT audited, NOT bumped, NOT tagged**. `e0378eb` on top is docs-only. Gate at hand-off: EXIT 0, 378 files / 7,598 passed / 35 skipped. Estate paths moved under `T:/Thejesh/CLAUDE-CODE/VYUHA/` on 2026-09-10 (sweep record: `docs/owner/HANDOFF-HYGIENE-2026-09-10.md`).
+**The one-line state (verified 2026-09-10):** published release = **v4.2.0** (tag `9da7bc8` → `b488dde`). v4.3.0 wave 1 (`265d684`) audited twice, fix waves `beaea48` / `786d288` / `6198c8b` CI 6/6. **v4.3.0 wave 2 = `a00ddd0`** — CI run 34472737988 SUCCESS 6/6, seam-tested, **audited (round 3, 2026-09-11: 142 → 14 → skeptic 14) → fix wave 3 = the commit on top of `cad41b0` (24 repo paths; its CI id is written into §2 once observed); round 4 = that fix wave's own audit NOT yet run; NOT bumped, NOT tagged**. Gate on the fix-wave tree: EXIT 0, 378 files / 7,626 passed / 35 skipped (raw vitest line). Estate paths moved under `T:/Thejesh/CLAUDE-CODE/VYUHA/` on 2026-09-10 (sweep record: `docs/owner/HANDOFF-HYGIENE-2026-09-10.md`).
 
 ### §0.1 Pickup table — one row per open item
 
 | # | Item | Status | Resume from EXACTLY here | Closed when |
 |---|---|---|---|---|
-| 1 | Six-dimension audit + skeptic over wave 2 (`6198c8b..a00ddd0`) | BUILT, CI 6/6, seam file `tests/seams-v43-wave2.test.ts`; NOT audited | `vyuha-audit` skill; the known-inputs list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 1 (do not re-find them; do not re-run the seam pass) | audit ladder reaches 0 open findings; every fix wave has its own audit; CI 6/6 on the last fix commit; §0.3 V1–V5 all PASS |
+| 1 | Audit ladder on wave 2: round 3 over `6198c8b..a00ddd0` DONE (14 → 14, all fixed in fix wave 3, the commit on top of `cad41b0`); **round 4 = the fix wave's own audit, NOT yet run** | fix wave 3 committed; gate EXIT 0, 378 / 7,626 / 35; CI on it to be read | `vyuha-audit` skill over `cad41b0..<fix-wave sha>`; known inputs = the "Recorded, not defects (round 3)" bullet in DECISIONS "2026-09-11 — v4.3.0 audit round 3" (do not re-find; the U-1/U-3/U-4 pins are source-shape by decision) | audit ladder reaches 0 open findings; CI 6/6 on the last fix commit; §0.3 V1–V5 all PASS |
 | 2 | Bump 4.3.0 + the 11 release steps | NOT started; waits on row 1 | `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (the bump recipe incl. the 0071 install-guide paragraph) → `08-BUILD-PROMPTS/V400-LIVE-DESK-BUILD-PROMPT.md` §7 → `release` skill → `vyuha-release-steward` | owner says **"tag"**; tag `v4.3.0` pushed; release run 3/3; `release:verify v4.3.0 -- --deep` 3/3; `releases/latest` → 4.3.0; client ZIP built; winget manifest with the CI asset sha; WDSI form handed over unprompted |
 | 3 | Owner laptop smoke test of 4.3.0 | waits on row 2 | the six-item list in `NEXT-SESSION-CONTINUATION.md` §0 NEXT item 2 (last sentence) — signatures in §0.3 V6 | owner confirms all six on a non-build machine with his own keys |
 | 4 | winget submission | HELD | `release-packages/winget/<version>`; §8.2 | microsoft/winget-pkgs #421585 merged, then the manifest is submitted |
@@ -38,7 +38,7 @@ left to do*.
 | 9 | §8 backlog (first-run onboarding, Zerodha F&O grammar rows, option-seller depth round 3, B1/B2 funnel, demo-video recording, macOS notarisation, theme/skin collapse, parsers not built, `/trades` pagination, short-sell modelling, floating search) | unscheduled | §8.0 / §8.2 / §8.4 / §8.5 of this file | owner picks; each ships in its own release |
 | 10 | Q52 second half — the index map's sha256 beside `asOf` on `/instruments` | open | `AGENTS.md` § Bundled NSE index map, last sentence | `/instruments` shows the file digest |
 | 11 | Operator-owed: hook proposal (wave-guard under-firing) | awaits the operator | `~/.claude/coord/learnings/HOOK-PROPOSALS.md` | applied or rejected there |
-| 12 | Operator-owed: the global trust-repo path | awaits the operator (hook-gate denies agents; the classifier blocks `unlock`) | `~/.claude/settings.json` line 236 — replace `VYUHA-TRADE JOURNAL-V1` with `VYUHA\TRADE-JOURNAL` | the line names the new path |
+| 12 | Operator-owed: the global trust-repo path | CLOSED 2026-09-11 — the round-3 docs auditor read `~/.claude/settings.json` line 236 and it already names `VYUHA\TRADE-JOURNAL` (0 occurrences of the old folder in that file) | — | done |
 | 13 | `fleet-tune` | not due (last 2026-09-09) | its own session | weekly |
 
 ### §0.2 What was left out of the pickup table deliberately
@@ -101,7 +101,7 @@ Migration re-keying rows closed by never-shipped wave-1 code — **none needed**
 | hub memory `vyuha-web-platform-research.md`, `vyuha-v390…` | pack at hub root; owner input files at hub root | `TESTING+RESEARCH/VYUHA-WEB-PLATFORM-RESEARCH/`; `TESTING+RESEARCH/RESEARCH FILES/` | `ls` → rewritten / path table |
 | hub memory `vyuha-wealth-planner-decision.md` | VYUHA v2.99.101; Atlas "phases 0–1, 49/49 tests" | Atlas state file says phase 6, 182/182 | read → rewritten without counts |
 | 42 files (73 path strings) across repo, Atlas, research packs, memory, coord config, scout agent | `VYUHA-TRADE JOURNAL-V1`, `VYUHA-LIVE-DESK-RESEARCH`, `VYUHA-ATLAS`, `BROKER FILES FOR TESTING`, `MTF FILES` paths | the `VYUHA/` tree (§0 one-line state) | sweep script, re-run = 0 → applied |
-| `~/.claude/settings.json` line 236 | trust-repo path `VYUHA-TRADE JOURNAL-V1` | `VYUHA\TRADE-JOURNAL` | hook-gate denies agents → **row 12, operator** |
+| `~/.claude/settings.json` line 236 | trust-repo path `VYUHA-TRADE JOURNAL-V1` | `VYUHA\TRADE-JOURNAL` | hook-gate denies agents → row 12 → **applied by the operator; verified by the round-3 docs auditor 2026-09-11** |
 | `~/.claude/hooks/learn.mjs` line 220 comment; `skills/token-efficient-coding/SKILL.md` line 200 label | mention the old folder name | historical mentions, not paths | left as history |
 
 ---
@@ -123,7 +123,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.3.0 WAVE 2 BUILT 2026-09-10 IST evening (`npm run verify` EXIT 0 — **378 files / 7,598 passed / 35 skipped**; wave 1 `265d684` → audit round 1 (12 → 12) → fix wave `beaea48` + CRLF cap `786d288` (CI 34465570290 6/6) → audit round 2 (6 → 6) → fix wave `6198c8b` (CI 34467572963 6/6) → **wave 2 = `a00ddd0`, CI 34472737988 SUCCESS 6/6**; **wave 2 NOT yet audited, NOT bumped, NOT tagged**). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+## 2. Current state — v4.3.0 WAVE 2 AUDITED, FIX WAVE 3 BUILT 2026-09-11 IST (`npm run verify` EXIT 0 — **378 files / 7,626 passed / 35 skipped**; wave 1 `265d684` → audit round 1 (12 → 12) → fix wave `beaea48` + CRLF cap `786d288` (CI 34465570290 6/6) → audit round 2 (6 → 6) → fix wave `6198c8b` (CI 34467572963 6/6) → **wave 2 = `a00ddd0`, CI 34472737988 SUCCESS 6/6** → audit round 3 (142 candidates → 14 → skeptic 14; DECISIONS "2026-09-11 — v4.3.0 audit round 3") → **fix wave 3 = the commit on top of `cad41b0`** (U-1 `router.refresh()` after the shelf fold; U-3 rollback on refusal; U-2 anchor; G-2 "sixteen"; G-1 comments; T-1 gate; M-1 analytic breakeven; S-1 shelf comparator; D-1/D-2 help copy; U-4 hash-targeted card + scroll) — **its own audit (round 4) NOT yet run; NOT bumped, NOT tagged**). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
 
 > **Wave 2 — what changed, the file that makes each true** (`docs/DECISIONS.md` "2026-09-10 — v4.3.0 wave 2"): the 40-row
 > `StrategyDef` catalogue + `matchStrategy` + per-symbol grouping with split-on-match-failure + UL legs + §7 nearest-expiry with a
