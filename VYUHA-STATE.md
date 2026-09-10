@@ -27,7 +27,7 @@ Positioning, pricing and the launch sequence live in `docs/owner/MONETIZATION_PL
 
 ---
 
-## 2. Current state — v4.3.0 WAVE 2 BUILT 2026-09-10 IST evening (`npm run verify` EXIT 0 — **378 files / 7,598 passed / 35 skipped**; wave 1 `265d684` → audit round 1 (12 → 12) → fix wave `beaea48` + CRLF cap `786d288` (CI 34465570290 6/6) → audit round 2 (6 → 6) → fix wave `6198c8b` (CI 34467572963 6/6) → wave 2 = the commit on top of `6198c8b` whose sha and CI are in the ledger; **wave 2 NOT yet audited, NOT bumped, NOT tagged**). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
+## 2. Current state — v4.3.0 WAVE 2 BUILT 2026-09-10 IST evening (`npm run verify` EXIT 0 — **378 files / 7,598 passed / 35 skipped**; wave 1 `265d684` → audit round 1 (12 → 12) → fix wave `beaea48` + CRLF cap `786d288` (CI 34465570290 6/6) → audit round 2 (6 → 6) → fix wave `6198c8b` (CI 34467572963 6/6) → **wave 2 = `a00ddd0`, CI 34472737988 SUCCESS 6/6**; **wave 2 NOT yet audited, NOT bumped, NOT tagged**). **v4.2.0 remains the PUBLISHED release** (section below, unchanged).
 
 > **Wave 2 — what changed, the file that makes each true** (`docs/DECISIONS.md` "2026-09-10 — v4.3.0 wave 2"): the 40-row
 > `StrategyDef` catalogue + `matchStrategy` + per-symbol grouping with split-on-match-failure + UL legs + §7 nearest-expiry with a
