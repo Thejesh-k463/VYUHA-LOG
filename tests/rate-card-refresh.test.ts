@@ -9,7 +9,7 @@ import type * as TS from "typescript";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { chargeConfig } from "@/lib/db/schema";
-import { buildChargeConfigSeed, STT_EPOCH_2026 } from "@/lib/db/seed-data";
+import { buildChargeConfigSeed, STT_EPOCH_2024, STT_EPOCH_2026 } from "@/lib/db/seed-data";
 import { findRates, ratesMapOf } from "@/lib/engine/rates";
 import type { ChargeRates } from "@/lib/engine/types";
 import { refreshRateCards } from "../scripts/rate-card-refresh.mjs";
@@ -27,6 +27,11 @@ import { refreshRateCards } from "../scripts/rate-card-refresh.mjs";
  * every launch the UPDATE collided on the unique index after the INSERT had
  * already autocommitted — the owner's DB ended with 45 overlapping open-ended
  * 1970 F&O epochs carrying the post-2026 STT.
+ *
+ * Since C-7 (v4.3.0) each F&O key carries THREE epochs (1970, 2024-10-01,
+ * 2026-04-01). The owner's real DB still holds the old two, so the planted
+ * states below delete the 2024-10-01 epoch first, and the refresh must add it
+ * with no change to scripts/rate-card-refresh.mjs.
  *
  * The behaviour is a list of SCENARIOS, run once against the real module and
  * again against every mutant in the table at the bottom of this file: each
@@ -86,22 +91,32 @@ const overlaps = (db: Database.Database) =>
   ).n;
 
 /**
- * The owner's real state: every 1970 epoch of a two-epoch key carries the
- * 2026 epoch's STT and an open effective_to. Returns the number of rows planted.
+ * Back to the pre-C-7 two-epoch key: every 1970 epoch of a multi-epoch key
+ * takes the STT of the epoch starting `sttFrom` and ends at `to` (NULL = open),
+ * then the 2024-10-01 epoch is deleted. Returns the number of 1970 rows rewritten.
  */
-function plantOwnerState(db: Database.Database): number {
+function collapse(db: Database.Database, sttFrom: string, to: string | null): number {
   const same = `n.broker = t.broker AND n.plan = t.plan AND n.segment = t.segment
-                AND n.exchange = t.exchange AND n.effective_from = '${STT_EPOCH_2026}'`;
-  return db
+                AND n.exchange = t.exchange AND n.effective_from = '${sttFrom}'`;
+  const changed = db
     .prepare(
       `UPDATE charge_config AS t SET
          stt_pct = (SELECT n.stt_pct FROM charge_config n WHERE ${same}),
          stt_side = (SELECT n.stt_side FROM charge_config n WHERE ${same}),
-         effective_to = NULL
+         effective_to = ?
        WHERE t.effective_from = '1970-01-01' AND EXISTS (SELECT 1 FROM charge_config n WHERE ${same})`,
     )
-    .run().changes;
+    .run(to).changes;
+  expect(db.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2024}'`).run().changes).toBe(45);
+  return changed;
 }
+/**
+ * The owner's real state: two epochs per F&O key (no 2024-10-01 epoch), every
+ * 1970 epoch carrying the 2026 epoch's STT and an open effective_to.
+ */
+const plantOwnerState = (db: Database.Database) => collapse(db, STT_EPOCH_2026, null);
+/** The CORRECT two-epoch state (the v3.2.0..v4.2 template): 1970 → 2026-04-01 at the FY25 STT. */
+const plantFy25State = (db: Database.Database) => collapse(db, STT_EPOCH_2024, STT_EPOCH_2026);
 
 type Key = { broker: string; plan: string; segment: string; exchange: string };
 const DHAN: Key = { broker: "dhan", plan: "default", segment: "index_option", exchange: "NSE" };
@@ -113,10 +128,10 @@ const rowsOf = (db: Database.Database, k: Key, from?: string) =>
 
 /**
  * The (e) shape: k's 1970 row becomes the user's own (user_edited, its window
- * ending at `to`, NULL = open) and k's 2026 epoch is deleted.
+ * ending at `to`, NULL = open) and k's later epochs (2024-10-01, 2026-04-01) are deleted.
  */
 function ownThe1970Row(u: Database.Database, k: Key, to: string | null, extraSet = ""): void {
-  u.prepare(`DELETE FROM charge_config WHERE ${where(k, STT_EPOCH_2026)}`).run();
+  expect(u.prepare(`DELETE FROM charge_config WHERE ${where(k)} AND effective_from > '1970-01-01'`).run().changes).toBe(2);
   const edited = u
     .prepare(`UPDATE charge_config SET user_edited = 1, effective_to = ?${extraSet} WHERE ${where(k, "1970-01-01")}`)
     .run(to).changes;
@@ -202,36 +217,57 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "(b)",
-    title: "the owner's real state: 45 corrupted 1970 epochs are corrected, overlaps gone, pre-2026 trades priced at the old STT",
+    title:
+      "the owner's real state (two epochs, 45 corrupted 1970 rows): the 2024 epoch is added, the 1970 rows corrected, overlaps gone, each era priced at its own STT",
     run: (refresh) => {
       const u = userCopy();
       expect(plantOwnerState(u)).toBe(45);
       expect(overlaps(u)).toBe(45); // the planted state really has the defect
 
-      expect(refresh(u)).toEqual({ added: 0, refreshed: 45 });
+      expect(refresh(u)).toEqual({ added: 45, refreshed: 45 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
 
       const tplStt = (from: string) => (rowsOf(tpl, DHAN, from)[0] as { stt_pct: number }).stt_pct;
       const oldStt = tplStt("1970-01-01");
+      const fy25Stt = tplStt(STT_EPOCH_2024);
       const newStt = tplStt(STT_EPOCH_2026);
-      expect(oldStt).not.toBe(newStt);
+      expect(new Set([oldStt, fy25Stt, newStt]).size).toBe(3);
 
       const map = ratesMapOf(drizzle(u).select().from(chargeConfig).all() as unknown as ChargeRates[]);
-      expect(findRates(map, "dhan", "index_option", "NSE", "2026-03-15").sttPct).toBe(oldStt);
+      expect(findRates(map, "dhan", "index_option", "NSE", "2024-09-30").sttPct).toBe(oldStt);
+      expect(findRates(map, "dhan", "index_option", "NSE", "2026-03-15").sttPct).toBe(fy25Stt);
       expect(findRates(map, "dhan", "index_option", "NSE", "2026-04-15").sttPct).toBe(newStt);
     },
   },
   {
+    id: "(b2)",
+    title: "the correct two-epoch state (1970 → 2026-04-01 at the FY25 STT): the 2024 epoch is added and the 1970 row split at 2024-10-01",
+    run: (refresh) => {
+      const u = userCopy();
+      expect(plantFy25State(u)).toBe(45);
+      expect(overlaps(u)).toBe(0);
+      const was = rowsOf(u, DHAN, "1970-01-01") as { stt_pct: number; effective_to: string }[];
+      expect(was).toMatchObject([{ effective_to: STT_EPOCH_2026 }]);
+
+      expect(refresh(u)).toEqual({ added: 45, refreshed: 45 });
+      expect(snapshot(u)).toEqual(snapshot(tpl));
+      expect(overlaps(u)).toBe(0);
+      // The FY25 rate the 1970 row carried now lives on the 2024 epoch.
+      expect(rowsOf(u, DHAN, STT_EPOCH_2024)).toMatchObject([{ stt_pct: was[0].stt_pct, effective_to: STT_EPOCH_2026 }]);
+      expect(rowsOf(u, DHAN, "1970-01-01")).toMatchObject([{ effective_to: STT_EPOCH_2024 }]);
+    },
+  },
+  {
     id: "(c)",
-    title: "the pre-v3.2 shape (one open 1970 row per key at current rates) gains the epochs, no overlaps",
+    title: "the pre-v3.2 shape (one open 1970 row per key at current rates) gains both later epochs, no overlaps",
     run: (refresh) => {
       const u = userCopy();
       expect(plantOwnerState(u)).toBe(45);
       u.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run();
-      expect(count(u)).toBe(count(tpl) - 45);
+      expect(count(u)).toBe(count(tpl) - 90);
 
-      expect(refresh(u)).toEqual({ added: 45, refreshed: 45 });
+      expect(refresh(u)).toEqual({ added: 90, refreshed: 45 });
       expect(snapshot(u)).toEqual(snapshot(tpl));
       expect(overlaps(u)).toBe(0);
     },
@@ -242,8 +278,9 @@ const SCENARIOS: Scenario[] = [
     run: (refresh) => {
       const u = userCopy();
       plantOwnerState(u);
-      expect(refresh(u)).toEqual({ added: 0, refreshed: 45 });
+      expect(refresh(u)).toEqual({ added: 45, refreshed: 45 });
       expect(refresh(u)).toEqual({ added: 0, refreshed: 0 });
+      expect(snapshot(u)).toEqual(snapshot(tpl));
     },
   },
   {
@@ -282,6 +319,7 @@ const SCENARIOS: Scenario[] = [
 
       expect(refresh(u)).toEqual({ added: 1, refreshed: 0 });
       expect(rowsOf(u, DHAN, "1970-01-01")).toEqual(before);
+      expect(rowsOf(u, DHAN, STT_EPOCH_2024)).toHaveLength(0); // inside the user's window: theirs
       const epoch = where(DHAN, STT_EPOCH_2026);
       expect(snapshot(u, epoch)).toHaveLength(1);
       expect(snapshot(u, epoch)).toEqual(snapshot(tpl, epoch));
@@ -310,6 +348,7 @@ const SCENARIOS: Scenario[] = [
 
       expect(refresh(u)).toEqual({ added: 1, refreshed: 0 });
       expect(rowsOf(u, DHAN, "1970-01-01")).toEqual(before);
+      expect(rowsOf(u, DHAN, STT_EPOCH_2024)).toHaveLength(0); // starts inside the user's window: theirs
       const epoch = where(DHAN, STT_EPOCH_2026);
       expect(snapshot(u, epoch)).toHaveLength(1);
       expect(snapshot(u, epoch)).toEqual(snapshot(tpl, epoch));
@@ -340,7 +379,7 @@ const SCENARIOS: Scenario[] = [
       run: (refresh) => {
         const differ = (Object.keys(edited) as (keyof Key)[]).filter((c) => edited[c] !== sibling[c]);
         expect(differ).toEqual([column]);
-        for (const k of [edited, sibling]) expect(rowsOf(tpl, k), `${where(k)} in the template`).toHaveLength(2);
+        for (const k of [edited, sibling]) expect(rowsOf(tpl, k), `${where(k)} in the template`).toHaveLength(3);
 
         const u = userCopy();
         ownThe1970Row(u, edited, null);
@@ -412,7 +451,7 @@ const SCENARIOS: Scenario[] = [
     title: "a user DB still on the pre-0050 4-column index skips rather than pick an arbitrary epoch",
     run: (refresh) => {
       const u = userCopy();
-      u.prepare(`DELETE FROM charge_config WHERE effective_from = '${STT_EPOCH_2026}'`).run();
+      expect(u.prepare(`DELETE FROM charge_config WHERE effective_from > '1970-01-01'`).run().changes).toBe(90);
       u.exec(
         "DROP INDEX charge_config_uq; CREATE UNIQUE INDEX charge_config_uq ON charge_config (broker, plan, segment, exchange)",
       );
@@ -428,7 +467,7 @@ const SCENARIOS: Scenario[] = [
     run: (refresh) => {
       const u = userCopy();
       const row = where(DHAN, "1970-01-01");
-      expect(snapshot(tpl, row)).toMatchObject([{ effective_to: STT_EPOCH_2026 }]);
+      expect(snapshot(tpl, row)).toMatchObject([{ effective_to: STT_EPOCH_2024 }]);
       expect(u.prepare(`UPDATE charge_config SET effective_to = NULL WHERE ${row}`).run().changes).toBe(1);
 
       expect(refresh(u)).toEqual({ added: 0, refreshed: 1 });
@@ -461,8 +500,11 @@ const SCENARIOS: Scenario[] = [
         u.prepare("SELECT id, broker, plan, segment, exchange, effective_from FROM charge_config ORDER BY id").all();
       const before = ids();
 
-      expect(refresh(u)).toEqual({ added: 0, refreshed: 45 });
-      expect(ids()).toEqual(before);
+      expect(refresh(u)).toEqual({ added: 45, refreshed: 45 });
+      // Every row that was there keeps its id; the 45 added 2024 epochs are the only new ones.
+      const after = ids() as { effective_from: string }[];
+      expect(after.filter((r) => r.effective_from !== STT_EPOCH_2024)).toEqual(before);
+      expect(after.filter((r) => r.effective_from === STT_EPOCH_2024)).toHaveLength(45);
       expect(snapshot(u)).toEqual(snapshot(tpl));
     },
   },
@@ -471,16 +513,18 @@ const SCENARIOS: Scenario[] = [
 const real = bind(refreshRateCards);
 
 describe("the fixture is not vacuous", () => {
-  it("the template holds 45 keys with two dated epochs, and the user index is 5 columns", () => {
-    const multi = (
-      tpl
-        .prepare(
-          `SELECT count(*) AS n FROM (SELECT 1 FROM charge_config
-             GROUP BY broker, plan, segment, exchange HAVING count(DISTINCT effective_from) >= 2)`,
-        )
-        .get() as { n: number }
-    ).n;
-    expect(multi).toBe(45);
+  it("the template holds 45 keys with three dated epochs (1970, 2024-10-01, 2026-04-01) and 72 with one, and the user index is 5 columns", () => {
+    const shapes = tpl
+      .prepare(
+        `SELECT epochs, count(*) AS keys FROM (SELECT group_concat(effective_from, ' ') AS epochs FROM
+           (SELECT * FROM charge_config ORDER BY effective_from) GROUP BY broker, plan, segment, exchange)
+         GROUP BY epochs ORDER BY epochs`,
+      )
+      .all();
+    expect(shapes).toEqual([
+      { epochs: "1970-01-01", keys: 72 },
+      { epochs: `1970-01-01 ${STT_EPOCH_2024} ${STT_EPOCH_2026}`, keys: 45 },
+    ]);
     const idx = (tpl.prepare("PRAGMA index_info(charge_config_uq)").all() as { name: string }[]).map((c) => c.name);
     expect(idx).toEqual(["broker", "plan", "segment", "exchange", "effective_from"]);
   });

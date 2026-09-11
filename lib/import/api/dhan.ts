@@ -344,18 +344,27 @@ function addDaysIso(isoDate: string, days: number): string {
  * every fill that happened after the pull ran. Null when there is nothing to
  * catch up on (never pulled, unreadable stamp, or already pulled today —
  * today's book is what `/positions` is for).
+ *
+ * C-6 (v4.3.0 fix wave C, owner ruling "Say it plainly"): when the gap is wider
+ * than DHAN_MAX_PULL_RANGE_DAYS the window is still clamped — no extra Dhan
+ * calls — but the result NAMES what the clamp left out, as `unfetched`: the
+ * last pull's IST day up to the day before the floor. Absent (not undefined)
+ * when nothing was left out, so an unclamped range is byte-identical to before.
  */
+export type DhanCatchUpRange = { from: string; to: string; unfetched?: { from: string; to: string } };
+
 export function catchUpRange(
   lastPullAt: string | null | undefined,
   today: string = todayIstIso(),
-): { from: string; to: string } | null {
+): DhanCatchUpRange | null {
   if (!lastPullAt) return null;
   const t = Date.parse(lastPullAt);
   if (!Number.isFinite(t)) return null;
   const day = todayIstIso(new Date(t));
   if (day >= today) return null;
   const floor = addDaysIso(today, -DHAN_MAX_PULL_RANGE_DAYS);
-  return { from: day < floor ? floor : day, to: today };
+  if (day < floor) return { from: floor, to: today, unfetched: { from: day, to: addDaysIso(floor, -1) } };
+  return { from: day, to: today };
 }
 
 /** "2026-09-07 10:15:00" (or an ISO instant) → "2026-09-07"; null when Dhan
@@ -984,18 +993,39 @@ export async function fetchDhanPositions(creds: DhanCredentials, onMinted?: (tok
  * statement re-served across a page boundary would otherwise double a
  * position's quantity, and a doubled quantity is a wrong book, not a warning.
  * A row with no id falls back to a composite of the facts that identify it.
+ *
+ * `onRead` (C-6) is told what the walk actually covered: a walk that ends at
+ * the page cap WITHOUT reaching an empty page is `truncated`, and the pull must
+ * say so rather than present a partial history as the whole one.
  */
+export interface DhanHistoryRead {
+  /** Pages requested from Dhan. */
+  pages: number;
+  /** True when the walk stopped at DHAN_TRADES_MAX_PAGES before an empty page. */
+  truncated: boolean;
+  /** Earliest / latest fill date actually read; null when no fill states a readable date. */
+  oldest: string | null;
+  newest: string | null;
+}
+
 export async function fetchDhanTrades(
   creds: DhanCredentials,
   range: { from: string; to: string },
   onMinted?: (token: string) => void,
+  onRead?: (read: DhanHistoryRead) => void,
 ): Promise<DhanTradeRow[]> {
   const out: DhanTradeRow[] = [];
   const seen = new Set<string>();
+  let pages = 0;
+  let reachedEnd = false;
   for (let page = 0; page < DHAN_TRADES_MAX_PAGES; page++) {
     const data = await dhanGet<DhanTradeRow[] | null>(`/trades/${range.from}/${range.to}/${page}`, creds, onMinted);
+    pages++;
     const rows = Array.isArray(data) ? data : [];
-    if (rows.length === 0) break;
+    if (rows.length === 0) {
+      reachedEnd = true;
+      break;
+    }
     for (const r of rows) {
       const id = String(r.exchangeTradeId ?? "").trim();
       const key = id || [r.orderId, r.tradingSymbol, r.transactionType, r.tradedQuantity, r.tradedPrice, r.exchangeTime ?? r.createTime].join("|");
@@ -1003,6 +1033,10 @@ export async function fetchDhanTrades(
       seen.add(key);
       out.push(r);
     }
+  }
+  if (onRead) {
+    const dates = out.map(tradeDateOf).filter((d): d is string => d != null).sort();
+    onRead({ pages, truncated: !reachedEnd, oldest: dates[0] ?? null, newest: dates[dates.length - 1] ?? null });
   }
   return out;
 }
@@ -1012,7 +1046,21 @@ export async function fetchDhanHoldings(creds: DhanCredentials, onMinted?: (toke
   return Array.isArray(data) ? data : [];
 }
 
-export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: string) => void): ApiImportSource {
+/** `fetchTrades`' options: the window, and (C-6) a hook told what the history
+ *  walk covered — how the page cap reaches the pull's warnings without a
+ *  second fetch or a property hidden on the returned array. */
+export interface DhanFetchOptions {
+  from?: string;
+  to?: string;
+  onHistory?: (read: DhanHistoryRead) => void;
+}
+
+/** The Dhan source: the shared ApiImportSource, with the widened options. */
+export interface DhanImportSource extends ApiImportSource {
+  fetchTrades(opts?: DhanFetchOptions): Promise<NormalizedTrade[]>;
+}
+
+export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: string) => void): DhanImportSource {
   return {
     id: "dhan-api",
     label: "Dhan API (today's positions, states MTF outright)",
@@ -1029,11 +1077,11 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
      * position row carries no `exchangeTradeId` to dedupe against, and
      * `/positions` is the only source that states MTF and the broker's mark.
      */
-    async fetchTrades(opts: { from?: string; to?: string } = {}) {
+    async fetchTrades(opts: DhanFetchOptions = {}) {
       const today = todayIstIso();
       const history: NormalizedTrade[] = [];
       if (opts.from) {
-        const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted);
+        const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted, opts.onHistory);
         history.push(...normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today)).trades);
       }
       const positions = normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
@@ -1042,17 +1090,56 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
   };
 }
 
+/**
+ * One span of Dhan history a pull did NOT read (C-6), and the sentence that
+ * says so. `range-cap`: older than DHAN_MAX_PULL_RANGE_DAYS, never asked for.
+ * `page-cap`: inside the window, but the walk stopped at DHAN_TRADES_MAX_PAGES.
+ * The caller that COMMITS keeps these (the audit trail), because the commit is
+ * what moves lastPullAt past them.
+ */
+export interface DhanUnfetchedSpan {
+  from: string;
+  to: string;
+  reason: "range-cap" | "page-cap";
+  message: string;
+}
+
 /** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects.
  *  `range` is the catch-up window when one was fetched — the warnings must say
- *  which days this pull covered, or a five-day catch-up reads like a daily one. */
-export function toParsedFile(trades: NormalizedTrade[], range?: { from: string; to: string } | null): ParsedFile {
+ *  which days this pull covered, or a five-day catch-up reads like a daily one.
+ *  `read` is what the history walk reported (C-6); `unfetched` hands back every
+ *  span the pull did not read, each with the warning that named it. */
+export function toParsedFile(
+  trades: NormalizedTrade[],
+  range?: DhanCatchUpRange | null,
+  read?: DhanHistoryRead | null,
+): ParsedFile & { unfetched: DhanUnfetchedSpan[] } {
   const mtf = trades.filter((t) => t.productHint === "mtf").length;
   const warnings: string[] = [];
+  const unfetched: DhanUnfetchedSpan[] = [];
 
   if (range) {
+    // C-4 (fix wave C): the reason stated is the one true of EVERY range
+    // catchUpRange returns (`day < today`) — "older than the previous trading
+    // day" was false on every routine next-day pull.
     warnings.push(
-      `Catch-up pull: fills from ${range.from} to ${range.to} were read from Dhan's trade history (the last pull was older than the previous trading day). Today's book still comes from /v2/positions, and re-pulled fills are de-duplicated on commit.`,
+      `Catch-up pull: fills from ${range.from} to ${range.to} were read from Dhan's trade history, because the last pull ran before today. Today's book still comes from /v2/positions, and re-pulled fills are de-duplicated on commit.`,
     );
+    if (range.unfetched) {
+      const u = range.unfetched;
+      const message = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. To bring those fills in, import a Dhan tradebook for ${u.from} to ${u.to}.`;
+      warnings.push(message);
+      unfetched.push({ from: u.from, to: u.to, reason: "range-cap", message });
+    }
+    if (read?.truncated) {
+      const dated =
+        read.oldest && read.newest
+          ? `The fills it read are dated ${read.oldest} to ${read.newest}.`
+          : "None of the fills it read states a readable date.";
+      const message = `Truncated: this pull stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history, so fills between ${range.from} and ${range.to} may be missing. ${dated} To be sure every fill is in, import a Dhan tradebook for ${range.from} to ${range.to}.`;
+      warnings.push(message);
+      unfetched.push({ from: range.from, to: range.to, reason: "page-cap", message });
+    }
   }
   if (trades.length === 0) {
     warnings.push(
@@ -1068,5 +1155,5 @@ export function toParsedFile(trades: NormalizedTrade[], range?: { from: string; 
     );
   }
 
-  return { sourceId: "dhan-api", broker: "dhan", format: "api", trades, warnings };
+  return { sourceId: "dhan-api", broker: "dhan", format: "api", trades, warnings, unfetched };
 }

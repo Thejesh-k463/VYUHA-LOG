@@ -39,6 +39,34 @@ export function splitShapeSentence(shape: ImportShape): { headline: string; revi
   return { headline, review, relabelled };
 }
 
+/** What a commit would close FIFO (`PreviewResult.autoClose`, lib/import/commit.ts). */
+export type AutoClosePlan = { closes: number; positions: { symbol: string; qty: number }[] };
+
+/**
+ * The close-plan sentence (v4.2.1 R5), ONE composer for BOTH previews — this
+ * file's and the broker card's "Preview pull" (C-5, fix wave C), which used to
+ * show no plan at all. Null when the rows close nothing.
+ */
+export function autoClosePlanNote(plan: AutoClosePlan | null | undefined): string | null {
+  const n = plan?.closes ?? 0;
+  if (!plan || n <= 0) return null;
+  const list = plan.positions;
+  const named =
+    list.length > 0
+      ? ` (${list.slice(0, 5).map((c) => `${c.symbol} ${c.qty}`).join(", ")}${list.length > 5 ? `, and ${list.length - 5} more` : ""})`
+      : "";
+  return `Will close ${n} open position${n === 1 ? "" : "s"} already held in this account, oldest first${named}.`;
+}
+
+/**
+ * The sentences the COMMIT produced (`CommitResult.warnings`) — the facts only
+ * the write knew, the closed-by-this-file one first among them (C-5). The
+ * commit card used to drop every one of them.
+ */
+export function commitResultNotes(result: { warnings?: readonly string[] | null } | null | undefined): string[] {
+  return (result?.warnings ?? []).filter((w): w is string => typeof w === "string" && w.trim() !== "");
+}
+
 interface PreviewRow {
   tradingsymbol: string; symbol: string; segment: Segment; bucket: string; exchange: string;
   buyQty: number; sellQty: number; buyValue: number; sellValue: number;
@@ -140,7 +168,7 @@ export function ImportClient({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number } | null>(null);
+  const [committed, setCommitted] = useState<{ added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[] } | null>(null);
   const [tab, setTab] = useState<"transactions" | "pnl">("transactions");
   /** Per-symbol product corrections for a P&L file. Empty = use the guesses. */
   const [productOverrides, setProductOverrides] = useState<Record<string, ProductHint>>({});
@@ -187,7 +215,7 @@ export function ImportClient({
         fd.append("productOverrides", JSON.stringify(productOverrides));
       }
       const res = await fetch("/api/import", { method: "POST", body: fd });
-      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number } }>(res);
+      const json = await readJson<{ result: { added: number; skipped: number; shape?: ImportShape; referenceStored?: number; enrichApplied?: number; enrichTotal?: number; warnings?: string[] } }>(res);
       if (!res.ok) { setError(json.error ?? "Commit failed"); return; }
       setCommitted(json.result);
       setPreview(null);
@@ -471,6 +499,16 @@ export function ImportClient({
                   {enrichAppliedNote(committed.enrichApplied, committed.enrichTotal)}
                 </p>
               )}
+              {/* C-5: the commit's own sentences — which open positions this
+                  file closed, contract-note days it could not place — one per
+                  line. They were in the response and nothing showed them. */}
+              {commitResultNotes(committed).length > 0 && (
+                <div data-testid="commit-warnings" className="space-y-1 text-xs text-muted-foreground">
+                  {commitResultNotes(committed).map((w, i) => (
+                    <p key={i}>{w}</p>
+                  ))}
+                </div>
+              )}
             </div>
             <Button size="sm" variant="secondary" className="shrink-0" onClick={() => router.push("/trades")}>
               View trades →
@@ -521,15 +559,9 @@ export function ImportClient({
               {/* R5: rows that close positions this account already holds. A
                   plain statement of what the commit will do — the realised P&L
                   lands on the existing row, not on a second open position. */}
-              {(p.autoClose?.closes ?? 0) > 0 && (
+              {autoClosePlanNote(p.autoClose) && (
                 <p data-testid="preview-auto-close" className="text-sm">
-                  Will close {p.autoClose!.closes} open position
-                  {p.autoClose!.closes === 1 ? "" : "s"} already held in this account, oldest first
-                  {p.autoClose!.positions.length > 0 && (
-                    <> ({p.autoClose!.positions.slice(0, 5).map((c) => `${c.symbol} ${c.qty}`).join(", ")}
-                    {p.autoClose!.positions.length > 5 ? `, and ${p.autoClose!.positions.length - 5} more` : ""})</>
-                  )}
-                  .
+                  {autoClosePlanNote(p.autoClose)}
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

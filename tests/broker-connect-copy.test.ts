@@ -13,7 +13,9 @@ import {
   TOKEN_EXPIRY_SEEN_KEY,
   formatTs,
   pullGapNotice,
+  pullResultMessage,
   tokenExpiredMessage,
+  unfetchedNotice,
 } from "@/components/import/broker-connect";
 
 /**
@@ -152,9 +154,11 @@ describe("formatTs — one explicit IST stamp, no machine locale", () => {
 });
 
 /**
- * R6 (v4.2.1) — the catch-up line. When the last pull is older than the
- * previous trading day the next pull fetches a RANGE, and the card says so in
- * one plain line. It states a fact ("pulls missed since …"), never advice.
+ * R6 (v4.2.1) — the catch-up line. A pull fetches a RANGE whenever the last one
+ * ran before today (`catchUpRange`, lib/import/api/dhan.ts); this line appears
+ * only when that gap is longer than a routine one — the last pull older than
+ * the previous trading day — and says so in one plain line. It states a fact
+ * ("pulls missed since …"), never advice.
  */
 describe("pullGapNotice — the missed-pulls line", () => {
   const now = new Date("2026-09-09T05:00:00Z"); // Wed 10:30 IST
@@ -187,6 +191,130 @@ describe("pullGapNotice — the missed-pulls line", () => {
   it("carries no SEBI-forbidden verb — it states a fact about pulls, not advice", () => {
     const line = pullGapNotice("2026-09-04T10:00:00Z", now)!;
     expect(line).not.toMatch(/\b(recommend|should|consider|buy|sell)\b/i);
+    expect(pullGapNotice("2026-05-01T05:00:00Z", now, "2026-06-11")!).not.toMatch(/\b(recommend|should|consider|buy|sell)\b/i);
+  });
+
+  /**
+   * C-6 (fix wave C). "The next pull fetches the gap" was false for a gap over
+   * DHAN_MAX_PULL_RANGE_DAYS: the pull is clamped. The server now states where
+   * the next pull will start (`catchUpFrom`, from the same catchUpRange), and
+   * when that is after the last pull's day the line says what is left out.
+   */
+  it("C-6: a gap the next pull cannot cover says where the pull starts and that the rest is not fetched", () => {
+    expect(pullGapNotice("2026-05-01T05:00:00Z", now, "2026-06-11")).toBe(
+      "Pulls missed since 01 May 2026 — the next pull fetches from 11 Jun 2026; fills before that are not fetched.",
+    );
+    // A start ON the last pull's day is no clamp: the ordinary sentence, verbatim.
+    expect(pullGapNotice("2026-09-04T10:00:00Z", now, "2026-09-04")).toBe(
+      "Pulls missed since 04 Sep 2026 — the next pull fetches the gap.",
+    );
+    expect(pullGapNotice("2026-09-04T10:00:00Z", now, null)).toBe(
+      "Pulls missed since 04 Sep 2026 — the next pull fetches the gap.",
+    );
+  });
+});
+
+/**
+ * C-5 (fix wave C). A SELL that auto-closes open rows FIFO (06-ANSWERS "v4.2.1
+ * rulings", item 4) ended on "Committed — 0 added, 0 duplicates skipped." — the
+ * commit's own sentence (`result.warnings`, lib/import/commit.ts) was in the
+ * response and nothing read it; "Preview pull" showed no close plan at all.
+ * The message is composed by ONE exported function now, pinned here on
+ * synthetic input and in tests/fix-wave-c-import.test.ts on the route's real
+ * response.
+ */
+describe("pullResultMessage — what the card prints after a pull", () => {
+  const CLOSED =
+    "1 open position in this account was closed by this file, oldest first (TCS 100). Realised P&L sits on the closed rows; the matching rows in this file are their closing legs, not new positions.";
+
+  it("commit: the counts, then the COMMIT's own sentences, then the pull's warnings", () => {
+    expect(
+      pullResultMessage("commit", { result: { added: 0, skipped: 0, warnings: [CLOSED] }, warnings: ["W1."] }),
+    ).toBe(`Committed — 0 added, 0 duplicates skipped. ${CLOSED} W1.`);
+  });
+
+  it("commit with nothing to add from the commit is the sentence it always was", () => {
+    expect(pullResultMessage("commit", { result: { added: 3, skipped: 1 }, warnings: [] })).toBe(
+      "Committed — 3 added, 1 duplicates skipped.",
+    );
+    expect(pullResultMessage("commit", { result: { added: 3, skipped: 1 }, warnings: ["W1."] })).toBe(
+      "Committed — 3 added, 1 duplicates skipped. W1.",
+    );
+  });
+
+  it("preview: the close plan, in the file preview's own words, before the warnings", () => {
+    expect(
+      pullResultMessage("preview", {
+        preview: { rows: [{}], autoClose: { closes: 1, positions: [{ symbol: "TCS", qty: 100 }] } },
+        warnings: ["W1."],
+      }),
+    ).toBe("Preview: 1 normalized trade. Will close 1 open position already held in this account, oldest first (TCS 100). W1.");
+    expect(
+      pullResultMessage("preview", { preview: { rows: [{}, {}], autoClose: { closes: 0, positions: [] } }, warnings: ["W1."] }),
+    ).toBe("Preview: 2 normalized trades. W1.");
+  });
+});
+
+/**
+ * C-6 — the kept notice. After a clamped (or page-capped) Dhan commit the
+ * span lives in the audit trail and the card shows it until the user clears
+ * it. The sentence names the dates and the remedy; it states a fact.
+ */
+describe("unfetchedNotice — the kept line for fills a pull never read", () => {
+  it("range cap: the dates, why, and the tradebook remedy — verbatim", () => {
+    expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-10", reason: "range-cap" })).toBe(
+      "Not fetched from Dhan: fills from 01 May 2026 to 10 Jun 2026 — they are older than the window a pull reads. Import a Dhan tradebook for 01 May 2026 to 10 Jun 2026 to bring them in.",
+    );
+  });
+
+  it("page cap: the window that may be short, and the same remedy — verbatim", () => {
+    expect(unfetchedNotice({ from: "2026-06-11", to: "2026-09-09", reason: "page-cap" })).toBe(
+      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Import a Dhan tradebook for 11 Jun 2026 to 09 Sep 2026 to be sure every fill is in.",
+    );
+  });
+
+  it("carries no SEBI-forbidden verb", () => {
+    for (const reason of ["range-cap", "page-cap"]) {
+      expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-10", reason })).not.toMatch(
+        /\b(recommend|suggest|should|consider|buy|sell)\b/i,
+      );
+    }
+  });
+});
+
+describe("the card reads those functions — the copy is not re-typed in JSX", () => {
+  const load = async () => {
+    const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
+    return src.replace(/\r\n/g, "\n").split("\n").filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
+  };
+
+  it("pull() prints pullResultMessage for BOTH modes, and the commit sentence is written once", async () => {
+    const code = await load();
+    expect(code).toContain("setMsg({ ok: true, text: pullResultMessage(mode, data) });");
+    expect(code.match(/Committed — /g)).toHaveLength(1);
+    expect(code.match(/Preview: \$\{/g)).toHaveLength(1);
+  });
+
+  it("the kept notices render unfetchedNotice with an explicit Clear control, on the Dhan tab only", async () => {
+    const code = await load();
+    expect(code).toMatch(/const unfetchedRows = active === "dhan" \?/);
+    const at = code.indexOf('data-testid="pull-unfetched"');
+    expect(at, "no kept-notice block").toBeGreaterThan(-1);
+    const block = code.slice(at, at + 1200);
+    expect(block).toContain("unfetchedNotice(s)");
+    expect(block).toMatch(/onClick=\{\(\) => clearUnfetched\(c, s\)\}/);
+  });
+
+  it("the clear is a route-handler write: fetch, then refresh and router.refresh() — never a server action", async () => {
+    const code = await load();
+    const a = code.indexOf("async function clearUnfetched(");
+    const b = code.indexOf("function switchBroker(", a);
+    expect(a).toBeGreaterThan(-1);
+    const fn = code.slice(a, b);
+    expect(fn).toContain('action: "clear-unfetched"');
+    expect(fn).toContain("await refresh();");
+    expect(fn).toContain("router.refresh();");
+    expect(code).not.toMatch(/["']use server["']/);
   });
 });
 
@@ -195,7 +323,8 @@ describe("the gap line is rendered from that one function", () => {
     const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
     // The sentence exists ONCE, inside the exported function.
     expect(src.match(/Pulls missed since/g)?.length).toBe(1);
-    expect(src).toMatch(/pullGapNotice\(conn\?\.lastPullAt\)/);
+    // C-6: the server's catchUpFrom rides along, so a clamped gap is said.
+    expect(src).toMatch(/pullGapNotice\(conn\?\.lastPullAt, undefined, conn\?\.catchUpFrom\)/);
     expect(src).toMatch(/data-testid="pull-gap"[\s\S]{0,200}?\{gapNotice\}/);
     // The old locale-ambiguous formatter must not come back. Comment lines are
     // dropped first — the header explains WHY it went, and naming it there is
@@ -218,7 +347,9 @@ describe("the gap line is rendered from that one function", () => {
 
     // The value the `pull-gap` block renders is null off the Dhan tab, so the
     // block cannot render there at all.
-    expect(code).toMatch(/const gapNotice = active === "dhan" \? pullGapNotice\(conn\?\.lastPullAt\) : null;/);
+    expect(code).toMatch(
+      /const gapNotice = active === "dhan" \? pullGapNotice\(conn\?\.lastPullAt, undefined, conn\?\.catchUpFrom\) : null;/,
+    );
     // …and it is still the ONE derivation the render reads.
     expect(code.match(/pullGapNotice\(conn/g)).toHaveLength(1);
     expect(code).toMatch(/\{gapNotice && \(/);

@@ -52,28 +52,34 @@ describe("charge_config epochs survive a re-seed", () => {
   it("keeps the historical STT epoch intact, and invents no epoch where the statute did not move", async () => {
     const { seedDatabase } = await import("@/lib/db/seed-core");
 
-    // --- Futures: FA 2026 moved this one, so it must carry TWO epochs. ------
+    // --- Futures: moved on 1-Oct-2024 AND by FA 2026, so THREE epochs. -----
     const before = pick("future");
-    expect(before.length).toBe(2);
+    expect(before.length).toBe(3);
     const oldBefore = before.find((r) => r.effectiveFrom === "1970-01-01")!;
+    const fy25Before = before.find((r) => r.effectiveFrom === "2024-10-01")!;
     const newBefore = before.find((r) => r.effectiveFrom === "2026-04-01")!;
-    expect(oldBefore.sttPct).toBeCloseTo(0.0002, 10); // 0.02% up to 31-Mar-2026
+    expect(oldBefore.sttPct).toBeCloseTo(0.000125, 10); // 0.0125% up to 30-Sep-2024
+    expect(fy25Before.sttPct).toBeCloseTo(0.0002, 10); // 0.02% 1-Oct-2024 .. 31-Mar-2026
     expect(newBefore.sttPct).toBeCloseTo(0.0005, 10); // 0.05% from 1-Apr-2026
-    expect(oldBefore.effectiveTo).toBe("2026-04-01");
+    expect(oldBefore.effectiveTo).toBe("2024-10-01");
+    expect(fy25Before.effectiveTo).toBe("2026-04-01");
     expect(newBefore.effectiveTo).toBeNull();
 
     // --- THE REGRESSION: seed again, exactly as an app update does. ---------
     seedDatabase();
 
     const after = pick("future");
-    expect(after.length).toBe(2); // no duplicate epoch created
+    expect(after.length).toBe(3); // no duplicate epoch created
     const oldAfter = after.find((r) => r.effectiveFrom === "1970-01-01")!;
+    const fy25After = after.find((r) => r.effectiveFrom === "2024-10-01")!;
     const newAfter = after.find((r) => r.effectiveFrom === "2026-04-01")!;
 
-    // The historical window still carries the HISTORICAL rate. Before the fix
-    // this read 0.0005 — today's rate written over the past.
-    expect(oldAfter.sttPct).toBeCloseTo(0.0002, 10);
-    expect(oldAfter.effectiveTo).toBe("2026-04-01");
+    // The historical windows still carry the HISTORICAL rates. Before the fix
+    // the oldest read 0.0005 — today's rate written over the past.
+    expect(oldAfter.sttPct).toBeCloseTo(0.000125, 10);
+    expect(oldAfter.effectiveTo).toBe("2024-10-01");
+    expect(fy25After.sttPct).toBeCloseTo(0.0002, 10);
+    expect(fy25After.effectiveTo).toBe("2026-04-01");
     expect(newAfter.sttPct).toBeCloseTo(0.0005, 10);
     expect(newAfter.effectiveTo).toBeNull();
 

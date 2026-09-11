@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BrowseDrawer } from "@/components/strategies/browse-drawer";
 import {
   FIGURE_TONE_CLASS,
   STRATEGY_COPY,
@@ -282,9 +285,68 @@ describe("the §6 / §7 sentences, by value", () => {
       "empty",
       "proWithheldNote",
       "shelfLocked",
+      "browseOpen",
     ]) {
       expect(src, `STRATEGY_COPY.${key} is never rendered`).toContain(`STRATEGY_COPY.${key}`);
     }
+  });
+});
+
+/**
+ * C-3 (v4.3.0 fix wave C). The drawer button read "Browse all 40 (40)": the
+ * label carried the count as a literal AND browse-drawer.tsx appended the
+ * derived one. The substring pins above passed over it, because "Browse all 40"
+ * is inside "Browse all 40 (40)". The button is rendered here and read EXACTLY,
+ * and no count is ever a literal in this copy (the "never a value pin" rule,
+ * docs/DECISIONS.md) — each one is the catalogue's own length.
+ */
+describe("the drawer button states the count once, and every count is the catalogue's (C-3)", () => {
+  const rows = CATALOGUE.map((d) => ({ id: d.id, name: d.name, style: d.style, beginner: d.beginner }));
+  const noop = () => {};
+
+  it("the rendered button text is EXACTLY `Browse all (N)`, N derived from the rows", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(BrowseDrawer, {
+        rows,
+        selected: [],
+        onToggle: noop,
+        onRestore: noop,
+        onUndo: noop,
+        onRedo: noop,
+        undoable: false,
+        redoable: false,
+      }),
+    );
+    const first = /<button\b[^>]*>([\s\S]*?)<\/button>/.exec(html);
+    expect(first, "the drawer renders no button").not.toBeNull();
+    const text = first![1].replace(/<[^>]+>/g, "").trim();
+    expect(text).toBe(`Browse all (${CATALOGUE.length})`);
+  });
+
+  it("the label itself carries no digit — the drawer appends the one count", () => {
+    expect(STRATEGY_COPY.browseOpen).not.toMatch(/\d/);
+  });
+
+  it("every count STRATEGY_COPY prints equals CATALOGUE.length (a version like 4.3 is not a count)", () => {
+    let seen = 0;
+    for (const [key, value] of Object.entries(STRATEGY_COPY)) {
+      if (typeof value !== "string") continue;
+      const counts = value.replace(/\b\d+\.\d+\b/g, " ").match(/\d+/g) ?? [];
+      for (const n of counts) {
+        seen++;
+        expect(Number(n), `STRATEGY_COPY.${key} prints ${n}: "${value}"`).toBe(CATALOGUE.length);
+      }
+    }
+    // The shelf-locked sentence names the picker's size, so this scan is not vacuous.
+    expect(seen).toBeGreaterThanOrEqual(1);
+  });
+
+  it("the shelf-locked sentence DERIVES its count — no digit literal in its source", () => {
+    const src = stripComments(fs.readFileSync(path.join(ROOT, "components/strategies/strategy-copy.ts"), "utf8"));
+    const decl = /shelfLocked:\s*([^\n]+)/.exec(src);
+    expect(decl, "shelfLocked is not declared on one line").not.toBeNull();
+    expect(decl![1]).toContain("CATALOGUE.length");
+    expect(decl![1], "a hand-typed count drifts from the catalogue").not.toMatch(/\d/);
   });
 });
 

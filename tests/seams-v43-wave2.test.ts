@@ -805,7 +805,10 @@ describe("S9 — one entitlement, both halves: the route refuses and the page lo
     expect(text).toContain("Call Calendar Spread");
     expect(text).toContain("Protective Put");
     expect(text).toContain("Bull Call Spread");
-    expect(text).toContain(STRATEGY_COPY.browseOpen);
+    // C-3: the label and the derived count, ONCE each — "Browse all 40 (40)"
+    // contained the bare label too, which is how a substring pin passed it.
+    expect(text).toContain(`${STRATEGY_COPY.browseOpen} (${CATALOGUE.length})`);
+    expect(text, "the count is printed twice").not.toMatch(/Browse all \d/);
     expect(text).not.toContain(STRATEGY_COPY.shelfLocked);
   });
 

@@ -3,11 +3,18 @@ import { db } from "@/lib/db";
 import { brokerConnections, settings as settingsTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { encryptSecret, readSecret } from "@/lib/vault";
-import { recordAudit } from "@/lib/audit";
+import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { toIst } from "@/lib/domain/trading-day";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
-import { catchUpRange, dhanImportSource, dhanTotpEnrolled, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import {
+  catchUpRange,
+  dhanImportSource,
+  dhanTotpEnrolled,
+  toParsedFile as dhanToParsedFile,
+  type DhanHistoryRead,
+  type DhanUnfetchedSpan,
+} from "@/lib/import/api/dhan";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 
 // Opt-in auto-pull on launch (v3.6, WS3) — the auto-MTM render-guard pattern,
@@ -106,6 +113,40 @@ const labelOf = (broker: string) => LABELS[broker] ?? broker;
 
 type ConnRow = typeof brokerConnections.$inferSelect;
 
+/**
+ * C-6 (v4.3.0 fix wave C): keep what a background Dhan commit did not read —
+ * the SAME append-only audit record the manual route writes
+ * (app/api/import/broker/route.ts, `recordUnfetched`, where the store is
+ * explained), so the Dhan card lists a clamp from a sweep exactly as it lists
+ * one from a click. tests/fix-wave-c-import.test.ts reads this writer back
+ * through the route's GET.
+ */
+function recordUnfetched(conn: ConnRow, spans: readonly DhanUnfetchedSpan[]): void {
+  if (spans.length === 0) return;
+  recordAuditMany(
+    spans.map((s) => ({
+      entity: "settings" as const,
+      entityId: conn.id,
+      action: "create" as const,
+      summary: s.message,
+      before: null,
+      after: { notice: "dhan-unfetched", broker: "dhan", accountId: conn.accountId, from: s.from, to: s.to, reason: s.reason, clearedAt: null },
+      source: "auto-pull",
+    })),
+  );
+}
+
+/** The sweep line's words for the same spans — plain, and with the remedy. */
+function unfetchedDetail(spans: readonly DhanUnfetchedSpan[]): string {
+  if (spans.length === 0) return "";
+  const parts = spans.map((s) =>
+    s.reason === "range-cap"
+      ? `fills from ${s.from} to ${s.to} not fetched`
+      : `fills between ${s.from} and ${s.to} may be missing (page limit)`,
+  );
+  return ` (${parts.join("; ")} — import a Dhan tradebook for those dates)`;
+}
+
 /** One eligible connection's pull → preview → commit, 409-shapes skipped.
  *  Injectable for tests; the default does the real adapter work. */
 export type PullOne = (conn: ConnRow, today: string) => Promise<AutoPullEntry>;
@@ -125,6 +166,8 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
   }
 
   let parsed;
+  /** C-6: Dhan history this pull did not read — kept only if it commits. */
+  let unfetched: readonly DhanUnfetchedSpan[] = [];
   try {
     if (conn.broker === "angelone") {
       if (!auth?.clientCode || !auth?.pin || !auth?.totpSecret) {
@@ -167,8 +210,24 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       // turns the stored stamp into [lastPullAt IST day, today], clamped to
       // DHAN_MAX_PULL_RANGE_DAYS; null (never pulled, or already pulled
       // today) leaves the daily pull byte-identical to what it always did.
+      // C-6: a clamp (range.unfetched) or a page-capped walk (onHistory) is
+      // named in the warnings and handed back as spans, as in the route.
       const range = catchUpRange(conn.lastPullAt, today);
-      parsed = dhanToParsedFile(await source.fetchTrades(range ?? {}), range);
+      let read: DhanHistoryRead | null = null;
+      const trades = await source.fetchTrades(
+        range
+          ? {
+              from: range.from,
+              to: range.to,
+              onHistory: (h) => {
+                read = h;
+              },
+            }
+          : {},
+      );
+      const pulled = dhanToParsedFile(trades, range, read);
+      unfetched = pulled.unfetched;
+      parsed = pulled;
     } else if (conn.broker === "upstox") {
       parsed = upstoxToParsedFile(normalizeUpstoxTrades(await fetchUpstoxTrades({ accessToken: keyRead.value }), today));
     } else {
@@ -192,11 +251,18 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       return { ...base, status: "collision", detail: "collision — review in Import" };
     }
     commitParsedFile(parsed, fileName, null, conn.accountId);
+    // C-6: keep the unread spans BEFORE lastPullAt moves past them.
+    recordUnfetched(conn, unfetched);
     db.update(brokerConnections)
       .set({ lastPullAt: new Date().toISOString() })
       .where(eq(brokerConnections.id, conn.id))
       .run();
-    return { ...base, status: "imported", detail: `+${pre.summary.newCount} trade${pre.summary.newCount === 1 ? "" : "s"}`, newCount: pre.summary.newCount };
+    return {
+      ...base,
+      status: "imported",
+      detail: `+${pre.summary.newCount} trade${pre.summary.newCount === 1 ? "" : "s"}${unfetchedDetail(unfetched)}`,
+      newCount: pre.summary.newCount,
+    };
   } catch (e) {
     return { ...base, status: "error", detail: `import refused: ${(e as Error).message}` };
   }

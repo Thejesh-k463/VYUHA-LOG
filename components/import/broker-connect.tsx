@@ -30,6 +30,8 @@ import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalg
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
 import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components/import/broker-connect-gate";
 import { writeStored } from "@/components/layout/use-stored-value";
+// The file preview's close-plan sentence — ONE composer for both screens (C-5).
+import { autoClosePlanNote, type AutoClosePlan } from "@/components/import/import-client";
 // Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
 // trading-day walk-back, so the gap line cannot invent a second calendar.
 import { previousTradingDay, todayIstIso } from "@/lib/domain/trading-day";
@@ -64,6 +66,12 @@ interface ConnStatus {
   /** The stored token's own `exp`, ISO — null when absent or not a JWT. */
   tokenExpiresAt?: string | null;
   lastPullAt: string | null;
+  /** Dhan only (C-6): history spans a COMMITTED pull never read, kept in the
+   *  audit trail until the user clears them. */
+  unfetched?: UnfetchedSpan[];
+  /** Dhan only (C-6): where the NEXT pull's history window starts — later than
+   *  the last pull's day means the 90-day clamp will leave days out. */
+  catchUpFrom?: string | null;
   /** OpenAlgo only — saved config echoed back so the form shows what is
    *  actually connected instead of defaults (host/broker are not secrets). */
   openalgoHost?: string | null;
@@ -84,6 +92,45 @@ interface PullResult {
   skipped?: number;
   total?: number;
   rows?: number;
+  /** The COMMIT's own sentences (lib/import/commit.ts) — e.g. which open
+   *  positions a pulled SELL closed. C-5: these used to go unread. */
+  warnings?: string[];
+}
+
+/** One kept "not fetched" span, as GET projects it (C-6). */
+export interface UnfetchedSpan {
+  from: string;
+  to: string;
+  reason: string;
+}
+
+/** The slice of the pull route's JSON the message reads. */
+export interface PullResponseLite {
+  result?: PullResult;
+  preview?: { rows?: unknown[]; summary?: { total?: number }; autoClose?: AutoClosePlan | null };
+  warnings?: string[];
+}
+
+/**
+ * The one line the card prints after a pull (C-5).
+ *
+ * Commit: the counts, then the commit's OWN sentences (`result.warnings`) —
+ * a SELL that closed a held lot adds nothing and skips nothing, so without
+ * them the line read "0 added, 0 duplicates skipped" over a position that had
+ * just closed — then the pull's warnings. Preview: the row count, then the
+ * close plan in the file preview's own words, then the warnings.
+ */
+export function pullResultMessage(mode: "preview" | "commit", data: PullResponseLite): string {
+  const warn = data.warnings ?? [];
+  if (mode === "commit") {
+    const r = data.result ?? {};
+    return [`Committed — ${r.added ?? 0} added, ${r.skipped ?? 0} duplicates skipped.`, ...(r.warnings ?? []), ...warn]
+      .join(" ")
+      .trim();
+  }
+  const rows = data.preview?.rows?.length ?? data.preview?.summary?.total ?? 0;
+  const plan = autoClosePlanNote(data.preview?.autoClose);
+  return [`Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}.`, ...(plan ? [plan] : []), ...warn].join(" ").trim();
 }
 
 type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";
@@ -193,16 +240,35 @@ export function formatTs(iso: string): string {
   return `${p.day} ${mon} ${p.year}, ${p.hour}:${p.minute} IST`;
 }
 
+/** "2026-09-04" → "04 Sep 2026" — the same shape as the stamp. */
+function dayLabel(isoDay: string): string {
+  const [y, m, d] = isoDay.split("-");
+  return `${d} ${MON_SHORT[Number(m) - 1] ?? m} ${y}`;
+}
+
 /**
- * The one line under the pull buttons when the last pull is older than the
- * previous trading day: the next pull will fetch a RANGE, not just today, and
- * saying so is the difference between "nothing happened" and "the gap is
- * coming". A statement of fact — no advice verb (SEBI copy rule).
+ * The one line under the pull buttons when a gap is longer than a routine one.
+ *
+ * A pull fetches a RANGE whenever the last one ran before today
+ * (`catchUpRange`, lib/import/api/dhan.ts); a one-day gap is the everyday case
+ * and is not called "missed", so this line appears only when the last pull is
+ * older than the previous trading day. Saying so is the difference between
+ * "nothing happened" and "the gap is coming". A statement of fact — no advice
+ * verb (SEBI copy rule).
+ *
+ * C-6: `fetchFrom` is where the server says the next pull's window starts
+ * (`catchUpFrom`). When that is after the last pull's day the window is
+ * clamped, and "fetches the gap" would be false — the line names the start and
+ * says the rest is not fetched.
  *
  * Null when there is nothing to say: never pulled, pulled since the previous
  * trading day, or an unreadable stamp.
  */
-export function pullGapNotice(lastPullAt: string | null | undefined, now: Date = new Date()): string | null {
+export function pullGapNotice(
+  lastPullAt: string | null | undefined,
+  now: Date = new Date(),
+  fetchFrom?: string | null,
+): string | null {
   if (!lastPullAt) return null;
   const t = Date.parse(lastPullAt);
   if (!Number.isFinite(t)) return null;
@@ -210,8 +276,26 @@ export function pullGapNotice(lastPullAt: string | null | undefined, now: Date =
   // 2026-09-04T19:00Z is already 5 Sep in India.
   const day = todayIstIso(new Date(t));
   if (day >= previousTradingDay(todayIstIso(now))) return null;
-  const [y, m, d] = day.split("-");
-  return `Pulls missed since ${d} ${MON_SHORT[Number(m) - 1] ?? m} ${y} — the next pull fetches the gap.`;
+  const clampedFrom =
+    typeof fetchFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fetchFrom) && fetchFrom > day ? fetchFrom : null;
+  const tail = clampedFrom
+    ? `the next pull fetches from ${dayLabel(clampedFrom)}; fills before that are not fetched.`
+    : "the next pull fetches the gap.";
+  return `Pulls missed since ${dayLabel(day)} — ${tail}`;
+}
+
+/**
+ * C-6 — the KEPT line for Dhan history a committed pull never read. It stays
+ * on the card until the user clears it, because the commit moved lastPullAt
+ * past those days and no later pull will ask for them. Names the dates and the
+ * remedy; states a fact.
+ */
+export function unfetchedNotice(s: UnfetchedSpan): string {
+  const a = dayLabel(s.from);
+  const b = dayLabel(s.to);
+  return s.reason === "page-cap"
+    ? `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing. Import a Dhan tradebook for ${a} to ${b} to be sure every fill is in.`
+    : `Not fetched from Dhan: fills from ${a} to ${b} — they are older than the window a pull reads. Import a Dhan tradebook for ${a} to ${b} to bring them in.`;
 }
 
 /**
@@ -483,7 +567,11 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
    *  the sole caller that widens a pull to a range; every other broker fetches
    *  its own default window whatever the last pull says, so on their tabs this
    *  line promised a catch-up that does not happen. */
-  const gapNotice = active === "dhan" ? pullGapNotice(conn?.lastPullAt) : null;
+  const gapNotice = active === "dhan" ? pullGapNotice(conn?.lastPullAt, undefined, conn?.catchUpFrom) : null;
+  /** C-6 — every kept "not fetched" span on this tab's Dhan rows, derived at
+   *  render time from the server's projection (never state, never an effect).
+   *  Dhan only: no other puller clamps a window. */
+  const unfetchedRows = active === "dhan" ? brokerConns.flatMap((c) => (c.unfetched ?? []).map((s) => ({ c, s }))) : [];
   /** The row a SAVE would upsert — in the aggregate view, the picker's account. */
   const saveTargetConn =
     saveAccountId > 0
@@ -692,16 +780,12 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
       await fail(res, data, "Pull failed");
       return;
     }
+    // C-5: one composer for both modes — the commit's own sentences and the
+    // preview's close plan are part of the message, not dropped beside it.
+    setMsg({ ok: true, text: pullResultMessage(mode, data) });
     if (mode === "commit") {
-      const r: PullResult = data.result ?? {};
-      const warn = (data.warnings ?? []).join(" ");
-      setMsg({ ok: true, text: `Committed — ${r.added ?? 0} added, ${r.skipped ?? 0} duplicates skipped. ${warn}`.trim() });
       await refresh();
       router.refresh();
-    } else {
-      const rows = data.preview?.rows?.length ?? data.preview?.summary?.total ?? 0;
-      const warn = (data.warnings ?? []).join(" ");
-      setMsg({ ok: true, text: `Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}. ${warn}`.trim() });
     }
   }
 
@@ -730,6 +814,24 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
     }
     setMsg({ ok: true, text: data.message ?? "" });
     await refresh();
+  }
+
+  /** C-6 — the explicit clear for a kept "not fetched" notice. A route-handler
+   *  write (fetch, then re-read the list and router.refresh()), never a server
+   *  action: that would remount this card and reset its state (AGENTS.md). */
+  async function clearUnfetched(c: ConnStatus, s: UnfetchedSpan) {
+    const { res, data } = await post(
+      { action: "clear-unfetched", broker: c.broker, accountId: c.accountId, from: s.from, to: s.to, reason: s.reason },
+      "clear-unfetched",
+    );
+    if (!data.ok) {
+      await fail(res, data, "Could not clear the notice.");
+      await refresh();
+      return;
+    }
+    setMsg({ ok: true, text: data.message ?? "" });
+    await refresh();
+    router.refresh();
   }
 
   function switchBroker(b: BrokerId) {
@@ -1188,6 +1290,28 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
           <p className="text-xs text-muted-foreground" data-testid="pull-gap">
             {gapNotice}
           </p>
+        )}
+
+        {/* C-6: Dhan history a committed pull never read. Kept until the user
+            clears it — the commit moved lastPullAt past these days, so no
+            later pull asks for them and the gap line above no longer can. */}
+        {unfetchedRows.length > 0 && (
+          <div className="space-y-1.5" data-testid="pull-unfetched">
+            {unfetchedRows.map(({ c, s }) => (
+              <div
+                key={`${c.accountId}|${s.from}|${s.to}|${s.reason}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning/90"
+              >
+                <span>
+                  {aggregate || brokerConns.length > 1 ? `${c.accountName ?? `Account ${c.accountId}`}: ` : ""}
+                  {unfetchedNotice(s)}
+                </span>
+                <Button size="sm" variant="secondary" onClick={() => clearUnfetched(c, s)} disabled={busy != null}>
+                  Clear notice
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
 
         {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}

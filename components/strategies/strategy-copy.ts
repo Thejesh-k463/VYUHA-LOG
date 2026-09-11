@@ -17,6 +17,7 @@
  */
 
 import {
+  CATALOGUE,
   getStrategyDef,
   type StrategyId,
 } from "@/lib/analytics/strategy-catalogue";
@@ -75,13 +76,20 @@ export const STRATEGY_COPY = {
   proWithheldNote:
     "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. Your legs, the four figures and the payoff curve stay free.",
 
-  /** The shelf, for a free build: a locked strip and one line. */
-  shelfLocked: "The strategy shelf and the 40-shape picker are part of Vyuha Pro.",
+  /**
+   * The shelf, for a free build: a locked strip and one line. The picker's
+   * size is the catalogue's own length, never a typed count (C-3, fix wave C).
+   */
+  shelfLocked: `The strategy shelf and the ${CATALOGUE.length}-shape picker are part of Vyuha Pro.`,
 
   shelfTitle: "Your shelf",
   shelfEmpty: "Nothing on the shelf.",
   browseTitle: "Browse the catalogue",
-  browseOpen: "Browse all 40",
+  /**
+   * NO count here: `browse-drawer.tsx` appends the one derived from the rows it
+   * was handed, and a count in the label printed "Browse all 40 (40)" (C-3).
+   */
+  browseOpen: "Browse all",
   browseClose: "Close",
   restoreDefaults: "Restore defaults",
   undo: "Undo",

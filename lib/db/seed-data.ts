@@ -68,11 +68,29 @@ const GST = 0.18;
  */
 export const STT_EPOCH_2026 = "2026-04-01";
 
+/**
+ * THE EARLIER STT EPOCH BOUNDARY — 1 October 2024.
+ *
+ * The Finance (No. 2) Act, 2024 raised the same three derivative STT rates with
+ * effect from 1 October 2024: futures 0.0125% → 0.02%, options 0.0625% → 0.10%
+ * of premium, both on the sell side. In-repo source: the dated reference table
+ * lib/data/charge-rates-defaults.json (futures 1970→2024-10-01 sttPct 0.000125,
+ * index_option 1970→2024-10-01 sttPct 0.000625, both "sell"). That table has no
+ * stock_option row; stock options take the index-option rate because the levy
+ * is one line for both ("sale of an option in securities").
+ *
+ * Without this epoch, every pre-October-2024 F&O trade priced from charge_config
+ * (a file that states no broker charges) carried 1.6× the STT that applied.
+ * Only STT is dated here (owner ruling C-7, "rates only").
+ */
+export const STT_EPOCH_2024 = "2024-10-01";
+
 /** Which rate regime a seed row describes. */
-export type SttEpoch = "pre-2026-04" | "current";
+export type SttEpoch = "pre-2024-10" | "pre-2026-04" | "current";
 
 function sttFor(segment: Segment, epoch: SttEpoch = "current"): { pct: number; side: "both" | "sell" | "none" } {
-  const old = epoch === "pre-2026-04";
+  const pick = (pre2024: number, fy25: number, now: number) =>
+    epoch === "pre-2024-10" ? pre2024 : epoch === "pre-2026-04" ? fy25 : now;
   switch (segment) {
     case "eq_delivery":
     case "eq_mtf":
@@ -80,10 +98,10 @@ function sttFor(segment: Segment, epoch: SttEpoch = "current"): { pct: number; s
     case "eq_intraday":
       return { pct: 0.00025, side: "sell" }; // 0.025% sell — unchanged by FA 2026
     case "future":
-      return { pct: old ? 0.0002 : 0.0005, side: "sell" }; // 0.02% → 0.05% sell
+      return { pct: pick(0.000125, 0.0002, 0.0005), side: "sell" }; // 0.0125% → 0.02% → 0.05% sell
     case "index_option":
     case "stock_option":
-      return { pct: old ? 0.001 : 0.0015, side: "sell" }; // 0.10% → 0.15% of premium on sell
+      return { pct: pick(0.000625, 0.001, 0.0015), side: "sell" }; // 0.0625% → 0.10% → 0.15% of premium on sell
     case "commodity_future":
       return { pct: 0.0001, side: "sell" }; // CTT 0.01% sell — a different levy
     case "commodity_option":
@@ -519,23 +537,33 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         });
 
         /**
-         * The pre-1-Apr-2026 epoch, for the three rates FA 2026 moved.
+         * The earlier epochs, for the three rates FA 2026 moved (the same three
+         * the Finance (No. 2) Act, 2024 moved on 1 October 2024).
          *
-         * Emitted as a SECOND row for the same key, closed at the boundary, so
-         * a trade from before the change is priced at the rate that actually
-         * applied to it. Segments the circular left alone get one open-ended
-         * row exactly as before — no needless history where nothing changed.
+         * Emitted as further rows for the same key, each closed at the next
+         * boundary, so a trade is priced at the rate that actually applied on
+         * its own date. They differ from the current row in STT ONLY. Segments
+         * neither change touched get one open-ended row exactly as before — no
+         * needless history where nothing changed.
          */
         if (sttChangedIn2026(segment)) {
-          const prevStt = sttFor(segment, "pre-2026-04");
           const current = rows[rows.length - 1];
           current.effectiveFrom = STT_EPOCH_2026;
+          const fy25Stt = sttFor(segment, "pre-2026-04");
           rows.push({
             ...current,
-            sttPct: prevStt.pct,
-            sttSide: prevStt.side,
-            effectiveFrom: "1970-01-01",
+            sttPct: fy25Stt.pct,
+            sttSide: fy25Stt.side,
+            effectiveFrom: STT_EPOCH_2024,
             effectiveTo: STT_EPOCH_2026,
+          });
+          const preStt = sttFor(segment, "pre-2024-10");
+          rows.push({
+            ...current,
+            sttPct: preStt.pct,
+            sttSide: preStt.side,
+            effectiveFrom: "1970-01-01",
+            effectiveTo: STT_EPOCH_2024,
           });
         }
       }

@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { brokerConnections, settings } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
-import { recordAudit } from "@/lib/audit";
+import { auditLog, brokerConnections, settings } from "@/lib/db/schema";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { recordAudit, recordAuditMany } from "@/lib/audit";
 import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
-import { DHAN_TOTP_ACK_VERSION, catchUpRange, dhanImportSource, dhanTotpEnrolled, jwtExpiresAt, toParsedFile as dhanToParsedFile } from "@/lib/import/api/dhan";
+import {
+  DHAN_TOTP_ACK_VERSION,
+  catchUpRange,
+  dhanImportSource,
+  dhanTotpEnrolled,
+  jwtExpiresAt,
+  toParsedFile as dhanToParsedFile,
+  type DhanHistoryRead,
+  type DhanUnfetchedSpan,
+} from "@/lib/import/api/dhan";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 import {
@@ -155,6 +164,81 @@ function readAuthBlob(stored: string | null | undefined): AuthBlobRead {
 const AUTH_UNREADABLE_WARNING = "enrolment stored but unreadable — remove the enrolment and re-enrol";
 
 /**
+ * C-6 (v4.3.0 fix wave C, owner ruling "Say it plainly") — the KEPT notice for
+ * Dhan history a committed pull never read.
+ *
+ * THE STORE IS THE AUDIT TRAIL, and no column was added (4.3.0 ships exactly
+ * one migration, 0071). A record is one append-only `audit_log` row, entity
+ * "settings" (what every broker-connection event already uses), whose after
+ * snapshot is `{notice, broker, accountId, from, to, reason, clearedAt: null}`;
+ * the user's clear is a SECOND row with the same keys and `clearedAt` set. The
+ * notice is outstanding while the latest row for its span is uncleared. Keyed
+ * by ACCOUNT, not connection id, because the fact is about the book: a
+ * disconnect + reconnect in the same account still shows it.
+ *
+ * Why not the alternatives: `auth_json` is the vault-encrypted credential blob
+ * — `hasAuth`, `clearAuth`, a re-save with new PIN + TOTP and the backup's
+ * credential redaction would each misreport or silently erase the notice;
+ * `import_batches.notes` is shown on the imports table and every file touching
+ * that table must be a declared owner in tests/account-isolation.test.ts
+ * (auto-pull resolves no account by design); `panel_dismissals` is
+ * account-scoped with its own owners and the inverse meaning; `settings` has no
+ * general JSON column. `audit_log` has no account_id (lib/domain/search-scope.ts),
+ * travels in backups, and is already written by both callers.
+ *
+ * lib/jobs/auto-pull.ts writes the SAME record for a background commit;
+ * tests/fix-wave-c-import.test.ts reads both writers back through GET.
+ */
+const DHAN_UNFETCHED_NOTICE = "dhan-unfetched";
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The spans still outstanding for one account, oldest first. */
+function outstandingUnfetched(accountId: number): { from: string; to: string; reason: string }[] {
+  const rows = db
+    .select({ after: auditLog.afterJson })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entity, "settings"),
+        sql`json_extract(${auditLog.afterJson}, '$.notice') = ${DHAN_UNFETCHED_NOTICE}`,
+        sql`json_extract(${auditLog.afterJson}, '$.accountId') = ${accountId}`,
+      ),
+    )
+    .orderBy(asc(auditLog.id))
+    .all();
+  const latest = new Map<string, { from: string; to: string; reason: string; cleared: boolean }>();
+  for (const r of rows) {
+    const a = r.after;
+    if (!a) continue;
+    const from = String(a.from ?? "");
+    const to = String(a.to ?? "");
+    const reason = String(a.reason ?? "");
+    if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) continue;
+    latest.set(`${from}|${to}|${reason}`, { from, to, reason, cleared: a.clearedAt != null });
+  }
+  return [...latest.values()]
+    .filter((s) => !s.cleared)
+    .map(({ from, to, reason }) => ({ from, to, reason }))
+    .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to));
+}
+
+/** Keep what a COMMITTED pull did not read — called before lastPullAt moves past it. */
+function recordUnfetched(connId: number, accountId: number, spans: readonly DhanUnfetchedSpan[]): void {
+  if (spans.length === 0) return;
+  recordAuditMany(
+    spans.map((s) => ({
+      entity: "settings" as const,
+      entityId: connId,
+      action: "create" as const,
+      summary: s.message,
+      before: null,
+      after: { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason, clearedAt: null },
+      source: "import",
+    })),
+  );
+}
+
+/**
  * Per-broker packing of the auth_json extras (OpenAlgo has its own branch in
  * the save handler because it also rewrites the connection id). Each entry
  * validates AT SAVE, with a message naming the field — not at tomorrow's pull
@@ -300,6 +384,13 @@ export async function GET() {
         lastPullAt: r.lastPullAt,
         updatedAt: r.updatedAt,
       };
+      // C-6, Dhan only: the kept notices, and where the NEXT pull's history
+      // window starts — later than the last pull's day means the clamp will
+      // leave days out, and the card's gap line says so before the pull.
+      if (r.broker === "dhan") {
+        out.unfetched = outstandingUnfetched(r.accountId);
+        out.catchUpFrom = catchUpRange(r.lastPullAt)?.from ?? null;
+      }
       // OpenAlgo's host and underlying broker are CONFIG, not credentials —
       // they ride encrypted in auth_json but the UI must show them back, or a
       // reloaded page renders the default host over a saved one and an
@@ -544,6 +635,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, message: "Disconnected." });
   }
 
+  // C-6: the explicit clear for a kept "not fetched" notice. A route-handler
+  // write the card calls with fetch + router.refresh() (AGENTS.md — never a
+  // server action). It APPENDS the clear; the record it clears is not touched.
+  if (body.action === "clear-unfetched") {
+    const from = str(body.from);
+    const to = str(body.to);
+    const reason = str(body.reason);
+    const open = outstandingUnfetched(accountId).find((s) => s.from === from && s.to === to && s.reason === reason);
+    if (!open) {
+      return NextResponse.json(
+        { ok: false, message: "That notice is not open for this account — nothing was changed." },
+        { status: 404 },
+      );
+    }
+    const connRow = db
+      .select({ id: brokerConnections.id })
+      .from(brokerConnections)
+      .where(and(eq(brokerConnections.accountId, accountId), eq(brokerConnections.broker, "dhan")))
+      .get();
+    const snap = { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId, from, to, reason };
+    recordAudit({
+      entity: "settings",
+      entityId: connRow?.id ?? null,
+      action: "update",
+      summary: `Dhan notice cleared by the user: fills from ${from} to ${to} were not fetched by a pull.`,
+      before: { ...snap, clearedAt: null },
+      after: { ...snap, clearedAt: new Date().toISOString() },
+      source: "ui",
+    });
+    return NextResponse.json({
+      ok: true,
+      message: `Notice cleared. Fills from ${from} to ${to} are in the journal only if a Dhan tradebook for those dates has been imported.`,
+    });
+  }
+
   if (body.action === "pull") {
     const broker = String(body.broker ?? "zerodha");
     const mode = body.mode === "commit" ? "commit" : "preview";
@@ -604,6 +730,8 @@ export async function POST(req: Request) {
     let parsed;
     /** Which broker sat behind the OpenAlgo instance — names the commit file. */
     let openAlgoBroker: Broker | null = null;
+    /** C-6: Dhan history this pull did not read — kept only if it commits. */
+    let unfetched: readonly DhanUnfetchedSpan[] = [];
     try {
       if (isOpenAlgoConnectionId(broker)) {
         // host + underlyingBroker live in auth_json as one encrypted blob.
@@ -724,8 +852,24 @@ export async function POST(req: Request) {
         // stamp becomes the window [its IST day, today], clamped to
         // DHAN_MAX_PULL_RANGE_DAYS. Null (never pulled, or pulled already
         // today) leaves this pull byte-identical to every build before.
+        // C-6: a clamped window (range.unfetched) and a page-capped walk
+        // (onHistory) are both NAMED in the warnings, and handed back as spans.
         const range = catchUpRange(conn.lastPullAt, todayIstIso());
-        parsed = dhanToParsedFile(await source.fetchTrades(range ?? {}), range);
+        let read: DhanHistoryRead | null = null;
+        const trades = await source.fetchTrades(
+          range
+            ? {
+                from: range.from,
+                to: range.to,
+                onHistory: (h) => {
+                  read = h;
+                },
+              }
+            : {},
+        );
+        const pulled = dhanToParsedFile(trades, range, read);
+        unfetched = pulled.unfetched;
+        parsed = pulled;
       } else if (broker === "upstox") {
         // apiKey holds the year-long read-only Analytics token. normalize is
         // called directly so the unparseable-symbol notes reach the screen.
@@ -911,6 +1055,9 @@ export async function POST(req: Request) {
           );
         }
         const result = commitParsedFile(parsed, fileName, null, accountId);
+        // C-6: keep the unread spans BEFORE lastPullAt moves past them — the
+        // move is what used to make them unrecoverable without a word.
+        recordUnfetched(conn.id, accountId, unfetched);
         db.update(brokerConnections)
           .set({ lastPullAt: new Date().toISOString() })
           .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
