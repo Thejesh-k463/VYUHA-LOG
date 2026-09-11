@@ -9,6 +9,7 @@ import { getIpoRealisedNet } from "./ipos";
 import { getSelectedAccount, getSelectedAccountId } from "./accounts";
 import { getTrades } from "./trades";
 import { getBucketCapital } from "./bucket-capital";
+import { signOf } from "@/lib/format";
 
 // Re-exported so the dozen existing `from "@/lib/queries/capital"` importers
 // keep working after the helper moved to its own module (see the header of
@@ -175,7 +176,7 @@ export function compoundRealised(bucket: Bucket): CompoundResult {
 
   return {
     ok: true,
-    message: `Compounded ${add >= 0 ? "+" : ""}₹${Math.round(add).toLocaleString("en-IN")} into ${bucket} capital.`,
+    message: `Compounded ${signOf(add)}₹${Math.round(Math.abs(add)).toLocaleString("en-IN")} into ${bucket} capital.`,
     added: add,
     bucket,
   };

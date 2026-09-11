@@ -11,10 +11,12 @@ import {
   capNote,
   customName,
   figureDescriptor,
+  helpHref,
   legCountLabel,
 } from "@/components/strategies/strategy-copy";
 import { CATALOGUE } from "@/lib/analytics/strategy-catalogue";
-import { OPTIONS_HELP_FOOTER } from "@/lib/domain/options-help";
+import { OPTIONS_HELP_FOOTER, OPTIONS_SECTION_ANCHOR } from "@/lib/domain/options-help";
+import { HELP_ENTRIES } from "@/lib/domain/help-content";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
 import { sebiRealityLine } from "@/lib/domain/options-help";
 
@@ -442,5 +444,25 @@ describe("figureDescriptor — the heading and the colour follow the SIGN", () =
     expect(legCountLabel(1)).toBe("1 leg");
     expect(legCountLabel(2)).toBe("2 legs");
     expect(legCountLabel(4)).toBe("4 legs");
+  });
+});
+
+/**
+ * R50 (v4.3.0 fix wave 1). The /strategies help entry said "each card here
+ * links straight to its entry". A Custom card — a group that matches no shape,
+ * or a match whose name is withheld on the free tier — has no entry to link to:
+ * `helpHref(null)` sends it to the TOP of the Options section. The help now says
+ * both halves, and this joins the sentence to the function that decides it.
+ */
+describe("the help says where a Custom card's link lands (R50)", () => {
+  it("helpHref(null) is the Options section top, and the /strategies help entry says so", () => {
+    expect(helpHref(null)).toBe("/help#options-help");
+    expect(helpHref(null)).toBe(`/help#${OPTIONS_SECTION_ANCHOR}`);
+    const body = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    expect(body).toMatch(/Custom/);
+    expect(body).toMatch(/top of the Options section/);
+    expect(body, "the help still says EVERY card links to its own entry").not.toMatch(
+      /each card here links straight to its entry/,
+    );
   });
 });

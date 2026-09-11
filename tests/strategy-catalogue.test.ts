@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   CATALOGUE,
   STRATEGY_IDS,
+  getStrategyDef,
   type LegPattern,
   type StrategyId,
 } from "@/lib/analytics/strategy-catalogue";
@@ -188,6 +189,8 @@ interface Fixture {
   maxProfit: number | null; // null = unbounded, per §4
   maxLoss: number | null;
   breakevens: number[]; // the §4 breakevens; the computed set must contain them
+  /** The computed set must EQUAL `breakevens` — pins a side with no breakeven. */
+  exactBreakevens?: true;
 }
 
 const FIXTURES: Fixture[] = [
@@ -219,6 +222,21 @@ const FIXTURES: Fixture[] = [
     id: "iron-butterfly",
     legs: [pe(90, "long", 1), pe(100, "short", 4), ce(100, "short", 4), ce(110, "long", 1)],
     maxProfit: 6, maxLoss: -4, breakevens: [94, 106],
+  },
+  // R98 (v4.3.0 fix wave 1): unequal wings take the same name. The WIDER wing
+  // sets the cap — max(K2 − K1, K3 − K2) × qty − credit = 20 − 6 — and the
+  // breakevens stay K2 ∓ credit/qty while each wing is wider than the credit.
+  {
+    id: "iron-butterfly",
+    legs: [pe(90, "long", 1), pe(100, "short", 4), ce(100, "short", 4), ce(120, "long", 1)],
+    maxProfit: 6, maxLoss: -14, breakevens: [94, 106],
+  },
+  // …and a wing NARROWER than the credit (5 < 11.5) leaves its side with no
+  // breakeven at all: one breakeven, K2 + 11.5, and max loss 30 − 11.5.
+  {
+    id: "iron-butterfly",
+    legs: [pe(95, "long", 7.5), pe(100, "short", 10), ce(100, "short", 10), ce(130, "long", 1)],
+    maxProfit: 11.5, maxLoss: -18.5, breakevens: [111.5], exactBreakevens: true,
   },
   // §4 20–22, butterflies
   {
@@ -262,15 +280,28 @@ const FIXTURES: Fixture[] = [
     legs: [pe(90, "short", 1), pe(95, "long", 2), ce(105, "long", 2), ce(110, "short", 1)],
     maxProfit: 3, maxLoss: -2, breakevens: [93, 107],
   },
+  // R98: unequal wings — max(K2 − K1, K4 − K3) × qty − debit = 15 − 2.
+  {
+    id: "reverse-iron-condor",
+    legs: [pe(90, "short", 1), pe(95, "long", 2), ce(105, "long", 2), ce(120, "short", 1)],
+    maxProfit: 13, maxLoss: -2, breakevens: [93, 107],
+  },
   // §4 27–30, ratios and backspreads
   { id: "call-ratio-spread", legs: [ce(100, "long", 6), ce(105, "short", 2, 2)], maxProfit: 3, maxLoss: null, breakevens: [102, 108] },
   { id: "put-ratio-spread", legs: [pe(95, "short", 2, 2), pe(100, "long", 6)], maxProfit: 3, maxLoss: -92, breakevens: [92, 98] },
   { id: "call-backspread", legs: [ce(100, "short", 6), ce(105, "long", 2, 2)], maxProfit: null, maxLoss: -3, breakevens: [102, 108] },
+  // R99: a DEBIT backspread (net 3 − 4 = −1). Max loss is (K2 − K1) × qty minus
+  // the signed net = 5 − (−1); "minus any net credit" read 5.
+  { id: "call-backspread", legs: [ce(100, "short", 3), ce(105, "long", 2, 2)], maxProfit: null, maxLoss: -6, breakevens: [111] },
   { id: "put-backspread", legs: [pe(95, "long", 2, 2), pe(100, "short", 6)], maxProfit: 92, maxLoss: -3, breakevens: [92, 98] },
   // §4 34–37, synthetics, combos and the box
   { id: "synthetic-long-stock", legs: [ce(100, "long", 5), pe(100, "short", 4)], maxProfit: null, maxLoss: -101, breakevens: [101] },
   { id: "synthetic-short-stock", legs: [ce(100, "short", 5), pe(100, "long", 4)], maxProfit: 101, maxLoss: null, breakevens: [101] },
   { id: "split-strike-combo", legs: [pe(95, "short", 2), ce(105, "long", 3)], maxProfit: null, maxLoss: -96, breakevens: [106] },
+  // R100: the CALL-LOWER variant is not flat between the strikes — both legs are
+  // in the money there, P&L = 2S − 199 — so its one breakeven (99.5) sits
+  // BETWEEN them. At S = 0: −105 + the net credit of 1.
+  { id: "split-strike-combo", legs: [ce(95, "long", 8), pe(105, "short", 9)], maxProfit: null, maxLoss: -104, breakevens: [99.5], exactBreakevens: true },
   {
     id: "box-spread",
     legs: [ce(90, "long", 12), pe(90, "short", 1), ce(100, "short", 5), pe(100, "long", 2)],
@@ -296,7 +327,7 @@ describe("§5.3 property 2 — §4 closed forms agree with the vertex computatio
       expect(s.maxProfit, "maxProfit").toBe(f.maxProfit);
       expect(s.maxLoss, "maxLoss").toBe(f.maxLoss);
       for (const be of f.breakevens) expect(s.breakevens, "breakevens").toContain(be);
-      if (f.breakevens.length === 0) expect(s.breakevens).toEqual([]);
+      if (f.breakevens.length === 0 || f.exactBreakevens) expect(s.breakevens).toEqual(f.breakevens);
     });
   }
 
@@ -307,5 +338,60 @@ describe("§5.3 property 2 — §4 closed forms agree with the vertex computatio
     const covered = [...new Set(FIXTURES.map((f) => f.id))];
     expect(covered.length).toBeGreaterThanOrEqual(21);
     expect([...covered].sort()).toEqual([...singleExpiryNoUl].sort());
+  });
+});
+
+/**
+ * v4.3.0 fix wave 1 (W1-HELP) — the catalogue's closed-form STRINGS agree with
+ * the engine and with the header's own convention (N = the net premium, credit
+ * positive). They are documentation, but they are the documentation the help
+ * desk was written from, so a wrong sign here is a wrong sentence there.
+ */
+describe("closed-form strings keep the credit-positive convention (R97, R98)", () => {
+  // Kept OUT of FIXTURES: the coverage equality above counts non-UL rows only.
+  // N is the OPTION-only net (strategy-copy.ts optionNetPremium) — the engine's
+  // own netPremium includes the underlying leg, so it is never asserted here.
+  const ul: OptionLeg = { kind: "UL", strike: 0, side: "long", premium: 100, qty: 1, expiry: null };
+
+  it("R97 — a collar's caps are (K2 − S0) × qty + N and (S0 − K1) × qty − N, for a debit and a credit", () => {
+    // Debit collar: N = 1 − 3 = −2 → cap 10 − 2 = 8, floor 5 + 2 = 7, BE 100 + 2.
+    const debit = computeStrategy("X", "2026-06-25", [ul, pe(95, "long", 3), ce(110, "short", 1)]);
+    expect(debit.strategyId).toBe("collar");
+    expect(debit.maxProfit).toBe(8);
+    expect(debit.maxLoss).toBe(-7);
+    expect(debit.breakevens).toContain(102);
+    // Credit collar: N = 2 − 1 = +1 → cap 10 + 1 = 11, floor 5 − 1 = 4, BE 100 − 1.
+    const credit = computeStrategy("X", "2026-06-25", [ul, pe(95, "long", 1), ce(110, "short", 2)]);
+    expect(credit.strategyId).toBe("collar");
+    expect(credit.maxProfit).toBe(11);
+    expect(credit.maxLoss).toBe(-4);
+    expect(credit.breakevens).toContain(99);
+
+    const def = getStrategyDef("collar")!;
+    expect(def.maxProfit).toBe("(K2 − S0) × qty + N");
+    expect(def.maxLoss).toBe("(S0 − K1) × qty − N");
+    expect(def.breakevens).toBe("S0 − n");
+  });
+
+  it("R98 — the iron wings state the WIDER wing and a conditioned breakeven; the six equal-wing rows say so", () => {
+    expect(getStrategyDef("iron-butterfly")!.maxLoss).toBe("max(K2−K1, K3−K2) × qty − credit");
+    expect(getStrategyDef("reverse-iron-condor")!.maxProfit).toBe("max(K2−K1, K4−K3) × qty − debit");
+    for (const id of ["iron-condor", "iron-butterfly", "reverse-iron-condor"]) {
+      expect(getStrategyDef(id)!.breakevens, `${id} states a breakeven on every side`).toMatch(
+        /each only on a side whose wing exceeds (credit|debit)\/qty/,
+      );
+    }
+    for (const id of [
+      "long-call-butterfly",
+      "long-put-butterfly",
+      "short-butterfly",
+      "long-call-condor",
+      "short-call-condor",
+      "long-put-condor",
+    ]) {
+      const def = getStrategyDef(id)!;
+      expect(def.maxProfit, `${id} maxProfit`).toMatch(/ \(equal wings\)$/);
+      expect(def.maxLoss, `${id} maxLoss`).toMatch(/ \(equal wings\)$/);
+    }
   });
 });

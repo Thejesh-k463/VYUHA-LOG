@@ -702,6 +702,7 @@ describe("read-only by surface", () => {
       "DHAN_TOTP_ACK_VERSION",
       "DHAN_TRADES_MAX_PAGES",
       "canonicalDerivativeName",
+      "catchUpAfter",
       "catchUpRange",
       "dhanAuthUrl",
       "dhanImportSource",
@@ -762,6 +763,17 @@ describe("catchUpRange — what a pull should ask for, given the last one", () =
     const span =
       (Date.parse(TODAY) - Date.parse(dhan.catchUpRange("2025-09-09T10:00:00Z", TODAY)!.from)) / 86_400_000;
     expect(span).toBe(90);
+  });
+
+  // R42 (v4.3.0 fix wave 1): the cutoff the caller hands fetchTrades as `after`.
+  it("R42: catchUpAfter is the last pull's stamp as IST wall clock — null when there is no window or it is clamped", () => {
+    expect(dhan.catchUpAfter("2026-09-07T13:00:00Z", "2026-09-10")).toBe("2026-09-07 18:30:00");
+    // 19:00Z is already the next day in India — the same +5:30 as the window.
+    expect(dhan.catchUpAfter("2026-09-04T19:00:00Z", TODAY)).toBe("2026-09-05 00:30:00");
+    // Clamped: the stamp's day is not in the window, so nothing it read can come back.
+    expect(dhan.catchUpAfter("2025-09-09T10:00:00Z", TODAY)).toBeNull();
+    expect(dhan.catchUpAfter(null, TODAY)).toBeNull();
+    expect(dhan.catchUpAfter("2026-09-09T03:00:00Z", TODAY)).toBeNull();
   });
 });
 
@@ -839,11 +851,22 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
       .fetchTrades({ from: "2026-06-11", to: "2026-09-09", onHistory: (r) => reads.push(r) });
     expect(reads).toEqual([{ pages: 50, truncated: true, oldest: "2026-07-10", newest: "2026-07-29" }]);
 
-    const pf = toParsedFile([], { from: "2026-06-11", to: "2026-09-09" }, reads[0]);
+    // F-L1-3a (fix wave 1): the walk is dropped whole, so the span runs to
+    // YESTERDAY, and the remedy starts the day after the last pull's own day.
+    const pf = toParsedFile([], { from: "2026-06-11", to: "2026-09-09" }, reads[0], "2026-06-11T05:00:00.000Z");
     const line =
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history, so fills between 2026-06-11 and 2026-09-09 may be missing. The fills it read are dated 2026-07-10 to 2026-07-29. To be sure every fill is in, import a Dhan tradebook for 2026-06-11 to 2026-09-09.";
+      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. Today's book came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
     expect(pf.warnings).toContain(line);
-    expect(pf.unfetched).toEqual([{ from: "2026-06-11", to: "2026-09-09", reason: "page-cap", message: line }]);
+    expect(pf.unfetched).toEqual([
+      {
+        from: "2026-06-11",
+        to: "2026-09-08",
+        reason: "page-cap",
+        message: line,
+        remedy: { from: "2026-06-12", to: "2026-09-08" },
+        partial: { day: "2026-06-11", after: "10:30" },
+      },
+    ]);
   });
 
   it("C-6: a walk that reaches an empty page is NOT truncated, and states nothing extra", async () => {
@@ -856,6 +879,79 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     const pf = toParsedFile([], { from: "2026-09-05", to: "2026-09-09" }, reads[0]);
     expect(pf.unfetched).toEqual([]);
     expect(pf.warnings.some((w) => /Truncated/.test(w))).toBe(false);
+  });
+
+  it("F-L1-3a: a truncated walk keeps NONE of its partial history; the span ends yesterday and the remedy starts after the last pull's day", async () => {
+    const never = new Proxy([] as dhan.DhanTradeRow[][], {
+      get: (_t, k) =>
+        typeof k === "string" && /^\d+$/.test(k)
+          ? [trade({ exchangeTradeId: `P${k}`, exchangeTime: "2026-09-08 10:00:00" })]
+          : undefined,
+    });
+    stub(never);
+    const reads: dhan.DhanHistoryRead[] = [];
+    const out = await dhan
+      .dhanImportSource(creds())
+      .fetchTrades({ from: "2026-09-07", to: "2026-09-11", onHistory: (r) => reads.push(r) });
+    expect(reads[0]!.truncated).toBe(true);
+    // THE assertion: which days a truncated walk covered cannot be named, so none of it is committed.
+    expect(out, "no history row survives a truncated walk").toEqual([]);
+
+    const [span] = toParsedFile(out, { from: "2026-09-07", to: "2026-09-11" }, reads[0], "2026-09-07T05:00:00.000Z").unfetched;
+    expect(span!.to, "the span ends yesterday — today came from /v2/positions").toBe("2026-09-10");
+    expect(span!.remedy).toEqual({ from: "2026-09-08", to: "2026-09-10" });
+    expect(span!.message).not.toContain("2026-09-11");
+    // The last pull's own day is never a remedy start; it is stated as a fact.
+    expect(span!.message).not.toMatch(/tradebook for 2026-09-07 to/);
+    expect(span!.message).toContain(
+      "Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it.",
+    );
+  });
+
+  // R42 (v4.3.0 fix wave 1): the fills the last pull's /positions snapshot
+  // already stored come back from the inclusive window; paired with a later
+  // SELL they became a new closed row beside the stored open one.
+  it("R42: fetchTrades({from,to,after}) drops the BUY the last pull stored, so a later SELL 40 arrives sell-only", async () => {
+    stub([
+      [
+        trade({ exchangeTradeId: "B1", transactionType: "BUY", tradedQuantity: 100, tradedPrice: 100, exchangeTime: "2026-09-07 10:00:00" }),
+        trade({ exchangeTradeId: "S1", transactionType: "SELL", tradedQuantity: 40, tradedPrice: 120, exchangeTime: "2026-09-09 14:00:00" }),
+      ],
+      [],
+    ]);
+    const out = await dhan
+      .dhanImportSource(creds())
+      .fetchTrades({ from: "2026-09-07", to: "2026-09-10", after: dhan.catchUpAfter("2026-09-07T13:00:00Z", "2026-09-10") });
+    expect(out.filter((x) => x.buyQty > 0), "the stored purchase is not restated").toEqual([]);
+    expect(out.map((x) => [x.buyQty, x.sellQty, x.sellDate])).toEqual([[0, 40, "2026-09-09"]]);
+  });
+
+  it("R42: a fill after the stamp on the stamp's own day is kept, and so is one stating no time of day", async () => {
+    stub([
+      [
+        trade({ exchangeTradeId: "LATE", transactionType: "BUY", tradedQuantity: 3, tradedPrice: 100, exchangeTime: "2026-09-07 18:31:00" }),
+        trade({ exchangeTradeId: "UNTIMED", transactionType: "BUY", tradedQuantity: 2, tradedPrice: 100, exchangeTime: "2026-09-07" }),
+        trade({ exchangeTradeId: "EARLY", transactionType: "BUY", tradedQuantity: 5, tradedPrice: 100, exchangeTime: "2026-09-07T09:15:00" }),
+      ],
+      [],
+    ]);
+    const out = await dhan
+      .dhanImportSource(creds())
+      .fetchTrades({ from: "2026-09-07", to: "2026-09-10", after: "2026-09-07 18:30:00" });
+    // LATE (3) + UNTIMED (2); EARLY is at or before the stamp.
+    expect(out.reduce((s, x) => s + x.buyQty, 0)).toBe(5);
+  });
+
+  it("R42: onCutoff fires BEFORE /v2/positions is requested — the stamp is the pre-read instant", async () => {
+    const paths = stub([[]], []);
+    let seenAtCutoff: string[] | null = null;
+    await dhan.dhanImportSource(creds()).fetchTrades({
+      onCutoff: () => {
+        seenAtCutoff = [...paths];
+      },
+    });
+    expect(seenAtCutoff).toEqual([]);
+    expect(paths).toEqual(["/v2/positions"]);
   });
 
   it("maps a SELL fill to a sell execution with its quantity, price and STATED charges", async () => {
@@ -1048,11 +1144,26 @@ describe("C-6 — a clamped pull names the dates it did not fetch, and the remed
   });
 
   it("toParsedFile states the unfetched dates and the tradebook remedy, verbatim, and hands the span back", () => {
-    const pf = toParsedFile([], dhan.catchUpRange("2026-05-01T05:00:00Z", TODAY));
+    const pf = toParsedFile([], dhan.catchUpRange("2026-05-01T05:00:00Z", TODAY), null, "2026-05-01T05:00:00Z");
+    // F-L1-3a (fix wave 1): the remedy starts the day AFTER the last pull's own
+    // day, which is stated as a fact and never named as something to import.
     const line =
-      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. To bring those fills in, import a Dhan tradebook for 2026-05-01 to 2026-06-10.";
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(pf.warnings[1]).toBe(line);
-    expect(pf.unfetched).toEqual([{ from: "2026-05-01", to: "2026-06-10", reason: "range-cap", message: line }]);
+    expect(pf.unfetched).toEqual([
+      {
+        from: "2026-05-01",
+        to: "2026-06-10",
+        reason: "range-cap",
+        message: line,
+        remedy: { from: "2026-05-02", to: "2026-06-10" },
+        partial: { day: "2026-05-01", after: "10:30" },
+      },
+    ]);
+    // A one-day span has no remedy at all: its only day is the last pull's own.
+    const one = toParsedFile([], dhan.catchUpRange("2026-06-10T05:00:00Z", TODAY), null, "2026-06-10T05:00:00Z").unfetched[0]!;
+    expect(one.remedy).toBeNull();
+    expect(one.message).not.toMatch(/import a Dhan tradebook/);
     // A pull the cap did not touch hands back nothing.
     expect(toParsedFile([], { from: "2026-09-04", to: TODAY }).unfetched).toEqual([]);
     expect(toParsedFile([]).unfetched).toEqual([]);

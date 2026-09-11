@@ -280,18 +280,78 @@ export function pullGapNotice(
   return `Pulls missed since ${dayLabel(day)} — ${tail}`;
 }
 
+/** The slice of a connection row the gap lines read. */
+export interface GapRow {
+  accountId: number;
+  accountName?: string | null;
+  lastPullAt: string | null;
+  catchUpFrom?: string | null;
+}
+
+/**
+ * R47 — one gap line per connection row that has a gap, never only the first.
+ *
+ * The All-accounts view lists one Dhan row per account. The card used to read
+ * `brokerConns[0]` alone, so a stale second account said nothing while the
+ * lowest one was current, and a stale first account was not named. Each row now
+ * reads its OWN lastPullAt and catchUpFrom through pullGapNotice. It is prefixed
+ * with its account's name under the rule the kept "not fetched" notices use
+ * (`aggregate || rows.length > 1`). Pure, derived at render time: no state, no
+ * effect.
+ */
+export function pullGapLines(rows: GapRow[], aggregate: boolean, now: Date = new Date()): string[] {
+  const named = aggregate || rows.length > 1;
+  return rows.flatMap((c) => {
+    const line = pullGapNotice(c.lastPullAt, now, c.catchUpFrom);
+    if (!line) return [];
+    return [named ? `${c.accountName ?? `Account ${c.accountId}`}: ${line}` : line];
+  });
+}
+
 /**
  * C-6 — the KEPT line for Dhan history a committed pull never read. It stays
  * on the card until the user clears it, because the commit moved lastPullAt
  * past those days and no later pull will ask for them. Names the dates and the
  * remedy; states a fact.
+ *
+ * D2 (F-L1-3a's card half, v4.3.0 fix wave 1 follow-up). A span's `from` is
+ * the LAST PULL's own IST day (dhan.ts catchUpRange), whose fills up to that
+ * pull are already in the journal, and a Dhan tradebook states scrip names the
+ * API's tickers do not match, so a tradebook for that day would import them
+ * twice. The remedy starts the day AFTER `from`; a one-day span names no
+ * import. The words mirror lib/import/api/dhan.ts toParsedFile and
+ * lib/jobs/auto-pull.ts unfetchedDetail (sharing one helper would need
+ * dhan.ts's private addDaysIso). The last pull's HH:MM is not on the wire, so
+ * the card says "the last pull" — the server's words when the stamp is unknown.
+ *
+ * `rowSpans` are the row's own kept spans. A page-cap span that starts the day
+ * after one of them (a range-cap span) ends began at the clamped window's
+ * floor, a day no pull ran, and its remedy is the whole span, as the server's.
  */
-export function unfetchedNotice(s: UnfetchedSpan): string {
+export function unfetchedNotice(s: UnfetchedSpan, rowSpans: readonly UnfetchedSpan[] = []): string {
   const a = dayLabel(s.from);
   const b = dayLabel(s.to);
-  return s.reason === "page-cap"
-    ? `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing. Import a Dhan tradebook for ${a} to ${b} to be sure every fill is in.`
-    : `Not fetched from Dhan: fills from ${a} to ${b} — they are older than the window a pull reads. Import a Dhan tradebook for ${a} to ${b} to bring them in.`;
+  const page = s.reason === "page-cap";
+  if (page && rowSpans.some((r) => r.reason === "range-cap" && nextIsoDay(r.to) === s.from)) {
+    return `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing. Import a Dhan tradebook for ${a} to ${b} to bring those fills in.`;
+  }
+  const repeats = `tradebook for ${a} would repeat the fills already imported from it.`;
+  const restFrom = nextIsoDay(s.from);
+  if (restFrom > s.to) {
+    const fact = page
+      ? `A Dhan pull stopped at its page limit: fills on ${a} after the last pull may be missing.`
+      : `Not fetched from Dhan: fills on ${a} after the last pull.`;
+    return `${fact} A ${repeats}`;
+  }
+  const fact = page
+    ? `A Dhan pull stopped at its page limit: fills between ${a} and ${b} may be missing.`
+    : `Not fetched from Dhan: fills from ${a} to ${b} — they are older than the window a pull reads.`;
+  return `${fact} Fills on ${a} after the last pull were not fetched; a ${repeats} Import a Dhan tradebook for ${dayLabel(restFrom)} to ${b} to bring the rest in.`;
+}
+
+/** One ISO day later: dhan.ts addDaysIso's arithmetic, at UTC midnight so no zone shifts the day. */
+function nextIsoDay(isoDay: string): string {
+  return new Date(Date.parse(`${isoDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 }
 
 /**
@@ -562,8 +622,11 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
    *  D-1 (2026-09-10): DHAN ONLY. `catchUpRange` (lib/import/api/dhan.ts) is
    *  the sole caller that widens a pull to a range; every other broker fetches
    *  its own default window whatever the last pull says, so on their tabs this
-   *  line promised a catch-up that does not happen. */
-  const gapNotice = active === "dhan" ? pullGapNotice(conn?.lastPullAt, undefined, conn?.catchUpFrom) : null;
+   *  line promised a catch-up that does not happen.
+   *
+   *  R47: one line per Dhan ROW with a gap, named by account in the
+   *  All-accounts view — never only the lowest account's row. */
+  const gapLines = active === "dhan" ? pullGapLines(brokerConns, aggregate) : [];
   /** C-6 — every kept "not fetched" span on this tab's Dhan rows, derived at
    *  render time from the server's projection (never state, never an effect).
    *  Dhan only: no other puller clamps a window. */
@@ -943,7 +1006,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                     <span className="text-muted-foreground"> — {c.openalgoHost ?? "host unknown"} · key {c.apiKeyMasked}</span>
                     <ModeBadge conn={c} />
                     {c.lastPullAt && (
-                      <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+                      <span className="text-muted-foreground"> · last pull {formatTs(c.lastPullAt)}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -978,7 +1041,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                     <span className="text-loss"> · {c.authWarning ?? "enrolment stored but unreadable — re-enrol"}</span>
                   )}
                   {c.lastPullAt && (
-                    <span className="text-muted-foreground"> · last pull {c.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+                    <span className="text-muted-foreground"> · last pull {formatTs(c.lastPullAt)}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -1273,7 +1336,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 </span>
               )}
               {conn?.lastPullAt && (
-                <span className="text-[0.6875rem] text-muted-foreground">last pull {conn.lastPullAt.slice(0, 16).replace("T", " ")}</span>
+                <span className="text-[0.6875rem] text-muted-foreground">last pull {formatTs(conn.lastPullAt)}</span>
               )}
             </>
           )}
@@ -1282,10 +1345,14 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         {/* The catch-up line: the last pull is older than the previous trading
             day, so the next pull fetches the range since then rather than only
             today's book. A statement of fact, under the buttons that will do it. */}
-        {gapNotice && (
-          <p className="text-xs text-muted-foreground" data-testid="pull-gap">
-            {gapNotice}
-          </p>
+        {gapLines.length > 0 && (
+          <div className="space-y-0.5" data-testid="pull-gap">
+            {gapLines.map((line, i) => (
+              <p key={`${i}|${line}`} className="text-xs text-muted-foreground">
+                {line}
+              </p>
+            ))}
+          </div>
         )}
 
         {/* C-6: Dhan history a committed pull never read. Kept until the user
@@ -1300,7 +1367,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
               >
                 <span>
                   {aggregate || brokerConns.length > 1 ? `${c.accountName ?? `Account ${c.accountId}`}: ` : ""}
-                  {unfetchedNotice(s)}
+                  {unfetchedNotice(s, c.unfetched)}
                 </span>
                 <Button size="sm" variant="secondary" onClick={() => clearUnfetched(c, s)} disabled={busy != null}>
                   Clear notice

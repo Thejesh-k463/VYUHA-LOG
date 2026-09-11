@@ -173,7 +173,7 @@ export async function POST(req: Request) {
     summary:
       parsed.data.action === "restore"
         ? `strategy shelf restored to the ${DEFAULT_SHELF.length} defaults`
-        : `strategy shelf → ${parsed.data.selected.length} strategies`,
+        : `strategy shelf → ${parsed.data.selected.length} ${parsed.data.selected.length === 1 ? "strategy" : "strategies"}`,
     source: "ui",
   });
 

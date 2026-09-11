@@ -21,7 +21,13 @@ import {
   getStrategyDef,
   type StrategyId,
 } from "@/lib/analytics/strategy-catalogue";
-import { legKind, type CapLabel, type OptionLeg, type StrategyGroup } from "@/lib/analytics/strategies";
+import {
+  legKind,
+  underlyingExpiresFirst,
+  type CapLabel,
+  type OptionLeg,
+  type StrategyGroup,
+} from "@/lib/analytics/strategies";
 import type { ShelfHistory, ShelfPostResult } from "@/lib/domain/strategy-shelf";
 import { OPTIONS_HELP_FOOTER, optionsAnchorId } from "@/lib/domain/options-help";
 import { inr } from "@/lib/format";
@@ -52,6 +58,13 @@ export const STRATEGY_COPY = {
   /** §7, option A: model-free, and honest about the direction of its error. */
   multiExpiryNote:
     "Drawn at the nearest expiry. Legs expiring later are valued at intrinsic only — their remaining time value is not included, so a long far leg is understated and a short far leg is overstated. Max profit, max loss and breakevens on this card describe the nearest expiry alone.",
+
+  /**
+   * R104: why both tiles are blank when an underlying FUTURE settles before an
+   * option leg. `notComputedNote` cites volatility, which is not the reason.
+   */
+  underlyingExpiresFirstNote:
+    "The underlying future expires before an option leg does, so max profit and max loss at the later option expiry depend on where the future settles first. Neither is computed here.",
 
   /** §6: the zero-price cap is a floor, not a forecast. */
   atZeroNote:
@@ -196,31 +209,37 @@ export function foldShelfPost(h: ShelfHistory, r: ShelfPostResult): ShelfHistory
   return { ...h, present: { selected: [...r.shelf.selected] } };
 }
 
-/** Which word a card prints for its cash: the catalogue's, never the sign's. */
+/** Which word a card's chip prints for its cash: the option premium's sign. */
 export type NetTone = "credit" | "debit" | null;
 
 /**
- * B1's note, made executable: label credit/debit from the CATALOGUE, not from
- * `isCredit`. A covered call's `netPremium` includes the underlying entry cash,
- * so its sign describes the position's cash flow and not the structure — and
- * a "net debit" chip on a credit structure is a wrong fact, cheaply avoided.
+ * THE CHIP IS THE SIGN OF THE OPTION PREMIUM — the number the "Net premium"
+ * tile prints beside it (R67/R68, K3-M5). One fact, one sign.
  *
- * `null` = no chip. An unnamed or withheld group has no catalogue row to ask,
- * and a group carrying an underlying leg whose row is `either` has a sign that
- * answers a different question.
+ * The catalogue used to decide instead, because the group's `netPremium`
+ * carries the underlying's entry cash and a covered call read as a debit.
+ * `optionNetPremium` leaves that cash out, so the reason for the override is
+ * gone — and the override contradicted a spread legged in at a credit (a
+ * "+₹150" tile beside a "Net debit" chip).
+ *
+ * `null` = no chip: an unnamed or withheld group, an id with no catalogue row,
+ * and a zero net (a zero-cost structure is neither a credit nor a debit).
  */
-export function netTone(
-  strategyId: StrategyId | null,
-  netPremium: number,
-  hasUnderlying: boolean,
-): NetTone {
-  if (strategyId === null) return null;
-  const def = getStrategyDef(strategyId);
-  if (!def) return null;
-  if (def.net === "credit") return "credit";
-  if (def.net === "debit") return "debit";
-  if (hasUnderlying) return null;
-  return netPremium > 0 ? "credit" : "debit";
+export function netTone(strategyId: StrategyId | null, optionNet: number): NetTone {
+  if (strategyId === null || !getStrategyDef(strategyId)) return null;
+  return optionNet > 0 ? "credit" : optionNet < 0 ? "debit" : null;
+}
+
+/**
+ * R104: the sentence a card carries when an underlying FUTURE settles before
+ * an option leg — the reason both figures are blank. The flag is B1's own
+ * `underlyingExpiresFirst`, so the sentence and the blank tiles cannot disagree.
+ */
+export function underlyingExpiryNote(group: {
+  ulLegs: readonly OptionLeg[];
+  expiries: readonly string[];
+}): string | null {
+  return underlyingExpiresFirst(group.ulLegs, group.expiries) ? STRATEGY_COPY.underlyingExpiresFirstNote : null;
 }
 
 export const NET_LABEL: Record<"credit" | "debit", string> = {

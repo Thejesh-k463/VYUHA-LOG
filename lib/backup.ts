@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync }
 import { sql } from "drizzle-orm";
 import { db, sqlite, schema } from "@/lib/db";
 import { rerunDataFixesAfterRestore } from "@/lib/db/data-fixes";
+import { refreshChargeConfig } from "@/lib/db/seed-core";
 import { attachmentsDir } from "@/lib/db";
 import {
   BACKUP_VERSION,
@@ -291,6 +292,18 @@ export function restoreDatabase(dump: unknown): { ok: boolean; message: string; 
         }
       }
       if ((tables.accounts ?? []).length === 0) tx.insert(schema.accounts).values({ id: 1, name: "Primary", isDefault: true }).run();
+
+      // The rate card the envelope carried is the DONOR release's card, which
+      // may predate this build's corrections — a pre-4.3 backup brought back
+      // F&O STT and exchange charges that 4.3.0 corrected, and the desktop
+      // refresh runs only at sidecar start, so every import for the rest of the
+      // session priced from it (v4.3.0 R7). The rows the user never edited are
+      // brought onto this version's card here, inside this same transaction
+      // (invariant 10: a failure rolls the lot back); user-edited rows and
+      // their windows stay pinned by the launch refresh's own guard. A backup
+      // that did not carry charge_config left the table as it was, so it is
+      // left as it was.
+      if (tables.charge_config !== undefined) refreshChargeConfig(tx);
 
       // Re-apply the machine's own licence/trial state over whatever the
       // envelope carried — restoring a journal must neither install someone

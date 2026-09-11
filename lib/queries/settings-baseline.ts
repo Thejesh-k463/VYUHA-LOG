@@ -7,6 +7,7 @@ import {
   type SettingsBaseline, type BaselineSettingsField,
 } from "@/lib/domain/settings-baseline";
 import { recordAudit } from "@/lib/audit";
+import { refreshChargeConfig } from "@/lib/db/seed-core";
 
 /**
  * Server half of "My Default Settings". The preference/state split lives in
@@ -68,8 +69,10 @@ export function baselineDiff(): { fields: BaselineSettingsField[]; capturedAt: s
 
 /**
  * Restore the baseline: preference fields onto the settings row, and the three
- * rate tables replaced wholesale with the snapshot. All in one transaction —
- * a partial restore would leave rates from one era and preferences from another.
+ * rate tables replaced wholesale with the snapshot — then the charge rows the
+ * user never edited are brought onto this build's rate card (v4.3.0 R7). All in
+ * one transaction — a partial restore would leave rates from one era and
+ * preferences from another.
  *
  * State fields (licence, trial, clock ratchet, pnlRolledIn, selected account,
  * go-live) are untouched by construction: they are not in the payload at all.
@@ -88,6 +91,11 @@ export function restoreBaseline(): { ok: boolean; message: string } {
 
       tx.delete(chargeConfig).run();
       for (const r of b.chargeConfig) tx.insert(chargeConfig).values(r as never).run();
+      // The snapshot's rate card is the one captured then, which may predate
+      // this build's corrections (v4.3.0 R7). The rows the user never edited
+      // follow this version's card, inside this transaction; user-edited rows
+      // and their windows stay exactly as the snapshot holds them.
+      refreshChargeConfig(tx);
       tx.delete(marginConfig).run();
       for (const r of b.marginConfig) tx.insert(marginConfig).values(r as never).run();
       tx.delete(riskConfig).run();
@@ -98,5 +106,9 @@ export function restoreBaseline(): { ok: boolean; message: string } {
   }
 
   recordAudit({ entity: "settings", action: "update", summary: `restored default-settings baseline from ${b.capturedAt}`, source: "ui" });
-  return { ok: true, message: "Your default settings are back — preferences and all three rate tables." };
+  return {
+    ok: true,
+    message:
+      "Your default settings are back — preferences and all three rate tables. Rate rows you never edited follow this version's rate card.",
+  };
 }

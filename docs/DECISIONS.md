@@ -5936,3 +5936,124 @@ same-side pins stay green.
 - Rejected: keeping the 409, which leaves a permanent loop on a routine exit.
 - Rejected: auto-pull stamping past a collision, which loses the fill under R42's `after` filter.
 - R42 closes only with this (wave 2, R42b).
+
+**CI on the switch-off (`9e0e16f`, run 34623714500):** attempt 1 failed the Windows job only.
+`tests/trash-roundtrip.test.ts` › broker-remove timed out at 5 s. That file is unchanged since v3.9 (`4d9e9bd`,
+2026-09-04), and its tests take 17–44 ms locally (three runs). This is V1 FAIL-B (a cold runner): the failed job was
+re-run with no code touched, and attempt 2 passed 6/6.
+
+## 2026-09-11 — v4.3.0 fix wave 1 (fifth session): nine Opus builders on disjoint files, one follow-up builder, the seam tester
+
+**Fixed.** Each fix is red on revert, and the assertions are quoted in the builder reports (the session's `wave1.json`).
+
+| Builder | Findings |
+|---|---|
+| W1-PULL | R42, R19, R27, R10, R9, and F-L1-3a server side (its card half is in the follow-up) |
+| W1-DQ | R26 |
+| W1-RATES | R1, R91, R54, R7, R35 |
+| W1-SETTLE | R77, R78, R79 |
+| W1-HELP | R49, R94, R95, R97, R98, R99, R100, R101, R21, R50 |
+| W1-STRAT | R102, R104, R105, R69, R66, R53, R67, R68, plus K3-M1, K3-M4, K3-M5 |
+| W1-PAYTM | R71 |
+| W1-PREVIEW | R56 |
+| W1-UI | R12, R47, R48, R51, R28 |
+
+No builder edited a file outside its set.
+
+**Decisions and measured facts:**
+
+- **R42 (the pull cutoff).**
+  - The cutoff is the instant `fetchTrades` takes immediately BEFORE `/v2/positions` (`onCutoff`). `lastPullAt` is that
+    instant; other brokers use the instant the pull started.
+  - History fills at or before `catchUpAfter()` (the stamp as IST wall clock) are dropped. A fill with no readable time is
+    kept. A clamped window gets no cutoff.
+  - RESIDUAL: a fill executed between the cutoff and Dhan's `/positions` response can sit in the snapshot AND in the next
+    pull's history. A laptop clock running ahead of the exchange widens that window.
+  - Rejected: a post-commit stamp, which drops forever any fill executed between the snapshot and the stamp.
+- **R19 / R27 (spans and the stamp).** In the new server-only `lib/import/dhan-unfetched.ts`, the not-fetched spans are
+  written FIRST, in a transaction that throws on failure; then the commit; then the stamp. If a span cannot be written, the
+  route answers 500 and auto-pull reports `error`, with nothing committed and the stamp unmoved. A pull that finds nothing
+  new writes its spans and the stamp in one transaction; the collision / needsForce paths stay unstamped.
+- **R10.** An account merge carries the source account's outstanding spans, as append-only audit rows. The insert throws,
+  so a failure aborts the merge.
+- **R9.** The Kite token exchange checks for a rival connection BEFORE stamping `kiteUserId`. Residual: a pasted-token
+  connection never learns a user_id, so it cannot be refused there.
+- **F-L1-3a (server side).**
+  - A page-capped history walk is dropped whole, and `/positions` is kept.
+  - The page-cap span ends yesterday.
+  - The tradebook remedy starts the day AFTER the last pull's IST day. That day is stated only as a fact: fills after
+    HH:MM IST were not fetched, and a tradebook for it would repeat the fills already imported.
+- **R26 (the stale-lot close).**
+  - "One click" is a button plus a confirm. The only confirmed input is the date, prefilled with S's date, or the IST day
+    of S's `created_at` when S states none (the 4.2.0 Dhan rows with `sell_date` NULL).
+  - The server requires `exitDate` and never defaults it (invariant 6). It refuses a future date and a date before L's
+    entry date.
+  - Pairing is the pure `staleOpenPairs`: each row takes one role, and sales are read against longs first. A delivery or
+    MTF sell-only row is never a short (M-3), and neither is a basis-unknown sell.
+  - Import dedup in `commit.ts` now reads `dedup-alias:` entries, the deliberate deviation from the v4.2.0 file recorded
+    in the entry above.
+- **R1 / R91 (the rate epochs).**
+  - The seed grows from 459 to 522 rows (+63 F&O epochs).
+  - The first-launch refresh on a 4.2.0 card now reads **360 added, 135 refreshed, 0 removed** (was 297 added); the second
+    launch reads 0 / 0 / 0. The bump drafts' first-launch log line and the owner's smoke signature change to match.
+  - `verified: false` on the two epochs whose start is unverified: futures 1970 → 2013-06-01 and index options
+    1970 → 2016-06-01. The `sizing-charges` pin is re-pinned to R91's rule, `verified` only where a FATAX source is cited.
+- **R54 / R7.** `refreshRateCards` returns a `removed` count. A restored backup, or "back to my defaults", re-runs the seed
+  refresh, so it no longer prices with the old bundled card until the next launch. R35's closed-window pin rides in R7's
+  restore test.
+- **R77 / R78 (physical settlement).** `settlement.ts`: an ITM stock option's `physicalStt` = rupee(deliverySttPct ×
+  strike × qty) + (long ? rupee(exerciseSttPct × intrinsic × qty) : 0), each term rounded separately. Index options are
+  unchanged.
+- **R71 (the exchange rule).**
+  - `pair-legs.ts` `rowVenue`: a trade row's exchange is the venue carrying the larger share of the row's OWN turnover.
+    Ties go to the sell leg's venue for a closed row.
+  - A row whose legs span both venues is still priced at one exchange (a one-row limit), and the cross-exchange note says
+    so.
+  - `pair-legs-short-cover.test.ts:234` is re-pinned from NSE to BSE (NSE buy 20,000, BSE sell 21,000).
+- **R56 (the charge preview).**
+  - `POST /api/charges/preview` prices at `pricingDate({buyDate, sellDate})`, the save's own rule. Callers send the dates
+    their save stores: the close dialog puts the exit on the covering side, and the manual form swaps the dates for a
+    sell-direction F&O trade.
+  - Measured on the seed (Zerodha, NSE index option, 75 @ 200 / 75 @ 300): 96.96 before; 83.37 with both dates
+    2024-09-30, equal to what the save stores.
+- **K3-M1 (the `/strategies` underlying leg), accepted trade-off.** `getOpenUnderlyingPositions` excludes
+  `acquisition = 'unknown'`, the open count's own predicate. With auto-close off, a basis-unknown sale of a held lot no
+  longer nets the underlying leg, which reads as the whole buy until 4.3.1. The alternative fabricates a SHORT underlying
+  and an "Unlimited" loss (invariant 6).
+- **R67 / R68 (the credit / debit chip).** The chip is the sign of `optionNetPremium`, the Net premium tile's own number.
+  Zero, an unnamed or withheld group, or an id with no catalogue row gets no chip.
+- **R12.** Focus returns to the opener through `openerRef` plus `onCloseAutoFocus` with `preventDefault`. The 17 older
+  dialogs with no trigger are out of scope.
+- **R47.** `pullGapLines` gives one gap line per Dhan connection, each from that row's own `lastPullAt`.
+
+**Seam pass** (`tests/seams-v43-fixA.test.ts`, 23 tests):
+- **D1:** Dhan rows ignore the exchange R71's `pairLegs` picks (`dhan.ts:719` `exchangeHint`), the same defect as K2-M5.
+  It stays wave 2's W2-DHAN, pinned as an `it.fails` stating the correct value.
+- **D2:** the Dhan card's own not-fetched notice still named the last pull's day. Fixed by the follow-up builder.
+
+**The follow-up builder** closed four reds:
+- D2 in `broker-connect.tsx` `unfetchedNotice`. The card's tradebook remedy starts the day after the span's `from`, and a
+  one-day span names NO import: "Not fetched from Dhan: fills on <day> after the last pull. A tradebook for <day> would
+  repeat the fills already imported from it."
+- The S3 refresh-count re-pin: 360 / 135 / 0, then 0 / 0 / 0.
+- The `sizing-charges` verified-marker re-pin.
+- The R71 re-pin in `pair-legs-short-cover`.
+
+Reverting only the card hunk turns 10 tests red. Three of its departures are recorded here:
+1. **The "verified" rule** is `verified === (a FATAX source is cited && the note does not say "NOT verified")`. Both 1970
+   F&O epochs cite FATAX circulars (for the rates) yet are unverified (for their start). Three mutants in a new `it`
+   prove the rule can go red.
+2. **The card wording** reads "Import a Dhan tradebook for X to Y to bring the rest in."; the server says "To bring the
+   rest in, import…". `fix-wave-c-import.test.ts:371` pins the server's phrase.
+3. **The new `rowSpans` argument** lets the card tell a page-cap span that starts at a clamped floor (a day no pull
+   imported) from one that starts on the last pull's day. Known gap: if the user clears the range-cap notice but keeps
+   its page-cap sibling, the card reads the sibling as the last-pull-day case. The real fix sends `remedy` / `partial`
+   through GET: a 4.3.1 candidate.
+
+**Gate (wave 1 + the follow-up):** `npm run verify` exits 0.
+- Test Files 389 passed (389).
+- Tests 8083 passed | 1 expected fail | 35 skipped (8119). The expected fail is D1, pinned as `it.fails`, for wave 2.
+- ✓ Compiled successfully.
+- `npx playwright test e2e/z-live-desk.spec.ts` — 9 passed (55.7 s), owed because `components/live/position-chart-panel.tsx`
+  changed (W1-STRAT). Nothing was left listening on :3100 afterwards.
+- The README counts moved to 8083 / 389.

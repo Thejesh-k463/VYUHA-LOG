@@ -177,7 +177,7 @@ export const IMPORT_HELP_CARDS: ImportHelpCard[] = [
       "Verified live by Vyuha (Aug 2026): an Upstox OpenAlgo instance — the second instance on the same machine — was set up and pulled end to end against a real account.",
     ],
     notes: [
-      "Honesty note: the file layouts are verified against real exports (2026-08-20), but those files carried no data rows — so value behaviour is inferred until a populated export is seen. Check your first file import against a contract note.",
+      "Honesty note: the file layouts are verified against real exports (2026-08-20), and since 2026-09-04 against populated ones — one populated realised-P&L export matched Upstox's own stated gross, net and charges to the paisa. A trade report states no P&L, so its figures are pinned against Vyuha's own arithmetic rather than a broker statement. Check your first trade-report import against a contract note.",
     ],
     guide: OPENALGO_GUIDE,
   },

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { KpiCard } from "@/components/kpi-card";
 import { getTrades } from "@/lib/queries/trades";
 import { computeExpiryStats, type ExpiryBucket } from "@/lib/analytics/expiry-stats";
-import { inr, fmtDate } from "@/lib/format";
+import { inr, fmtDate, signOf } from "@/lib/format";
 import { ProGate } from "@/components/system/pro-gate";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -60,7 +60,7 @@ export default function ExpiryPage() {
               <KpiCard label="Expiry-day concentration" value={`${s.concentrationPct}%`} sub={`${s.expiryDay.trades} of ${closedFno} F&O exits`} />
               <KpiCard
                 label="Expiry edge"
-                value={`${s.netEdgeExpiry >= 0 ? "+" : ""}${inr(s.netEdgeExpiry, { decimals: 0 })}`}
+                value={`${signOf(s.netEdgeExpiry)}${inr(Math.abs(s.netEdgeExpiry), { decimals: 0 })}`}
                 valueClassName={s.netEdgeExpiry > 0 ? "text-profit" : s.netEdgeExpiry < 0 ? "text-loss" : ""}
                 sub="avg/trade vs other days"
               />

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ProLock } from "@/components/system/pro-lock";
-import { inr } from "@/lib/format";
+import { inr, num, signOf } from "@/lib/format";
 import { legKind, type CapLabel, type OptionLeg } from "@/lib/analytics/strategies";
 import {
   EM_DASH,
@@ -19,6 +19,7 @@ import {
   netTone,
   optionNetPremium,
   underlyingEntryLine,
+  underlyingExpiryNote,
   type ScreenGroup,
 } from "./strategy-copy";
 
@@ -39,9 +40,14 @@ import {
 export function StrategyCard({ group, chart }: { group: ScreenGroup; chart: React.ReactNode }) {
   const g = group;
   const optionLegs = g.legs.filter((l) => legKind(l) !== "UL");
-  const tone = netTone(g.strategyId, g.netPremium, g.ulLegs.length > 0);
   const optNet = optionNetPremium(g);
+  // The chip reads the tile's own number (R67/R68, K3-M5), never netPremium.
+  const tone = netTone(g.strategyId, optNet);
+  // K3-M4: the tile's sign follows the PRINTED rupee figure. Rounded the way
+  // Intl rounds (half away from zero), so ₹0.30 prints "₹0", not "+₹0".
+  const shownNet = Math.sign(optNet) * Math.round(Math.abs(optNet));
   const ulEntry = underlyingEntryLine(g);
+  const ulNote = underlyingExpiryNote(g);
   const multiExpiry = g.expiries.length > 1;
 
   return (
@@ -96,22 +102,30 @@ export function StrategyCard({ group, chart }: { group: ScreenGroup; chart: Reac
                 tile contradicted its own "Net credit" chip. */}
             <Metric
               label="Net premium"
-              value={`${optNet > 0 ? "+" : ""}${inr(optNet, { decimals: 0 })}`}
-              tone={FIGURE_TONE_CLASS[optNet > 0 ? "gain" : optNet < 0 ? "loss" : "neutral"]}
+              value={`${signOf(shownNet)}${inr(Math.abs(shownNet), { decimals: 0 })}`}
+              tone={FIGURE_TONE_CLASS[shownNet > 0 ? "gain" : shownNet < 0 ? "loss" : "neutral"]}
               sub={ulEntry ?? undefined}
             />
+            {/* R66: a breakeven is a price level and stays at paise — IDEA's
+                10 CE bought at ₹0.45 breaks even at 10.45, not 10. */}
             <Metric
               label="Breakeven(s)"
-              value={g.breakevens.length ? g.breakevens.map((b) => Math.round(b)).join(" / ") : EM_DASH}
+              value={g.breakevens.length ? g.breakevens.map((b) => num(b, 2)).join(" / ") : EM_DASH}
               sub={multiExpiry ? "At nearest expiry" : undefined}
             />
-            <Figure which="maxProfit" value={g.maxProfit} cap={g.capLabel.maxProfit} />
-            <Figure which="maxLoss" value={g.maxLoss} cap={g.capLabel.maxLoss} />
+            <Figure which="maxProfit" value={g.maxProfit} cap={g.capLabel.maxProfit} note={ulNote} />
+            <Figure which="maxLoss" value={g.maxLoss} cap={g.capLabel.maxLoss} note={ulNote} />
           </div>
 
           {multiExpiry ? (
             <p className="rounded-md border border-warning/30 bg-warning/[0.05] px-2.5 py-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
               {STRATEGY_COPY.multiExpiryNote}
+            </p>
+          ) : null}
+
+          {ulNote ? (
+            <p className="rounded-md border border-warning/30 bg-warning/[0.05] px-2.5 py-1.5 text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {ulNote}
             </p>
           ) : null}
 
@@ -156,10 +170,13 @@ function Figure({
   which,
   value,
   cap,
+  note,
 }: {
   which: "maxProfit" | "maxLoss";
   value: number | null;
   cap: CapLabel;
+  /** R104's reason, when it is the reason: `capNote` would cite volatility. */
+  note: string | null;
 }) {
   const printed = cap === "Not computed" ? EM_DASH : value == null ? "Unlimited" : inr(value, { decimals: 0 });
   const d = figureDescriptor(which, value, cap);
@@ -168,7 +185,7 @@ function Figure({
       label={d.label}
       value={printed}
       sub={d.sub}
-      title={capNote(cap) ?? undefined}
+      title={(cap === "Not computed" && note) || capNote(cap) || undefined}
       tone={FIGURE_TONE_CLASS[d.tone]}
     />
   );

@@ -12,6 +12,7 @@ import {
   TOKEN_EXPIRED_TITLE,
   TOKEN_EXPIRY_SEEN_KEY,
   formatTs,
+  pullGapLines,
   pullGapNotice,
   pullResultMessage,
   tokenExpiredMessage,
@@ -215,6 +216,59 @@ describe("pullGapNotice — the missed-pulls line", () => {
 });
 
 /**
+ * R47 — the All-accounts view with two Dhan connections. The card derived the
+ * gap line from `brokerConns[0]` alone (the lowest account id) and printed it
+ * with no account name, so account 2's ten-day gap was never said while
+ * account 1 was current — and when account 1 was the stale one, the line did
+ * not say WHICH book. One line per row with a gap now, named by account under
+ * the same rule the kept "not fetched" notices use (aggregate || 2+ rows).
+ */
+describe("pullGapLines — one gap line per Dhan connection (R47)", () => {
+  const now = new Date("2026-09-09T05:00:00Z"); // Wed 10:30 IST
+  const current = { accountId: 1, accountName: "Main", lastPullAt: now.toISOString(), catchUpFrom: null };
+  const stale = { accountId: 2, accountName: "Second", lastPullAt: "2026-08-30T05:00:00Z", catchUpFrom: null };
+
+  it("All-accounts, two rows: the lowest account is current, the other ten days back — the stale one speaks, by name", () => {
+    const lines = pullGapLines([current, stale], true, now);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].startsWith("Second: ")).toBe(true);
+    expect(lines[0]).toContain("Pulls missed since");
+    expect(lines[0]).toBe(`Second: ${pullGapNotice(stale.lastPullAt, now)}`);
+  });
+
+  it("every stale row gets its own line, in the order handed in", () => {
+    const older = { ...current, lastPullAt: "2026-09-01T05:00:00Z" };
+    expect(pullGapLines([older, stale], true, now)).toEqual([
+      `Main: ${pullGapNotice(older.lastPullAt, now)}`,
+      `Second: ${pullGapNotice(stale.lastPullAt, now)}`,
+    ]);
+  });
+
+  it("each row's own catchUpFrom rides along, so a clamped gap is said per account", () => {
+    const clamped = { ...stale, lastPullAt: "2026-05-01T05:00:00Z", catchUpFrom: "2026-06-11" };
+    expect(pullGapLines([current, clamped], true, now)).toEqual([
+      `Second: ${pullGapNotice(clamped.lastPullAt, now, "2026-06-11")}`,
+    ]);
+  });
+
+  it("one row in one account: the sentence verbatim, no name (nothing to tell apart)", () => {
+    expect(pullGapLines([stale], false, now)).toEqual([pullGapNotice(stale.lastPullAt, now)]);
+  });
+
+  it("names the account whenever the view is aggregate, or there are two rows — and falls back to 'Account <id>'", () => {
+    expect(pullGapLines([stale], true, now)[0].startsWith("Second: ")).toBe(true);
+    expect(pullGapLines([current, { ...stale, accountName: null }], false, now)).toEqual([
+      `Account 2: ${pullGapNotice(stale.lastPullAt, now)}`,
+    ]);
+  });
+
+  it("says nothing when no row has a gap, or there are no rows", () => {
+    expect(pullGapLines([current], true, now)).toEqual([]);
+    expect(pullGapLines([], true, now)).toEqual([]);
+  });
+});
+
+/**
  * C-5 (fix wave C). The commit's own sentences (`result.warnings`,
  * lib/import/commit.ts) were in the pull response and nothing read them. The
  * message is composed by ONE exported function now, pinned here on synthetic
@@ -257,26 +311,71 @@ describe("pullResultMessage — what the card prints after a pull", () => {
  * C-6 — the kept notice. After a clamped (or page-capped) Dhan commit the
  * span lives in the audit trail and the card shows it until the user clears
  * it. The sentence names the dates and the remedy; it states a fact.
+ *
+ * D2 (v4.3.0 fix wave 1 follow-up, 2026-09-11) — F-L1-3a's card half. A kept
+ * span's `from` is the LAST PULL's own IST day, whose fills up to that pull are
+ * already in the journal, so the tradebook remedy starts the day AFTER it: the
+ * wording lib/import/api/dhan.ts toParsedFile and lib/jobs/auto-pull.ts
+ * unfetchedDetail already use. A one-day span names no import at all.
  */
 describe("unfetchedNotice — the kept line for fills a pull never read", () => {
-  it("range cap: the dates, why, and the tradebook remedy — verbatim", () => {
-    expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-10", reason: "range-cap" })).toBe(
-      "Not fetched from Dhan: fills from 01 May 2026 to 10 Jun 2026 — they are older than the window a pull reads. Import a Dhan tradebook for 01 May 2026 to 10 Jun 2026 to bring them in.",
+  const RANGE = { from: "2026-05-01", to: "2026-06-10", reason: "range-cap" };
+  const PAGE = { from: "2026-06-11", to: "2026-09-09", reason: "page-cap" };
+  const SEBI = /\b(recommend|suggest|should|consider|buy|sell)\b/i;
+
+  it("range cap: the dates, why, the last pull's own day as a fact, and a remedy from the day after it — verbatim", () => {
+    expect(unfetchedNotice(RANGE)).toBe(
+      "Not fetched from Dhan: fills from 01 May 2026 to 10 Jun 2026 — they are older than the window a pull reads. Fills on 01 May 2026 after the last pull were not fetched; a tradebook for 01 May 2026 would repeat the fills already imported from it. Import a Dhan tradebook for 02 May 2026 to 10 Jun 2026 to bring the rest in.",
     );
   });
 
-  it("page cap: the window that may be short, and the same remedy — verbatim", () => {
-    expect(unfetchedNotice({ from: "2026-06-11", to: "2026-09-09", reason: "page-cap" })).toBe(
-      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Import a Dhan tradebook for 11 Jun 2026 to 09 Sep 2026 to be sure every fill is in.",
+  it("page cap: the window that may be short, the last pull's own day as a fact, the same day-after remedy — verbatim", () => {
+    expect(unfetchedNotice(PAGE)).toBe(
+      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Fills on 11 Jun 2026 after the last pull were not fetched; a tradebook for 11 Jun 2026 would repeat the fills already imported from it. Import a Dhan tradebook for 12 Jun 2026 to 09 Sep 2026 to bring the rest in.",
     );
+  });
+
+  it("D2: a one-day span names NO import — only that day's unfetched fills, and that a tradebook would repeat the rest", () => {
+    const range = unfetchedNotice({ from: "2026-06-12", to: "2026-06-12", reason: "range-cap" });
+    expect(range).toBe(
+      "Not fetched from Dhan: fills on 12 Jun 2026 after the last pull. A tradebook for 12 Jun 2026 would repeat the fills already imported from it.",
+    );
+    const page = unfetchedNotice({ from: "2026-09-10", to: "2026-09-10", reason: "page-cap" });
+    expect(page).toBe(
+      "A Dhan pull stopped at its page limit: fills on 10 Sep 2026 after the last pull may be missing. A tradebook for 10 Sep 2026 would repeat the fills already imported from it.",
+    );
+    for (const line of [range, page]) expect(line).not.toMatch(/import a Dhan tradebook/i);
+  });
+
+  it("D2: no remedy names the span's first day — it starts the day after, across a month end too", () => {
+    expect(unfetchedNotice(RANGE)).not.toContain("Import a Dhan tradebook for 01 May 2026");
+    expect(unfetchedNotice(PAGE)).not.toContain("Import a Dhan tradebook for 11 Jun 2026");
+    expect(unfetchedNotice({ from: "2026-05-31", to: "2026-06-10", reason: "range-cap" })).toContain(
+      "Import a Dhan tradebook for 01 Jun 2026 to 10 Jun 2026 to bring the rest in.",
+    );
+  });
+
+  it("a page-cap span starting the day after its row's range-cap span began at the clamped floor, a day no pull ran — the remedy names it", () => {
+    // dhan.ts toParsedFile: a clamped AND truncated walk keeps both spans; the
+    // page-cap one starts at the window's floor, and the server's remedy is
+    // that whole span ("To bring those fills in, import a Dhan tradebook for …").
+    const row = [RANGE, PAGE];
+    expect(unfetchedNotice(PAGE, row)).toBe(
+      "A Dhan pull stopped at its page limit: fills between 11 Jun 2026 and 09 Sep 2026 may be missing. Import a Dhan tradebook for 11 Jun 2026 to 09 Sep 2026 to bring those fills in.",
+    );
+    // The range-cap span in that row keeps its own rule…
+    expect(unfetchedNotice(RANGE, row)).toBe(unfetchedNotice(RANGE));
+    // …and a range-cap span that does not end the day before changes nothing.
+    expect(unfetchedNotice(PAGE, [{ ...RANGE, to: "2026-06-09" }, PAGE])).toBe(unfetchedNotice(PAGE));
   });
 
   it("carries no SEBI-forbidden verb", () => {
     for (const reason of ["range-cap", "page-cap"]) {
-      expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-10", reason })).not.toMatch(
-        /\b(recommend|suggest|should|consider|buy|sell)\b/i,
-      );
+      for (const to of ["2026-06-10", "2026-05-01"]) {
+        expect(unfetchedNotice({ from: "2026-05-01", to, reason })).not.toMatch(SEBI);
+      }
     }
+    expect(unfetchedNotice(PAGE, [RANGE, PAGE])).not.toMatch(SEBI);
   });
 });
 
@@ -299,7 +398,9 @@ describe("the card reads those functions — the copy is not re-typed in JSX", (
     const at = code.indexOf('data-testid="pull-unfetched"');
     expect(at, "no kept-notice block").toBeGreaterThan(-1);
     const block = code.slice(at, at + 1200);
-    expect(block).toContain("unfetchedNotice(s)");
+    // D2: the row's own spans ride along, so a page-cap span at the clamped
+    // floor is read as the floor, not as the last pull's day.
+    expect(block).toContain("unfetchedNotice(s, c.unfetched)");
     expect(block).toMatch(/onClick=\{\(\) => clearUnfetched\(c, s\)\}/);
   });
 
@@ -321,9 +422,10 @@ describe("the gap line is rendered from that one function", () => {
     const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
     // The sentence exists ONCE, inside the exported function.
     expect(src.match(/Pulls missed since/g)?.length).toBe(1);
-    // C-6: the server's catchUpFrom rides along, so a clamped gap is said.
-    expect(src).toMatch(/pullGapNotice\(conn\?\.lastPullAt, undefined, conn\?\.catchUpFrom\)/);
-    expect(src).toMatch(/data-testid="pull-gap"[\s\S]{0,200}?\{gapNotice\}/);
+    // C-6: each row's own catchUpFrom rides along, so a clamped gap is said.
+    // R47: per ROW — pullGapLines calls pullGapNotice once per connection.
+    expect(src).toMatch(/pullGapNotice\(c\.lastPullAt, now, c\.catchUpFrom\)/);
+    expect(src).toMatch(/data-testid="pull-gap"[\s\S]{0,300}?gapLines\.map\(/);
     // The old locale-ambiguous formatter must not come back. Comment lines are
     // dropped first — the header explains WHY it went, and naming it there is
     // not calling it.
@@ -343,15 +445,15 @@ describe("the gap line is rendered from that one function", () => {
     const src = await readFile(new URL("../components/import/broker-connect.tsx", import.meta.url), "utf8");
     const code = src.split(/\r?\n/).filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join("\n");
 
-    // The value the `pull-gap` block renders is null off the Dhan tab, so the
+    // The list the `pull-gap` block renders is empty off the Dhan tab, so the
     // block cannot render there at all.
-    expect(code).toMatch(
-      /const gapNotice = active === "dhan" \? pullGapNotice\(conn\?\.lastPullAt, undefined, conn\?\.catchUpFrom\) : null;/,
-    );
+    expect(code).toMatch(/const gapLines = active === "dhan" \? pullGapLines\(brokerConns, aggregate\) : \[\];/);
     // …and it is still the ONE derivation the render reads.
-    expect(code.match(/pullGapNotice\(conn/g)).toHaveLength(1);
-    expect(code).toMatch(/\{gapNotice && \(/);
+    expect(code.match(/pullGapLines\(brokerConns/g)).toHaveLength(1);
+    expect(code).toMatch(/\{gapLines\.length > 0 && \(/);
     // Never re-derived unconditionally beside it.
-    expect(code).not.toMatch(/const gapNotice = pullGapNotice\(/);
+    expect(code).not.toMatch(/const gapLines = pullGapLines\(/);
+    // R47: never again from the single lowest-account row.
+    expect(code).not.toMatch(/pullGapNotice\(conn/);
   });
 });

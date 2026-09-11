@@ -79,9 +79,9 @@ export function GreeksPanel({ greeks, latestVix }: { greeks: PortfolioGreeks; la
         </div>
 
         <p className="text-[0.6875rem] text-muted-foreground">
-          Black-Scholes estimates from the underlying spot (bhavcopy/manual MTM) — Indian index options are
-          European-style (exact), stock options are American-style (Black-Scholes is the standard retail
-          approximation, ignoring early-exercise value). IV falls back in three tiers: what you set on a position
+          Black-Scholes estimates from the underlying spot (bhavcopy/manual MTM) — index options and
+          NSE stock options are European-style, exercised only at expiry, so Black-Scholes needs no
+          early-exercise adjustment for either. IV falls back in three tiers: what you set on a position
           (Portfolio Risk → edit a position → &ldquo;Implied vol %&rdquo;), else the latest India VIX close
           (marked &ldquo;VIX&rdquo; — paste it below), else a flat 20% estimate (marked &ldquo;est.&rdquo;) if no
           VIX is loaded either. India VIX is a NIFTY-index vol proxy, not the real IV of a specific stock option —

@@ -8,6 +8,7 @@ import {
   riskConfig,
   settings as settingsTable,
   tradeLegs,
+  tradeAttachments,
   accounts as accountsTable,
   brokerReference,
 } from "@/lib/db/schema";
@@ -22,7 +23,7 @@ import type { Broker, Bucket, Exchange, Segment } from "@/lib/domain/constants";
 import { SEGMENT_BUCKET } from "@/lib/domain/constants";
 import type { CommitResult, EnrichmentRow, ParsedFile, ReferenceRow } from "./types";
 import { referenceVsBookNote, relabelledFromWarnings, type ImportShape } from "@/lib/domain/import-shape";
-import { getWriteAccountId } from "@/lib/queries/accounts";
+import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 import { detectCrossBrokerEchoes, detectCrossSourceDuplicates, type CrossSourceReport } from "./cross-source";
 import { dedupHash } from "./dedup";
 import { recordAudit } from "@/lib/audit";
@@ -31,6 +32,9 @@ import { getSymbolsByIsin } from "@/lib/queries/instruments";
 import { bundledSymbolByIsin, isCodedSymbol, nameByIsin, resolveCodedSymbols } from "./isin-symbol";
 import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
+import { deleteTradesByIds } from "@/lib/queries/delete";
+import { lotIdentityHashes, withStaleCloseNote } from "./close-open-lots";
+import { saleJournalFields, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
  * leverage varies by broker), falling back to the seeded default if missing. */
@@ -426,7 +430,11 @@ export function previewParsedFile(
     .from(tradesTable)
     .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
     .all();
-  const existing = new Set(existingRows.map((r) => r.dedupHash));
+  // R26 (4.3.0): every hash a row answers to — its own AND any alias. A lot
+  // Data Quality joined to its stored sale answers to the sale's record, so a
+  // re-pull of that sale is a duplicate here exactly as it is at commit. A book
+  // with no alias rows gets v4.2.0's set, own hashes only.
+  const existing = new Set(existingRows.flatMap((r) => lotIdentityHashes(r)));
 
   const rows: PreviewRow[] = [];
   let grossPnl = 0, chargesTotal = 0, netPnl = 0, dupCount = 0, openCount = 0, openingSells = 0;
@@ -989,8 +997,14 @@ export function commitParsedFile(
     if (!tx.select({ id: accountsTable.id }).from(accountsTable).where(eq(accountsTable.id, accountId)).get()) {
       throw new Error(`The destination account (id ${accountId}) no longer exists — it was deleted while this import was in flight. Nothing was imported.`);
     }
+    // R26: own hashes AND aliases, the same set the preview reads.
     const existing = new Set(
-      tx.select({ h: tradesTable.dedupHash }).from(tradesTable).where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker))).all().map((r) => r.h),
+      tx
+        .select({ dedupHash: tradesTable.dedupHash, importNotes: tradesTable.importNotes })
+        .from(tradesTable)
+        .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
+        .all()
+        .flatMap((r) => lotIdentityHashes(r)),
     );
 
     const batch = tx
@@ -1544,6 +1558,244 @@ export function closePosition(
   });
 
   return { ok: true, message: "Position closed." };
+}
+
+/**
+ * Why `closeStaleLot` refused — the stable wire value the route maps to an HTTP
+ * status. Every refusal changes nothing.
+ */
+export type StaleCloseCode = "BAD_DATE" | "NOT_FOUND" | "OTHER_ACCOUNT" | "NO_PAIR" | "PARTIAL" | "JOURNAL" | "DELETE_FAILED";
+
+export interface StaleCloseResult {
+  ok: boolean;
+  message: string;
+  code?: StaleCloseCode;
+}
+
+/** The ten stored charge components, in the order the row lists them. */
+const STALE_CHARGE_PARTS = [
+  "brokerage", "sttCtt", "exchangeTxn", "sebi", "stampDuty",
+  "ipft", "gst", "dpCharges", "mtfInterest", "pledgeCharges",
+] as const;
+type StaleChargeParts = Record<(typeof STALE_CHARGE_PARTS)[number], number>;
+
+/** Thrown inside the transaction to roll it back with a sentence for the user. */
+class StaleCloseAbort extends Error {}
+
+/**
+ * R26 (v4.3.0; ruling R10 half b, 06-ANSWERS:224 — with auto-close OFF,
+ * 06-ANSWERS:353, the only remedy) — close an open lot L with the
+ * opposite-side row S the book already stored for it, from Data Quality.
+ *
+ * "One click" is a button plus a confirm, and needs no user entry: L closes at
+ * S's stored price and quantity. The ONE thing confirmed is the date — a
+ * 4.2.0 Dhan sale row stored `sell_date` NULL, and a close date sets the
+ * charge epoch, the holding period and MTF interest, so it is never invented
+ * (invariant 6): `exitDate` is required, and the caller pre-fills it with S's
+ * own date or the IST day S was pulled.
+ *
+ * In ONE transaction:
+ *  1. the pair is RE-DERIVED from the book (`staleOpenPairs`, the same pure
+ *     rule the screen used) and refused unless it still holds one-to-one;
+ *  2. S is refused when it carries the user's own journal fields (notes,
+ *     tags, a playbook, an exit reason, attachments, legs) — removing it would
+ *     remove them, and merging two rows' journals is not what the user wrote;
+ *  3. CHARGES: each side keeps the bill it STATES — L's stored charges plus
+ *     S's stored charges. A side that states none is priced from
+ *     `charge_config` (invariant 3) on its own date; never both for one side.
+ *     MTF interest (and pledge) is re-priced to the confirmed date exactly as
+ *     `closePosition` prices it, replacing whatever either side carried;
+ *  4. S goes through `deleteTradesByIds` — recovery snapshot, audit row, legs
+ *     and attachments with it (there are none: step 2) — and L records S's
+ *     hash as an alias (`withStaleCloseNote`), so re-pulling S is a duplicate;
+ *  5. L is audited with action "close".
+ *
+ * Money is rupees here; the paise conversion is the column's (invariant 1).
+ * The write lands on L's own account, never the All-accounts view (invariant
+ * 9), and is refused when a different book is selected (invariant 8).
+ *
+ * `deleteTradesByIds` writes its snapshot file before its (nested, savepoint)
+ * transaction. If the lot's update below it then threw, the outer rollback
+ * would put S back and leave that snapshot behind — an orphan whose restore
+ * skips the row, because its id is taken. Nothing is lost either way.
+ */
+export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string | null): StaleCloseResult {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const raw = typeof exitDateIn === "string" ? exitDateIn.trim() : "";
+  const exitDate = /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw)) ? raw : null;
+  if (!exitDate) {
+    return { ok: false, code: "BAD_DATE", message: "Confirm the date of the recorded sale (YYYY-MM-DD) first. Nothing was changed." };
+  }
+  if (exitDate > todayIstIso()) {
+    return { ok: false, code: "BAD_DATE", message: `${exitDate} is in the future. Nothing was changed.` };
+  }
+  const view = getSelectedAccountId();
+
+  try {
+    return db.transaction((tx): StaleCloseResult => {
+      const lot = tx.select().from(tradesTable).where(eq(tradesTable.id, lotId)).get();
+      const sale = tx.select().from(tradesTable).where(eq(tradesTable.id, saleId)).get();
+      if (!lot || !sale) {
+        return { ok: false, code: "NOT_FOUND", message: "That position or its recorded sale is no longer in the journal. Nothing was changed." };
+      }
+      if (lot.accountId <= 0 || (view > 0 && view !== lot.accountId)) {
+        return { ok: false, code: "OTHER_ACCOUNT", message: "That position belongs to a different account from the one you are viewing. Nothing was changed." };
+      }
+
+      // 1 — re-derive, over the lot's own book only (pairs never cross books).
+      const sym = lot.tradingsymbol.trim().toUpperCase();
+      const book = tx
+        .select()
+        .from(tradesTable)
+        .where(and(eq(tradesTable.accountId, lot.accountId), eq(tradesTable.broker, lot.broker), eq(tradesTable.segment, lot.segment), eq(tradesTable.exchange, lot.exchange)))
+        .all()
+        .filter((r) => r.tradingsymbol.trim().toUpperCase() === sym);
+      const pair = staleOpenPairs(book).find((p) => p.lotId === lot.id && p.saleId === sale.id);
+      if (!pair) {
+        return { ok: false, code: "NO_PAIR", message: "These two rows no longer pair — the position is closed, the sale has gone, or an older position now takes the sale first. Nothing was changed." };
+      }
+      if (!pair.oneClick) {
+        return { ok: false, code: "PARTIAL", message: `The recorded sale is ${pair.saleQty} and the position holds ${pair.lotQty}, so they are not joined in one step. Nothing was changed.` };
+      }
+      if (exitDate < pair.lotDate) {
+        return { ok: false, code: "BAD_DATE", message: `${exitDate} is before the position was opened (${pair.lotDate}). Nothing was changed.` };
+      }
+
+      // 2 — the user's own record on S is never deleted by a data fix.
+      const attachments = tx.select({ id: tradeAttachments.id }).from(tradeAttachments).where(eq(tradeAttachments.tradeId, sale.id)).all().length;
+      const legs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, sale.id)).all().length;
+      const journal = saleJournalFields(sale, { attachments, legs });
+      if (journal.length > 0) {
+        return { ok: false, code: "JOURNAL", message: `Nothing was changed. ${staleJournalNote(journal, pair.side)}` };
+      }
+
+      // 3 — the joined row's legs.
+      const isShort = pair.side === "short";
+      const buyQty = isShort ? lot.buyQty + sale.buyQty : lot.buyQty;
+      const buyValue = isShort ? r2(lot.buyValue + sale.buyValue) : lot.buyValue;
+      const avgBuyPrice = isShort ? (lot.buyQty > 0 ? buyValue / buyQty : sale.avgBuyPrice) : lot.avgBuyPrice;
+      const buyDate = isShort ? exitDate : lot.buyDate;
+      const buyOrderCount = isShort ? (lot.buyQty > 0 ? lot.buyOrderCount : 0) + (sale.buyOrderCount || 1) : lot.buyOrderCount;
+      const sellQty = isShort ? lot.sellQty : lot.sellQty + sale.sellQty;
+      const sellValue = isShort ? lot.sellValue : r2(lot.sellValue + sale.sellValue);
+      const avgSellPrice = isShort ? lot.avgSellPrice : lot.sellQty > 0 ? sellValue / sellQty : sale.avgSellPrice;
+      const sellDate = isShort ? lot.sellDate : exitDate;
+      const sellOrderCount = isShort ? lot.sellOrderCount : (lot.sellQty > 0 ? lot.sellOrderCount : 0) + (sale.sellOrderCount || 1);
+      if (Math.abs(buyQty - sellQty) > 1e-9) {
+        return { ok: false, code: "NO_PAIR", message: "The joined quantities would not balance. Nothing was changed." };
+      }
+
+      // 3 — charges: the bill each side STATES, else charge_config for that side alone.
+      const { rates } = loadRatesContext();
+      const ratesOn = (day: string) => findRates(rates, lot.broker as Broker, lot.segment as Segment, lot.exchange as Exchange, day);
+      const partsOf = (c: StaleChargeParts) => Object.fromEntries(STALE_CHARGE_PARTS.map((k) => [k, c[k]])) as StaleChargeParts;
+      const side = (
+        row: typeof lot,
+        leg: { buyValue: number; sellValue: number; buyQty: number; sellQty: number; buyOrderCount: number; sellOrderCount: number },
+        day: string,
+      ): { parts: StaleChargeParts; total: number } => {
+        if (row.chargesTotal > 0) return { parts: partsOf(row), total: row.chargesTotal };
+        const c = computeCharges({ segment: lot.segment as Segment, ...leg }, ratesOn(day));
+        return { parts: partsOf(c), total: c.total };
+      };
+      const lotSide = side(
+        lot,
+        { buyValue: lot.buyValue, sellValue: lot.sellValue, buyQty: lot.buyQty, sellQty: lot.sellQty, buyOrderCount: lot.buyOrderCount, sellOrderCount: lot.sellOrderCount },
+        pricingDate(lot, exitDate),
+      );
+      const saleSide = side(
+        sale,
+        isShort
+          ? { buyValue: sale.buyValue, sellValue: 0, buyQty: sale.buyQty, sellQty: 0, buyOrderCount: sale.buyOrderCount || 1, sellOrderCount: 0 }
+          : { buyValue: 0, sellValue: sale.sellValue, buyQty: 0, sellQty: sale.sellQty, buyOrderCount: 0, sellOrderCount: sale.sellOrderCount || 1 },
+        exitDate,
+      );
+      const parts = {} as StaleChargeParts;
+      for (const k of STALE_CHARGE_PARTS) parts[k] = r2(lotSide.parts[k] + saleSide.parts[k]);
+      let chargesTotal = r2(lotSide.total + saleSide.total);
+
+      // MTF interest over the holding period (buy → the CONFIRMED date), with
+      // closePosition's funded amount and day count. It REPLACES what either
+      // side carried (the daily accrual writes interest-to-today onto an open
+      // lot), and so does the pledge fee with the GST levied on it.
+      let mtfFundedAmount = lot.mtfFundedAmount;
+      if (lot.segment === "eq_mtf") {
+        const r = ratesOn(exitDate);
+        const funded = lot.mtfFundedAmount && lot.mtfFundedAmount > 0 ? lot.mtfFundedAmount : defaultMtfFundedAmount(lot.buyValue, mtfOwnMarginPct(lot.broker));
+        const days = lot.buyDate
+          ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(lot.buyDate).getTime()) / 86400000))
+          : 0;
+        const m = computeCharges(
+          { segment: "eq_mtf", buyValue: 0, sellValue: 0, buyQty: 0, sellQty: 0, buyOrderCount: 0, sellOrderCount: 0, mtf: { fundedAmount: funded, daysHeld: days, pledgeScrips: 1 } },
+          r,
+        );
+        const carriedPledge = r2(lotSide.parts.pledgeCharges + saleSide.parts.pledgeCharges);
+        const carriedPledgeGst = r2(r.gstPct * carriedPledge);
+        chargesTotal = r2(chargesTotal - parts.mtfInterest - carriedPledge - carriedPledgeGst + m.total);
+        parts.gst = r2(parts.gst - carriedPledgeGst + m.gst);
+        parts.mtfInterest = m.mtfInterest;
+        parts.pledgeCharges = m.pledgeCharges;
+        mtfFundedAmount = funded;
+      }
+
+      const grossPnl = r2(sellValue - buyValue);
+      const netPnl = r2(grossPnl - chargesTotal);
+      const realisedPct = buyValue > 0 ? Math.round((grossPnl / buyValue) * 10000) / 100 : null;
+      const rMultiple = lot.riskAmount && lot.riskAmount > 0 ? Math.round((netPnl / lot.riskAmount) * 100) / 100 : lot.rMultiple;
+      const importNotes = withStaleCloseNote(lot.importNotes, sale.dedupHash);
+      const what = isShort ? "purchase" : "sale";
+
+      // 4 — S leaves through the one delete path (snapshot + audit).
+      const del = deleteTradesByIds([sale.id], `joined to trade #${lot.id} (${lot.tradingsymbol}) as its recorded ${what} — Data Quality`, "data-quality");
+      if (!del.ok) throw new StaleCloseAbort(del.message);
+
+      tx.update(tradesTable)
+        .set({
+          buyQty,
+          avgBuyPrice,
+          buyValue,
+          buyDate,
+          buyOrderCount,
+          sellQty,
+          avgSellPrice,
+          sellValue,
+          sellDate,
+          sellOrderCount,
+          isOpen: false,
+          unrealisedPnl: 0,
+          grossPnl,
+          chargesTotal,
+          netPnl,
+          realisedPct,
+          rMultiple,
+          ...parts,
+          mtfFundedAmount,
+          importNotes,
+          updatedAt: sql`(datetime('now'))`,
+        })
+        .where(eq(tradesTable.id, lot.id))
+        .run();
+
+      // 5
+      recordAudit({
+        entity: "trade",
+        entityId: lot.id,
+        action: "close",
+        summary: `${lot.symbol} ${isShort ? "covered" : "closed"} @ ${pair.salePrice} with the recorded ${what} #${sale.id} (Data Quality) · net ${netPnl}`,
+        before: { isOpen: true, buyQty: lot.buyQty, sellQty: lot.sellQty, sellDate: lot.sellDate, chargesTotal: lot.chargesTotal, netPnl: lot.netPnl, importNotes: lot.importNotes },
+        after: { isOpen: false, buyQty, sellQty, sellDate, chargesTotal, netPnl, importNotes },
+        source: "data-quality",
+      });
+
+      return {
+        ok: true,
+        message: `${lot.tradingsymbol} ${isShort ? "covered" : "closed"} with the recorded ${what}: ${pair.saleQty} at ${pair.salePrice} on ${exitDate}. The ${what} row was removed — recoverable from Backup & Restore → Deleted items.`,
+      };
+    });
+  } catch (e) {
+    if (e instanceof StaleCloseAbort) return { ok: false, code: "DELETE_FAILED", message: e.message };
+    throw e;
+  }
 }
 
 export interface UpdateTradeFields {

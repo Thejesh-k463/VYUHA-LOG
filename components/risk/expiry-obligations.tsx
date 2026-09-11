@@ -258,20 +258,25 @@ export function ExpiryObligations({
               <CappedNote total={obligations.length} noun="obligations" />
             </div>
 
-            {/* The rate WORD is derived from the rate the panel computed with
-                (P-1). Delivery and futures-exit STT are resolved from
-                charge_config by the page (invariant 3); exercise STT has no
-                charge_config column and stays a named constant by ruling
-                (DECISIONS 2026-08-12), so the copy must not promise it is
-                editable. */}
+            {/* Both rate WORDS are derived from the rates the rows were
+                computed with (P-1): delivery STT from the summary's own rates,
+                which the page resolves from charge_config (invariant 3);
+                exercise STT has no charge_config column and stays a named
+                constant by ruling (DECISIONS 2026-08-12), so the copy must not
+                promise it is editable. WHO pays which levy (R77/R78) is stated
+                as fact, in the same substance as the Options Help Desk (R49):
+                delivery STT on both sides of a physically settled option,
+                exercise STT on an exercised long only, none on index options. */}
             <p className="text-[0.6875rem] text-muted-foreground">
-              Indian single-stock F&amp;O is <strong>physically settled</strong>; index F&amp;O is cash-settled. An ITM
-              stock option or any stock future left open at expiry devolves into share delivery and a delivery-STT
-              charge on the whole notional, plus exercise STT (
-              {`${pctText(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)}% of intrinsic`}) — computed as far more than the
-              STT of squaring off. {SPOT_DOOR_NOTE} Delivery STT and the futures square-off STT are read from
-              your charge config; exercise STT is a fixed statutory rate (Finance Act 2026, in force 1 April 2026) and
-              is not editable.
+              Indian single-stock F&amp;O is <strong>physically settled</strong>; index F&amp;O is cash-settled. A stock
+              future, or an in-the-money stock option, left open at expiry devolves into share delivery. Delivery STT
+              is charged on both sides of that delivery, at{" "}
+              {`${pctText(summary.rates.deliverySttPct)}% of the strike value`} for an option and at the same rate on
+              the delivery value for a future. Exercise STT (
+              {`${pctText(DEFAULT_SETTLEMENT_RATES.exerciseSttPct)}% of intrinsic value`}) is paid only by a long whose
+              option is exercised, not by the assigned writer. Index options settle in cash with no delivery STT.{" "}
+              {SPOT_DOOR_NOTE} Delivery STT and the futures square-off STT are read from your charge config; exercise
+              STT is a fixed statutory rate (Finance Act 2026, in force 1 April 2026) and is not editable.
             </p>
           </>
         )}

@@ -24,7 +24,7 @@
  * authenticated GET.
  */
 
-import { todayIstIso } from "@/lib/domain/trading-day";
+import { todayIstIso, toIst } from "@/lib/domain/trading-day";
 import type { ChargeBreakdown, Execution, NormalizedTrade, ProductHint } from "@/lib/engine/types";
 import type { Exchange } from "@/lib/domain/constants";
 import type { ApiImportSource, ParsedFile } from "@/lib/import/types";
@@ -339,9 +339,14 @@ function addDaysIso(isoDate: string, days: number): string {
 /**
  * The window a pull should ask for, given when this connection last pulled.
  *
- * `from` is the IST DAY of the last pull, INCLUSIVE — re-fetching that day is
- * cheap and the commit pipeline de-duplicates, whereas excluding it would drop
- * every fill that happened after the pull ran. Null when there is nothing to
+ * `from` is the IST DAY of the last pull, INCLUSIVE — excluding it would drop
+ * every fill that happened after the pull ran. Re-reading that day is NOT made
+ * safe by the commit's de-duplication: a fill the last pull already stored from
+ * /v2/positions (which states no fill id) comes back from the history in
+ * another shape, and normalizeDhanTrades pairs it with any later SELL into a
+ * new closed row that hashes differently — a purchase counted twice (R42,
+ * v4.3.0 fix wave 1). `catchUpAfter` below is the cutoff that stops it; the
+ * caller hands it to fetchTrades as `after`. Null when there is nothing to
  * catch up on (never pulled, unreadable stamp, or already pulled today —
  * today's book is what `/positions` is for).
  *
@@ -365,6 +370,43 @@ export function catchUpRange(
   const floor = addDaysIso(today, -DHAN_MAX_PULL_RANGE_DAYS);
   if (day < floor) return { from: floor, to: today, unfetched: { from: day, to: addDaysIso(floor, -1) } };
   return { from: day, to: today };
+}
+
+/** An instant as India wall clock, `YYYY-MM-DD HH:MM:SS` — the format Dhan
+ *  states a fill's `exchangeTime` in. */
+function istWallClock(ms: number): string {
+  return toIst(new Date(ms)).toISOString().slice(0, 19).replace("T", " ");
+}
+
+/**
+ * R42 (v4.3.0 fix wave 1): the cutoff a catch-up pull hands fetchTrades as
+ * `after` — the last pull's stamp as IST wall clock. A history fill at or
+ * before it was already in the book that pull read from /v2/positions, so
+ * fetchTrades drops it instead of re-pairing the stored BUY with a later SELL.
+ *
+ * Null when there is no window, and when the window is CLAMPED: the stamp's day
+ * is then not in it, so nothing that pull read can come back. A separate
+ * function, not a field on `catchUpRange`'s result, so the window every caller
+ * and test already reads keeps its exact shape.
+ *
+ * The stamp is the instant taken immediately BEFORE the /v2/positions request
+ * (`onCutoff`), never a post-commit clock — a fill executed after the snapshot
+ * and before a later stamp would otherwise be dropped on every pull. Residual:
+ * a fill executed between that instant and Dhan's response can sit in the
+ * snapshot AND in the next pull's history; a laptop clock running ahead of the
+ * exchange's widens that window by the skew.
+ */
+export function catchUpAfter(lastPullAt: string | null | undefined, today: string = todayIstIso()): string | null {
+  const range = catchUpRange(lastPullAt, today);
+  if (!range || range.unfetched) return null;
+  return istWallClock(Date.parse(lastPullAt!));
+}
+
+/** R42: the fill's `YYYY-MM-DD HH:MM:SS` as Dhan states it (exchangeTime, else
+ *  createTime), or null when no full time is readable — such a fill is kept. */
+function fillWallClock(r: DhanTradeRow): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/.exec(String(r.exchangeTime ?? r.createTime ?? "").trim());
+  return m ? `${m[1]} ${m[2]}` : null;
 }
 
 /** "2026-09-07 10:15:00" (or an ISO instant) → "2026-09-07"; null when Dhan
@@ -1052,7 +1094,12 @@ export async function fetchDhanHoldings(creds: DhanCredentials, onMinted?: (toke
 export interface DhanFetchOptions {
   from?: string;
   to?: string;
+  /** R42: `catchUpAfter`'s cutoff — history fills at or before it are dropped. */
+  after?: string | null;
   onHistory?: (read: DhanHistoryRead) => void;
+  /** R42: the instant taken immediately BEFORE the /v2/positions request, as
+   *  ISO — the only honest lastPullAt for this pull. */
+  onCutoff?: (iso: string) => void;
 }
 
 /** The Dhan source: the shared ApiImportSource, with the widened options. */
@@ -1076,14 +1123,34 @@ export function dhanImportSource(creds: DhanCredentials, onMinted?: (token: stri
      * dropped: the two sources state the same day in different shapes, a
      * position row carries no `exchangeTradeId` to dedupe against, and
      * `/positions` is the only source that states MTF and the broker's mark.
+     *
+     * v4.3.0 fix wave 1: fills at or before `after` (the last pull's stamp)
+     * are dropped — that pull's snapshot already holds them (R42). A walk that
+     * stopped at the page cap is dropped WHOLE (F-L1-3a): which days a
+     * truncated walk covered cannot be named at day granularity, so none of it
+     * is committed and toParsedFile names the whole span. `onCutoff` hands back
+     * the instant taken just before /v2/positions — the caller's stamp.
      */
     async fetchTrades(opts: DhanFetchOptions = {}) {
       const today = todayIstIso();
       const history: NormalizedTrade[] = [];
       if (opts.from) {
-        const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted, opts.onHistory);
-        history.push(...normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today)).trades);
+        const walk: { read: DhanHistoryRead | null } = { read: null };
+        const rows = await fetchDhanTrades(creds, { from: opts.from, to: opts.to ?? today }, onMinted, (r) => {
+          walk.read = r;
+          opts.onHistory?.(r);
+        });
+        if (!walk.read?.truncated) {
+          const after = opts.after ?? null;
+          const notCovered = (r: DhanTradeRow) => {
+            if (!after) return true;
+            const at = fillWallClock(r);
+            return at == null || at > after;
+          };
+          history.push(...normalizeDhanTrades(rows.filter((r) => tradeDateOf(r) !== today && notCovered(r))).trades);
+        }
       }
+      opts.onCutoff?.(new Date().toISOString());
       const positions = normalizeDhanPositions(await fetchDhanPositions(creds, onMinted), today);
       return [...history, ...positions];
     },
@@ -1102,21 +1169,38 @@ export interface DhanUnfetchedSpan {
   to: string;
   reason: "range-cap" | "page-cap";
   message: string;
+  /** The days a Dhan tradebook can bring in WITHOUT repeating an import: the
+   *  span minus the last pull's own IST day. Null when nothing is left. */
+  remedy: { from: string; to: string } | null;
+  /** Set when the span starts on the last pull's own IST day: its fills up to
+   *  that pull are in the journal, the ones after `after` (IST "HH:MM"; null
+   *  when the stamp is not known) were not fetched. */
+  partial: { day: string; after: string | null } | null;
 }
 
 /** Wrap an API pull in the ParsedFile shape the preview/commit pipeline expects.
  *  `range` is the catch-up window when one was fetched — the warnings must say
  *  which days this pull covered, or a five-day catch-up reads like a daily one.
  *  `read` is what the history walk reported (C-6); `unfetched` hands back every
- *  span the pull did not read, each with the warning that named it. */
+ *  span the pull did not read, each with the warning that named it.
+ *  `lastPullAt` is the stamp the window was computed from — it dates the last
+ *  pull's own day, the one day a tradebook would partly repeat (F-L1-3a). */
 export function toParsedFile(
   trades: NormalizedTrade[],
   range?: DhanCatchUpRange | null,
   read?: DhanHistoryRead | null,
+  lastPullAt?: string | null,
 ): ParsedFile & { unfetched: DhanUnfetchedSpan[] } {
   const mtf = trades.filter((t) => t.productHint === "mtf").length;
   const warnings: string[] = [];
   const unfetched: DhanUnfetchedSpan[] = [];
+  const stampMs = Date.parse(String(lastPullAt ?? ""));
+  const lastHhmm = Number.isFinite(stampMs) ? istWallClock(stampMs).slice(11, 16) : null;
+  /** F-L1-3a: the last pull's own day is a plain fact, never a remedy — its
+   *  fills up to that pull came from /v2/positions, and a tradebook states
+   *  scrip names the API's tickers do not match, so it would import them twice. */
+  const partialDay = (day: string) =>
+    `Fills on ${day} after ${lastHhmm ? `${lastHhmm} IST` : "the last pull"} were not fetched; a tradebook for ${day} would repeat the fills already imported from it.`;
 
   if (range) {
     // C-4 (fix wave C): the reason stated is the one true of EVERY range
@@ -1126,19 +1210,43 @@ export function toParsedFile(
       `Catch-up pull: fills from ${range.from} to ${range.to} were read from Dhan's trade history, because the last pull ran before today. Today's book still comes from /v2/positions, and re-pulled fills are de-duplicated on commit.`,
     );
     if (range.unfetched) {
+      // `u.from` IS the last pull's IST day (catchUpRange), so the remedy
+      // starts the day after it.
       const u = range.unfetched;
-      const message = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. To bring those fills in, import a Dhan tradebook for ${u.from} to ${u.to}.`;
+      const restFrom = addDaysIso(u.from, 1);
+      const remedy = restFrom <= u.to ? { from: restFrom, to: u.to } : null;
+      const message =
+        `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. ${partialDay(u.from)}` +
+        (remedy ? ` To bring the rest in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : "");
       warnings.push(message);
-      unfetched.push({ from: u.from, to: u.to, reason: "range-cap", message });
+      unfetched.push({ from: u.from, to: u.to, reason: "range-cap", message, remedy, partial: { day: u.from, after: lastHhmm } });
     }
     if (read?.truncated) {
-      const dated =
-        read.oldest && read.newest
-          ? `The fills it read are dated ${read.oldest} to ${read.newest}.`
-          : "None of the fills it read states a readable date.";
-      const message = `Truncated: this pull stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history, so fills between ${range.from} and ${range.to} may be missing. ${dated} To be sure every fill is in, import a Dhan tradebook for ${range.from} to ${range.to}.`;
+      // F-L1-3a: fetchTrades kept NONE of a truncated walk, so the span is the
+      // whole history window up to YESTERDAY — `range.to` is today (the window
+      // always ends on it), and today's book came from /v2/positions. Unclamped,
+      // the window starts on the last pull's own day; clamped, on the floor,
+      // a day no pull imported.
+      const yesterday = addDaysIso(range.to, -1);
+      const onLastPullDay = !range.unfetched;
+      const restFrom = onLastPullDay ? addDaysIso(range.from, 1) : range.from;
+      const remedy = restFrom <= yesterday ? { from: restFrom, to: yesterday } : null;
+      const message = [
+        `Truncated: this pull stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history and kept none of what it read, so fills from ${range.from} to ${yesterday} were not read. Today's book came from /v2/positions.`,
+        onLastPullDay ? partialDay(range.from) : null,
+        remedy ? `To bring ${onLastPullDay ? "the rest" : "those fills"} in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
       warnings.push(message);
-      unfetched.push({ from: range.from, to: range.to, reason: "page-cap", message });
+      unfetched.push({
+        from: range.from,
+        to: yesterday,
+        reason: "page-cap",
+        message,
+        remedy,
+        partial: onLastPullDay ? { day: range.from, after: lastHhmm } : null,
+      });
     }
   }
   if (trades.length === 0) {

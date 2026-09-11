@@ -5,10 +5,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getDataQualityReport } from "@/lib/queries/data-quality";
+import { getDataQualityReport, getStaleOpenPairs } from "@/lib/queries/data-quality";
 import { crossAccountIssues, scoreIssues } from "@/lib/analytics/data-quality";
 import { listDuplicateConnections, listDuplicateTradeGroups } from "@/lib/import/broker-identity";
 import { DuplicateFix } from "@/components/quality/duplicate-fix";
+import { StaleLotFix } from "@/components/quality/stale-lot-fix";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,9 @@ export default function DataQualityPage() {
           </div>;
         })}
       </CardContent></Card>
+      {/* R26 — the stale open rows the `stale_open` issue counts, and the join
+          that closes each one with its recorded sale. Account-scoped. */}
+      <StaleLotFix pairs={getStaleOpenPairs()} />
       <DuplicateFix groups={duplicateTradeGroups} connections={duplicateConnections} />
       <p className="text-[0.6875rem] text-muted-foreground">The score is a completeness indicator, not a judgement of trading performance. Critical unknowns carry more weight because they can change reported money.</p>
     </div>

@@ -906,10 +906,35 @@ describe("help describes the v4.3 Option Strategies screen", () => {
     expect(both("The shelf is Pro; the grouping, the recognition and the payoff are free."), "the scan is dead").toBe(true);
   });
 
+  it("R50 — says where a Custom card's link lands, not that every card links to an entry", () => {
+    expect(text(), "the entry still says EVERY card links straight to its entry").not.toMatch(
+      /each card here links straight to its entry/,
+    );
+    expect(text()).toMatch(/A named card here links straight to its entry/);
+    expect(text()).toMatch(/Custom card[^.]*top of the Options section/);
+  });
+
   it("carries no href for an options structure — the NAV join above would fail on one", () => {
     // Options entries live in lib/domain/options-help.ts and deliberately have
     // no href; this pins that none leaked into HELP_ENTRIES as a ghost screen.
     const ghosts = HELP_ENTRIES.filter((e) => e.href.includes("#"));
     expect(ghosts.map((e) => e.href)).toEqual([]);
+  });
+});
+
+/**
+ * R21 (v4.3.0 fix wave 1). The /import-help entry said Upstox "value behaviour
+ * is inferred until a populated export is seen" — a caveat AGENTS.md and
+ * docs/BROKER_FORMATS.md discharged on 2026-09-04 (tests/golden-books.test.ts
+ * pins a populated realised-P&L export against Upstox's own figures).
+ */
+describe("the /import-help entry states the Upstox verification as it stands (R21)", () => {
+  const body = (href: string) => HELP_ENTRIES.find((e) => e.href === href)!.body.join(" ");
+
+  it("no longer says value behaviour is inferred, and says what is verified and what is our arithmetic", () => {
+    const text = body("/import-help");
+    expect(text, "the discharged Upstox caveat is still printed").not.toMatch(/inferred until/);
+    expect(text).toMatch(/value behaviour is verified for the realised-P&L export/);
+    expect(text).toMatch(/pinned against Vyuha's own arithmetic for the trade report/);
   });
 });

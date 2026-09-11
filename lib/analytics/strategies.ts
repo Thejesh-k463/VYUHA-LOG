@@ -257,6 +257,18 @@ export function classifyStrategy(legs: OptionLeg[], groupExpiry: string | null =
 
 // ── Payoff ───────────────────────────────────────────────────────────────────
 
+/**
+ * True when an underlying FUTURE settles before the LAST option leg does (R104).
+ * After it settles the option legs stand alone, so both figures at the later
+ * expiry depend on where the future settled — not a number the journal can
+ * state. A cash holding (`expiry: null`) never expires. Shared with the card's
+ * note (strategy-copy.ts) so the flag and the sentence cannot disagree.
+ */
+export function underlyingExpiresFirst(ulLegs: readonly OptionLeg[], expiries: readonly string[]): boolean {
+  const latest = expiries[expiries.length - 1];
+  return !!latest && ulLegs.some((l) => !!l.expiry && l.expiry < latest);
+}
+
 export function computeStrategy(
   symbol: string,
   expiry: string | null,
@@ -303,11 +315,26 @@ export function computeStrategy(
   const minAtZeroOnly = rest.length > 0 && vy[0].pnl < Math.min(...rest) - 1e-9;
 
   // Breakevens: zero-crossings across the analytic vertices.
+  // R69: a vertex P&L under half a paisa IS zero. A 100/110 call spread bought
+  // for exactly its width is 0 at 110 in arithmetic and ±1e-13 in floats, and
+  // the old `<= 0 / > 0` test listed 110 or nothing depending on that residue.
   const breakevens: number[] = [];
-  for (let i = 1; i < vy.length; i++) {
-    const a = vy[i - 1];
-    const b = vy[i];
-    if ((a.pnl <= 0 && b.pnl > 0) || (a.pnl >= 0 && b.pnl < 0)) {
+  const snapped = vy.map((v) => (Math.abs(v.pnl) < 0.005 ? 0 : v.pnl));
+  for (let i = 0; i < vy.length; i++) {
+    // A vertex ON zero is a breakeven when the payoff leaves zero on either
+    // side of it; a zero span between two strikes therefore lists both ends
+    // (decided, R69). Vertex 0 and the strikes only: `cHi` is the chart's
+    // edge, and a crossing there belongs to the analytic rescue (R4-M-1).
+    const onZero =
+      snapped[i] === 0 &&
+      vy[i].price !== cHi &&
+      ((i > 0 && snapped[i - 1] !== 0) || (i + 1 < vy.length && snapped[i + 1] !== 0));
+    if (onZero) breakevens.push(r2(vy[i].price));
+    if (i + 1 >= vy.length) continue;
+    // Strictly across zero: a vertex ON zero is the branch above's, listed once.
+    const a = vy[i];
+    const b = vy[i + 1];
+    if ((snapped[i] < 0 && snapped[i + 1] > 0) || (snapped[i] > 0 && snapped[i + 1] < 0)) {
       const be = a.price + ((b.price - a.price) * (0 - a.pnl)) / (b.pnl - a.pnl);
       if (Number.isFinite(be)) breakevens.push(r2(be));
     }
@@ -333,7 +360,7 @@ export function computeStrategy(
     // crossing on an `x.xx5` boundary rounds to neighbouring paise and got
     // listed TWICE (a 0.005 de-duplication cannot see a 0.01 gap, and widening
     // it would swallow two genuine crossings a paisa apart). The guard is `>=`,
-    // not `>`: the scan's `a.pnl >= 0 && b.pnl < 0` cannot see `b.pnl === 0`, so
+    // not `>`: the scan never lists `cHi` itself (R69 excludes it), so
     // a crossing landing exactly on `cHi` is the analytic value's alone. `r2`
     // moves a value by at most 0.005, which is exactly the slack allowed here.
     if (Number.isFinite(be) && be > maxK && be >= cHi - 0.005) {
@@ -365,7 +392,13 @@ export function computeStrategy(
   const farLegsAllLong = optionLegs
     .filter((l) => legExpiry(l, expiry) !== nearestExpiry)
     .every((l) => l.side === "long");
-  const notComputed = { maxProfit: multiExpiry, maxLoss: multiExpiry && !farLegsAllLong };
+  // R104: a future under the book that settles before the last option leg
+  // leaves that leg standing alone, so neither figure at its expiry is printed.
+  const ulFirst = underlyingExpiresFirst(ulLegs, expiries);
+  const notComputed = {
+    maxProfit: multiExpiry || ulFirst,
+    maxLoss: (multiExpiry && !farLegsAllLong) || ulFirst,
+  };
 
   const label = (nc: boolean, v: number | null, atZeroOnly: boolean): CapLabel =>
     nc ? "Not computed" : v === null ? "Unlimited" : atZeroOnly ? "Computed at underlying = 0" : "At expiry";
@@ -398,6 +431,11 @@ export function computeStrategy(
     ulLegs,
   };
 }
+
+/** R102: a sub-group states an UNBOUNDED figure where the whole book states a bound. */
+const splitContradictsWhole = (whole: StrategyGroup, subs: readonly StrategyGroup[]): boolean =>
+  (whole.maxLoss !== null && subs.some((s) => s.maxLoss === null)) ||
+  (whole.maxProfit !== null && subs.some((s) => s.maxProfit === null));
 
 export type PositionedLeg = OptionLeg & {
   symbol: string;
@@ -437,9 +475,19 @@ export function buildStrategies(legs: PositionedLeg[]): StrategyGroup[] {
       arr.push(l);
       byExpiry.set(e, arr);
     }
-    for (const [e, sub] of [...byExpiry.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      out.push(computeStrategy(symbol, e, sub, `${symbol}|${e}`));
+    const subs = [...byExpiry.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([e, sub]) => computeStrategy(symbol, e, sub, `${symbol}|${e}`));
+    // R102: parking the underlying on the nearest expiry leaves a far short
+    // call alone on its own card, reading "Unlimited" while the whole book is
+    // covered. When the book holds an underlying, a split that states an
+    // unbounded figure the whole contradicts is refused. Option-only splits
+    // are ruling 240's and unchanged here.
+    if (own.some((l) => legKind(l) === "UL") && splitContradictsWhole(whole, subs)) {
+      out.push(whole);
+      continue;
     }
+    out.push(...subs);
   }
 
   return out.sort(

@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { inr, inrCompact } from "@/lib/format";
+import { inr, inrCompact, num } from "@/lib/format";
 
 const axis = { fontSize: 10, fill: "var(--color-muted-foreground)" };
 
@@ -77,7 +77,8 @@ export function PayoffChart({
             x={b}
             stroke="var(--color-muted-foreground)"
             strokeDasharray="2 2"
-            label={{ value: Math.round(b), fontSize: 9, fill: "var(--color-muted-foreground)", position: "top" }}
+            // R53: the same paise the card prints (strategy-card's Breakeven(s)).
+            label={{ value: num(b, 2), fontSize: 9, fill: "var(--color-muted-foreground)", position: "top" }}
           />
         ))}
         {spot != null ? (

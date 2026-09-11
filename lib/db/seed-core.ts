@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import { db, sqlite } from "./index";
 import { capitalSnapshots, chargeConfig, marginConfig, regulatoryRulePacks, riskConfig, settings, accounts } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
@@ -24,13 +24,15 @@ export interface SeedReport {
   capitalSnapshots: "seeded" | "kept";
   chargeAdded: number;
   chargeRefreshed: number;
+  /** Non-edited epochs removed because a user-edited window of the same key covers their start (v4.3.0 R54). */
+  chargeRemoved: number;
   riskAdded: number;
 }
 
 /**
  * Idempotent, non-destructive seed of config tables. Returns what changed.
  *
- * ONE transaction (v4.3.0): the rate card is 459 charge_config rows, and a
+ * ONE transaction (v4.3.0): the rate card is 522 charge_config rows, and a
  * commit per row paid an fsync each — seeded test hooks hit the Windows
  * runner's 30 s hookTimeout (CI 34578562759). It also makes the seed atomic,
  * like the desktop refresh (scripts/rate-card-refresh.mjs): a failure part-way
@@ -46,6 +48,7 @@ function seedAll(log: boolean): SeedReport {
     capitalSnapshots: "kept",
     chargeAdded: 0,
     chargeRefreshed: 0,
+    chargeRemoved: 0,
     riskAdded: 0,
   };
   const say = (m: string) => log && console.log(m);
@@ -92,95 +95,12 @@ function seedAll(log: boolean): SeedReport {
     say("• capital_snapshots already present — left untouched");
   }
 
-  /*
-   * Rate rows are both ADDED and REFRESHED here.
-   *
-   * Adding alone was the bug: the seed ran once, on a fresh database, so every
-   * broker and every corrected rate published after that never reached an
-   * install — the app kept quoting figures it shipped with a year earlier.
-   *
-   * Refreshing skips any row the user edited (`userEdited`). Their number is
-   * the one they verified against their own contract note, and overwriting it
-   * on an app update would be the app silently disagreeing with the broker.
-   */
-  for (const row of buildChargeConfigSeed()) {
-    /**
-     * A USER-EDITED row whose window covers this epoch's start owns every date
-     * this row would claim, so the seed must not touch that key at all.
-     *
-     * `onConflictDoNothing` alone is not that guard: `effectiveFrom` is part of
-     * the unique index (migration 0050), so a seed epoch (e.g. the 2026-04-01
-     * F&O STT row) never CONFLICTS with a user-edited 1970-01-01→open row — it
-     * inserts cleanly beside it, and `findRates` picks the NEWEST covering
-     * epoch, silently shadowing the rates the user verified against their own
-     * contract note for every trade dated ≥ its effectiveFrom. That is the
-     * exact silent-rate-substitution the epoch work exists to prevent.
-     *
-     * The check sits BEFORE both the insert and the refresh below so the two
-     * paths agree: a covered epoch is neither added nor refreshed. Windows are
-     * inclusive-from / exclusive-to, and a null effectiveTo counts as open.
-     * A user edit that covers only PART of history (a closed epoch) blocks only
-     * the seed rows starting inside its window — the rest still refresh.
-     */
-    const from = row.effectiveFrom ?? "1970-01-01";
-    const editedCover = db
-      .select({ id: chargeConfig.id })
-      .from(chargeConfig)
-      .where(
-        and(
-          eq(chargeConfig.broker, row.broker),
-          eq(chargeConfig.plan, row.plan),
-          eq(chargeConfig.segment, row.segment),
-          eq(chargeConfig.exchange, row.exchange),
-          eq(chargeConfig.userEdited, true),
-          lte(chargeConfig.effectiveFrom, from),
-          or(isNull(chargeConfig.effectiveTo), gt(chargeConfig.effectiveTo, from)),
-        ),
-      )
-      .get();
-    if (editedCover) continue;
-
-    const inserted = db.insert(chargeConfig).values(row).onConflictDoNothing().run().changes;
-    report.chargeAdded += inserted;
-    if (inserted > 0) continue;
-
-    /**
-     * `effectiveFrom` is part of the identity (migration 0050) and MUST be in
-     * this lookup. Without it, a key that now holds two dated epochs returns an
-     * arbitrary one, and the update below would overwrite one epoch with the
-     * other's rate — either colliding on the unique index or silently swapping
-     * the pre- and post-2026 STT rows. Found by reading the seeder while adding
-     * the second epoch, not by a test: no test seeds twice over a migrated DB.
-     */
-    const existing = db
-      .select()
-      .from(chargeConfig)
-      .where(
-        and(
-          eq(chargeConfig.broker, row.broker),
-          eq(chargeConfig.plan, row.plan),
-          eq(chargeConfig.segment, row.segment),
-          eq(chargeConfig.exchange, row.exchange),
-          eq(chargeConfig.effectiveFrom, row.effectiveFrom ?? "1970-01-01"),
-        ),
-      )
-      .get();
-    if (!existing || existing.userEdited) continue;
-
-    const differs = (Object.keys(row) as (keyof typeof row)[]).some((k) => {
-      const a = row[k];
-      const b = (existing as Record<string, unknown>)[k];
-      return typeof a === "object" && a !== null
-        ? JSON.stringify(a) !== JSON.stringify(b)
-        : a !== b;
-    });
-    if (!differs) continue;
-
-    db.update(chargeConfig).set(row).where(eq(chargeConfig.id, existing.id)).run();
-    report.chargeRefreshed += 1;
-  }
+  const charge = refreshChargeConfig();
+  report.chargeAdded = charge.added;
+  report.chargeRefreshed = charge.refreshed;
+  report.chargeRemoved = charge.removed;
   say(
-    `✓ charge_config: ${report.chargeAdded} added, ${report.chargeRefreshed} refreshed` +
+    `✓ charge_config: ${charge.added} added, ${charge.refreshed} refreshed, ${charge.removed} removed` +
       ` (user-edited rows left untouched)`,
   );
 
@@ -240,5 +160,147 @@ function seedAll(log: boolean): SeedReport {
   for (const row of rulePacks) db.insert(regulatoryRulePacks).values(row).onConflictDoNothing().run();
   say("✓ regulatory_rule_packs seeded");
 
+  return report;
+}
+
+/** What one pass of the shipped rate card over charge_config changed. */
+export interface ChargeRefreshReport {
+  added: number;
+  refreshed: number;
+  removed: number;
+}
+
+/**
+ * The Drizzle handle a pass runs on: `db` itself, or a transaction on the same
+ * connection (`db.transaction((tx) => …)`), so the pass joins that transaction.
+ */
+type ChargeConn = Pick<typeof db, "select" | "insert" | "update" | "run">;
+
+/**
+ * Bring charge_config up to the rate card this build ships, on `conn`.
+ *
+ * Rate rows are both ADDED and REFRESHED here.
+ *
+ * Adding alone was the bug: the seed ran once, on a fresh database, so every
+ * broker and every corrected rate published after that never reached an
+ * install — the app kept quoting figures it shipped with a year earlier.
+ *
+ * Refreshing skips any row the user edited (`userEdited`). Their number is
+ * the one they verified against their own contract note, and overwriting it
+ * on an app update would be the app silently disagreeing with the broker.
+ *
+ * Exported for the two restore paths (v4.3.0 R7). restoreDatabase and
+ * restoreBaseline re-insert a rate card verbatim from a backup or a snapshot,
+ * which may be older than this build, and the desktop refresh runs only at
+ * sidecar start — so every import for the rest of the session priced from the
+ * restored card. They call this inside their own transaction, right after the
+ * re-insert. ATTACH (the desktop refresh's route) is impossible inside a
+ * transaction, which is why the restores use this TypeScript pass; the parity
+ * harness in tests/stt-epoch-2024.test.ts pins it equal to refreshRateCards().
+ *
+ * It opens no transaction of its own: seedDatabase() and the restores each
+ * run it inside theirs, so a failure part-way rolls the whole pass back.
+ */
+export function refreshChargeConfig(conn: ChargeConn = db): ChargeRefreshReport {
+  const report: ChargeRefreshReport = { added: 0, refreshed: 0, removed: 0 };
+
+  /**
+   * FIRST, a NON-edited epoch whose start falls inside a user-edited window of
+   * the same broker/plan/segment/exchange is REMOVED (v4.3.0 R54; parity with
+   * scripts/rate-card-refresh.mjs). The guard below stops the seed ADDING such
+   * an epoch, but one already on file — the pre-v3.2.0 1970 stamp beside
+   * v4.2.0's unguarded INSERT — stayed, and `findRates` picks the NEWEST
+   * covering epoch, so it kept overriding the rate the user verified for every
+   * trade dated on or after its start. Users edit rates, never dates
+   * (app/api/settings/route.ts), so the user's window is the authority on
+   * those dates, and the removed row is one the seed can always reproduce.
+   * Windows are inclusive-from / exclusive-to; a NULL effective_to is open. An
+   * empty user window (effective_to = effective_from) covers no date.
+   */
+  report.removed = conn.run(sql`DELETE FROM charge_config
+    WHERE user_edited = 0
+      AND EXISTS (SELECT 1 FROM charge_config u
+        WHERE u.user_edited = 1
+          AND u.broker = charge_config.broker AND u.plan IS charge_config.plan
+          AND u.segment = charge_config.segment AND u.exchange = charge_config.exchange
+          AND u.effective_from <= charge_config.effective_from
+          AND (u.effective_to IS NULL OR u.effective_to > charge_config.effective_from))`).changes;
+
+  for (const row of buildChargeConfigSeed()) {
+    /**
+     * A USER-EDITED row whose window covers this epoch's start owns every date
+     * this row would claim, so the seed must not touch that key at all.
+     *
+     * `onConflictDoNothing` alone is not that guard: `effectiveFrom` is part of
+     * the unique index (migration 0050), so a seed epoch (e.g. the 2026-04-01
+     * F&O STT row) never CONFLICTS with a user-edited 1970-01-01→open row — it
+     * inserts cleanly beside it, and `findRates` picks the NEWEST covering
+     * epoch, silently shadowing the rates the user verified against their own
+     * contract note for every trade dated ≥ its effectiveFrom. That is the
+     * exact silent-rate-substitution the epoch work exists to prevent.
+     *
+     * The check sits BEFORE both the insert and the refresh below so the two
+     * paths agree: a covered epoch is neither added nor refreshed. Windows are
+     * inclusive-from / exclusive-to, and a null effectiveTo counts as open.
+     * A user edit that covers only PART of history (a closed epoch) blocks only
+     * the seed rows starting inside its window — the rest still refresh.
+     */
+    const from = row.effectiveFrom ?? "1970-01-01";
+    const editedCover = conn
+      .select({ id: chargeConfig.id })
+      .from(chargeConfig)
+      .where(
+        and(
+          eq(chargeConfig.broker, row.broker),
+          eq(chargeConfig.plan, row.plan),
+          eq(chargeConfig.segment, row.segment),
+          eq(chargeConfig.exchange, row.exchange),
+          eq(chargeConfig.userEdited, true),
+          lte(chargeConfig.effectiveFrom, from),
+          or(isNull(chargeConfig.effectiveTo), gt(chargeConfig.effectiveTo, from)),
+        ),
+      )
+      .get();
+    if (editedCover) continue;
+
+    const inserted = conn.insert(chargeConfig).values(row).onConflictDoNothing().run().changes;
+    report.added += inserted;
+    if (inserted > 0) continue;
+
+    /**
+     * `effectiveFrom` is part of the identity (migration 0050) and MUST be in
+     * this lookup. Without it, a key that now holds two dated epochs returns an
+     * arbitrary one, and the update below would overwrite one epoch with the
+     * other's rate — either colliding on the unique index or silently swapping
+     * the pre- and post-2026 STT rows. Found by reading the seeder while adding
+     * the second epoch, not by a test: no test seeds twice over a migrated DB.
+     */
+    const existing = conn
+      .select()
+      .from(chargeConfig)
+      .where(
+        and(
+          eq(chargeConfig.broker, row.broker),
+          eq(chargeConfig.plan, row.plan),
+          eq(chargeConfig.segment, row.segment),
+          eq(chargeConfig.exchange, row.exchange),
+          eq(chargeConfig.effectiveFrom, row.effectiveFrom ?? "1970-01-01"),
+        ),
+      )
+      .get();
+    if (!existing || existing.userEdited) continue;
+
+    const differs = (Object.keys(row) as (keyof typeof row)[]).some((k) => {
+      const a = row[k];
+      const b = (existing as Record<string, unknown>)[k];
+      return typeof a === "object" && a !== null
+        ? JSON.stringify(a) !== JSON.stringify(b)
+        : a !== b;
+    });
+    if (!differs) continue;
+
+    conn.update(chargeConfig).set(row).where(eq(chargeConfig.id, existing.id)).run();
+    report.refreshed += 1;
+  }
   return report;
 }

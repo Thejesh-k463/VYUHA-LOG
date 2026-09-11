@@ -2,9 +2,54 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { db, attachmentsDir } from "@/lib/db";
-import { instruments, ipos, mtmPrices, tradeAttachments } from "@/lib/db/schema";
-import { assessDataQuality } from "@/lib/analytics/data-quality";
+import { inArray } from "drizzle-orm";
+import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs } from "@/lib/db/schema";
+import {
+  assessDataQuality,
+  saleJournalFields,
+  staleJournalNote,
+  staleOpenPairs,
+  type StaleOpenPair,
+} from "@/lib/analytics/data-quality";
 import { getTrades } from "./trades";
+import { collectIdChunks } from "./delete";
+
+/** A stale pair as the screen shows it: `blocked` is why it gets no button. */
+export interface StaleOpenView extends StaleOpenPair {
+  /** Set when the sale row carries the user's own journal fields (R26 decision). */
+  blocked: string | null;
+}
+
+/**
+ * R26 (v4.3.0) — the open lots with their closing trade stored beside them, for
+ * the Data Quality card. ACCOUNT-SCOPED through `getTrades()` (invariant 8):
+ * the All-accounts view lists every book's pairs, each within its own book.
+ */
+export function getStaleOpenPairs(): StaleOpenView[] {
+  const all = getTrades();
+  const pairs = staleOpenPairs(all);
+  if (pairs.length === 0) return [];
+  const saleIds = [...new Set(pairs.map((p) => p.saleId))];
+  const countBy = (rows: { tradeId: number }[]) => {
+    const m = new Map<number, number>();
+    for (const r of rows) m.set(r.tradeId, (m.get(r.tradeId) ?? 0) + 1);
+    return m;
+  };
+  const attachments = countBy(
+    collectIdChunks(saleIds, (c) => db.select({ tradeId: tradeAttachments.tradeId }).from(tradeAttachments).where(inArray(tradeAttachments.tradeId, c)).all()),
+  );
+  const legs = countBy(
+    collectIdChunks(saleIds, (c) => db.select({ tradeId: tradeLegs.tradeId }).from(tradeLegs).where(inArray(tradeLegs.tradeId, c)).all()),
+  );
+  const byId = new Map(all.map((t) => [t.id, t]));
+  return pairs.map((p) => {
+    const sale = byId.get(p.saleId);
+    const fields = sale
+      ? saleJournalFields(sale, { attachments: attachments.get(p.saleId) ?? 0, legs: legs.get(p.saleId) ?? 0 })
+      : [];
+    return { ...p, blocked: fields.length ? staleJournalNote(fields, p.side) : null };
+  });
+}
 
 export function getDataQualityReport(now = new Date()) {
   const all = getTrades();

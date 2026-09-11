@@ -53,12 +53,14 @@ describe("charge_config epochs survive a re-seed", () => {
   it("keeps every historical epoch intact, and invents no epoch where no levy moved", async () => {
     const { seedDatabase } = await import("@/lib/db/seed-core");
 
-    // --- Futures: STT moved on 1-Oct-2024 and 1-Apr-2026, the NSE charge on
-    // 1-Apr-2023, 1-Apr-2024, 1-Oct-2024 and 1-Mar-2026 — so SIX epochs. ------
+    // --- Futures: STT moved on 1-Jun-2013, 1-Apr-2023, 1-Oct-2024 and
+    // 1-Apr-2026 (FATAX23500 / 56235 / 63809 / 73524), the NSE charge on
+    // 1-Apr-2023, 1-Apr-2024, 1-Oct-2024 and 1-Mar-2026 — so SEVEN epochs. ----
     const FUT = [
       // [effectiveFrom, effectiveTo, sttPct, exchangeTxnPct]
-      ["1970-01-01", "2023-04-01", 0.000125, 0.00002], // STT 0.0125% up to 30-Sep-2024
-      ["2023-04-01", "2024-04-01", 0.000125, 0.000019],
+      ["1970-01-01", "2013-06-01", 0.00017, 0.00002], // STT 0.017% up to 31-May-2013 (start unverified)
+      ["2013-06-01", "2023-04-01", 0.0001, 0.00002], // STT 0.01% up to 31-Mar-2023
+      ["2023-04-01", "2024-04-01", 0.000125, 0.000019], // STT 0.0125% up to 30-Sep-2024
       ["2024-04-01", "2024-10-01", 0.000125, 0.0000188],
       ["2024-10-01", "2026-03-01", 0.0002, 0.0000173], // STT 0.02% 1-Oct-2024 .. 31-Mar-2026
       ["2026-03-01", "2026-04-01", 0.0002, 0.000018299],

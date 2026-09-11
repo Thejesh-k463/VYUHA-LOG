@@ -16,6 +16,7 @@ import {
 } from "@/lib/domain/options-help";
 import { searchHelp, type HelpHit } from "@/lib/domain/help-content";
 import { SEBI_FNO_FACTS } from "@/lib/analytics/sebi-reality";
+import { computeSettlement, DEFAULT_SETTLEMENT_RATES } from "@/lib/analytics/settlement";
 
 /**
  * THE OPTIONS HELP DESK (v4.3 wave 2, B5).
@@ -445,5 +446,148 @@ describe("a deep link lands even when the search filtered its card out (U-4)", (
     expect(src, "a setState in an effect is what broke the Trades filter").not.toMatch(
       /useEffect\([\s\S]{0,200}?set[QH]/,
     );
+  });
+});
+
+/**
+ * v4.3.0 FIX WAVE 1 (W1-HELP) — the copy states what the exchange and the
+ * engine actually do.
+ *
+ *  - R49. Exercise STT on intrinsic value is "Payable by Purchaser"
+ *    (NSE/FATAX/73524 row 4(b)): the HOLDER who exercises, never the assigned
+ *    writer. Five entries charged it to the writer, and the generic "an
+ *    in-the-money leg left to settle" charged it to short legs too.
+ *  - R94. NSE index and stock options are European-style — "Final Exercise is
+ *    Automatic on expiry" (NSE Clearing). Six entries described EARLY
+ *    assignment, which cannot happen here.
+ *  - R95. A stock option held in the money into expiry settles by DELIVERY, so
+ *    the premium is not the whole outlay — the app's own settlement panel says
+ *    so, and the help said the opposite.
+ *  - R97 / R98 / R99 / R100. Closed forms that the engine contradicts: the
+ *    collar's sign, the unequal-wing iron butterfly / reverse iron condor and
+ *    the one-sided breakeven, "any net credit" dropping a debit, and the
+ *    split-strike combo's unbounded side. The engine half of each is pinned in
+ *    tests/strategy-catalogue.test.ts.
+ */
+describe("the help copy agrees with the exchange and the engine (v4.3.0 fix wave 1)", () => {
+  const entry = (id: string) => {
+    const e = OPTIONS_HELP.find((x) => x.id === id);
+    if (!e) throw new Error(`no options help entry ${id}`);
+    return e;
+  };
+  const sentences = (e: OptionsHelpEntry) => prose(e).split(/(?<=\.)\s+/);
+
+  it("R49 — the one STT sentence names who pays: a long leg or the holder, never the assigned writer", () => {
+    const unnamed: string[] = [];
+    for (const e of OPTIONS_HELP) {
+      const stt = sentences(e).filter((s) => /STT/.test(s));
+      expect(stt, `${e.id} has ${stt.length} STT sentences`).toHaveLength(1);
+      if (!/\b(long (call|put|leg|wing)s?|holder)\b/.test(stt[0])) unnamed.push(`${e.id}: "${stt[0]}"`);
+      expect(prose(e), `${e.id} charges exercise STT to an assigned writer`).not.toMatch(
+        /\bassigned\b[^.;]*\bcharged STT\b/,
+      );
+    }
+    expect(unnamed, `STT sentences that do not say who pays:\n${unnamed.join("\n")}`).toEqual([]);
+    // The short-leg entries say it outright, and scope delivery to stock options.
+    for (const id of ["short-call", "short-put", "covered-call", "covered-put", "short-straddle", "short-strangle"]) {
+      expect(entry(id).risk, id).toContain("STT on intrinsic value falls on the holder who exercises, not on the assigned writer");
+      expect(entry(id).risk, id).toMatch(/a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides/);
+    }
+    // Index options settle in cash: every delivery clause names the stock option.
+    for (const id of ["short-put", "covered-call", "covered-put", "collar"]) {
+      for (const s of sentences(entry(id)).filter((x) => /\bdeliver/i.test(x) && !/STT/.test(x))) {
+        expect(s, `${id}: a delivery clause with no stock-option scope`).toMatch(/stock option/);
+      }
+    }
+    // The regex can fire on the sentence that was there.
+    expect(/\bassigned\b[^.;]*\bcharged STT\b/.test("An assigned short call is charged STT on intrinsic value.")).toBe(true);
+  });
+
+  it("R94 — no entry describes early assignment; NSE options are exercised at expiry only", () => {
+    const EARLY =
+      /\bassign\w*\b[^.]{0,80}\b(early|before expiry|still carr\w* time value)\b|\bearly (assignment|exercise)\b|\bexercised early\b/i;
+    const hits = OPTIONS_HELP.filter((e) => EARLY.test(prose(e))).map((e) => e.id);
+    expect(hits, `entries that describe early assignment: ${hits.join(", ")}`).toEqual([]);
+    expect(entry("collar").risk, "collar still says assignment delivers 'whatever happens afterwards'").not.toMatch(
+      /whatever happens afterwards/,
+    );
+    // BSE stock-option exercise style is not verified, so it is never named.
+    for (const e of OPTIONS_HELP) expect(prose(e), e.id).not.toMatch(/\bBSE\b/);
+    // The gate fires on the lines that were there.
+    expect(EARLY.test("The short leg can be assigned before expiry, which unbalances the pair.")).toBe(true);
+    expect(EARLY.test("Assignment on the short put can arrive while the long put still carries time value.")).toBe(true);
+  });
+
+  it("R95 — a long stock option in the money settles by delivery; the settlement engine says the same", () => {
+    for (const id of ["long-call", "long-put"]) {
+      expect(entry(id).what, `${id} still calls the premium the whole outlay`).toMatch(
+        /stock option[^.]*settles by delivery/,
+      );
+    }
+    expect(entry("long-call").what).not.toMatch(/nothing further is blocked/);
+    expect(entry("long-put").what).not.toMatch(/entire outlay of the position\./);
+    // The other half of the seam: the app's own settlement panel, for the same
+    // long ITM stock call, states the cash the delivery takes.
+    const s = computeSettlement(
+      [
+        {
+          id: 1,
+          symbol: "RELIANCE",
+          tradingsymbol: "OPT RELIANCE 15 Sep 2026 1400 CE",
+          segment: "stock_option",
+          optionType: "CE",
+          strike: 1400,
+          expiry: "2026-09-15",
+          netQty: 500,
+          side: "long",
+          refPrice: 1500,
+        },
+      ],
+      DEFAULT_SETTLEMENT_RATES,
+      "2026-09-11",
+    );
+    expect(s.obligations[0].fundsOrShares).toMatch(/cash if exercised/);
+  });
+
+  it("R97 — the collar's caps carry one signed net premium (credit positive, a debit negative)", () => {
+    const p = entry("collar").payoff;
+    expect(p).toMatch(/\(K2 − S0\) × quantity plus the net premium/);
+    expect(p).toMatch(/\(S0 − K1\) × quantity minus it/);
+    expect(p).toMatch(/net debit counted as negative/);
+  });
+
+  it("R98 — unequal wings: the wider wing sets the cap, and a narrow wing has no breakeven", () => {
+    expect(entry("iron-butterfly").payoff).toContain("max(K2 − K1, K3 − K2)");
+    expect(entry("reverse-iron-condor").payoff).toContain("max(K2 − K1, K4 − K3)");
+    for (const id of ["iron-condor", "iron-butterfly", "reverse-iron-condor"]) {
+      expect(entry(id).payoff, `${id} states two breakevens for any wings`).toMatch(
+        /a narrower wing leaves that side with no breakeven/,
+      );
+    }
+    for (const id of [
+      "long-call-butterfly",
+      "long-put-butterfly",
+      "short-butterfly",
+      "long-call-condor",
+      "short-call-condor",
+      "long-put-condor",
+    ]) {
+      expect(entry(id).payoff, `${id} states an equal-wing closed form with no qualifier`).toMatch(/equal wings/);
+    }
+  });
+
+  it("R99 — ratios and backspreads carry the signed net, so a debit is not dropped", () => {
+    for (const id of ["call-ratio-spread", "put-ratio-spread", "call-backspread", "put-backspread"]) {
+      expect(entry(id).payoff, id).not.toMatch(/any net credit/);
+      expect(entry(id).payoff, id).toMatch(/net debit counting as negative/);
+    }
+  });
+
+  it("R100 — the split-strike combo's unbounded side is above the higher strike, and a call-lower combo is not flat", () => {
+    const p = entry("split-strike-combo").payoff;
+    expect(p).not.toMatch(/Unlimited on the short side/);
+    expect(p).toMatch(/Unlimited above the higher strike/);
+    expect(p).toMatch(/two-for-one/);
+    expect(p).not.toMatch(/on the side the net sits/);
   });
 });

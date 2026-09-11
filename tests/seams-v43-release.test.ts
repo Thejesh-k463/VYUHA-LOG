@@ -212,13 +212,19 @@ const storedRows = (accountId: number) =>
 describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown (dhan.ts → route / auto-pull → GET → card)", () => {
   beforeEach(freezeAtBoundary);
 
-  // Frozen clock: today (IST) is 2026-09-11; the stamp's IST day is 2026-09-07.
+  // Frozen clock: today (IST) is 2026-09-11; the stamp is 10:30 IST on 2026-09-07.
+  // F-L1-3a (fix wave 1): a truncated walk keeps NONE of what it read, its span
+  // ends YESTERDAY (today came from /v2/positions), and the tradebook remedy
+  // starts the day after the last pull's own day.
   const STAMP = "2026-09-07T05:00:00.000Z";
   const TRUNCATED =
-    "Truncated: this pull stopped at the 50-page limit of Dhan's trade history, so fills between 2026-09-07 and 2026-09-11 may be missing. The fills it read are dated 2026-09-08 to 2026-09-08. To be sure every fill is in, import a Dhan tradebook for 2026-09-07 to 2026-09-11.";
-  const NOTICE =
-    "A Dhan pull stopped at its page limit: fills between 07 Sep 2026 and 11 Sep 2026 may be missing. Import a Dhan tradebook for 07 Sep 2026 to 11 Sep 2026 to be sure every fill is in.";
-  const SPAN = [{ from: "2026-09-07", to: "2026-09-11", reason: "page-cap" }];
+    "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
+  // The card's line (components/import/broker-connect.tsx) is composed from the
+  // stored span alone. D2 (fix wave 1 follow-up, 2026-09-11): its remedy now
+  // starts the day after the last pull's own day, as TRUNCATED's does.
+  const NOTICE_FACT = "A Dhan pull stopped at its page limit: fills between 07 Sep 2026 and 10 Sep 2026 may be missing.";
+  const NOTICE_REMEDY = "Import a Dhan tradebook for 08 Sep 2026 to 10 Sep 2026 to bring the rest in.";
+  const SPAN = [{ from: "2026-09-07", to: "2026-09-10", reason: "page-cap" }];
 
   it("route: the commit names the truncation, GET lists a page-cap span, and the card prints the page-limit line", async () => {
     addDhan(PAGE_ROUTE, STAMP);
@@ -235,12 +241,16 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
 
     expect(json.warnings as string[]).toContain(TRUNCATED);
     expect(bc.pullResultMessage("commit", json)).toContain(TRUNCATED);
-    expect(json.result.added).toBe(1);
+    // F-L1-3a: the fill read inside the truncated walk (2026-09-08) is NOT
+    // committed, and /v2/positions is empty — so nothing is added.
+    expect(json.result.added).toBe(0);
+    expect(storedRows(PAGE_ROUTE)).toEqual([]);
 
     // THE assertion: the span outlives the lastPullAt move, and the card's line is the page-limit one.
     const conn = await connOf(PAGE_ROUTE);
     expect(conn.unfetched).toEqual(SPAN);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(NOTICE);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_FACT);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_REMEDY);
     // Pulled today: no gap line on top of the kept notice.
     expect(conn.catchUpFrom).toBeNull();
     expect(bc.pullGapNotice(conn.lastPullAt, new Date(), conn.catchUpFrom)).toBeNull();
@@ -253,16 +263,21 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
 
     const out = await job.runAutoPull(new Date()); // the REAL pullOne
     const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === PAGE_AUTO);
-    expect(mine?.status).toBe("imported");
-    expect(mine?.detail).toBe(
-      "+1 trade (fills between 2026-09-07 and 2026-09-11 may be missing (page limit) — import a Dhan tradebook for those dates)",
-    );
+    // F-L1-3a: the truncated walk is dropped whole and /v2/positions is empty,
+    // so the sweep finds nothing new — and R27 still keeps the span and stamps.
+    expect(mine?.status).toBe("nothingNew");
+    const WORDS =
+      " (fills from 2026-09-07 to 2026-09-10 not read (page limit) — import a Dhan tradebook for 2026-09-08 to 2026-09-10; fills on 2026-09-07 after 10:30 IST not fetched — a tradebook for 2026-09-07 would repeat the fills already imported from it)";
+    expect(mine?.detail).toBe(`no trades today${WORDS}`);
+    expect(out.line).toContain(`Dhan nothing new${WORDS}`);
     // The token-only rows in this file are not unattended-eligible, so nothing else was pulled.
-    expect(out.summary.filter((e) => e.status === "imported").map((e) => e.accountId)).toEqual([PAGE_AUTO]);
+    expect(out.summary.filter((e) => e.status !== "notEligible").map((e) => e.accountId)).toEqual([PAGE_AUTO]);
 
     const conn = await connOf(PAGE_AUTO);
     expect(conn.unfetched).toEqual(SPAN);
-    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(NOTICE);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_FACT);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain(NOTICE_REMEDY);
+    expect(conn.lastPullAt).toBe(AT_IST_BOUNDARY.toISOString());
   });
 });
 
@@ -305,13 +320,17 @@ describe("S4 · catchUpFrom crosses to pullGapNotice at the exact 90-day edge, 0
     const json = await res.json();
     expect(paths).toContain("/v2/trades/2026-06-13/2026-09-11/0");
     expect(json.warnings as string[]).toContain(
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. To bring those fills in, import a Dhan tradebook for 2026-06-12 to 2026-06-12.",
+      // F-L1-3a: the one-day span is the last pull's own day — stated as a
+      // fact, with no tradebook remedy (there is no day left to name).
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
     );
 
     const after = await connOf(EDGE_OUT);
     expect(after.unfetched).toEqual([{ from: "2026-06-12", to: "2026-06-12", reason: "range-cap" }]);
+    // D2 (fix wave 1 follow-up, 2026-09-11): the card agrees with the pull's
+    // sentence above — a one-day span is the last pull's own day, and names no import.
     expect(bc.unfetchedNotice(after.unfetched![0]!)).toBe(
-      "Not fetched from Dhan: fills from 12 Jun 2026 to 12 Jun 2026 — they are older than the window a pull reads. Import a Dhan tradebook for 12 Jun 2026 to 12 Jun 2026 to bring them in.",
+      "Not fetched from Dhan: fills on 12 Jun 2026 after the last pull. A tradebook for 12 Jun 2026 would repeat the fills already imported from it.",
     );
     expect(bc.pullGapNotice(after.lastPullAt, new Date(), after.catchUpFrom)).toBeNull();
   });
@@ -593,9 +612,13 @@ describe("S3 · the C-7/C-8 card, delivered by the desktop refresh, is what comm
     expect(opts.get("2024-09-30")).toMatchObject({ exchangeTxn: 70.06, sttCtt: 180 });
   });
 
-  it("the real sidecar refresh moves that card onto the template: 297 added, 135 refreshed, then 0 / 0", () => {
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 297, refreshed: 135 });
-    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0 });
+  // Re-pinned 2026-09-11 (v4.3.0 fix wave 1). R1 added 63 verified F&O STT
+  // epochs (seed 459 -> 522 rows; FATAX23500/27711/32385/56235), so the owner's
+  // 4.2.0 card gains 63 more rows than the 297 this pinned before; R54 added
+  // `removed` to refreshRateCards' result. Measured, not derived.
+  it("the real sidecar refresh moves that card onto the template: 360 added, 135 refreshed, 0 removed, then 0 / 0 / 0", () => {
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 360, refreshed: 135, removed: 0 });
+    expect(refreshRateCards(t.sqlite, TEMPLATE, () => {})).toEqual({ added: 0, refreshed: 0, removed: 0 });
   });
 
   it("after it, commit — reading charge_config through loadRatesMap — stores every boundary at its circular's rate", () => {

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { inr, inrCompact } from "@/lib/format";
+import { inr, inrCompact, signOf } from "@/lib/format";
 import type { CapitalSummary } from "@/lib/queries/capital";
 import { toast } from "@/components/ui/toaster";
 import { TrendingUp } from "lucide-react";
@@ -59,7 +59,7 @@ export function CapitalCard({ summary }: { summary: CapitalSummary }) {
             <div>
               <div className="text-xs text-muted-foreground">Realised P&L available to compound</div>
               <div className={`text-xl font-bold tabular-nums ${pnl(summary.available)}`}>
-                {summary.available >= 0 ? "+" : ""}{inr(summary.available, { decimals: 0 })}
+                {signOf(summary.available)}{inr(Math.abs(summary.available), { decimals: 0 })}
               </div>
               <div className="mt-0.5 text-[0.6875rem] text-muted-foreground">
                 Total realised {inr(summary.totalRealised, { decimals: 0 })} · already compounded {inr(summary.rolledIn, { decimals: 0 })}

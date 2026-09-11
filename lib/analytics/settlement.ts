@@ -4,13 +4,18 @@
 // expiry (SEBI, phased in from Oct-2019), while INDEX F&O (NIFTY, BANKNIFTY,
 // SENSEX, …) is **cash-settled**. Leaving a stock future — or an in-the-money
 // stock option — open into expiry converts it into a *delivery obligation*:
-//   • you must take/give delivery of the underlying shares (full notional), and
-//   • the position is charged **equity-delivery STT (0.1%) on the whole notional**,
-//     plus STT on exercise (0.15% on intrinsic since 1-Apr-2026) — vs the tiny
-//     premium/turnover STT (and, for a SHORT future, vs nothing at all: its
-//     square-off is a BUY, and futures STT is charged on the sell leg only)
-//     of simply squaring off. This "STT jump" + the surprise delivery is a classic
-//     retail money-trap. This module flags those obligations ahead of expiry.
+//   • the underlying shares are taken/given in delivery (full notional);
+//   • a physically settled contract carries **delivery STT on BOTH sides** at
+//     the equity-delivery rate (0.1%; NSE FATAX38737, from 26 Jul 2018) — on
+//     the cash close × qty for a future, on the STRIKE VALUE (strike × qty) for
+//     an option, whether the option is long or short;
+//   • **exercise STT** (0.15% of intrinsic since 1-Apr-2026, circular 02/2026
+//     row 4(b)) is payable by the PURCHASER only — an exercised LONG pays it on
+//     top of delivery STT, an assigned writer does not;
+//   • INDEX options settle in cash and carry no delivery STT.
+// Squaring off instead costs the premium/turnover STT (and, for a SHORT future,
+// nothing at all: its square-off is a BUY, and futures STT is charged on the
+// sell leg only). This module computes those obligations ahead of expiry.
 //
 // Rates: the equity-delivery STT comes from `charge_config` (never hard-coded);
 // the option-exercise STT is a dated statutory default the caller may override.
@@ -63,7 +68,9 @@ export interface SettlementInput {
 }
 
 export interface SettlementRates {
-  /** Equity-delivery STT as a fraction (e.g. 0.001 = 0.1%) — from charge_config eq_delivery. */
+  /** Equity-delivery STT as a fraction (e.g. 0.001 = 0.1%) — from charge_config eq_delivery.
+   *  Levied on BOTH sides of every physically settled contract: a stock
+   *  future's delivery value and an ITM stock option's strike value. */
   deliverySttPct: number;
   /** STT on exercise of options, on intrinsic value (statutory default 0.15%
    *  since 1-Apr-2026 — FA 2026, NSE circular 02/2026 row 4(b)). */
@@ -118,7 +125,10 @@ export interface SettlementObligation {
    *  panel prints "—" and the totals exclude it (ruling C-1, invariant 6). */
   notional: number | null;
   fundsOrShares: string; // human note: cash needed / shares to deliver
-  physicalStt: number | null; // ₹ STT incurred on physical settlement
+  /** ₹ STT incurred on physical settlement: delivery STT on the delivery value
+   *  (both sides), plus exercise STT on intrinsic for an exercised LONG option
+   *  only — each rounded to the rupee separately (R77/R78). */
+  physicalStt: number | null;
   /**
    * ₹ STT to square off now — SIDE-AWARE, because futures STT is SELL-SIDE
    * ONLY (`charge_config` carries the `future` segment as
@@ -172,6 +182,10 @@ export interface SettlementSummary {
    *  summed futures deltas with options ABSOLUTES under a delta label and
    *  overstated "extra" on any book with ITM options (v3.5.0 audit C3). */
   physicalSttTotal: number;
+  /** The rates every figure above was computed with, so the panel's footer
+   *  names the delivery-STT rate the page actually read from charge_config
+   *  rather than a default it may not have used. */
+  rates: SettlementRates;
   nearestExpiry: string | null;
   obligations: SettlementObligation[]; // physical first, then by dte asc
 }
@@ -274,7 +288,17 @@ export function computeSettlement(
         intrinsicPerUnit = r2(intr);
         moneyness = intr > 0 ? "ITM" : "OTM";
         settles = intr > 0 ? "yes" : "no";
-        if (intr > 0) physicalStt = rupee(rates.exerciseSttPct * intr * p.netQty);
+        if (intr > 0) {
+          // R77/R78. A physically settled option carries delivery STT on its
+          // strike value for BOTH sides (FATAX38737, from 26 Jul 2018; rate
+          // from charge_config eq_delivery, invariant 3). Exercise STT (row
+          // 4(b)) is payable by the PURCHASER only, so an assigned writer owes
+          // none of it. This line used to charge every ITM leg the exercise
+          // term alone — ₹75 on a short SBIN 1400 CE ×500 that owes ₹700.
+          const delivery = rupee(rates.deliverySttPct * notional);
+          const exercise = p.side === "long" ? rupee(rates.exerciseSttPct * intr * p.netQty) : 0;
+          physicalStt = delivery + exercise;
+        }
       } else {
         moneyness = "unknown";
         settles = "if-ITM"; // spot unknown — obligation is conditional
@@ -367,6 +391,7 @@ export function computeSettlement(
       (o) => o.deliveryAction === "Take delivery (buy)" && o.notional == null,
     ).length,
     physicalSttTotal: rupee(settling.reduce((s, o) => s + (o.physicalStt ?? 0), 0)),
+    rates: { ...rates },
     nearestExpiry: expiries[0] ?? null,
     obligations,
   };

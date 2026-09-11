@@ -6,10 +6,11 @@ import type { Broker, Exchange, Segment } from "../domain/constants";
  * turnover/premium (0.1% => 0.001) unless noted.
  *
  * The broker-set figures (brokerage, DP, MTF) are today's cards and carry no
- * history. The levies that have moved are EFFECTIVE-DATED: STT (STT_EPOCH_2024,
- * STT_EPOCH_2026) and the exchange transaction charge + NSE IPFT (the EXCHANGE
- * CHARGE EPOCHS below). A key is split at the UNION of its boundaries; a key
- * whose levies never moved keeps one open-ended row.
+ * history. The levies that have moved are EFFECTIVE-DATED: F&O STT (the F&O STT
+ * SCHEDULES below, one boundary per NSE FATAX circular) and the exchange
+ * transaction charge + NSE IPFT (the EXCHANGE CHARGE EPOCHS below). A key is
+ * split at the UNION of its boundaries; a key whose levies never moved keeps one
+ * open-ended row.
  * These values seed `charge_config`; the engine reads only from the DB at runtime.
  */
 
@@ -53,15 +54,31 @@ const EPOCH_START = "1970-01-01";
 
 // --- STT / CTT by segment, EFFECTIVE-DATED -----------------------------------
 /**
- * THE STT EPOCH BOUNDARY.
+ * THE F&O STT SCHEDULES (v4.3.0 R1; owner ruling: from a verified primary
+ * source only, as C-8; rates only — charges already stored on trades are not
+ * rewritten). Every boundary is read from an NSE circular, all fetched
+ * 2026-09-11 (SHA-256 in LIVE-DESK-RESEARCH/_data/stt-primary-sources-2026-09-11):
  *
- * The Finance Act, 2026 (Presidential assent 30 March 2026) revised three
- * derivative STT rates with effect from 1 April 2026. Primary source:
- * **NSE Circular Ref. No. 02/2026, Download Ref. No. NSE/FATAX/73524, dated
- * 31 March 2026**, and NSE's own STT page
- * <https://www.nseindia.com/static/products-services/equity-derivatives-securities-transaction-tax>.
- *
- * What changed — and, just as importantly, what did NOT:
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX23500.pdf
+ *     Circular 1/2013, 24 May 2013 (Finance Act 2013): "Sale of a futures in
+ *     securities: 0.017 per cent till 31.05.2013, 0.01 per cent from
+ *     01.06.2013"; the sale of an option stays at 0.017 per cent.
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX27711.pdf
+ *     Circular 1/2014, 29 Sep 2014: "4(a) 0.017 per cent; 4(b) 0.125 per cent
+ *     Purchaser; 4(c) 0.01 per cent".
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX32385.pdf
+ *     Circular 2/2016, 16 May 2016 (Finance Act 2016): STT on sale of option
+ *     "revised from current rate of 0.017% to 0.05% with effect from 01st day
+ *     of June, 2016". Futures did not move.
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX56235.pdf
+ *     Circular 2/2023, 1 Apr 2023 (Finance Act 2023): option "0.0625% (upto
+ *     March 31, 2023 – 0.05%)"; futures "0.0125% (upto March 31, 2023 – 0.01%)".
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf
+ *     Circular 2/2024, 9 Sep 2024 (Finance (No. 2) Act 2024): "Sale of an
+ *     option in securities has been revised to 0.10% (upto September 30, 2024
+ *     - 0.0625%)"; futures 0.0125% → 0.02%, both from 1 Oct 2024.
+ *   https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf
+ *     Circular 02/2026, 31 Mar 2026 (Finance Act 2026, assent 30 Mar 2026):
  *
  * | Circular row | Transaction                          | ≤ 31-Mar-2026 | ≥ 1-Apr-2026 | Payable by |
  * |--------------|--------------------------------------|---------------|--------------|------------|
@@ -71,68 +88,71 @@ const EPOCH_START = "1970-01-01";
  * | 1 & 2        | Equity delivery, purchase and sale   | 0.1%          | 0.1% (No Change) | both   |
  * | 3            | Equity sale settled otherwise (intraday) | 0.025%    | 0.025% (No Change) | Seller |
  *
- * Commodity segments are deliberately untouched: they carry CTT, a different
- * levy under a different head, which this circular does not address.
+ * THE UNVERIFIED START. The 0.017% regime came in with the Finance Act 2008,
+ * whose NSE circular (NSE/F&A/10706) returns 404, so when it began is not
+ * verified. Per the owner's C-8 ruling (06-ANSWERS: before the earliest
+ * verified boundary the EARLIEST VERIFIED schedule applies, and the gap is
+ * recorded) the 0.017% rows are extended back to 1970.
+ *
+ * Stock options take the index-option rate: the levy is one line for both
+ * ("sale of an option in securities"). Before this schedule the seed had three
+ * STT windows (1970, 1 Oct 2024, 1 Apr 2026), so every F&O sale before
+ * 1 Apr 2023 was priced at the Finance Act 2023 rates: 1.25× on futures and
+ * options after the 2013/2016 changes, 3.7× on options sold before June 2016,
+ * and 0.74× on futures sold before June 2013.
+ *
+ * NOT dated here: equity delivery STT was 0.125% on both sides until
+ * 2012-06-30 (FATAX20990); eq_delivery and eq_mtf keep one 0.1% row. Commodity
+ * segments carry CTT, a different levy under a different head.
  */
 export const STT_EPOCH_2026 = "2026-04-01";
-
-/**
- * THE EARLIER STT EPOCH BOUNDARY — 1 October 2024.
- *
- * The Finance (No. 2) Act, 2024 raised the same three derivative STT rates with
- * effect from 1 October 2024: futures 0.0125% → 0.02%, options 0.0625% → 0.10%
- * of premium, both on the sell side. In-repo source: the dated reference table
- * lib/data/charge-rates-defaults.json (futures 1970→2024-10-01 sttPct 0.000125,
- * index_option 1970→2024-10-01 sttPct 0.000625, both "sell"). That table has no
- * stock_option row; stock options take the index-option rate because the levy
- * is one line for both ("sale of an option in securities").
- *
- * Without this epoch, every pre-October-2024 F&O trade priced from charge_config
- * (a file that states no broker charges) carried 1.6× the STT that applied.
- * Only STT is dated here (owner ruling C-7, "rates only").
- */
+/** Finance (No. 2) Act 2024 (FATAX63809): futures 0.0125% → 0.02%, options 0.0625% → 0.10%. */
 export const STT_EPOCH_2024 = "2024-10-01";
-
-/** Which rate regime a seed row describes. */
-export type SttEpoch = "pre-2024-10" | "pre-2026-04" | "current";
-
-function sttFor(segment: Segment, epoch: SttEpoch = "current"): { pct: number; side: "both" | "sell" | "none" } {
-  const pick = (pre2024: number, fy25: number, now: number) =>
-    epoch === "pre-2024-10" ? pre2024 : epoch === "pre-2026-04" ? fy25 : now;
-  switch (segment) {
-    case "eq_delivery":
-    case "eq_mtf":
-      return { pct: 0.001, side: "both" }; // 0.1% buy + sell — unchanged by FA 2026
-    case "eq_intraday":
-      return { pct: 0.00025, side: "sell" }; // 0.025% sell — unchanged by FA 2026
-    case "future":
-      return { pct: pick(0.000125, 0.0002, 0.0005), side: "sell" }; // 0.0125% → 0.02% → 0.05% sell
-    case "index_option":
-    case "stock_option":
-      return { pct: pick(0.000625, 0.001, 0.0015), side: "sell" }; // 0.0625% → 0.10% → 0.15% of premium on sell
-    case "commodity_future":
-      return { pct: 0.0001, side: "sell" }; // CTT 0.01% sell — a different levy
-    case "commodity_option":
-      return { pct: 0.0005, side: "sell" }; // CTT 0.05% sell — a different levy
-  }
-}
-
-/** True only for the segments FA 2026 actually moved. */
-export function sttChangedIn2026(segment: Segment): boolean {
-  return segment === "future" || segment === "index_option" || segment === "stock_option";
-}
+/** Finance Act 2023 (FATAX56235): futures 0.01% → 0.0125%, options 0.05% → 0.0625%. */
+const STT_EPOCH_2023 = "2023-04-01";
+/** Finance Act 2016 (FATAX32385): options 0.017% → 0.05% of premium. Futures did not move. */
+const STT_EPOCH_2016 = "2016-06-01";
+/** Finance Act 2013 (FATAX23500): futures 0.017% → 0.01%. Options did not move. */
+const STT_EPOCH_2013 = "2013-06-01";
 
 /** One dated STT regime, in force from `from` (inclusive) to the next entry's `from`. */
 type SttLevy = { from: string; pct: number; side: "both" | "sell" | "none" };
 
-/** A segment's STT schedule, oldest first. */
+/** Row 4(c): sale of a futures in securities — seller, on traded value. */
+const STT_FUTURES: SttLevy[] = [
+  { from: EPOCH_START, pct: 0.00017, side: "sell" }, // FATAX23500 "till 31.05.2013"; start unverified, extended back
+  { from: STT_EPOCH_2013, pct: 0.0001, side: "sell" }, // FATAX23500
+  { from: STT_EPOCH_2023, pct: 0.000125, side: "sell" }, // FATAX56235
+  { from: STT_EPOCH_2024, pct: 0.0002, side: "sell" }, // FATAX63809
+  { from: STT_EPOCH_2026, pct: 0.0005, side: "sell" }, // FATAX73524
+];
+/** Row 4(a): sale of an option in securities — seller, on premium. Index and stock options alike. */
+const STT_OPTIONS: SttLevy[] = [
+  { from: EPOCH_START, pct: 0.00017, side: "sell" }, // FATAX23500 / FATAX27711; start unverified, extended back
+  { from: STT_EPOCH_2016, pct: 0.0005, side: "sell" }, // FATAX32385
+  { from: STT_EPOCH_2023, pct: 0.000625, side: "sell" }, // FATAX56235
+  { from: STT_EPOCH_2024, pct: 0.001, side: "sell" }, // FATAX63809
+  { from: STT_EPOCH_2026, pct: 0.0015, side: "sell" }, // FATAX73524
+];
+
+/** A segment's STT schedule, oldest first. Only F&O carries history. */
 function sttScheduleFor(segment: Segment): SttLevy[] {
-  if (!sttChangedIn2026(segment)) return [{ from: EPOCH_START, ...sttFor(segment, "current") }];
-  return [
-    { from: EPOCH_START, ...sttFor(segment, "pre-2024-10") },
-    { from: STT_EPOCH_2024, ...sttFor(segment, "pre-2026-04") },
-    { from: STT_EPOCH_2026, ...sttFor(segment, "current") },
-  ];
+  switch (segment) {
+    case "future":
+      return STT_FUTURES;
+    case "index_option":
+    case "stock_option":
+      return STT_OPTIONS;
+    case "eq_delivery":
+    case "eq_mtf":
+      return [{ from: EPOCH_START, pct: 0.001, side: "both" }]; // 0.1% buy + sell (FATAX73524 rows 1 & 2, No Change)
+    case "eq_intraday":
+      return [{ from: EPOCH_START, pct: 0.00025, side: "sell" }]; // 0.025% sell (FATAX73524 row 3, No Change)
+    case "commodity_future":
+      return [{ from: EPOCH_START, pct: 0.0001, side: "sell" }]; // CTT 0.01% sell — a different levy
+    case "commodity_option":
+      return [{ from: EPOCH_START, pct: 0.0005, side: "sell" }]; // CTT 0.05% sell — a different levy
+  }
 }
 
 // --- Exchange transaction charges + NSE IPFT, EFFECTIVE-DATED ----------------

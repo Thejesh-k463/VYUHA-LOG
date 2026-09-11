@@ -35,12 +35,22 @@ import fs from "node:fs";
  * epoch inserted beside a user-edited open row would win `findRates`
  * (newest-first) and silently shadow the rate the user verified.
  *
+ * A NON-edited row already sitting inside such a window is REMOVED first
+ * (v4.3.0 R54, parity with seed-core's refreshChargeConfig). The guard alone
+ * only stops new ones: a pre-v3.2.0 install whose user edited an F&O row got
+ * its 1970 stamp, and v4.2.0's unguarded INSERT then landed the 2026-04-01
+ * epoch beside it — a row the guard kept from the UPDATE but nothing deleted,
+ * so it went on overriding the user's rate for every trade dated from its
+ * start. Users edit rates, never dates, so the user's window is the authority
+ * on those dates; the removed row is one the template can always reproduce.
+ *
  * Rates only: charges already stored on trades are not rewritten here.
  *
  * The template is the same seed the TypeScript path writes (build-desktop.mjs
  * generates it by running that seed), so both routes agree by construction.
  *
- * Returns { added, refreshed }, or { skipped: reason } when it cannot run safely.
+ * Returns { added, refreshed, removed }, or { skipped: reason } when it cannot
+ * run safely.
  */
 export function refreshRateCards(sqlite, templatePath, log = console.log) {
   const skip = (reason) => {
@@ -111,6 +121,12 @@ export function refreshRateCards(sqlite, templatePath, log = console.log) {
     // in it does not count as a difference and get rewritten every launch.
     const differs = values.length ? values.map((c) => `t.${q(c)} IS NOT s.${q(c)}`).join(" OR ") : "0";
 
+    // A non-edited row whose start a user-edited window of its key covers
+    // (NOT the guard = such a window EXISTS). With no epoch columns the guard
+    // is "1", so this removes nothing.
+    const remove = sqlite.prepare(
+      `DELETE FROM main.charge_config AS d WHERE d.user_edited = 0 AND NOT (${guard("d")})`,
+    );
     const insert = sqlite.prepare(
       `INSERT OR IGNORE INTO main.charge_config (${list})
        SELECT ${sList} FROM seedtpl.charge_config s WHERE ${guard("s")}`,
@@ -124,12 +140,14 @@ export function refreshRateCards(sqlite, templatePath, log = console.log) {
         )
       : null;
 
-    const { added, refreshed } = sqlite.transaction(() => ({
+    // Property order is run order: the DELETE lands before the INSERT and UPDATE.
+    const { added, refreshed, removed } = sqlite.transaction(() => ({
+      removed: remove.run().changes,
       added: insert.run().changes,
       refreshed: update ? update.run().changes : 0,
     }))();
-    log(`[vyuha] rate cards: ${added} added, ${refreshed} refreshed (user edits kept)`);
-    return { added, refreshed };
+    log(`[vyuha] rate cards: ${added} added, ${refreshed} refreshed, ${removed} removed (user edits kept)`);
+    return { added, refreshed, removed };
   } finally {
     sqlite.prepare("DETACH seedtpl").run();
   }

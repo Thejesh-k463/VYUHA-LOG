@@ -17,6 +17,8 @@ import {
 // The client half: the chip's own door and the body it posts.
 import { SPOT_MARK_ENDPOINT, spotMarkPayload, submitSpotMark } from "@/components/risk/spot-mark-editor";
 import { SPOT_DOOR_NOTE } from "@/components/risk/expiry-obligations";
+// PURE too (no DB, no React): the engine the page feeds the resolved ref into.
+import { computeSettlement, DEFAULT_SETTLEMENT_RATES } from "@/lib/analytics/settlement";
 
 // The route revalidates five paths; outside a request there is no store to
 // revalidate against (the shape tests/goals.test.ts uses).
@@ -84,6 +86,45 @@ describe("resolveSpotRef — typed mark ▸ newest EOD close ▸ unknown", () =>
 
   it("is case-insensitive on the symbol, like every other mtm reader", () => {
     expect(resolveSpotRef(" reliance ", new Map(), typedMap({ RELIANCE: 2950 })).source).toBe("eod");
+  });
+});
+
+/* ── R79: the EOD fallback → an ITM SHORT → the STT figure (pure seam) ──────
+ * R7 made the newest end-of-day close resolve moneyness with NOTHING typed, so
+ * every written stock option on an underlying with a close on record now
+ * reaches the ITM branch of computeSettlement by itself. That seam carried no
+ * money assertion, and the branch charged an assigned writer the purchaser's
+ * exercise STT (₹75 here) instead of its own delivery STT (₹700) — R77. */
+describe("an EOD-resolved ITM short stock option carries the writer's STT (R77/R79)", () => {
+  it("no typed mark + a close of 1500 → ITM 1400 CE ×500 → ₹700 delivery STT, in the tile total", () => {
+    const ref = resolveSpotRef("SBIN", new Map(), typedMap({ SBIN: 1500 }));
+    expect(ref).toEqual({ value: 1500, source: "eod" });
+    const s = computeSettlement(
+      [
+        {
+          id: 1,
+          symbol: "SBIN",
+          tradingsymbol: "OPT SBIN 24 SEP 2026 1400 CE",
+          segment: "stock_option",
+          optionType: "CE",
+          strike: 1400,
+          expiry: "2026-09-24",
+          netQty: 500,
+          side: "short",
+          refPrice: ref.value,
+        },
+      ],
+      DEFAULT_SETTLEMENT_RATES,
+      "2026-09-20",
+    );
+    const o = s.obligations[0];
+    expect(o.moneyness).toBe("ITM");
+    expect(o.settles).toBe("yes");
+    // 0.1% × (1400 × 500) — delivery STT on the strike value; no exercise STT,
+    // which only the purchaser who exercises pays.
+    expect(o.physicalStt).toBe(700);
+    expect(o.physicalStt).not.toBe(75);
+    expect(s.physicalSttTotal).toBe(700);
   });
 });
 

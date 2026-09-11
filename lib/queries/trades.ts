@@ -2,8 +2,9 @@ import "server-only";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { trades, importBatches, tradeAttachments } from "@/lib/db/schema";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import type { Trade } from "@/lib/db/schema";
+import { bundledIsinBySymbol } from "@/lib/import/isin-symbol";
 import { SLIM_TRADE_FIELDS, type SlimTrade } from "@/lib/domain/slim-trade";
 import { getSelectedAccountId } from "./accounts";
 
@@ -248,23 +249,46 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
  * Same account scope on BOTH halves of the statement, so an "All accounts"
  * view widens the legs and the underlyings together and a single-account view
  * narrows both.
+ *
+ * THE JOIN IS READ-TIME ONLY (R105): option symbols are upper-cased at import,
+ * an equity row keeps the broker's spelling ("reliance"), and a Groww row is
+ * stored under the COMPANY NAME with its ISIN. So a row joins when its symbol
+ * matches case-folded, OR its ISIN is the bundled ISIN of an option-side
+ * symbol — both inside the same account filter. No stored symbol changes; the
+ * page resolves the leg's symbol through `isin`.
+ *
+ * A basis-unknown sale (`acquisition = 'unknown'`, stored open) is NOT an
+ * underlying (K3-M1): read as one, it netted the holding into a phantom SHORT
+ * and the card printed an "Unlimited" loss. Same predicate as the open count.
  */
 const UNDERLYING_LEG_FIELDS = [
-  "symbol", "instrumentType", "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice",
+  "symbol", "instrumentType", "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice", "expiry", "isin",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type UnderlyingLegRow = Pick<Trade, (typeof UNDERLYING_LEG_FIELDS)[number]>;
 
 export const getOpenUnderlyingPositions = cache((): UnderlyingLegRow[] => {
   const accountId = getSelectedAccountId();
+  const optionLeg = openOptionLegWhere(accountId);
   const withAnOptionLeg = db
-    .select({ symbol: trades.symbol })
+    .select({ symbol: sql<string>`upper(${trades.symbol})` })
     .from(trades)
-    .where(openOptionLegWhere(accountId));
+    .where(optionLeg);
+  const byCase = inArray(sql`upper(${trades.symbol})`, withAnOptionLeg);
+  // The option-side symbols are a handful of distinct tickers, so their ISINs
+  // are resolved here, from the bundled snapshot, under the same scope.
+  const optionIsins = [
+    ...new Set(
+      db.selectDistinct({ symbol: trades.symbol }).from(trades).where(optionLeg).all()
+        .map((r) => bundledIsinBySymbol(r.symbol))
+        .filter((isin): isin is string => !!isin),
+    ),
+  ];
   const isUnderlying = and(
     eq(trades.isOpen, true),
     inArray(trades.instrumentType, ["equity", "future"]),
-    inArray(trades.symbol, withAnOptionLeg),
+    sql`coalesce(${trades.acquisition}, '') != 'unknown'`,
+    optionIsins.length ? or(byCase, inArray(trades.isin, optionIsins)) : byCase,
   );
   return db.select(pickCols(UNDERLYING_LEG_FIELDS)).from(trades)
     .where(accountId > 0 ? and(isUnderlying, eq(trades.accountId, accountId)) : isUnderlying)

@@ -181,3 +181,81 @@ describe("conservation — FIFO must not create or destroy shares", () => {
     expect(out[0].basisUnknown).toBe(false);
   });
 });
+
+// R71 (v4.3.0): a trade row has ONE exchange and commit prices it there
+// (invariant 3), so it must be where the row's OWN fills happened. It used to
+// be the security's first leg, stamped on every position of that security.
+describe("the row's exchange — where its own fills happened (R71)", () => {
+  it("takes the venue of most of the row's own turnover, not the security's first leg nor the sell leg alone", () => {
+    // First traded on BSE; the later position is bought on NSE (20 of 100 at
+    // ₹1,000 = ₹20,000 consumed) and sold on BSE for ₹18,000.
+    const out = pairSymbolLegs([
+      leg({ symbol: "V", side: "buy", date: "2026-08-01", qty: 10, value: 10000, exchange: "BSE" }),
+      leg({ symbol: "V", side: "sell", date: "2026-08-01", qty: 10, value: 10100, exchange: "BSE" }),
+      leg({ symbol: "V", side: "buy", date: "2026-08-02", qty: 100, value: 100000, exchange: "NSE" }),
+      leg({ symbol: "V", side: "sell", date: "2026-08-03", qty: 20, value: 18000, exchange: "BSE" }),
+    ]);
+    const later = out.find((p) => p.kind === "closed" && p.sellDate === "2026-08-03")!;
+    expect(later.exchange).toBe("NSE");
+    expect(later.notes.join(" ")).toMatch(/Bought on NSE, sold on BSE/);
+    expect(out.find((p) => p.kind === "open")!.exchange).toBe("NSE");
+    expect(out.find((p) => p.sellDate === "2026-08-01")!.exchange).toBe("BSE");
+  });
+
+  it("breaks an exact tie toward the sell leg's venue", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "T", side: "buy", date: "2026-08-01", qty: 50, value: 50000, exchange: "NSE" }),
+      leg({ symbol: "T", side: "sell", date: "2026-08-04", qty: 50, value: 50000, exchange: "BSE" }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].exchange).toBe("BSE");
+  });
+
+  it("gives an open lot its own venue, though the security first traded elsewhere", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "O", side: "buy", date: "2026-08-01", qty: 100, value: 20000, exchange: "NSE" }),
+      leg({ symbol: "O", side: "sell", date: "2026-08-01", qty: 100, value: 21000, exchange: "NSE" }),
+      leg({ symbol: "O", side: "buy", date: "2026-08-03", qty: 50, value: 10000, exchange: "BSE" }),
+    ]);
+    expect(out.find((p) => p.kind === "closed")!.exchange).toBe("NSE");
+    expect(out.find((p) => p.kind === "open")!.exchange).toBe("BSE");
+  });
+
+  it("gives an opening sell its own leg's venue", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "S", side: "buy", date: "2026-08-01", qty: 10, value: 1000, exchange: "NSE" }),
+      leg({ symbol: "S", side: "sell", date: "2026-08-01", qty: 10, value: 1100, exchange: "NSE" }),
+      leg({ symbol: "S", side: "sell", date: "2026-08-02", qty: 5, value: 600, exchange: "BSE" }),
+    ]);
+    const orphan = out.find((p) => p.kind === "opening-sell")!;
+    expect(orphan.sellQty).toBe(5);
+    expect(orphan.exchange).toBe("BSE");
+  });
+
+  it("falls back to the security's first named venue ONLY when none of the row's own legs names one", () => {
+    const out = pairSymbolLegs([
+      leg({ symbol: "U", side: "buy", date: "2026-08-01", qty: 10, value: 1000, exchange: "NSE" }),
+      leg({ symbol: "U", side: "sell", date: "2026-08-01", qty: 10, value: 1100, exchange: "NSE" }),
+      leg({ symbol: "U", side: "buy", date: "2026-08-02", qty: 10, value: 1000 }),
+      leg({ symbol: "U", side: "sell", date: "2026-08-03", qty: 10, value: 1200 }),
+    ]);
+    expect(out.map((p) => p.exchange)).toEqual(["NSE", "NSE"]);
+  });
+
+  it("tallies a leg that spans two venues by its own per-venue values, and pairs the money exactly as without them", () => {
+    // One leg aggregating ₹70,000 of NSE fills and ₹30,000 of BSE fills (a Paytm
+    // scrip-day). 40 sold on BSE for ₹36,000: consumed NSE 28,000 + BSE 12,000,
+    // plus the sale's 36,000 → BSE 48,000 against NSE 28,000. Read as one NSE
+    // lot it would be NSE 40,000 against BSE 36,000.
+    const out = pairSymbolLegs([
+      leg({ symbol: "M", side: "buy", date: "2026-08-01", qty: 100, value: 100000, exchange: "NSE", venues: { NSE: 70000, BSE: 30000 } }),
+      leg({ symbol: "M", side: "sell", date: "2026-08-05", qty: 40, value: 36000, exchange: "BSE" }),
+    ]);
+    const closed = out.find((p) => p.kind === "closed")!;
+    const open = out.find((p) => p.kind === "open")!;
+    expect(closed.exchange).toBe("BSE");
+    expect(open.exchange).toBe("NSE"); // 60 left: NSE 42,000 / BSE 18,000
+    expect([closed.buyValue, closed.sellValue, open.buyValue]).toEqual([40000, 36000, 60000]);
+    expect(closed.notes.join(" ")).toMatch(/Bought on NSE\/BSE, sold on BSE/);
+  });
+});

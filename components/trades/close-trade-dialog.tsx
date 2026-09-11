@@ -50,6 +50,7 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
         const avgBuyPrice = isShort ? price : trade.avgBuyPrice;
         const sellQty = isShort ? trade.sellQty : qty;
         const avgSellPrice = isShort ? trade.avgSellPrice : price;
+        const exitIso = exitDate || todayIstIso();
         const res = await fetch("/api/charges/preview", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -67,6 +68,11 @@ export function CloseTradeDialog({ trade, onDone }: { trade: Trade; onDone: () =
             ownCapitalUsed: trade.mtfFundedAmount != null ? Math.max(0, buyQty * avgBuyPrice - trade.mtfFundedAmount) : null,
             daysHeld: trade.buyDate ? Math.max(0, Math.floor((new Date(exitDate).getTime() - new Date(trade.buyDate).getTime()) / 86400000)) : 0,
             isOpen: false,
+            // The dates closePosition will store, so the preview prices at the
+            // same epoch (R56): the exit lands on the covering side — the SELL
+            // for a long, the BUY for a short — and a blank exit date is today.
+            buyDate: isShort ? exitIso : trade.buyDate,
+            sellDate: isShort ? trade.sellDate : exitIso,
           }),
         });
         if (res.ok) setPreview(await res.json());

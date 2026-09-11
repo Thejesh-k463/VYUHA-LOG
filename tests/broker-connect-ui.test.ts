@@ -196,3 +196,20 @@ describe("the All-accounts save names the account", () => {
     expect((SRC.match(/Saving to \{saveTarget\}/g) ?? []).length).toBe(2); // beside the picker + beside the button
   });
 });
+
+/**
+ * R48 — "last pull" printed the server's UTC ISO clock with the T swapped out
+ * (`2026-09-10 20:00`): no zone stated, five and a half hours from the IST the
+ * rest of the card speaks. formatTs is already pinned in
+ * broker-connect-copy.test.ts; what can go red here is the call site.
+ */
+describe("every 'last pull' stamp is the one IST formatter (R48)", () => {
+  it("no row prints the raw UTC ISO clock", () => {
+    expect(SRC).not.toContain("lastPullAt.slice(0, 16)");
+  });
+
+  it("all three sites — OpenAlgo rows, per-account rows, the single row — go through formatTs", () => {
+    expect(SRC.match(/last pull \{formatTs\(c\.lastPullAt\)\}/g) ?? []).toHaveLength(2);
+    expect(SRC.match(/last pull \{formatTs\(conn\.lastPullAt\)\}/g) ?? []).toHaveLength(1);
+  });
+});

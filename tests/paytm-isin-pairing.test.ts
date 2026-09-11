@@ -152,6 +152,32 @@ describe("the key", () => {
   });
 });
 
+// R71 (v4.3.0): still one book per ISIN, but each ROW's exchange is where its
+// own fills happened — not the security's first leg, not the day's first fill.
+describe("the row's exchange", () => {
+  it("a position that opens on BSE carries BSE, though the security first traded on NSE (the INE0ATZ01017 shape)", () => {
+    const p = parse([
+      row({ Exchange: "NSE", STT: 0, "Stamp Duty": 0.6 }),
+      row({ Exchange: "NSE", Type: "Sell", Price: 210, STT: 5.25, "Stamp Duty": 0 }),
+      row({ Exchange: "BSE", Date: "05-08-2026", Quantity: 50, STT: 10, "Stamp Duty": 1.5 }),
+    ]);
+    expect(p.trades).toHaveLength(2); // one ISIN, one book: a closed round trip and an open lot
+    expect(p.trades.find((t) => t.sellQty > 0)!.exchangeHint).toBe("NSE");
+    expect(p.trades.find((t) => t.sellQty === 0)!.exchangeHint).toBe("BSE");
+  });
+
+  it("the real August book: INE0OWZ01020's 2026-08-06 round trips are NSE, not the day's first fill's BSE", () => {
+    const file = "paytm-tradebook-2026-08-01_2026-08-18.xlsx";
+    const aug = parsePaytmTradebook({ filename: file, buffer: fs.readFileSync(path.join(process.cwd(), "tests", "fixtures", "redacted", file)) });
+    const day = aug.trades.filter((t) => t.isin === "INE0OWZ01020" && t.buyDate === "2026-08-06" && t.sellDate === "2026-08-06");
+    expect(day.map((t) => t.exchangeHint)).toEqual(["NSE", "NSE"]);
+    // Per ROW, not per day or security: the 10 Aug exit is a BSE sale of that lot.
+    expect(aug.trades.find((t) => t.isin === "INE0OWZ01020" && t.sellDate === "2026-08-10")!.exchangeHint).toBe("BSE");
+    // …and the position count is what it was — nothing split by exchange.
+    expect(aug.trades).toHaveLength(146);
+  });
+});
+
 // ── The real book, when it is on this machine ───────────────────────────────
 //
 // The 7,544-execution export lives outside the repo (or in the gitignored

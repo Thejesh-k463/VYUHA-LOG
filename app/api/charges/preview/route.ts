@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { classify } from "@/lib/engine/classify";
 import { computeCharges } from "@/lib/engine/charges";
-import { findRates } from "@/lib/engine/rates";
+import { findRates, pricingDate } from "@/lib/engine/rates";
 import { todayIstIso } from "@/lib/domain/trading-day";
 import { loadRatesMap } from "@/lib/engine/rates-db";
 import { SEGMENT_BUCKET, BROKERS, type Segment } from "@/lib/domain/constants";
@@ -27,6 +27,11 @@ const Body = z.object({
   daysHeld: z.number().nonnegative().nullish(),
   grossPnl: z.number().nullish(),
   isOpen: z.boolean().nullish(),
+  // The trade's own dates (R56). Every SAVE prices at pricingDate — the sell
+  // date, else the buy date — so a preview priced at today's epoch showed a
+  // figure the save would not store. Today (IST) is only the fallback.
+  buyDate: z.string().nullish(),
+  sellDate: z.string().nullish(),
 });
 
 export async function POST(req: Request) {
@@ -51,7 +56,7 @@ export async function POST(req: Request) {
   const rates = loadRatesMap();
   let breakdown;
   try {
-    const r = findRates(rates, v.broker, cls.segment, cls.exchange, todayIstIso());
+    const r = findRates(rates, v.broker, cls.segment, cls.exchange, pricingDate({ buyDate: v.buyDate, sellDate: v.sellDate }, todayIstIso()));
     // Mirror commitManualTrade's MTF defaulting exactly, so the preview never
     // understates what actually gets saved: ownCapitalUsed (what YOU put in) is
     // the primary input, funded = buyValue − ownCapitalUsed; no explicit entry →

@@ -91,12 +91,44 @@ describe("computeSettlement — stock option (spot known)", () => {
     expect(o.settles).toBe("yes");
     expect(o.deliveryAction).toBe("Take delivery (buy)");
     expect(o.notional).toBe(725000); // strike 2900 × 250
-    // 0.15% × 100 × 250 = 37.5 → ₹38. Was 31 at the pre-1-Apr-2026 rate of
-    // 0.125% on intrinsic (NSE circular 02/2026 row 4(b), "sale of an option in
-    // securities, where option is exercised"). Understating this understated the
-    // very "STT jump" this module exists to warn about.
-    expect(o.physicalStt).toBe(38);
+    // R78: TWO levies, each rounded to the rupee on its own.
+    //   delivery STT  0.1%  × 7,25,000 (strike × qty)  = ₹725 — a physically
+    //     settled contract carries delivery STT on BOTH sides (FATAX38737,
+    //     from 26 Jul 2018);
+    //   exercise STT  0.15% × 100 × 250 (intrinsic)   = 37.5 → ₹38 — circular
+    //     02/2026 row 4(b), payable by the PURCHASER who exercises.
+    // This pin was 38 — the exercise term alone — under a footer saying the
+    // delivery charge was included.
+    expect(o.physicalStt).toBe(763);
+    expect(o.physicalStt).not.toBe(38);
     expect(o.warn).toBe("danger"); // dte 2 ≤ 7
+  });
+
+  it("R77 short ITM call → give delivery, delivery STT on the strike value and NO exercise STT", () => {
+    const o = computeSettlement(
+      [{ ...base, id: 13, symbol: "SBIN", tradingsymbol: "OPT SBIN 25 Jun 2026 1400 CE", segment: "stock_option", optionType: "CE", strike: 1400, side: "short", expiry: "2026-06-26", netQty: 500, refPrice: 1500 }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    ).obligations[0];
+    expect(o.moneyness).toBe("ITM");
+    expect(o.deliveryAction).toBe("Give delivery (sell)"); // assigned writer delivers
+    expect(o.notional).toBe(700000); // 1400 × 500
+    // 0.1% × 7,00,000 = ₹700. The writer does not exercise, so row 4(b)
+    // (payable by the purchaser) is not its levy: 0.15% × 100 × 500 = ₹75 was
+    // what this row printed, a tenth of what it owes.
+    expect(o.physicalStt).toBe(700);
+    expect(o.physicalStt).not.toBe(75);
+    expect(o.sttJump).toBeNull(); // an option's exit STT needs its premium
+  });
+
+  it("an index option is cash-settled — no delivery STT, no STT figure at all", () => {
+    const o = computeSettlement(
+      [{ ...base, id: 14, symbol: "NIFTY", tradingsymbol: "OPT NIFTY 26 Jun 2026 24000 CE", segment: "index_option", optionType: "CE", strike: 24000, side: "short", expiry: "2026-06-26", netQty: 75, refPrice: 24500 }],
+      DEFAULT_SETTLEMENT_RATES,
+      today,
+    ).obligations[0];
+    expect(o.kind).toBe("index_cash");
+    expect(o.physicalStt).toBeNull();
   });
 
   it("OTM call lapses worthless — no delivery", () => {
@@ -118,6 +150,24 @@ describe("computeSettlement — stock option (spot known)", () => {
     ).obligations[0];
     expect(o.moneyness).toBe("ITM"); // put ITM when spot < strike
     expect(o.deliveryAction).toBe("Take delivery (buy)");
+    // R77: the assigned writer takes 400 shares at 1600 — delivery STT 0.1% ×
+    // 6,40,000 = ₹640, and no exercise STT (that is the purchaser's levy). It
+    // printed ₹60 (0.15% × 100 × 400) before.
+    expect(o.notional).toBe(640000);
+    expect(o.physicalStt).toBe(640);
+    expect(o.physicalStt).not.toBe(60);
+  });
+
+  it("the summary carries the rates it was computed with — the footer prints them", () => {
+    const rates = { ...DEFAULT_SETTLEMENT_RATES, deliverySttPct: 0.0012 };
+    const s = computeSettlement(
+      [{ ...base, id: 15, symbol: "SBIN", tradingsymbol: "OPT SBIN 25 Jun 2026 1400 CE", segment: "stock_option", optionType: "CE", strike: 1400, side: "short", expiry: "2026-06-26", netQty: 500, refPrice: 1500 }],
+      rates,
+      today,
+    );
+    expect(s.rates).toEqual(rates);
+    expect(s.obligations[0].physicalStt).toBe(840); // 0.12% × 7,00,000 — the passed rate, not the default
+    expect(s.physicalSttTotal).toBe(840);
   });
 });
 

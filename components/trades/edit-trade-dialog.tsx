@@ -158,6 +158,9 @@ export function EditTradeDialog({
             ownCapitalUsed: ownCapitalUsed !== "" ? Number(ownCapitalUsed) : isMtf ? currentOwnCapitalGuess : null,
             daysHeld: !isOpen && buyDate && sellDate ? Math.max(0, Math.floor((new Date(sellDate).getTime() - new Date(buyDate).getTime()) / 86400000)) : 0,
             isOpen,
+            // The save re-prices at pricingDate({ buyDate, sellDate }); so does the preview (R56).
+            buyDate: buyDate || null,
+            sellDate: sellDate || null,
           }),
         });
         if (res.ok) setPreview(await res.json());

@@ -12,8 +12,9 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * "v4.3.0 release-level-audit rulings", row 1).
  *
  * Wave 1's FIFO auto-close (R5) does not ship in 4.3.0. `lib/import/commit.ts`
- * is restored to v4.2.0 byte-for-byte (`git diff v4.2.0 -- lib/import/commit.ts`
- * is empty), so an import does exactly what v4.2.0 did with a SELL of a lot the
+ * is restored to v4.2.0 (`git diff v4.2.0 -- lib/import/commit.ts` shows only
+ * R26: the alias-aware dedup sets — (v) below — and `closeStaleLot`, the Data
+ * Quality join), so an import does exactly what v4.2.0 did with a SELL of a lot the
  * account already holds: the held row is never read as a lot and never
  * changes, and the SELL is written as its own new row. A BUY against a held
  * short is the same. The applier stays in git at d0eda00 and is rebuilt in
@@ -34,6 +35,7 @@ let t: TempDb;
 let commit: typeof import("@/lib/import/commit");
 let dhan: typeof import("@/lib/import/api/dhan");
 let angel: typeof import("@/lib/import/api/angelone");
+let dedup: typeof import("@/lib/import/dedup");
 
 const ROOT = path.resolve(__dirname, "..");
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -127,6 +129,7 @@ beforeAll(async () => {
   commit = await import("@/lib/import/commit");
   dhan = await import("@/lib/import/api/dhan");
   angel = await import("@/lib/import/api/angelone");
+  dedup = await import("@/lib/import/dedup");
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -293,11 +296,40 @@ describe("(iii) broker-pull shapes landing in a held book", () => {
   });
 });
 
-describe("(iv) the switch-off is the v4.2.0 file, not a flag", () => {
-  it("commit.ts neither imports the planner nor names it", () => {
+describe("(iv) the switch-off is the v4.2.0 file (plus R26), not a flag", () => {
+  it("commit.ts names none of the auto-close applier's pieces", () => {
+    // R26 (4.3.0) imports the identity reader and the stale-close note from
+    // close-open-lots, so the module name alone no longer tells; the applier's
+    // pieces do. Re-wiring auto-close needs at least one of them.
     const src = fs.readFileSync(path.join(ROOT, "lib/import/commit.ts"), "utf8");
-    expect(src).not.toContain("close-open-lots");
-    expect(src).not.toContain("planLotCloses");
+    for (const name of ["planLotCloses", "applyLotCloses", "withLotCloseNote", "withScaledRemainderNote", "splitByRemainder"]) {
+      expect(src, `${name} is wave 1's auto-close; 4.3.0 ships it off`).not.toContain(name);
+    }
+  });
+});
+
+describe("(v) R26 — import dedup answers to a row's aliases, not only its own hash", () => {
+  // The one deliberate change to v4.2.0's commit.ts dedup: Data Quality's
+  // stale-lot close (closeStaleLot) removes the sale row and records its hash
+  // on the lot as `dedup-alias:<hash>`. Without the alias in the existing-hash
+  // set, the next pull would bring the sale back as a fresh open row.
+  const ACC = 705;
+  const buys = () => parsed([buyRow("ALIASED", 100, 200, "2026-08-20")]);
+  const sale = () => parsed([sellRow("ALIASED", 100, 250, "2026-08-28")]);
+
+  it("a row carrying dedup-alias:H makes a re-import of the record hashed H a duplicate, in preview and commit", () => {
+    newAccount(ACC, "off-v-alias");
+    expect(commit.commitParsedFile(buys(), "buys.csv", null, ACC).added).toBe(1);
+    const H = dedup.dedupHash(sale().trades[0]);
+    const [lot] = rowsOf(ACC);
+    expect(lot.dedupHash).not.toBe(H);
+    t.db.update(t.schema.trades).set({ importNotes: `dedup-alias:${H}` }).where(eq(t.schema.trades.id, lot.id)).run();
+
+    const p = commit.previewParsedFile(sale(), null, ACC);
+    expect([p.summary.newCount, p.summary.dupCount], "the preview reads the alias").toEqual([0, 1]);
+    const res = commit.commitParsedFile(sale(), "sells.csv", null, ACC);
+    expect([res.added, res.skipped], "the commit reads it too").toEqual([0, 1]);
+    expect(rowsOf(ACC)).toHaveLength(1);
   });
 });
 

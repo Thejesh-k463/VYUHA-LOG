@@ -839,4 +839,15 @@ describe("the DuplicateFix card", () => {
     expect(src).toMatch(/qty \{g\.qty \?\? "—"\}/);
     expect(src).toMatch(/qty: number \| null;/);
   });
+
+  it("R12 — closing the confirm returns focus to the button that opened it, never <body>", () => {
+    // The dialog is opened from state, with no DialogTrigger, so Radix's own
+    // restore focuses a null triggerRef and keyboard focus fell to <body>. The
+    // opener is kept in a REF (no state, no effect) and focused from
+    // onCloseAutoFocus, whose preventDefault skips Radix's own restore.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    expect(code).toMatch(/const openerRef = React\.useRef<HTMLButtonElement \| null>\(null\);/);
+    expect(code).toMatch(/openerRef\.current = e\.currentTarget;\s*setTarget\(/);
+    expect(code).toMatch(/onCloseAutoFocus=\{\(e\) => \{\s*e\.preventDefault\(\);\s*openerRef\.current\?\.focus\(\);/);
+  });
 });

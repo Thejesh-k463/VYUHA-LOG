@@ -425,3 +425,73 @@ describe("one crossing is listed once, whichever path found it (R4-M-1)", () => 
     expect(s.payoff[60].price).toBe(23000);
   });
 });
+
+describe("a split never states an uncovered leg the whole book does not have (R102)", () => {
+  // 500 RELIANCE held under TWO short calls, one per expiry. The whole book is
+  // covered (slope above the top strike: 500 − 250 − 250 = 0) and reads as
+  // Custom, so the per-expiry fallback used to split it — parking the
+  // underlying on the NEAREST expiry and leaving the October call alone on its
+  // own card, where it read as an uncovered short call with an "Unlimited" loss.
+  const legs: PositionedLeg[] = [
+    { symbol: "RELIANCE", expiry: null, kind: "UL", strike: 0, side: "long", premium: 2900, qty: 500 },
+    { symbol: "RELIANCE", expiry: "2026-09-24", optionType: "CE", strike: 3000, side: "short", premium: 40, qty: 250 },
+    { symbol: "RELIANCE", expiry: "2026-10-29", optionType: "CE", strike: 3100, side: "short", premium: 55, qty: 250 },
+  ];
+
+  it("keeps the book whole rather than print an Unlimited the whole book contradicts", () => {
+    const groups = buildStrategies(legs);
+    expect(groups.map((g) => g.key)).toEqual(["RELIANCE"]);
+    expect(groups.map((g) => g.capLabel.maxLoss)).not.toContain("Unlimited");
+    expect(groups[0].maxLoss, "the whole book is bounded below").not.toBeNull();
+  });
+});
+
+describe("an underlying FUTURE that expires before an option leg (R104)", () => {
+  // A September future under an October short call: after the future settles
+  // the call is uncovered, so a bounded worst case at the call's expiry is not
+  // a fact the journal can state (invariant 6, research note §7).
+  const legs = (ulExpiry: string | null): PositionedLeg[] => [
+    { symbol: "NIFTY", expiry: ulExpiry, kind: "UL", strike: 0, side: "long", premium: 24000, qty: 75 },
+    { symbol: "NIFTY", expiry: "2026-10-29", optionType: "CE", strike: 24500, side: "short", premium: 180, qty: 75 },
+  ];
+
+  it("blanks BOTH figures as Not computed, and keeps the name", () => {
+    const [g] = buildStrategies(legs("2026-09-24"));
+    expect(g.strategyId).toBe("covered-call");
+    expect(g.notComputed).toEqual({ maxProfit: true, maxLoss: true });
+    expect(g.capLabel.maxLoss).toBe("Not computed");
+    expect(g.capLabel.maxProfit).toBe("Not computed");
+  });
+
+  it("a cash holding, or a future that lives as long as the option, keeps its figures", () => {
+    for (const e of [null, "2026-10-29", "2026-11-26"]) {
+      const [g] = buildStrategies(legs(e));
+      expect(g.notComputed, String(e)).toEqual({ maxProfit: false, maxLoss: false });
+      expect(g.capLabel.maxLoss, String(e)).not.toBe("Not computed");
+    }
+  });
+});
+
+describe("a payoff that lands on zero at a strike breaks even THERE, whatever the float noise (R69)", () => {
+  // A 100/110 bull call spread bought for exactly its width: the payoff is 0 at
+  // and above 110. Identical payoffs used to print [] or [110] depending on the
+  // float residue of `hi − lo`, and a blank on the card means "no breakeven".
+  it.each([
+    [12, 2],
+    [12.05, 2.05],
+    [12.1, 2.1],
+    [12.15, 2.15],
+    [12.3, 2.3],
+  ])("long 100 CE @%s, short 110 CE @%s → [110]", (lo, hi) => {
+    const s = computeStrategy("NIFTY", "2026-09-24", [leg("CE", 100, "long", lo, 50), leg("CE", 110, "short", hi, 50)]);
+    expect(s.breakevens).toEqual([110]);
+  });
+
+  it("a zero span between two strikes lists BOTH ends (decided, R69)", () => {
+    // Long 110 CE @5 against short 90 PE @5: zero cost, and the payoff is
+    // exactly 0 from 90 to 110 — the position stops losing at 90 and starts
+    // gaining at 110, and both levels are stated.
+    const s = computeStrategy("NIFTY", "2026-09-24", [leg("CE", 110, "long", 5, 50), leg("PE", 90, "short", 5, 50)]);
+    expect(s.breakevens).toEqual([90, 110]);
+  });
+});

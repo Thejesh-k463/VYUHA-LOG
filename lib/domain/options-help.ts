@@ -117,7 +117,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     name: "Long call",
     style: "directional",
     beginner: true,
-    what: "One long call at strike K1, one expiry, opened for a net debit. The premium paid is the whole outlay and nothing further is blocked against it.",
+    what: "One long call at strike K1, one expiry, opened for a net debit. On an index option the premium paid is the whole outlay; a stock option left in the money into expiry settles by delivery, so the full strike value of the shares is due on top of it.",
     payoff:
       "Above K1 the payoff rises one-for-one with the underlying and has no cap, so max profit is stated as Unlimited. At or below K1 the loss is the debit, in full. Breakeven is computed at K1 plus the premium per unit.",
     whoUses:
@@ -130,12 +130,12 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     name: "Long put",
     style: "directional",
     beginner: true,
-    what: "One long put at strike K1, one expiry, for a net debit. The premium paid is the entire outlay of the position.",
+    what: "One long put at strike K1, one expiry, for a net debit. On an index option the premium paid is the entire outlay; a stock option left in the money into expiry settles by delivery, so the shares themselves are due against it.",
     payoff:
       "Below K1 the payoff rises as the underlying falls, and the cap is computed at underlying = 0 as (K1 − premium) × quantity — a price floor, not a forecast. At or above K1 the loss is the debit. Breakeven is computed at K1 minus the premium per unit.",
     whoUses:
       "A trader who expects a fall, or who holds the underlying and wants a floor under it, uses this directional and hedging shape.",
-    risk: "Decay runs against the position daily and the debit is gone in full if the underlying settles at or above K1. A put left to settle in the money is charged STT on intrinsic value, not on premium. Deep strikes can be hard to exit at a quoted price.",
+    risk: "Decay runs against the position daily and the debit is gone in full if the underlying settles at or above K1. A long put left to settle in the money is charged STT on intrinsic value, not on premium. Deep strikes can be hard to exit at a quoted price.",
     keywords: ["long put", "put option", "pe long", "downside", "beginner", "floor"],
   },
   {
@@ -148,7 +148,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, kept if the underlying settles at or below K1. Above K1 the loss grows one-for-one with no cap, so max loss is stated as Unlimited — naked short risk. Breakeven is computed at K1 plus the premium per unit.",
     whoUses:
       "A trader who expects the underlying to stay below K1 through expiry uses this income shape; it sits at the advanced end of the catalogue.",
-    risk: "Assignment can arrive on any in-the-money short leg, margin can be called intraday, and a gap through K1 has no upper bound. An assigned short call is charged STT on intrinsic value rather than on premium.",
+    risk: "Assignment arrives at expiry on an in-the-money short leg, margin can be called intraday, and a gap through K1 has no upper bound. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["short call", "naked call", "call writing", "credit", "income", "margin"],
   },
   {
@@ -156,12 +156,12 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     name: "Short put / cash-secured put",
     style: "income",
     beginner: false,
-    what: "One short put at K1, one expiry, for a net credit — cash-secured when the full strike value is set aside against delivery. Margin is blocked against the leg.",
+    what: "One short put at K1, one expiry, for a net credit — cash-secured when the full strike value is set aside against delivery of the shares on a stock option. Margin is blocked against the leg.",
     payoff:
       "Max profit is the credit, kept at or above K1. Below K1 the loss grows as the underlying falls and is computed at underlying = 0 as (K1 − premium) × quantity. Breakeven is computed at K1 minus the premium per unit.",
     whoUses:
-      "A trader who expects the underlying to hold above K1, and who accepts delivery at the effective price if it does not, uses this income shape.",
-    risk: "Assignment leaves a long position at K1 wherever the market is by then, and margin expands as volatility rises. An assigned in-the-money put is charged STT on intrinsic value rather than on premium.",
+      "A trader who expects the underlying to hold above K1, and who accepts delivery at the effective price on a stock option (a cash settlement on an index option) if it does not, uses this income shape.",
+    risk: "Assignment at expiry leaves a long position at K1 on a stock option, and a cash settlement on an index option, wherever the market is by then; margin expands as volatility rises. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["short put", "cash secured put", "put writing", "credit", "income", "assignment"],
   },
   {
@@ -174,7 +174,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "The gain is capped at (K1 − S0) × quantity plus the credit once the underlying settles above K1. The downside is the underlying's own, cushioned by the credit, and is computed at underlying = 0. Breakeven is computed at the entry price minus the premium per unit.",
     whoUses:
       "A holder who expects the underlying to drift sideways or up slowly, and who accepts a capped exit at K1, uses this income shape.",
-    risk: "Everything above K1 is given away while the whole downside stays, and assignment delivers the holding at K1. An in-the-money call left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "Everything above K1 is given away while the whole downside stays; on a stock option, assignment at expiry delivers the holding at K1, while an index option settles in cash. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["covered call", "call against holding", "income", "beginner", "capped upside"],
   },
   {
@@ -187,7 +187,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Above the entry the payoff follows the underlying with no cap, stated as Unlimited. Below K1 the loss is fixed at (S0 − K1) × quantity plus the debit, so the put sets a floor. Breakeven is computed at the entry price plus the premium per unit.",
     whoUses:
       "A holder who expects to carry a position through an event and wants the loss below K1 fixed uses this hedging shape.",
-    risk: "The premium is a repeated cost that reduces the net result every cycle it is renewed, and the floor lapses at expiry. An in-the-money put left to settle is charged STT on intrinsic value, not on premium.",
+    risk: "The premium is a repeated cost that reduces the net result every cycle it is renewed, and the floor lapses at expiry. An in-the-money long put left to settle is charged STT on intrinsic value, not on premium.",
     keywords: ["protective put", "married put", "hedge", "floor", "beginner", "insurance"],
   },
   {
@@ -200,7 +200,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Below the entry the payoff rises as the underlying falls and is computed at underlying = 0. Above K1 the loss is fixed at (K1 − S0) × quantity plus the debit. Breakeven is computed at the entry price minus the premium per unit.",
     whoUses:
       "A trader carrying a short position who expects a fall but wants the loss above K1 fixed uses this hedging shape.",
-    risk: "A short underlying leg brings borrowing and margin costs of its own, and the call premium is a repeated outlay against them. An in-the-money call left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "A short underlying leg brings borrowing and margin costs of its own, and the call premium is a repeated outlay against them. An in-the-money long call left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["protective call", "synthetic long put", "hedge", "short hedge", "cap"],
   },
   {
@@ -213,7 +213,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is (S0 − K1) × quantity plus the credit, reached at or below K1. Above K1 the loss grows with the underlying and has no cap, so max loss is stated as Unlimited. Breakeven is computed at the entry price plus the premium per unit.",
     whoUses:
       "A trader already short who expects a slow drift down, and who accepts a capped exit at K1, uses this income shape.",
-    risk: "The short underlying leg has no upper bound and the credit cushions little of it; assignment closes the short at K1 whenever the put goes in the money. An in-the-money put left to settle is charged STT on intrinsic value.",
+    risk: "The short underlying leg has no upper bound and the credit cushions little of it; on a stock option, assignment closes the short at K1 when the put settles in the money at expiry, while an index option settles in cash. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["covered put", "short combination", "income", "credit", "short stock"],
   },
   {
@@ -223,10 +223,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "The underlying held long, one long put at K1 and one short call at a higher K2, same expiry. The call's credit offsets the put's debit, so the net can fall either way.",
     payoff:
-      "The gain is capped at (K2 − S0) × quantity minus the net premium and the loss at (S0 − K1) × quantity plus it — both ends bounded. Breakeven is computed at the entry price minus the net premium per unit.",
+      "The gain is capped at (K2 − S0) × quantity plus the net premium of the two options and the loss at (S0 − K1) × quantity minus it, with a net debit counted as negative — both ends bounded. Breakeven is computed at the entry price minus the net premium per unit.",
     whoUses:
       "A holder who expects to carry a position through a known event, and who exchanges the upside above K2 for a floor at K1, uses this hedging shape.",
-    risk: "Assignment on the short call delivers the holding at K2 whatever happens afterwards, and both wings depend on strike liquidity. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "An in-the-money short call settles at expiry, on a stock option by delivering the holding at K2, and both wings depend on strike liquidity. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["collar", "protective collar", "hedge", "floor", "cap", "zero cost"],
   },
   {
@@ -239,7 +239,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is (K2 − K1) × quantity minus the debit, reached at or above K2. Max loss is the debit, at or below K1. Breakeven is computed at K1 plus the debit per unit.",
     whoUses:
       "A trader who expects a limited move up and prefers a known outlay to an open-ended one uses this directional shape.",
-    risk: "Both ends are bounded, so the short leg holds the result at K2 however far the move runs. Closing one leg alone leaves a naked short. An in-the-money leg left to settle is charged STT on intrinsic value, not on premium.",
+    risk: "Both ends are bounded, so the short leg holds the result at K2 however far the move runs. Closing one leg alone leaves a naked short. An in-the-money long leg left to settle is charged STT on intrinsic value, not on premium.",
     keywords: ["bull call spread", "debit spread", "vertical", "directional", "beginner"],
   },
   {
@@ -252,7 +252,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, kept at or below K1. Max loss is (K2 − K1) × quantity minus the credit, at or above K2. Breakeven is computed at K1 plus the credit per unit.",
     whoUses:
       "A trader who expects the underlying to stay under K1 and wants a defined worst case rather than a naked short uses this income shape.",
-    risk: "The wing caps the loss only while both legs are held together; unwinding one alone restores naked short risk. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The wing caps the loss only while both legs are held together; unwinding one alone restores naked short risk. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["bear call spread", "credit spread", "vertical", "income", "defined risk"],
   },
   {
@@ -265,7 +265,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, kept at or above K2. Max loss is (K2 − K1) × quantity minus the credit, at or below K1. Breakeven is computed at K2 minus the credit per unit.",
     whoUses:
       "A trader who expects the underlying to hold above K2 and wants a defined worst case uses this income shape.",
-    risk: "Assignment on the short put can arrive while the long put still carries time value, leaving a delivered position for a day. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "Both puts settle together at expiry, so a settle between the strikes leaves only the short put in the money, which on a stock option means delivery of the shares at K2. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["bull put spread", "credit spread", "vertical", "income", "defined risk"],
   },
   {
@@ -278,7 +278,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is (K2 − K1) × quantity minus the debit, reached at or below K1. Max loss is the debit, at or above K2. Breakeven is computed at K2 minus the debit per unit.",
     whoUses:
       "A trader who expects a limited move down and prefers a bounded outlay uses this directional shape.",
-    risk: "The short leg holds the result at K1 and can be assigned before expiry, which unbalances the pair. An in-the-money leg left to settle is charged STT on intrinsic value, not on premium.",
+    risk: "The short leg holds the result at K1, and both legs settle together at expiry rather than one at a time. An in-the-money long leg left to settle is charged STT on intrinsic value, not on premium.",
     keywords: ["bear put spread", "debit spread", "vertical", "directional", "downside"],
   },
   {
@@ -291,7 +291,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Above K1 the upside is Unlimited; below K1 the payoff is computed at underlying = 0. Max loss is the debit, at exactly K1. Two breakevens are computed at K1 plus and K1 minus the debit per unit.",
     whoUses:
       "A trader who expects a large move without a direction, and who accepts that the move has to clear both premiums, uses this volatility shape.",
-    risk: "Both legs decay at once, so a quiet market costs the debit quickly, and a fall in implied volatility after an event can cost more than the move returns. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "Both legs decay at once, so a quiet market costs the debit quickly, and a fall in implied volatility after an event can cost more than the move returns. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["long straddle", "straddle", "volatility", "event", "atm", "debit"],
   },
   {
@@ -304,7 +304,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, and it is kept in full only if the underlying settles exactly at K1. The loss grows in both directions with no cap above, so max loss is stated as Unlimited. Breakevens are computed at K1 plus and K1 minus the credit per unit.",
     whoUses:
       "A trader who expects the underlying to stay near K1 and implied volatility to fall uses this income shape; it sits at the advanced end of the catalogue.",
-    risk: "One side is in the money the moment the market moves, margin expands with volatility, and a gap has no upper bound. An assigned in-the-money leg is charged STT on intrinsic value rather than on premium.",
+    risk: "One side is in the money the moment the market moves, margin expands with volatility, and a gap has no upper bound. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["short straddle", "straddle", "premium", "income", "theta", "naked"],
   },
   {
@@ -317,7 +317,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Above K2 the upside is Unlimited; below K1 the payoff is bounded by the price floor. Max loss is the debit, held anywhere between the strikes. Breakevens are computed at K1 minus and K2 plus the debit per unit.",
     whoUses:
       "A trader who expects a very large move either way, and who accepts a wider dead zone in exchange for a smaller outlay, uses this volatility shape.",
-    risk: "The distance between the strikes has to be crossed before anything comes back, and both legs decay together. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The distance between the strikes has to be crossed before anything comes back, and both legs decay together. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["long strangle", "strangle", "volatility", "otm", "wide", "debit"],
   },
   {
@@ -330,7 +330,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, kept if the underlying settles between K1 and K2. Above K2 there is no cap and below K1 the loss runs to the floor, so max loss is stated as Unlimited. Breakevens are computed at K1 minus and K2 plus the credit per unit.",
     whoUses:
       "A trader who expects the underlying to stay inside the band and implied volatility to fall uses this income shape; it sits at the advanced end of the catalogue.",
-    risk: "A gap through either strike is unbounded on the call side, margin rises as volatility rises, and either leg can be assigned. An assigned in-the-money leg is charged STT on intrinsic value.",
+    risk: "A gap through either strike is unbounded on the call side, margin rises as volatility rises, and either leg can be assigned at expiry. STT on intrinsic value falls on the holder who exercises, not on the assigned writer; a stock option settled by delivery is charged the equity-delivery rate on the shares, on both sides.",
     keywords: ["short strangle", "strangle", "premium", "income", "range", "naked"],
   },
   {
@@ -340,10 +340,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "Four legs at one expiry: a long put at K1, a short put at K2, a short call at K3 and a long call at K4, strikes ascending, for a net credit.",
     payoff:
-      "Max profit is the credit, kept between K2 and K3. Max loss is the wider wing — max(K2 − K1, K4 − K3) × quantity — minus the credit. Breakevens are computed at K2 minus and K3 plus the credit per unit.",
+      "Max profit is the credit, kept between K2 and K3. Max loss is the wider wing — max(K2 − K1, K4 − K3) × quantity — minus the credit. Breakevens are computed at K2 minus and K3 plus the credit per unit, on each side whose wing is wider than the credit per unit; a narrower wing leaves that side with no breakeven.",
     whoUses:
       "A trader who expects the underlying to stay inside a band and wants both tails bounded uses this income shape.",
-    risk: "Four legs mean four fills and four sets of charges, and a wing that cannot be filled leaves a naked short behind it. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "Four legs mean four fills and four sets of charges, and a wing that cannot be filled leaves a naked short behind it. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["iron condor", "condor", "range", "credit", "income", "four legs", "wings"],
   },
   {
@@ -353,10 +353,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "A long put at K1, a short put and a short call both at K2, and a long call at K3, one expiry, for a net credit larger than the condor's at the same width.",
     payoff:
-      "Max profit is the credit, at exactly K2. Max loss is (K2 − K1) × quantity minus the credit, at or beyond either wing. Breakevens are computed at K2 plus and K2 minus the credit per unit.",
+      "Max profit is the credit, at exactly K2. Max loss is the wider wing — max(K2 − K1, K3 − K2) × quantity — minus the credit, at or beyond that wing. Breakevens are computed at K2 minus and K2 plus the credit per unit, on each side whose wing is wider than the credit per unit; a narrower wing leaves that side with no breakeven.",
     whoUses:
       "A trader who expects the underlying to finish very close to K2 uses this income shape.",
-    risk: "The full credit is reached at one point only, and the body is in the money on one side almost always. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The full credit is reached at one point only, and the body is in the money on one side almost always. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["iron butterfly", "butterfly", "pin", "credit", "income", "atm body"],
   },
   {
@@ -366,10 +366,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One long call at K1, two short calls at K2 and one long call at K3, equally spaced, one expiry, for a small net debit.",
     payoff:
-      "Max profit is (K2 − K1) × quantity minus the debit, at exactly K2. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K3 minus the debit per unit.",
+      "Max profit is (K2 − K1) × quantity minus the debit, at exactly K2. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K3 minus the debit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects the underlying to pin near K2 and wants a small fixed outlay uses this volatility shape.",
-    risk: "The peak is a single point, so the stated max profit is rarely reached in full, and three strikes mean three fills. A wing left to settle in the money is charged STT on intrinsic value, which here can exceed the whole debit.",
+    risk: "The peak is a single point, so the stated max profit is rarely reached in full, and three strikes mean three fills. A long wing left to settle in the money is charged STT on intrinsic value, which here can exceed the whole debit.",
     keywords: ["long call butterfly", "butterfly", "pin", "debit", "three strikes"],
   },
   {
@@ -379,10 +379,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One long put at K3, two short puts at K2 and one long put at K1, equally spaced, one expiry, for a small net debit.",
     payoff:
-      "Max profit is (K2 − K1) × quantity minus the debit, at exactly K2. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K3 minus the debit per unit.",
+      "Max profit is (K2 − K1) × quantity minus the debit, at exactly K2. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K3 minus the debit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects the underlying to settle near K2 and finds put strikes better quoted uses this volatility shape.",
-    risk: "The same single-point peak as the call version, and the body can be assigned early while the wings still carry time value. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The same single-point peak as the call version, and three strikes mean three fills and three sets of charges. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["long put butterfly", "butterfly", "pin", "debit", "put wings"],
   },
   {
@@ -392,10 +392,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "The butterfly reversed: short wings at K1 and K3, two long bodies at K2, one option type and one expiry, for a net credit.",
     payoff:
-      "Max profit is the credit, kept at or outside the wings. Max loss is (K2 − K1) × quantity minus the credit, at exactly K2. Breakevens are computed at K1 plus and K3 minus the credit per unit.",
+      "Max profit is the credit, kept at or outside the wings. Max loss is (K2 − K1) × quantity minus the credit, at exactly K2. Breakevens are computed at K1 plus and K3 minus the credit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects the underlying to leave the K2 area in either direction uses this volatility shape.",
-    risk: "The worst case sits where a quiet market most often settles, at the middle strike, and both wings are short. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The worst case sits where a quiet market most often settles, at the middle strike, and both wings are short. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["short butterfly", "butterfly", "credit", "breakout", "reverse"],
   },
   {
@@ -405,10 +405,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "Four calls at one expiry — long K1, short K2, short K3, long K4, strikes ascending — for a net debit.",
     payoff:
-      "Max profit is (K2 − K1) × quantity minus the debit, held anywhere between K2 and K3. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K4 minus the debit per unit.",
+      "Max profit is (K2 − K1) × quantity minus the debit, held anywhere between K2 and K3. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K4 minus the debit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects the underlying to finish inside a band and prefers a plateau to the butterfly's single point uses this volatility shape.",
-    risk: "Four call legs at one expiry are four fills and four sets of charges, and the plateau is narrow in percentage terms. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "Four call legs at one expiry are four fills and four sets of charges, and the plateau is narrow in percentage terms. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["long call condor", "condor", "all calls", "debit", "plateau"],
   },
   {
@@ -418,10 +418,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "Four calls at one expiry — short K1, long K2, long K3, short K4, strikes ascending — for a net credit.",
     payoff:
-      "Max profit is the credit, kept at or outside the outer strikes. Max loss is (K2 − K1) × quantity minus the credit, held between K2 and K3. Breakevens are computed at K1 plus and K4 minus the credit per unit.",
+      "Max profit is the credit, kept at or outside the outer strikes. Max loss is (K2 − K1) × quantity minus the credit, held between K2 and K3. Breakevens are computed at K1 plus and K4 minus the credit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects the underlying to travel out of the middle band in either direction uses this volatility shape.",
-    risk: "The loss zone is the middle of the range, where a quiet market settles most often, and both outer legs are short. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The loss zone is the middle of the range, where a quiet market settles most often, and both outer legs are short. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["short call condor", "condor", "credit", "breakout", "all calls"],
   },
   {
@@ -431,10 +431,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "Four puts at one expiry — long K4, short K3, short K2, long K1 — for a net debit; the all-put twin of the call condor.",
     payoff:
-      "Max profit is (K2 − K1) × quantity minus the debit, held between K2 and K3. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K4 minus the debit per unit.",
+      "Max profit is (K2 − K1) × quantity minus the debit, held between K2 and K3. Max loss is the debit, at or outside the wings. Breakevens are computed at K1 plus and K4 minus the debit per unit. These figures hold for equal wings; a group with unequal wings takes the same name, and its card computes the figures from its own strikes.",
     whoUses:
       "A trader who expects a settle inside the middle band and finds put strikes better quoted uses this volatility shape.",
-    risk: "Deep in-the-money put legs can be assigned early, which unbalances the structure before expiry, and four legs are four fills. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "All four put legs settle together at expiry, so the structure stays whole only while every leg is held, and four legs are four fills. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["long put condor", "condor", "all puts", "debit", "plateau"],
   },
   {
@@ -444,10 +444,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "The iron condor inverted: a short put at K1, a long put at K2, a long call at K3 and a short call at K4, one expiry, for a net debit.",
     payoff:
-      "Max profit is (K2 − K1) × quantity minus the debit, reached at or beyond either outer strike. Max loss is the debit, held between K2 and K3. Breakevens are computed at K2 minus and K3 plus the debit per unit.",
+      "Max profit is the wider wing — max(K2 − K1, K4 − K3) × quantity — minus the debit, reached at or beyond that wing's outer strike. Max loss is the debit, held between K2 and K3. Breakevens are computed at K2 minus and K3 plus the debit per unit, on each side whose wing is wider than the debit per unit; a narrower wing leaves that side with no breakeven.",
     whoUses:
       "A trader who expects a move out of the band before expiry, with both the outlay and the gain bounded, uses this volatility shape.",
-    risk: "The move has to clear an inner strike plus the debit before anything returns, and the full figure needs the outer strike. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The move has to clear an inner strike plus the debit before anything returns, and the full figure needs the outer strike. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["reverse iron condor", "condor", "debit", "breakout", "long volatility"],
   },
   {
@@ -457,10 +457,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One long call at K1 against two short calls at a higher K2, one expiry. The net can be a debit or a credit depending on the strikes chosen.",
     payoff:
-      "Max profit is (K2 − K1) × quantity plus any net credit, at exactly K2. Above K2 the second short call is unhedged and the loss is stated as Unlimited. The upper breakeven is computed at K2 plus (K2 − K1) plus the net per unit.",
+      "Max profit is (K2 − K1) × quantity plus the net premium, a net debit counting as negative, at exactly K2. Above K2 the second short call is unhedged and the loss is stated as Unlimited. The upper breakeven is computed at K2 plus (K2 − K1) plus the net per unit.",
     whoUses:
       "A trader who expects a move up that stalls near K2 uses this volatility and directional shape.",
-    risk: "The unhedged second short leg carries naked short risk above K2 and full margin with it, and a fast move through K2 is the worst case. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The unhedged second short leg carries naked short risk above K2 and full margin with it, and a fast move through K2 is the worst case. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["call ratio spread", "ratio", "1x2", "front spread", "naked leg"],
   },
   {
@@ -470,10 +470,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One long put at K2 against two short puts at a lower K1, one expiry, for a net that can fall either way depending on the strikes.",
     payoff:
-      "Max profit is (K2 − K1) × quantity plus any net credit, at exactly K1. Below K1 the extra short put loses and the figure is computed at underlying = 0, where it is large but bounded. The lower breakeven is computed at K1 minus (K2 − K1) minus the net per unit.",
+      "Max profit is (K2 − K1) × quantity plus the net premium, a net debit counting as negative, at exactly K1. Below K1 the extra short put loses and the figure is computed at underlying = 0, where it is large but bounded. The lower breakeven is computed at K1 minus (K2 − K1) minus the net per unit.",
     whoUses:
       "A trader who expects a move down that halts near K1 uses this volatility and directional shape.",
-    risk: "The second short put is unhedged below K1 and can be assigned into a long position there while the market keeps falling. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The second short put is unhedged below K1, and at expiry it settles in the money there, on a stock option as shares taken at K1 and still exposed to any further fall. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["put ratio spread", "ratio", "1x2", "front spread", "naked leg"],
   },
   {
@@ -483,10 +483,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One short call at K1 against two long calls at a higher K2, one expiry, often opened for a small net credit.",
     payoff:
-      "Above K2 the two long calls outrun the short one and the upside is Unlimited. Max loss is (K2 − K1) × quantity minus any net credit, at exactly K2. The upper breakeven is computed at K2 plus (K2 − K1) minus the net per unit.",
+      "Above K2 the two long calls outrun the short one and the upside is Unlimited. Max loss is (K2 − K1) × quantity minus the net premium, a net debit counting as negative, at exactly K2. The upper breakeven is computed at K2 plus (K2 − K1) minus the net per unit.",
     whoUses:
       "A trader who expects a very large move up, and who accepts a loss if the market stalls at K2, uses this volatility shape.",
-    risk: "The worst case sits at the strike a drifting market reaches most easily, and two long legs decay against the position meanwhile. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The worst case sits at the strike a drifting market reaches most easily, and two long legs decay against the position meanwhile. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["call backspread", "backspread", "ratio", "1x2", "long volatility"],
   },
   {
@@ -496,10 +496,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "One short put at K2 against two long puts at a lower K1, one expiry, often opened for a small net credit.",
     payoff:
-      "Below K1 the long puts outrun the short one and the payoff is computed at underlying = 0, where it is large but bounded. Max loss is (K2 − K1) × quantity minus any net credit, at exactly K1. The lower breakeven is computed at K1 minus (K2 − K1) plus the net per unit.",
+      "Below K1 the long puts outrun the short one and the payoff is computed at underlying = 0, where it is large but bounded. Max loss is (K2 − K1) × quantity minus the net premium, a net debit counting as negative, at exactly K1. The lower breakeven is computed at K1 minus (K2 − K1) plus the net per unit.",
     whoUses:
       "A trader who expects a sharp fall, and who accepts a loss if the market settles at K1, uses this volatility shape.",
-    risk: "A slow drift into K1 is the worst outcome and the short put can be assigned there, leaving a delivered position. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "A slow drift into K1 is the worst outcome, and at expiry the short put settles in the money there, which on a stock option leaves a delivered position. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["put backspread", "backspread", "ratio", "1x2", "crash hedge"],
   },
   {
@@ -512,7 +512,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "The curve is drawn at the nearest expiry with the far leg valued at intrinsic only, which understates a long far leg — so max profit is left as Not computed and stated as needing a volatility input. Max loss is the debit while the far leg is long, and the breakevens describe the nearest expiry alone.",
     whoUses:
       "A trader who expects the underlying to sit near K1 while near-dated premium decays faster than far-dated premium uses this volatility and income shape.",
-    risk: "The result turns on implied volatility across two expiries, which an intrinsic-value payoff cannot show, and early assignment on the near leg leaves the far leg standing alone. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The result turns on implied volatility across two expiries, which an intrinsic-value payoff cannot show, and at the near expiry the short leg settles while the far leg stays open alone. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["call calendar spread", "calendar", "horizontal", "two expiries", "time spread"],
   },
   {
@@ -525,7 +525,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Drawn at the nearest expiry with the far leg at intrinsic only, so the tent shape does not appear at all and max profit is left as Not computed. Max loss is the debit while the far leg is long, and the breakevens describe the nearest expiry alone.",
     whoUses:
       "A trader who expects the underlying to hold near K1 while near-dated premium decays faster uses this volatility and income shape.",
-    risk: "A deep in-the-money near put can be assigned early, leaving a long put and a delivered position to carry, and the far leg's time value is invisible on the drawn curve. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "A near put in the money at its expiry settles while the far put stays open (on a stock option, with delivered shares carried beside it), and the far leg's time value is invisible on the drawn curve. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["put calendar spread", "calendar", "horizontal", "two expiries", "time spread"],
   },
   {
@@ -538,7 +538,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "The curve is drawn at the nearest expiry with the far leg at intrinsic, so max profit is Not computed and max loss is the debit while the far leg is long. The breakevens describe the nearest expiry alone.",
     whoUses:
       "A trader who expects a slow drift towards the near strike while holding longer-dated exposure uses this volatility and directional shape.",
-    risk: "The shape changes as the near leg rolls off, so what is on screen describes one expiry of a position that has two, and the far leg's time value is not in it. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The shape changes as the near leg rolls off, so what is on screen describes one expiry of a position that has two, and the far leg's time value is not in it. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["diagonal spread", "diagonal", "two expiries", "roll", "time spread"],
   },
   {
@@ -551,7 +551,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Above K1 the payoff rises with the underlying, Unlimited on that side. Below K1 it falls with the underlying and is computed at underlying = 0 as (K1 × quantity) minus the net. Breakeven is computed at K1 minus the net per unit.",
     whoUses:
       "A trader who expects an upward move and prefers two option legs to the underlying itself uses this directional shape.",
-    risk: "The short put carries the whole downside and its margin, so this is not a limited-loss structure despite being built from options. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The short put carries the whole downside and its margin, so this is not a limited-loss structure despite being built from options. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["synthetic long stock", "combo", "synthetic", "conversion", "directional"],
   },
   {
@@ -564,7 +564,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Below K1 the payoff rises as the underlying falls and is computed at underlying = 0 as (K1 × quantity) plus the net. Above K1 the loss is stated as Unlimited. Breakeven is computed at K1 plus the net per unit.",
     whoUses:
       "A trader who expects a fall, or who is hedging a holding without touching it, uses this directional and hedging shape.",
-    risk: "The short call is naked, so the upside has no bound and margin expands as volatility does. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The short call is naked, so the upside has no bound and margin expands as volatility does. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["synthetic short stock", "combo", "synthetic", "reversal", "directional"],
   },
   {
@@ -574,10 +574,10 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
     beginner: false,
     what: "A call and a put on opposite sides at different strikes, one expiry — the synthetic with its strikes pulled apart, for a debit or a credit.",
     payoff:
-      "Between the strikes the payoff is flat at the net premium; outside them it takes the shape of the synthetic it is built from, Unlimited on the short side. One breakeven is computed, on the side the net sits.",
+      "When the call strike is above the put strike, the payoff between the strikes is flat at the net premium; when it is below, both legs are in the money between the strikes and the payoff moves two-for-one there. Outside the strikes it takes the shape of the synthetic it is built from, Unlimited above the higher strike: a gain when the call is long, a loss when it is short. One breakeven is computed.",
     whoUses:
       "A trader who expects a directional move but wants a band of indifference between the strikes uses this directional shape.",
-    risk: "The short leg is naked beyond its own strike and carries the same margin as an outright short option. An in-the-money leg left to settle is charged STT on intrinsic value rather than on premium.",
+    risk: "The short leg is naked beyond its own strike and carries the same margin as an outright short option. An in-the-money long leg left to settle is charged STT on intrinsic value rather than on premium.",
     keywords: ["split strike combo", "combo", "risk reversal", "synthetic", "split strikes"],
   },
   {
@@ -590,7 +590,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "The payoff is flat: the same fixed amount at every underlying price, so there is no breakeven at all. Max profit and max loss are both fixed, by the net paid or received against (K2 − K1) × quantity.",
     whoUses:
       "A trader who expects nothing from direction, and who is measuring that fixed payoff against the net cost of getting into it, uses this arbitrage shape.",
-    risk: "The whole result lives inside the fills and the charges — four legs, four spreads crossed — and a leg that cannot be filled breaks the flat payoff. Every in-the-money leg left to settle is charged STT on intrinsic value, on both spreads at once.",
+    risk: "The whole result lives inside the fills and the charges — four legs, four spreads crossed — and a leg that cannot be filled breaks the flat payoff. Every in-the-money long leg left to settle is charged STT on intrinsic value, on both spreads at once.",
     keywords: ["box spread", "box", "arbitrage", "four legs", "flat payoff"],
   },
   {
@@ -603,7 +603,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Max profit is the credit, kept between K1 and K2. Above K2 the loss is bounded by the K3 wing, and when the credit is at least (K3 − K2) × quantity there is no upside breakeven at all. Below K1 the loss is computed at underlying = 0 as (K1 × quantity) minus the credit.",
     whoUses:
       "A trader who expects the underlying to hold above K1, with the upside tail closed by the wing, uses this income shape.",
-    risk: "The downside is the short put's in full, unhedged all the way to the floor, and no institutional body publishes this name — it was coined on a trading desk. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "The downside is the short put's in full, unhedged all the way to the floor, and no institutional body publishes this name — it was coined on a trading desk. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["jade lizard", "lizard", "credit", "income", "no upside risk"],
   },
   {
@@ -616,7 +616,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "A strip leans down and a strap leans up; the strap's upside is Unlimited and the strip's downside runs to the price floor. Max loss is the debit, at exactly K1, and two breakevens are computed from the debit spread over one leg on one side and two on the other.",
     whoUses:
       "A trader who expects a large move with a lean towards one direction uses this volatility and directional shape.",
-    risk: "Three long premiums decay together, so the move has to be both large and quick, and no institutional body publishes these two names. An in-the-money leg left to settle is charged STT on intrinsic value.",
+    risk: "Three long premiums decay together, so the move has to be both large and quick, and no institutional body publishes these two names. An in-the-money long leg left to settle is charged STT on intrinsic value.",
     keywords: ["strip", "strap", "straddle variant", "skewed straddle", "debit"],
   },
   {
@@ -629,7 +629,7 @@ export const OPTIONS_HELP: OptionsHelpEntry[] = [
       "Long guts keeps an Unlimited upside and, inside the strikes, a loss of the debit minus (K2 − K1) × quantity; short guts keeps the credit minus (K2 − K1) × quantity and is Unlimited above. Breakevens are computed at K1 plus and K2 minus the debit per unit.",
     whoUses:
       "A trader who expects a large move and prefers in-the-money strikes to the strangle's out-of-the-money ones uses this volatility shape.",
-    risk: "Both legs are in the money from the start, so both carry intrinsic value into settlement and in-the-money series are often thinly quoted. An in-the-money leg left to settle is charged STT on intrinsic value — the charge this structure is most exposed to.",
+    risk: "Both legs are in the money from the start, so both carry intrinsic value into settlement and in-the-money series are often thinly quoted. An in-the-money long leg left to settle is charged STT on intrinsic value — the charge long guts is most exposed to.",
     keywords: ["guts", "long guts", "short guts", "itm strangle", "volatility"],
   },
 ];

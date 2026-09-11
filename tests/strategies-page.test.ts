@@ -10,9 +10,11 @@ import {
   netTone,
   optionNetPremium,
   underlyingEntryLine,
+  underlyingExpiryNote,
   withholdForFree,
 } from "@/components/strategies/strategy-copy";
 import { buildStrategies, type PositionedLeg, type StrategyGroup } from "@/lib/analytics/strategies";
+import type { StrategyId } from "@/lib/analytics/strategy-catalogue";
 import {
   canRedo,
   canUndo,
@@ -116,20 +118,39 @@ describe("the Pro withholding happens BEFORE the payload", () => {
 });
 
 describe("the card's seams", () => {
-  it("credit/debit is read from the CATALOGUE, never from the sign of netPremium", () => {
-    // B1's note: a covered call's netPremium carries the underlying entry cash,
-    // so its sign describes the cash flow and not the structure.
-    expect(netTone("covered-call", -999999, true), "the catalogue says credit, the sign says debit").toBe(
-      "credit",
-    );
-    expect(netTone("bull-call-spread", 4500, false), "and the other way round").toBe("debit");
-    // `either` with no underlying leg: the sign IS the answer, and is used.
-    expect(netTone("call-ratio-spread", 4500, false)).toBe("credit");
-    expect(netTone("call-ratio-spread", -4500, false)).toBe("debit");
-    // `either` WITH an underlying leg, and an unnamed or withheld group: no
-    // chip at all, rather than a guess.
-    expect(netTone("collar", 4500, true)).toBeNull();
-    expect(netTone(null, -4500, false)).toBeNull();
+  it("credit/debit is the sign of the OPTION premium — the Net premium tile's own number (R67/R68)", () => {
+    // The chip and the tile state ONE fact. `optionNetPremium` already leaves
+    // the underlying's entry cash out, so the catalogue override it once needed
+    // is gone: a covered call collected at a credit reads credit by its sign.
+    expect(netTone("covered-call", 55 * 150)).toBe("credit");
+    // R68: a bull call spread legged in for a net CREDIT is a credit on the
+    // card too — the tile prints "+₹150", and a "Net debit" chip beside it
+    // contradicted it.
+    expect(netTone("bull-call-spread", 150), "the tile's sign, not the catalogue's usual word").toBe("credit");
+    expect(netTone("bull-call-spread", -4500)).toBe("debit");
+    // R67: a zero-cost structure has no credit and no debit — no chip, beside
+    // the neutral "₹0" tile.
+    expect(netTone("synthetic-long-stock", 0)).toBeNull();
+    // An unnamed or withheld group, or an id with no catalogue row: no chip.
+    expect(netTone(null, -4500)).toBeNull();
+    expect(netTone("not-a-catalogue-id" as StrategyId, 4500)).toBeNull();
+  });
+
+  it("the underlying-expires-first note appears only when a future settles before an option leg (R104)", () => {
+    const fut = (expiry: string | null): PositionedLeg => ({
+      symbol: "NIFTY",
+      expiry,
+      kind: "UL",
+      strike: 0,
+      side: "long",
+      qty: 75,
+      premium: 24000,
+    });
+    const call = ce({ side: "short", strike: 24500, expiry: "2026-10-29", premium: 180 });
+    expect(underlyingExpiryNote(groupOf([fut("2026-09-24"), call]))).toBe(STRATEGY_COPY.underlyingExpiresFirstNote);
+    expect(underlyingExpiryNote(groupOf([fut("2026-10-29"), call]))).toBeNull();
+    expect(underlyingExpiryNote(groupOf([fut(null), call]))).toBeNull();
+    expect(underlyingExpiryNote(groupOf([call]))).toBeNull();
   });
 
   it("every card links into /help, and a Custom group lands on the section top", () => {
@@ -1070,11 +1091,13 @@ describe("getOpenUnderlyingPositions (Q4) — account-scoped, and only where an 
     ]);
   });
 
-  it("projects the six columns the page feeds into a UL leg, and nothing else", () => {
+  it("projects the eight columns the page feeds into a UL leg, and nothing else", () => {
     select(PRIMARY);
     const [row] = trades.getOpenUnderlyingPositions();
+    // `expiry` (R104: a future's own expiry) and `isin` (R105: the join key a
+    // company-name symbol is resolved through) joined the original six.
     expect(Object.keys(row).sort()).toEqual(
-      ["avgBuyPrice", "avgSellPrice", "buyQty", "instrumentType", "sellQty", "symbol"].sort(),
+      ["avgBuyPrice", "avgSellPrice", "buyQty", "expiry", "instrumentType", "isin", "sellQty", "symbol"].sort(),
     );
     expect(row.avgBuyPrice).toBe(2900);
   });
@@ -1136,7 +1159,10 @@ describe("optionNetPremium — a premium tile counts premiums (defect 2)", () =>
     // What the tile used to print, and why it contradicted its own chip.
     expect(g.netPremium).toBe(55 * 150 - 3100 * 150);
     expect(g.netPremium).toBeLessThan(0);
-    expect(netTone(g.strategyId, g.netPremium, true)).toBe("credit");
+    // The chip reads the SAME number the tile prints (R68/K3-M5); fed the
+    // position's netPremium it would say debit beside a "+₹8,250" tile.
+    expect(netTone(g.strategyId, optionNetPremium(g))).toBe("credit");
+    expect(netTone(g.strategyId, g.netPremium), "the cash-flow sign answers a different question").toBe("debit");
     // What it prints now: B1's sign convention, option legs only.
     expect(optionNetPremium(g)).toBe(55 * 150);
     expect(optionNetPremium(g)).toBeGreaterThan(0);

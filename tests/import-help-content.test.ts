@@ -98,9 +98,21 @@ describe("the copy stays honest", () => {
     });
   }
 
-  it("the Upstox card states the inferred-values caveat (docs/BROKER_FORMATS.md)", () => {
+  /**
+   * R21 (v4.3.0 fix wave 1). This test used to pin the caveat itself —
+   * `toMatch(/inferred/i)` — so the card went on saying "value behaviour is
+   * inferred until a populated export is seen" for a week after AGENTS.md and
+   * docs/BROKER_FORMATS.md DISCHARGED it (2026-09-04, tests/golden-books.test.ts).
+   * It now pins the verified state, at its honest size: ONE populated
+   * realised-P&L export met Upstox's own figures, and a trade report states no
+   * P&L at all, so its figures are Vyuha's own arithmetic.
+   */
+  it("the Upstox card states the verified value behaviour, not the discharged caveat (docs/BROKER_FORMATS.md)", () => {
     const upstox = IMPORT_HELP_CARDS.find((c) => c.id === "upstox")!;
-    expect(cardText(upstox)).toMatch(/inferred/i);
+    const text = cardText(upstox);
+    expect(text, "the discharged caveat is still printed").not.toMatch(/inferred until a populated export/i);
+    expect(text).toMatch(/one populated realised-P&L export matched Upstox's own stated gross, net and charges/);
+    expect(text).toMatch(/trade report states no P&L/);
   });
 
   it("the download prose is dated the way BROKER_FORMATS.md dates verifications", () => {

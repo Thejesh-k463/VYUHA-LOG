@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { auditLog, brokerConnections, settings } from "@/lib/db/schema";
-import { and, asc, eq, sql } from "drizzle-orm";
-import { recordAudit, recordAuditMany } from "@/lib/audit";
+import { brokerConnections, settings } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
+import { recordAudit } from "@/lib/audit";
 import { exchangeKiteRequestToken, kiteImportSource, kiteLoginUrl, toParsedFile as kiteToParsedFile } from "@/lib/import/api/kite";
 import {
   DHAN_TOTP_ACK_VERSION,
+  catchUpAfter,
   catchUpRange,
   dhanImportSource,
   dhanTotpEnrolled,
@@ -27,6 +28,7 @@ import {
   toParsedFile as openAlgoToParsedFile,
 } from "@/lib/import/api/openalgo";
 import { brokerLabel, findRivalConnection } from "@/lib/import/broker-identity";
+import { DHAN_UNFETCHED_NOTICE, keepUnfetched, keepUnfetchedAndStamp, outstandingUnfetched } from "@/lib/import/dhan-unfetched";
 import { openAlgoGate } from "@/lib/domain/openalgo-disclosure";
 import type { Broker } from "@/lib/domain/constants";
 import { looksLikeTotpSecret } from "@/lib/totp";
@@ -164,79 +166,29 @@ function readAuthBlob(stored: string | null | undefined): AuthBlobRead {
 const AUTH_UNREADABLE_WARNING = "enrolment stored but unreadable — remove the enrolment and re-enrol";
 
 /**
- * C-6 (v4.3.0 fix wave C, owner ruling "Say it plainly") — the KEPT notice for
- * Dhan history a committed pull never read.
- *
- * THE STORE IS THE AUDIT TRAIL, and no column was added (4.3.0 ships exactly
- * one migration, 0071). A record is one append-only `audit_log` row, entity
- * "settings" (what every broker-connection event already uses), whose after
- * snapshot is `{notice, broker, accountId, from, to, reason, clearedAt: null}`;
- * the user's clear is a SECOND row with the same keys and `clearedAt` set. The
- * notice is outstanding while the latest row for its span is uncleared. Keyed
- * by ACCOUNT, not connection id, because the fact is about the book: a
- * disconnect + reconnect in the same account still shows it.
- *
- * Why not the alternatives: `auth_json` is the vault-encrypted credential blob
- * — `hasAuth`, `clearAuth`, a re-save with new PIN + TOTP and the backup's
- * credential redaction would each misreport or silently erase the notice;
- * `import_batches.notes` is shown on the imports table and every file touching
- * that table must be a declared owner in tests/account-isolation.test.ts
- * (auto-pull resolves no account by design); `panel_dismissals` is
- * account-scoped with its own owners and the inverse meaning; `settings` has no
- * general JSON column. `audit_log` has no account_id (lib/domain/search-scope.ts),
- * travels in backups, and is already written by both callers.
- *
- * lib/jobs/auto-pull.ts writes the SAME record for a background commit;
- * tests/fix-wave-c-import.test.ts reads both writers back through GET.
+ * C-6 (owner ruling "Say it plainly") — the KEPT notice for Dhan history a
+ * pull never read. The store (append-only audit_log rows keyed by account),
+ * why it is the audit trail, and the THROWING writers live in
+ * lib/import/dhan-unfetched.ts, shared with lib/jobs/auto-pull.ts and the
+ * account merge (v4.3.0 fix wave 1: R19, R27, R10).
+ * tests/fix-wave-c-import.test.ts reads every writer back through GET.
  */
-const DHAN_UNFETCHED_NOTICE = "dhan-unfetched";
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The spans still outstanding for one account, oldest first. */
-function outstandingUnfetched(accountId: number): { from: string; to: string; reason: string }[] {
-  const rows = db
-    .select({ after: auditLog.afterJson })
-    .from(auditLog)
-    .where(
-      and(
-        eq(auditLog.entity, "settings"),
-        sql`json_extract(${auditLog.afterJson}, '$.notice') = ${DHAN_UNFETCHED_NOTICE}`,
-        sql`json_extract(${auditLog.afterJson}, '$.accountId') = ${accountId}`,
-      ),
-    )
-    .orderBy(asc(auditLog.id))
-    .all();
-  const latest = new Map<string, { from: string; to: string; reason: string; cleared: boolean }>();
-  for (const r of rows) {
-    const a = r.after;
-    if (!a) continue;
-    const from = String(a.from ?? "");
-    const to = String(a.to ?? "");
-    const reason = String(a.reason ?? "");
-    if (!ISO_DAY.test(from) || !ISO_DAY.test(to)) continue;
-    latest.set(`${from}|${to}|${reason}`, { from, to, reason, cleared: a.clearedAt != null });
-  }
-  return [...latest.values()]
-    .filter((s) => !s.cleared)
-    .map(({ from, to, reason }) => ({ from, to, reason }))
-    .sort((x, y) => x.from.localeCompare(y.from) || x.to.localeCompare(y.to));
-}
-
-/** Keep what a COMMITTED pull did not read — called before lastPullAt moves past it. */
-function recordUnfetched(connId: number, accountId: number, spans: readonly DhanUnfetchedSpan[]): void {
-  if (spans.length === 0) return;
-  recordAuditMany(
-    spans.map((s) => ({
-      entity: "settings" as const,
-      entityId: connId,
-      action: "create" as const,
-      summary: s.message,
-      before: null,
-      after: { notice: DHAN_UNFETCHED_NOTICE, broker: "dhan", accountId, from: s.from, to: s.to, reason: s.reason, clearedAt: null },
-      source: "import",
-    })),
+/** R19: the answer when the notice cannot be saved — nothing was committed and
+ *  the stamp did not move, so the next pull reads the same dates again. */
+function unsavedNotice(e: unknown) {
+  return NextResponse.json(
+    {
+      ok: false,
+      message: `The notice naming the Dhan history this pull did not read could not be saved (${e instanceof Error ? e.message : "unknown error"}). Nothing was committed and the last-pull time is unchanged, so the next pull reads the same dates again.`,
+    },
+    { status: 500 },
   );
 }
+
+/** R4a's refusal, ONE string for the save and the Zerodha exchange (R9). */
+const rivalMessage = (broker: string, accountName: string) =>
+  `This ${brokerLabel(broker)} client is already connected in account "${accountName}". Vyuha keeps one connection per broker client so a book is never imported twice.`;
 
 /**
  * Per-broker packing of the auth_json extras (OpenAlgo has its own branch in
@@ -587,7 +539,7 @@ export async function POST(req: Request) {
       accountId,
     });
     if (rival) {
-      const message = `This ${brokerLabel(broker)} client is already connected in account "${rival.accountName}". Vyuha keeps one connection per broker client so a book is never imported twice.`;
+      const message = rivalMessage(broker, rival.accountName);
       // `error` is the seam's field; `message` is what every existing client
       // renders. One string, so they can never disagree.
       return NextResponse.json({ ok: false, error: message, message }, { status: 409 });
@@ -732,6 +684,11 @@ export async function POST(req: Request) {
     let openAlgoBroker: Broker | null = null;
     /** C-6: Dhan history this pull did not read — kept only if it commits. */
     let unfetched: readonly DhanUnfetchedSpan[] = [];
+    /** R42: this pull's lastPullAt. Dhan's is the instant fetchTrades took
+     *  just before /v2/positions (`onCutoff`); every other broker's is when
+     *  the pull started. Never a post-commit clock. */
+    const pulledAt = new Date().toISOString();
+    let cutoff = null as string | null;
     try {
       if (isOpenAlgoConnectionId(broker)) {
         // host + underlyingBroker live in auth_json as one encrypted blob.
@@ -854,20 +811,28 @@ export async function POST(req: Request) {
         // today) leaves this pull byte-identical to every build before.
         // C-6: a clamped window (range.unfetched) and a page-capped walk
         // (onHistory) are both NAMED in the warnings, and handed back as spans.
-        const range = catchUpRange(conn.lastPullAt, todayIstIso());
+        // R42 (v4.3.0 fix wave 1): `after` drops the history fills the last
+        // pull's /positions snapshot already stored, and this pull's stamp is
+        // the instant fetchTrades took before reading /positions.
+        const today = todayIstIso();
+        const range = catchUpRange(conn.lastPullAt, today);
         let read: DhanHistoryRead | null = null;
-        const trades = await source.fetchTrades(
-          range
+        const trades = await source.fetchTrades({
+          ...(range
             ? {
                 from: range.from,
                 to: range.to,
-                onHistory: (h) => {
+                after: catchUpAfter(conn.lastPullAt, today),
+                onHistory: (h: DhanHistoryRead) => {
                   read = h;
                 },
               }
-            : {},
-        );
-        const pulled = dhanToParsedFile(trades, range, read);
+            : {}),
+          onCutoff: (iso) => {
+            cutoff = iso;
+          },
+        });
+        const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
         unfetched = pulled.unfetched;
         parsed = pulled;
       } else if (broker === "upstox") {
@@ -921,6 +886,26 @@ export async function POST(req: Request) {
               },
               { status: 409 },
             );
+          }
+          // R9 (v4.3.0 fix wave 1): R4a's one-connection-per-client refusal, at
+          // the only point the Zerodha identity is known. The save cannot know
+          // it (an api_key may log in several clients, DECISIONS:4852), so a
+          // second account's connection for the SAME Kite user was saved as
+          // {apiSecret} and then stamped below with no rival check. Refused
+          // BEFORE the stamp, the token cache and the fetch. Residual: a
+          // pasted-token connection never learns a user_id and cannot be
+          // refused here.
+          if (userId) {
+            const rival = findRivalConnection({
+              broker,
+              apiKey: keyRead.value,
+              authJson: JSON.stringify({ apiSecret, kiteUserId: userId }),
+              accountId,
+            });
+            if (rival) {
+              const message = rivalMessage(broker, rival.accountName);
+              return NextResponse.json({ ok: false, error: message, message }, { status: 409 });
+            }
           }
           kiteToken = accessToken;
           // First successful exchange for a connection with no stored id
@@ -984,6 +969,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, message: (e as Error).message }, { status: 502 });
     }
 
+    const stamp = cutoff ?? pulledAt;
     const today = todayIstIso();
     // "kite" is kept for Zerodha so source_file naming stays continuous with
     // every existing import; Angel One used to fall into the kite name too,
@@ -1019,6 +1005,15 @@ export async function POST(req: Request) {
         // is created for a no-op. (Found live 2026-08-28: the native Upstox
         // pull exact-deduped 5/5 against the OpenAlgo rows, silently.)
         if (pre.summary.total > 0 && pre.summary.newCount === 0 && body.force !== true) {
+          // R27 (v4.3.0 fix wave 1): nothing new is still a successful READ.
+          // Its spans and the stamp land in ONE transaction. Unstamped, the
+          // inclusive window re-read the same day on every pull and the card
+          // kept printing "Pulls missed since".
+          try {
+            keepUnfetchedAndStamp(unfetched, { connId: conn.id, accountId, source: "import" }, stamp);
+          } catch (e) {
+            return unsavedNotice(e);
+          }
           return NextResponse.json(
             {
               ok: false,
@@ -1054,12 +1049,20 @@ export async function POST(req: Request) {
             { status: 409 },
           );
         }
+        // R19 (v4.3.0 fix wave 1): the unread spans are kept FIRST, in their
+        // own transaction, with a write that THROWS. The old best-effort audit
+        // write could fail silently AFTER the commit while lastPullAt still
+        // moved past the dates. A failure here commits nothing and leaves the
+        // stamp, so the next pull recomputes both.
+        try {
+          keepUnfetched(unfetched, { connId: conn.id, accountId, source: "import" });
+        } catch (e) {
+          return unsavedNotice(e);
+        }
         const result = commitParsedFile(parsed, fileName, null, accountId);
-        // C-6: keep the unread spans BEFORE lastPullAt moves past them — the
-        // move is what used to make them unrecoverable without a word.
-        recordUnfetched(conn.id, accountId, unfetched);
+        // R42: the stamp is the instant taken before /v2/positions was read.
         db.update(brokerConnections)
-          .set({ lastPullAt: new Date().toISOString() })
+          .set({ lastPullAt: stamp })
           .where(and(eq(brokerConnections.accountId,accountId),eq(brokerConnections.broker, broker)))
           .run();
         revalidatePath("/trades");

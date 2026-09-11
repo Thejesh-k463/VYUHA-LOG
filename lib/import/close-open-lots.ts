@@ -11,8 +11,13 @@
  * `withScaledRemainderNote` and `splitByRemainder` have NO production caller —
  * they are dormant, pure library code kept with their unit tests. The
  * identity readers below (`lotIdentityHashes`, `isLotIdentityFrozen`) are
- * still read by Data Quality and the restore re-key; without alias rows they
- * answer "own hash only, not frozen" for every row.
+ * still read by Data Quality and the restore re-key — and, since R26, by
+ * import dedup in `commit.ts` (preview and commit alike); without alias rows
+ * they answer "own hash only, not frozen" for every row. In 4.3.0 the ONE
+ * writer of an alias is Data Quality's stale-lot close (`withStaleCloseNote`,
+ * called by `closeStaleLot` in commit.ts): a lot joined to the sale the book
+ * had stored as its own row answers to that sale's record from then on, so a
+ * re-pull of the sale is a duplicate instead of a second open row.
  *
  * Everything below describes the design as wave 1 built it (for 4.3.1).
  *
@@ -76,12 +81,11 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // with for ever, and every hash that also stands for it — one per consuming
 // execution — is recorded as an ALIAS in `import_notes`, which is the only
 // free-text column that travels with the row through backup, restore and the
-// data fixes. In 4.3.0 import dedup reads each row's OWN hash only (the v4.2.0
-// rule in commit.ts — auto-close is switched off, so no import writes an
-// alias); the restore re-key (`lib/db/data-fixes.ts`) and Data Quality
-// (`lib/import/broker-identity.ts`) still read identity through
-// `lotIdentityHashes`, so they stay correct for any aliased row a restore
-// brings in.
+// data fixes. Import dedup (commit.ts, preview and commit), the restore re-key
+// (`lib/db/data-fixes.ts`) and Data Quality (`lib/import/broker-identity.ts`)
+// all read identity through `lotIdentityHashes`. Auto-close is switched off
+// for 4.3.0, so no IMPORT writes an alias; Data Quality's stale-lot close does
+// (R26, `withStaleCloseNote`), and a restore can bring aliased rows in.
 
 /** Marks one alias hash inside `import_notes`. Segments are joined by " | ". */
 export const DEDUP_ALIAS_PREFIX = "dedup-alias:";
@@ -103,11 +107,11 @@ const HASH_RE = /^[0-9a-f]{40}$/;
  * EVERY hash that stands for this stored row: its own first, then its aliases,
  * de-duplicated and in a stable order.
  *
- * The single door for the restore re-key (`lib/db/data-fixes.ts`) and the Data
- * Quality report. Import dedup (`commit.ts`) does NOT read it in 4.3.0: it
- * compares own hashes only, as v4.2.0 did (auto-close switched off; 4.3.1
- * re-wires it). Pure and total: a row with no notes answers with just its own
- * hash.
+ * The single door for import dedup (`commit.ts`: the preview's and the
+ * commit's existing-hash sets are every row's identity hashes — R26, 4.3.0),
+ * the restore re-key (`lib/db/data-fixes.ts`) and the Data Quality report.
+ * Pure and total: a row with no notes answers with just its own hash, so a
+ * book with no alias rows de-duplicates exactly as v4.2.0 did.
  */
 export function lotIdentityHashes(row: { dedupHash: string; importNotes: string | null }): string[] {
   const out: string[] = [];
@@ -186,6 +190,25 @@ export function withLotCloseNote(importNotes: string | null, closingHash: string
  */
 export function withScaledRemainderNote(importNotes: string | null, ownHash: string): string {
   return withIdentityNote(importNotes, PARTIAL_CLOSE_NOTE, ownHash);
+}
+
+/**
+ * R26 (v4.3.0) — written to `import_notes` on a lot the USER closed from Data
+ * Quality with the opposite-side row the book had stored as its own row.
+ *
+ * Its OWN sentence, not `AUTO_CLOSE_NOTE`: that one says "Closed
+ * automatically", and nothing here was automatic — the user confirmed the
+ * pair and its date. The alias is what makes a re-pull of the removed row a
+ * duplicate; `isLotIdentityFrozen` then reads the lot as a merged lot, which
+ * it now is (the restore re-key must leave it alone, and Data Quality's
+ * duplicate scan must never offer it as a plain copy).
+ */
+export const STALE_CLOSE_NOTE =
+  "Closed from Data Quality with a closing trade this account had stored as its own row; that row was removed and its record is kept here as an alias.";
+
+/** The lot's `import_notes` after a Data Quality stale-lot close. Idempotent. */
+export function withStaleCloseNote(importNotes: string | null, saleHash: string): string {
+  return withIdentityNote(importNotes, STALE_CLOSE_NOTE, saleHash);
 }
 
 /**

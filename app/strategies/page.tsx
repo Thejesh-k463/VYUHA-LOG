@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StrategiesClient } from "@/components/strategies/strategies-client";
 import { STRATEGY_COPY, withholdForFree, type PickerRow } from "@/components/strategies/strategy-copy";
 import { getOpenOptionPositions, getOpenUnderlyingPositions } from "@/lib/queries/trades";
+import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { getEntitlement } from "@/lib/queries/license";
@@ -76,8 +77,12 @@ export default function StrategiesPage() {
     const side: "long" | "short" = net >= 0 ? "long" : "short";
     const qty = Math.abs(net) || Math.max(t.buyQty, t.sellQty);
     return {
-      symbol: t.symbol,
-      expiry: null,
+      // R105: the leg wears the option side's ticker so it groups with them —
+      // resolved through the ISIN when the row carries one (a company-name
+      // row), else the stored symbol upper-cased as option symbols are.
+      symbol: (t.isin && bundledSymbolByIsin(t.isin)) || t.symbol.toUpperCase(),
+      // R104: a future's own expiry; a cash holding never expires.
+      expiry: t.instrumentType === "future" ? t.expiry : null,
       kind: "UL" as const,
       // A UL leg has no strike. It is excluded from the strike ladder by
       // `computeStrategy`, so this is a placeholder and never a level.

@@ -246,3 +246,27 @@ describe("file-level reporting", () => {
     expect(p.warnings.join(" ")).toMatch(/refused/i);
   });
 });
+
+// ── (i) a scrip-day filled on BOTH exchanges (R71, v4.3.0) ─────────────────
+describe("a scrip-day filled on both exchanges", () => {
+  // Paytm's own shape (INE0OWZ01020, 2026-08-06): the day OPENS with a small
+  // BSE buy, then buys and sells on NSE. The day took its FIRST fill's
+  // exchange, so this NSE round trip was priced and labelled BSE.
+  const p = parsePaytmTradebook(ctx(wb([
+    row({ Date: "06-08-2026", Script: "544851", Exchange: "BSE", Quantity: 30, Price: 200 }),
+    row({ Date: "06-08-2026", Script: "544851", Exchange: "NSE", Quantity: 70, Price: 200, "Stamp Duty": 0.6 }),
+    row({ Date: "06-08-2026", Script: "544851", Exchange: "NSE", Type: "Sell", Quantity: 100, Price: 210, STT: 5.25 }),
+  ])));
+
+  it("keeps ONE position with exactly the same money", () => {
+    expect(p.trades).toHaveLength(1);
+    const t = p.trades[0];
+    expect([t.buyQty, t.sellQty, t.buyValue, t.sellValue, t.grossPnl]).toEqual([100, 100, 20000, 21000, 1000]);
+    expect(t.productHint).toBe("intraday");
+  });
+
+  it("prices it at NSE, where most of its turnover happened, and says it was bought on both", () => {
+    expect(p.trades[0].exchangeHint).toBe("NSE");
+    expect((p.trades[0].importNotes ?? []).join(" ")).toMatch(/Bought on NSE\/BSE, sold on NSE/);
+  });
+});

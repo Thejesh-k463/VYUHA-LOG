@@ -3,10 +3,12 @@
 // portfolio aggregator. No live feed exists yet (Vyuha stays offline-first), so implied
 // volatility is either user-entered per position or falls back to a flat estimate — this
 // is an APPROXIMATION for decision support, not a pricing-desk-grade model:
-//   • Indian index options (NIFTY, BANKNIFTY, SENSEX…) are European-style — Black-Scholes
-//     is exact for these.
-//   • Indian stock options are American-style — Black-Scholes is the standard retail
-//     approximation (ignores early-exercise value), same simplification brokers use.
+//   • Indian index options (NIFTY, BANKNIFTY, SENSEX…) and
+//     NSE stock options are European-style: exercised only at expiry ("exercise style is
+//     European style. Final Exercise is Automatic on expiry" — NSE Clearing's settlement
+//     mechanism; SEBI CIR/DNPD/6/2010, 27 Oct 2010), so Black-Scholes needs no
+//     early-exercise adjustment.
+//   • The exercise style of BSE stock options is not verified here, so it is not stated.
 // Position Greeks are signed: short flips the raw per-unit Greeks (short = short
 // gamma/vega, long theta — the seller's decay works in their favour).
 

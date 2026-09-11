@@ -188,6 +188,13 @@ const SIGN_SITES: { rel: string; imports: RegExp }[] = [
   { rel: "components/risk/greeks-panel.tsx", imports: /signOf/ },
   { rel: "components/risk/var-panel.tsx", imports: /signOf/ },
   { rel: "components/risk/mtf-drift-card.tsx", imports: /signedNumber/ },
+  // v4.3.0 fix wave 1 (R28) — five more hand-rolled `>= 0 ? "+"` sites the
+  // wave-2 list above did not reach. Each printed "+₹0" / "+0R" for a zero.
+  { rel: "components/settings/capital-card.tsx", imports: /signOf/ },
+  { rel: "app/reports/expiry/page.tsx", imports: /signOf/ },
+  { rel: "components/cash/ledger-table.tsx", imports: /signOf/ },
+  { rel: "components/trades/staged-panel.tsx", imports: /signedNumber/ },
+  { rel: "lib/queries/capital.ts", imports: /signOf/ },
 ];
 
 const srcOf = (rel: string) => fs.readFileSync(path.join(process.cwd(), ...rel.split("/")), "utf8");
@@ -221,5 +228,38 @@ describe("the drawdown keeps a HARD minus, and says why at the site", () => {
       const src = srcOf(rel);
       expect(src, `${rel} lost the hard-minus justification`).toMatch(/positive magnitude by construction/);
     }
+  });
+});
+
+/**
+ * R28 — the live position panel's Open R. It chose its own sign
+ * (`openR >= 0 ? "+" : "−"`), so a flat position read "+0.00R". The live desk
+ * already has the formatter for an R figure — desk-format's `rMultiple`, which
+ * takes ppm, keeps the real minus (U+2212) the desk uses, and leaves zero
+ * unsigned — so the panel goes through it rather than a new ternary. Its
+ * `signedInr` had the same zero defect on the Unrealised stat ("+₹0").
+ */
+describe("the live position panel signs through desk-format (R28)", () => {
+  const src = srcOf("components/live/position-chart-panel.tsx");
+
+  it("has no hand-rolled `>= 0 ? \"+\"` of its own", () => {
+    const own = src.match(/>= 0 \? "\+"/g) ?? [];
+    expect(own, `independent sign choices still in the panel: ${own.join(" | ")}`).toEqual([]);
+  });
+
+  it("renders Open R through rMultiple, fed ppm", () => {
+    expect(src).toMatch(/import \{[^}]*\brMultiple\b[^}]*\} from "\.\/desk-format";/);
+    expect(src).toMatch(/rMultiple\(Math\.round\(openR \* PPM\)\)/);
+  });
+
+  it("signedInr leaves a zero unsigned — no `: \"+\"` fall-through for p === 0", () => {
+    expect(src).not.toMatch(/p < 0 \? "−" : "\+";/);
+  });
+
+  it("rMultiple: zero unsigned, a real minus, two decimals", async () => {
+    const { rMultiple } = await import("@/components/live/desk-format");
+    expect(rMultiple(0)).toBe("0.00R");
+    expect(rMultiple(-1_500_000)).toBe("−1.50R");
+    expect(rMultiple(250_000)).toBe("+0.25R");
   });
 });

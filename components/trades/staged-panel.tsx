@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@/components/ui/dialog";
-import { inr } from "@/lib/format";
+import { inr, signedNumber } from "@/lib/format";
 import { toast } from "@/components/ui/toaster";
 import { Layers, Plus, Minus, Trash2, TriangleAlert, Info, ShieldAlert, Target } from "lucide-react";
 import type { SlimTrade as Trade } from "@/lib/domain/slim-trade"; // wire projection — see slim-trade.ts
@@ -146,7 +146,7 @@ export function StagedPanel({ trade, onChanged }: { trade: Trade; onChanged?: ()
         />
         <Stat
           label="Realised R"
-          value={p.realisedR != null ? `${p.realisedR >= 0 ? "+" : ""}${p.realisedR}R` : "—"}
+          value={p.realisedR != null ? `${signedNumber(p.realisedR)}R` : "—"}
           cls={p.realisedR != null ? pnlClass(p.realisedR) : ""}
         />
         <Stat
@@ -273,7 +273,7 @@ export function StagedPanel({ trade, onChanged }: { trade: Trade; onChanged?: ()
                     {fill ? inr(fill.netPnl, { decimals: 0 }) : "—"}
                   </td>
                   <td className={`px-3 py-2 text-right font-mono tabular-nums ${fill?.rContribution != null ? pnlClass(fill.rContribution) : ""}`}>
-                    {fill?.rContribution != null ? `${fill.rContribution >= 0 ? "+" : ""}${fill.rContribution}R` : "—"}
+                    {fill?.rContribution != null ? `${signedNumber(fill.rContribution)}R` : "—"}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <DeleteLeg legId={leg.id} tradeId={trade.id} onDone={refresh} />

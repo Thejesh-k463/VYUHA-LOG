@@ -82,6 +82,9 @@ export function ManualTradeForm({
   const [riskTouched, setRiskTouched] = useState(false);
   const [ownCapitalUsed, setOwnCapitalUsed] = useState("");
   const [daysHeld, setDaysHeld] = useState("");
+  // Controlled so the charge preview can price at the trade's own date (R56).
+  const [buyDate, setBuyDate] = useState("");
+  const [sellDate, setSellDate] = useState("");
   const [preview, setPreview] = useState<PreviewResp | null>(null);
   const [limit, setLimit] = useState<LimitResult | null>(null);
 
@@ -188,6 +191,9 @@ export function ManualTradeForm({
     // before the debounced fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!tradingsymbol || (bq <= 0 && sq <= 0)) { setPreview(null); return; }
+    const entryDate = buyDate || null;
+    const exitDate = open ? null : sellDate || null;
+    const shortFno = kind === "fno" && direction === "sell";
     const ctrl = new AbortController();
     const id = setTimeout(async () => {
       try {
@@ -208,13 +214,18 @@ export function ManualTradeForm({
             ownCapitalUsed: Number(ownCapitalUsed) >= 0 && ownCapitalUsed !== "" ? Number(ownCapitalUsed) : null,
             daysHeld: open ? 0 : Number(daysHeld) || 0,
             isOpen: open,
+            // Priced at the date the save will store (R56). createManualTrade
+            // files a written (sell-direction) F&O entry on the SELL side and
+            // its exit on the BUY side, and an open trade has no exit date.
+            buyDate: shortFno ? exitDate : entryDate,
+            sellDate: shortFno ? entryDate : exitDate,
           }),
         });
         if (res.ok) setPreview(await res.json());
       } catch { /* aborted */ }
     }, 300);
     return () => { clearTimeout(id); ctrl.abort(); };
-  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open]);
+  }, [broker, tradingsymbol, productHint, segment, exchange, buyQty, avgBuyPrice, sellQty, avgSellPrice, ownCapitalUsed, daysHeld, open, buyDate, sellDate, kind, direction]);
 
   // Pre-trade limits check (open trades only) — block/warn before saving (P1.4).
   useEffect(() => {
@@ -461,8 +472,8 @@ export function ManualTradeForm({
             <input type="hidden" name="avgSellPrice" value={avgSellPrice} />
           </>
         )}
-        <Field label={open ? "Entry date" : kind === "fno" ? "Entry date" : "Buy date"}><Input name="buyDate" type="date" /></Field>
-        {!open && <Field label={kind === "fno" ? "Exit date" : "Sell date"}><Input name="sellDate" type="date" /></Field>}
+        <Field label={open ? "Entry date" : kind === "fno" ? "Entry date" : "Buy date"}><Input name="buyDate" type="date" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} /></Field>
+        {!open && <Field label={kind === "fno" ? "Exit date" : "Sell date"}><Input name="sellDate" type="date" value={sellDate} onChange={(e) => setSellDate(e.target.value)} /></Field>}
         <Field label="SL (original)"><Input name="slPlanned" type="number" step="any" value={sl} onChange={(e) => setSl(e.target.value)} /></Field>
         <Field label="Trailing SL"><Input name="trailingSl" type="number" step="any" /></Field>
         <Field label="Target"><Input name="targetPlanned" type="number" step="any" value={target} onChange={(e) => setTarget(e.target.value)} /></Field>

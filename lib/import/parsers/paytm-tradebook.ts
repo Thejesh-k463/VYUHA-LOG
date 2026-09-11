@@ -64,6 +64,21 @@
  *     of buy PLUS sell); 34 were intraday, and a scrip-day whose stamp duty
  *     sits between the two rates is part-and-part — those are split by
  *     `splitMixedRow` into an intraday pair and a delivery remainder.
+ *
+ * ── Where each fill happened (v4.3.0, R71) ──────────────────────────────────
+ *
+ *   - **One scrip-day can fill on BOTH exchanges** — 8 scrip-days across 6
+ *     securities in the August export, 51 across 39 in the five-month one.
+ *     The day keeps ONE signature and the SAME legs (that is how Paytm books
+ *     STT and stamp), but each leg carries its value per exchange (`venues`,
+ *     the day side's own split pro rata), and the paired row takes the venue
+ *     carrying most of its own turnover (pair-legs.ts `rowVenue`). Emitting
+ *     one leg per exchange instead was built and measured: a fixed venue
+ *     order then decides which fills FIFO closes, which moved the August
+ *     book's gross by −20,420.87 and added three rows (one an opening sell,
+ *     reddening the v3.8 one-holding guard). Stored charges are Paytm's own
+ *     either way; what moves is the row's exchange and the engine's
+ *     cross-check figure.
  */
 
 import * as XLSX from "xlsx";
@@ -365,27 +380,44 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   }
 
   // ── Pass 2: one signature per SCRIP-DAY, because that is where Paytm books
-  //    the statutory charges — see the header note.
-  interface DayAcc {
-    key: string; date: string; exchange: Exchange | null;
-    buyQty: number; buyValue: number; sellQty: number; sellValue: number;
+  //    the statutory charges — see the header note. The same totals are ALSO
+  //    kept per exchange, because the exchange is where each fill happened and
+  //    commit prices a row there (invariant 3). The day used to take its FIRST
+  //    fill's exchange, so a day opening with a ₹20.59L BSE buy and then filling
+  //    ₹63.43L of buys and ₹66.15L of sells on NSE became one BSE day, priced
+  //    and labelled BSE (R71, INE0OWZ01020 on 2026-08-06).
+  interface SideTotals { buyQty: number; buyValue: number; sellQty: number; sellValue: number }
+  interface DayAcc extends SideTotals {
+    key: string; date: string;
     charges: number; stt: number; stamp: number;
+    byExchange: Map<Exchange | null, SideTotals>;
   }
+  const zeroSide = (): SideTotals => ({ buyQty: 0, buyValue: 0, sellQty: 0, sellValue: 0 });
   const days = new Map<string, DayAcc>();
   for (const f of fills) {
     const dk = `${f.key}${SEP}${f.date}`;
-    const a = days.get(dk) ?? {
-      key: f.key, date: f.date, exchange: f.exchange,
-      buyQty: 0, buyValue: 0, sellQty: 0, sellValue: 0, charges: 0, stt: 0, stamp: 0,
+    const a: DayAcc = days.get(dk) ?? {
+      key: f.key, date: f.date, ...zeroSide(), charges: 0, stt: 0, stamp: 0, byExchange: new Map(),
     };
-    if (f.side === "buy") { a.buyQty += f.qty; a.buyValue += f.qty * f.price; }
-    else { a.sellQty += f.qty; a.sellValue += f.qty * f.price; }
+    const v = a.byExchange.get(f.exchange) ?? zeroSide();
+    for (const acc of [a, v]) {
+      if (f.side === "buy") { acc.buyQty += f.qty; acc.buyValue += f.qty * f.price; }
+      else { acc.sellQty += f.qty; acc.sellValue += f.qty * f.price; }
+    }
+    a.byExchange.set(f.exchange, v);
     a.charges += f.charges;
     a.stt += f.stt;
     a.stamp += f.stamp;
-    if (!a.exchange && f.exchange) a.exchange = f.exchange;
     days.set(dk, a);
   }
+
+  /**
+   * A FIXED venue order (NSE, BSE, MCX, then an unstated exchange), never file
+   * order — so a leg's label on an exact value tie can never depend on which
+   * fill Paytm printed first.
+   */
+  const VENUE_RANK: Record<string, number> = { NSE: 0, BSE: 1, MCX: 2 };
+  const venueRank = (e: Exchange | null) => (e == null ? 9 : (VENUE_RANK[e] ?? 8));
 
   // ── Pass 3: legs per scrip-day-side, charges split by traded value ────────
   //
@@ -402,6 +434,14 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
   // quantity so an intraday leg never exceeds what was actually sold. Values
   // follow the day's average prices; the day's charges are shared by value
   // with the last leg taking the rounding remainder, so nothing is lost.
+  //
+  // Per exchange (R71): each leg ALSO carries its value per exchange
+  // (`venues`) — the day side's own per-exchange totals, pro rata to the leg's
+  // share of that side, because the file does not say which fill fed which
+  // leg — and its `exchange` label is the venue carrying most of it (ties in
+  // VENUE_RANK order). Quantities, values and pairing are exactly what they
+  // were; only the venue a row is priced at is now decided by where its fills
+  // happened. A day on one exchange produces exactly the legs it always did.
   const legs: Leg[] = [];
   /** Per scrip-day notes (split / corroboration), keyed like `days`. */
   const dayNotes = new Map<string, string>();
@@ -414,18 +454,43 @@ export function parsePaytmTradebook(ctx: ParseContext): ParsedFile {
     const dk = `${a.key}${SEP}${a.date}`;
     const twoSided = a.buyQty > 0 && a.sellQty > 0;
     const denom = a.buyValue + a.sellValue;
+    const venues = [...a.byExchange.keys()].sort((x, y) => venueRank(x) - venueRank(y));
+    const sub = (e: Exchange | null) => a.byExchange.get(e)!;
 
+    /** The day's first named venue in VENUE_RANK order — for a side that names none. */
+    const dayVenue = venues.find((e) => e != null) ?? null;
+    /**
+     * A leg's venue label and, when its side filled on more than one named
+     * exchange, its value per venue: that side's own split, pro rata to the
+     * leg's share of the side. The label is the venue carrying most of it;
+     * strict `>` over the VENUE_RANK-sorted list keeps NSE on a tie.
+     */
+    const venueSplit = (side: "buy" | "sell", value: number): { exchange: Exchange | null; venues?: Record<string, number> } => {
+      const sideValue = (e: Exchange | null) => (side === "buy" ? sub(e).buyValue : sub(e).sellValue);
+      const named = venues.filter((e): e is Exchange => e != null && (side === "buy" ? sub(e).buyQty : sub(e).sellQty) > 0);
+      if (named.length === 0) return { exchange: dayVenue };
+      if (named.length === 1) return { exchange: named[0] };
+      const total = side === "buy" ? a.buyValue : a.sellValue;
+      const k = total > 0 ? value / total : 0;
+      const split: Record<string, number> = Object.fromEntries(named.map((e) => [e, sideValue(e) * k]));
+      const exchange = named.reduce((best, e) => (split[e] > split[best] ? e : best), named[0]);
+      return { exchange, venues: split };
+    };
+
+    type Part = { side: "buy" | "sell"; qty: number; value: number; product: Leg["product"] };
     /** Push legs in order, charges by value share, remainder on the last. */
-    const pushLegs = (parts: { side: "buy" | "sell"; qty: number; value: number; product: Leg["product"] }[]) => {
+    const pushLegs = (parts: Part[]) => {
       const live = parts.filter((x) => x.qty > 0);
       let given = 0;
       live.forEach((x, i) => {
         const last = i === live.length - 1;
         const charges = denom <= 0 ? 0 : last ? r2(a.charges - given) : r2((a.charges * x.value) / denom);
         given += charges;
+        const { exchange, venues: split } = venueSplit(x.side, x.value);
         legs.push({
           symbol: a.key, side: x.side, date: a.date, qty: x.qty, value: r2(x.value),
-          charges, exchange: a.exchange, product: x.product,
+          charges, exchange, product: x.product,
+          ...(split ? { venues: split } : {}),
         });
       });
     };

@@ -219,3 +219,28 @@ describe("the Pro gate is on the server", () => {
     expect(parseShelf(storedJson(), STRATEGY_IDS).selected).toEqual(["long-call"]);
   });
 });
+
+/** The newest Audit Log row's summary, by id. */
+function newestAuditSummary(): string | null {
+  const rows = t.db
+    .select({ id: t.schema.auditLog.id, summary: t.schema.auditLog.summary })
+    .from(t.schema.auditLog)
+    .all();
+  return rows.reduce<(typeof rows)[number] | null>((a, r) => (a == null || r.id > a.id ? r : a), null)?.summary ?? null;
+}
+
+describe("the Audit Log row reads as English (R51)", () => {
+  it("one strategy is 'strategy', never '1 strategies'", async () => {
+    const { status } = await send({ action: "set", selected: ["long-call"] });
+    expect(status).toBe(200);
+    expect(newestAuditSummary()).toBe("strategy shelf → 1 strategy");
+  });
+
+  it("any other count keeps the plural — zero included", async () => {
+    await send({ action: "set", selected: A_SHELF });
+    expect(newestAuditSummary()).toBe("strategy shelf → 3 strategies");
+    await send({ action: "set", selected: [] });
+    expect(newestAuditSummary()).toBe("strategy shelf → 0 strategies");
+    await send({ action: "set", selected: A_SHELF });
+  });
+});

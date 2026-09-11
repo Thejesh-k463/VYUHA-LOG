@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { formatPaise } from "@/lib/money";
+import { signOf } from "@/lib/format";
 import { LEDGER_PAGE_SIZE, TYPE_LABEL, type RunningRow } from "@/lib/analytics/ledger";
 import { ReportTable, ReportThead, ReportTh, ReportTr, ReportTd } from "@/components/ui/report-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -79,8 +80,8 @@ export function LedgerTable({ rows, total }: { rows: RunningRow[]; total: number
               </ReportTd>
               <ReportTd>{TYPE_LABEL[r.type]}</ReportTd>
               <ReportTd align="right" className={r.amountPaise >= 0 ? "text-profit" : "text-loss"}>
-                {r.amountPaise >= 0 ? "+" : ""}
-                {formatPaise(r.amountPaise, { decimals: 0 })}
+                {signOf(r.amountPaise)}
+                {formatPaise(Math.abs(r.amountPaise), { decimals: 0 })}
               </ReportTd>
               <ReportTd align="right" className="font-medium">{formatPaise(r.balancePaise, { decimals: 0 })}</ReportTd>
               <ReportTd muted>{r.note ?? "—"}</ReportTd>

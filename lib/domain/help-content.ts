@@ -103,7 +103,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
       // were pinned BY VALUE in the test, which is how they passed a green gate;
       // they are pinned by the catalogue's own counts now.
       "The grouping, the payoff curve and the gross figures — labelled before charges — are free for every book, and the sixteen shapes Vyuha named before 4.3 keep their names on the free tier. The other twenty-four names are part of Vyuha Pro: on the free tier a group matching one of them reads as its leg count rather than as a name. The shelf is Pro too — a selection of catalogue tiles pinned above the named groups, with undo, redo and restore-defaults — and so is the picker that edits it. Nothing here carries a name of your own: a shelf tile is a shape from the catalogue.",
-      "Every one of the 40 shapes is written up in the Options section of the Help Desk — the legs, how the payoff is computed, who uses it and what it risks — free on every tier, and each card here links straight to its entry.",
+      "Every one of the 40 shapes is written up in the Options section of the Help Desk — the legs, how the payoff is computed, who uses it and what it risks — free on every tier. A named card here links straight to its entry; a Custom card — a group that matches no shape, or a match whose name is withheld on the free tier — links to the top of the Options section.",
     ],
     keywords: ["payoff", "straddle", "strangle", "iron condor", "spread", "breakeven", "catalogue", "shapes", "butterfly", "calendar", "synthetic", "jade lizard", "shelf"],
   },
@@ -284,7 +284,7 @@ export const HELP_ENTRIES: HelpEntry[] = [
     answers: "Where do I get each broker's files, and how do the API connections work?",
     body: [
       "One card per import path: which exports Vyuha reads (generated from the same registry the import screen uses, so the list can never overstate it), where each file is downloaded from the broker, and how the four API connections and the two-part OpenAlgo path are set up.",
-      "Verification status is stated honestly — Upstox layouts are verified but value behaviour is inferred until a populated export is seen, the PDF source reads text without importing trades, and brokers with no published format go to the column mapper, where you say whose file it is.",
+      "Verification status is stated honestly — Upstox layouts are verified, value behaviour is verified for the realised-P&L export (one populated file, matched to Upstox's own figures to the paisa) and pinned against Vyuha's own arithmetic for the trade report (which states no P&L), the PDF source reads text without importing trades, and brokers with no published format go to the column mapper, where you say whose file it is.",
     ],
     keywords: ["import help", "download", "tradebook", "api key", "access token", "totp", "openalgo", "kite connect", "smartapi", "column mapper"],
   },

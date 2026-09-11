@@ -44,6 +44,7 @@ import { computeStop, type StopResult, type StopSource } from "@/lib/live/stop";
 import { wilderAtrSeriesP3 } from "@/lib/live/tracker-row";
 import { trailSuggestions } from "@/lib/live/trail";
 import { PPM, type Bar, type Paise, type Side } from "@/lib/live/types";
+import { rMultiple } from "./desk-format";
 
 const PositionChart = dynamic(() => import("@/components/charts/lw/position-chart"), {
   // lightweight-charts touches `document` on creation; every DB-backed page
@@ -95,10 +96,11 @@ function latestAtrP3(bars: Bar[], length: number): number | null {
   return null;
 }
 
-/** `+₹1,20,000` / `−₹4,500`. The minus is a real minus sign, not a hyphen. */
+/** `+₹1,20,000` / `−₹4,500` / `₹0`. The minus is a real minus sign, not a
+ *  hyphen, and a zero is unsigned (R28) — the desk's own signedMoney rule. */
 function signedInr(p: Paise | null): string {
   if (p === null) return "—";
-  const sign = p < 0 ? "−" : "+";
+  const sign = p < 0 ? "−" : p > 0 ? "+" : "";
   return `${sign}${inr(Math.abs(rupees(p)), { decimals: 0 })}`;
 }
 
@@ -240,7 +242,7 @@ export function PositionChartPanel(props: {
         <Stat label="Unrealised" value={signedInr(unrealisedP)} tone={moneyClass(unrealisedP)} />
         <Stat
           label="Open R"
-          value={openR === null ? "—" : `${openR >= 0 ? "+" : "−"}${num(Math.abs(openR))}R`}
+          value={openR === null ? "—" : rMultiple(Math.round(openR * PPM))}
           tone={moneyClass(openR === null ? null : Math.round(openR * 100))}
         />
         <Stat label="₹ at risk, mark → stop" value={atRiskP === null ? "—" : inr(rupees(atRiskP), { decimals: 0 })} />

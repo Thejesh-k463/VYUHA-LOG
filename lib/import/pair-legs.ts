@@ -104,6 +104,13 @@ export interface Leg {
   /** Broker-reported charges attributable to this leg. */
   charges: number;
   exchange?: string | null;
+  /**
+   * The leg's value per NAMED exchange, when one leg aggregates fills made on
+   * more than one venue (a Paytm scrip-day, R71). Absent means the whole value
+   * belongs to `exchange`. Read ONLY to decide a row's venue (`rowVenue`):
+   * quantities and values pair exactly as they would without it.
+   */
+  venues?: Record<string, number>;
   /** Product as inferred from the charge signature, when known. */
   product?: "delivery" | "intraday" | "mixed" | "unknown";
   /** Free-text note carried through to the trade (e.g. "product derived"). */
@@ -214,15 +221,70 @@ function shortCoverQtys(legsIn: Leg[], openingQty = 0): Map<Leg, number> {
  * exchanges. The position is NOT split by exchange: one ISIN is one holding,
  * and splitting it turned 38 opening sells into 101 on a real book (measured
  * and rejected, v3.8; pinned by tests/paytm-isin-pairing.test.ts). The
- * position's own `exchange` stays the first leg's — the note is what tells the
- * trader the two fills happened in different places.
+ * position's own `exchange` is decided by `rowVenue` below — the note is what
+ * tells the trader the two fills happened in different places.
  */
-function crossExchangeNote(buyExchanges: string[], sellExchange: string | null | undefined): string | null {
-  if (!sellExchange) return null;
+function crossExchangeNote(buyExchanges: string[], sellExchanges: string[]): string | null {
   const from = [...new Set(buyExchanges.filter(Boolean))];
-  if (from.length === 0 || !from.some((e) => e !== sellExchange)) return null;
-  return `Bought on ${from.join("/")}, sold on ${sellExchange} — one holding, the exchange is where the fill happened.`;
+  const to = [...new Set(sellExchanges.filter(Boolean))];
+  if (from.length === 0 || to.length === 0) return null;
+  if (new Set([...from, ...to]).size < 2) return null;
+  return `Bought on ${from.join("/")}, sold on ${to.join("/")} — one holding, the exchange is where the fill happened.`;
 }
+
+/**
+ * The ONE exchange a paired row is priced at (R71, v4.3.0).
+ *
+ * A trade row has one `exchange`, and commit hands it to `charge_config`, so
+ * it must be where the row's own fills happened (invariant 3). It used to be
+ * the SECURITY's first leg, stamped on every position: a stock first bought on
+ * NSE priced a later BSE-only position at NSE's rate, and a Paytm day opening
+ * with a small BSE buy priced a round trip filled almost wholly on NSE at BSE's.
+ *
+ * THE RULE: the venue carrying the larger share of the row's OWN turnover —
+ * the value of the buy lots it consumed plus its sell value. Majority by value,
+ * because that is where most of the exchange charge on the row actually
+ * arises. On an exact tie the first venue in `prefer` wins (a closed row passes
+ * its sell leg's venue, then its consumed lots oldest-first). An open row is
+ * one lot, so it takes that lot's own venue; an opening sell takes its own
+ * leg's. `fallback` (the security's first named venue) is used ONLY when none
+ * of the row's own legs names a venue.
+ *
+ * A row whose legs span BOTH venues is still priced at ONE exchange — the
+ * minority venue's turnover is charged at the majority venue's rate. That is a
+ * one-row limit, like `pricingDate`'s one epoch per row, and the
+ * `crossExchangeNote` says so on the trade. Rejected: the first leg's venue
+ * (the defect), and the sell leg's venue alone (a row closing a large BSE lot
+ * with a small NSE sale would be priced wholly at NSE).
+ */
+function rowVenue(
+  parts: { exchange: string | null | undefined; value: number }[],
+  prefer: (string | null | undefined)[],
+  fallback: string | null,
+): string | null {
+  const byVenue = new Map<string, number>();
+  for (const p of parts) {
+    if (!p.exchange) continue;
+    byVenue.set(p.exchange, (byVenue.get(p.exchange) ?? 0) + p.value);
+  }
+  if (byVenue.size === 0) return fallback;
+  // Compared to the paisa, so float noise in a sum cannot break a real tie.
+  const totals = [...byVenue].map(([e, v]) => [e, r2(v)] as const);
+  const best = Math.max(...totals.map(([, v]) => v));
+  const tied = totals.filter(([, v]) => v === best).map(([e]) => e);
+  if (tied.length === 1) return tied[0];
+  for (const e of prefer) if (e && tied.includes(e)) return e;
+  return tied[0];
+}
+
+/** A leg's or lot's value as (venue, value) parts — split by its `venues` when it has them. */
+function venueParts(exchange: string | null | undefined, value: number, venues?: Record<string, number>) {
+  return venues ? Object.entries(venues).map(([e, v]) => ({ exchange: e, value: v })) : [{ exchange, value }];
+}
+
+/** `venues` scaled by a quantity share — unrounded, it only ever feeds `rowVenue`. */
+const scaleVenues = (venues: Record<string, number> | undefined, k: number) =>
+  venues ? Object.fromEntries(Object.entries(venues).map(([e, v]) => [e, v * k])) : undefined;
 
 /** Pick the most specific product across the legs that formed a position. */
 function resolveProduct(products: (Leg["product"] | undefined)[]): PairedPosition["product"] {
@@ -246,7 +308,8 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
   if (legs.length === 0) return [];
 
   const symbol = legs[0].symbol;
-  const exchange = legs.find((l) => l.exchange)?.exchange ?? null;
+  // ONLY the fallback for a row none of whose own legs names a venue — see rowVenue.
+  const securityExchange = legs.find((l) => l.exchange)?.exchange ?? null;
 
   type Lot = {
     date: string;
@@ -255,6 +318,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
     charges: number;
     product: Leg["product"];
     exchange?: string | null;
+    venues?: Record<string, number>;
     opening?: boolean;
   };
 
@@ -322,6 +386,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
             charges: leg.charges,
             product: leg.product,
             exchange: leg.exchange ?? null,
+            venues: leg.venues ? { ...leg.venues } : undefined,
           });
         }
         continue;
@@ -347,9 +412,11 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
             charges: r2(lot.charges * share),
             product: lot.product,
             exchange: lot.exchange ?? null,
+            venues: scaleVenues(lot.venues, share),
           });
         lot.qty -= take;
         lot.value = r2(lot.value * (1 - share));
+        lot.venues = scaleVenues(lot.venues, 1 - share);
         lot.charges = r2(lot.charges * (1 - share));
         remaining -= take;
       };
@@ -384,13 +451,27 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
         const shortQty = buyDate === leg.date ? (shortCovers.get(leg) ?? 0) : 0;
         const notes: string[] = [];
         if (shortQty > 0) notes.push(INTRADAY_SHORT_NOTE);
-        const xNote = crossExchangeNote(consumed.map((c) => c.exchange ?? ""), leg.exchange);
+        const xNote = crossExchangeNote(
+          consumed.flatMap((c) => (c.venues ? Object.keys(c.venues) : [c.exchange ?? ""])),
+          leg.venues ? Object.keys(leg.venues) : [leg.exchange ?? ""],
+        );
         if (xNote) notes.push(xNote);
         let product = resolveProduct([...consumed.map((c) => c.product), leg.product]);
         // Only now, and only here: the sale was covered on its own day and NO
         // lot — real or seeded — could have delivered it. Anything weaker and
         // `unknown → intraday` understates STT on a file that states no product.
         if (shortQty > 0 && product === "unknown") product = "intraday";
+        const sellValue = r2(perShare * matchedQty);
+        // Tie: the sell leg's venue, then the consumed lots oldest-first.
+        const oldestFirst = [...consumed].sort((a, b) => a.date.localeCompare(b.date));
+        const exchange = rowVenue(
+          [
+            ...consumed.flatMap((c) => venueParts(c.exchange, c.value, c.venues)),
+            ...venueParts(leg.exchange, sellValue, scaleVenues(leg.venues, portion)),
+          ],
+          [leg.exchange, ...oldestFirst.map((c) => c.exchange)],
+          securityExchange,
+        );
         out.push({
           symbol,
           kind: "closed",
@@ -398,7 +479,7 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
           buyQty: matchedQty,
           buyValue: r2(consumed.reduce((s, c) => s + c.value, 0)),
           sellQty: matchedQty,
-          sellValue: r2(perShare * matchedQty),
+          sellValue,
           buyDate,
           sellDate: leg.date,
           charges: r2(consumed.reduce((s, c) => s + c.charges, 0) + sellCharges * portion),
@@ -421,7 +502,8 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
       out.push({
         symbol,
         kind: "opening-sell",
-        exchange,
+        exchange: rowVenue(venueParts(s.exchange, s.value, s.venues), [s.exchange], securityExchange), // its own leg's venue
+
         buyQty: 0,
         buyValue: 0,
         sellQty: s.qty,
@@ -442,7 +524,8 @@ export function pairSymbolLegs(legsIn: Leg[]): PairedPosition[] {
       out.push({
         symbol,
         kind: "open",
-        exchange,
+        exchange: rowVenue(venueParts(lot.exchange, lot.value, lot.venues), [lot.exchange], securityExchange), // one lot: its own venue
+
         buyQty: lot.qty,
         buyValue: r2(lot.value),
         sellQty: 0,

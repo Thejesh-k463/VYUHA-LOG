@@ -141,7 +141,7 @@ describe("chargesAdjustedRisk knows which leg is the sale (M6)", () => {
   });
 });
 
-describe("the rate table is dated, because STT has moved three times", () => {
+describe("the rate table is dated, because STT moves — one epoch per circular", () => {
   it("a 2024-09-30 futures trade uses the old STT and a 2026-04-01 trade the new", () => {
     expect(ratesOn("future", "2024-09-30").sttPct).toBe(0.000125);
     expect(ratesOn("future", "2024-10-01").sttPct).toBe(0.0002);
@@ -157,11 +157,47 @@ describe("the rate table is dated, because STT has moved three times", () => {
     expect(after.riskAtStopP).toBe(before.riskAtStopP); // price risk is unchanged
   });
 
-  it("every shipped epoch carries its source and a verified marker", () => {
+  /**
+   * R91 (v4.3.0 fix wave 1): `verified` means a primary NSE circular (FATAX)
+   * states the epoch, its start included. The 1970 futures and options epochs
+   * cite FATAX for the RATE, but when that rate began (Finance Act 2008) is not
+   * verified, so they ship verified:false with "NOT verified" in their note.
+   * Re-pinned 2026-09-11; this used to assert verified === true on every epoch.
+   * tests/stt-epoch-2024.test.ts pins the F&O windows, the 1970 pair and
+   * verified => FATAX; this pins the marker rule over EVERY epoch, both ways.
+   * The note match is case-sensitive on purpose: eq_intraday's "earlier history
+   * is not verified here" is about history the table does not carry, and that
+   * epoch is verified.
+   */
+  const FATAX_SOURCE = /^https:\/\/nsearchives\.nseindia\.com\/content\/circulars\/FATAX\d+\.pdf$/;
+  type Epoch = { segment: string; effectiveFrom: string; verified: unknown; sources?: unknown; note?: string };
+  /** Null when the epoch's marker agrees with its sources and note; otherwise what is wrong. */
+  const markerFault = (e: Epoch): string | null => {
+    if (!Array.isArray(e.sources) || e.sources.length === 0) return "no sources";
+    if (typeof e.verified !== "boolean") return "verified is not a boolean";
+    const primary = e.sources.some((s) => typeof s === "string" && FATAX_SOURCE.test(s));
+    const expected = primary && !/NOT verified/.test(e.note ?? "");
+    return e.verified === expected ? null : `verified is ${e.verified}; its sources and note say ${expected}`;
+  };
+
+  it("every shipped epoch carries sources, and is marked verified exactly when a FATAX circular states it (R91)", () => {
     expect(defaults.epochs.length).toBeGreaterThan(0);
-    for (const e of defaults.epochs) expect(e.verified).toBe(true);
+    for (const e of defaults.epochs) expect(markerFault(e), `${e.segment} ${e.effectiveFrom}`).toBeNull();
+    expect(defaults.epochs.filter((e) => !e.verified).map((e) => `${e.segment} ${e.effectiveFrom}`)).toEqual([
+      "future 1970-01-01",
+      "index_option 1970-01-01",
+    ]);
     expect(defaults.sources.primary).toMatch(/^https:\/\//);
     expect(defaults.asOf).toBe("2026-09-05");
+  });
+
+  it("the marker rule goes red on a broker-blog-only epoch marked verified, an unverified start flipped, or no sources", () => {
+    const real = defaults.epochs.find((e) => e.segment === "future" && e.effectiveFrom === "2013-06-01")!;
+    const start = defaults.epochs.find((e) => e.segment === "future" && e.effectiveFrom === "1970-01-01")!;
+    expect(markerFault(real)).toBeNull();
+    expect(markerFault({ ...real, sources: ["https://zerodha.com/z-connect/budget-2013-stt"] })).not.toBeNull();
+    expect(markerFault({ ...start, verified: true })).not.toBeNull();
+    expect(markerFault({ ...real, sources: [] })).not.toBeNull();
   });
 });
 

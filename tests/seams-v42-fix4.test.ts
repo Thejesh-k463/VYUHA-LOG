@@ -102,7 +102,8 @@ const SHORT_KNOWN = 941;
 const LONG_KNOWN = 942;
 /** A SHORT future nothing can price — M-2's give-delivery unknown. */
 const SHORT_UNKNOWN = 943;
-/** An ITM long call — the ONE row whose STT is the footer's exercise rate. */
+/** An ITM long call — the ONE row whose STT carries BOTH footer rates: delivery
+ *  STT on the strike value (charge config) plus exercise STT on intrinsic. */
 const ITM_OPTION = 944;
 
 const SBIN_CASH = 1400;
@@ -135,6 +136,11 @@ const OPTION_INTRINSIC = TCS_SPOT - TCS_STRIKE; // 200 per share
 const OPTION_EXERCISE_STT = Math.round(
   DEFAULT_SETTLEMENT_RATES.exerciseSttPct * OPTION_INTRINSIC * TCS_QTY,
 ); // 45
+/** R78: a physically settled option carries delivery STT on the strike value,
+ *  at the charge-config rate, on both sides — and the long also pays exercise
+ *  STT. Each rounds to the rupee on its own. */
+const OPTION_DELIVERY_STT = Math.round(CONFIG_DELIVERY_STT * OPTION_NOTIONAL); // 540
+const OPTION_STT = OPTION_DELIVERY_STT + OPTION_EXERCISE_STT; // 585
 
 /**
  * 18:30–24:00 UTC — the IST day boundary. `todayIstIso()` is already tomorrow
@@ -436,8 +442,8 @@ beforeAll(async () => {
         sellDate: "2026-09-01",
         isOpen: true,
       }),
-      // An ITM long call — the only row whose STT is the EXERCISE rate, which
-      // is the rate the panel's footer names in words.
+      // An ITM long call — the only row whose STT is delivery STT on the strike
+      // value PLUS the exercise rate, both of which the footer names in words.
       tradeRow({
         id: ITM_OPTION,
         accountId: ACCOUNT,
@@ -915,23 +921,36 @@ describe("S5 — the auto-MTM route publishes the job's own outcome, field for f
  * breach-banner scope, which S5 and tests/breach-scan-scope.test.ts cover.
  * ══════════════════════════════════════════════════════════════════════════ */
 describe("S6 — the footer's rates are the rates the rows were computed with", () => {
-  it("S6a  the exercise rate the footer prints reproduces the ITM option's own STT cell", () => {
+  it("S6a  the two rates the footer prints reproduce the ITM option's own STT cell", () => {
     const option = settlement.obligations.find((o) => o.id === ITM_OPTION)!;
     expect(option.kind).toBe("stock_option");
     expect(option.moneyness).toBe("ITM");
     expect(option.intrinsicPerUnit).toBe(OPTION_INTRINSIC);
-    expect(option.physicalStt).toBe(OPTION_EXERCISE_STT); // ₹45
+    expect(option.notional).toBe(OPTION_NOTIONAL);
+    // R78: 540 (0.12% × 4,50,000) + 45 (0.15% × 200 × 150). It was ₹45 — the
+    // exercise term alone, under a footer saying delivery STT was included.
+    expect(option.physicalStt).toBe(OPTION_STT); // ₹585
+    expect(option.physicalStt).not.toBe(OPTION_EXERCISE_STT);
 
-    // THE WORD ON THE FOOTER, parsed — never restated.
-    const stated = /(\d+(?:\.\d+)?)% of intrinsic/.exec(panelText())?.[1];
-    expect(stated, "the panel footer no longer names an exercise-STT rate").toBeTypeOf("string");
-    // It is the constant the page spread into computeSettlement…
-    expect(Number(stated)).toBe(DEFAULT_SETTLEMENT_RATES.exerciseSttPct * 100);
-    // …and, read as a rate, it reproduces the rupee figure on the row. A footer
-    // naming the repealed 0.125% would compute ₹37 against a printed ₹45.
-    expect(Math.round((Number(stated) / 100) * OPTION_INTRINSIC * TCS_QTY)).toBe(option.physicalStt);
-    expect(panelRowCells(ITM_OPTION)[6]).toBe("₹45");
-    expect(panelText()).not.toContain("0.125");
+    // THE WORDS ON THE FOOTER, parsed — never restated.
+    const text = panelText();
+    const exercise = /(\d+(?:\.\d+)?)% of intrinsic/.exec(text)?.[1];
+    const delivery = /(\d+(?:\.\d+)?)% of the strike value/.exec(text)?.[1];
+    expect(exercise, "the panel footer no longer names an exercise-STT rate").toBeTypeOf("string");
+    expect(delivery, "the panel footer no longer names the delivery-STT rate on an option").toBeTypeOf("string");
+    // The exercise word is the constant the page spread into computeSettlement;
+    // the delivery word is the charge-config rate the page read (0.12% here —
+    // no default carries it, so a footer printing the default fails).
+    expect(Number(exercise)).toBe(DEFAULT_SETTLEMENT_RATES.exerciseSttPct * 100);
+    expect(Number(delivery) / 100).toBeCloseTo(CONFIG_DELIVERY_STT, 10);
+    // …and, read as rates, they reproduce the rupee figure on the row. A footer
+    // naming the repealed 0.125% would compute 540 + 37 against a printed 585.
+    expect(
+      Math.round((Number(delivery) / 100) * OPTION_NOTIONAL) +
+        Math.round((Number(exercise) / 100) * OPTION_INTRINSIC * TCS_QTY),
+    ).toBe(option.physicalStt);
+    expect(panelRowCells(ITM_OPTION)[6]).toBe("₹585");
+    expect(text).not.toContain("0.125");
   });
 
   it("S6b  the two rates the footer attributes to charge config are the ones the page read from it", () => {
@@ -960,5 +979,27 @@ describe("S6 — the footer's rates are the rates the rows were computed with", 
     const long = settlement.obligations.find((o) => o.id === LONG_KNOWN)!;
     expect(long.physicalStt).toBe(Math.round(delivery * long.notional!));
     expect(long.exitStt).toBe(Math.round(futExit * long.notional!));
+  });
+
+  /**
+   * R77/R78: the footer states WHO pays which STT, as facts — and in the same
+   * substance as the Options Help Desk's sentence (R49): a physically settled
+   * stock option carries delivery STT on both sides; exercise STT falls on the
+   * long who exercises, never on the assigned writer; index options settle in
+   * cash with no delivery STT. It said the reverse by omission before: one
+   * "plus exercise STT" for every ITM option, whichever side it was on.
+   */
+  it("S6c  the footer says who pays which STT, and advises nothing", () => {
+    const text = plain(panelText());
+    const footer = text.slice(text.indexOf("Indian single-stock"));
+    expect(footer.length, "the footer paragraph is missing").toBeGreaterThan(100);
+    expect(footer).toMatch(/Delivery STT is charged on both sides/);
+    // flattenText joins JSX leaves with a space, so the parenthesis may carry one.
+    expect(footer).toMatch(/Exercise STT \(\s*[\d.]+% of intrinsic value\s*\) is paid only by a long whose option is exercised, not by the assigned writer/);
+    expect(footer).toContain("Index options settle in cash with no delivery STT");
+    // The old blanket "plus exercise STT" on every ITM stock option is gone.
+    expect(footer).not.toMatch(/delivery-STT charge on the whole notional, plus exercise STT/);
+    // SEBI copy: a fact about a levy, never an instruction about a position.
+    expect(footer).not.toMatch(/\b(recommend\w*|suggest\w*|should|consider|advis\w*)\b/i);
   });
 });

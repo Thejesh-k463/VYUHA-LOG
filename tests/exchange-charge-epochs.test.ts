@@ -33,7 +33,13 @@ type Class = {
 };
 
 const EQ = ["eq_delivery", "eq_mtf", "eq_intraday"];
-const NSE_FNO = ["1970-01-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01", "2026-04-01"];
+/**
+ * NSE F&O keys are also split at R1's STT boundaries (the exchange charge does
+ * not move there): futures on 2013-06-01 (FATAX23500), options on 2016-06-01
+ * (FATAX32385). BSE options gain 2016-06-01 and 2023-04-01 (FATAX56235) the same way.
+ */
+const NSE_FUT = ["1970-01-01", "2013-06-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01", "2026-04-01"];
+const NSE_OPT = ["1970-01-01", "2016-06-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01", "2026-04-01"];
 
 const CLASSES: Class[] = [
   {
@@ -49,19 +55,19 @@ const CLASSES: Class[] = [
     name: "NSE futures",
     match: (r) => r.exchange === "NSE" && r.segment === "future",
     keys: 9,
-    froms: NSE_FNO,
-    txn: [0.00002, 0.000019, 0.0000188, 0.0000173, 0.000018299, 0.000018299],
-    ipft: [0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001, 0.000000001],
-    perCrore: [200.01, 200, 198, 183, 183, 183],
+    froms: NSE_FUT,
+    txn: [0.00002, 0.00002, 0.000019, 0.0000188, 0.0000173, 0.000018299, 0.000018299],
+    ipft: [0.000000001, 0.000000001, 0.000001, 0.000001, 0.000001, 0.000000001, 0.000000001],
+    perCrore: [200.01, 200.01, 200, 198, 183, 183, 183],
   },
   {
     name: "NSE options (index and stock, of premium)",
     match: (r) => r.exchange === "NSE" && (r.segment === "index_option" || r.segment === "stock_option"),
     keys: 18,
-    froms: NSE_FNO,
-    txn: [0.00053, 0.0005, 0.000495, 0.0003503, 0.000355299, 0.000355299],
-    ipft: [0.000000001, 0.000005, 0.000005, 0.000005, 0.000000001, 0.000000001],
-    perCrore: [5300.01, 5050, 5000, 3553, 3553, 3553],
+    froms: NSE_OPT,
+    txn: [0.00053, 0.00053, 0.0005, 0.000495, 0.0003503, 0.000355299, 0.000355299],
+    ipft: [0.000000001, 0.000000001, 0.000005, 0.000005, 0.000005, 0.000000001, 0.000000001],
+    perCrore: [5300.01, 5300.01, 5050, 5000, 3553, 3553, 3553],
   },
   {
     name: "BSE cash (Group A / B / non-exclusive)",
@@ -76,19 +82,19 @@ const CLASSES: Class[] = [
     name: "BSE stock options (of premium)",
     match: (r) => r.exchange === "BSE" && r.segment === "stock_option",
     keys: 9,
-    froms: ["1970-01-01", "2022-05-02", "2024-10-01", "2026-04-01"],
-    txn: [0, 0.00005, 0.00005, 0.00005],
-    ipft: [0, 0, 0, 0],
-    perCrore: [0, 500, 500, 500],
+    froms: ["1970-01-01", "2016-06-01", "2022-05-02", "2023-04-01", "2024-10-01", "2026-04-01"],
+    txn: [0, 0, 0.00005, 0.00005, 0.00005, 0.00005],
+    ipft: [0, 0, 0, 0, 0, 0],
+    perCrore: [0, 0, 500, 500, 500, 500],
   },
   {
     name: "BSE index options (Sensex/Bankex, of premium)",
     match: (r) => r.exchange === "BSE" && r.segment === "index_option",
     keys: 9,
-    froms: ["1970-01-01", "2022-05-02", "2023-11-01", "2024-05-13", "2024-10-01", "2026-04-01"],
-    txn: [0, 0.00005, 0.000375, 0.000495, 0.000325, 0.000325],
-    ipft: [0, 0, 0, 0, 0, 0],
-    perCrore: [0, 500, 3750, 4950, 3250, 3250],
+    froms: ["1970-01-01", "2016-06-01", "2022-05-02", "2023-04-01", "2023-11-01", "2024-05-13", "2024-10-01", "2026-04-01"],
+    txn: [0, 0, 0.00005, 0.00005, 0.000375, 0.000495, 0.000325, 0.000325],
+    ipft: [0, 0, 0, 0, 0, 0, 0, 0],
+    perCrore: [0, 0, 500, 500, 3750, 4950, 3250, 3250],
   },
   {
     name: "MCX commodity futures (unchanged, no history)",
@@ -110,13 +116,24 @@ const CLASSES: Class[] = [
   },
 ];
 
-/** Statutory STT on `on` — typed from the Finance Acts, not read from the seed. */
+/** Statutory sell-side STT on `on` — typed from the NSE FATAX circulars (R1), not read from the seed. */
 function sttOn(segment: string, on: string): number {
-  const era = on < "2024-10-01" ? 0 : on < "2026-04-01" ? 1 : 2;
   if (segment === "eq_delivery" || segment === "eq_mtf") return 0.001;
   if (segment === "eq_intraday") return 0.00025;
-  if (segment === "future") return [0.000125, 0.0002, 0.0005][era];
-  if (segment === "index_option" || segment === "stock_option") return [0.000625, 0.001, 0.0015][era];
+  if (segment === "future") {
+    // FATAX23500 (0.017% till 31.05.2013; start unverified), 23500, 56235, 63809, 73524
+    if (on < "2013-06-01") return 0.00017;
+    if (on < "2023-04-01") return 0.0001;
+    if (on < "2024-10-01") return 0.000125;
+    return on < "2026-04-01" ? 0.0002 : 0.0005;
+  }
+  if (segment === "index_option" || segment === "stock_option") {
+    // FATAX27711 (0.017%; start unverified), 32385, 56235, 63809, 73524
+    if (on < "2016-06-01") return 0.00017;
+    if (on < "2023-04-01") return 0.0005;
+    if (on < "2024-10-01") return 0.000625;
+    return on < "2026-04-01" ? 0.001 : 0.0015;
+  }
   if (segment === "commodity_future") return 0.0001;
   return 0.0005; // commodity_option
 }
@@ -134,10 +151,10 @@ const perCrore = (r: SeedRow) => Math.round((r.exchangeTxnPct + r.ipftPct) * 1e7
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 describe("the seed's exchange-charge epochs", () => {
-  it("the classes partition all 117 keys and 459 rows", () => {
+  it("the classes partition all 117 keys and 522 rows", () => {
     expect(CLASSES.reduce((a, c) => a + keysOf(c).length, 0)).toBe(byKey.size);
     expect(byKey.size).toBe(117);
-    expect(seed).toHaveLength(459);
+    expect(seed).toHaveLength(522);
   });
 
   it.each(CLASSES)("$name: windows, transaction charge, IPFT and the per-crore total on every key", (c) => {

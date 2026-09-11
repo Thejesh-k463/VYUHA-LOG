@@ -230,8 +230,9 @@ describe("cross-exchange fills — one holding, two venues", () => {
     expect(out).toHaveLength(1);
     expect(out[0].kind).toBe("closed");
     expect(out[0].basisUnknown).toBe(false);
-    // The position's exchange stays the first leg's — the note carries the rest.
-    expect(out[0].exchange).toBe("NSE");
+    // The venue of most of the row's own turnover (R71); the cross-exchange note
+    // carries the rest. NSE buy ₹20,000 < BSE sell ₹21,000, so the row is BSE.
+    expect(out[0].exchange).toBe("BSE");
     expect(out[0].notes).toHaveLength(1);
     expect(out[0].notes[0]).toBe(
       "Bought on NSE, sold on BSE — one holding, the exchange is where the fill happened.",

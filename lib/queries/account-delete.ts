@@ -22,6 +22,7 @@ import {
   brokerReference,
 } from "@/lib/db/schema";
 import { recordAudit, recordAuditMany } from "@/lib/audit";
+import { carryUnfetchedOnMerge } from "@/lib/import/dhan-unfetched";
 import { writeTrashSnapshot, stashAttachmentFiles } from "@/lib/trash";
 import { forEachIdChunk, collectIdChunks } from "./delete";
 
@@ -765,6 +766,19 @@ export function deleteAccount(opts: {
         // real payments (b/f-lot semantics), and the table carries no unique
         // key, so there is no such thing as a colliding challan.
         tx.update(advanceTaxChallans).set({ accountId: targetId }).where(eq(advanceTaxChallans.accountId, accountId)).run();
+
+        // R10 (v4.3.0 fix wave 1): the source's kept "not fetched" Dhan notices
+        // follow its trades, whatever the connections choice — the fact is
+        // about the BOOK (lib/import/dhan-unfetched.ts). One append-only row
+        // per span names the target; the insert throws, so a failure aborts
+        // the merge rather than dropping the notice.
+        carryUnfetchedOnMerge(tx, {
+          fromAccountId: accountId,
+          toAccountId: targetId,
+          fromName: account.name,
+          toName: r.target!.name,
+          source,
+        });
 
         if (connections === "move") {
           // UNIQUE(account_id, broker): a broker the target already has keeps

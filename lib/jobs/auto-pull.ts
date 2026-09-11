@@ -3,11 +3,12 @@ import { db } from "@/lib/db";
 import { brokerConnections, settings as settingsTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { encryptSecret, readSecret } from "@/lib/vault";
-import { recordAudit, recordAuditMany } from "@/lib/audit";
+import { recordAudit } from "@/lib/audit";
 import { toIst } from "@/lib/domain/trading-day";
 import { previewParsedFile, commitParsedFile } from "@/lib/import/commit";
 import { angelOneLogin, fetchAngelTradeBook, normalizeAngelTrades, toParsedFile as angelToParsedFile } from "@/lib/import/api/angelone";
 import {
+  catchUpAfter,
   catchUpRange,
   dhanImportSource,
   dhanTotpEnrolled,
@@ -15,6 +16,7 @@ import {
   type DhanHistoryRead,
   type DhanUnfetchedSpan,
 } from "@/lib/import/api/dhan";
+import { keepUnfetched, keepUnfetchedAndStamp } from "@/lib/import/dhan-unfetched";
 import { toParsedFile as upstoxToParsedFile, normalizeUpstoxTrades, fetchUpstoxTrades } from "@/lib/import/api/upstox";
 
 // Opt-in auto-pull on launch (v3.6, WS3) — the auto-MTM render-guard pattern,
@@ -97,6 +99,9 @@ export interface AutoPullEntry {
   status: AutoPullStatus;
   detail: string;
   newCount: number;
+  /** C-6 on a "nothingNew" pull: the sweep line's words for the Dhan history
+   *  it did not read (an "imported" entry carries them in `detail`). */
+  notFetched?: string;
 }
 
 export interface AutoPullOutcome {
@@ -114,38 +119,35 @@ const labelOf = (broker: string) => LABELS[broker] ?? broker;
 type ConnRow = typeof brokerConnections.$inferSelect;
 
 /**
- * C-6 (v4.3.0 fix wave C): keep what a background Dhan commit did not read —
- * the SAME append-only audit record the manual route writes
- * (app/api/import/broker/route.ts, `recordUnfetched`, where the store is
- * explained), so the Dhan card lists a clamp from a sweep exactly as it lists
- * one from a click. tests/fix-wave-c-import.test.ts reads this writer back
+ * C-6: what a background Dhan pull did not read is kept through the SAME
+ * store and writers the manual route uses (lib/import/dhan-unfetched.ts, where
+ * the store is explained), so the Dhan card lists a clamp from a sweep exactly
+ * as it lists one from a click. tests/fix-wave-c-import.test.ts reads it back
  * through the route's GET.
  */
-function recordUnfetched(conn: ConnRow, spans: readonly DhanUnfetchedSpan[]): void {
-  if (spans.length === 0) return;
-  recordAuditMany(
-    spans.map((s) => ({
-      entity: "settings" as const,
-      entityId: conn.id,
-      action: "create" as const,
-      summary: s.message,
-      before: null,
-      after: { notice: "dhan-unfetched", broker: "dhan", accountId: conn.accountId, from: s.from, to: s.to, reason: s.reason, clearedAt: null },
-      source: "auto-pull",
-    })),
-  );
-}
 
-/** The sweep line's words for the same spans — plain, and with the remedy. */
+/** The sweep line's words for the same spans — plain, and with the remedy.
+ *  F-L1-3a: the remedy starts the day AFTER the last pull's own day; that day
+ *  is stated as a fact, never named as something to import. */
 function unfetchedDetail(spans: readonly DhanUnfetchedSpan[]): string {
   if (spans.length === 0) return "";
-  const parts = spans.map((s) =>
-    s.reason === "range-cap"
-      ? `fills from ${s.from} to ${s.to} not fetched`
-      : `fills between ${s.from} and ${s.to} may be missing (page limit)`,
-  );
-  return ` (${parts.join("; ")} — import a Dhan tradebook for those dates)`;
+  const parts = spans.map((s) => {
+    const fact =
+      s.reason === "range-cap"
+        ? `fills from ${s.from} to ${s.to} not fetched`
+        : `fills from ${s.from} to ${s.to} not read (page limit)`;
+    const remedy = s.remedy ? ` — import a Dhan tradebook for ${s.remedy.from} to ${s.remedy.to}` : "";
+    const partial = s.partial
+      ? `; fills on ${s.partial.day} after ${s.partial.after ? `${s.partial.after} IST` : "the last pull"} not fetched — a tradebook for ${s.partial.day} would repeat the fills already imported from it`
+      : "";
+    return `${fact}${remedy}${partial}`;
+  });
+  return ` (${parts.join("; ")})`;
 }
+
+/** R19: the detail when the notice cannot be saved — the pull then commits nothing. */
+const unsavedDetail = (e: unknown) =>
+  `the notice naming the Dhan history this pull did not read could not be saved (${e instanceof Error ? e.message : "unknown error"}) — nothing was committed`;
 
 /** One eligible connection's pull → preview → commit, 409-shapes skipped.
  *  Injectable for tests; the default does the real adapter work. */
@@ -168,6 +170,10 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
   let parsed;
   /** C-6: Dhan history this pull did not read — kept only if it commits. */
   let unfetched: readonly DhanUnfetchedSpan[] = [];
+  /** R42: this pull's lastPullAt — Dhan's pre-/positions instant (`onCutoff`),
+   *  else when the pull started. Never a post-commit clock. */
+  const pulledAt = new Date().toISOString();
+  let cutoff = null as string | null;
   try {
     if (conn.broker === "angelone") {
       if (!auth?.clientCode || !auth?.pin || !auth?.totpSecret) {
@@ -212,20 +218,25 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       // today) leaves the daily pull byte-identical to what it always did.
       // C-6: a clamp (range.unfetched) or a page-capped walk (onHistory) is
       // named in the warnings and handed back as spans, as in the route.
+      // R42: `after` drops the fills the last pull's snapshot already stored.
       const range = catchUpRange(conn.lastPullAt, today);
       let read: DhanHistoryRead | null = null;
-      const trades = await source.fetchTrades(
-        range
+      const trades = await source.fetchTrades({
+        ...(range
           ? {
               from: range.from,
               to: range.to,
-              onHistory: (h) => {
+              after: catchUpAfter(conn.lastPullAt, today),
+              onHistory: (h: DhanHistoryRead) => {
                 read = h;
               },
             }
-          : {},
-      );
-      const pulled = dhanToParsedFile(trades, range, read);
+          : {}),
+        onCutoff: (iso) => {
+          cutoff = iso;
+        },
+      });
+      const pulled = dhanToParsedFile(trades, range, read, conn.lastPullAt);
       unfetched = pulled.unfetched;
       parsed = pulled;
     } else if (conn.broker === "upstox") {
@@ -237,24 +248,45 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
     return { ...base, status: "error", detail: (e as Error).message };
   }
 
+  const stamp = cutoff ?? pulledAt;
+  const owner = { connId: conn.id, accountId: conn.accountId, source: "auto-pull" };
   // Same file naming as the manual pull, so dedup and batch history line up.
   const fileName = `${conn.broker}-api-${today}`;
   try {
     const pre = previewParsedFile(parsed, null, conn.accountId, fileName);
     const cls = classifyPreview(pre);
     if (cls === "nothingNew") {
-      return { ...base, status: "nothingNew", detail: pre.summary.total > 0 ? "already in the journal" : "no trades today" };
+      // R27 (v4.3.0 fix wave 1): nothing new — for either total — is still a
+      // successful read. Its spans and the stamp land in ONE transaction.
+      try {
+        keepUnfetchedAndStamp(unfetched, owner, stamp);
+      } catch (e) {
+        return { ...base, status: "error", detail: unsavedDetail(e) };
+      }
+      const notFetched = unfetchedDetail(unfetched);
+      return {
+        ...base,
+        status: "nothingNew",
+        detail: `${pre.summary.total > 0 ? "already in the journal" : "no trades today"}${notFetched}`,
+        ...(notFetched ? { notFetched } : {}),
+      };
     }
     if (cls === "collision") {
       // The manual flow's needsForce 409. Auto-pull must never force past a
       // collision — these rows wait for the Import screen.
       return { ...base, status: "collision", detail: "collision — review in Import" };
     }
+    // R19 (v4.3.0 fix wave 1): the unread spans FIRST, with a write that
+    // throws; a failure commits nothing and leaves the stamp where it was.
+    try {
+      keepUnfetched(unfetched, owner);
+    } catch (e) {
+      return { ...base, status: "error", detail: unsavedDetail(e) };
+    }
     const res = commitParsedFile(parsed, fileName, null, conn.accountId);
-    // C-6: keep the unread spans BEFORE lastPullAt moves past them.
-    recordUnfetched(conn, unfetched);
+    // R42: the stamp is the instant taken before /v2/positions was read.
     db.update(brokerConnections)
-      .set({ lastPullAt: new Date().toISOString() })
+      .set({ lastPullAt: stamp })
       .where(eq(brokerConnections.id, conn.id))
       .run();
     // "+N trades" is what the commit ADDED — the manual pull's "N added" — not
@@ -322,7 +354,7 @@ export async function runAutoPull(now = new Date(), pullOne: PullOne = realPullO
           .map((e) => {
             const what =
               e.status === "imported" ? e.detail
-              : e.status === "nothingNew" ? "nothing new"
+              : e.status === "nothingNew" ? `nothing new${e.notFetched ?? ""}`
               : e.status === "collision" ? "skipped (collision — review in Import)"
               : `failed (${e.detail})`;
             return `${labelOf(e.broker)} ${what}`;

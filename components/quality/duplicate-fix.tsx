@@ -94,6 +94,11 @@ export function DuplicateFix({
   // filter under the React Compiler (AGENTS.md).
   const [target, setTarget] = React.useState<Target | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // R12 — the button that opened the confirm. The dialog opens from state
+  // with no DialogTrigger, so Radix's own close restore focuses a null
+  // triggerRef and keyboard focus fell to <body>. A ref, not state: it is
+  // written in the click handler, read in onCloseAutoFocus, and never renders.
+  const openerRef = React.useRef<HTMLButtonElement | null>(null);
 
   // U-1 — `busy` is cleared in a `finally`. Without it a thrown action left
   // `busy` true for ever: Confirm disabled, Cancel disabled, and
@@ -192,7 +197,10 @@ export function DuplicateFix({
                           size="sm"
                           variant="outline"
                           disabled={busy}
-                          onClick={() => setTarget({ group: g, account: a })}
+                          onClick={(e) => {
+                            openerRef.current = e.currentTarget;
+                            setTarget({ group: g, account: a });
+                          }}
                         >
                           Remove the copy in {a.name}
                         </Button>
@@ -218,7 +226,13 @@ export function DuplicateFix({
           if (!v && !busy) setTarget(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="max-w-md"
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            openerRef.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <TriangleAlert className="size-4 text-warning" />

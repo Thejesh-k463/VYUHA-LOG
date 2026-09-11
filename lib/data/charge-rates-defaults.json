@@ -1,7 +1,7 @@
 {
   "asOf": "2026-09-05",
   "what": "DATED statutory + broker rate epochs, in the same fraction convention as the charge_config table and the ChargeRates type (0.1% => 0.001). This file is a dated REFERENCE table for the sizing calculators and for seeding review — invariant 3 stands: the charges engine reads rates only from charge_config, and lib/risk/sizing.ts never feeds this file to the engine on its own. A caller passes a rates object in.",
-  "why": "STT has moved in three consecutive budgets (1 Oct 2024 and 1 Apr 2026 both changed F&O rates). A book that spans a change must be priced at the rate that applied on each trade's own date, so every row carries effectiveFrom and effectiveTo (exclusive).",
+  "why": "F&O STT has moved five times: futures on 1 Jun 2013, options on 1 Jun 2016, and both on 1 Apr 2023, 1 Oct 2024 and 1 Apr 2026. A book that spans a change must be priced at the rate that applied on each trade's own date, so every row carries effectiveFrom and effectiveTo (exclusive). Each epoch names its own sources, and verified is true only where an NSE circular (a primary source) is cited.",
   "broker": "zerodha",
   "plan": "default",
   "exchange": "NSE",
@@ -17,7 +17,12 @@
       "effectiveFrom": "1970-01-01",
       "effectiveTo": null,
       "verified": true,
-      "note": "Equity delivery STT 0.1% on both sides has not moved across the epochs covered here.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX20990.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "Equity delivery STT 0.1% on both sides, from 1 Jul 2012 (FATAX20990: 0.125% -> 0.1% for purchaser and seller) and unchanged by FATAX63809 and FATAX73524 (rows 1 and 2). Before 1 Jul 2012 it was 0.125% on both sides; neither this table nor the rate card carries that earlier rate yet.",
       "rates": {
         "brokerageFlat": 0,
         "brokeragePct": 0,
@@ -41,6 +46,11 @@
       "effectiveFrom": "1970-01-01",
       "effectiveTo": null,
       "verified": true,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "Intraday (a sale settled otherwise than by actual delivery) STT 0.025% on the sale, as FATAX63809 and FATAX73524 row 3 state (No Change). Its earlier history is not verified here.",
       "rates": {
         "brokerageFlat": null,
         "brokeragePct": 0.0003,
@@ -62,9 +72,68 @@
     {
       "segment": "future",
       "effectiveFrom": "1970-01-01",
+      "effectiveTo": "2013-06-01",
+      "verified": false,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX23500.pdf"
+      ],
+      "note": "Futures STT 0.017% on the sale until 31 May 2013 (FATAX23500). When this rate began (Finance Act 2008) is NOT verified: NSE/F&A/10706 returns 404, so the rate is extended back to 1970 (owner ruling C-8: the earliest verified schedule applies, and the gap is recorded).",
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.00017,
+        "sttSide": "sell",
+        "exchangeTxnPct": 1.83e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "future",
+      "effectiveFrom": "2013-06-01",
+      "effectiveTo": "2023-04-01",
+      "verified": true,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX23500.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX56235.pdf"
+      ],
+      "note": "Finance Act 2013: futures STT 0.017% -> 0.01% from 1 Jun 2013 (FATAX23500), in force until 31 Mar 2023 (FATAX56235).",
+      "rates": {
+        "brokerageFlat": null,
+        "brokeragePct": 0.0003,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.0001,
+        "sttSide": "sell",
+        "exchangeTxnPct": 1.83e-05,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "future",
+      "effectiveFrom": "2023-04-01",
       "effectiveTo": "2024-10-01",
       "verified": true,
-      "note": "Futures STT before the FY25 budget hike.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX56235.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf"
+      ],
+      "note": "Finance Act 2023: futures STT 0.01% -> 0.0125% from 1 Apr 2023 (FATAX56235).",
       "rates": {
         "brokerageFlat": null,
         "brokeragePct": 0.0003,
@@ -88,7 +157,11 @@
       "effectiveFrom": "2024-10-01",
       "effectiveTo": "2026-04-01",
       "verified": true,
-      "note": "FY25 budget: futures STT 0.0125% -> 0.02%.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "FY25 budget: futures STT 0.0125% -> 0.02% from 1 Oct 2024 (FATAX63809).",
       "rates": {
         "brokerageFlat": null,
         "brokeragePct": 0.0003,
@@ -112,7 +185,10 @@
       "effectiveFrom": "2026-04-01",
       "effectiveTo": null,
       "verified": true,
-      "note": "Budget 2026: futures STT 0.02% -> 0.05%, effective 1 Apr 2026.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "Budget 2026: futures STT 0.02% -> 0.05%, effective 1 Apr 2026 (FATAX73524).",
       "rates": {
         "brokerageFlat": null,
         "brokeragePct": 0.0003,
@@ -134,9 +210,69 @@
     {
       "segment": "index_option",
       "effectiveFrom": "1970-01-01",
+      "effectiveTo": "2016-06-01",
+      "verified": false,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX23500.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX27711.pdf"
+      ],
+      "note": "Options STT is charged on PREMIUM, sell side: 0.017% (FATAX23500, FATAX27711). When this rate began (Finance Act 2008) is NOT verified: NSE/F&A/10706 returns 404, so the rate is extended back to 1970 (owner ruling C-8: the earliest verified schedule applies, and the gap is recorded).",
+      "rates": {
+        "brokerageFlat": 20,
+        "brokeragePct": 0,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.00017,
+        "sttSide": "sell",
+        "exchangeTxnPct": 0.0003553,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "index_option",
+      "effectiveFrom": "2016-06-01",
+      "effectiveTo": "2023-04-01",
+      "verified": true,
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX32385.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX56235.pdf"
+      ],
+      "note": "Finance Act 2016: options STT 0.017% -> 0.05% of premium from 1 Jun 2016 (FATAX32385), in force until 31 Mar 2023 (FATAX56235).",
+      "rates": {
+        "brokerageFlat": 20,
+        "brokeragePct": 0,
+        "brokerageCap": 20,
+        "brokerageFloor": 0,
+        "sttPct": 0.0005,
+        "sttSide": "sell",
+        "exchangeTxnPct": 0.0003553,
+        "sebiPct": 1e-06,
+        "stampPct": 3e-05,
+        "ipftPct": 0,
+        "gstPct": 0.18,
+        "dpCharge": 0,
+        "dpPct": 0,
+        "dpGstApplicable": false,
+        "dpMinValue": 0
+      }
+    },
+    {
+      "segment": "index_option",
+      "effectiveFrom": "2023-04-01",
       "effectiveTo": "2024-10-01",
       "verified": true,
-      "note": "Options STT is charged on PREMIUM, sell side. Rate before the FY25 budget hike.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX56235.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf"
+      ],
+      "note": "Finance Act 2023: options STT 0.05% -> 0.0625% of premium from 1 Apr 2023 (FATAX56235).",
       "rates": {
         "brokerageFlat": 20,
         "brokeragePct": 0,
@@ -160,7 +296,11 @@
       "effectiveFrom": "2024-10-01",
       "effectiveTo": "2026-04-01",
       "verified": true,
-      "note": "FY25 budget: options STT 0.0625% -> 0.10% of premium.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX63809.pdf",
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "FY25 budget: options STT 0.0625% -> 0.10% of premium from 1 Oct 2024 (FATAX63809).",
       "rates": {
         "brokerageFlat": 20,
         "brokeragePct": 0,
@@ -184,7 +324,10 @@
       "effectiveFrom": "2026-04-01",
       "effectiveTo": null,
       "verified": true,
-      "note": "Budget 2026: options STT 0.10% -> 0.15% of premium, effective 1 Apr 2026.",
+      "sources": [
+        "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+      ],
+      "note": "Budget 2026: options STT 0.10% -> 0.15% of premium, effective 1 Apr 2026 (FATAX73524).",
       "rates": {
         "brokerageFlat": 20,
         "brokeragePct": 0,

@@ -299,4 +299,42 @@ describe("Kite exchange stamps and verifies WHOSE session it minted", () => {
     expect((await pullWith("rt1")).status).toBe(200);
     expect(storedAuth().kiteUserId).toBe("CD5678");
   });
+
+  /**
+   * R9 (v4.3.0 fix wave 1): R4a's one-connection-per-client refusal could not
+   * fire for Zerodha — the save stores only {apiSecret}, so SWING's row was a
+   * `secret` identity that never equals PRIMARY's `id` one, and the exchange
+   * then stamped the SAME Kite user into a second account with no rival check.
+   */
+  it("R9: SWING's exchange returns PRIMARY's user_id → 409 naming PRIMARY's account; nothing stamped, cached or pulled", async () => {
+    t.db
+      .insert(t.schema.accounts)
+      .values([
+        { id: 901, name: "R9 primary", isDefault: false },
+        { id: 902, name: "R9 swing", isDefault: false },
+      ])
+      .onConflictDoNothing()
+      .run();
+    const seed = t.sqlite.prepare(
+      "INSERT INTO broker_connections (account_id, broker, api_key, access_token, auth_json) VALUES (?, 'zerodha', 'kitekey123', ?, ?)",
+    );
+    seed.run(901, "tok-primary", JSON.stringify({ apiSecret: "apisecret789", kiteUserId: "AB1234" }));
+    seed.run(902, "tok-swing", JSON.stringify({ apiSecret: "apisecret789" }));
+    const paths = stubKite("AB1234", "tok-new");
+
+    const res = await post({ action: "pull", broker: "zerodha", mode: "commit", accountId: 902, requestToken: "rt9" });
+    expect(res.status).toBe(409);
+    const json = (await res.json()) as { ok: boolean; error?: string; message: string };
+    expect(json.ok).toBe(false);
+    expect(json.message).toContain('account "R9 primary"');
+    expect(json.error).toBe(json.message);
+    // Refused BEFORE the stamp, the token cache and the fetch.
+    expect(paths).toEqual(["/session/token"]);
+    const swing = t.sqlite
+      .prepare("SELECT access_token, auth_json FROM broker_connections WHERE account_id = 902 AND broker = 'zerodha'")
+      .get() as { access_token: string; auth_json: string };
+    expect(JSON.parse(decrypt(swing.auth_json))).toEqual({ apiSecret: "apisecret789" });
+    expect(decrypt(swing.access_token)).toBe("tok-swing");
+    expect((t.sqlite.prepare("SELECT COUNT(*) AS n FROM trades WHERE account_id = 902").get() as { n: number }).n).toBe(0);
+  });
 });

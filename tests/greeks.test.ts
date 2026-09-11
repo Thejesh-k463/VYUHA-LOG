@@ -1,5 +1,29 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { blackScholes, positionGreeks, portfolioGreeks, resolveIvSource, DEFAULT_IV_PCT } from "@/lib/analytics/greeks";
+
+/**
+ * R101 (v4.3.0 fix wave 1). The Risk panel's footnote and this module's header
+ * said Indian stock options are American-style. NSE Clearing's settlement page
+ * says the exercise style is European and "Final Exercise is Automatic on
+ * expiry" (SEBI CIR/DNPD/6/2010, 27 Oct 2010). BSE stock options are not
+ * verified, so the copy names NSE and leaves BSE unnamed.
+ */
+describe("the exercise-style statement is the exchange's (R101)", () => {
+  const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, "..", rel), "utf8");
+
+  it("the Greeks footnote and the module header say NSE stock options are European-style", () => {
+    const panel = read("components/risk/greeks-panel.tsx");
+    const mod = read("lib/analytics/greeks.ts");
+    for (const [rel, src] of [["greeks-panel.tsx", panel], ["greeks.ts", mod]] as const) {
+      expect(src, `${rel} still calls stock options American-style`).not.toMatch(/stock options are\s+American-style/i);
+      expect(src, `${rel} names BSE's exercise style, which is not verified`).not.toMatch(/\bBSE stock options are\b/i);
+    }
+    expect(panel).toMatch(/NSE stock options are\s+European-style/);
+    expect(mod).toMatch(/NSE stock options are\s+European-style/);
+  });
+});
 
 describe("blackScholes — put-call parity (C - P = S - K·e^-rT, holds for any inputs)", () => {
   it("holds for an ATM 30d option", () => {

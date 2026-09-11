@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { openTempDb, tradeRow, type TempDb } from "./helpers/temp-db";
+import * as nodeFs from "node:fs";
+import * as nodePath from "node:path";
 
 // ─── PURE HALVES, STATICALLY IMPORTED ────────────────────────────────────────
 // Nothing here reaches `@/lib/db`: the components are client modules whose graph
@@ -25,6 +27,7 @@ import {
   customName,
   helpHref,
   netTone,
+  optionNetPremium,
   withholdForFree,
   foldShelfPost,
 } from "@/components/strategies/strategy-copy";
@@ -509,21 +512,98 @@ describe("S4 — the three CapLabels each reach the card as their own sentence",
   });
 });
 
-describe("S1b — netTone reads the CATALOGUE, never the sign of a group holding the underlying", () => {
-  it("a covered call is a CREDIT structure even though its netPremium is a large debit", () => {
+describe("S1b — netTone reads the OPTION premium the tile prints, never the sign of the position's cash", () => {
+  it("a covered call collected at a credit prints Net credit, though its netPremium is a large debit", () => {
     const legs = legsFor(getStrategyDef("covered-call")!);
     const [g] = buildStrategies(legs);
     expect(g.strategyId).toBe("covered-call");
     expect(g.netPremium).toBeLessThan(0); // the underlying's entry cash dominates
     expect(g.isCredit).toBe(false);
-    expect(netTone(g.strategyId, g.netPremium, g.ulLegs.length > 0)).toBe("credit");
-    expect(textOf(cardHtml(legs, true))).toContain("Net credit");
+    expect(optionNetPremium(g)).toBeGreaterThan(0);
+    expect(netTone(g.strategyId, optionNetPremium(g))).toBe("credit");
+    // K3-M5: the CARD hands netTone the tile's own number. Handed
+    // g.netPremium, the same card prints "Net debit" beside a "+" tile.
+    const text = textOf(cardHtml(legs, true));
+    expect(text).toContain("Net credit");
+    expect(text).not.toContain("Net debit");
   });
 
   it("a withheld group has no catalogue row left to ask, so it prints no chip at all", () => {
     const text = textOf(cardHtml(legsFor(getStrategyDef("covered-call")!), false));
     expect(text).not.toContain("Net credit");
     expect(text).not.toContain("Net debit");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v4.3.0 fix wave 1 (W1-STRAT) — the card's figures, each at its own precision
+   and with ONE sign: B1's group rendered through B4's card, read off the DOM.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("the card's tiles: breakevens at paise, one sign on the premium, chip = tile (R66/R53, K3-M4, R67/R68, R104)", () => {
+  /** The value line of one tile, read from the rendered card. */
+  const tile = (legs: PositionedLeg[], label: string): string => {
+    const esc = label.replace(/[()]/g, "\\$&");
+    const m = textOf(cardHtml(legs, true)).match(new RegExp(`\\|${esc}\\|([^|]*)\\|`));
+    return m ? m[1] : "(no tile)";
+  };
+
+  it("R66: a breakeven is printed to the paisa — IDEA 10 CE @ ₹0.45 breaks even at 10.45, not 10", () => {
+    expect(tile([ce({ symbol: "IDEA", strike: 10, premium: 0.45, qty: 40000 })], "Breakeven(s)")).toBe("10.45");
+    expect(tile([ce({ strike: 100, premium: 1.35, qty: 75 })], "Breakeven(s)")).toBe("101.35");
+  });
+
+  it("R53: the payoff chart's breakeven label and the card use the same 2-decimal formatter", () => {
+    const root = nodePath.resolve(__dirname, "..");
+    const chart = nodeFs.readFileSync(nodePath.join(root, "components/reports/payoff-chart.tsx"), "utf8");
+    const card = nodeFs.readFileSync(nodePath.join(root, "components/strategies/strategy-card.tsx"), "utf8");
+    expect(chart, "the chart rounds a paise breakeven to the rupee").not.toMatch(/Math\.round\(b\)/);
+    expect(chart).toContain("num(b, 2)");
+    expect(card, "the card rounds a paise breakeven to the rupee").not.toMatch(/Math\.round\(b\)/);
+  });
+
+  it("K3-M4: a sub-rupee premium prints ₹0 with no sign — never '+₹0' or '-₹0'", () => {
+    const credit = [ce({ premium: 10, qty: 1 }), ce({ strike: 24500, side: "short", premium: 10.3, qty: 1 })];
+    const debit = [ce({ premium: 10.3, qty: 1 }), ce({ strike: 24500, side: "short", premium: 10, qty: 1 })];
+    expect(tile(credit, "Net premium")).toBe("₹0");
+    expect(tile(debit, "Net premium")).toBe("₹0");
+    // …and a real figure keeps its one sign.
+    expect(tile([ce({ premium: 40 }), ce({ strike: 24500, side: "short", premium: 100 })], "Net premium")).toBe("+₹4,500");
+    expect(tile([ce({ premium: 100 }), ce({ strike: 24500, side: "short", premium: 40 })], "Net premium")).toBe("-₹4,500");
+  });
+
+  it("R67: a zero-cost structure carries no credit/debit chip beside its ₹0 tile", () => {
+    const synthetic = [ce({ premium: 100 }), pe({ side: "short", premium: 100 })];
+    expect(buildStrategies(synthetic)[0].strategyId).toBe("synthetic-long-stock");
+    const text = textOf(cardHtml(synthetic, true));
+    expect(text).not.toContain("Net debit");
+    expect(text).not.toContain("Net credit");
+    expect(tile(synthetic, "Net premium")).toBe("₹0");
+  });
+
+  it("R68: a bull call spread legged in at a CREDIT says Net credit, as its '+' tile does", () => {
+    const legged = [ce({ premium: 40 }), ce({ strike: 24500, side: "short", premium: 100 })];
+    expect(buildStrategies(legged)[0].strategyId).toBe("bull-call-spread");
+    const text = textOf(cardHtml(legged, true));
+    expect(text).toContain("Net credit");
+    expect(text).not.toContain("Net debit");
+  });
+
+  it("R104: a future that settles before the short call blanks both figures and says why", () => {
+    const fut = (expiry: string | null): PositionedLeg => ({
+      symbol: "NIFTY",
+      expiry,
+      kind: "UL",
+      strike: 0,
+      side: "long",
+      qty: 75,
+      premium: 24000,
+    });
+    const call = ce({ side: "short", strike: 24500, expiry: "2026-10-29", premium: 180 });
+    const text = textOf(cardHtml([fut("2026-09-24"), call], true));
+    expect(text).toContain(STRATEGY_COPY.underlyingExpiresFirstNote);
+    expect(text).toContain(`|Max loss|${EM_DASH}|Not computed|`);
+    expect(textOf(cardHtml([fut(null), call], true))).not.toContain(STRATEGY_COPY.underlyingExpiresFirstNote);
   });
 });
 

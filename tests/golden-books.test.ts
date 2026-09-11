@@ -180,8 +180,9 @@ const GOLDEN: Golden[] = [
     reference: null,
     charges: { mode: "engine" },
     // C-8: charges 151,916.35 → 152,074.08, net 751,071.05 → 750,913.32; no broker-stated charges — NSE cash from 1 Mar 2026 is FA73061's Rs 306.99 + IPFT 0.01/crore (was 297 + 0.01).
-    commit: { net: 750913.32, gross: 902987.4, charges: 152074.08 },
-    note: "Equity tradebook, 3,530 fills / 58 symbols → 79 positions. No reference: a tradebook states no P&L and no charges (the engine's 152,074.08 is an estimate), and the Console P&L on this machine covers a different account and period.",
+    // R71 (4.3.0): charges 152,074.08 → 152,143.88, net 750,913.32 → 750,843.52, gross unchanged — a row's exchange is now the venue of most of its OWN turnover, not its security's first leg: 5 rows NSE → BSE, 3 BSE → NSE (NSE/BSE 52/27 → 50/29).
+    commit: { net: 750843.52, gross: 902987.4, charges: 152143.88 },
+    note: "Equity tradebook, 3,530 fills / 58 symbols → 79 positions. No reference: a tradebook states no P&L and no charges (the engine's 152,143.88 is an estimate), and the Console P&L on this machine covers a different account and period.",
   },
   {
     file: "zerodha-tradebook-2026-04-01_2026-08-11.xlsx",
@@ -190,7 +191,8 @@ const GOLDEN: Golden[] = [
     reference: null,
     charges: { mode: "engine" },
     // C-8: charges 51,606.06 → 51,650.91, net 470,177.54 → 470,132.69; no broker-stated charges — NSE cash from 1 Mar 2026 at FA73061's rate.
-    commit: { net: 470132.69, gross: 521783.6, charges: 51650.91 },
+    // R71 (4.3.0): charges 51,650.91 → 51,614.70, net 470,132.69 → 470,168.90, gross unchanged — the row's own venue: 1 row NSE → BSE, 2 BSE → NSE (21/7 → 22/6).
+    commit: { net: 470168.9, gross: 521783.6, charges: 51614.7 },
     note: "The 1,554-fill tradebook of tests/private-reconciliation.test.ts (28 positions, 11 opening sells with no P&L, fill times throughout). No reference for the same reason as the row above.",
   },
 
@@ -360,7 +362,8 @@ const GOLDEN: Golden[] = [
     reference: null,
     charges: { mode: "engine" },
     // C-8: charges 102,300.25 → 102,706.37, net −531,351.44 → −531,757.56; no charges reference (an order list states none) — FY25-26 NSE cash now carries IPFT Rs 10/crore to Feb 2026, FA73061's rate in March.
-    commit: { net: -531757.56, gross: -429051.19, charges: 102706.37 },
+    // R71 (4.3.0): charges 102,706.37 → 102,671.60, net −531,757.56 → −531,722.79, gross unchanged — the row's own venue: 26 rows NSE → BSE, 30 BSE → NSE (411/72 → 415/68).
+    commit: { net: -531722.79, gross: -429051.19, charges: 102671.6 },
     note: "Order history FY25-26, 952 executed orders → 483 positions. No reference: Groww's own P&L for the same year states realised −637,838 over LOTS, including ones bought before this window (16 opening sells here carry no basis, invariant 6), and its charges 152,274.81 include ₹45,891.62 of MTF interest and pledge fees the engine does not estimate from an order list.",
   },
   {
@@ -669,10 +672,12 @@ const EXCHANGE_LINE: ExchangeLine[] = [
   // The txn residual (+19.80, 0.22%) is NOT explained; the bound states it rather than hiding it.
   { file: "zerodha-taxpnl-2024-04-01_2025-03-31.xlsx", family: "fno", head: "txn", source: "rows", engine: 9220.99, stated: 9201.19, tol: 20 },
   { file: "zerodha-taxpnl-2024-04-01_2025-03-31.xlsx", family: "fno", head: "ipft", source: "rows", engine: 108.4, stated: 108.18, tol: 0.25 },
-  // DEFECT, UNEXPLAINED — handed to the 4.3.0 release audit: against Paytm's stated ETT the
-  // exchange line MOVED AWAY with C-8, +252.56 → +441.49 (engine 9,776.24 → 9,965.17), while
-  // the 5-month book of the same broker moved closer (−5,853.02 → −4,857.87). Pinned so it cannot drift.
-  { file: "paytm-tradebook-2026-08-01_2026-08-18.xlsx", family: "equity", head: "txn+ipft", source: "rows", engine: 9965.17, stated: 9523.68, gap: 441.49 },
+  // Paytm August, EXPLAINED (R71, 4.3.0 — was +441.49 "unexplained", engine 9,965.17). Each row is now priced at the
+  // venue of most of its OWN turnover (11 rows BSE → NSE), and the remaining +117.91 is measured per venue against the
+  // file's own ETT column: NSE fills bill 307.00/crore (engine per fill 6,994.93 vs 6,995.25, −0.32); BSE fills bill
+  // 350.31/crore against the seeded 375 (+178.20 on ₹7.22 crore); and −59.97 is the one-row limit — a row whose legs
+  // span both venues is priced at ONE (engine per row 9,641.59 vs per fill 9,701.56). Pinned exactly so it cannot drift.
+  { file: "paytm-tradebook-2026-08-01_2026-08-18.xlsx", family: "equity", head: "txn+ipft", source: "rows", engine: 9641.59, stated: 9523.68, gap: 117.91 },
 ];
 
 describe("the exchange line against the broker's own stated exchange figure (C-8)", () => {
@@ -702,6 +707,33 @@ describe("the exchange line against the broker's own stated exchange figure (C-8
     else expect(Math.abs(engine - stated)).toBeLessThanOrEqual(l.tol!);
     // Measured 38–247 ms locally (a parse plus two previews of up to 1,011 rows); the
     // Windows runner is >15× slower (AGENTS.md § Testing), so the 5 s default has no headroom.
+  }, 60_000);
+});
+
+// R71 (v4.3.0), the audit's own example pinned at POSITION level: ISIN
+// INE0OWZ01020 on 2026-08-06 opens with a ₹20.59L BSE buy, then ₹63.43L of NSE
+// buys and ₹66.15L of NSE sells. The scrip-day took its FIRST fill's exchange,
+// so both same-day round trips were stored as BSE and the engine's cross-check
+// priced NSE turnover at BSE's rate.
+describe("R71: a round trip filled on NSE is priced at NSE even when its day opened on BSE", () => {
+  it("INE0OWZ01020 · 2026-08-06: the closed rows are NSE and their computed exchange line is NSE's", async () => {
+    const file = "paytm-tradebook-2026-08-01_2026-08-18.xlsx";
+    const ctx = buildContext(file, fs.readFileSync(path.join(DIR, file)));
+    const parsed = await rankParsers(ctx)[0].parse(ctx);
+    const day = parsed.trades.filter((x) => x.isin === "INE0OWZ01020" && x.buyDate === "2026-08-06" && x.sellDate === "2026-08-06");
+    expect(day).toHaveLength(2);
+    const line = (trades: ParsedFile["trades"]) => {
+      const pv = commitMod.previewParsedFile({ ...parsed, reported: {}, trades: trades.map((x) => ({ ...x, reportedCharges: undefined })) }, null, 1);
+      const c = pv.reconciliation!.computed;
+      return { exchanges: pv.rows.map((r) => r.exchange), txn: r2(c.exchangeTxn + c.ipft) };
+    };
+    const got = line(day);
+    const atNse = line(day.map((x) => ({ ...x, exchangeHint: "NSE" as const })));
+    const atBse = line(day.map((x) => ({ ...x, exchangeHint: "BSE" as const })));
+    expect(got.exchanges).toEqual(["NSE", "NSE"]);
+    expect(got.txn).toBe(atNse.txn);
+    expect(got.txn).toBeLessThan(atBse.txn); // BSE's seeded rate is the higher one — the old figure
+    // A parse plus three previews of two rows; the 5 s default has no headroom on the Windows runner (AGENTS.md § Testing).
   }, 60_000);
 });
 
