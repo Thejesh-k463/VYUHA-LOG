@@ -126,7 +126,7 @@ describe("Manual entry", () => {
     expect(row.segment).toBe("index_option");
     expect(row.bucket).toBe("active");
     expect(row.optionType).toBe("CE");
-    expect(row.chargesTotal).toBeCloseTo(74.32, 2);
+    expect(row.chargesTotal).toBeCloseTo(74.45, 2); // no dates → priced today: NSE options 0.0355299% (FA73061)
     expect(row.setupTag).toBe("breakout");
     // duplicate guard
     expect(commit.commitManualTrade(t, {}).duplicate).toBe(true);

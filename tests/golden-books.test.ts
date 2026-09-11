@@ -168,9 +168,10 @@ const GOLDEN: Golden[] = [
     reportedPins: { charges: 3269.4101, realisedPnl: -67517.25, brokerage: 1340, sttCtt: 899, gst: 357.1643 },
     // DEFECT (by design until v3.9 reconciliation): the pinned charges are the ENGINE's
     // estimate, not the broker's. Zerodha states 3,269.41 for these very rows; the journal
-    // holds 3,183.73, 85.68 under. Pinned so the number cannot drift, NOT because it is right.
-    commit: { net: -70700.98, gross: -67517.25, charges: 3183.73 },
-    note: "Console P&L for F&O FY25-26, 22 symbol rows, no dates (the report states none). Same book as the FY25-26 tax P&L: gross agrees to the paisa. The Summary's Charges 3,269.4101 and per-head table now travel in `reported` (pinned above); the rows state no charges, so the journal holds the engine's 3,183.73 — ₹85.68 under the broker, visible beside it rather than hidden.",
+    // holds 3,193.75, 75.66 under. Pinned so the number cannot drift, NOT because it is right.
+    // C-8: charges 3,183.73 → 3,193.75, net −70,700.98 → −70,711.00; vs Zerodha's stated 3,269.41 CLOSER (−85.68 → −75.66) — no dates, so priced today at NSE FA73061's option rate.
+    commit: { net: -70711, gross: -67517.25, charges: 3193.75 },
+    note: "Console P&L for F&O FY25-26, 22 symbol rows, no dates (the report states none). Same book as the FY25-26 tax P&L: gross agrees to the paisa. The Summary's Charges 3,269.4101 and per-head table now travel in `reported` (pinned above); the rows state no charges, so the journal holds the engine's 3,193.75 — ₹75.66 under the broker, visible beside it rather than hidden.",
   },
   {
     file: "zerodha-tradebook-2026-04-01_2026-08-29.xlsx",
@@ -178,8 +179,9 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 3530, closed: 64, open: 4, openingSells: 11 },
     reference: null,
     charges: { mode: "engine" },
-    commit: { net: 751071.05, gross: 902987.4, charges: 151916.35 },
-    note: "Equity tradebook, 3,530 fills / 58 symbols → 79 positions. No reference: a tradebook states no P&L and no charges (the engine's 151,916.35 is an estimate), and the Console P&L on this machine covers a different account and period.",
+    // C-8: charges 151,916.35 → 152,074.08, net 751,071.05 → 750,913.32; no broker-stated charges — NSE cash from 1 Mar 2026 is FA73061's Rs 306.99 + IPFT 0.01/crore (was 297 + 0.01).
+    commit: { net: 750913.32, gross: 902987.4, charges: 152074.08 },
+    note: "Equity tradebook, 3,530 fills / 58 symbols → 79 positions. No reference: a tradebook states no P&L and no charges (the engine's 152,074.08 is an estimate), and the Console P&L on this machine covers a different account and period.",
   },
   {
     file: "zerodha-tradebook-2026-04-01_2026-08-11.xlsx",
@@ -187,7 +189,8 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 1554, closed: 15, open: 2, openingSells: 11 },
     reference: null,
     charges: { mode: "engine" },
-    commit: { net: 470177.54, gross: 521783.6, charges: 51606.06 },
+    // C-8: charges 51,606.06 → 51,650.91, net 470,177.54 → 470,132.69; no broker-stated charges — NSE cash from 1 Mar 2026 at FA73061's rate.
+    commit: { net: 470132.69, gross: 521783.6, charges: 51650.91 },
     note: "The 1,554-fill tradebook of tests/private-reconciliation.test.ts (28 positions, 11 opening sells with no P&L, fill times throughout). No reference for the same reason as the row above.",
   },
 
@@ -201,11 +204,13 @@ const GOLDEN: Golden[] = [
     reportedPins: { grossPnl: -1093133.238, totalCharges: 812563.1735, netPnl: -1905696.411, brokerage: 278939.23 },
     commit: { net: -1906334.64, gross: -1093771.47, charges: 812563.17 },
     segments: {
-      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, grossGap: -638.22, fileCharges: 92380.88, fileNet: -275670.2, engineCharges: 88802.27, engineNet: -272091.59 },
-      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, fileCharges: 719326.83, fileNet: -1629989.47, engineCharges: 452063.58, engineNet: -1362726.22 },
+      // C-8: engine 88,802.27 → 89,094.55 (net −272,091.59 → −272,383.87) vs the file's 92,380.88, CLOSER; its exchange line is +0.07 vs the Realised P&L's 7,610.05 (was −247.93).
+      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, grossGap: -638.22, fileCharges: 92380.88, fileNet: -275670.2, engineCharges: 89094.55, engineNet: -272383.87 },
+      // C-8: engine 452,063.58 → 453,210.04 (net −1,362,726.22 → −1,363,872.68) vs the file's 719,326.83, CLOSER; exchange line −0.13 vs the Realised P&L's 117,806.31 (was −971.88).
+      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, fileCharges: 719326.83, fileNet: -1629989.47, engineCharges: 453210.04, engineNet: -1363872.68 },
       commodity: { grossRef: 180.49, chargesRef: 855.48, netRef: -674.99, fileCharges: 855.46, fileNet: -674.97, engineCharges: 717.03, engineNet: -536.54 },
     },
-    note: "THE BOOK (owner ruling): Global Transactions report, account 1 — 1,431 bill lines (dd-mm-yyyy dates, read since 2026-09-04) → 1,286 positions: 1,283 closed, 2 open, 1 opening sell (SBI Funds Management, 37 shares, basis unknown — the footer implies ₹574/share). No gross reference at file level because that opening sell is IN the broker's gross (−1,093,133.24) and not in ours (−1,093,771.47): the −638.22 gap is pinned on the equity segment. F&O ties to the Realised P&L's segment row within ₹0.02 and Commodities to the paisa. Charges are the broker's own per-row figures, conserved to the footer's Total Charges 812,563.17 (−₹0.05 of apportioning + footer rounding rides on the last position). Per segment the GTR's charges sit within ₹1.03 / ₹0.08 / ₹0.02 of the Realised P&L's rows — the two Dhan statements, not Vyuha. The ENGINE's estimate for the same rows (charges stripped, previewed) is pinned beside: 541,582.88 in total vs the broker's 812,563.17 — the engine's brokerage is the seeded plan (delivery ₹0, intraday min(₹20, 0.03%), F&O ₹20 per order at the default order count), not the ₹278,939.23 Dhan actually billed, and that plan gap is most of the difference. One commodity contract (OPT CRUDEOIL 09 Jun 2026 8000 PE) is placed on NSE by the report and classified at MCX, noted on the trade and in a warning — the rate table prices commodity contracts at MCX only, as the Realised P&L parser already assumes.",
+    note: "THE BOOK (owner ruling): Global Transactions report, account 1 — 1,431 bill lines (dd-mm-yyyy dates, read since 2026-09-04) → 1,286 positions: 1,283 closed, 2 open, 1 opening sell (SBI Funds Management, 37 shares, basis unknown — the footer implies ₹574/share). No gross reference at file level because that opening sell is IN the broker's gross (−1,093,133.24) and not in ours (−1,093,771.47): the −638.22 gap is pinned on the equity segment. F&O ties to the Realised P&L's segment row within ₹0.02 and Commodities to the paisa. Charges are the broker's own per-row figures, conserved to the footer's Total Charges 812,563.17 (−₹0.05 of apportioning + footer rounding rides on the last position). Per segment the GTR's charges sit within ₹1.03 / ₹0.08 / ₹0.02 of the Realised P&L's rows — the two Dhan statements, not Vyuha. The ENGINE's estimate for the same rows (charges stripped, previewed) is pinned beside: 543,021.62 in total vs the broker's 812,563.17 — the engine's brokerage is the seeded plan (delivery ₹0, intraday min(₹20, 0.03%), F&O ₹20 per order at the default order count), not the ₹278,939.23 Dhan actually billed, and that plan gap is most of the difference. One commodity contract (OPT CRUDEOIL 09 Jun 2026 8000 PE) is placed on NSE by the report and classified at MCX, noted on the trade and in a warning — the rate table prices commodity contracts at MCX only, as the Realised P&L parser already assumes.",
   },
   {
     file: "dhan-gtr-2026-04-01_2026-09-03-a2.csv",
@@ -216,10 +221,12 @@ const GOLDEN: Golden[] = [
     reportedPins: { grossPnl: -152158.278, totalCharges: 81058.8768, netPnl: -233217.1548, brokerage: 24610.02 },
     commit: { net: -233883.18, gross: -152824.3, charges: 81058.88 },
     segments: {
-      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, grossGap: -665.98, fileCharges: 48489.06, fileNet: -150326.33, engineCharges: 50773.5, engineNet: -152610.77 },
-      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, fileCharges: 32569.82, fileNet: -83556.85, engineCharges: 14180.37, engineNet: -65167.4 },
+      // C-8: engine 50,773.50 → 50,932.89 (net −152,610.77 → −152,770.16) vs the file's 48,489.06, FURTHER (+2,284.44 → +2,443.83): the engine already overshot this equity book on its other heads (pre-existing, not diagnosed here); its exchange line is +4.08 vs the Realised P&L's 4,146.81 (was −130.99).
+      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, grossGap: -665.98, fileCharges: 48489.06, fileNet: -150326.33, engineCharges: 50932.89, engineNet: -152770.16 },
+      // C-8: engine 14,180.37 → 14,206.14 (net −65,167.40 → −65,193.17) vs the file's 32,569.82, CLOSER; exchange line +0.01 vs the Realised P&L's 3,342.23 (was −21.85).
+      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, fileCharges: 32569.82, fileNet: -83556.85, engineCharges: 14206.14, engineNet: -65193.17 },
     },
-    note: "Global Transactions report, account 2 — 209 bill lines → 178 positions (174 closed, 3 open, 1 opening sell: the same SBI Funds Management allotment, −665.98 pinned on equity). F&O ties to the Realised P&L within ₹0.01. Charges conserved to the footer's 81,058.88 (+₹0.02 rides on the last position). Equity charges 48,489.06 vs the Realised P&L's 48,311.04 — the ₹178.02 is Dhan's two statements disagreeing (the P&L export's footer says 81,058.88, the Realised P&L 80,880.89), already noted on the P&L row. Engine estimate beside the broker's: 64,953.87 vs 81,058.88, same plan-brokerage reason as account 1. No commodity rows in this account.",
+    note: "Global Transactions report, account 2 — 209 bill lines → 178 positions (174 closed, 3 open, 1 opening sell: the same SBI Funds Management allotment, −665.98 pinned on equity). F&O ties to the Realised P&L within ₹0.01. Charges conserved to the footer's 81,058.88 (+₹0.02 rides on the last position). Equity charges 48,489.06 vs the Realised P&L's 48,311.04 — the ₹178.02 is Dhan's two statements disagreeing (the P&L export's footer says 81,058.88, the Realised P&L 80,880.89), already noted on the P&L row. Engine estimate beside the broker's: 65,139.03 vs 81,058.88, same plan-brokerage reason as account 1. No commodity rows in this account.",
   },
   {
     file: "dhan-pnl-2026-04-01_2026-09-03-a1.xlsx",
@@ -228,17 +235,20 @@ const GOLDEN: Golden[] = [
     reference: { gross: -1093133.24, tol: 0.05 },
     charges: { mode: "engine" },
     // DEFECT (by design until v3.9 reconciliation): the ENGINE's estimate stands in for
-    // charges this file does not state — 719,936.21 against the broker's own 812,563.17,
-    // with equity over-estimated ~3x (277,765.57 vs 92,379.85: no product column, so every
-    // equity row is assumed delivery and pays delivery STT) and F&O under-estimated ~39%
+    // charges this file does not state — 721,374.93 against the broker's own 812,563.17,
+    // with equity over-estimated ~3x (278,057.84 vs 92,379.85: no product column, so every
+    // equity row is assumed delivery and pays delivery STT) and F&O under-estimated ~38%
     // (seeded plan brokerage, not the 278,939.23 Dhan billed). Frozen, not endorsed.
-    commit: { net: -1813069.44, gross: -1093133.23, charges: 719936.21 },
+    // C-8: charges 719,936.21 → 721,374.93, net −1,813,069.44 → −1,814,508.16; vs the broker's 812,563.17 CLOSER overall.
+    commit: { net: -1814508.16, gross: -1093133.23, charges: 721374.93 },
     segments: {
-      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 277765.57, engineNet: -460416.66 },
-      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, engineCharges: 441500.81, engineNet: -1352163.44 },
+      // C-8: engine 277,765.57 → 278,057.84 (net −460,416.66 → −460,708.93) vs 92,379.85, FURTHER: the product-less export charges delivery STT on every equity row (pre-existing); the exchange line itself is +0.77 vs the Realised P&L's 7,610.05 (was −246.95).
+      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 278057.84, engineNet: -460708.93 },
+      // C-8: engine 441,500.81 → 442,647.26 (net −1,352,163.44 → −1,353,309.89) vs 719,326.91, CLOSER; exchange line −0.21 (was −971.92).
+      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, engineCharges: 442647.26, engineNet: -1353309.89 },
       commodity: { grossRef: 180.49, chargesRef: 855.48, netRef: -674.99, engineCharges: 669.83, engineNet: -489.34 },
     },
-    note: "P&L export, account 1: 1,013 scrip rows (2 open). Gross ties to its own footer (−1,093,133.24) and, per segment, to the Realised P&L's segment rows (same window, same book). NO net/charges reference: this file states no per-row charges, so what the journal holds is the engine's estimate — 719,936.21 against the broker's 812,563.17 (equity over-estimated 3×, F&O under-estimated 39%; the file has no product column, so equity defaults to delivery). The broker's own two files disagree with each other by ₹0.93 on charges.",
+    note: "P&L export, account 1: 1,013 scrip rows (2 open). Gross ties to its own footer (−1,093,133.24) and, per segment, to the Realised P&L's segment rows (same window, same book). NO net/charges reference: this file states no per-row charges, so what the journal holds is the engine's estimate — 721,374.93 against the broker's 812,563.17 (equity over-estimated 3×, F&O under-estimated 39%; the file has no product column, so equity defaults to delivery). The broker's own two files disagree with each other by ₹0.93 on charges.",
   },
   {
     file: "dhan-pnl-2026-04-01_2026-09-03-a2.xlsx",
@@ -247,14 +257,17 @@ const GOLDEN: Golden[] = [
     reference: { gross: -152158.28, tol: 0.05 },
     charges: { mode: "engine" },
     // DEFECT (by design until v3.9 reconciliation): engine estimate, not the broker's —
-    // 165,564.67 against 81,058.88 (equity 151,668.54 vs 48,311.04, same delivery-STT
+    // 165,749.95 against 81,058.88 (equity 151,828.01 vs 48,311.04, same delivery-STT
     // assumption as account 1). Frozen so it cannot drift, not because it is right.
-    commit: { net: -317722.98, gross: -152158.31, charges: 165564.67 },
+    // C-8: charges 165,564.67 → 165,749.95, net −317,722.98 → −317,908.26; vs 81,058.88 FURTHER, the equity delivery-STT assumption below.
+    commit: { net: -317908.26, gross: -152158.31, charges: 165749.95 },
     segments: {
-      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151668.54, engineNet: -252839.81 },
-      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, engineCharges: 13896.13, engineNet: -64883.17 },
+      // C-8: engine 151,668.54 → 151,828.01 (net −252,839.81 → −252,999.28) vs 48,311.04, FURTHER: delivery STT on every equity row (pre-existing); exchange line +4.71 vs the Realised P&L's 4,146.81 (was −130.37).
+      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151828.01, engineNet: -252999.28 },
+      // C-8: engine 13,896.13 → 13,921.94 (net −64,883.17 → −64,908.98) vs 32,569.85, CLOSER; exchange line +0.01 (was −21.87).
+      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, engineCharges: 13921.94, engineNet: -64908.98 },
     },
-    note: "P&L export, account 2: 149 rows (3 open). Footer gross −152,158.28; segment refs from the account-2 Realised P&L. Engine charges 165,564.67 vs the broker's 81,058.88 (this file) / 80,880.89 (Realised P&L) — Dhan's own two statements differ by ₹177.99.",
+    note: "P&L export, account 2: 149 rows (3 open). Footer gross −152,158.28; segment refs from the account-2 Realised P&L. Engine charges 165,749.95 vs the broker's 81,058.88 (this file) / 80,880.89 (Realised P&L) — Dhan's own two statements differ by ₹177.99.",
   },
   {
     file: "dhan-realised-pnl-2026-04-01_2026-09-03-a1.xls",
@@ -263,12 +276,15 @@ const GOLDEN: Golden[] = [
     reference: { gross: -1093133.27, tol: 0.01 },
     charges: { mode: "engine" },
     // DEFECT (by design until v3.9 reconciliation): the per-scrip rows state no charges,
-    // so the journal holds the engine's 719,935.15 against the broker's own segment rows'
-    // 812,562.24 — equity 277,764.51 vs 92,379.85 (delivery STT assumed for every row).
-    commit: { net: -1813068.42, gross: -1093133.27, charges: 719935.15 },
+    // so the journal holds the engine's 721,373.87 against the broker's own segment rows'
+    // 812,562.24 — equity 278,056.78 vs 92,379.85 (delivery STT assumed for every row).
+    // C-8: charges 719,935.15 → 721,373.87, net −1,813,068.42 → −1,814,507.14; vs 812,562.24 CLOSER overall.
+    commit: { net: -1814507.14, gross: -1093133.27, charges: 721373.87 },
     segments: {
-      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 277764.51, engineNet: -460415.61 },
-      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, engineCharges: 441500.81, engineNet: -1352163.47 },
+      // C-8: engine 277,764.51 → 278,056.78 (net −460,415.61 → −460,707.88) vs 92,379.85, FURTHER: delivery STT on every equity row (pre-existing); exchange line +0.72 vs this file's 7,610.05 (was −247.00).
+      equity: { grossRef: -182651.1, chargesRef: 92379.85, netRef: -275030.96, engineCharges: 278056.78, engineNet: -460707.88 },
+      // C-8: engine 441,500.81 → 442,647.26 (net −1,352,163.47 → −1,353,309.92) vs 719,326.91, CLOSER; exchange line −0.21 vs 117,806.31 (was −971.92).
+      fno: { grossRef: -910662.66, chargesRef: 719326.91, netRef: -1629989.43, engineCharges: 442647.26, engineNet: -1353309.92 },
       commodity: { grossRef: 180.49, chargesRef: 855.48, netRef: -674.99, engineCharges: 669.83, engineNet: -489.34 },
     },
     note: "THE REFERENCE (owner ruling): four segment rows — Equity / Futures and Options / Commodities / Currency — with every charge head. Gross per segment ties to the paisa. The file's per-segment charges live in `reported` (broker 812,562.24 in total); the per-scrip rows carry none, so the journal's charges are the engine's — the gap per segment is pinned beside the broker's figure, not hidden. Currency row is all zeros. Kept as .xls (BIFF8).",
@@ -279,12 +295,15 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 146, closed: 146, open: 0, openingSells: 0 },
     reference: { gross: -152158.33, tol: 0.01 },
     charges: { mode: "engine" },
-    // DEFECT (by design until v3.9 reconciliation): engine estimate again — 165,410.93
-    // against the broker's 80,880.89 (equity 151,514.80 vs 48,311.04). Frozen, not endorsed.
-    commit: { net: -317569.26, gross: -152158.33, charges: 165410.93 },
+    // DEFECT (by design until v3.9 reconciliation): engine estimate again — 165,596.05
+    // against the broker's 80,880.89 (equity 151,674.11 vs 48,311.04). Frozen, not endorsed.
+    // C-8: charges 165,410.93 → 165,596.05, net −317,569.26 → −317,754.38; vs 80,880.89 FURTHER, the equity delivery-STT assumption below.
+    commit: { net: -317754.38, gross: -152158.33, charges: 165596.05 },
     segments: {
-      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151514.8, engineNet: -252686.09 },
-      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, engineCharges: 13896.13, engineNet: -64883.17 },
+      // C-8: engine 151,514.80 → 151,674.11 (net −252,686.09 → −252,845.40) vs 48,311.04, FURTHER: delivery STT on every equity row (pre-existing); exchange line +0.69 vs this file's 4,146.81 (was −134.26).
+      equity: { grossRef: -101171.29, chargesRef: 48311.04, netRef: -149482.29, engineCharges: 151674.11, engineNet: -252845.4 },
+      // C-8: engine 13,896.13 → 13,921.94 (net −64,883.17 → −64,908.98) vs 32,569.85, CLOSER; exchange line +0.01 vs 3,342.23 (was −21.87).
+      fno: { grossRef: -50987.04, chargesRef: 32569.85, netRef: -83556.88, engineCharges: 13921.94, engineNet: -64908.98 },
     },
     note: "Account-2 Realised P&L: Equity and F&O only (Commodities and Currency rows are zero). Kept as .xls (BIFF8).",
   },
@@ -340,7 +359,8 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: 952, closed: 466, open: 1, openingSells: 16 },
     reference: null,
     charges: { mode: "engine" },
-    commit: { net: -531351.44, gross: -429051.19, charges: 102300.25 },
+    // C-8: charges 102,300.25 → 102,706.37, net −531,351.44 → −531,757.56; no charges reference (an order list states none) — FY25-26 NSE cash now carries IPFT Rs 10/crore to Feb 2026, FA73061's rate in March.
+    commit: { net: -531757.56, gross: -429051.19, charges: 102706.37 },
     note: "Order history FY25-26, 952 executed orders → 483 positions. No reference: Groww's own P&L for the same year states realised −637,838 over LOTS, including ones bought before this window (16 opening sells here carry no basis, invariant 6), and its charges 152,274.81 include ₹45,891.62 of MTF interest and pledge fees the engine does not estimate from an order list.",
   },
   {
@@ -349,8 +369,9 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 490, open: 2, openingSells: 0 },
     reference: { gross: -637838, tol: 0.01 },
     charges: { mode: "engine" },
-    commit: { net: -739596.5, gross: -637838, charges: 101758.5 },
-    note: "Scrip-level P&L FY25-26 (Trade Level 491 realised rows + Scrip Level): gross ties to the file's Realised P&L. Under a NEUTRAL filename this file scores only 0.55 — the claim needs Groww's `stocks_pnl` filename, which the real export always has. Charges reference omitted: the file's 152,274.81 total includes MTF interest (45,891.62), DP and pledge heads; the scrip rows carry no charges, so the journal holds the engine's 101,758.50.",
+    // C-8: charges 101,758.50 → 102,229.63, net −739,596.50 → −740,067.63; Groww states exchange 12,327.49 + IPFT 347.69 = 12,675.18, and the engine's exchange line moved 11,854.95 → 12,254.13, CLOSER (−820.23 → −421.05).
+    commit: { net: -740067.63, gross: -637838, charges: 102229.63 },
+    note: "Scrip-level P&L FY25-26 (Trade Level 491 realised rows + Scrip Level): gross ties to the file's Realised P&L. Under a NEUTRAL filename this file scores only 0.55 — the claim needs Groww's `stocks_pnl` filename, which the real export always has. Charges reference omitted: the file's 152,274.81 total includes MTF interest (45,891.62), DP and pledge heads; the scrip rows carry no charges, so the journal holds the engine's 102,229.63.",
   },
 
   // ── Angel One ──────────────────────────────────────────────────────────────
@@ -404,7 +425,8 @@ const GOLDEN: Golden[] = [
     shape: { sourceRows: null, closed: 4, open: 0, openingSells: 0 },
     reference: null,
     charges: { mode: "engine" },
-    commit: { net: -271.9, gross: -135.45, charges: 136.45 },
+    // C-8: charges 136.45 → 136.47, net −271.90 → −271.92; no broker-stated charges (a trade report states none) — NSE cash at FA73061's rate.
+    commit: { net: -271.92, gross: -135.45, charges: 136.47 },
     note: "Trade report, 11 execution rows → 4 positions; the parser sets no `sourceRows`, so the screen cannot say '11 executions → 4 positions' for this file (noted, not pinned as a defect — no rule requires it). No reference: a trade report states neither P&L nor charges.",
   },
   {
@@ -610,6 +632,77 @@ GOLDEN.forEach((row, i) => {
       });
     }
   });
+});
+
+// ── The EXCHANGE LINE against the broker's own stated exchange figure (C-8) ──
+//
+// Owner ruling (06-ANSWERS "v4.3.0 C-8 ruling", last row): C-8 was accepted on
+// THIS evidence. The engine prices the file's own rows (any stated charges
+// stripped); its exchange transaction charge + IPFT is set against the exchange
+// figure the broker states for the same rows. A total can move away from the
+// broker's while this line moves onto it (other heads overshoot), so these pins
+// hold the line — and each goes red if the pre-C-8 flat rates come back.
+interface ExchangeLine {
+  file: string;
+  family: "equity" | "fno";
+  /** Engine head(s) compared. Dhan states ONE exchange figure, IPFT inside it. */
+  head: "txn+ipft" | "txn" | "ipft";
+  /** Dhan: the Realised P&L's own segment row; otherwise the rows' own charge columns. */
+  source: "segment" | "rows";
+  /** The engine's figure, to the paisa. */
+  engine: number;
+  /** The broker's figure, as the file states it. */
+  stated: number;
+  /** |engine − stated| bound — or, for an unexplained gap, `gap` pins it exactly. */
+  tol?: number;
+  gap?: number;
+}
+
+const EXCHANGE_LINE: ExchangeLine[] = [
+  // Dhan Realised P&L (THE REFERENCE, owner ruling). Before C-8: −247.00 / −971.92 / −134.26 / −21.87.
+  { file: "dhan-realised-pnl-2026-04-01_2026-09-03-a1.xls", family: "equity", head: "txn+ipft", source: "segment", engine: 7610.77, stated: 7610.05, tol: 1 },
+  { file: "dhan-realised-pnl-2026-04-01_2026-09-03-a1.xls", family: "fno", head: "txn+ipft", source: "segment", engine: 117806.1, stated: 117806.31, tol: 1 },
+  { file: "dhan-realised-pnl-2026-04-01_2026-09-03-a2.xls", family: "equity", head: "txn+ipft", source: "segment", engine: 4147.5, stated: 4146.81, tol: 1 },
+  { file: "dhan-realised-pnl-2026-04-01_2026-09-03-a2.xls", family: "fno", head: "txn+ipft", source: "segment", engine: 3342.24, stated: 3342.23, tol: 1 },
+  // Zerodha FY24-25 crosses the 1 Apr 2024 and 1 Oct 2024 boundaries and states txn and IPFT per row.
+  // Before C-8 the engine's txn was ~7,595.6 (−1,605) and its IPFT ~0 (Rs 0.01/crore, not Rs 50).
+  // The txn residual (+19.80, 0.22%) is NOT explained; the bound states it rather than hiding it.
+  { file: "zerodha-taxpnl-2024-04-01_2025-03-31.xlsx", family: "fno", head: "txn", source: "rows", engine: 9220.99, stated: 9201.19, tol: 20 },
+  { file: "zerodha-taxpnl-2024-04-01_2025-03-31.xlsx", family: "fno", head: "ipft", source: "rows", engine: 108.4, stated: 108.18, tol: 0.25 },
+  // DEFECT, UNEXPLAINED — handed to the 4.3.0 release audit: against Paytm's stated ETT the
+  // exchange line MOVED AWAY with C-8, +252.56 → +441.49 (engine 9,776.24 → 9,965.17), while
+  // the 5-month book of the same broker moved closer (−5,853.02 → −4,857.87). Pinned so it cannot drift.
+  { file: "paytm-tradebook-2026-08-01_2026-08-18.xlsx", family: "equity", head: "txn+ipft", source: "rows", engine: 9965.17, stated: 9523.68, gap: 441.49 },
+];
+
+describe("the exchange line against the broker's own stated exchange figure (C-8)", () => {
+  const parsedOf = new Map<string, Promise<ParsedFile>>();
+  const parse = (file: string) => {
+    if (!parsedOf.has(file)) {
+      const ctx = buildContext(file, fs.readFileSync(path.join(DIR, file)));
+      parsedOf.set(file, Promise.resolve(rankParsers(ctx)[0].parse(ctx)));
+    }
+    return parsedOf.get(file)!;
+  };
+
+  it.each(EXCHANGE_LINE)("$file · $family · $head", async (l) => {
+    const parsed = await parse(l.file);
+    const fams = commitMod.previewParsedFile(parsed, null, 1).rows.map((r) => family(r.segment));
+    const trades = parsed.trades.filter((_, i) => fams[i] === l.family);
+    const stripped = { ...parsed, reported: {}, trades: trades.map((x) => ({ ...x, reportedCharges: undefined })) };
+    const c = commitMod.previewParsedFile(stripped, null, 1).reconciliation!.computed;
+    const engine = r2(l.head === "txn" ? c.exchangeTxn : l.head === "ipft" ? c.ipft : c.exchangeTxn + c.ipft);
+    const stated =
+      l.source === "segment"
+        ? parsed.reported![`${l.family}.exchangeTxn`]
+        : sum(trades.map((x) => (l.head === "ipft" ? 0 : x.reportedCharges?.exchangeTxn ?? 0) + (l.head === "txn" ? 0 : x.reportedCharges?.ipft ?? 0)));
+    expect(stated).toBe(l.stated);
+    expect(engine).toBe(l.engine);
+    if (l.gap != null) expect(r2(engine - stated) || 0).toBe(l.gap);
+    else expect(Math.abs(engine - stated)).toBeLessThanOrEqual(l.tol!);
+    // Measured 38–247 ms locally (a parse plus two previews of up to 1,011 rows); the
+    // Windows runner is >15× slower (AGENTS.md § Testing), so the 5 s default has no headroom.
+  }, 60_000);
 });
 
 describe("Zerodha: both tax P&Ls into ONE account — the exit date owns the FY", () => {

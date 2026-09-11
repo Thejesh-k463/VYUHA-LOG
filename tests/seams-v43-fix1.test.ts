@@ -636,7 +636,8 @@ describe("S4 · one pull, a Monday BUY and today's SELL, one closed row (F2 ↔ 
     const res = importer.commitParsedFile(parsed, "dhan-api", null, PULL);
     expect([res.added, res.skipped, res.total]).toEqual([1, 0, 2]);
     expect(
-      (res.warnings ?? []).some((w) => w.includes("1 open position in this account was closed by this file")),
+      // A real Dhan pull (format "api"): the sentence names the pull, not a file.
+      (res.warnings ?? []).some((w) => w.includes("1 open position in this account was closed by this pull")),
     ).toBe(true);
 
     const rows = storedRows(PULL);

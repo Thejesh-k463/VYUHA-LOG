@@ -5639,3 +5639,126 @@ and a fix wave gets a SCOPED re-check. One release-level audit per release, in o
 `.claude/skills/vyuha-audit/SKILL.md` §0.5 / §1a / §4. Supersedes the round-8 precedent. For 4.3.0 it runs over
 `v4.2.0..HEAD` after fix wave C, with a fresh hashed copy of the owner's live DB at `data/smoke-430-release/` (app closed;
 live `vyuha.sqlite` + `-wal` hashes identical before and after; last written 2026-09-09, i.e. the true v4.2.0 state).
+
+**Fix wave C = `bbdc4ec`** (two Opus builders on disjoint sets; neither ran the full gate — shared tree — the orchestrator
+ran it once). **CB — C-7:** the 45 F&O keys carry THREE STT epochs (futures 0.000125 → 0.0002 → 0.0005; index/stock options
+0.000625 → 0.001 → 0.0015, sell side; the pre-Oct-2024 values from `charge-rates-defaults.json:62-85/:134-157`; stock_option
+takes the options rate — the JSON has no stock_option row and the levy is one line); 207 seed rows (was 162). Refresh with NO
+code change: the owner's real two-epoch state → {45, 45} then {0, 0}; a correct two-epoch DB → {45, 45}; pre-v3.2 → {90, 45};
+empty → {207, 0}; `seedDatabase()` ≡ `refreshRateCards()` byte-identical over 4 planted states; the 20-mutant table still all
+killed. findRates pinned for all 27 NSE F&O keys on 2024-09-30 / 2024-10-01 / 2026-03-31 / 2026-04-01. Revert → 29 red.
+**CA — C-3..C-6:** "Browse all (40)" (count derived); the catch-up sentence reads "because the last pull ran before today";
+the auto-close sentence reaches the screen after a pull commit and a file commit, and the pull preview shows the close plan
+(`pullResultMessage`, `autoClosePlanNote`, `commitResultNotes` — the route already sent `result.warnings`; no client read
+them); C-6: `catchUpRange` returns the `unfetched` span only when it clamps, the history walk reports its reach, the pull
+names the dates + the remedy, a 50-page truncation is named too, the span is kept as an AUDIT-LOG row (entity "settings",
+per account; a clear is a second row — nothing rewritten; rejected stores: `auth_json` (erased by re-save / backup
+redaction), `import_batches.notes`, `panel_dismissals`, `settings` (no free column)) until "Clear notice", and auto-pull
+records it too. No migration. Gate: 381 files — 7,741 passed + the README file-count guard (379 → 381, the only red, fixed in
+the commit; tests 7704 → 7742); lint 0 errors.
+**Leftovers CA reported → follow-up builder CC:** the auto-close sentence says "closed by this file" — false after a pull,
+and C-5 made it visible there (a product defect, so it reopens work under the stopping rule); `tests/fix-wave-c-import.test.ts`
+reads the real clock (IST-midnight flake, medium); the auto-pull "+N trades" count vs a closing SELL (check, fix only if
+false); `recordAudit` never reports a failed write (confirm/refute only — `lib/audit.ts` untouched).
+
+**CB's other-columns report (C-7 scope was STT only):** `charge-rates-defaults.json` (read only by the Sizing Lab) differs
+from the seed in `exchangeTxnPct` (futures 0.0000183 vs 0.0000173, options 0.0003553 vs 0.0003503, equity 0.0000307 vs
+0.0000297), `stampPct` futures, `ipftPct`, `brokerageCap` and delivery `dpGstApplicable` — identically in all three of the
+JSON's epochs, so it records no 1 Oct 2024 change. The JSON's figures turn out to be NSE's rates FROM 1 Mar 2026 (below).
+
+**C-8 — exchange transaction charges (owner: research, fix in 4.3.0 if verified).** `exchangeTxnFor`
+(`seed-data.ts:118-129`) applies the flat 1-Oct-2024 "true to label" rates to every date. The research agent (primary
+sources only; `scratchpad/c8-exchange-charges.md`, to be summarised here when seeded) found: the Oct-2024 values match the
+exchanges' circulars; before them NSE charged cash 0.0000322 / futures 0.0000188 / options 0.000495 (top slab, FA61137, from
+1 Apr 2024) and BSE Sensex/Bankex options 0.000495 (from 13 May 2024), with more boundaries earlier (NSE 1 Jan 2021, 1 Apr
+2023; BSE derivatives waived from 20 Aug 2019, then 2 May 2022, 1 Nov 2023; BSE cash flat 0.0000375 since 1 Dec 2022); AND
+three errors in TODAY's card — NSE folds IPFT into transaction charges from 1 Mar 2026 (FA73061: 0.000030699 / 0.000018299 /
+0.000355299), NSE IPFT was ₹10/crore (cash, futures) and ₹50/crore (options) from 1 Apr 2023 to 28 Feb 2026, not ₹0.01, and
+BSE equity futures are NIL and BSE stock (and Sensex 50) options ₹500/crore (notice 20240927-37). The SEBI circular is
+SEBI/HO/MRD/TPD-1/P/CIR/2024/92. UNVERIFIED (recorded, never seeded): MCX before 1 Oct 2024 (mcxindia.com denied every
+fetch; Zerodha billed 0.0026% / 0.05% — broker evidence only), NSE before 1 Jan 2021, BSE cash before 1 Mar 2021 and
+derivatives before 20 Aug 2019, the other BSE stock groups (X/XT/Z…), BSE's own IPF contribution. A structural limit, not
+fixable by rates: the seed has ONE BSE `index_option` rate, so Sensex 50 options (₹500/crore) are priced at the Sensex rate.
+**Owner rulings** (06-ANSWERS "v4.3.0 C-8 ruling", three rows): fix every figure a Fable skeptic CONFIRMS against the
+primary source in 4.3.0, rates only, reporting how the golden books move against broker-stated charges (closer confirms,
+further stops the wave); trades before the earliest verified boundary use the earliest verified schedule, the gap recorded.
+**The Fable skeptic over the research** re-fetched every cited PDF from its primary host (each SHA-256-identical to the
+researcher's copy) and all seven BSE notices: every figure CONFIRMED, with two corrections — **IPFT stays a SEPARATE line**
+(FA73061's table: txn 306.99 + IPFT 0.01 = 307/crore from 1 Mar 2026; only the ₹9.99 / ₹49.99 increase moved), so today's
+seed (txn 297 + IPFT 0.01) under-bills NSE by ₹9.99/crore (cash, futures) and ₹49.99/crore (options) on every trade since
+1 Apr 2023; and the seed has NO BSE `future` combo (`COMBOS`, `seed-data.ts:437`), so "BSE futures nil" needs no row. The
+BSE `index_option` rows were not seedable as one key (Sensex vs Sensex 50; nearest vs other Sensex expiries 2023-11-01 →
+2024-05-13) → owner: follow Sensex/Bankex (06-ANSWERS, fourth C-8 row). "Top slab = what brokers billed" is verified
+(Zerodha) only for 2023-04-01 → 2024-10-01. MCX stays UNVERIFIED (mcxindia.com 403 to both agents) and unchanged.
+
+**CI 34586408007 on `bbdc4ec` = 5/6 — NOT the cold-runner flake.** The Windows job alone red, in this session's own new
+tests: `tests/rate-card-refresh.test.ts`'s mutant-table CONTROL sweep and three EQUIVALENT sweeps ("Test timed out in
+5000ms" — each `it` runs every scenario, ~318 ms locally) and `tests/stt-epoch-2024.test.ts`'s `beforeAll` ("Hook timed out
+in 30000ms"); 379 of 381 files passed. F1-3 (`ca73495`) passed Windows with the same table; fix wave C's larger seed (162 →
+207 rows) plus the new file crossed the line. Medium test-integrity (it blocks the release job) → reopens work: folded into
+the C-8 builder's wave — in-memory user DBs via `serialize()` / `new Database(buffer)` instead of a file copy per scenario,
+the template built once per file, sweeps split, headroom ≤ 300 ms per `it` and ≤ 3 s per hook locally. Not re-run (it
+would only re-measure a known deterministic overrun). **Lesson: the Windows runner is > 15× slower than this machine on
+SQLite-file-heavy tests** — AGENTS.md § Testing now says so.
+
+**Follow-up CC** (one Opus builder; `lib/import/commit.ts` +5/−1, `lib/jobs/auto-pull.ts` +8/−2, three tests): (1) PRODUCT —
+the auto-close sentence said "closed by this file … the matching rows in this file" after a broker pull, which C-5 had just
+made visible; it now reads "pull" when `parsed.format === "api"` (every adapter under `lib/import/api/` sets it; no file
+parser does) and "file" otherwise — rejected: a new `commitParsedFile` parameter threaded through the route and auto-pull
+(more surface; the real-route Dhan test catches a future adapter with another format). (2) `tests/fix-wave-c-import.test.ts`
+freezes the date at 23:59:59 IST (`vi.setSystemTime`, timers real) — 10/10 at that instant and at 00:00:01 IST; a probe
+that crossed midnight mid-call reproduced the flake (3 red, `…/2026-06-13/2026-09-11/0` vs `…/2026-06-12/2026-09-10/0`).
+(3) PRODUCT — the auto-pull line "+N trades" counted the PREVIEW's new rows, so a closing SELL read "Dhan +1 trade" while 0
+rows were written; it now counts the commit's added rows and names closes: "Dhan +0 trades, 1 open position closed". Red on
+revert: 3 fail / 46 pass, and `expected '+1 trade' to be '+0 trades, 1 open position closed'`. **Recorded, not fixed:**
+`recordAudit` is best-effort by design (`lib/audit.ts:158-164`), so a failed audit insert would drop the C-6 card notice
+while the pull message still names the dates (`route.ts:226-239`, `auto-pull.ts:124-137`) — only reachable when the DB
+itself is failing; handed to the release-level audit as a known input. `tests/broker-connect-copy.test.ts:228` still feeds
+a made-up "closed by this file" line to the pull-message builder (fake input, passes) — test-only cosmetic, recorded.
+
+**C-8 built** (one Opus builder, resumed twice; `lib/db/seed-data.ts` +165/−44, `lib/db/seed-core.ts` +14/−2, rate / charge /
+seed / golden tests, new `tests/exchange-charge-epochs.test.ts`). One boundary table (`sttScheduleFor` ∪
+`exchangeScheduleFor`) replaces the `sttChangedIn2026` gate: 207 → **459 rows, 117 keys** — NSE cash 5 epochs (1970,
+2023-04-01, 2024-04-01, 2024-10-01, 2026-03-01), NSE F&O 6 (+ 2026-04-01), BSE cash 2 (1970, 2022-12-01), BSE stock options
+4, BSE index options 6 (Sensex/Bankex by ruling), MCX 1 (unchanged, unverified). Per-crore NSE totals pinned so a swapped IPFT
+pairing goes red — cash 345.01 / 335 / 332 / 307 / 307, futures 200.01 / 200 / 198 / 183 / 183, options 5300.01 / 5050 /
+5000 / 3553 / 3553 (the total is unchanged across 1 Mar 2026, as FA73061 says). **The builder caught an arithmetic slip in
+the orchestrator's brief** (its example cash totals used ₹1/crore for IPFT; 1e-6 is ₹10/crore) and followed the
+skeptic-confirmed fractions. Refresh with NO code change: the owner's real 4.2.0 state → {297, 135} then {0, 0}; correct
+two-epoch → {297, 135}; `bbdc4ec`'s three-epoch → {252, 171}; pre-v3.2 → {342, 99}; empty → {459, 0}; `seedDatabase()` ≡
+`refreshRateCards()` byte-identical in all five; mutant table 20 / 3 / control green. Revert → 110 red in 6 files; a planted
+double-count → red. **Windows timeouts fixed:** templates migrated + seeded once in memory, `serialize()` → `new
+Database(buffer)` per scenario, sweeps split per scenario — rate-card-refresh slowest `it` 379 → 46 ms. **`seedDatabase()`
+now runs in ONE transaction** (a wrapper over the byte-unchanged body): atomic (a planted mid-seed abort leaves
+`charge_config` byte-identical; red without it — `expected { n: 1 } to deeply equal { n: +0 }`) and one commit instead of
+459 per seeded temp DB on the fsync-bound Windows runner (locally 154 → 115 ms).
+**Golden books, owner ruling "accept on the exchange-line evidence"** (06-ANSWERS, fifth C-8 row): the exchange line now
+matches Dhan's Realised P&L to +0.72 / −0.21 / +0.69 / +0.01 (was −247.00 / −971.92 / −134.26 / −21.87) and Zerodha FY24-25
+txn 9,220.99 vs 9,201.19, IPFT 108.40 vs 108.18; totals that moved further were already over on OTHER lines (delivery STT on
+product-less exports, brokerage-plan gaps — pre-existing, not 4.3.0). **Open:** the Paytm August file's exchange line moved
++252 → +441 against Paytm's stated ETT (the 5-month Paytm book moved closer) — pinned with a comment, handed to the
+release-level audit's money lens; a C-8 error there reverts C-8 before the bump.
+
+**Upgrade on a copy of the owner's live DB — PASS (the release-level audit's lens 6, run by the orchestrator).** Stage
+`data/sidecar-430/` = `scripts/desktop-server.mjs` + `scripts/rate-card-refresh.mjs` + the repo `drizzle/` + a template built
+exactly as `build-desktop.mjs:90-92` does (`VYUHA_SEED_CLEAN=1`, `lib/db/migrate.ts` then `lib/db/seed.ts`: 459 charge rows,
+72 migrations); user dir `data/sidecar-430-user/` = a copy of `data/smoke-430-release/` (the pristine hashed copy stays
+untouched). Start 1: "pre-migration backup", "migrations applied", "rate cards: **297 added, 135 refreshed**" — the builder's
+predicted count; start 2: "schema current — no migration, no backup", "0 added, 0 refreshed". After: `charge_config` 459 rows
+byte-identical to the template (every column but id / updated_at), 0 overlapping open epochs, `__drizzle_migrations` 72
+(newest created_at 1788800500000 = 0071), `strategy_shelf_json` present and NULL, trades 1,305 (earliest 2026-04-01).
+findRates-equivalent lookups on the migrated copy: dhan index_option NSE 2024-09-30 → txn 0.000495 / IPFT 5e-6 / STT
+0.000625; 2025-06-15 → 0.0003503 / 5e-6 / 0.001; 2026-03-15 → 0.000355299 / 1e-9 / 0.001; 2026-06-15 → 0.000355299 / 1e-9 /
+0.0015; eq_delivery NSE on the same dates → 0.0000322 / 1e-6, 0.0000297 / 1e-6, 0.000030699 / 1e-9, 0.000030699 / 1e-9.
+
+**What C-8 does NOT fix, stated plainly (owner rulings; also owed to the 4.3.0 release note's "not in this release" line).**
+(1) Dates before the earliest verified schedule — NSE before 1 Jan 2021, BSE cash before 1 Mar 2021, BSE derivatives before
+20 Aug 2019 — are priced at that earliest verified schedule (by ruling); the real earlier rates are not in the repo. (2) Sensex
+50 options, and non-nearest Sensex expiries from 1 Nov 2023 to 13 May 2024, are priced at the Sensex/Bankex rate — the card
+has one BSE `index_option` key; a per-contract key needs a schema change. (3) MCX is unchanged and its pre-October-2024 rates
+unverified. (4) The other BSE stock groups (X / XT / Z …) and BSE's own IPF contribution are not modelled. (5) The Paytm
+August exchange-line gap (+441.49, pinned as "DEFECT, UNEXPLAINED") is open for the release-level audit. (6) Charges already
+stored on trades are not rewritten (rates only). The golden re-pin (`tests/golden-books.test.ts` +131/−38) moved the Upstox
+trade report's committed net −271.90 → −271.92 (priced at NSE's 1-Mar-2026 rate): `tests/broker-doc-claims.test.ts:27`,
+`AGENTS.md:117` and `docs/BROKER_FORMATS.md:29/:345` updated with it (the builder's targeted run had not included that guard).
+The Zerodha FY24-25 txn line is +₹19.80 (0.22%) over the stated figure, unexplained, bounded at ₹20 in the new pin.

@@ -623,3 +623,42 @@ describe("10 — a row this file just wrote is a lot only when it may be one", (
     expect(rows.every((r) => r.isOpen), "neither row closed the other").toBe(true);
   });
 });
+
+// ──── case 11 (v4.3.0 wave C follow-up): the close sentence names its source ────
+
+/**
+ * Since C-5 the commit's close sentence is SHOWN after a broker pull as well as
+ * after a file import, so "closed by this file" became a false statement on the
+ * pull card. Every broker API adapter (lib/import/api/*) returns
+ * `format: "api"` and no file parser does; the sentence reads its source from
+ * that. Both variants are pinned WHOLE, so the source noun is the only word
+ * allowed to differ.
+ */
+describe("11 — the close sentence says 'this pull' after a broker pull and 'this file' after a file", () => {
+  const FROM_FILE = 616;
+  const FROM_PULL = 617;
+  const sentence = (source: "file" | "pull") =>
+    `1 open position in this account was closed by this ${source}, oldest first (TCS 100). Realised P&L sits on the closed rows; the matching rows in this ${source} are their closing legs, not new positions.`;
+  const pulled = (trades: NormalizedTrade[]): ParsedFile => ({
+    sourceId: "dhan-api",
+    broker: "dhan",
+    format: "api",
+    trades,
+    warnings: [],
+  });
+
+  it("a file import: 'this file', every word as it was", () => {
+    newAccount(FROM_FILE, "case-11-file");
+    commit.commitParsedFile(parsed([buyRow("TCS", 100, 100, "2026-09-01")]), "buys.csv", null, FROM_FILE);
+    const res = commit.commitParsedFile(parsed([sellRow("TCS", 100, 120, "2026-09-02")]), "sells.csv", null, FROM_FILE);
+    expect(res.warnings).toContain(sentence("file"));
+  });
+
+  it("a broker pull: 'this pull', and never 'this file'", () => {
+    newAccount(FROM_PULL, "case-11-pull");
+    commit.commitParsedFile(pulled([buyRow("TCS", 100, 100, "2026-09-01")]), "dhan-api-2026-09-01", null, FROM_PULL);
+    const res = commit.commitParsedFile(pulled([sellRow("TCS", 100, 120, "2026-09-02")]), "dhan-api-2026-09-02", null, FROM_PULL);
+    expect(res.warnings).toContain(sentence("pull"));
+    expect(res.warnings?.join(" | ")).not.toMatch(/this file/);
+  });
+});

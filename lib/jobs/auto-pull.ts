@@ -250,17 +250,23 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       // collision — these rows wait for the Import screen.
       return { ...base, status: "collision", detail: "collision — review in Import" };
     }
-    commitParsedFile(parsed, fileName, null, conn.accountId);
+    const res = commitParsedFile(parsed, fileName, null, conn.accountId);
     // C-6: keep the unread spans BEFORE lastPullAt moves past them.
     recordUnfetched(conn, unfetched);
     db.update(brokerConnections)
       .set({ lastPullAt: new Date().toISOString() })
       .where(eq(brokerConnections.id, conn.id))
       .run();
+    // "+N trades" is what the commit ADDED — the manual pull's "N added" — not
+    // the preview's non-duplicate rows: a SELL that closes a held lot adds no
+    // row. The closes are named in the preview's own count, which the commit
+    // performs exactly (tests/seams-v43-fix1.test.ts S4); the two run back to
+    // back, synchronously, so nothing can land between them.
+    const closes = pre.autoClose?.closes ?? 0;
     return {
       ...base,
       status: "imported",
-      detail: `+${pre.summary.newCount} trade${pre.summary.newCount === 1 ? "" : "s"}${unfetchedDetail(unfetched)}`,
+      detail: `+${res.added} trade${res.added === 1 ? "" : "s"}${closes > 0 ? `, ${closes} open position${closes === 1 ? "" : "s"} closed` : ""}${unfetchedDetail(unfetched)}`,
       newCount: pre.summary.newCount,
     };
   } catch (e) {

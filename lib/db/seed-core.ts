@@ -1,5 +1,5 @@
 import { and, eq, gt, isNull, lte, or } from "drizzle-orm";
-import { db } from "./index";
+import { db, sqlite } from "./index";
 import { capitalSnapshots, chargeConfig, marginConfig, regulatoryRulePacks, riskConfig, settings, accounts } from "./schema";
 import { buildChargeConfigSeed } from "./seed-data";
 
@@ -27,8 +27,20 @@ export interface SeedReport {
   riskAdded: number;
 }
 
-/** Idempotent, non-destructive seed of config tables. Returns what changed. */
+/**
+ * Idempotent, non-destructive seed of config tables. Returns what changed.
+ *
+ * ONE transaction (v4.3.0): the rate card is 459 charge_config rows, and a
+ * commit per row paid an fsync each — seeded test hooks hit the Windows
+ * runner's 30 s hookTimeout (CI 34578562759). It also makes the seed atomic,
+ * like the desktop refresh (scripts/rate-card-refresh.mjs): a failure part-way
+ * leaves every table as it was, never a half-applied rate card.
+ */
 export function seedDatabase(log = false): SeedReport {
+  return sqlite.transaction(() => seedAll(log))();
+}
+
+function seedAll(log: boolean): SeedReport {
   const report: SeedReport = {
     settings: "kept",
     capitalSnapshots: "kept",

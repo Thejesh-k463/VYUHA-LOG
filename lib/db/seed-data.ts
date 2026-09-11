@@ -1,8 +1,15 @@
 import type { Broker, Exchange, Segment } from "../domain/constants";
 
 /**
- * Canonical FY2026-27 (post 1-Apr-2026) rate table from the build brief §5.
- * Everything here is a fraction of turnover/premium (0.1% => 0.001) unless noted.
+ * The canonical rate table: every broker's card, as one row per EPOCH of each
+ * (broker, plan, segment, exchange) key. Everything here is a fraction of
+ * turnover/premium (0.1% => 0.001) unless noted.
+ *
+ * The broker-set figures (brokerage, DP, MTF) are today's cards and carry no
+ * history. The levies that have moved are EFFECTIVE-DATED: STT (STT_EPOCH_2024,
+ * STT_EPOCH_2026) and the exchange transaction charge + NSE IPFT (the EXCHANGE
+ * CHARGE EPOCHS below). A key is split at the UNION of its boundaries; a key
+ * whose levies never moved keeps one open-ended row.
  * These values seed `charge_config`; the engine reads only from the DB at runtime.
  */
 
@@ -40,8 +47,9 @@ type ChargeSeedRow = {
 };
 
 const SEBI_PCT = 0.000001; // 0.0001% = ₹10/crore, both sides
-const IPFT_NSE_PCT = 0.000000001; // ~₹0.01/crore, NSE only, both sides
 const GST = 0.18;
+/** The seed's lower bound: an epoch starting here covers all earlier history. */
+const EPOCH_START = "1970-01-01";
 
 // --- STT / CTT by segment, EFFECTIVE-DATED -----------------------------------
 /**
@@ -114,18 +122,135 @@ export function sttChangedIn2026(segment: Segment): boolean {
   return segment === "future" || segment === "index_option" || segment === "stock_option";
 }
 
-// --- Exchange transaction charges by segment + exchange ----------------------
-function exchangeTxnFor(segment: Segment, exchange: Exchange): number {
-  if (segment === "eq_delivery" || segment === "eq_mtf" || segment === "eq_intraday") {
-    return exchange === "BSE" ? 0.0000375 : 0.0000297;
+/** One dated STT regime, in force from `from` (inclusive) to the next entry's `from`. */
+type SttLevy = { from: string; pct: number; side: "both" | "sell" | "none" };
+
+/** A segment's STT schedule, oldest first. */
+function sttScheduleFor(segment: Segment): SttLevy[] {
+  if (!sttChangedIn2026(segment)) return [{ from: EPOCH_START, ...sttFor(segment, "current") }];
+  return [
+    { from: EPOCH_START, ...sttFor(segment, "pre-2024-10") },
+    { from: STT_EPOCH_2024, ...sttFor(segment, "pre-2026-04") },
+    { from: STT_EPOCH_2026, ...sttFor(segment, "current") },
+  ];
+}
+
+// --- Exchange transaction charges + NSE IPFT, EFFECTIVE-DATED ----------------
+/**
+ * THE EXCHANGE CHARGE EPOCHS (v4.3.0 C-8; owner ruling: fix every figure a
+ * skeptic CONFIRMED against the exchange's own circular, rates only — charges
+ * already stored on trades are not rewritten). Each side, as a fraction of
+ * traded value (of PREMIUM for options). Before 1 Oct 2024 NSE and BSE charged
+ * slab-wise on a member's monthly turnover; the seed carries the TOP slab, the
+ * rate brokers billed clients (Zerodha's page, Jul 2024: 0.00322% / 0.00188% /
+ * 0.0495%).
+ *
+ * IPFT is a SEPARATE line in NSE's circulars and a separate column here. Folding
+ * it into the transaction charge double-counts: from 1 Mar 2026 the charge is
+ * Rs 306.99/crore AND IPFT Rs 0.01/crore (307 in all), not 306.99 + 10.
+ *
+ * NSE  (circular · dated · effective → cash / futures / options per LAKH; IPFT per CRORE)
+ *   NSE/FA/46730 (15/2020) · 18 Dec 2020 · 1 Jan 2021 → 3.45 / 2.00 / 53.00;  IPFT 0.01
+ *   NSE/FA/56129 (1/2023)  · 24 Mar 2023 · 1 Apr 2023 → 3.25 / 1.90 / 50.00;  IPFT 10 cash+futures, 50 options
+ *   NSE/FA/61137 (2/2024)  · 14 Mar 2024 · 1 Apr 2024 → 3.22 / 1.88 / 49.50;  IPFT unchanged
+ *   NSE/FA/64232 (5/2024)  · 27 Sep 2024 · 1 Oct 2024 → 2.97 / 1.73 / 35.03 flat (SEBI "true to label",
+ *                                                       SEBI/HO/MRD/TPD-1/P/CIR/2024/92, 1 Jul 2024); IPFT unchanged
+ *   NSE/FA/73061           · 27 Feb 2026 · 1 Mar 2026 → Rs 306.99 / 182.99 / 3,552.99 per crore; IPFT back to 0.01
+ * BSE equity cash, Group A / B / non-exclusive scrips (no BSE IPFT is seeded: 0)
+ *   20210210-42 · 10 Feb 2021 · 1 Mar 2021 → slab Rs 345…320/crore, top slab 345
+ *   20221109-7  ·  9 Nov 2022 · 1 Dec 2022 → Rs 375/crore flat, unchanged since
+ * BSE equity derivatives
+ *   20190819-14 · 19 Aug 2019 · 20 Aug 2019 → every product waived
+ *   20220425-2  · 25 Apr 2022 · 2 May 2022  → all options Rs 500/crore of premium; futures stay NIL
+ *   20231020-46 · 20 Oct 2023 · 1 Nov 2023  → Sensex options, nearest expiry: slab, top Rs 3,750/crore
+ *   20240430-42 · 30 Apr 2024 · 13 May 2024 → Sensex + Bankex options, all expiries: slab, top Rs 4,950/crore
+ *   20240927-37 · 27 Sep 2024 · 1 Oct 2024  → Sensex + Bankex Rs 3,250/crore flat; stock and Sensex 50
+ *                                             options stay Rs 500/crore; index and stock futures NIL
+ *
+ * Before the earliest verified boundary the EARLIEST VERIFIED schedule applies
+ * (owner ruling), and the gap is recorded rather than guessed: NSE 1970 → 1 Apr
+ * 2023 takes FA46730 (whose start before 1 Jan 2021 is unverified); BSE cash
+ * 1970 → 1 Dec 2022 takes the 20210210-42 top slab (verified from 1 Mar 2021);
+ * BSE options 1970 → 2 May 2022 take the 20 Aug 2019 waiver.
+ *
+ * The card has ONE BSE index_option rate, so it follows Sensex/Bankex (owner
+ * ruling). Sensex 50 options, and from 1 Nov 2023 to 13 May 2024 Bankex and the
+ * non-nearest Sensex expiries (Rs 500/crore), stay mis-priced: a per-contract
+ * key needs a schema change. The seed has no BSE `future` row (BSE futures are NIL).
+ *
+ * MCX carries no history and is UNCHANGED: MCX/F&A/631/2024 (1 Oct 2024) is
+ * verified, its 2021 predecessors could not be retrieved.
+ */
+const IPFT_NSE_PCT = 0.000000001; // Rs 0.01/crore — before 1 Apr 2023, and again from 1 Mar 2026
+const IPFT_NSE_CASH_FUT_2023 = 0.000001; // Rs 10/crore, cash + futures, 1 Apr 2023 → 1 Mar 2026 (FA56129)
+const IPFT_NSE_OPT_2023 = 0.000005; // Rs 50/crore of premium, options, same window
+
+/** One dated exchange schedule entry, in force from `from` (inclusive) to the next entry's `from`. */
+type ExchangeLevy = { from: string; txn: number; ipft: number };
+
+const NSE_CASH: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0.0000345, ipft: IPFT_NSE_PCT }, // FA46730, extended back
+  { from: "2023-04-01", txn: 0.0000325, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA56129
+  { from: "2024-04-01", txn: 0.0000322, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA61137
+  { from: "2024-10-01", txn: 0.0000297, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA64232
+  { from: "2026-03-01", txn: 0.000030699, ipft: IPFT_NSE_PCT }, // FA73061
+];
+const NSE_FUTURES: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0.00002, ipft: IPFT_NSE_PCT }, // FA46730, extended back
+  { from: "2023-04-01", txn: 0.000019, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA56129
+  { from: "2024-04-01", txn: 0.0000188, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA61137
+  { from: "2024-10-01", txn: 0.0000173, ipft: IPFT_NSE_CASH_FUT_2023 }, // FA64232
+  { from: "2026-03-01", txn: 0.000018299, ipft: IPFT_NSE_PCT }, // FA73061
+];
+const NSE_OPTIONS: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0.00053, ipft: IPFT_NSE_PCT }, // FA46730, extended back
+  { from: "2023-04-01", txn: 0.0005, ipft: IPFT_NSE_OPT_2023 }, // FA56129
+  { from: "2024-04-01", txn: 0.000495, ipft: IPFT_NSE_OPT_2023 }, // FA61137
+  { from: "2024-10-01", txn: 0.0003503, ipft: IPFT_NSE_OPT_2023 }, // FA64232
+  { from: "2026-03-01", txn: 0.000355299, ipft: IPFT_NSE_PCT }, // FA73061
+];
+const BSE_CASH: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0.0000345, ipft: 0 }, // 20210210-42 top slab, extended back
+  { from: "2022-12-01", txn: 0.0000375, ipft: 0 }, // 20221109-7
+];
+const BSE_STOCK_OPTIONS: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0, ipft: 0 }, // 20190819-14 waiver, extended back
+  { from: "2022-05-02", txn: 0.00005, ipft: 0 }, // 20220425-2, unchanged by 20240927-37
+];
+const BSE_INDEX_OPTIONS: ExchangeLevy[] = [
+  { from: EPOCH_START, txn: 0, ipft: 0 }, // 20190819-14 waiver, extended back
+  { from: "2022-05-02", txn: 0.00005, ipft: 0 }, // 20220425-2
+  { from: "2023-11-01", txn: 0.000375, ipft: 0 }, // 20231020-46, Sensex nearest-expiry top slab
+  { from: "2024-05-13", txn: 0.000495, ipft: 0 }, // 20240430-42, Sensex + Bankex top slab
+  { from: "2024-10-01", txn: 0.000325, ipft: 0 }, // 20240927-37
+];
+
+/** The exchange schedule for a seeded (segment, exchange), oldest first. */
+function exchangeScheduleFor(segment: Segment, exchange: Exchange): ExchangeLevy[] {
+  const isEq = segment === "eq_delivery" || segment === "eq_mtf" || segment === "eq_intraday";
+  if (exchange === "NSE") {
+    if (isEq) return NSE_CASH;
+    if (segment === "index_option" || segment === "stock_option") return NSE_OPTIONS;
+    if (segment === "future") return NSE_FUTURES;
   }
-  if (segment === "index_option" || segment === "stock_option") {
-    return exchange === "BSE" ? 0.000325 : 0.0003503;
+  if (exchange === "BSE") {
+    if (isEq) return BSE_CASH;
+    if (segment === "index_option") return BSE_INDEX_OPTIONS;
+    if (segment === "stock_option") return BSE_STOCK_OPTIONS;
   }
-  if (segment === "future") return 0.0000173;
-  if (segment === "commodity_future") return 0.000021;
-  if (segment === "commodity_option") return 0.000418;
-  return 0;
+  if (exchange === "MCX") {
+    if (segment === "commodity_future") return [{ from: EPOCH_START, txn: 0.000021, ipft: 0 }];
+    if (segment === "commodity_option") return [{ from: EPOCH_START, txn: 0.000418, ipft: 0 }];
+  }
+  // A combo with no verified schedule must not be seeded at a guessed 0.
+  throw new Error(`No verified exchange-charge schedule for ${segment} on ${exchange}`);
+}
+
+/** The entry of an oldest-first schedule in force on `on`. */
+function inForce<T extends { from: string }>(schedule: T[], on: string): T {
+  let hit = schedule[0];
+  for (const e of schedule) if (e.from <= on) hit = e;
+  return hit;
 }
 
 // --- Stamp duty (BUY side) by segment ---------------------------------------
@@ -493,7 +618,18 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         // A paid plan overrides only what it actually changes; everything
         // else falls through to the broker's standard rates.
         const b = plan?.brokerage?.[segment] ?? brokerageFor(broker, segment);
-        const stt = sttFor(segment, "current");
+        // The key's dated levies, and every date on which one of them moves —
+        // the UNION of the STT and exchange schedules' boundaries, oldest first.
+        const sttSched = sttScheduleFor(segment);
+        const exchSched = exchangeScheduleFor(segment, exchange);
+        const bounds = [...new Set([...sttSched, ...exchSched].map((e) => e.from))].sort();
+        const levies = (on: string) => {
+          const s = inForce(sttSched, on);
+          const e = inForce(exchSched, on);
+          return { sttPct: s.pct, sttSide: s.side, exchangeTxnPct: e.txn, ipftPct: e.ipft };
+        };
+        const newest = bounds[bounds.length - 1];
+        const now = levies(newest);
         const isDeliveryLike = segment === "eq_delivery" || segment === "eq_mtf";
         const isMtf = segment === "eq_mtf";
         const dp = isDeliveryLike
@@ -518,12 +654,12 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
           brokeragePct: b.pct,
           brokerageCap: b.cap,
           brokerageFloor: b.floor,
-          sttPct: stt.pct,
-          sttSide: stt.side,
-          exchangeTxnPct: exchangeTxnFor(segment, exchange),
+          sttPct: now.sttPct,
+          sttSide: now.sttSide,
+          exchangeTxnPct: now.exchangeTxnPct,
           sebiPct: SEBI_PCT,
           stampPct: stampFor(segment),
-          ipftPct: exchange === "NSE" ? IPFT_NSE_PCT : 0,
+          ipftPct: now.ipftPct,
           gstPct: GST,
           dpCharge: dp.dpCharge,
           dpPct: dp.dpPct ?? 0,
@@ -537,34 +673,19 @@ export function buildChargeConfigSeed(): ChargeSeedRow[] {
         });
 
         /**
-         * The earlier epochs, for the three rates FA 2026 moved (the same three
-         * the Finance (No. 2) Act, 2024 moved on 1 October 2024).
-         *
-         * Emitted as further rows for the same key, each closed at the next
-         * boundary, so a trade is priced at the rate that actually applied on
-         * its own date. They differ from the current row in STT ONLY. Segments
-         * neither change touched get one open-ended row exactly as before — no
-         * needless history where nothing changed.
+         * The earlier epochs: one further row per window of the key's boundary
+         * union, newest first, each closed at the next boundary, so a trade is
+         * priced at the levies that actually applied on its own date. They
+         * differ from the current row in STT and the exchange charge + IPFT
+         * ONLY. A key neither schedule moves (MCX) keeps one open-ended row
+         * exactly as before — no needless history where nothing changed.
          */
-        if (sttChangedIn2026(segment)) {
+        if (bounds.length > 1) {
           const current = rows[rows.length - 1];
-          current.effectiveFrom = STT_EPOCH_2026;
-          const fy25Stt = sttFor(segment, "pre-2026-04");
-          rows.push({
-            ...current,
-            sttPct: fy25Stt.pct,
-            sttSide: fy25Stt.side,
-            effectiveFrom: STT_EPOCH_2024,
-            effectiveTo: STT_EPOCH_2026,
-          });
-          const preStt = sttFor(segment, "pre-2024-10");
-          rows.push({
-            ...current,
-            sttPct: preStt.pct,
-            sttSide: preStt.side,
-            effectiveFrom: "1970-01-01",
-            effectiveTo: STT_EPOCH_2024,
-          });
+          current.effectiveFrom = newest;
+          for (let i = bounds.length - 2; i >= 0; i--) {
+            rows.push({ ...current, ...levies(bounds[i]), effectiveFrom: bounds[i], effectiveTo: bounds[i + 1] });
+          }
         }
       }
     }

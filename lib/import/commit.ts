@@ -1785,8 +1785,12 @@ export function commitParsedFile(
     if (autoClosed.length > 0) {
       const named = autoClosed.slice(0, 5).map((a) => `${a.symbol} ${a.qty}`).join(", ");
       const more = autoClosed.length > 5 ? `, and ${autoClosed.length - 5} more` : "";
+      // Since v4.3.0 C-5 this sentence is SHOWN after a broker pull as well as a
+      // file import, so it names its real source: every broker API adapter
+      // (lib/import/api/*) returns format "api", and no file parser does.
+      const source = parsed.format === "api" ? "pull" : "file";
       commitWarnings.push(
-        `${autoClosed.length} open position${autoClosed.length === 1 ? "" : "s"} in this account ${autoClosed.length === 1 ? "was" : "were"} closed by this file, oldest first (${named}${more}). Realised P&L sits on the closed rows; the matching rows in this file are their closing legs, not new positions.`,
+        `${autoClosed.length} open position${autoClosed.length === 1 ? "" : "s"} in this account ${autoClosed.length === 1 ? "was" : "were"} closed by this ${source}, oldest first (${named}${more}). Realised P&L sits on the closed rows; the matching rows in this ${source} are their closing legs, not new positions.`,
       );
     }
     const referenceRows = parsed.reference?.length ? parsed.reference : referenceFromReported(parsed.reported);

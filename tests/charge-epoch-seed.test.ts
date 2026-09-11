@@ -31,6 +31,7 @@ interface Row {
   segment: string;
   exchange: string;
   sttPct: number;
+  exchangeTxnPct: number;
   effectiveFrom: string;
   effectiveTo: string | null;
 }
@@ -49,47 +50,45 @@ describe("charge_config epochs survive a re-seed", () => {
       (r) => r.broker === "zerodha" && r.plan === "default" && r.segment === segment && r.exchange === "NSE",
     );
 
-  it("keeps the historical STT epoch intact, and invents no epoch where the statute did not move", async () => {
+  it("keeps every historical epoch intact, and invents no epoch where no levy moved", async () => {
     const { seedDatabase } = await import("@/lib/db/seed-core");
 
-    // --- Futures: moved on 1-Oct-2024 AND by FA 2026, so THREE epochs. -----
-    const before = pick("future");
-    expect(before.length).toBe(3);
-    const oldBefore = before.find((r) => r.effectiveFrom === "1970-01-01")!;
-    const fy25Before = before.find((r) => r.effectiveFrom === "2024-10-01")!;
-    const newBefore = before.find((r) => r.effectiveFrom === "2026-04-01")!;
-    expect(oldBefore.sttPct).toBeCloseTo(0.000125, 10); // 0.0125% up to 30-Sep-2024
-    expect(fy25Before.sttPct).toBeCloseTo(0.0002, 10); // 0.02% 1-Oct-2024 .. 31-Mar-2026
-    expect(newBefore.sttPct).toBeCloseTo(0.0005, 10); // 0.05% from 1-Apr-2026
-    expect(oldBefore.effectiveTo).toBe("2024-10-01");
-    expect(fy25Before.effectiveTo).toBe("2026-04-01");
-    expect(newBefore.effectiveTo).toBeNull();
+    // --- Futures: STT moved on 1-Oct-2024 and 1-Apr-2026, the NSE charge on
+    // 1-Apr-2023, 1-Apr-2024, 1-Oct-2024 and 1-Mar-2026 — so SIX epochs. ------
+    const FUT = [
+      // [effectiveFrom, effectiveTo, sttPct, exchangeTxnPct]
+      ["1970-01-01", "2023-04-01", 0.000125, 0.00002], // STT 0.0125% up to 30-Sep-2024
+      ["2023-04-01", "2024-04-01", 0.000125, 0.000019],
+      ["2024-04-01", "2024-10-01", 0.000125, 0.0000188],
+      ["2024-10-01", "2026-03-01", 0.0002, 0.0000173], // STT 0.02% 1-Oct-2024 .. 31-Mar-2026
+      ["2026-03-01", "2026-04-01", 0.0002, 0.000018299],
+      ["2026-04-01", null, 0.0005, 0.000018299], // STT 0.05% from 1-Apr-2026
+    ];
+    const shape = (rows: Row[]) =>
+      [...rows]
+        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+        .map((r) => [r.effectiveFrom, r.effectiveTo, r.sttPct, r.exchangeTxnPct]);
+    expect(shape(pick("future"))).toEqual(FUT);
 
     // --- THE REGRESSION: seed again, exactly as an app update does. ---------
     seedDatabase();
 
-    const after = pick("future");
-    expect(after.length).toBe(3); // no duplicate epoch created
-    const oldAfter = after.find((r) => r.effectiveFrom === "1970-01-01")!;
-    const fy25After = after.find((r) => r.effectiveFrom === "2024-10-01")!;
-    const newAfter = after.find((r) => r.effectiveFrom === "2026-04-01")!;
+    // No duplicate epoch, and the historical windows still carry the HISTORICAL
+    // rates. Before the fix the oldest read 0.0005 — today's rate written over the past.
+    expect(shape(pick("future"))).toEqual(FUT);
 
-    // The historical windows still carry the HISTORICAL rates. Before the fix
-    // the oldest read 0.0005 — today's rate written over the past.
-    expect(oldAfter.sttPct).toBeCloseTo(0.000125, 10);
-    expect(oldAfter.effectiveTo).toBe("2024-10-01");
-    expect(fy25After.sttPct).toBeCloseTo(0.0002, 10);
-    expect(fy25After.effectiveTo).toBe("2026-04-01");
-    expect(newAfter.sttPct).toBeCloseTo(0.0005, 10);
-    expect(newAfter.effectiveTo).toBeNull();
+    // --- MCX commodity futures: no levy moved, so one open row. Splitting it
+    // would invent history that never happened. ---------------------------------
+    const mcx = rows().filter(
+      (r) => r.broker === "zerodha" && r.plan === "default" && r.segment === "commodity_future" && r.exchange === "MCX",
+    );
+    expect(mcx.map((r) => [r.effectiveFrom, r.effectiveTo])).toEqual([["1970-01-01", null]]);
 
-    // --- Equity delivery: explicitly "No Change" in circular 02/2026. -------
-    // Splitting it would invent history that never happened.
+    // --- Equity delivery: STT "No Change" in circular 02/2026 — every epoch
+    // carries 0.1%; its epochs are the NSE exchange charge's alone. ------------
     const delivery = pick("eq_delivery");
-    expect(delivery.length).toBe(1);
-    expect(delivery[0].effectiveFrom).toBe("1970-01-01");
-    expect(delivery[0].effectiveTo).toBeNull();
-    expect(delivery[0].sttPct).toBeCloseTo(0.001, 10);
+    expect(delivery.map((r) => r.effectiveFrom).sort()).toEqual(["1970-01-01", "2023-04-01", "2024-04-01", "2024-10-01", "2026-03-01"]);
+    for (const r of delivery) expect(r.sttPct).toBeCloseTo(0.001, 10);
   });
 
   /**
@@ -153,5 +152,35 @@ describe("charge_config epochs survive a re-seed", () => {
     const map = ratesMapOf(after as unknown as ChargeRates[]);
     const rates = findRates(map, "zerodha", "future", "NSE", "2026-06-01");
     expect(rates.sttPct).toBeCloseTo(0.000123, 12);
+  });
+
+  /**
+   * seedDatabase() is ONE transaction (v4.3.0), like the desktop refresh: an
+   * abort part-way through leaves charge_config exactly as it was. Before, each
+   * row committed on its own, so a failure left a half-applied rate card.
+   *
+   * The seed walks brokers in BROKER_LIST order (dhan first, sahi last), so the
+   * dhan epoch deleted here is re-INSERTED before the sahi row's UPDATE is
+   * reached — and the planted trigger aborts that UPDATE. Runs last in the
+   * file: it rewrites rows and plants a trigger.
+   */
+  it("is atomic: an abort mid-seed rolls back the rows the seed had already written", async () => {
+    const { seedDatabase } = await import("@/lib/db/seed-core");
+    const { sqlite } = t;
+    const key = (broker: string, from: string) =>
+      `broker = '${broker}' AND plan = 'default' AND segment = 'eq_delivery' AND exchange = 'NSE' AND effective_from = '${from}'`;
+    expect(sqlite.prepare(`DELETE FROM charge_config WHERE ${key("dhan", "2023-04-01")}`).run().changes).toBe(1);
+    expect(sqlite.prepare(`UPDATE charge_config SET brokerage_pct = 0.5 WHERE ${key("sahi", "2026-03-01")}`).run().changes).toBe(1);
+    sqlite.exec(`CREATE TRIGGER planted_abort BEFORE UPDATE ON charge_config BEGIN SELECT RAISE(ABORT, 'planted abort'); END;`);
+    const snap = () => sqlite.prepare("SELECT * FROM charge_config ORDER BY id").all();
+    const before = snap();
+    try {
+      expect(() => seedDatabase()).toThrow(/planted abort/);
+      // The dhan epoch the seed inserted before the abort is rolled back with it.
+      expect(sqlite.prepare(`SELECT count(*) AS n FROM charge_config WHERE ${key("dhan", "2023-04-01")}`).get()).toEqual({ n: 0 });
+      expect(snap()).toEqual(before);
+    } finally {
+      sqlite.exec("DROP TRIGGER planted_abort");
+    }
   });
 });

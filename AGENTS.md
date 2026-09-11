@@ -114,7 +114,7 @@ this is about catching it before the push, not instead of CI.
   Upstox was the last schema-only broker — its first three real exports carried zero data rows.
   That caveat is DISCHARGED as of 2026-09-04: `tests/golden-books.test.ts` pins a POPULATED
   realised-P&L export against Upstox's own stated figures (gross −1.05, net −4.28, charges 3.23,
-  met to the paisa) and a populated trade report (11 executions → 4 positions, net −271.90 — our
+  met to the paisa) and a populated trade report (11 executions → 4 positions, net −271.92 — our
   arithmetic, since a trade report states no P&L). Its layouts AND its realised-P&L value
   behaviour are VERIFIED; the Upstox ledger still has no parser.
 - **Every DB-reading page/layout is `force-dynamic`.**
@@ -158,6 +158,12 @@ seconds. Two things cannot be tested that way, because the behaviour under test 
 - **One temp database per FILE.** Vitest gives one module registry per file and `lib/db` caches its
   connection on `globalThis`, so a second `openTempDb()` in the same file reuses the first. If a
   test needs a second database, it needs a second file.
+- **The Windows CI runner is > 15× slower than a dev machine on SQLite-file work** (measured 2026-09-11:
+  a 318 ms local `it` timed out at vitest's 5 s there, and a `beforeAll` passed 30 s). A test that
+  builds many databases — a scenario sweep, a mutant table — gives each scenario an in-memory copy
+  (`tpl.serialize()` once, `new Database(buffer)` per scenario; ATTACH of a template FILE still
+  works from it), builds its template once per file, and splits sweeps with `it.each`. Budget ≤ 300 ms
+  per `it` and ≤ 3 s per hook LOCALLY; a raised timeout needs a comment with the measured local time.
 
 **e2e:** the Playwright suite shares one database across the run and imports are de-duplicated, so
 specs must not assume they run first (see `e2e/helpers.ts`). Two rules learned the hard way:

@@ -13,12 +13,12 @@ describe("computeCharges — exact statutory values", () => {
     );
     expect(c.brokerage).toBe(0);
     expect(c.sttCtt).toBe(210); // round(0.1% × 210000)
-    expect(c.exchangeTxn).toBe(6.24); // 0.00297% × 210000
+    expect(c.exchangeTxn).toBe(6.45); // 0.0030699% × 210000 (NSE FA73061, from 1 Mar 2026)
     expect(c.sebi).toBe(0.21);
     expect(c.stampDuty).toBe(15); // round(0.015% × 100000)
     expect(c.dpCharges).toBe(15.34); // Zerodha incl GST
-    expect(c.gst).toBe(1.16); // 18% × (exchange + sebi); DP already incl GST
-    expect(c.total).toBe(247.95);
+    expect(c.gst).toBe(1.2); // 18% × (exchange + sebi); DP already incl GST
+    expect(c.total).toBe(248.2);
   });
 
   it("Zerodha index option (NSE): ₹20/order flat, STT on sell premium", () => {
@@ -29,12 +29,12 @@ describe("computeCharges — exact statutory values", () => {
     );
     expect(c.brokerage).toBe(40); // 20 buy + 20 sell
     expect(c.sttCtt).toBe(18); // round(0.15% × 12000)
-    expect(c.exchangeTxn).toBe(7.71); // 0.03503% × 22000
+    expect(c.exchangeTxn).toBe(7.82); // 0.0355299% × 22000 (NSE FA73061, from 1 Mar 2026)
     expect(c.sebi).toBe(0.02);
     expect(c.stampDuty).toBe(0); // round(0.003% × 10000 = 0.3)
-    expect(c.gst).toBe(8.59);
+    expect(c.gst).toBe(8.61);
     expect(c.dpCharges).toBe(0);
-    expect(c.total).toBe(74.32);
+    expect(c.total).toBe(74.45);
   });
 
   it("Zerodha equity intraday (NSE): brokerage capped at ₹20/order, STT on sell", () => {
@@ -45,11 +45,11 @@ describe("computeCharges — exact statutory values", () => {
     );
     expect(c.brokerage).toBe(40); // min(20, 0.03%×200000=60) × 2
     expect(c.sttCtt).toBe(50); // round(0.025% × 200000)
-    expect(c.exchangeTxn).toBe(11.88);
+    expect(c.exchangeTxn).toBe(12.28); // 0.0030699% × 400000 (NSE FA73061, from 1 Mar 2026)
     expect(c.stampDuty).toBe(6); // round(0.003% × 200000)
     expect(c.dpCharges).toBe(0); // no DP on intraday
-    expect(c.gst).toBe(9.41);
-    expect(c.total).toBe(117.69);
+    expect(c.gst).toBe(9.48);
+    expect(c.total).toBe(118.16);
   });
 
   it("Dhan commodity option (MCX): CTT 0.05% sell, no IPFT", () => {

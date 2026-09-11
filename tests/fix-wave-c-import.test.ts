@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
 /**
@@ -25,7 +25,9 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * file (lib/db caches its connection), so every scenario owns its account id.
  * Dates are derived HERE from the clock, never by the module under test — a
  * check that asks catchUpRange what catchUpRange should return agrees with
- * itself.
+ * itself. The clock is FROZEN per test at NOW (Date only; timers stay real),
+ * so a run that straddles IST midnight can no longer put this file's dates and
+ * the route's `today` on two different days.
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -42,6 +44,7 @@ const C5_PULL = 41;
 const C5_FILE = 42;
 const C6_ROUTE = 43;
 const C6_AUTO = 44;
+const C5_AUTO = 45;
 const CLIENT = "1000000009";
 const ROOT = path.resolve(__dirname, "..");
 
@@ -59,6 +62,7 @@ beforeAll(async () => {
       { id: C5_FILE, name: "C5 file", isDefault: false },
       { id: C6_ROUTE, name: "C6 route", isDefault: false },
       { id: C6_AUTO, name: "C6 auto", isDefault: false },
+      { id: C5_AUTO, name: "C5 auto", isDefault: false },
     ])
     .run();
 });
@@ -66,9 +70,19 @@ afterAll(() => {
   vi.unstubAllGlobals();
   t?.cleanup();
 });
-afterEach(() => vi.unstubAllGlobals());
+/** 23:59:59 IST on 10 Sep — one second before IST midnight, the worst instant
+ *  for the old real-clock derivation. Frozen per test, restored after it. */
+const NOW = new Date("2026-09-10T18:29:59.000Z");
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
-// ── dates, from the clock (IST = UTC + 5:30) ─────────────────────────────────
+// ── dates, from the frozen clock (IST = UTC + 5:30) ──────────────────────────
 const DAY = 86_400_000;
 /** The IST calendar day `offset` days from now. */
 const istDay = (offset = 0) => new Date(Date.now() + 5.5 * 3_600_000 + offset * DAY).toISOString().slice(0, 10);
@@ -198,9 +212,10 @@ describe("C-5 · a Dhan pull whose SELL closes a held lot says so — preview AN
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.result.added).toBe(0);
-    const closed = (json.result.warnings as string[]).find((w) => w.includes("was closed by this file"));
-    expect(closed, "the route response dropped the commit's sentence").toMatch(
-      /^1 open position in this account was closed by this file, oldest first \(TCS 100\)\./,
+    const closed = (json.result.warnings as string[]).find((w) => w.includes("was closed by this pull"));
+    // A PULL closed it: the sentence the card prints names the pull, never a file.
+    expect(closed, "the route response dropped the commit's sentence, or it names a file").toBe(
+      "1 open position in this account was closed by this pull, oldest first (TCS 100). Realised P&L sits on the closed rows; the matching rows in this pull are their closing legs, not new positions.",
     );
 
     const text = bc.pullResultMessage("commit", json);
@@ -377,10 +392,48 @@ describe("C-6 · a clamp in the background auto-pull is recorded through the sam
     const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === C6_AUTO);
     expect(mine?.status).toBe("imported");
     expect(mine?.detail).toContain(`fills from ${istDay(-120)} to ${istDay(-91)} not fetched`);
+    // An ordinary new row still reads as it always did: "+1 trade (…)".
+    expect(mine?.detail.startsWith("+1 trade (fills from")).toBe(true);
     expect(out.line).toContain("not fetched");
 
     // THE assertion (red on revert): the background commit is not silent either.
     const conn = await connOf(C6_AUTO);
     expect(conn.unfetched).toEqual([{ from: istDay(-120), to: istDay(-91), reason: "range-cap" }]);
+  });
+});
+
+// ===========================================================================
+// C-5 · the scheduled auto-pull's "+N trades"
+// ===========================================================================
+
+/**
+ * The sweep line counted the PREVIEW's non-duplicate rows
+ * (`summary.newCount`), so a SELL that closed a held lot read "Dhan +1 trade"
+ * while the commit added no row — the manual pull says "0 added" for the very
+ * same fills. The line now counts the rows the commit ADDED and names the
+ * closes, in the same count the preview's close plan states.
+ */
+describe("C-5 · the auto-pull line says what the commit did to a held lot", () => {
+  it("a SELL that closes the held lot reads '+0 trades, 1 open position closed', never '+1 trade'", async () => {
+    addDhan(C5_AUTO, stampOn(-4), { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 });
+    stubDhan([{ id: "A5-B", side: "BUY", qty: 100, price: 100, at: `${istDay(-3)} 09:30:00` }]);
+    const opened = await post({ action: "pull", broker: "dhan", accountId: C5_AUTO, mode: "commit" });
+    expect(opened.status).toBe(200);
+    expect(rowsOf(C5_AUTO).map((r) => r.is_open)).toEqual([1]);
+    // Put the stamp back so the sweep's catch-up window reaches the sell.
+    t.sqlite.prepare("UPDATE broker_connections SET last_pull_at = ? WHERE account_id = ?").run(stampOn(-4), C5_AUTO);
+
+    t.sqlite.prepare("UPDATE settings SET auto_pull_enabled = 1, last_auto_pull_date = NULL").run();
+    stubDhan([{ id: "A5-S", side: "SELL", qty: 100, price: 120, at: `${istDay(-2)} 14:00:00` }]);
+    const out = await job.runAutoPull(new Date()); // the REAL pullOne
+    const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === C5_AUTO);
+    expect(mine?.status).toBe("imported");
+    // THE assertion (red on revert): the count is what the commit wrote.
+    expect(mine?.detail).toBe("+0 trades, 1 open position closed");
+    expect(out.line).toContain("Dhan +0 trades, 1 open position closed");
+    // …and it is true: no row was added, the held one closed in place.
+    const rows = rowsOf(C5_AUTO);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ is_open: 0, buy_qty: 100, sell_qty: 100 });
   });
 });

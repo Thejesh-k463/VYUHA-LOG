@@ -24,7 +24,9 @@ describe("the Upstox schema-only caveat is retired everywhere it was stated", ()
     expect(golden, "the realised-P&L reference Upstox itself states").toContain(
       "reference: { gross: -1.05, net: -4.28, charges: 3.23",
     );
-    expect(golden, "the trade report's committed net").toContain("commit: { net: -271.9,");
+    // −271.90 → −271.92 on 2026-09-11: the 4.3.0 exchange-charge epochs (C-8) price the trade
+    // report at NSE's 1-Mar-2026 transaction rate; the docs quote the same figure.
+    expect(golden, "the trade report's committed net").toContain("commit: { net: -271.92,");
   });
 
   for (const file of ["AGENTS.md", "docs/BROKER_FORMATS.md"]) {
@@ -48,7 +50,8 @@ describe("the Upstox schema-only caveat is retired everywhere it was stated", ()
       const text = readFileSync(path.join(root, file), "utf8");
       expect(text).toMatch(/golden-books\.test\.ts/);
       expect(text).toMatch(/−4\.28|-4\.28/);
-      expect(text).toMatch(/−271\.90|-271\.90/);
+      // Follows the golden commit pinned above (−271.90 → −271.92, C-8, 2026-09-11).
+      expect(text).toMatch(/−271\.92|-271\.92/);
     });
   }
 });

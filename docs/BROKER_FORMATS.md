@@ -26,7 +26,7 @@ codes, PANs and names). This document deliberately contains **no identifiers**.
 > now pins two POPULATED Upstox exports: a realised-P&L export whose single row is
 > checked against Upstox's own stated figures (gross −1.05, net −4.28, charges
 > 3.23, met to the paisa by the engine's estimate), and a trade report of 11
-> executions → 4 positions committing net −271.90 (a trade report states neither
+> executions → 4 positions committing net −271.92 (a trade report states neither
 > P&L nor charges, so that one pins our own arithmetic, not the broker's). Upstox
 > value behaviour is therefore VERIFIED for the realised-P&L export and pinned for
 > the trade report; the Upstox ledger still has no parser. What the data
@@ -342,7 +342,7 @@ Three real exports examined 2026-08-20 were **all schema-only** (that account ha
 no trades). A fourth and fifth, examined 2026-09-04, are POPULATED and pinned by
 `tests/golden-books.test.ts` — a realised-P&L export checked against Upstox's own
 stated figures (gross −1.05, net −4.28, charges 3.23, met to the paisa) and a trade
-report of 11 executions → 4 positions committing net −271.90. So the layouts below
+report of 11 executions → 4 positions committing net −271.92. So the layouts below
 are VERIFIED, and value behaviour is VERIFIED for the realised-P&L export and pinned
 (against our own arithmetic, not a broker statement) for the trade report; the ledger
 still has no parser. Filenames name no broker: `trade_<from>_<to>_<code>.xlsx`,
