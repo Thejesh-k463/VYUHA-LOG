@@ -5566,3 +5566,76 @@ the commented-out plants and the `>=` mutant proven red), then round 2 = test-in
 skeptic. **S-1 is recorded, not fixed:** pre-existing, outside the F1 rulings, and a first-run header check only trades one
 broken start for another (no template → no usable DB either). Rejected: fixing S-1 in 4.3.0 (new first-run behaviour
 nobody asked for); recording T-1 / T-2 without a fix (the (h)/(i) pins would not catch the likeliest slip, a commented line).
+
+## 2026-09-11 — v4.3.0 fourth session: micro fix wave F1-2 → round 2 (8 → 7) → F1-3; five product defects (C-3..C-7) found by the release-copy drafter; owner rulings
+
+**F1-2 = `2560992`** (one Opus builder; `tests/rate-card-refresh.test.ts` +94/−6, `scripts/desktop-server.mjs` comments and
+indentation only — `git diff -w` is the header comment — README counts 7661 → 7666 at six sites). T-1: the (h)/(i) source pins
+read comment-stripped source; T-2: (e3) a closed user-edited window is exclusive-to; T-3: the template handle on `opened`; S-2 /
+S-3 as filed. Red on revert against the old AND the new test file: a commented refresh call (old 15/15 green → new 3 red), a
+commented `build-desktop.mjs:78` (old green → new 2 red), `>` → `>=` at `rate-card-refresh.mjs:106` (old green → (e3) red).
+Orchestrator's own gate: `npm run verify` EXIT 0 — 379 files / 7,666 passed / 35 skipped.
+**CI 34578562759:** attempt 1 = 5/6, the Windows job alone red on `Hook timed out in 30000ms` in the `beforeAll` of three
+unrelated seeded files (`import`, `reconcile-screen`, `strategies-shelf-route`) — a cold runner past even the 30 s
+`hookTimeout` raised after 4.1 (this file, 2026-09-07 entry); `gh run rerun --failed` → attempt 2 **6/6**. No code change.
+If it recurs in a release run, re-run that job (continuation §1 (c)); if it recurs twice in one run, measure the seeded
+`beforeAll` durations before raising the cap again.
+
+**Round 2 over `0170674..2560992`** (4 Fable auditors — two lenses per ruled dimension — + a Fable skeptic, 495k):
+schema-migrations **0** (31 candidates, all refuted: the launcher change is whitespace + comments, the migrate → refresh →
+close order and the three handlers intact, the header true, the upgrade path and seed-core parity re-derived);
+test-integrity **8 → skeptic 7** (T1-10 a duplicate of T2-1). Survivors, all pin gaps on CORRECT code, each killed by the
+skeptic's own mutation harness over the real module: **T1-11 (medium)** the guard's key columns are unpinned (dropping broker
+/ plan / segment / exchange leaves (e)/(e2)/(e3) green); **T1-19 (medium)** the loader is unpinned (`import(path.join(…))`
+without `pathToFileURL` passes 20/20 and throws `ERR_UNSUPPORTED_ESM_URL_SCHEME` on Windows); **T1-15** `IS NOT` → `!=`
+survives; **T1-2** a quote-bearing regex literal flips the hand stripper (cannot fire at HEAD); **T1-18** (h) pins isolation,
+not order; **T2-1** covering / ended-before windows never planted (`<`, `!=`, the dropped disjunct survive); **T2-2
+(cosmetic)** (f)'s raw handle is off `opened[]`. **Decided (orchestrator; the round-1 / round-8 precedent): micro fix wave
+F1-3 fixes all seven, and adds an IN-SUITE mutant table over `rate-card-refresh.mjs`** (each mutant a single-occurrence string
+replacement imported from a temp file; each must fail a named scenario; equivalents listed with a reason) **and moves the
+stripper onto the TypeScript parser**. Rejected: seven one-off pins with no table (the ladder would find the next survivor
+each round); recording them (the pins would not catch the likeliest slips). Also found by the skeptic: two 0-byte untracked
+files at the repo root named with U+F022 (MSYS's stand-in for `"`), created 13:53 IST by an agent's mangled redirect during
+the round; removed after inspection.
+
+**The release-copy drafter** (one Opus agent drafting the 4.3.0 CHANGELOG / README / client README / install guide / landing
+chip into the scratchpad only, every claim checked against code): 74 claims verified, 19 dropped or reworded, 12
+contradictions. Copy corrections it forced (the drafts follow the code): **16** `legacyFree` names stay free, not 11 (this
+file's 5205 already noted the 11 was a shape count); Data Quality duplicate removal is a button **plus a confirm**, not
+"one-click" (STATE §2 says one-click — corrected at hand-off); only dialog BODY text grew; the IST expiry stamp is for pasted
+tokens; OpenAlgo DOES price contracts, so "not priced by these feeds" names Upstox and Angel One only; ROM uses
+`signedPct`; the "v4.2.1" label sits in 26 comments, not 4. **Five product candidates**, each given two independent Fable
+auditors (refute-first, reproduce), **all CONFIRMED 2/2**: **C-3 (cosmetic, wave 2 `a00ddd0`)** the drawer button reads
+"Browse all 40 (40)" (`strategy-copy.ts:84` + `browse-drawer.tsx:57`; the substring pins pass over it); **C-4 (low, wave 1
+`265d684`)** the Dhan catch-up message says "the last pull was older than the previous trading day" on every routine
+next-day pull (`dhan.ts:1054`); **C-5 (medium, wave 1)** a broker pull whose SELL auto-closes a lot reports "Committed — 0
+added" — the after-commit sentence (`commit.ts:1789`) reaches no screen, and the pull preview shows no close plan;
+**C-6 (medium / silent, wave 1)** a Dhan gap over 90 days is clamped silently, `lastPullAt` moves to now and the older fills
+are never fetched (this file's 4834 accepted the cap's existence, not its silence); **C-7 (silent wrong number,
+PRE-EXISTING since v3.2.0 `b26cb5c`)** the seed has no 2024-10-01 epoch, so pre-October-2024 F&O trades from files that
+state no charges carry 1.6× the STT (0.02% / 0.10% vs 0.0125% / 0.0625%). **Owner rulings** (06-ANSWERS "v4.3.0 C-6 / C-7
+rulings"): C-7 fixed in 4.3.0, rates only; C-6 said plainly. **Decided (orchestrator): C-3, C-4, C-5 fixed in 4.3.0** —
+introduced by this release, small, inside the ruled scope. Rejected: shipping a release's own known defects. Fix wave C runs
+after F1-3 lands (C-7 moves `rate-card-refresh.test.ts` expectations F1-3 is editing).
+
+**Two owner items closed without a pop-up.** The Pro annual price: `docs/owner/MONETIZATION_PLAN.md:344` (the price
+authority), `landing-page.html:498/518/533` and `brochure.html:242` all sell **₹7,999**; `docs/SESSION_PROMPT.md:178`'s
+₹9,999 was the stale line and is corrected (STATE §0.4 item 7). Rejected: asking (the authority and both selling surfaces
+agree). The "v4.2.1 rulings asked under a patch premise" flag: asked once — the owner: "NO MINOR RELEASE REQUIRED, release all
+in v4.3.0 (I have made the same ruling before)"; every wave-1 ruling stands (06-ANSWERS "v4.3.0 pre-bump ruling").
+
+**F1-3 = `ca73495`** (one Opus builder; `tests/rate-card-refresh.test.ts` +634/−223, README 7666 → 7704): all seven
+round-2 survivors pinned; the stripper and the try-statement finder read the TypeScript parser's tree (loaded through
+`createRequire` — an ESM import made vite transform the 9 MB compiler, +10 s); an in-suite mutant table of **20** mutants of
+`scripts/rate-card-refresh.mjs`, each killed by a named scenario (23 scenarios; the unmutated control passes all), and **3
+equivalents** (`<=` → `<` on the window start — the same five NOT NULL index columns make that row the row itself — and the two
+`IS` → `=` on NOT NULL key columns) asserted to pass every scenario. Proofs: a no-op mutant → "SURVIVED every scenario"; a bare
+`import(path.join(…))` → red; the two tries swapped → red; a quote-bearing regex + a commented refresh call → 3 red. The file:
+58 tests, 3.6 s, slowest `it` 318 ms. Builder's gate EXIT 0 — 379 / 7,704 / 35; **CI 34582856615 6/6** on attempt 1.
+
+**The audit stopping rule + the release-level audit** (owner, typed in chat; 06-ANSWERS "Audit stopping rule"): LOW /
+cosmetic test-only findings are recorded, never a new wave; only a product defect or a medium+ test finding reopens work,
+and a fix wave gets a SCOPED re-check. One release-level audit per release, in one session, every lens — codified in
+`.claude/skills/vyuha-audit/SKILL.md` §0.5 / §1a / §4. Supersedes the round-8 precedent. For 4.3.0 it runs over
+`v4.2.0..HEAD` after fix wave C, with a fresh hashed copy of the owner's live DB at `data/smoke-430-release/` (app closed;
+live `vyuha.sqlite` + `-wal` hashes identical before and after; last written 2026-09-09, i.e. the true v4.2.0 state).

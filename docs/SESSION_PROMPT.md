@@ -175,7 +175,7 @@ IF THE TASK IS A RELEASE: follow the `release` skill start to finish. Traps alre
 9. winget:manifest REQUIRES --sha, and it must be the PUBLISHED asset's hash, not your local
    build's. WDSI takes the ZIP's installer instead. DOC_AUDIT rows 15/16/20.
 
-ALREADY SETTLED — do not re-open: Pro annual Rs 9,999 / lifetime Rs 29,999 (list Rs 13,000 /
+ALREADY SETTLED — do not re-open: Pro annual Rs 7,999 / lifetime Rs 29,999 (list Rs 13,000 /
 Rs 35,999 from 2027-01-01); keep the v2.99.0 tag; PDF parser returns trades: [] by design;
 revocations prerelease exists; annual->lifetime = full credit within the year; delivery is manual
 mail/WhatsApp; intraday data not required; macOS is not sold; landing page = Pages redirect, not a

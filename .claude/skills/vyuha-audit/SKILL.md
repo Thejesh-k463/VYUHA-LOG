@@ -30,6 +30,46 @@ you gate. This skill does not fork; it runs in your context so you can hold the 
    CRLF; when a script is unavoidable, append UTF-8 BYTES (`cat` a file, or `Encode::encode`)
    and verify a mojibake scan (the byte pairs for a-circumflex + euro sign, A-tilde, A-circumflex) returns 0 and there are zero LF-only lines before committing.
 
+## 0.5 The stopping rule (owner ruling 2026-09-11, 06-ANSWERS "Audit stopping rule") — apply to EVERY finding
+
+- **Reopens work (a fix wave):** any PRODUCT defect, at any severity, and any test-integrity finding graded MEDIUM or above.
+- **Recorded, never a new wave:** LOW / cosmetic findings that live only in tests (a pin that could be stricter, a harness
+  nit). Write each into the round's `docs/DECISIONS.md` entry — id, `file:line`, why it is not fixed — and move on.
+- **A fix wave is verified by a SCOPED re-check, not a new full round:** the skeptic re-checks each fix against its finding,
+  every fix is red-on-revert with the assertion quoted, one `npm run verify`, CI green. A new full round only when the fix
+  wave changed product code in an area no lens has audited.
+- Tell the owner, every time, which findings are PRODUCT and which are TEST-ONLY. Superseded: the round-8 precedent of
+  fixing every low pin gap (the ladder never converged: each round found the next surviving mutant in the last fix's tests).
+
+## 1a. The release-level audit — ONCE per release, in ONE session, every lens (owner: "no new defect comes … highest accurate build")
+
+Run it over `<last tag>..HEAD` after the last feature/fix wave has its CI run. It exists because nine diff-scoped rounds
+missed four 4.3.0 product defects that the release-notes draft found in an hour (DECISIONS 2026-09-11, C-3..C-6). One
+workflow, auditors and skeptic on Fable, in this order:
+
+1. **Release-notes claims — drafted FIRST.** One agent drafts the CHANGELOG section, the README quote, the client README
+   "New in", the install-guide upgrade lines and the landing chip into the scratchpad, every claim checked against CODE with
+   `file:line`. A claim the code does not back is a finding (product if the code is wrong, docs if the copy is). The drafts
+   are then the bump's inputs.
+2. **The six dimensions (§1),** each with TWO auditors on different lenses (e.g. refute-first vs reproduce/trace) — same
+   dimension, never a seventh.
+3. **Ruling conformance.** Every row of every `06-ANSWERS.md` table ruled for this release → the code that implements it →
+   the test that pins it. Behaviour that diverges from the ruling, or a ruling with no pinning test, is a finding.
+4. **User journeys.** Each user-visible flow the release touched, traced end to end — UI → route → lib → DB → back to the
+   screen — asking what the user SEES after every action. A real write that reads as a no-op ("0 added"), a silent clamp, a
+   message that is false on the common path: findings (C-4, C-5, C-6 were all this).
+5. **Mutation on money and data paths.** For each changed module that computes or writes money, rates or trades: name the
+   smallest mutants and prove the suite kills them; a module that guards money gets an IN-SUITE mutant table
+   (`tests/rate-card-refresh.test.ts` is the pattern).
+6. **Upgrade on a copy of the owner's live DB** (STATE §0.3 V3 procedure): the real sidecar startup twice, the migration +1
+   then +0, the rate-card refresh counts as expected then 0/0. The only lens that found F1.
+7. **Seams** (`vyuha-seam-tester`) when the release had more than one builder.
+8. **Completeness critic, last.** One agent lists what no lens covered — diff files no auditor opened, rulings not traced,
+   flows not walked, modules without a mutant check — and each material gap gets a targeted pass IN THE SAME RUN before the
+   skeptic. The audit is done when the critic's list is empty or every item on it is recorded as out of scope with a reason.
+
+Then §2 (the skeptic over the union), the stopping rule, and §3 (the plan, asked before any fix agent starts).
+
 ## 1. Fan out — six auditors, in parallel, one message
 
 Launch six `vyuha-auditor` agents in a SINGLE message so they run concurrently. Each gets
@@ -77,8 +117,10 @@ The plan must state, per wave:
 
 ## 4. After the fix wave
 
-The fix wave gets its OWN audit before a tag. Re-run step 1 on the fix wave's diff. A fix
-wave that was not audited is how v3.5.0 and v3.7.0 died.
+The fix wave gets its OWN verification before a tag — the SCOPED re-check of §0.5 (the skeptic
+re-checks each fix against its finding, red-on-revert quoted, one `npm run verify`, CI green). Re-run step 1 on the fix
+wave's diff ONLY when it changed product code in an area no lens of the release-level audit (§1a) covered. A fix wave
+that was not verified is how v3.5.0 and v3.7.0 died; a ladder of full rounds over test nits is how 4.3.0 stalled.
 
 Probes are `tests/zzprobe-*.test.ts` only and are deleted before any agent reports; the
 project's `probe-guard` hook will deny the commit while one exists.
