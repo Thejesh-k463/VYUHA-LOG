@@ -5754,7 +5754,9 @@ findRates-equivalent lookups on the migrated copy: dhan index_option NSE 2024-09
 **What C-8 does NOT fix, stated plainly (owner rulings; also owed to the 4.3.0 release note's "not in this release" line).**
 (1) Dates before the earliest verified schedule — NSE before 1 Jan 2021, BSE cash before 1 Mar 2021, BSE derivatives before
 20 Aug 2019 — are priced at that earliest verified schedule (by ruling); the real earlier rates are not in the repo. (2) Sensex
-50 options, and non-nearest Sensex expiries from 1 Nov 2023 to 13 May 2024, are priced at the Sensex/Bankex rate — the card
+50 options are priced at the Sensex/Bankex rate, and — from 1 Nov 2023 to 13 May 2024 — BANKEX options and non-nearest
+Sensex expiries (BSE charged them ₹500/crore then) are priced at the nearest-expiry Sensex top slab 0.0375% (release-audit
+lens 1 caught that the ruling question named only Sensex 50 and non-nearest expiries; flagged to the owner) — the card
 has one BSE `index_option` key; a per-contract key needs a schema change. (3) MCX is unchanged and its pre-October-2024 rates
 unverified. (4) The other BSE stock groups (X / XT / Z …) and BSE's own IPF contribution are not modelled. (5) The Paytm
 August exchange-line gap (+441.49, pinned as "DEFECT, UNEXPLAINED") is open for the release-level audit. (6) Charges already
@@ -5762,3 +5764,58 @@ stored on trades are not rewritten (rates only). The golden re-pin (`tests/golde
 trade report's committed net −271.90 → −271.92 (priced at NSE's 1-Mar-2026 rate): `tests/broker-doc-claims.test.ts:27`,
 `AGENTS.md:117` and `docs/BROKER_FORMATS.md:29/:345` updated with it (the builder's targeted run had not included that guard).
 The Zerodha FY24-25 txn line is +₹19.80 (0.22%) over the stated figure, unexplained, bounded at ₹20 in the new pin.
+
+**C-8 + CC = `d0eda00`** (gate: 382 files, 7,868 passed + three doc/count guards fixed in the commit — README 7742 → 7871 and
+381 → 382, the two −271.92 pins in `tests/broker-doc-claims.test.ts:27/:53` — 35 skipped; lint 0 errors).
+**The release-level audit (skill §1a) over `v4.2.0..d0eda00`** (27 commits, 122 files, +22,664 / −678) was first launched
+with every auditor and the skeptic on Fable (the standing rule); **Fable's usage limit was exhausted mid-launch — 21 of 23
+started agents failed, none completed — and the owner ruled "run all the agents on OPUS"**. Stopped and relaunched with every
+agent on Opus (same script, same brief; nothing was cached because nothing had completed). The standing "Fable only for
+auditors and the skeptic" rule resumes when Fable is available again; an Opus audit is not a deviation to re-run.
+
+## 2026-09-11 — v4.3.0 release-level audit (the first under the new rule) → 91 confirmed; owner: auto-close OFF for 4.3.0, all 19 older product defects in 4.3.0, the work to a fresh session
+
+**CI 34592381864 on `d0eda00` = 6/6 on attempt 1**, the Windows job included (the in-memory rate-test rework held). Nothing
+this session built is uncommitted or unverified; the audit below is its verification.
+
+**Lens 1 (the release notes re-drafted from the final code first; drafts now in
+`LIVE-DESK-RESEARCH/16-BUMP-4.3.0-DRAFTS/`):** 98 claims — 91 still true, 7 changed, 27 new, 0 dropped; the widened rate-card
+sentence keeps the owner's three clauses verbatim. Its findings, through an Opus skeptic (the global `skeptic` agent defaults
+to Fable — pass `model: opus` while Fable is out): **F-L1-3 silent wrong number, product, introduced** — the C-6 page-limit
+remedy tells the user to import a Dhan GTR over days the pull ALREADY imported; the GTR states scrip names ("Reliance
+Industries"), the API tickers, the dedup hash (`dedup.ts:52`) and the cross-source warning (`cross-source.ts:164,171`) key on
+that name, so the rows import twice with no warning; the range also runs to today, which `/positions` always covers. The name
+mismatch underneath is PRE-EXISTING. **F-L1-7 medium, product** — the auto-pull line takes closes from the PREVIEW while the
+commit also skips same-pull repeats (`commit.ts:1591`); the hash omits exchange, so NSE + BSE same-price sells plan 2 closes
+and commit 1, and the second real sale is dropped — the drop is PRE-EXISTING since `25aa650` (v1.10.0). **F-L1-5** a stale
+comment. And the Bankex window: the ruling question had named only Sensex 50 and non-nearest expiries; re-asked with Bankex
+named — owner RE-CONFIRMED the nearest-Sensex 0.0375% for 2023-11-01 → 2024-05-13.
+
+**The release-level audit** (skill §1a; one workflow, **45 agents, all Opus**, 7.68 M subagent tokens, 67 min): 12 dimension
+auditors (6 × 2 lenses), 3 ruling-conformance, 4 user journeys, 3 deep (mutation × 2, Paytm), 1 seam tester, a completeness
+critic, 6 gap passes, skeptic batches. **105 → 91 CONFIRMED + 14 duplicates.** Product introduced by 4.3.0: **7 silent wrong
+numbers**, 1 broken feature, 11 medium, 22 low, 3 cosmetic (44); product pre-existing: **6 silent wrong numbers**, 4 medium, 8
+low, 1 cosmetic (19); test-only medium+ 8 (6 introduced); test-only low/cosmetic 14 (**recorded, not fixed — the stopping
+rule**); docs 6. **Six of the seven introduced silent wrong numbers are in the wave-1 FIFO auto-close** — R3 a closed row's
+charges re-added from components (engine DP/IPFT replace the broker's stated total), R4 a sale closes a lot bought AFTER it
+(no lot.date ≤ row.date test), R8 an account merge moves a second copy of an auto-closed slice, R42 the Dhan catch-up re-reads
+the last pull's day and pairs a stored BUY with a later SELL into a new closed row, R72 Angel One / Upstox auto-closes store a
+CLOSED trade with `sell_date` NULL, R75 deleting the BUY import deletes the row carrying the SELL's money — and the seventh,
+R80, is Dhan's `allocateFills` vs `pairLegs` same-day order. The handed items: **the Paytm August +441.49 is NOT a C-8 error**
+(the NSE fills bill exactly 307/crore = the post-C-8 306.99 + 0.01; the residual is BSE fills implying 350.31/crore against the
+seeded 375, and six mixed-venue scrips priced at their first fill's venue — `paytm-tradebook.ts:386`, R71, pre-existing), so
+C-8 stands; **recordAudit best-effort** graded low (R19). Why nine diff-scoped rounds missed them: none walked a whole flow,
+traced a ruling to its code and test, or mutated the money path across files — the release-level lenses did (the owner's
+2026-09-11 rule, vindicated on its first run). **The full list, every finding with where / happens / should / reproduce / the
+skeptic's evidence: `LIVE-DESK-RESEARCH/15-RELEASE-AUDIT-4.3.0.md`** (880 lines; generated from the workflow output).
+
+**Owner rulings** (06-ANSWERS "v4.3.0 release-level-audit rulings"): the FIFO auto-close is **switched OFF for 4.3.0** and
+rebuilt in **4.3.1** together with the duplicate-detection defects that share its trade-identity code (F-L1-3's name
+mismatch, F-L1-7's drop, R43) — the next session confirms what 4.2.0 did with a SELL of a held lot and restores exactly that;
+**all 19 older product defects are fixed in 4.3.0** (R1 only from a verified Finance Act 2023 source; R43 as its own item
+unless it proves inseparable from the identity rebuild — then ask); **the fix work runs in a fresh session**. Rejected: fix
+auto-close in place; rate-card-only older fixes; continuing in this ~510k-token session. With auto-close off, its own findings
+(R3, R4, R8, R72, R75, R76, R2, R14, R31, R6, R39, R41, R62, R15 and the tests R16, R58–R60) move to the 4.3.1 rebuild; the
+next session re-checks each against the switched-off code, because some (R42, R80, R81, R82) live in the Dhan adapter, not
+in auto-close, and stay 4.3.0 work. The bump drafts must drop every auto-close claim (C-5's close sentence, CC's pull
+wording, the auto-pull closes count) before they are used.
