@@ -32,6 +32,16 @@
       "autoPort": true
     },
     {
+      "name": "vyuha-dev-smoke-0071",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VYUHA_DB_PATH=data\\smoke-0071\\vyuha.sqlite&& npm run dev -- -p 3011"
+      ],
+      "port": 3011,
+      "autoPort": false
+    },
+    {
       "name": "vyuha-dev-live-db",
       "runtimeExecutable": "cmd",
       "runtimeArgs": [

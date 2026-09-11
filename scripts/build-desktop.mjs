@@ -74,6 +74,8 @@ if (fs.existsSync(path.join(root, "public"))) {
 
 // 3. launcher + migrations (so the launcher can upgrade existing user DBs)
 fs.copyFileSync(path.join(root, "scripts", "desktop-server.mjs"), path.join(dist, "desktop-server.mjs"));
+// Every module the launcher loads must sit beside it (tests/rate-card-refresh.test.ts pins this).
+fs.copyFileSync(path.join(root, "scripts", "rate-card-refresh.mjs"), path.join(dist, "rate-card-refresh.mjs"));
 fs.cpSync(path.join(root, "drizzle"), path.join(dist, "drizzle"), { recursive: true });
 // Ensure the full drizzle-orm package (incl. the migrator submodule) is bundled —
 // Next's file tracing may omit files the app never imports directly.

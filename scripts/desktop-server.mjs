@@ -40,13 +40,21 @@ if (!fs.existsSync(dbPath) && fs.existsSync(seedTemplate)) {
 // Apply pending migrations (idempotent; safe on every launch, incl. app updates).
 // A pre-migration backup of the user DB is written first — parity with the dev
 // migrate path (lib/db/migrate.ts), so a bad upgrade can never eat the journal.
+//
+// Migration and rate-card refresh are TWO steps with TWO error handlers. They
+// used to share one try, so a refresh failure (it threw on every launch from
+// v3.2.0 to v4.2) was logged as "migration step failed" and skipped close().
+// A genuine migration failure still lets the server start, as it always has.
 const migrationsDir = path.join(here, "drizzle");
 if (fs.existsSync(migrationsDir)) {
+  let sqlite;
   try {
     const { default: Database } = await import("better-sqlite3");
+    sqlite = new Database(dbPath);
+
+    try {
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
-    const sqlite = new Database(dbPath);
 
     // Back up ONLY when this launch will actually migrate. The old code copied
     // the whole DB on EVERY launch — 30-150 ms of blocking I/O and up to ten
@@ -88,66 +96,25 @@ if (fs.existsSync(migrationsDir)) {
     }
 
     migrate(drizzle(sqlite), { migrationsFolder: migrationsDir });
-    refreshRateCards(sqlite, seedTemplate);
-    sqlite.close();
     console.log(pending ? "[vyuha] migrations applied" : "[vyuha] schema current — no migration, no backup");
+    } catch (e) {
+      console.error("[vyuha] migration step failed:", e?.message ?? e);
+    }
+
+    // Rate cards (scripts/rate-card-refresh.mjs): its own step, its own handler.
+    // Loaded dynamically so a packaging slip (the module missing beside this
+    // file) degrades to a logged line instead of ERR_MODULE_NOT_FOUND killing
+    // the sidecar before the server starts.
+    try {
+      const { refreshRateCards } = await import(pathToFileURL(path.join(here, "rate-card-refresh.mjs")).href);
+      refreshRateCards(sqlite, seedTemplate);
+    } catch (e) {
+      console.error("[vyuha] rate-card refresh failed (journal and schema untouched):", e?.message ?? e);
+    }
   } catch (e) {
-    console.error("[vyuha] migration step failed:", e?.message ?? e);
-  }
-}
-
-/**
- * Bring charge_config up to date with the rate cards this build ships.
- *
- * Migrations already ran on every launch, but SEEDING did not: it happened once,
- * when the database file was first created. So a broker added in a later release,
- * or a rate corrected after a broker revised its card, never reached anyone who
- * had already installed Vyuha — the app kept quoting figures from the build the
- * user first ran, and the new brokers showed as "unpriced" forever.
- *
- * Rows the user edited are pinned by `user_edited` and never touched: their
- * number came from their own contract note and outranks ours.
- *
- * The template is the same seed the TypeScript path writes (build-desktop.mjs
- * generates it by running that seed), so both routes agree by construction.
- */
-function refreshRateCards(sqlite, templatePath) {
-  if (!fs.existsSync(templatePath)) return;
-  const KEY = ["broker", "plan", "segment", "exchange"];
-  const cols = sqlite
-    .prepare("PRAGMA table_info(charge_config)")
-    .all()
-    .map((c) => c.name);
-  // Only columns BOTH databases have — an older template must not break launch.
-  sqlite.prepare("ATTACH ? AS seedtpl").run(templatePath);
-  try {
-    const tplCols = new Set(
-      sqlite.prepare("PRAGMA seedtpl.table_info(charge_config)").all().map((c) => c.name),
-    );
-    const shared = cols.filter((c) => tplCols.has(c) && c !== "id");
-    if (!KEY.every((k) => shared.includes(k))) return;
-    const values = shared.filter((c) => !KEY.includes(c) && c !== "user_edited" && c !== "updated_at");
-    const list = shared.map((c) => `"${c}"`).join(", ");
-    const match = KEY.map((k) => `t."${k}" = s."${k}"`).join(" AND ");
-
-    const added = sqlite
-      .prepare(`INSERT OR IGNORE INTO charge_config (${list}) SELECT ${list} FROM seedtpl.charge_config`)
-      .run().changes;
-
-    const set = values.map((c) => `"${c}" = (SELECT s."${c}" FROM seedtpl.charge_config s WHERE ${match})`);
-    // `IS NOT` is SQLite's null-safe comparison, so an unchanged row with NULLs
-    // in it does not count as a difference and get rewritten every launch.
-    const differs = values.map((c) => `t."${c}" IS NOT s."${c}"`).join(" OR ");
-    const refreshed = sqlite
-      .prepare(
-        `UPDATE charge_config AS t SET ${set.join(", ")}
-         WHERE t.user_edited = 0
-           AND EXISTS (SELECT 1 FROM seedtpl.charge_config s WHERE ${match} AND (${differs}))`,
-      )
-      .run().changes;
-    console.log(`[vyuha] rate cards: ${added} added, ${refreshed} refreshed (user edits kept)`);
+    console.error("[vyuha] database could not be opened — migrations and rate-card refresh skipped:", e?.message ?? e);
   } finally {
-    sqlite.prepare("DETACH seedtpl").run();
+    if (sqlite) sqlite.close();
   }
 }
 

@@ -5471,3 +5471,78 @@ skeptic. Rejected: record both under the widened caveat and close row 1 now.
   duplicate `const before` inside the stale guard; the stale block moved past its guard's `return;`) still red under the wider
   slice; scoped `strategies-page` + `readme-claims` + `seams-v43-wave2` 120/120; eslint clean. Gate line, sha and CI: STATE §2 /
   the ledger.
+
+## 2026-09-11 — v4.3.0 STATE §0.3 V3/V4/V5 on a copy of the owner's live DB → PASS; and F1: the sidecar rate-card refresh has failed on every launch since v3.2.0
+
+**How it was run, and why not as STATE wrote it.** The copy is `vyuha.sqlite` + its `-wal` (desktop app not running; both
+sha256-hashed before and after — identical; no script opened the live files) at `data/smoke-0071/vyuha.sqlite` — a FOLDER,
+not `data/smoke-0071.sqlite`, because `lib/db/index.ts:74-84` puts `attachments/`, `trash/` and `vault.key` beside the DB
+file, and a copy loose in `data/` shares them with the dev DB (a restore renames the attachments dir — invariant 10).
+**STATE's V3 procedure cannot work as written:** `next dev` never migrates (no instrumentation file; `lib/db/index.ts` runs
+data fixes only). Migrations run in `lib/db/migrate.ts` (`npm run db:migrate`) and in the desktop sidecar
+(`scripts/desktop-server.mjs:40-97`) — nowhere else. So V3 ran BOTH: (a) `db:migrate` twice on the copy; (b) the REAL sidecar
+code staged at `data/sidecar-stage/` (desktop-server.mjs + the repo's `drizzle/` + the v4.2.0 seed template) started twice
+with `VYUHA_DATA_DIR` on a second copy (it dies on the missing `server.js` after the migration block — expected). STATE's
+V3 FAIL-C also names the wrong list: a shelf survives backup/restore because `SETTINGS_MACHINE_COLUMNS`
+(`lib/backup-format.ts:86`) does NOT contain `strategyShelfJson`; `BASELINE_SETTINGS_FIELDS` drives My Default Settings only.
+
+**Measured.** Pre-state 71 `__drizzle_migrations` rows (0069/0070 hashes equal the files), no `strategy_shelf_json`. Both
+paths: +1 row (created_at 1788800500000, hash `ce04992f9e81` = sha256 of the 0071 file), the column present and NULL; second
+run/start +0. (0068's stored hash `5cc1b2e89018` ≠ the file's `f4959225ce1e`: the owner DB took 0068 from a pre-commit draft;
+comment-only — the column is right, and drizzle cuts off by created_at, never by hash.) V3 render: no SqliteError; the NULL
+shelf reaches the page as `DEFAULT_SHELF` in order and Pro draws those 8 tiles in order. FAIL-C round trip through the live
+routes (`POST /api/strategies/shelf` set → `/api/backup` export with `includeAttachments:false` → column NULLed → restore):
+dumped === stored, "Restored 2480 rows across 34 tables", after === stored, trades 1311 = 1311. **V4:** there is no
+entitlement override — FREE is the copy's own state (trial began 2026-08-30; the licence ciphertext cannot decrypt with the
+folder's fresh `vault.key`), PRO is `trial_started_at` = now. Seeded in the selected account: a 1×2 call ratio spread and a
+call calendar (non-legacy) and a long straddle (legacy control). FREE document HTML + decoded inline flight + the `RSC: 1`
+response: **0 hits across all 34 non-legacy names and variants** (the list built at run time from the catalogue by
+`legacyFree`), 2 × "Custom (2 legs)" + ProLock, `picker: null`, the locked strip; "Long Straddle" stays named by design.
+PRO: both names, no ProLock, the drawer's 40 `aria-pressed` tiles (8 pressed); tick / Undo / Redo / Restore defaults each
+`POST` 200 and persisted (Restore stores the explicit 8-id envelope). **V5**, in headless Chromium because the Browser pane
+is hidden and lays nothing out (its rects read 0): 40 anchors set-equal to `STRATEGY_IDS` (DOM order grouped by style, by
+design); fresh loads of `#options-box-spread` / `#options-jade-lizard` put the card at top 80 px under a 69 px sticky header;
+the palette's "jade" → "Jade lizard · Options" first from `/help` and from `/`. The 9 related test files 252/252.
+
+**F1 — found by (b), by no test.** `refreshRateCards` keys on `broker, plan, segment, exchange`; since `b26cb5c` (v3.2.0,
+2026-08-30) `charge_config_uq` also carries `effective_from` and the seed emits two epochs for 45 F&O keys. `effective_from`
+therefore stays in the UPDATE's SET list, both epoch rows of a key receive the same value, and the UPDATE violates the index —
+after the INSERT OR IGNORE has already autocommitted. The throw shares the migration's try, so it logs "[vyuha] migration step
+failed" (the migration had succeeded) and skips `sqlite.close()`. It fires on every launch of every v3.2.0+ install, fresh
+ones included (the template as the user DB throws). The owner's `sidecar.log`: 24 starts, 1 refresh (the first launch,
+2026-08-30), then 23 failures from the 2026-08-31 upgrade on. Left behind in the owner's DB: 45 1970-epoch rows at the
+post-2026 STT (0.0015 options, 0.0005 futures, against 0.001 / 0.0002) with `effective_to` NULL instead of 2026-04-01 —
+replaying the failing refresh on the pre-upgrade state reproduces the owner's `charge_config` exactly. All 1,305 of the
+owner's trades date from 2026-04-01, so newest-first `findRates` prices them right; a pre-April F&O trade would carry 1.5× /
+2.5× the STT with nothing on screen looking wrong. The TS seed path (`lib/db/seed-core.ts:113-155`) was updated for epochs in
+`b26cb5c`; the sidecar copy of the same idea was not, and no test executed it. Rulings: 06-ANSWERS "v4.3.0 V3–V5 verification
+rulings" (fix in 4.3.0; migration failure logged accurately but non-fatal; rates only, stored charges untouched, said plainly
+in the release note; the install guide says one upgrade, 0071).
+
+**Fable skeptic over the V3–V5 claims: 0 refuted, 5 unverifiable** — every one state-dependent (the backup round trip, run
+last, had overwritten the NULL-shelf fixture; the server was Pro while it looked). Closed by a re-run in the copy's FREE
+state with the shelf NULLed, the bodies saved for re-grep: 12 of 12 inline flight chunks decoded (0 parse failures), 0
+non-legacy names, `pro:false`, 2 withheld groups, the default 8 ids in order; `/help` free: 40 anchors, no ProLock;
+`/settings` says "Unlicensed". **Order your checks read-before-write** — the one lesson of the round. Two notes, no change:
+a free page receives the user's STORED shelf ids (page.tsx:108/132 are not gated) — by the page's own contract it withholds
+the picker and the MATCH, and a user's own saved selection of catalogue ids (public on /help and in the client chunk) is
+theirs; and React SSR renders the help badge as `40<!-- --> structures`, so a literal `40 structures` assertion on SSR HTML
+is a silent false negative.
+
+**Fix wave F1** (one Opus builder, 113k; `scripts/rate-card-refresh.mjs` NEW; `scripts/desktop-server.mjs` +25/−58;
+`scripts/build-desktop.mjs` +2; `tests/rate-card-refresh.test.ts` NEW, 15 tests; README 7646 → 7661 and 378 → 379 at its
+six sites). The refresh moved into its own module. Its key is read from `charge_config_uq` via `PRAGMA index_info`; it
+SKIPS with a logged reason when that index is absent, the template lacks a key column, or the template is not unique on the
+key — the last is the builder's addition: R2 lets the refresh run after a failed migration, and a DB stuck on the 4-column
+index facing an epoch template must not take an arbitrary epoch's rates. INSERT + UPDATE run in one transaction; the
+user-edit guard covers BOTH (seed-core parity: a covered epoch is neither added nor refreshed). The launcher opens the DB
+once: migration in its own try ("migration step failed", the server still starts — R2), the refresh in a separate try that
+loads the module by dynamic import (a packaging slip logs "rate-card refresh failed" instead of killing the sidecar), a
+third catch for a DB that will not open, `close()` in a `finally`. **Red on revert**, each assertion quoted by the builder:
+the 4-column key → 8 of 15 red (the literal shipped code: `UNIQUE constraint failed … effective_from`); no transaction →
+`expected 162 to be 161`; no insert guard → `{ added: 1 }`; no update guard → `{ refreshed: 1 }`; the refresh back inside
+the migration try → the (h) source pin; the build copy line dropped → the (i) bundle pin. **Real sidecar smoke** on a fresh
+copy of the owner DB with the v4.2.0 template: start 1 "migrations applied" + "rate cards: 0 added, 45 refreshed"; start 2
+"schema current" + "0 added, 0 refreshed"; 0 UNIQUE lines, 0 "migration step failed", 0 overlapping open epochs in 162
+rows. Gate: `npm run verify` EXIT 0 — 379 files / 7,661 passed / 35 skipped; lint 0 errors (the 3 old warnings). **Not
+proven:** the dynamic-import fallback with the module actually missing (static pins only).
