@@ -50,6 +50,13 @@ import { StrategyCard } from "./strategy-card";
  * on the shelf it superseded — the store moved, whoever's tick was latest
  * (R5-U-2, in `run`).
  *
+ * A REFUSAL REVERTS TO THE CONFIRMED HISTORY, stack and all. `committed` is a
+ * real `ShelfHistory`, advanced by replaying each accepted gesture's own action
+ * through the reducer, so putting the strip back costs the session neither its
+ * Undo nor its Redo — and can never leave an OPTIMISTIC shelf inside them,
+ * which reverting to a gesture's closure `history` did with two writes in
+ * flight (R6-U-1, in `run`).
+ *
  * NO EFFECT ANYWHERE. Everything on this screen is derived at render from
  * `history.present` and the props — the rule AGENTS.md states after the Trades
  * view filter broke under the React Compiler.
@@ -84,18 +91,35 @@ export function StrategiesClient({
   const latest = React.useRef(0);
 
   /**
-   * THE LAST SERVER-CONFIRMED SHELF — the only state a refusal may revert to.
+   * THE LAST SERVER-CONFIRMED HISTORY — the only state a refusal may revert to.
    *
-   * R4-U-1. This used to be a `previous` snapshotted inside the gesture, which
-   * is the right answer for ONE write in flight and the wrong one for two. Tick
-   * A and tick B, both refused: A's reply is stale and returns without touching
-   * anything, and B's revert then landed on A's snapshot — A's OPTIMISTIC
-   * state, a shelf the store never held. The strip showed A ticked while the
-   * database still held the shelf from before A.
+   * R4-U-1's shape, made correct. It began as a `previous` snapshotted inside
+   * the gesture; fix wave 5 then took `present` from here and `past`/`future`
+   * from the gesture's closure `history`. BOTH are right for ONE write in
+   * flight and wrong for two, and for the same reason: a closure is one
+   * gesture's optimistic view of the world. Ticks A and B in flight, B refused:
+   * B's closure `history` IS A's optimistic state, so the revert put A's
+   * never-stored shelf into `past`. Three refusals deep, Undo lands on a shelf
+   * the store never held — and the next tick STORES it (R6-U-1).
+   *
+   * So this ref is not a snapshot of the store's PRESENT any more: it is the
+   * CONFIRMED HISTORY. Every accepted reply replays that gesture's OWN action
+   * through the real reducer and folds the route's re-read over the result
+   * (`foldShelfPost(shelfReducer(committed.current, action), r)`), so the
+   * undo/redo positions advance exactly as the screen's did while `present`
+   * stays the server's word. A refusal then reverts WHOLESALE to it, and every
+   * shelf reachable by Undo afterwards is one the store actually held.
    *
    * `useRef` keeps its FIRST argument, so the seed here is the server prop this
    * island mounted on — which is the stored shelf by definition. After that it
    * moves only when the route says the store moved.
+   *
+   * RESIDUAL, recorded rather than fixed: two ACCEPTED replies that land out of
+   * order (A slow, B fast) advance this ref on B only — `mine > committedAt`
+   * drops A's late `ok` — so the confirmed stack is SHORTER by A's step. That
+   * is a missing undo step, never a phantom one: every entry it does hold was
+   * stored, which is the property this ref exists to guarantee. Fixing it needs
+   * the replies ordered at the route, not here (see the tick-C residual below).
    */
   const committed = React.useRef(initShelfHistory(shelf));
   /**
@@ -129,11 +153,19 @@ export function StrategiesClient({
       // screen — and recorded even when this reply is stale, because a write
       // the route ACCEPTED is where a newer tick's refusal has to land. Drop it
       // only if a newer confirmation has already been folded in.
+      //
+      // `before` is the PRE-advance confirmed present and must stay above the
+      // advance: the stale branch asks whether the screen is still sitting on
+      // the shelf THIS reply superseded, which the advance is about to
+      // overwrite. The advance itself replays the gesture's OWN action on the
+      // confirmed history — so its undo/redo positions move with the screen's —
+      // and folds the route's re-read over the result, so `present` is the
+      // store's word and not this client's arithmetic (R6-U-1).
       const before = committed.current.present;
       const advanced = r.ok && mine > committedAt.current;
       if (advanced) {
         committedAt.current = mine;
-        committed.current = foldShelfPost(committed.current, r);
+        committed.current = foldShelfPost(shelfReducer(committed.current, action), r);
       }
       if (mine !== latest.current) {
         // R5-U-2. A STALE `ok` IS STILL A WRITE THAT HAPPENED — and returning
@@ -151,8 +183,17 @@ export function StrategiesClient({
         // IF it is still sitting on the one this reply superseded. Both halves
         // compare BY VALUE: `useState` and `useRef` seed two different objects
         // from the same server prop, so identity is false at mount even when
-        // the two say the same shelf. A screen that has moved on since — a
-        // later tick, a later fold — is left exactly where it is.
+        // the two say the same shelf.
+        //
+        // WHAT THAT BOUND REALLY IS (R6-U-2, ruled cosmetic and left alone): a
+        // screen that has moved on to a DIFFERENT selection is left exactly
+        // where it is, but one that has moved on to a value-EQUAL selection is
+        // re-synced anyway — tick a tile and untick it again with both writes
+        // in flight, and the earlier `ok` landing first flashes the removed
+        // tile back for ONE round-trip. The newer reply then lands and the
+        // final state matches the store either way. Comparing by identity
+        // instead would trade that flash for the mount-time false negative
+        // above, which loses a write; the value comparison stays.
         //
         // RESIDUAL, recorded rather than fixed: a tick C fired in the window
         // between B's revert and A's late `ok` posts the pre-A shelf plus C,
@@ -190,18 +231,19 @@ export function StrategiesClient({
         // A stale refusal's state is decided by the newer tick's reply, which
         // reverts to `committed` — the same shelf, reached one step later.
         //
-        // R5-U-1: THE PRESENT COMES BACK, THE HISTORY DOES NOT MOVE. Reverting
-        // to the whole of `committed.current` reset Undo: `foldShelfPost` is
-        // `{ ...h, present }`, so that ref's `past`/`future` are empty by
-        // construction — it records the STORE, not this session — and one
-        // refused tick after five accepted ones left the user with nothing to
-        // undo, which is the very thing the header of this file says a write on
-        // this screen must never do. `past`/`future` therefore come from the
-        // gesture's PRE-TICK `history`, and NOT from `cur`: `cur === next` is
-        // the optimistic state, whose `past` already carries the tick being
-        // refused — undoing from there would land on a shelf the store never
-        // held.
-        setHistory((cur) => (cur === next ? { ...history, present: committed.current.present } : cur));
+        // R6-U-1: THE WHOLE CONFIRMED HISTORY COMES BACK, STACK AND ALL — which
+        // is safe now and was not before, because `committed` IS a history: it
+        // is advanced by replaying each accepted gesture's action (see its
+        // declaration), so its `past`/`future` are no longer empty by
+        // construction and one refused tick after five accepted ones still
+        // leaves five things to undo. The two rejected alternatives both put a
+        // shelf the store never held into the stack: `cur` (=== `next`) carries
+        // the optimistic present the reducer already pushed onto `past`, and
+        // the gesture's closure `history` carries the OTHER in-flight
+        // gesture's optimistic state — three refusals deep, Undo lands on that
+        // shelf and the next tick STORES it. Nothing from a closure may enter
+        // the stack.
+        setHistory((cur) => (cur === next ? committed.current : cur));
         return;
       }
       // The screen takes the route's re-read, and the client router cache is

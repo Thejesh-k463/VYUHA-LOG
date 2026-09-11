@@ -13,7 +13,16 @@ import {
   withholdForFree,
 } from "@/components/strategies/strategy-copy";
 import { buildStrategies, type PositionedLeg, type StrategyGroup } from "@/lib/analytics/strategies";
-import { canUndo, initShelfHistory, shelfReducer } from "@/lib/domain/strategy-shelf";
+import {
+  canRedo,
+  canUndo,
+  initShelfHistory,
+  shelfReducer,
+  type ShelfAction,
+  type ShelfHistory,
+  type ShelfPostResult,
+  type ShelfState,
+} from "@/lib/domain/strategy-shelf";
 import { optionsAnchorId } from "@/lib/domain/options-help";
 
 /**
@@ -159,66 +168,220 @@ describe("the shelf write folds the route's own answer", () => {
   });
 
   /**
-   * R5-U-1, BEHAVIOURALLY: ONE REFUSAL MUST NOT COST THE UNDO HISTORY.
+   * R6-U-1, BEHAVIOURALLY: THE UNDO STACK MAY HOLD ONLY SHELVES THE STORE HELD.
    *
-   * `foldShelfPost` returns `{ ...h, present }`, so the `committed` ref's
-   * `past`/`future` are ALWAYS empty — it is a record of the STORE, not of the
-   * session. Reverting the WHOLE history to it therefore emptied `past`, and
-   * `canUndo` went false after N accepted ticks: the header of
-   * `strategies-client.tsx` says in its first paragraph that this screen exists
-   * as a route-handler write precisely so the undo history is never reset.
+   * Two answers have already been wrong here, and both for the same reason — a
+   * CLOSURE is one gesture's optimistic view of the world:
    *
-   * THE EXPRESSION BELOW IS DUPLICATED FROM THE COMPONENT, deliberately. The
-   * real one is a closure over the gesture's pre-tick `history` and the
-   * `committed` ref inside a `"use client"` island — not importable here (the
-   * island is React, and `tests/client-value-imports.test.ts` is what keeps it
-   * out of server graphs). The pin that ties this copy to the shipped one is
-   * "a refusal puts the strip back …" below, which asserts the literal
-   * `{ ...history, present: committed.current.present }` in the source; if that
-   * pin and this test ever disagree, the source pin is the one that is right.
+   *   • reverting the whole history to the `committed` REF emptied `past`
+   *     (`foldShelfPost` is `{ ...h, present }`, so that ref's stack was empty
+   *     by construction) — one refusal after N accepted ticks disabled Undo,
+   *     the reset the island's header says a route-handler write exists to
+   *     avoid (R5-U-1);
+   *   • taking `past`/`future` from the gesture's own pre-tick `history`
+   *     instead fixed that for ONE write in flight and broke it for two: with
+   *     ticks A and B in flight and B refused, B's closure `history` IS A's
+   *     optimistic state, so A's never-stored shelf stayed in `past`. Three
+   *     refusals deep, Undo lands on a shelf the store never held — and the
+   *     next tick POSTS it, which stores it (R6-U-1).
+   *
+   * The shipped answer makes `committed` a real HISTORY: an accepted reply
+   * replays that gesture's own action through the reducer before folding the
+   * route's re-read over it, so a refusal can revert WHOLESALE to it.
+   *
+   * THE TWO EXPRESSIONS MARKED "verbatim" BELOW ARE DUPLICATED FROM THE
+   * COMPONENT, deliberately. The real ones are a ref and a closure inside a
+   * `"use client"` island — not importable here (the island is React, and
+   * `tests/client-value-imports.test.ts` is what keeps it out of server
+   * graphs). What ties this copy to the shipped code is the SOURCE-SHAPE pins
+   * below ("a refusal puts the strip back …", "the confirmed history is
+   * advanced …"); if a pin and this harness ever disagree, the pin is right.
    */
+  const sameSelection = (a: ShelfState, b: ShelfState): boolean =>
+    a.selected.length === b.selected.length && a.selected.every((id, i) => id === b.selected[i]);
+
+  const ok = (selected: string[]): ShelfPostResult => ({
+    ok: true,
+    shelf: { selected },
+    updatedAt: "2026-09-11T10:00:00.000Z",
+  });
+  const refused: ShelfPostResult = { ok: false, error: "Nothing was stored." };
+
+  /**
+   * `prev` is the gesture's PRE-TICK history — the `history` its `.then()`
+   * closes over in the component. The shipped revert must not read it (that was
+   * the R6-U-1 defect); it is carried here so a test can SHOW what it holds
+   * while another write is in flight.
+   */
+  type Gesture = { mine: number; prev: ShelfHistory; next: ShelfHistory; action: ShelfAction };
+
+  /**
+   * `run()` and its `.then((r) => …)`, outside React: `history` stands in for
+   * the `useState`, `committed`/`committedAt`/`latest` for the three refs. The
+   * component's own no-op guard (`next === history`) is left out — every
+   * gesture below really changes the shelf.
+   */
+  function island(seed: ShelfState) {
+    let history = initShelfHistory(seed);
+    // Seeded from the SAME server prop as `history` and a different object,
+    // which is why every comparison downstream is by value.
+    let committed = initShelfHistory(seed);
+    let committedAt = 0;
+    let latest = 0;
+
+    return {
+      /** The gesture: reduce, render optimistically, number the write. */
+      tick(action: ShelfAction): Gesture {
+        const prev = history;
+        const next = shelfReducer(history, action);
+        history = next;
+        const mine = ++latest;
+        return { mine, prev, next, action };
+      },
+      /** Its reply, whenever it lands. */
+      reply(g: Gesture, r: ShelfPostResult): void {
+        const before = committed.present;
+        const advanced = r.ok && g.mine > committedAt;
+        if (advanced) {
+          committedAt = g.mine;
+          // ── the component's advance, verbatim ──
+          committed = foldShelfPost(shelfReducer(committed, g.action), r);
+        }
+        if (g.mine !== latest) {
+          if (advanced) {
+            history =
+              sameSelection(history.present, before) && !sameSelection(history.present, committed.present)
+                ? { ...history, present: committed.present }
+                : history;
+          }
+          return;
+        }
+        if (!r.ok) {
+          // ── the component's revert, verbatim ──
+          history = history === g.next ? committed : history;
+          return;
+        }
+        history = foldShelfPost(history, r);
+      },
+      get history(): ShelfHistory {
+        return history;
+      },
+      get committed(): ShelfHistory {
+        return committed;
+      },
+    };
+  }
+
+  /** Everything Undo can reach from here, oldest first — `past` then `present`. */
+  const stackOf = (h: ShelfHistory): string[][] => [...h.past, h.present].map((s) => s.selected);
+
+  it("two ticks in flight, both refused: the store never moved, so there is nothing to undo (R6-U-1)", () => {
+    const seed = { selected: ["long-call", "long-put"] };
+    const s = island(seed);
+    const a = s.tick({ type: "select", id: "iron-condor" });
+    const b = s.tick({ type: "select", id: "long-straddle" });
+    // A answers first and is already stale (B is `latest`), so it stays silent;
+    // B is the reply that decides the screen.
+    s.reply(a, refused);
+    s.reply(b, refused);
+
+    // WHY A CLOSURE CANNOT BE THE REVERT TARGET, stated as a fact: what B's
+    // `.then()` closes over is A's optimistic shelf, which the store refused.
+    expect(b.prev.present.selected, "B's pre-tick history is A's OPTIMISTIC state").toEqual([
+      ...seed.selected,
+      "iron-condor",
+    ]);
+    expect(s.history.present.selected, "the strip kept a shelf the route refused").toEqual(seed.selected);
+    expect(
+      s.history.past,
+      "the revert carried the OTHER in-flight gesture's optimistic shelf into `past`",
+    ).toHaveLength(0);
+    expect(canUndo(s.history), "there is an undo step for a write that never happened").toBe(false);
+  });
+
+  it("three refusals deep, every shelf Undo can still reach is one the store held (R6-U-1)", () => {
+    const seed = { selected: ["long-call", "long-put"] };
+    const s = island(seed);
+    const a = s.tick({ type: "select", id: "iron-condor" });
+    const b = s.tick({ type: "select", id: "long-straddle" });
+    const c = s.tick({ type: "select", id: "bull-call-spread" });
+    s.reply(a, refused);
+    s.reply(b, refused);
+    s.reply(c, refused);
+
+    // The store answered "no" three times, so the ONLY shelf it ever held is
+    // the seed — and that is the whole stack. Anything else here is a shelf
+    // the user can undo onto and the next tick will then POST.
+    expect(stackOf(s.history), "the undo stack holds a shelf the store never held").toEqual([seed.selected]);
+    expect(canUndo(s.history)).toBe(false);
+  });
+
   it("a refused tick after three accepted ones leaves Undo alive and the strip on the store (R5-U-1)", () => {
     const seed = { selected: ["long-call", "long-put"] };
-    let history = initShelfHistory(seed);
-    // The ref the component seeds from the SAME server prop — a different
-    // object, which is why every comparison downstream is by value.
-    let committed = initShelfHistory(seed);
+    const s = island(seed);
 
     // Three ticks, each accepted and each re-read by the route.
     for (const id of ["iron-condor", "long-straddle", "bull-call-spread"]) {
-      history = shelfReducer(history, { type: "select", id });
-      committed = foldShelfPost(committed, {
-        ok: true,
-        shelf: { selected: history.present.selected },
-        updatedAt: "",
-      });
+      const g = s.tick({ type: "select", id });
+      s.reply(g, ok(g.next.present.selected));
     }
-    expect(history.past).toHaveLength(3);
-    expect(committed.past, "the fold spends no undo step, so this is always []").toHaveLength(0);
-    expect(committed.present.selected).toEqual(history.present.selected);
+    expect(s.history.past).toHaveLength(3);
+    expect(
+      s.committed.past,
+      "the confirmed history does not advance with the screen's — the fold alone never moves a stack",
+    ).toHaveLength(3);
+    expect(s.committed.present.selected).toEqual(s.history.present.selected);
 
     // The fourth tick: reduced, rendered — and then REFUSED by the route.
-    const next = shelfReducer(history, { type: "select", id: "jade-lizard" });
-    expect(next.past, "the optimistic tick pushed the pre-tick present onto `past`").toHaveLength(4);
+    const fourth = s.tick({ type: "select", id: "jade-lizard" });
+    expect(fourth.next.past, "the optimistic tick pushed the pre-tick present onto `past`").toHaveLength(4);
+    s.reply(fourth, refused);
 
-    // ── the component's revert expression, verbatim ──
-    const reverted = { ...history, present: committed.present };
-
-    expect(canUndo(reverted), "one refused tick disabled Undo for the whole session").toBe(true);
-    expect(reverted.past, "the accepted ticks' history was replaced by the store's empty one").toHaveLength(3);
-    expect(reverted.present.selected, "the strip is not on the last shelf the store confirmed").toEqual([
+    expect(canUndo(s.history), "one refused tick disabled Undo for the whole session").toBe(true);
+    expect(s.history.past, "the accepted ticks' history was replaced by an empty one").toHaveLength(3);
+    expect(s.history.present.selected, "the strip is not on the last shelf the store confirmed").toEqual([
       "long-call",
       "long-put",
       "iron-condor",
       "long-straddle",
       "bull-call-spread",
     ]);
-    // …and NOT `cur`-based: `cur === next` already carries the optimistic
-    // present pushed onto `past`, so undoing from a `{ ...cur }` revert would
-    // land on a shelf the store never held.
-    expect(shelfReducer(reverted, { type: "undo" }).present.selected).toEqual([
+    // …and one step back is the shelf the store held before the third tick —
+    // not the optimistic present the reducer had already pushed onto `past`.
+    expect(shelfReducer(s.history, { type: "undo" }).present.selected).toEqual([
       "long-call",
       "long-put",
+      "iron-condor",
+      "long-straddle",
+    ]);
+  });
+
+  it("an accepted UNDO moves the confirmed history too, so the next refusal lands on that step (R6-U-1)", () => {
+    const seed = { selected: ["long-call"] };
+    const s = island(seed);
+    for (const id of ["iron-condor", "long-straddle"]) {
+      const g = s.tick({ type: "select", id });
+      s.reply(g, ok(g.next.present.selected));
+    }
+
+    // Undo is a write like any other: the route stores the undone shelf and
+    // re-reads it back.
+    const undo = s.tick({ type: "undo" });
+    s.reply(undo, ok(undo.next.present.selected));
+    expect(s.history.present.selected).toEqual(["long-call", "iron-condor"]);
+
+    // …and then a tick the route refuses.
+    const refusedTick = s.tick({ type: "select", id: "bull-call-spread" });
+    s.reply(refusedTick, refused);
+
+    expect(s.history.present.selected, "the strip is not on the shelf the accepted undo confirmed").toEqual([
+      "long-call",
+      "iron-condor",
+    ]);
+    expect(s.history.past, "the confirmed history is not standing where the undo left it").toHaveLength(1);
+    expect(canRedo(s.history), "the redo the accepted undo created was lost by a refusal").toBe(true);
+    expect(shelfReducer(s.history, { type: "redo" }).present.selected).toEqual([
+      "long-call",
       "iron-condor",
       "long-straddle",
     ]);
@@ -322,31 +485,61 @@ describe("the page is wired the way the estate requires", () => {
       /committed[\s\S]{0,400}?initShelfHistory\(shelf\)/,
     );
     const refusal = refusalBranch(client);
-    // R5-U-1: the PRESENT comes from the confirmed ref, the past/future from
-    // the gesture's own PRE-TICK `history`. Reverting the WHOLE history to
-    // `committed.current` disabled Undo, because `foldShelfPost` is
-    // `{ ...h, present }` and that ref's `past` is empty by construction; and
-    // reverting `{ ...cur }` would keep the optimistic present the reducer had
-    // already pushed onto `past` — a phantom undo step onto a shelf the store
-    // never held. Behaviour: "a refused tick after three accepted ones …".
+    // R6-U-1: THE WHOLE CONFIRMED HISTORY, stack included — which is only safe
+    // because `committed` is now advanced by replaying each accepted gesture's
+    // action (pinned by ADVANCE below). The two rejected shapes both put a
+    // shelf the store never held into the stack: `{ ...cur }` keeps the
+    // optimistic present the reducer already pushed onto `past`, and
+    // `{ ...history, present: … }` keeps the OTHER in-flight gesture's
+    // optimistic state there. Behaviour: the four tests in "the shelf write
+    // folds the route's own answer".
     expect(refusal, "a functional update, so a later successful tick is not overwritten").toContain(
-      "setHistory((cur) => (cur === next ? { ...history, present: committed.current.present } : cur));",
+      "setHistory((cur) => (cur === next ? committed.current : cur));",
     );
-    expect(refusal, "the whole history is replaced — one refusal empties past/future (R5-U-1)").not.toContain(
-      "? committed.current :",
-    );
+    expect(
+      refusal,
+      "a closure's `past` is back in the revert — with two writes in flight that is another gesture's optimistic shelf (R6-U-1)",
+    ).not.toContain("{ ...history, present:");
     expect(refusal, "the error is still stated").toContain("toast.error(r.error)");
     expect(client, "a `previous` snapshot is what this fix removed").not.toContain("const previous = history;");
+  });
 
-    // R5-T-1: NOTHING PINNED THE ADVANCE. Deleting the two lines that move
-    // `committed` leaves every refusal reverting to the mount seed — the exact
-    // bug R4-U-1 was written against — with the rest of this suite green. The
-    // ref must also be advanced BEFORE the refusal branch reads it.
-    const advance =
-      /const advanced = r\.ok && mine > committedAt\.current;\r?\n\s*if \(advanced\) \{\r?\n\s*committedAt\.current = mine;\r?\n\s*committed\.current = foldShelfPost\(committed\.current, r\);/;
-    expect(client, "the confirmed shelf is never advanced — `committed` stays the mount seed").toMatch(advance);
+  /**
+   * The advance of the confirmed history. R5-T-1 pinned its old shape; R6-U-1
+   * changed it, because a ref that only ever took `{ ...h, present }` could not
+   * be reverted to wholesale — its stack was empty by construction.
+   */
+  const ADVANCE =
+    /const advanced = r\.ok && mine > committedAt\.current;\r?\n\s*if \(advanced\) \{\r?\n\s*committedAt\.current = mine;\r?\n\s*committed\.current = foldShelfPost\(shelfReducer\(committed\.current, action\), r\);/;
+
+  it("the confirmed history is advanced by REPLAYING the gesture's action, and before either guard (R6-T-1/T-2)", () => {
+    // Without the replay, `committed`'s `past`/`future` stay `[]` for the whole
+    // session (`foldShelfPost` is `{ ...h, present }`) and the wholesale revert
+    // silently becomes R5-U-1 again: one refusal, no undo history. Deleting the
+    // advance outright is R4-U-1 in a new coat — every refusal reverts to the
+    // mount seed.
+    expect(client, "the confirmed history is never advanced, or no longer replays the action").toMatch(ADVANCE);
+
+    // R6-T-1. `before` is the PRE-advance confirmed present: the stale branch
+    // asks whether the screen still sits on the shelf THIS reply superseded,
+    // which the advance overwrites. Declared below the advance, that question
+    // compares the screen against the answer instead — it can never be true,
+    // and the re-sync silently stops happening.
     expect(
-      client.search(advance),
+      client.indexOf("const before = committed.current.present;"),
+      "`before` is captured AFTER the advance, so it is the new confirmed shelf and not the superseded one",
+    ).toBeLessThan(client.search(ADVANCE));
+
+    // R6-T-2. The load-bearing order pin: the advance must precede the STALE
+    // guard, which returns. (The refusal branch is mutually exclusive with the
+    // advance — `!r.ok` — so anchoring on it alone was vacuous; it is kept
+    // because it still catches the block being moved past the ok path.)
+    expect(
+      client.search(ADVANCE),
+      "the stale guard returns before this reply's acceptance is recorded — a stale `ok` is lost (R5-U-2)",
+    ).toBeLessThan(client.indexOf("if (mine !== latest.current) {"));
+    expect(
+      client.search(ADVANCE),
       "the refusal branch reads `committed` before this reply advances it",
     ).toBeLessThan(client.indexOf("if (!r.ok) {"));
   });
@@ -383,6 +576,49 @@ describe("the page is wired the way the estate requires", () => {
     // A stale REFUSAL stays silent — the fix-wave-4 decision, unchanged.
     expect(stale, "a stale refusal must not toast: a newer acceptance carries its change").not.toContain(
       "toast.error",
+    );
+  });
+
+  it("the stale re-sync is pinned as ONE block — guard, comparison, arms and refresh together (R6-T-3)", () => {
+    // The `toContain`s above are five independent assertions over one slice, so
+    // each of them stays green while the block around it is rearranged: negate
+    // the guard to `!advanced`, turn the `&&` into `||`, swap the ternary arms,
+    // and every fragment is still present somewhere in the slice. This is the
+    // adjacency pin — the technique ADVANCE and the ok-path refresh already use
+    // — so the block is asserted as the thing it actually is.
+    expect(
+      client,
+      "the stale re-sync block has been rearranged: check the `advanced` guard, the `&&`, the ternary arms and the refresh",
+    ).toMatch(
+      /if \(advanced\) \{\r?\n\s*setHistory\(\(cur\) =>\r?\n\s*sameSelection\(cur\.present, before\) && !sameSelection\(cur\.present, committed\.current\.present\)\r?\n\s*\? \{ \.\.\.cur, present: committed\.current\.present \}\r?\n\s*: cur,\r?\n\s*\);\r?\n\s*router\.refresh\(\);/,
+    );
+  });
+
+  it("nothing inside the reply callback shadows `history`, `committed` or `next` (R6-T-4)", () => {
+    // Every pin in this file reads the callback's three names as the ones
+    // declared in `run` and at component scope. A local `const committed = …`
+    // or `const history = …` inside the callback would satisfy every regex
+    // above while sending the revert somewhere else entirely — the one way the
+    // source-shape technique can be defeated without touching a pinned line.
+    const from = client.indexOf("void postShelf(body).then((r) => {");
+    const to = client.indexOf("const rows = picker");
+    expect(from, "the POST's reply handler is not where this test expects it").toBeGreaterThan(-1);
+    expect(to, "`run` no longer ends before the render").toBeGreaterThan(from);
+    expect(
+      client.slice(from, to),
+      "a declaration inside the reply callback shadows the state the revert is supposed to use",
+    ).not.toMatch(/\b(const|let|var) (history|committed|next)\b/);
+  });
+
+  it("sameSelection really compares the two selections, element by element (R6-T-5)", () => {
+    // The stale re-sync and the whole R5-U-2 fix rest on this one helper, and
+    // the pins above only assert that it is CALLED. A body of `return a === b;`
+    // makes the guard false at mount — `useState` and `useRef` build two
+    // objects from the same server prop — so the re-sync never fires and the
+    // lost write comes back; a length-only body calls two different shelves the
+    // same when a tick and an untick are both in flight.
+    expect(client, "sameSelection no longer compares the selections by value, in order").toMatch(
+      /function sameSelection\(a: ShelfState, b: ShelfState\): boolean \{\r?\n\s*return a\.selected\.length === b\.selected\.length && a\.selected\.every\(\(id, i\) => id === b\.selected\[i\]\);\r?\n\}/,
     );
   });
 

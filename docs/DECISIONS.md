@@ -5318,3 +5318,61 @@ the part that matters"). Ruling: `06-ANSWERS.md` "v4.3.0 audit-round-5 ruling" �
   moved it below went red: `expected 10184 to be less than 8180`). Two `it(` added (README 7632 → 7634). No jsdom harness: the
   `latest`/`committedAt` interleavings are reasoned and pinned, not observed (same caveat as fix wave 4). Gate line, sha and CI:
   STATE §2 / the ledger.
+
+## 2026-09-11 — v4.3.0 audit round 6 (scoped) over fix wave 5 `34db076..5494d9f` → fix wave 6 (one builder)
+
+**The audit** (scoped by the round-5 ruling to ui-regressions + test-integrity, two Fable auditors launched at HEAD `32cef9f` — docs-only
+on `5494d9f`, CI 34526537168 SUCCESS 6/6 — the seam pass not re-run because one builder built the wave): ui 14 → **2** (the handler
+copied verbatim into a zzprobe, real reducer + fold, 2- and 3-tick interleavings; deleted); test-integrity 17 → **5** (nine plants
+against the scoped file, each restored with `git checkout --`; the calibration plant — delete the stale-branch `router.refresh()` —
+went red exactly as round 5 recorded) → Fable **skeptic 7 → 7** (its read-only guard refused every write, so it re-applied the test
+file's own assertions in memory to the real component under each plant — three control plants red as recorded — and drove every
+behavioural claim through the real reducer imported from `lib/domain/strategy-shelf.ts`), severities re-set: R6-U-1 down to broken
+feature (nothing the store held is lost; the phantom is on screen; top-of-`past` == `present` in 60 of 668 interleavings), R6-T-5 down
+to cosmetic (an identity body changes the stored shelf in 13 of 1,578 schedules, all inside the U-2 window). Ruling: `06-ANSWERS.md`
+"v4.3.0 audit-round-6 ruling" — one Opus builder, all seven, then a scoped round 7.
+
+- **R6-U-1 (broken feature)** `strategies-client.tsx`: with two or more ticks in flight and the latest refused, gesture B's closure
+  `history` is A's OPTIMISTIC state (`run` reads the render's `history`; `setHistory(next)` is a value update), so the fix-wave-5
+  revert `{ ...history, present: committed.current.present }` kept A's optimistic shelf in `past`. Two refusals → Undo enabled on a
+  fresh mount with nothing to undo (the click POSTs the same shelf and writes an audit row); three refusals → Undo lands on a shelf
+  the store never held and STORES it once the route is back. The fix-wave-5 behavioural test drove ONE gesture whose closure was
+  the confirmed history, so the case was unreachable by construction. R4-U-1 fixed the `present` half, R5-U-1 the stack for ONE
+  refusal; neither covered the stack for two in flight. Fix: `committed.current` becomes the CONFIRMED HISTORY.
+- **R6-U-2 (cosmetic, RECORDED by ruling)** same file, the stale-accepted branch: the value re-sync drags the screen back onto A's
+  shelf when the user's NEWER edit equals the pre-A selection by value (tick a → untick a, or tick a → Undo, both in flight, A's ok
+  first) — the removed tile flashes back for one round-trip; the Undo variant leaves Redo enabled as a same-shelf no-op write. Final
+  state matches the store in every order probed. The comment that claimed "a screen that has moved on since … is left exactly where
+  it is" was false for value-equal moves; only the comment changes.
+- **R6-T-1 (data-loss-class pin)** `tests/strategies-page.test.ts`: `before` was pinned by presence (`toContain`) — declared BELOW the
+  advance the re-sync condition is a contradiction, the screen stays pre-A and the next tick erases A, with the R5-U-2 test green.
+- **R6-T-2 (data-loss-class pin)**: the R5-T-1 order pin anchored the advance on `if (!r.ok) {`, but `advanced` requires `r.ok` — the
+  advance and the refusal branch are mutually exclusive, so the anchor was vacuous; the load-bearing order is advance BEFORE the stale
+  guard `if (mine !== latest.current) {`. Round 5's "a plant that moved it below went red" tested the wrong "below".
+- **R6-T-3**: the stale block's guard, its `&&` and its ternary arms were unpinned — `if (!advanced)`, `||`, arms swapped all green.
+- **R6-T-4 (low)**: a `const history = committed.current;` shadow as the callback's first line kept the R5-U-1 literal byte-identical
+  and killed Undo — outside the recorded dead-branch/comment forms of the source-shape caveat.
+- **R6-T-5 (cosmetic)**: only `sameSelection`'s signature was pinned; `return a === b;` and a length-only body stayed green.
+- **Recorded, not defects (round 6):** the skeptic's premise that B's click observes the post-A render is reasoned from React 19
+  discrete-event flushing, not observed (no harness); the tick-C residual carries; a stale refusal stays silent; the T-1 superset
+  caveat carries.
+- **Fix wave 6 (one Opus builder, 119k; three files — `strategies-client.tsx` two code lines + comments, `tests/strategies-page.test.ts`
+  +7 `it(` (36 → 43), README 7634 → 7641 at its six agreeing sites; no seam file needed an edit):** U-1 — the advance is
+  `committed.current = foldShelfPost(shelfReducer(committed.current, action), r)` (the gesture's own action replayed on the confirmed
+  history, `present` the route's re-read) and the refusal revert is `cur === next ? committed.current : cur` — WHOLESALE, the R4-U-1
+  shape made correct because the ref now carries a real stack; no closure `history` in the revert. A harness drives `run` and its
+  `.then` outside React over the real reducer (four tests: two refused → `past` empty; three refused → the reachable stack is `[seed]`;
+  three accepted + one refused → `past.length` 3, the R5-U-1 pin kept; accepted undo then a refusal → redo lands right); red on the
+  closure form `the revert carried the OTHER in-flight gesture's optimistic shelf into 'past': expected [...] to have a length of +0
+  but got 1`; red when the advance stops replaying `the confirmed history does not advance with the screen's — the fold alone never
+  moves a stack: expected [] to have a length of 3`. NEW residual, in the ref's doc comment: two ACCEPTED replies out of order (A slow,
+  B fast) advance on B only, so the confirmed stack is SHORTER by A's step — a missing undo step, never a phantom; ordering replies
+  needs the route. U-2 — comment corrected to the true bound (value-equal screen re-synced for one round-trip; identity rejected
+  because `useState` and `useRef` seed two objects at mount). T-1 `before` index < advance index (`expected 8393 to be less than
+  8176`); T-2 advance index < stale-guard index (`expected 11080 to be less than 8225`; the old refusal anchor kept and labelled
+  vacuous); T-3 ONE adjacency regex over the whole stale-accepted block (all three one-token plants red on it); T-4 the reply-callback
+  slice must not declare `history`/`committed`/`next` (word-boundary regex); T-5 the `sameSelection` BODY pinned by shape (length +
+  in-order `every`). The R5-U-1 literal pin now pins the wholesale form with the negative `not.toContain("{ ...history, present:")`;
+  the R5-T-1 advance regex pins the replay form. Thirteen plants, every one EXIT 1; restored tree 43/43; scoped `readme-claims` +
+  `seams-v43-wave2` 72/72; eslint and `tsc --noEmit` clean. No jsdom harness: the `cur === next` identity under React's functional
+  updater and StrictMode double-invocation are reasoned, not observed. Gate line, sha and CI: STATE §2 / the ledger.
