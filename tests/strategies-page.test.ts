@@ -228,6 +228,10 @@ describe("the shelf write folds the route's own answer", () => {
     let committed = initShelfHistory(seed);
     let committedAt = 0;
     let latest = 0;
+    // The component's `router.refresh()`, counted rather than performed: the
+    // R5-U-2 fix is half screen and half CACHE, and a harness that records only
+    // the screen cannot say the cache half happened at all.
+    let refreshes = 0;
 
     return {
       /** The gesture: reduce, render optimistically, number the write. */
@@ -253,6 +257,7 @@ describe("the shelf write folds the route's own answer", () => {
               sameSelection(history.present, before) && !sameSelection(history.present, committed.present)
                 ? { ...history, present: committed.present }
                 : history;
+            refreshes++;
           }
           return;
         }
@@ -262,6 +267,7 @@ describe("the shelf write folds the route's own answer", () => {
           return;
         }
         history = foldShelfPost(history, r);
+        refreshes++;
       },
       get history(): ShelfHistory {
         return history;
@@ -269,11 +275,23 @@ describe("the shelf write folds the route's own answer", () => {
       get committed(): ShelfHistory {
         return committed;
       },
+      get refreshes(): number {
+        return refreshes;
+      },
     };
   }
 
   /** Everything Undo can reach from here, oldest first — `past` then `present`. */
   const stackOf = (h: ShelfHistory): string[][] => [...h.past, h.present].map((s) => s.selected);
+
+  /**
+   * Everything REDO can reach, in the order the reducer will hand it back.
+   * `stackOf` folds `present` into the undo side, so a step in `future` that is
+   * value-equal to `present` is invisible to it — and that duplicate is exactly
+   * the R7-U-1 shape: Redo enabled onto the shelf already on screen, a click
+   * that POSTs the same shelf and writes one audit row for nothing.
+   */
+  const redoStackOf = (h: ShelfHistory): string[][] => h.future.map((s) => s.selected);
 
   it("two ticks in flight, both refused: the store never moved, so there is nothing to undo (R6-U-1)", () => {
     const seed = { selected: ["long-call", "long-put"] };
@@ -297,6 +315,10 @@ describe("the shelf write folds the route's own answer", () => {
       "the revert carried the OTHER in-flight gesture's optimistic shelf into `past`",
     ).toHaveLength(0);
     expect(canUndo(s.history), "there is an undo step for a write that never happened").toBe(false);
+    expect(
+      redoStackOf(s.history),
+      "a redo step equal to `present` is a no-op write onto the shelf already on screen (R7-U-1)",
+    ).not.toContainEqual(s.history.present.selected);
   });
 
   it("three refusals deep, every shelf Undo can still reach is one the store held (R6-U-1)", () => {
@@ -314,6 +336,10 @@ describe("the shelf write folds the route's own answer", () => {
     // the user can undo onto and the next tick will then POST.
     expect(stackOf(s.history), "the undo stack holds a shelf the store never held").toEqual([seed.selected]);
     expect(canUndo(s.history)).toBe(false);
+    expect(
+      redoStackOf(s.history),
+      "a redo step equal to `present` is a no-op write onto the shelf already on screen (R7-U-1)",
+    ).not.toContainEqual(s.history.present.selected);
   });
 
   it("a refused tick after three accepted ones leaves Undo alive and the strip on the store (R5-U-1)", () => {
@@ -354,6 +380,10 @@ describe("the shelf write folds the route's own answer", () => {
       "iron-condor",
       "long-straddle",
     ]);
+    expect(
+      redoStackOf(s.history),
+      "a redo step equal to `present` is a no-op write onto the shelf already on screen (R7-U-1)",
+    ).not.toContainEqual(s.history.present.selected);
   });
 
   it("an accepted UNDO moves the confirmed history too, so the next refusal lands on that step (R6-U-1)", () => {
@@ -385,9 +415,89 @@ describe("the shelf write folds the route's own answer", () => {
       "iron-condor",
       "long-straddle",
     ]);
+    // The redo this leaves behind is a REAL step: it goes somewhere the screen
+    // is not. The R7-U-1 shape — a `future` entry value-equal to `present`, so
+    // Redo posts the shelf already on screen — is absent here, and this is the
+    // interleaving where an undo/redo replay could most easily have produced it.
+    expect(
+      redoStackOf(s.history),
+      "a redo step equal to `present` is a no-op write onto the shelf already on screen (R7-U-1)",
+    ).not.toContainEqual(s.history.present.selected);
+  });
+
+  /**
+   * R7-T-5, THE R5-U-2 INTERLEAVING ITSELF, DRIVEN — the one the fix was
+   * written for and the one no test had ever run: tick A accepted but slow,
+   * tick B refused and fast, B's reply first.
+   *
+   * TWO THINGS THIS TEST IS NOT. It cannot go red on a component plant: the
+   * island above DUPLICATES the handler (a closure and three refs inside a
+   * `"use client"` file cannot be imported), so what ties it to the shipped
+   * code is the source-shape pins in the next describe, not this harness. And
+   * it does not claim the bound is tight — it DOCUMENTS the recorded bound
+   * (R5-U-2's residual tick C, R6-U-2's value-equal re-sync), which is why the
+   * assertions below also state the DEPTH the two stacks end up at.
+   */
+  it("the stale-accepted branch: the screen re-syncs and the cache is purged — the R5-U-2/R6-U-2 bound DOCUMENTED, not pinned, because this harness duplicates the island and cannot go red on a component plant", () => {
+    const seed = { selected: ["long-call", "long-put"] };
+    const s = island(seed);
+    const a = s.tick({ type: "select", id: "iron-condor" });
+    const b = s.tick({ type: "select", id: "long-straddle" });
+
+    // B answers first and is `latest`, so its refusal reverts the strip
+    // WHOLESALE to the confirmed history — which is still the mount seed,
+    // because A has not been confirmed yet. The screen is now pre-A.
+    s.reply(b, refused);
+    expect(s.history.present.selected, "the refusal did not put the strip back").toEqual(seed.selected);
+    expect(s.refreshes, "a refusal stored nothing, so nothing upstream is stale").toBe(0);
+
+    // …and now A's `ok` lands, stale. Before the fix it moved `committed` and
+    // returned: screen pre-A, store post-A, cache never purged, and the next
+    // tick would post the screen's list and erase A permanently.
+    s.reply(a, ok(a.next.present.selected));
+
+    const postA = ["long-call", "long-put", "iron-condor"];
+    expect(s.history.present.selected, "the screen was left on the shelf this reply superseded").toEqual(postA);
+    expect(s.committed.present.selected, "the confirmed present is not the route's re-read").toEqual(postA);
+    expect(s.refreshes, "the store moved and the client router cache was never purged").toBe(1);
+
+    // THE STACK IS INTACT: the re-sync replaces `present` and nothing else, so
+    // the screen keeps the (empty) stack the wholesale revert gave it.
+    expect(s.history.past, "the re-sync replaced the history instead of just the present").toHaveLength(0);
+    expect(
+      redoStackOf(s.history),
+      "a redo step equal to `present` is a no-op write onto the shelf already on screen (R7-U-1)",
+    ).not.toContainEqual(s.history.present.selected);
+
+    // AND THE RECORDED BOUND, stated as a number: the confirmed history now
+    // stands one step DEEPER than the screen's, because A's acceptance was
+    // replayed here and the screen had already reverted past it. Nothing is
+    // lost — every shelf either side held was stored — but this is the
+    // divergence an undo/redo replay later pops the wrong entry from (R7-U-1),
+    // and it is fixable only by ordering the replies at the route.
+    expect(s.committed.past, "the confirmed history did not record A's step").toHaveLength(1);
   });
 });
 
+/**
+ * THE SOURCE-SHAPE PINS, AND WHAT THEY CAN AND CANNOT SAY.
+ *
+ * The island is a `"use client"` file: its handler closes over `useState` and
+ * three refs, so no test can call it. Everything below therefore reads the FILE
+ * and asserts its SHAPE — the literal, its neighbours, its NESTING (R7-T-1) and
+ * how many times each name is declared or assigned (R7-T-2/T-3/T-4).
+ *
+ * THE CAVEAT, WIDENED (R7, and recorded so it is not re-filed): a shape pin
+ * says what IS there, never what is not. Two rounds have already found live
+ * code the pins could not see — a block moved OUT of the guard it must run
+ * inside, a second declaration shadowing a pinned one — and the counts below
+ * close those two classes. Beyond them, ANY FURTHER LIVE STATEMENT INSIDE THE
+ * REPLY CALLBACK THAT IS NOT ITSELF PINNED IS THE ACCEPTED WEAKNESS OF THIS
+ * METHOD, not a new defect: closing it completely needs the handler to be
+ * callable, which needs a jsdom harness this screen does not have. The
+ * previously recorded forms — a dead branch, a wrong comment — stand under the
+ * same caveat. Round 8 may not re-file any of it as a finding.
+ */
 describe("the page is wired the way the estate requires", () => {
   const page = read("app/strategies/page.tsx");
   const client = read("components/strategies/strategies-client.tsx");
@@ -444,6 +554,75 @@ describe("the page is wired the way the estate requires", () => {
     expect(to, "the refusal branch no longer follows the stale guard").toBeGreaterThan(from);
     return src.slice(from, to);
   };
+
+  const STALE_GUARD = "if (mine !== latest.current) {";
+  const REFUSAL_GUARD = "if (!r.ok) {";
+  const OK_FOLD = "setHistory((cur) => foldShelfPost";
+
+  /**
+   * R7-T-1, THE NESTING PINS. The two slices above end at the NEXT branch, not
+   * at the guard's own `return;`, so a block lifted OUT of its guard and
+   * dropped after its closing brace stays inside them and every content pin
+   * stays green — while the code now runs on replies the guard exists to keep
+   * it away from. `returnAfter` is what makes "inside the guard" assertable:
+   * the body of a guard that returns is everything above that `return;`.
+   */
+  const returnAfter = (src: string, from: number, what: string): number => {
+    const at = src.indexOf("return;", from);
+    expect(at, `${what} no longer ends in a \`return;\``).toBeGreaterThan(from);
+    return at;
+  };
+
+  /** Everything the STALE guard runs before returning — its real body. */
+  const staleGuardBody = (src: string): string => {
+    const from = src.indexOf(STALE_GUARD);
+    expect(from, "the stale guard is not where this test expects it").toBeGreaterThan(-1);
+    return src.slice(from, returnAfter(src, from, "the stale guard"));
+  };
+
+  /** …and everything between that `return;` and the refusal branch, which must do no work. */
+  const afterStaleGuard = (src: string): string => {
+    const from = src.indexOf(STALE_GUARD);
+    const to = src.indexOf(REFUSAL_GUARD);
+    expect(to, "the refusal branch no longer follows the stale guard").toBeGreaterThan(from);
+    return src.slice(returnAfter(src, from, "the stale guard"), to);
+  };
+
+  /** Everything the REFUSAL branch runs before returning. */
+  const refusalBody = (src: string): string => {
+    const from = src.indexOf(REFUSAL_GUARD);
+    expect(from, "the refusal branch is not where this test expects it").toBeGreaterThan(-1);
+    return src.slice(from, returnAfter(src, from, "the refusal branch"));
+  };
+
+  /** …and everything between that `return;` and the ok path's fold. */
+  const afterRefusal = (src: string): string => {
+    const from = src.indexOf(REFUSAL_GUARD);
+    const to = src.indexOf(OK_FOLD);
+    expect(to, "the ok path's fold is not where this test expects it").toBeGreaterThan(from);
+    return src.slice(returnAfter(src, from, "the refusal branch"), to);
+  };
+
+  /**
+   * The POST's reply callback down to the ok path's fold: every statement that
+   * runs before the screen takes the route's answer. R7-T-2/T-3/T-4 count over
+   * this slice.
+   */
+  const replyCallback = (src: string): string => {
+    const from = src.indexOf("void postShelf(body).then((r) => {");
+    const to = src.indexOf(OK_FOLD);
+    expect(from, "the POST's reply handler is not where this test expects it").toBeGreaterThan(-1);
+    expect(to, "the ok path's fold is not where this test expects it").toBeGreaterThan(from);
+    return src.slice(from, to);
+  };
+
+  /**
+   * How many times `needle` occurs — a COUNT, never an `indexOf`. R7-T-2: every
+   * index pin in this file reads the FIRST occurrence, so a second copy of a
+   * pinned declaration is invisible to all of them and is the one the code
+   * below actually reads.
+   */
+  const occurrences = (hay: string, needle: string): number => hay.split(needle).length - 1;
 
   it("writes through the route and FOLDS the answer — never a server action", () => {
     expect(client).toContain('"use client"');
@@ -579,6 +758,10 @@ describe("the page is wired the way the estate requires", () => {
     );
   });
 
+  /** The stale re-sync as ONE block: guard, comparison, both arms, refresh. */
+  const STALE_BLOCK =
+    /if \(advanced\) \{\r?\n\s*setHistory\(\(cur\) =>\r?\n\s*sameSelection\(cur\.present, before\) && !sameSelection\(cur\.present, committed\.current\.present\)\r?\n\s*\? \{ \.\.\.cur, present: committed\.current\.present \}\r?\n\s*: cur,\r?\n\s*\);\r?\n\s*router\.refresh\(\);/;
+
   it("the stale re-sync is pinned as ONE block — guard, comparison, arms and refresh together (R6-T-3)", () => {
     // The `toContain`s above are five independent assertions over one slice, so
     // each of them stays green while the block around it is rearranged: negate
@@ -589,9 +772,93 @@ describe("the page is wired the way the estate requires", () => {
     expect(
       client,
       "the stale re-sync block has been rearranged: check the `advanced` guard, the `&&`, the ternary arms and the refresh",
-    ).toMatch(
-      /if \(advanced\) \{\r?\n\s*setHistory\(\(cur\) =>\r?\n\s*sameSelection\(cur\.present, before\) && !sameSelection\(cur\.present, committed\.current\.present\)\r?\n\s*\? \{ \.\.\.cur, present: committed\.current\.present \}\r?\n\s*: cur,\r?\n\s*\);\r?\n\s*router\.refresh\(\);/,
-    );
+    ).toMatch(STALE_BLOCK);
+  });
+
+  it("the stale re-sync sits INSIDE the stale guard, above its `return;` (R7-T-1)", () => {
+    // The block above is matched against the WHOLE file, so it goes on matching
+    // wherever in the callback the block sits. Lift it out and drop it just
+    // after the guard's closing brace and BOTH halves of R5-U-2 come back: the
+    // stale reply — the only one this block was written for — now hits a guard
+    // whose whole body is `return;`, so the store moves, the screen stays
+    // pre-A and the cache is never purged; meanwhile every reply that is NOT
+    // stale runs the re-sync and drags the screen onto `committed`.
+    expect(
+      staleGuardBody(client),
+      "the stale re-sync is no longer inside `if (mine !== latest.current)` — a stale accepted reply now returns having done nothing (R5-U-2)",
+    ).toMatch(STALE_BLOCK);
+    const after = afterStaleGuard(client);
+    expect(
+      after,
+      "a `setHistory` sits between the stale guard's `return;` and the refusal branch — it runs on every non-stale reply",
+    ).not.toContain("setHistory");
+    expect(
+      after,
+      "a `router.refresh()` sits between the stale guard's `return;` and the refusal branch",
+    ).not.toContain("router.refresh()");
+  });
+
+  it("the refusal revert sits INSIDE the refusal branch, above its `return;` (R7-T-1)", () => {
+    // Same hole, other branch: `refusalBranch` ends at the ok path's fold, so
+    // the revert keeps satisfying it from just below the branch's closing
+    // brace — where it reverts an ACCEPTED write as well, throwing away the
+    // shelf the route just confirmed on every successful tick.
+    expect(
+      refusalBody(client),
+      "the revert is no longer inside `if (!r.ok)` — nothing puts the strip back when the store refuses (U-3)",
+    ).toContain("setHistory((cur) => (cur === next ? committed.current : cur));");
+    expect(
+      afterRefusal(client),
+      "the revert sits below the refusal branch's `return;` — it now reverts accepted writes too",
+    ).not.toContain("setHistory((cur) => (cur === next");
+  });
+
+  it("the reply callback declares each name once and assigns each ref once (R7-T-2/T-4)", () => {
+    // Every ORDER pin in this file is an `indexOf`, which reads the FIRST
+    // occurrence — so a second `const before = …` as the guard's first line
+    // keeps all of them green while being the declaration the branch actually
+    // reads, and a second `committed.current = …` after the advance keeps the
+    // ADVANCE regex green while overwriting what it just proved.
+    const reply = replyCallback(client);
+    expect(
+      occurrences(reply, "const before = committed.current.present;"),
+      "`before` is declared more than once — the index pins read the first, the branches read the last",
+    ).toBe(1);
+    expect(
+      occurrences(reply, "const advanced = r.ok && mine > committedAt.current;"),
+      "`advanced` is declared more than once — the guard the pins checked is not the one that runs",
+    ).toBe(1);
+    expect(
+      occurrences(reply, "committed.current ="),
+      "the confirmed history is assigned more than once per reply — a second assignment undoes the advance the pins proved",
+    ).toBe(1);
+    expect(
+      occurrences(reply, "committedAt.current ="),
+      "the confirmation watermark is assigned more than once per reply",
+    ).toBe(1);
+    expect(
+      occurrences(reply, "latest.current ="),
+      "the reply renumbers the writes — `latest` belongs to the gesture, and moving it here makes every later reply look current",
+    ).toBe(0);
+  });
+
+  it("…and declares NOTHING else, destructuring included (R7-T-3)", () => {
+    // The R6-T-4 regex reads `const NAME`, so a destructuring shadow
+    // (`const { committed } = …`) walks straight past it. Counting every
+    // declaration keyword in the slice is the form that cannot be written
+    // around: the callback is two declarations long, and anything else in it is
+    // a name the pins below do not know about.
+    const reply = replyCallback(client);
+    expect(
+      reply.match(/\b(const|let|var|function|class)\b/g) ?? [],
+      "the reply callback declares something other than `before` and `advanced` — every pin below reads the outer names",
+    ).toHaveLength(2);
+    expect(
+      reply.match(
+        /\b(const|let|var)\b[^=;]*\b(history|committed|next|before|advanced|latest|committedAt|action|router)\b/g,
+      ) ?? [],
+      "a declaration inside the reply callback binds one of the island's own names — destructuring counts (R7-T-3)",
+    ).toEqual(["const before", "const advanced"]);
   });
 
   it("nothing inside the reply callback shadows `history`, `committed` or `next` (R6-T-4)", () => {

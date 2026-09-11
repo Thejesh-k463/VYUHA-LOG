@@ -106,9 +106,35 @@ export function StrategiesClient({
    * CONFIRMED HISTORY. Every accepted reply replays that gesture's OWN action
    * through the real reducer and folds the route's re-read over the result
    * (`foldShelfPost(shelfReducer(committed.current, action), r)`), so the
-   * undo/redo positions advance exactly as the screen's did while `present`
-   * stays the server's word. A refusal then reverts WHOLESALE to it, and every
-   * shelf reachable by Undo afterwards is one the store actually held.
+   * undo/redo positions move with the screen's — IN LOCKSTEP ONLY WHILE THE
+   * TWO STACKS AGREE (R7-U-1) — while `present` stays the server's word. A
+   * refusal then reverts WHOLESALE to it, and every shelf reachable by Undo
+   * afterwards is one the store actually held. THAT last property is what this
+   * ref exists for, and it survives everything below.
+   *
+   * WHERE LOCKSTEP ENDS, precisely. Every window already recorded on this
+   * island can leave this stack at a different DEPTH from the screen's: a
+   * stale refusal (the screen reverts wholesale, this ref does not), two
+   * accepted replies out of order (the residual below), a value-equal re-sync
+   * (R6-U-2). Replay an `undo` or a `redo` on a stack whose depth has diverged
+   * and the reducer pops the WRONG entry here; `foldShelfPost` then overwrites
+   * `present` with the route's re-read, which IS the shelf the screen really
+   * undid to. What is left is a stack one step out of phase: a NO-OP step
+   * equal to `present` sitting in `future` (after an undo) or in `past` (after
+   * a redo), and one stored step dropped off the other end. A later wholesale
+   * revert hands that stack to the screen, and the user gets Undo DISABLED
+   * although the store's past still holds a step, or Redo ENABLED onto the
+   * shelf already on screen — a click that POSTs the same shelf and writes one
+   * audit row. Measured: 12 of 624 three-gesture schedules, every one behind a
+   * window recorded here. It is never a shelf the store did not hold — a
+   * dropped step and a duplicated one, not an invented one.
+   *
+   * NOT FIXED HERE, and not fixable here: once the two cursors disagree the
+   * client cannot tell which one is right, because it cannot know the order
+   * the route applied the writes in. The answer is at the route — an if-match
+   * or version on the POST, so a superseded reply can be refused and the rest
+   * ordered — the same answer as the tick-C residual in `run`, deferred by the
+   * same ruling.
    *
    * `useRef` keeps its FIRST argument, so the seed here is the server prop this
    * island mounted on — which is the stored shelf by definition. After that it
@@ -158,9 +184,17 @@ export function StrategiesClient({
       // advance: the stale branch asks whether the screen is still sitting on
       // the shelf THIS reply superseded, which the advance is about to
       // overwrite. The advance itself replays the gesture's OWN action on the
-      // confirmed history — so its undo/redo positions move with the screen's —
-      // and folds the route's re-read over the result, so `present` is the
-      // store's word and not this client's arithmetic (R6-U-1).
+      // confirmed history and folds the route's re-read over the result, so
+      // `present` is the store's word and not this client's arithmetic
+      // (R6-U-1). Its undo/redo positions track the screen's IN LOCKSTEP ONLY
+      // WHILE THE TWO STACKS ARE THE SAME DEPTH: replay an `undo` or a `redo`
+      // here after any recorded window has made them differ (a stale refusal,
+      // two accepted replies out of order, a value-equal re-sync) and the
+      // reducer pops the wrong entry, after which the fold puts the route's
+      // shelf back into `present` — leaving a no-op step equal to `present` in
+      // `future` or in `past` and dropping a stored one. Never a shelf the
+      // store did not hold. The measurement, and why the answer is at the
+      // route rather than here, are on the ref's declaration (R7-U-1).
       const before = committed.current.present;
       const advanced = r.ok && mine > committedAt.current;
       if (advanced) {

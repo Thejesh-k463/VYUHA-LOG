@@ -5376,3 +5376,61 @@ to cosmetic (an identity body changes the stored shelf in 13 of 1,578 schedules,
   the R5-T-1 advance regex pins the replay form. Thirteen plants, every one EXIT 1; restored tree 43/43; scoped `readme-claims` +
   `seams-v43-wave2` 72/72; eslint and `tsc --noEmit` clean. No jsdom harness: the `cur === next` identity under React's functional
   updater and StrictMode double-invocation are reasoned, not observed. Gate line, sha and CI: STATE §2 / the ledger.
+
+## 2026-09-11 — v4.3.0 audit round 7 (scoped) over fix wave 6 `32cef9f..5bbed43` → fix wave 7 (one builder, pins + comments)
+
+**The audit** (scoped by the round-6 ruling to ui-regressions + test-integrity, two Fable auditors launched while CI 34558028790
+ran — SUCCESS 6/6): ui 12 → **1** (an exhaustive enumeration over the real reducer: every ordering of 2 and 3 ticks interleaved
+with their replies, a 7-action alphabet, every ok/refused mask, two route models — 7,730 schedules each; never-stored shelves in
+the confirmed history 0, screen ≠ store with no refresh 0 under a send-order route); test-integrity 20 → **5** (six plants in
+memory or reverted, two controls red as recorded) → Fable **skeptic 6 → 5** (plants applied through a vitest Node-API transform so
+the real 48-assertion file saw a planted component; two controls red; R7-T-5 a coverage note, not a defect; R7-U-1 down to low with
+both user-visible facts already recorded and only the mechanism new; R7-T-3 up to lost-write class at very low plausibility).
+Ruling: `06-ANSWERS.md` "v4.3.0 audit-round-7 ruling" — fix wave 7 (test file + two comments), the caveat WIDENED, then a scoped
+round 8 (test-integrity on Fable + skeptic). Rejected: a jsdom/RTL harness now (the right long-term answer, 3–4× the cost, off the
+4.3.0 critical path); record all five and bump.
+
+- **R7-U-1 (broken feature, low; RECORDED by ruling)** `strategies-client.tsx` advance: an `undo`/`redo` REPLAYED on a confirmed
+  history whose stack DEPTH diverged from the screen's (behind a recorded window — a stale refusal, two accepted replies out of
+  order, a value-equal re-sync) pops the wrong entry; `foldShelfPost` then forces `present` to the route's re-read, leaving a
+  no-op step equal to `present` in `future` (undo) or `past` (redo) and dropping a stored one; a later wholesale revert hands
+  that stack to the screen — Undo disabled with a stored step behind it, or Redo enabled onto the shelf on screen (a same-shelf
+  POST + one audit row). 12 of 624 three-gesture schedules, every one behind an already-recorded window; never a shelf the store
+  did not hold. The skeptic found the proposed client-side guard (accept the replay only when its present equals the re-read)
+  a symmetric trade — it drops a Redo to a stored shelf where the shipped code drops an Undo; the root is route-level ordering
+  (if-match/version keyed on `updatedAt`), deferred to its own release. The two comments claiming the positions "advance exactly
+  as the screen's did" were false once the stacks diverge → rewritten to the true contract.
+- **R7-T-1 (genuine gap, lost-write class)** `tests/strategies-page.test.ts`: the anchor-delimited slices and the R6-T-3 adjacency
+  regex pinned CONTENT, not NESTING — the stale re-sync block moved past its guard's `return;` (a plausible flatten-the-if refactor)
+  shipped R5-U-2 with 43/43 green; the revert moved past the refusal `return;` shipped fix-wave-3's U-3.
+- **R7-T-2 (genuine gap, lost write)**: a second `const before = committed.current.present;` inside the stale guard — the R6-T-1
+  `indexOf` pin reads the first occurrence, the branches read the last; eslint warns, CI's `npm run lint` has no `--max-warnings`.
+- **R7-T-3 / R7-T-4 (the generic weakness re-found in adversarial forms)**: a destructuring shadow `const { committed } = …`
+  bypassed the round-6 name-list regex; an extra `committed.current = initShelfHistory(…)` after the advance reset the stack.
+- **R7-T-5 (coverage note)**: the harness's stale-accepted branch was executed by no test.
+- **Caveat WIDENED by ruling (binding for round 8 and after):** the island is pinned by source shape; the two classes found so far
+  (a block moved out of its guard, a shadowing or duplicate declaration) are closed by pins; **any further LIVE statement inside
+  the reply callback that is not itself pinned is the accepted weakness of the method, not a new defect — round 8 may not re-file
+  it**, alongside the recorded dead-branch and wrong-comment forms. Closing it needs a callable handler (a jsdom harness this
+  screen does not have; deferred).
+- **Recorded, not defects (round 7):** under a route that commits requests out of send order, a stale `ok` with `mine <
+  committedAt` is dropped on the premise the newer write superseded it — false when the OLDER request wrote LAST (1,226 of 7,730
+  landing-order schedules, all carrying the out-of-order precondition) — pre-existing, the same route-side root; a stale refusal
+  followed by a newer accepted tick leaves the screen one undo step SHORT after a revert (never a phantom); the stale-ok re-sync
+  replaces the state object so a later refusal of the `latest` tick fails `cur === next` and keeps a duplicate top (inside the
+  R6-U-2 family, cosmetic); React-level identity and flush order remain reasoned, not observed.
+- **Fix wave 7 (one Opus builder, 118k; test file +5 `it(` (43 → 48), README 7641 → 7646 at six sites, the component
+  COMMENTS ONLY — verified by a code-line diff that prints nothing):** T-1 `returnAfter()` + four slices make "inside the guard"
+  mean "above the guard's own `return;`": the adjacency regex (now `STALE_BLOCK`) must match inside the stale guard's body and the
+  span from that `return;` to `if (!r.ok) {` must hold no `setHistory` / `router.refresh()`; the revert must sit inside the refusal
+  body and the span after its `return;` must not hold the revert. T-2/T-4 a `replyCallback` slice with `occurrences()` =
+  `split(x).length − 1`: exactly one `const before`, one `const advanced`, one `committed.current =`, one `committedAt.current =`,
+  zero `latest.current =`. T-3 declaration keywords in the slice === 2 and a destructuring-aware shadow regex must equal exactly
+  the two pinned lines. T-5 the harness gained a `refreshes` counter and `redoStackOf`; one `it(` drives A, B, B refused, A
+  accepted late → screen post-A, one refresh, the screen's `past` 0 vs the confirmed `past` 1 (the depth divergence that is
+  R7-U-1's premise); every harness test asserts `future` holds no entry value-equal to `present`. Twelve plants (P3, P3b a copy
+  left after the guard, P4, P4b, duplicate `before`, duplicate `advanced`, extra `committed.current =`, duplicate `committedAt`,
+  a `latest.current =` in the reply, the destructuring shadow, and the two round-6 controls) every one EXIT 1 with its message
+  quoted in the ledger; restored tree 48/48; `readme-claims` + `seams-v43-wave2` 72/72; eslint and `tsc --noEmit` clean. The
+  count pins read the RAW slice, comments included — a future comment inside the callback containing a whole-word
+  `const`/`let`/`var`/`function`/`class` would redden them (deliberate). Gate line, sha and CI: STATE §2 / the ledger.
