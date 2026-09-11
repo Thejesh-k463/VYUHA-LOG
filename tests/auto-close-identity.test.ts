@@ -8,6 +8,7 @@ import {
   isLotIdentityFrozen,
   lotIdentityHashes,
   withLotCloseNote,
+  withScaledRemainderNote,
 } from "@/lib/import/close-open-lots";
 import { openTempDb, type TempDb } from "./helpers/temp-db";
 
@@ -24,7 +25,16 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  *
  * The ruling: the lot keeps its ORIGINAL hash for ever and every consuming
  * execution's hash becomes an ALIAS on the row. `lotIdentityHashes` is the one
- * door to that answer, for dedup, for the restore re-key and for Data Quality.
+ * door to that answer for the restore re-key and for Data Quality.
+ *
+ * AUTO-CLOSE IS SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
+ * "v4.3.0 release-level-audit rulings", row 1). lib/import/commit.ts is v4.2.0
+ * again: import dedup reads each row's OWN hash and no import writes an alias.
+ * So S-1 now pins v4.2.0's dedup on the same buy/sell/sell sequence, and S-2
+ * plus the scaled remainder PLANT the frozen rows wave 1 wrote (as
+ * tests/data-quality.test.ts plants merged lots) — the restore re-key
+ * (lib/db/data-fixes.ts) still reads `isLotIdentityFrozen` and must leave such
+ * a row alone whenever one exists.
  *
  * ONE temp database per FILE (AGENTS.md) — `lib/db` caches its connection on
  * globalThis — so every case below uses its own account id.
@@ -33,6 +43,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 let t: TempDb;
 let commit: typeof import("@/lib/import/commit");
 let dataFixes: typeof import("@/lib/db/data-fixes");
+let dedup: typeof import("@/lib/import/dedup");
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -85,6 +96,7 @@ beforeAll(async () => {
   t = await openTempDb("auto-close-identity", { seed: true });
   commit = await import("@/lib/import/commit");
   dataFixes = await import("@/lib/db/data-fixes");
+  dedup = await import("@/lib/import/dedup");
 }, 120_000);
 afterAll(() => t?.cleanup());
 
@@ -119,9 +131,9 @@ describe("lotIdentityHashes — the one door to a row's identity", () => {
   });
 });
 
-// ───────────── S-1: buy 100 → sell 40 → sell 60 → re-import the BUY ─────────
+// ──────── S-1: buy 100 → sell 40 → sell 60 → re-import, under v4.2.0 ───────
 
-describe("S-1 — a lot keeps the hash it was born with, for ever", () => {
+describe("S-1 — v4.2.0 dedup: every row answers to its OWN hash, and no import re-keys a lot", () => {
   const ACC = 621;
   const buys = () => parsed([buyRow("TCS", 100, 100, "2026-04-01")]);
   const sell40 = () => parsed([sellRow("TCS", 40, 120, "2026-05-01")]);
@@ -135,33 +147,31 @@ describe("S-1 — a lot keeps the hash it was born with, for ever", () => {
     expect(bornHash).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  it("a partial sell reduces the lot WITHOUT re-keying it, and leaves an alias", () => {
-    expect(commit.commitParsedFile(sell40(), "sell40.csv", null, ACC).added).toBe(0);
-    const open = rowsOf(ACC).find((r) => r.isOpen)!;
-    expect(open.buyQty).toBe(60);
-    expect(open.dedupHash, "the lot's own hash is frozen at what the buy file said").toBe(bornHash);
-    expect(lotIdentityHashes(open).length, "the consuming sell is an alias on the lot").toBe(2);
+  it("a partial sell lands as its OWN row; the lot's hash and notes are unchanged", () => {
+    expect(commit.commitParsedFile(sell40(), "sell40.csv", null, ACC).added).toBe(1);
+    const lot = rowsOf(ACC).find((r) => r.dedupHash === bornHash)!;
+    expect([lot.buyQty, lot.isOpen, lot.importNotes]).toEqual([100, true, null]);
+    expect(lotIdentityHashes(lot), "no alias: the lot answers to the buy file alone").toEqual([bornHash]);
+    expect(isLotIdentityFrozen(lot)).toBe(false);
   });
 
-  it("the sell that consumes the REST still does not re-key it", () => {
-    expect(commit.commitParsedFile(sell60(), "sell60.csv", null, ACC).added).toBe(0);
+  it("the second sell lands as its own row too; nothing is closed and nothing is frozen", () => {
+    expect(commit.commitParsedFile(sell60(), "sell60.csv", null, ACC).added).toBe(1);
     const rows = rowsOf(ACC);
-    expect(rows.filter((r) => r.isOpen), "nothing is left open").toEqual([]);
-    const lot = rows.find((r) => r.dedupHash === bornHash);
-    expect(lot, "the row born from the buy file still answers to the buy file's hash").toBeTruthy();
-    expect(lotIdentityHashes(lot!), "both consuming sells are aliases").toHaveLength(3);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.isOpen)).toBe(true);
+    expect(rows.some((r) => isLotIdentityFrozen(r))).toBe(false);
   });
 
-  it("re-importing the BUY file adds NOTHING — no phantom open 100 lot", () => {
+  it("re-importing the BUY file is skipped by its own hash — no phantom second lot", () => {
     const before = rowsOf(ACC).length;
     const again = commit.commitParsedFile(buys(), "buys.csv", null, ACC);
     expect(again.added).toBe(0);
     expect(again.skipped).toBe(1);
     expect(rowsOf(ACC)).toHaveLength(before);
-    expect(rowsOf(ACC).filter((r) => r.isOpen)).toEqual([]);
   });
 
-  it("re-importing EITHER sell file is skipped by its alias", () => {
+  it("re-importing EITHER sell file is skipped by its own hash", () => {
     const before = rowsOf(ACC).map((r) => [r.id, r.buyQty, r.sellQty, r.isOpen]);
     expect(commit.commitParsedFile(sell40(), "sell40.csv", null, ACC).skipped).toBe(1);
     expect(commit.commitParsedFile(sell60(), "sell60.csv", null, ACC).skipped).toBe(1);
@@ -171,31 +181,41 @@ describe("S-1 — a lot keeps the hash it was born with, for ever", () => {
 
 // ──────────── S-2: the restore re-key must not touch a frozen lot ───────────
 
-describe("S-2 — rerunDataFixesAfterRestore leaves a frozen lot alone", () => {
+describe("S-2 — rerunDataFixesAfterRestore leaves a frozen lot alone (the lot is PLANTED)", () => {
   const ACC = 622;
   const ISIN = "INE000A01018";
   const buys = () => parsed([buyRow("PAYTMTEST", 100, 100, "2026-04-01", { isin: ISIN })], "paytm");
   const sells = () => parsed([sellRow("PAYTMTEST", 40, 120, "2026-05-01", { isin: ISIN })], "paytm");
   let frozen = "";
+  let lotId = 0;
 
-  it("a Paytm lot partly closed by an import", () => {
+  it("a Paytm lot in the state wave 1 left after SELL 40 — planted, since no 4.3.0 import writes one", () => {
     newAccount(ACC, "identity-s2");
     expect(commit.commitParsedFile(buys(), "paytm-buys.csv", null, ACC).added).toBe(1);
-    frozen = rowsOf(ACC)[0].dedupHash;
-    expect(commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC).added).toBe(0);
-    const open = rowsOf(ACC).find((r) => r.isOpen)!;
-    expect(open.buyQty).toBe(60);
-    expect(open.dedupHash).toBe(frozen);
+    const lot = rowsOf(ACC)[0];
+    frozen = lot.dedupHash;
+    lotId = lot.id;
+    const hSell = dedup.dedupHash(sells().trades[0]);
+    // What wave 1's auto-close wrote: the lot reduced to 60 under its born-with
+    // hash, the consuming sale's hash an alias beside it.
+    t.db
+      .update(t.schema.trades)
+      .set({ buyQty: 60, buyValue: 6000, importNotes: withLotCloseNote(lot.importNotes, hSell) })
+      .where(eq(t.schema.trades.id, lot.id))
+      .run();
+    const planted = rowsOf(ACC)[0];
+    expect(isLotIdentityFrozen(planted)).toBe(true);
+    expect(lotIdentityHashes(planted)).toEqual([frozen, hSell]);
+    // The trap S-2 closes: the CURRENT legs hash to a different identity.
+    expect(dedup.dedupHash({ ...buys().trades[0], buyQty: 60, buyValue: 6000 })).not.toBe(frozen);
   });
 
   it("the re-key run on every restore does not re-key it", () => {
     const results = dataFixes.rerunDataFixesAfterRestore(t.sqlite);
     expect(results.length).toBeGreaterThan(0);
-    const open = rowsOf(ACC).find((r) => r.isOpen)!;
-    expect(open.dedupHash, "a frozen lot's hash survives the restore re-key").toBe(frozen);
-    for (const r of rowsOf(ACC)) {
-      expect(isLotIdentityFrozen(r), `row ${r.id} should still be frozen`).toBe(true);
-    }
+    const lot = rowsOf(ACC).find((r) => r.id === lotId)!;
+    expect(lot.dedupHash, "a frozen lot's hash survives the restore re-key").toBe(frozen);
+    expect(isLotIdentityFrozen(lot), "and it is still frozen").toBe(true);
   });
 
   it("so the buy file still de-duplicates after the restore", () => {
@@ -207,42 +227,38 @@ describe("S-2 — rerunDataFixesAfterRestore leaves a frozen lot alone", () => {
   });
 });
 
-// ───── S-1 (round 2): the row an OVER-CONSUMING execution leaves behind ─────
+// ───── S-1 (round 2): the row an OVER-CONSUMING execution left behind ─────
 
-describe("S-1 — a scaled-down remainder is frozen too", () => {
+describe("S-1 — a scaled-down remainder is frozen too (the remainder is PLANTED)", () => {
   const ACC = 623;
   const ISIN = "INE000A01026";
   const SYM = "PAYTMOVER";
-  const buys = () => parsed([buyRow(SYM, 40, 100, "2026-04-01", { isin: ISIN })], "paytm");
-  // 100 sold against a book holding 40: 40 closes the lot, 60 is left over and
-  // is written as its own row — scaled, but stored under the WHOLE file row's
+  // Wave 1: 100 sold against a book holding 40 — 40 closed the lot and 60 was
+  // left over as its own row, scaled, but stored under the WHOLE file row's
   // hash, because that is the record the file states.
   const sells = () => parsed([sellRow(SYM, 100, 120, "2026-05-01", { isin: ISIN })], "paytm");
   let remainderHash = "";
 
-  it("the sale over-consumes the book: 40 closes, 60 is left as its own row", () => {
+  it("the 60 left of a stated 100, planted as wave 1 wrote it, is frozen and has one identity", () => {
     newAccount(ACC, "identity-s1-remainder");
-    expect(commit.commitParsedFile(buys(), "paytm-buys.csv", null, ACC).added).toBe(1);
     expect(commit.commitParsedFile(sells(), "paytm-sells.csv", null, ACC).added).toBe(1);
+    const row = rowsOf(ACC)[0];
+    remainderHash = row.dedupHash;
+    t.db
+      .update(t.schema.trades)
+      .set({ sellQty: 60, sellValue: 7200, importNotes: withScaledRemainderNote(row.importNotes, remainderHash) })
+      .where(eq(t.schema.trades.id, row.id))
+      .run();
 
-    const rows = rowsOf(ACC);
-    expect(rows).toHaveLength(2);
-    const remainder = rows.find((r) => r.isOpen)!;
-    expect(remainder.sellQty, "the part of the sale that closed nothing").toBe(60);
-    expect(remainder.buyQty).toBe(0);
-    remainderHash = remainder.dedupHash;
-
+    const remainder = rowsOf(ACC)[0];
+    expect([remainder.buyQty, remainder.sellQty, remainder.isOpen]).toEqual([0, 60, true]);
     expect(isLotIdentityFrozen(remainder), "its hash no longer describes its own legs").toBe(true);
-    expect(lotIdentityHashes(remainder), "and it gains no SECOND identity from saying so")
-      .toEqual([remainderHash]);
+    expect(lotIdentityHashes(remainder), "and it gains no SECOND identity from saying so").toEqual([remainderHash]);
   });
 
-  it("the restore re-key leaves it alone — it does not become a 60-share sale", async () => {
-    // Imported dynamically like every other module here: the temp-db helper
-    // must set VYUHA_DB_PATH before anything in the graph binds a connection.
-    const { dedupHash } = await import("@/lib/import/dedup");
+  it("the restore re-key leaves it alone — it does not become a 60-share sale", () => {
     // What a genuine, separate 60-share sale of this scrip would be called.
-    const genuine60 = dedupHash({
+    const genuine60 = dedup.dedupHash({
       broker: "paytm",
       tradingsymbol: SYM,
       isin: ISIN,
@@ -257,7 +273,7 @@ describe("S-1 — a scaled-down remainder is frozen too", () => {
     });
 
     expect(dataFixes.rerunDataFixesAfterRestore(t.sqlite).length).toBeGreaterThan(0);
-    const remainder = rowsOf(ACC).find((r) => r.isOpen)!;
+    const remainder = rowsOf(ACC)[0];
     expect(remainder.dedupHash, "the remainder's hash survives the restore re-key").toBe(remainderHash);
     expect(remainder.dedupHash, "and never becomes the identity of a sale that never happened")
       .not.toBe(genuine60);

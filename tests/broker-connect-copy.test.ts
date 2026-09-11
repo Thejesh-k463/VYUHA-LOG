@@ -215,22 +215,22 @@ describe("pullGapNotice — the missed-pulls line", () => {
 });
 
 /**
- * C-5 (fix wave C). A SELL that auto-closes open rows FIFO (06-ANSWERS "v4.2.1
- * rulings", item 4) ended on "Committed — 0 added, 0 duplicates skipped." — the
- * commit's own sentence (`result.warnings`, lib/import/commit.ts) was in the
- * response and nothing read it; "Preview pull" showed no close plan at all.
- * The message is composed by ONE exported function now, pinned here on
- * synthetic input and in tests/fix-wave-c-import.test.ts on the route's real
- * response.
+ * C-5 (fix wave C). The commit's own sentences (`result.warnings`,
+ * lib/import/commit.ts) were in the pull response and nothing read them. The
+ * message is composed by ONE exported function now, pinned here on synthetic
+ * input and in tests/fix-wave-c-import.test.ts on the route's real response.
+ * Auto-close is SWITCHED OFF for 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
+ * "v4.3.0 release-level-audit rulings", row 1): there is no close plan, and
+ * the preview line is v4.2.0's, character for character.
  */
 describe("pullResultMessage — what the card prints after a pull", () => {
-  const CLOSED =
-    "1 open position in this account was closed by this file, oldest first (TCS 100). Realised P&L sits on the closed rows; the matching rows in this file are their closing legs, not new positions.";
+  // A sentence commit.ts really writes (a contract-note commit), not a made-up one.
+  const NOTE = "2 contract-note fills aggregated into 1 contract-day: applied 1, already had times 0, unmatched 0.";
 
   it("commit: the counts, then the COMMIT's own sentences, then the pull's warnings", () => {
     expect(
-      pullResultMessage("commit", { result: { added: 0, skipped: 0, warnings: [CLOSED] }, warnings: ["W1."] }),
-    ).toBe(`Committed — 0 added, 0 duplicates skipped. ${CLOSED} W1.`);
+      pullResultMessage("commit", { result: { added: 0, skipped: 0, warnings: [NOTE] }, warnings: ["W1."] }),
+    ).toBe(`Committed — 0 added, 0 duplicates skipped. ${NOTE} W1.`);
   });
 
   it("commit with nothing to add from the commit is the sentence it always was", () => {
@@ -242,16 +242,14 @@ describe("pullResultMessage — what the card prints after a pull", () => {
     );
   });
 
-  it("preview: the close plan, in the file preview's own words, before the warnings", () => {
-    expect(
-      pullResultMessage("preview", {
-        preview: { rows: [{}], autoClose: { closes: 1, positions: [{ symbol: "TCS", qty: 100 }] } },
-        warnings: ["W1."],
-      }),
-    ).toBe("Preview: 1 normalized trade. Will close 1 open position already held in this account, oldest first (TCS 100). W1.");
-    expect(
-      pullResultMessage("preview", { preview: { rows: [{}, {}], autoClose: { closes: 0, positions: [] } }, warnings: ["W1."] }),
-    ).toBe("Preview: 2 normalized trades. W1.");
+  it("preview: the row count, then the warnings — v4.2.0's line, with no close plan", () => {
+    expect(pullResultMessage("preview", { preview: { rows: [{}] }, warnings: ["W1."] })).toBe(
+      "Preview: 1 normalized trade. W1.",
+    );
+    expect(pullResultMessage("preview", { preview: { rows: [{}, {}] }, warnings: ["W1."] })).toBe(
+      "Preview: 2 normalized trades. W1.",
+    );
+    expect(pullResultMessage("preview", { preview: { rows: [{}] } })).toBe("Preview: 1 normalized trade.");
   });
 });
 

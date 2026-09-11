@@ -2,6 +2,20 @@
  * R5 (v4.2.1) — an incoming execution that CLOSES a position the book already
  * holds, decided across rows instead of inside one file.
  *
+ * ── SWITCHED OFF FOR 4.3.0 ─────────────────────────────────────────────────
+ * By the 2026-09-11 owner ruling (06-ANSWERS, "v4.3.0 release-level-audit
+ * rulings", row 1) auto-close does not ship in 4.3.0: `lib/import/commit.ts`
+ * is restored to v4.2.0 byte-for-byte, so a SELL of a held lot is written as
+ * its own row, exactly as v4.2.0 wrote it. The applier lives in git at d0eda00
+ * and is rebuilt in 4.3.1. Until then `planLotCloses`, `withLotCloseNote`,
+ * `withScaledRemainderNote` and `splitByRemainder` have NO production caller —
+ * they are dormant, pure library code kept with their unit tests. The
+ * identity readers below (`lotIdentityHashes`, `isLotIdentityFrozen`) are
+ * still read by Data Quality and the restore re-key; without alias rows they
+ * answer "own hash only, not frozen" for every row.
+ *
+ * Everything below describes the design as wave 1 built it (for 4.3.1).
+ *
  * Until now `is_open` was decided one row at a time (`buyQty !== sellQty`,
  * commit.ts), and FIFO existed only WITHIN a single parsed file
  * (`pair-legs.ts`). So a tradebook that sold a holding bought in an earlier
@@ -62,9 +76,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // with for ever, and every hash that also stands for it — one per consuming
 // execution — is recorded as an ALIAS in `import_notes`, which is the only
 // free-text column that travels with the row through backup, restore and the
-// data fixes. Dedup, the restore re-key and Data Quality all read identity
-// through `lotIdentityHashes`, so there is exactly one answer to "which files
-// does this row already account for".
+// data fixes. In 4.3.0 import dedup reads each row's OWN hash only (the v4.2.0
+// rule in commit.ts — auto-close is switched off, so no import writes an
+// alias); the restore re-key (`lib/db/data-fixes.ts`) and Data Quality
+// (`lib/import/broker-identity.ts`) still read identity through
+// `lotIdentityHashes`, so they stay correct for any aliased row a restore
+// brings in.
 
 /** Marks one alias hash inside `import_notes`. Segments are joined by " | ". */
 export const DEDUP_ALIAS_PREFIX = "dedup-alias:";
@@ -86,9 +103,11 @@ const HASH_RE = /^[0-9a-f]{40}$/;
  * EVERY hash that stands for this stored row: its own first, then its aliases,
  * de-duplicated and in a stable order.
  *
- * The single door for import dedup (`commit.ts`), the restore re-key
- * (`lib/db/data-fixes.ts`) and the Data Quality report. Pure and total: a row
- * with no notes answers with just its own hash.
+ * The single door for the restore re-key (`lib/db/data-fixes.ts`) and the Data
+ * Quality report. Import dedup (`commit.ts`) does NOT read it in 4.3.0: it
+ * compares own hashes only, as v4.2.0 did (auto-close switched off; 4.3.1
+ * re-wires it). Pure and total: a row with no notes answers with just its own
+ * hash.
  */
 export function lotIdentityHashes(row: { dedupHash: string; importNotes: string | null }): string[] {
   const out: string[] = [];
@@ -126,7 +145,8 @@ export function isLotIdentityFrozen(row: { dedupHash: string; importNotes: strin
  * 100, 40 of it closed lots this account held, and this row is the other 60.
  *
  * A separate sentence from `AUTO_CLOSE_NOTE` on purpose (S-1, round 2): the
- * legacy leg-rehash fallback in `commit.ts` fires on the auto-close sentence,
+ * legacy leg-rehash fallback in wave 1's `commit.ts` (d0eda00; not in 4.3.0)
+ * fires on the auto-close sentence,
  * and re-hashing THIS row's legs would produce exactly the hash a genuine
  * 60-share sale carries — a guess that would then swallow a real file.
  */

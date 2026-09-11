@@ -258,15 +258,15 @@ async function realPullOne(conn: ConnRow, today: string): Promise<AutoPullEntry>
       .where(eq(brokerConnections.id, conn.id))
       .run();
     // "+N trades" is what the commit ADDED — the manual pull's "N added" — not
-    // the preview's non-duplicate rows: a SELL that closes a held lot adds no
-    // row. The closes are named in the preview's own count, which the commit
-    // performs exactly (tests/seams-v43-fix1.test.ts S4); the two run back to
-    // back, synchronously, so nothing can land between them.
-    const closes = pre.autoClose?.closes ?? 0;
+    // the preview's non-duplicate rows, which also count a row the pull repeats
+    // and the commit then skips (F-L1-7). Auto-close is switched off for 4.3.0
+    // (06-ANSWERS, v4.3.0 release-level-audit rulings, row 1), so a SELL of a
+    // held lot lands as its own row, exactly as in v4.2.0, and reads "+1 trade"
+    // either way.
     return {
       ...base,
       status: "imported",
-      detail: `+${res.added} trade${res.added === 1 ? "" : "s"}${closes > 0 ? `, ${closes} open position${closes === 1 ? "" : "s"} closed` : ""}${unfetchedDetail(unfetched)}`,
+      detail: `+${res.added} trade${res.added === 1 ? "" : "s"}${unfetchedDetail(unfetched)}`,
       newCount: pre.summary.newCount,
     };
   } catch (e) {

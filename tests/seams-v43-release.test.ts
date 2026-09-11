@@ -38,7 +38,7 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  *   |   ↳ DhanUnfetchedSpan "page-cap"        | lib/import/api/dhan.ts:1141 toParsedFile     | route.ts:1060 recordUnfetched → audit_log         | {from,to: IST ISO day, reason}        |
  *   |   ↳ GET `unfetched[]`                   | route.ts:392 outstandingUnfetched            | components/import/broker-connect.tsx:293 notice   | JSON array, IST ISO days              | S1 · the card prints the page-limit line
  *   |   ↳ the sweep's copy                    | lib/jobs/auto-pull.ts:222 → :255             | auto-pull.ts:141 unfetchedDetail + route GET      | same audit record, `source: auto-pull`| S1 · the sweep keeps it too
- * 2 | ParsedFile.format === "api"             | lib/import/api/kite.ts:236, angelone.ts:363, | lib/import/commit.ts:1791 the auto-close sentence | string; "api" → "pull", else "file"   | S2 · every pull adapter says "pull"
+ * 2 | ParsedFile.format === "api"             | lib/import/api/kite.ts:236, angelone.ts:363, | lib/import/commit.ts:1791 the auto-close sentence | string; "api" → "pull", else "file"   | S2 · SWITCHED OFF (4.3.0): no close sentence
  *   |                                         | upstox.ts:308, openalgo.ts:558               |                                                   |                                       |
  * 3 | charge_config epochs (C-7 STT, C-8 txn  | lib/db/seed-data.ts:191-226 schedules, :611  | scripts/rate-card-refresh.mjs:45 (the sidecar)    | fractions of turnover / sell premium  | S3 · the refreshed card, priced by commit
  *   |   + IPFT), via the desktop template     | buildChargeConfigSeed                        | → lib/engine/rates-db.ts:15 loadRatesMap          | → stored PAISE, rupees at runtime     |
@@ -52,10 +52,17 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * SEAM DEFECT found by this pass, NOT fixed here (reported to the audit union):
  *  Angel One and Upstox state a sell-only row with `sellDate: null`
  *  (lib/import/api/angelone.ts:321, upstox.ts:214 — `closed ? today : null`).
- *  Since wave 1's auto-close, commit.ts:435 hands that null to the planner and
- *  commit.ts:655 writes it as the CLOSED lot's `sell_date` — a realised trade
- *  with no exit date (the exact shape DECISIONS 2026-09-10 M-3 fixed for Dhan
- *  only). S2 below therefore pins the exit date for Kite and OpenAlgo only.
+ *  Under wave 1's auto-close that null became a CLOSED lot's `sell_date` — a
+ *  realised trade with no exit date (R72; the shape DECISIONS 2026-09-10 M-3
+ *  fixed for Dhan only).
+ *
+ * AUTO-CLOSE IS SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
+ * "v4.3.0 release-level-audit rulings", row 1): lib/import/commit.ts is v4.2.0
+ * again, so seam row 2's consumer (the close sentence) no longer exists and no
+ * close happens — R72 is unreachable. The Angel One / Upstox sale still lands
+ * as an OPEN SHORT with `sell_date` NULL and no basis flag: v4.2.0's shape,
+ * which S2 pins as today's behaviour pending an owner decision (carried with
+ * R72 to 4.3.1) — not as correct.
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -405,31 +412,34 @@ const PULL_ADAPTERS: PullAdapter[] = [
   },
 ];
 
-describe("S2 · every broker-API adapter's ParsedFile reaches commit's auto-close sentence as a PULL (adapters → commit.ts:1791)", () => {
-  it.each(PULL_ADAPTERS)("$name: a pulled SELL that closes the held lot is 'closed by this pull', never 'this file'", (a) => {
-    const opened = importer.commitParsedFile(a.pull("BUY", "2026-09-01", "10:00:00"), `${a.name}-api-2026-09-01`, null, a.account);
+// Rewritten DELIBERATELY for the 2026-09-11 owner ruling (06-ANSWERS "v4.3.0
+// release-level-audit rulings", row 1): auto-close is switched off for 4.3.0,
+// so this seam now pins v4.2.0's outcome for every pull adapter — the lot is
+// untouched, the SELL is its own row, and no sentence claims a close.
+describe("S2 · every broker-API adapter's pulled SELL of a held lot reaches commit as its own row (adapters → commit.ts; auto-close off in 4.3.0)", () => {
+  it.each(PULL_ADAPTERS)("$name: a pulled SELL of a held lot lands as its own row; the lot is untouched and no sentence claims a close", (a) => {
+    const buy = a.pull("BUY", "2026-09-01", "10:00:00");
+    // Seam row 2's input: every adapter says it is a PULL.
+    expect(buy.format).toBe("api");
+    const opened = importer.commitParsedFile(buy, `${a.name}-api-2026-09-01`, null, a.account);
     expect(opened.added).toBe(1);
-    expect(storedRows(a.account).map((r) => r.isOpen)).toEqual([true]);
+    const lot = storedRows(a.account)[0]!;
+    expect(lot.isOpen).toBe(true);
 
     const closing = a.pull("SELL", "2026-09-02", "11:00:00");
-    // What preview promises is what commit does (the plan the card prints).
-    expect(importer.previewParsedFile(closing, null, a.account).autoClose?.closes).toBe(1);
+    expect(closing.format).toBe("api");
+    expect("autoClose" in importer.previewParsedFile(closing, null, a.account), "no close plan").toBe(false);
     const res = importer.commitParsedFile(closing, `${a.name}-api-2026-09-02`, null, a.account);
-    expect(res.added).toBe(0);
+    expect(res.added).toBe(1);
+    expect((res.warnings ?? []).some((w) => w.includes("closed by this"))).toBe(false);
 
-    // THE assertion (CC's word, fed by the adapter's own format).
-    const sentence = (res.warnings ?? []).find((w) => w.includes(" open position in this account was closed by this "));
-    expect(sentence, "the commit said nothing about the close").toBeDefined();
-    expect(sentence).toMatch(
-      /^1 open position in this account was closed by this pull, oldest first \(TCS 10\)\. Realised P&L sits on the closed rows; the matching rows in this pull are their closing legs, not new positions\.$/,
-    );
-    expect((res.warnings ?? []).some((w) => w.includes("this file"))).toBe(false);
-
-    // …and true: one row, closed in place at the adapter's prices.
-    const rows = storedRows(a.account);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ isOpen: false, buyQty: 10, sellQty: 10, grossPnl: 100, buyDate: "2026-09-01" });
-    if (a.datesSellOnly) expect(rows[0]!.sellDate).toBe("2026-09-02");
+    const rows = storedRows(a.account).sort((x, y) => x.id - y.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0], "the held lot is untouched").toEqual(lot);
+    expect(rows[1]).toMatchObject({ isOpen: true, buyQty: 0, sellQty: 10 });
+    // Kite and OpenAlgo date a sell-only row; Angel One and Upstox leave it
+    // null — v4.2.0's shape, pending an owner decision (see the header).
+    expect(rows[1]!.sellDate).toBe(a.datesSellOnly ? "2026-09-02" : null);
   });
 });
 

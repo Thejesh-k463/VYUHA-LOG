@@ -34,12 +34,21 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * 3 | sell-only row: sellDate + basisUnknown | lib/import/api/dhan.ts:299,300 (F2)     | lib/import/commit.ts:1681 acquisition (F1)    | ISO IST date; boolean → "unknown"   | S2 · a sold-out holding closes the lot
  *   |                                        |                                         | lib/import/commit.ts:395 lotFromNewRow (F1)   | excluded from the FIFO book         | S2 · an empty account keeps it unknown
  * 4 | dedupHash of the SAME sale, two shapes | lib/import/api/dhan.ts:231 + :466 (F2)  | lib/import/commit.ts:461 knownHashes (F1)     | sha1 hex, account-free              | S2 · the next pull's history fill is skipped
- * 5 | import_notes alias segments            | lib/import/close-open-lots.ts:130 (F1)  | lib/import/broker-identity.ts:323 (F3)        | " | "-joined text, `dedup-alias:<sha1>` | S3 · the alias makes the group
- * 6 | lotIdentityHashes / isLotIdentityFrozen| lib/import/close-open-lots.ts:93,119(F1)| lib/analytics/data-quality.ts:111 (F3)        | string[] own-first; boolean         | S3 · only the plain copy is removable
+ * 5 | import_notes alias segments            | lib/import/close-open-lots.ts:130 (F1)  | lib/import/broker-identity.ts:323 (F3)        | " | "-joined text, `dedup-alias:<sha1>` | S3 · the alias makes the group (planted)
+ * 6 | lotIdentityHashes / isLotIdentityFrozen| lib/import/close-open-lots.ts:93,119(F1)| lib/analytics/data-quality.ts:111 (F3)        | string[] own-first; boolean         | S3 · only the plain copy is removable (planted)
  * 7 | DuplicateTradeGroup.accounts[].removable| lib/import/broker-identity.ts:339 (F3)  | app/data-quality/actions.ts:71 (F3) → F1 rows | boolean → a DELETE of trade ids     | S3 · the action refuses the merged lot
- * 8 | the lot a row of THIS file just wrote  | lib/import/commit.ts:1695 (F1)          | lib/import/close-open-lots.ts:265 planner     | OpenLot{qty, price, value, date}    | S4 · one pull, one closed row
- * 9 | PreviewResult.autoClose                | lib/import/commit.ts:990 (F1)           | the commit's own applied closes (F1)          | {closes:int, positions:[{sym,qty}]} | S4 · the preview plan equals the commit
- *10 | frozen identity across a RESTORE       | lib/import/close-open-lots.ts:119 (F1)  | lib/db/data-fixes.ts:100 (F1) → :323 (F3)     | dedup_hash left byte-identical      | S5 · the re-key skips the frozen lot
+ * 8 | the lot a row of THIS file just wrote  | lib/import/commit.ts:1695 (F1)          | lib/import/close-open-lots.ts:265 planner     | OpenLot{qty, price, value, date}    | SWITCHED OFF (4.3.0) — S4 pins preview = commit
+ * 9 | PreviewResult.autoClose                | lib/import/commit.ts:990 (F1)           | the commit's own applied closes (F1)          | {closes:int, positions:[{sym,qty}]} | SWITCHED OFF (4.3.0) — S4 pins no autoClose key
+ *10 | frozen identity across a RESTORE       | lib/import/close-open-lots.ts:119 (F1)  | lib/db/data-fixes.ts:100 (F1) → :323 (F3)     | dedup_hash left byte-identical      | S5 · the re-key skips the frozen lot (planted)
+ *
+ * AUTO-CLOSE IS SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
+ * "v4.3.0 release-level-audit rulings", row 1): lib/import/commit.ts is v4.2.0
+ * again, so every commit.ts line above is wave 1's (d0eda00). Rows 3–4 now
+ * cross into v4.2.0's buildRow and own-hash dedup: S2 pins the dated,
+ * basis-unknown sale landing BESIDE the held lot. Rows 5, 6 and 10 run on rows
+ * PLANTED in the state wave 1 left (as tests/data-quality.test.ts plants them):
+ * no 4.3.0 import writes one, but DQ and the restore re-key still read them.
+ * Rows 8 and 9 are switched off; S4 pins that preview and commit agree.
  *
  * DATES. Every date-carrying seam runs at 2026-09-09T19:00:00Z / 2026-09-10T19:00:00Z
  * — 00:30 IST, inside the 18:30–24:00 UTC window where the IST day and the UTC
@@ -388,16 +397,17 @@ describe("S1 · every paisa Dhan charged is stored once (F2 allocateFills → F1
 
 /**
  * `/v2/positions` states a sale out of a holding it cannot see: sellQty > 0,
- * buyQty === 0. F2 now dates it TODAY and flags `basisUnknown`; F1 turns that
- * flag into `acquisition: "unknown"`, keeps such a row out of the FIFO book
- * (it is not a short a later BUY may cover), and lets it CLOSE a long the
- * account already holds.
+ * buyQty === 0. F2 now dates it TODAY and flags `basisUnknown` (M-3); F1 turns
+ * that flag into `acquisition: "unknown"`. With auto-close switched off for
+ * 4.3.0 (ruling 2026-09-11) it closes nothing: beside a held long it lands as
+ * its own row, as v4.2.0 wrote a SELL of a held lot, and a later BUY does not
+ * cover it.
  */
 describe("S2 · a sold-out holding crosses as a dated, basis-unknown sale (F2 → F1)", () => {
   const BUY_FILL: FillSpec = { id: "H-BUY", side: "BUY", qty: 100, price: 100, at: "2026-09-07 09:30:00", symbol: "INFY" };
   let sellPull: ParsedFile;
 
-  it("it closes the open lot this account holds, dated the IST day, in ONE row", async () => {
+  it("the lot is untouched and the sale lands as a dated, basis-unknown row of its own (auto-close off)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(AT_IST_BOUNDARY);
     expect(todayIstIso(), "19:00Z is already the next day in India").toBe("2026-09-10");
@@ -407,7 +417,6 @@ describe("S2 · a sold-out holding crosses as a dated, basis-unknown sale (F2 �
     expect(importer.commitParsedFile(buyPull, "dhan-api", null, HOLDER).added).toBe(1);
     const lot = storedRows(HOLDER)[0];
     expect([lot.buyQty, lot.sellQty, lot.isOpen]).toEqual([100, 0, true]);
-    const lotCharges = lot.chargesTotal;
 
     // Pull 2 — today's book states the sale and no purchase.
     sellPull = await realDhanPull(null, [], [sellOnlyPosition("INFY", 100, 120)]);
@@ -415,35 +424,28 @@ describe("S2 · a sold-out holding crosses as a dated, basis-unknown sale (F2 �
       [0, 100, null, "2026-09-10", true],
     ]);
 
-    // F1's own price for the incoming row, read from the real preview — the
-    // close must carry the lot's charges PLUS this row's, and nothing else.
+    // 06-ANSWERS 2026-09-11, row 1: no close plan; F1 prices the sale as its own row.
     const preview = importer.previewParsedFile(sellPull, null, HOLDER);
+    expect("autoClose" in preview, "the preview plans no close").toBe(false);
+    expect(preview.summary.newCount).toBe(1);
     const sellCharges = preview.rows[0].chargesTotal;
-    expect(preview.autoClose).toEqual({ closes: 1, positions: [{ symbol: "INFY", qty: 100 }] });
 
     const before = maxAuditId();
     const res = importer.commitParsedFile(sellPull, "dhan-api", null, HOLDER);
-    expect([res.added, res.skipped], "the sale is a closing leg, not a new position").toEqual([0, 0]);
+    expect([res.added, res.skipped], "the sale is a new row, as v4.2.0 wrote it").toEqual([1, 0]);
 
-    const rows = storedRows(HOLDER);
-    expect(rows, "closing a lot must not leave a second row behind").toHaveLength(1);
-    const closed = rows[0];
-    expect(closed.id).toBe(lot.id);
-    expect([closed.buyQty, closed.sellQty, closed.isOpen]).toEqual([100, 100, false]);
-    expect([closed.buyDate, closed.sellDate], "the exit is dated today in IST, not left null").toEqual([
-      "2026-09-07",
+    const rows = storedRows(HOLDER).sort((a, b) => a.id - b.id);
+    expect(rows).toHaveLength(2);
+    expect(rows[0], "the held lot is untouched by the sale").toEqual(lot);
+    const sale = rows[1];
+    expect([sale.buyQty, sale.sellQty, sale.isOpen]).toEqual([0, 100, true]);
+    expect([sale.buyDate, sale.sellDate], "M-3: the exit is dated today in IST, not left null").toEqual([
+      null,
       "2026-09-10",
     ]);
-    expect(closed.acquisition, "a lot with a known basis stays known after it is sold").toBeNull();
-    expect(closed.grossPnl).toBe(2000);
-    expect(closed.chargesTotal, "the entry's charges plus the exit's, each exactly once").toBe(
-      r2(lotCharges + sellCharges),
-    );
-    expect(closed.netPnl).toBe(r2(2000 - r2(lotCharges + sellCharges)));
-
-    const audit = closeAuditSince(before);
-    expect(audit.map((a) => a.entity_id)).toEqual([closed.id]);
-    expect(audit[0].summary).toContain("INFY closed 100 @ 120 by import");
+    expect(sale.acquisition, "M-3: a sale with no purchase in the pull is unknown-basis").toBe("unknown");
+    expect(sale.chargesTotal, "the preview's price for the sale is what the commit stored").toBe(sellCharges);
+    expect(closeAuditSince(before), "nothing was closed").toEqual([]);
   });
 
   it("into an EMPTY account it is stored basis-unknown, and a later BUY does not cover it", async () => {
@@ -503,11 +505,13 @@ describe("S2 · a sold-out holding crosses as a dated, basis-unknown sale (F2 �
 // ===========================================================================
 
 /**
- * The same Dhan sale pulled into two accounts. In A it auto-closes a long, so
+ * The same Dhan sale pulled into two accounts. In A it auto-closed a long, so
  * A's row keeps the BUY file's hash and carries the sale's hash as an alias; in
  * B it is a plain row whose own hash IS the sale's. F3 groups on every hash a
  * row stands for, offers the delete only on a PLAIN copy, and the action
  * re-derives that verdict from the database rather than trusting the button.
+ * Auto-close is switched off for 4.3.0 (ruling 2026-09-11), so A's merged lot
+ * is PLANTED in the state wave 1 left; F3's half is unchanged and still runs.
  */
 describe("S3 · one sale, two accounts, one merged lot (F1 identity → F3 DQ + action)", () => {
   let hBuy = "";
@@ -529,8 +533,24 @@ describe("S3 · one sale, two accounts, one merged lot (F1 identity → F3 DQ + 
     ]);
     hSell = dedup.dedupHash(sellPull.trades[0]);
     expect(hSell).not.toBe(hBuy);
-    // The same pull, committed into both books — the duplicate this exists for.
-    expect(importer.commitParsedFile(sellPull, "dhan-api", null, BOOK_A).added).toBe(0);
+    // PLANTED (06-ANSWERS 2026-09-11, row 1 — no 4.3.0 commit writes a merged
+    // lot): A's row in the state wave 1's auto-close left after this sale —
+    // closed, realised, the sale's hash an alias — as tests/data-quality.test.ts
+    // plants one. B gets the same pull through the real commit.
+    const aLot = storedRows(BOOK_A)[0];
+    t.db
+      .update(t.schema.trades)
+      .set({
+        sellQty: 100,
+        avgSellPrice: 120,
+        sellValue: 12000,
+        sellDate: "2026-09-08",
+        isOpen: false,
+        grossPnl: 2000,
+        importNotes: lots.withLotCloseNote(aLot.importNotes, hSell),
+      })
+      .where(eq(t.schema.trades.id, aLot.id))
+      .run();
     expect(importer.commitParsedFile(sellPull, "dhan-api", null, BOOK_B).added).toBe(1);
 
     const a = storedRows(BOOK_A);
@@ -539,8 +559,8 @@ describe("S3 · one sale, two accounts, one merged lot (F1 identity → F3 DQ + 
     expect(b).toHaveLength(1);
     aRowId = a[0].id;
     bRowId = b[0].id;
-    // A's row kept the hash it was BORN with and gained the sale as an alias.
-    expect(a[0].dedupHash, "an auto-close must never rewrite the lot's own hash").toBe(hBuy);
+    // A's row keeps the hash it was BORN with and carries the sale as an alias.
+    expect(a[0].dedupHash, "a merged lot's own hash is the buy's").toBe(hBuy);
     expect(lots.lotIdentityHashes(a[0])).toEqual([hBuy, hSell]);
     expect(lots.isLotIdentityFrozen(a[0])).toBe(true);
     expect(lots.lotIdentityHashes(b[0])).toEqual([hSell]);
@@ -602,14 +622,16 @@ describe("S3 · one sale, two accounts, one merged lot (F1 identity → F3 DQ + 
 
 /**
  * A catch-up pull carries the history BUY and today's `/positions` SELL in ONE
- * ParsedFile. F1's book must fold a row it has just WRITTEN back in, or the
- * two halves of one position land as an open long plus a phantom short with no
- * P&L anywhere — and F2's sell-only row must be dated, or the closed row has no
- * exit date. The preview plans it without writing; the commit performs it. The
- * two must agree.
+ * ParsedFile. Wave 1 folded the row it had just written back in and closed it
+ * (seam rows 8-9). Auto-close is SWITCHED OFF for 4.3.0 (owner ruling
+ * 2026-09-11, 06-ANSWERS "v4.3.0 release-level-audit rulings", row 1), so the
+ * two halves land as v4.2.0 writes them — an open long plus a dated,
+ * basis-unknown opening sell (the shape M-2 was built to prevent; accepted by
+ * the ruling, rebuilt in 4.3.1). What must still hold is that preview and
+ * commit agree.
  */
-describe("S4 · one pull, a Monday BUY and today's SELL, one closed row (F2 ↔ F1, preview ↔ commit)", () => {
-  it("the preview's autoClose plan is exactly what the commit does", async () => {
+describe("S4 · one pull, a Monday BUY and today's SELL: preview and commit agree (F2 ↔ F1, preview ↔ commit)", () => {
+  it("the preview plans no close, and the commit writes exactly the rows the preview counted", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(AT_IST_BOUNDARY);
     const range = dhan.catchUpRange("2026-09-06T19:00:00Z");
@@ -626,36 +648,25 @@ describe("S4 · one pull, a Monday BUY and today's SELL, one closed row (F2 ↔ 
     ]);
 
     const preview = importer.previewParsedFile(parsed, null, PULL);
-    expect(preview.autoClose, "a row this file adds is a lot for the rows after it").toEqual({
-      closes: 1,
-      positions: [{ symbol: "HDFCBANK", qty: 100 }],
-    });
+    expect("autoClose" in preview, "seam row 9 is switched off: no plan crosses").toBe(false);
     expect(preview.summary.dupCount).toBe(0);
+    expect(preview.summary.newCount).toBe(2);
+    expect([preview.shape.open, preview.shape.openingSells]).toEqual([1, 1]);
 
     const before = maxAuditId();
     const res = importer.commitParsedFile(parsed, "dhan-api", null, PULL);
-    expect([res.added, res.skipped, res.total]).toEqual([1, 0, 2]);
-    expect(
-      // A real Dhan pull (format "api"): the sentence names the pull, not a file.
-      (res.warnings ?? []).some((w) => w.includes("1 open position in this account was closed by this pull")),
-    ).toBe(true);
+    expect(res.added, "the preview's new rows are the commit's added rows").toBe(preview.summary.newCount);
+    expect([res.added, res.skipped, res.total]).toEqual([2, 0, 2]);
+    expect((res.warnings ?? []).some((w) => /closed by this/.test(w)), "no sentence claims a close").toBe(false);
 
-    const rows = storedRows(PULL);
-    expect(rows, "an open long plus a phantom short is what this seam prevents").toHaveLength(1);
-    const closed = rows[0];
-    expect([closed.buyQty, closed.sellQty, closed.isOpen]).toEqual([100, 100, false]);
-    expect([closed.buyDate, closed.sellDate]).toEqual(["2026-09-07", "2026-09-10"]);
-    expect(closed.grossPnl).toBe(2000);
-    expect(closed.acquisition, "a lot bought in the same pull has a KNOWN basis").toBeNull();
-
-    // The plan and the deed: one close, the same symbol and quantity.
-    const audit = closeAuditSince(before);
-    expect(audit.map((a) => a.entity_id)).toEqual([closed.id]);
-    expect(
-      audit.map((a) => ({ symbol: a.summary.split(" ")[0], qty: Number(a.summary.split(" ")[2]) })),
-      "the preview promised exactly the closes the commit performed",
-    ).toEqual(preview.autoClose!.positions);
-    expect(closed.netPnl).toBe(r2(2000 - closed.chargesTotal));
+    const rows = storedRows(PULL).sort((a, b) => a.id - b.id);
+    expect(rows.map((r) => [r.buyQty, r.sellQty, r.isOpen, r.buyDate, r.sellDate, r.acquisition])).toEqual([
+      [100, 0, true, "2026-09-07", null, null],
+      [0, 100, true, null, "2026-09-10", "unknown"],
+    ]);
+    // What the preview priced per row is what the commit stored.
+    expect(rows.map((r) => r.chargesTotal)).toEqual(preview.rows.map((r) => r.chargesTotal));
+    expect(closeAuditSince(before), "nothing was closed").toEqual([]);
   });
 });
 
@@ -711,7 +722,15 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
     const hSell = dedup.dedupHash(sell);
 
     expect(importer.commitParsedFile(paytmFile([buy]), "paytm-buy.csv", null, PAYTM_A).added).toBe(1);
-    expect(importer.commitParsedFile(paytmFile([sell]), "paytm-sell.csv", null, PAYTM_A).added).toBe(0);
+    // PLANTED (06-ANSWERS 2026-09-11, row 1 — no 4.3.0 commit writes a frozen
+    // lot): A's lot in the state wave 1 left after SELL 40 — reduced to 60
+    // under its born-with hash, the sale's hash an alias. B gets the real commit.
+    const lotRow = storedRows(PAYTM_A)[0];
+    t.db
+      .update(t.schema.trades)
+      .set({ buyQty: 60, buyValue: 6000, importNotes: lots.withLotCloseNote(lotRow.importNotes, hSell) })
+      .where(eq(t.schema.trades.id, lotRow.id))
+      .run();
     expect(importer.commitParsedFile(paytmFile([sell]), "paytm-sell.csv", null, PAYTM_B).added).toBe(1);
 
     const reduced = storedRows(PAYTM_A)
@@ -738,13 +757,14 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
     // The consequence the freeze exists for: the BUY file still de-duplicates.
     const reimport = importer.commitParsedFile(paytmFile([buy]), "paytm-buy.csv", null, PAYTM_A);
     expect([reimport.added, reimport.skipped], "a re-imported buy file must not add a phantom 100 lot").toEqual([0, 1]);
-    expect(storedRows(PAYTM_A)).toHaveLength(2);
+    // One row in A: only the lot is planted (wave 1 also wrote a closed 40 slice).
+    expect(storedRows(PAYTM_A)).toHaveLength(1);
 
     // F3 still resolves the record across the two books after the restore.
     const group = identity.findDuplicateTradeGroup("paytm", hSell);
     expect(group, "the alias must still resolve the record across the two books").not.toBeNull();
     expect(group!.accounts).toEqual([
-      { id: PAYTM_A, name: "Paytm A", rows: 2, removable: false },
+      { id: PAYTM_A, name: "Paytm A", rows: 1, removable: false },
       { id: PAYTM_B, name: "Paytm B", rows: 1, removable: true },
     ]);
     expect(identity.duplicateTradeIdsIn("paytm", hSell, PAYTM_A)).toEqual([]);
@@ -752,8 +772,8 @@ describe("S5 · the restore re-key skips a frozen lot (F1 close-open-lots → F1
 
     // D2, FIXED. The group is ABOUT the 40-share sale of 2026-09-05, and it is
     // described by the row whose OWN hash is the group's — the plain copy in
-    // book B — not by whichever row is first, which here is the 60-share
-    // remainder lot the auto-close left behind.
+    // book B — not by whichever row is first, which here is the (planted)
+    // 60-share remainder lot.
     expect({ qty: group!.qty, sellDate: group!.sellDate }).toEqual({ qty: 40, sellDate: "2026-09-05" });
   });
 });

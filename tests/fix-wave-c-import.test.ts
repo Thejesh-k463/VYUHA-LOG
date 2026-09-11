@@ -6,13 +6,14 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
 /**
  * v4.3.0 FIX WAVE C — C-5 and C-6, both halves at once.
  *
- * C-5: a SELL that auto-closes an open row FIFO (06-ANSWERS "v4.2.1 rulings"
- * item 4) was silent on screen. The commit's sentence (`result.warnings`,
- * lib/import/commit.ts) reached the response and no client read it; "Preview
- * pull" showed no close plan. Here the REAL broker route and the REAL file
- * route answer, and their JSON goes straight into the REAL client composers
- * (`pullResultMessage`, `autoClosePlanNote`, `commitResultNotes`) — the seam
- * the defect lived on.
+ * C-5: the commit's own sentences (`result.warnings`, lib/import/commit.ts)
+ * reached the response and no client read them. Here the REAL broker route and
+ * the REAL file route answer, and their JSON goes straight into the REAL client
+ * composers (`pullResultMessage`, `commitResultNotes`) — the seam the defect
+ * lived on. Auto-close is SWITCHED OFF for 4.3.0 (owner ruling 2026-09-11,
+ * 06-ANSWERS "v4.3.0 release-level-audit rulings", row 1): a SELL of a held
+ * lot is written as its own row, as in v4.2.0, and no screen states a close
+ * plan or a close. The C-5 cases below pin exactly that.
  *
  * C-6 (owner ruling "Say it plainly"): a Dhan gap over DHAN_MAX_PULL_RANGE_DAYS
  * was clamped with no word, lastPullAt moved to now and the older fills were
@@ -179,7 +180,7 @@ const rowsOf = (accountId: number) =>
 // C-5 · broker pull
 // ===========================================================================
 
-describe("C-5 · a Dhan pull whose SELL closes a held lot says so — preview AND commit", () => {
+describe("C-5 · a Dhan pull whose SELL meets a held lot says what v4.2.0 said — preview AND commit (auto-close off)", () => {
   it("opens the lot (pull #1 commits a BUY)", async () => {
     addDhan(C5_PULL, stampOn(-4));
     stubDhan([{ id: "C5-B", side: "BUY", qty: 100, price: 100, at: `${istDay(-3)} 09:30:00` }]);
@@ -191,40 +192,33 @@ describe("C-5 · a Dhan pull whose SELL closes a held lot says so — preview AN
     t.sqlite.prepare("UPDATE broker_connections SET last_pull_at = ? WHERE account_id = ?").run(stampOn(-4), C5_PULL);
   });
 
-  it("Preview pull: the response carries the close plan, and the card prints it in the file preview's words", async () => {
+  it("Preview pull: the response carries no close plan, and the card prints v4.2.0's line", async () => {
     stubDhan([{ id: "C5-S", side: "SELL", qty: 100, price: 120, at: `${istDay(-2)} 14:00:00` }]);
     const res = await post({ action: "pull", broker: "dhan", accountId: C5_PULL, mode: "preview" });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.preview.autoClose).toEqual({ closes: 1, positions: [{ symbol: "TCS", qty: 100 }] });
+    expect("autoClose" in json.preview, "the server sends no plan").toBe(false);
 
-    const text = bc.pullResultMessage("preview", json);
-    expect(text).toContain("Will close 1 open position already held in this account, oldest first (TCS 100).");
-    // ONE composer for both screens: the file preview's sentence, not a copy of it.
-    expect(text).toContain(ic.autoClosePlanNote(json.preview.autoClose)!);
+    // v4.2.0's own expression (broker-connect.tsx at v4.2.0), not the composer's.
+    const warn = ((json.warnings ?? []) as string[]).join(" ");
+    expect(bc.pullResultMessage("preview", json)).toBe(`Preview: 1 normalized trade. ${warn}`.trim());
     // A preview writes nothing.
     expect(rowsOf(C5_PULL).map((r) => r.is_open)).toEqual([1]);
   });
 
-  it("Pull & commit: the response carries the commit's sentence, and the card prints it after the counts", async () => {
+  it("Pull & commit: the SELL is added as its own row, and no sentence claims a close", async () => {
     stubDhan([{ id: "C5-S", side: "SELL", qty: 100, price: 120, at: `${istDay(-2)} 14:00:00` }]);
     const res = await post({ action: "pull", broker: "dhan", accountId: C5_PULL, mode: "commit" });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.result.added).toBe(0);
-    const closed = (json.result.warnings as string[]).find((w) => w.includes("was closed by this pull"));
-    // A PULL closed it: the sentence the card prints names the pull, never a file.
-    expect(closed, "the route response dropped the commit's sentence, or it names a file").toBe(
-      "1 open position in this account was closed by this pull, oldest first (TCS 100). Realised P&L sits on the closed rows; the matching rows in this pull are their closing legs, not new positions.",
-    );
+    expect(json.result.added).toBe(1);
+    expect((json.result.warnings as string[]).some((w) => /closed by this/.test(w))).toBe(false);
 
     const text = bc.pullResultMessage("commit", json);
-    expect(text.startsWith("Committed — 0 added, 0 duplicates skipped. ")).toBe(true);
-    expect(text).toContain(closed!);
-    // …and it is true: the one row closed in place.
-    const rows = rowsOf(C5_PULL);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ is_open: 0, buy_qty: 100, sell_qty: 100 });
+    expect(text.startsWith("Committed — 1 added, 0 duplicates skipped.")).toBe(true);
+    expect(text).not.toMatch(/closed by this/);
+    // …and it is true: the held lot is still open, and the sale is a second open row.
+    expect(rowsOf(C5_PULL).map((r) => r.is_open)).toEqual([1, 1]);
   });
 });
 
@@ -253,8 +247,8 @@ function postFile(csv: string, mode: "preview" | "commit"): Promise<Response> {
   return fileRoute.POST(new Request("http://local/api/import", { method: "POST", body: fd }));
 }
 
-describe("C-5 · a file whose SELL closes a held lot says so after the commit", () => {
-  it("the file route's commit response carries the sentence, and the commit card lists it", async () => {
+describe("C-5 · a file whose SELL meets a held lot: no plan, no close, the sale lands (auto-close off)", () => {
+  it("the file route answers with no close plan, and the commit card's lines claim no close", async () => {
     selectAccount(C5_FILE);
     const opened = await postFile(gtr(BUY_ROW), "commit");
     expect(opened.status).toBe(200);
@@ -263,25 +257,24 @@ describe("C-5 · a file whose SELL closes a held lot says so after the commit", 
     const pre = await postFile(gtr(SELL_ROW), "preview");
     expect(pre.status).toBe(200);
     const pj = await pre.json();
-    expect(pj.preview.autoClose.closes).toBe(1);
-    expect(ic.autoClosePlanNote(pj.preview.autoClose)).toMatch(
-      /^Will close 1 open position already held in this account, oldest first \(.+ 10\)\.$/,
-    );
+    expect("autoClose" in pj.preview, "the server sends no plan").toBe(false);
 
     const res = await postFile(gtr(SELL_ROW), "commit");
     expect(res.status).toBe(200);
     const json = await res.json();
     const lines = ic.commitResultNotes(json.result);
-    expect(lines.some((w) => /^1 open position in this account was closed by this file, oldest first/.test(w))).toBe(true);
-    expect(rowsOf(C5_FILE).map((r) => r.is_open)).toEqual([0]);
+    expect(lines.some((w) => /closed by this/.test(w))).toBe(false);
+    // The held lot stays open, and the unpaired sale is its own open row.
+    expect(rowsOf(C5_FILE).map((r) => r.is_open)).toEqual([1, 1]);
   });
 
-  it("the commit card renders commitResultNotes, and the file preview renders autoClosePlanNote", () => {
+  it("the commit card renders commitResultNotes, and the file preview renders no close plan", () => {
     const src = fs.readFileSync(path.join(ROOT, "components/import/import-client.tsx"), "utf8").replace(/\r\n/g, "\n");
     const card = src.slice(src.indexOf("{committed && ("), src.indexOf("View trades →"));
     expect(card).toContain('data-testid="commit-warnings"');
     expect(card).toContain("commitResultNotes(committed)");
-    expect(src).toMatch(/data-testid="preview-auto-close"[^>]*>\s*\{autoClosePlanNote\(p\.autoClose\)\}/);
+    expect(src).not.toContain("autoClosePlanNote");
+    expect(src).not.toContain('data-testid="preview-auto-close"');
     // The committed state keeps the commit's sentences instead of dropping them.
     expect(src).toMatch(/useState<\{[^}]*warnings\?: string\[\][^}]*\} \| null>\(null\)/);
   });
@@ -407,14 +400,14 @@ describe("C-6 · a clamp in the background auto-pull is recorded through the sam
 // ===========================================================================
 
 /**
- * The sweep line counted the PREVIEW's non-duplicate rows
- * (`summary.newCount`), so a SELL that closed a held lot read "Dhan +1 trade"
- * while the commit added no row — the manual pull says "0 added" for the very
- * same fills. The line now counts the rows the commit ADDED and names the
- * closes, in the same count the preview's close plan states.
+ * The sweep line counts the rows the commit ADDED — the manual pull's "N
+ * added". With auto-close SWITCHED OFF for 4.3.0 (owner ruling 2026-09-11,
+ * 06-ANSWERS "v4.3.0 release-level-audit rulings", row 1) a SELL of a held lot
+ * is written as its own row, so the line reads "+1 trade", as v4.2.0's did, and
+ * names no close (R18's clause is gone with it).
  */
-describe("C-5 · the auto-pull line says what the commit did to a held lot", () => {
-  it("a SELL that closes the held lot reads '+0 trades, 1 open position closed', never '+1 trade'", async () => {
+describe("C-5 · the auto-pull line says what the commit did: a SELL of a held lot is +1 trade", () => {
+  it("a SELL of the held lot reads '+1 trade' and names no close", async () => {
     addDhan(C5_AUTO, stampOn(-4), { pin: "1234", totpSecret: "JBSWY3DPEHPK3PXP", totpAckVersion: 1 });
     stubDhan([{ id: "A5-B", side: "BUY", qty: 100, price: 100, at: `${istDay(-3)} 09:30:00` }]);
     const opened = await post({ action: "pull", broker: "dhan", accountId: C5_AUTO, mode: "commit" });
@@ -428,12 +421,13 @@ describe("C-5 · the auto-pull line says what the commit did to a held lot", () 
     const out = await job.runAutoPull(new Date()); // the REAL pullOne
     const mine = out.summary.find((e) => e.broker === "dhan" && e.accountId === C5_AUTO);
     expect(mine?.status).toBe("imported");
-    // THE assertion (red on revert): the count is what the commit wrote.
-    expect(mine?.detail).toBe("+0 trades, 1 open position closed");
-    expect(out.line).toContain("Dhan +0 trades, 1 open position closed");
-    // …and it is true: no row was added, the held one closed in place.
+    // THE assertion: the count is what the commit wrote, and no close is named.
+    expect(mine?.detail).toBe("+1 trade");
+    expect(out.line).toContain("Dhan +1 trade");
+    expect(out.line).not.toMatch(/closed/);
+    // …and it is true: one row was added, and the held one is still open.
     const rows = rowsOf(C5_AUTO);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ is_open: 0, buy_qty: 100, sell_qty: 100 });
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.is_open)).toEqual([1, 1]);
   });
 });

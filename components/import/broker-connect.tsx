@@ -30,8 +30,6 @@ import { OPENALGO_DEFAULT_HOST, isLocalOpenAlgoHost } from "@/lib/domain/openalg
 import { isOpenAlgoConnectionId, openAlgoBrokerOptions, openAlgoUnderlyingOf } from "@/lib/import/api/openalgo";
 import { connectionModeLabel, saveDisabled, saveTargetLabel } from "@/components/import/broker-connect-gate";
 import { writeStored } from "@/components/layout/use-stored-value";
-// The file preview's close-plan sentence — ONE composer for both screens (C-5).
-import { autoClosePlanNote, type AutoClosePlan } from "@/components/import/import-client";
 // Pure domain, browser-safe (invariant 2): the ONE +5:30 definition and the
 // trading-day walk-back, so the gap line cannot invent a second calendar.
 import { previousTradingDay, todayIstIso } from "@/lib/domain/trading-day";
@@ -92,8 +90,8 @@ interface PullResult {
   skipped?: number;
   total?: number;
   rows?: number;
-  /** The COMMIT's own sentences (lib/import/commit.ts) — e.g. which open
-   *  positions a pulled SELL closed. C-5: these used to go unread. */
+  /** The COMMIT's own sentences (lib/import/commit.ts) — e.g. contract-note
+   *  days it could not place. C-5: these used to go unread. */
   warnings?: string[];
 }
 
@@ -107,18 +105,17 @@ export interface UnfetchedSpan {
 /** The slice of the pull route's JSON the message reads. */
 export interface PullResponseLite {
   result?: PullResult;
-  preview?: { rows?: unknown[]; summary?: { total?: number }; autoClose?: AutoClosePlan | null };
+  preview?: { rows?: unknown[]; summary?: { total?: number } };
   warnings?: string[];
 }
 
 /**
  * The one line the card prints after a pull (C-5).
  *
- * Commit: the counts, then the commit's OWN sentences (`result.warnings`) —
- * a SELL that closed a held lot adds nothing and skips nothing, so without
- * them the line read "0 added, 0 duplicates skipped" over a position that had
- * just closed — then the pull's warnings. Preview: the row count, then the
- * close plan in the file preview's own words, then the warnings.
+ * Commit: the counts, then the commit's OWN sentences (`result.warnings`),
+ * which the card used to drop, then the pull's warnings. Preview: the row
+ * count, then the warnings — v4.2.0's line, character for character (auto-close
+ * is switched off for 4.3.0, so there is no close plan to state).
  */
 export function pullResultMessage(mode: "preview" | "commit", data: PullResponseLite): string {
   const warn = data.warnings ?? [];
@@ -129,8 +126,7 @@ export function pullResultMessage(mode: "preview" | "commit", data: PullResponse
       .trim();
   }
   const rows = data.preview?.rows?.length ?? data.preview?.summary?.total ?? 0;
-  const plan = autoClosePlanNote(data.preview?.autoClose);
-  return [`Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}.`, ...(plan ? [plan] : []), ...warn].join(" ").trim();
+  return [`Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}.`, ...warn].join(" ").trim();
 }
 
 type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";

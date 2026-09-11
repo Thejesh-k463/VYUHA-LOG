@@ -28,12 +28,12 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * 2 | findRivalConnection(...) → Rival|null| lib/import/broker-identity.ts:216 (B4)        | app/api/import/broker/route.ts:490 (B2)       | {accountId:int, accountName:str} | S2 · a rival client refuses the save
  * 3 | the 409 body                        | app/api/import/broker/route.ts:502 (B2)       | components/import/broker-connect.tsx:593       | JSON {ok,error,message} over HTTP| S2 · `error` and `message` are ONE string
  * 4 | maskSecret / maskAccountId          | lib/import/broker-identity.ts:88,93 (B4)      | route.ts:93 `mask`, route.ts:100 `maskId`(B2) | masked string, char for char     | S3 · the two masks are one mask
- * 5 | NormalizedTrade[] from a Dhan pull  | lib/import/api/dhan.ts:889 toParsedFile (B2)  | lib/import/commit.ts:802 previewParsedFile(B3)| ParsedFile, rupees (invariant 1) | S4 · a Dhan history SELL closes the book's long
- * 6 | PreviewResult.autoClose             | lib/import/commit.ts:883 (B3)                 | components/import/import-client.tsx:521 (B2)  | {closes:int, positions:[{sym,qty}]}| S4 · autoClose.closes crosses as an integer
+ * 5 | NormalizedTrade[] from a Dhan pull  | lib/import/api/dhan.ts:889 toParsedFile (B2)  | lib/import/commit.ts:802 previewParsedFile(B3)| ParsedFile, rupees (invariant 1) | S4 · a Dhan history SELL lands beside the book's long
+ * 6 | PreviewResult.autoClose             | lib/import/commit.ts:883 (B3)                 | components/import/import-client.tsx:521 (B2)  | {closes:int, positions:[{sym,qty}]}| SWITCHED OFF (4.3.0) — no autoClose key
  * 7 | catchUpRange(lastPullAt, today)     | lib/import/api/dhan.ts:327 (B2)               | lib/jobs/auto-pull.ts:170 / route.ts:727 (B2) | {from,to} ISO dates, IST day     | S4 · the IST day boundary (18:30–24:00 UTC)
  * 8 | (broker, dedupHash) across accounts | lib/import/commit.ts commit (B3)              | lib/import/broker-identity.ts:326 (B4)        | sha string, account-free         | S5 · one account is never its own duplicate
  * 9 | removeDuplicateCopy(broker,hash,acc)| app/data-quality/actions.ts:33 (B4)           | lib/import/commit.ts lot book (B3)            | row ids scoped to ONE account    | S5 · B4's delete must not touch account A
- *10 | trades.is_open after an auto-close  | lib/import/commit.ts applyLotCloses (B3)      | lib/analytics/positions.ts:97 (B5, /risk)     | boolean column → OpenPosition[]  | S6 · a closed lot leaves the risk open set
+ *10 | trades.is_open after an auto-close  | lib/import/commit.ts applyLotCloses (B3)      | lib/analytics/positions.ts:97 (B5, /risk)     | boolean column → OpenPosition[]  | S6 · the held long stays in the risk open set
  *11 | pct(value, decimals)                | lib/format.ts:32 (B5, pre-existing)           | every % surface outside B5                    | percent (NOT ppm), no "+" sign   | S7 · pct() is byte-identical in behaviour
  *12 | signedPct(rupees, pct, decimals)     | lib/format.ts:59 (B5)                         | app/reports/rom/page.tsx:47 (B6, wave 2)      | percent, sign BORROWED from ₹    | S7 · rom's local pct is gone (wave 2)
  *13 | the splash tagline + struck phrases | src-tauri/loading/index.html:73 (B1)          | tests/positioning-copy.test.ts STRUCK scan    | literal sentence, UTF-8          | S8 · the splash crosses the positioning scan
@@ -46,6 +46,12 @@ import { openTempDb, type TempDb } from "./helpers/temp-db";
  * the report as a naming hazard, not asserted here.
  *
  * Source-shape regexes use `\r?\n`: Windows CI checks these files out CRLF.
+ *
+ * AUTO-CLOSE IS SWITCHED OFF FOR 4.3.0 (owner ruling 2026-09-11, 06-ANSWERS
+ * "v4.3.0 release-level-audit rulings", row 1): lib/import/commit.ts is v4.2.0
+ * again. Seam 6 no longer exists (no autoClose key crosses), and seams 5, 9
+ * and 10 are rewritten DELIBERATELY to v4.2.0's outcome: a SELL of a held lot
+ * is its own row, and the lot stays open.
  */
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -450,7 +456,7 @@ async function realDhanPull(range: { from: string; to: string }, fills: Fill[]):
   return parsed;
 }
 
-describe("S5/S6/S7 · a Dhan history SELL closes the long the book already holds (B2 → B3 → B4 → B5)", () => {
+describe("S5/S6/S7 · a Dhan history SELL of the long the book already holds (B2 → B3 → B4 → B5; auto-close off in 4.3.0)", () => {
   // 2026-09-08T19:00:00Z is 2026-09-09 00:30 IST — the day boundary the whole
   // catch-up window is measured from. Every date below is decided at that
   // instant, so an off-by-one in the IST definition shows up as a wrong window.
@@ -469,7 +475,7 @@ describe("S5/S6/S7 · a Dhan history SELL closes the long the book already holds
     expect(dhan.catchUpRange(null)).toBeNull();
   });
 
-  it("the pull's SELL closes the open long: autoClose.closes === 1, then one closed row and no new short", async () => {
+  it("the pull's SELL lands as its own row and the open long stays open (auto-close off)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(AT_IST_BOUNDARY);
     selectAccount(PULL);
@@ -485,7 +491,7 @@ describe("S5/S6/S7 · a Dhan history SELL closes the long the book already holds
     expect(buyPull.warnings.some((w) => w.includes(`fills from ${range1.from} to ${range1.to}`))).toBe(true);
 
     // ── B3, for real ────────────────────────────────────────────────────────
-    expect(commit.previewParsedFile(buyPull, null, PULL).autoClose).toEqual({ closes: 0, positions: [] });
+    expect("autoClose" in commit.previewParsedFile(buyPull, null, PULL)).toBe(false);
     expect(commit.commitParsedFile(buyPull, "dhan-api", null, PULL).added).toBe(1);
     const open = tradeRowsOf(PULL);
     expect(open).toHaveLength(1);
@@ -500,42 +506,36 @@ describe("S5/S6/S7 · a Dhan history SELL closes the long the book already holds
     expect(sellPull.trades[0].sellQty).toBe(100);
     expect(sellPull.trades[0].buyQty).toBe(0);
 
-    // Seam 6: the integer that crosses into components/import/import-client.tsx.
+    // Seam 6 is SWITCHED OFF (06-ANSWERS 2026-09-11, row 1): no close plan
+    // crosses into components/import/import-client.tsx.
     const preview = commit.previewParsedFile(sellPull, null, PULL);
-    expect(preview.autoClose).toEqual({ closes: 1, positions: [{ symbol: "TCS", qty: 100 }] });
+    expect("autoClose" in preview).toBe(false);
+    expect(preview.summary.newCount).toBe(1);
 
     const res = commit.commitParsedFile(sellPull, "dhan-api", null, PULL);
-    const after = tradeRowsOf(PULL);
-    expect(after, "the close landed on the existing row, not beside it").toHaveLength(1);
-    expect(after[0].id).toBe(open[0].id);
-    expect(after[0].isOpen).toBe(false);
-    expect(after[0].buyQty).toBe(100);
-    expect(after[0].sellQty).toBe(100);
-    expect(after[0].avgSellPrice).toBe(120);
-    expect(after[0].grossPnl).toBe(2000); // (120 − 100) × 100, rupees
-    expect(after.filter((r) => r.isOpen && r.sellQty > r.buyQty), "no phantom short").toHaveLength(0);
-    expect(res.added).toBe(0); // it CLOSED a row; it did not add one
+    expect(res.added, "v4.2.0 writes the sale as its own row").toBe(1);
+    const after = tradeRowsOf(PULL).sort((a, b) => a.id - b.id);
+    expect(after).toHaveLength(2);
+    expect(after[0], "the held long is untouched").toEqual(open[0]);
+    // An unpaired history sell is flagged basis-unknown by the adapter.
+    expect(after[1]).toMatchObject({ buyQty: 0, sellQty: 100, avgSellPrice: 120, isOpen: true, acquisition: "unknown" });
   });
 
-  it("a SECOND identical pull closes nothing and adds nothing — dedup runs before matching", async () => {
+  it("a SECOND identical pull adds nothing — own-hash dedup skips the sale", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(AT_IST_BOUNDARY);
     selectAccount(PULL);
     const before = tradeRowsOf(PULL);
-    expect(before).toHaveLength(1);
+    expect(before).toHaveLength(2);
 
     const range2 = dhan.catchUpRange("2026-09-06T19:00:00Z")!;
     const again = await realDhanPull(range2, [
       { id: "F-SELL", side: "SELL", qty: 100, price: 120, at: "2026-09-07 14:00:00" },
     ]);
-    expect(commit.previewParsedFile(again, null, PULL).autoClose).toEqual({ closes: 0, positions: [] });
     const res = commit.commitParsedFile(again, "dhan-api", null, PULL);
     expect(res.added).toBe(0);
     expect(res.skipped).toBe(1);
-    const after = tradeRowsOf(PULL);
-    expect(after).toHaveLength(1);
-    expect(after[0].sellQty).toBe(100);
-    expect(after[0].grossPnl).toBe(2000);
+    expect(tradeRowsOf(PULL)).toEqual(before);
   });
 
   it("S5 · B4 sees no duplicate: one account can never be its own duplicate", () => {
@@ -543,14 +543,15 @@ describe("S5/S6/S7 · a Dhan history SELL closes the long the book already holds
     expect(mine).toEqual([]);
   });
 
-  it("S6 · the auto-closed lot has left the risk page's open set (B3's column → B5's derivation)", () => {
+  it("S6 · auto-close off: the held long is still in the risk page's open set (B3's column → B5's derivation)", () => {
     selectAccount(PULL);
     const trades = tradesQ.getTrackerTrades();
-    expect(trades.length, "the account still holds its row").toBe(1);
+    expect(trades.length, "the lot and the sale, as two rows").toBe(2);
+    const lot = trades.find((r) => r.buyQty === 100 && r.sellQty === 0);
+    expect(lot, "the held long is one of them").toBeDefined();
     // The REAL /risk derivation, on the REAL rows the commit above wrote.
     const open = positionsMod.deriveOpenPositions(trades, new Map(), TODAY);
-    expect(open.map((p) => p.symbol)).not.toContain("TCS");
-    expect(open).toEqual([]);
+    expect(open.map((p) => p.id)).toContain(lot!.id);
   });
 });
 
@@ -628,7 +629,7 @@ describe("S8/S9 · one broker record in two books (B3's dedupHash → B4's group
     expect(g.dedupHash).toBe(tradeRowsOf(BOOK_A)[0].dedupHash);
   });
 
-  it("removing B's copy leaves A's lot intact — and A's auto-close matcher still closes it", async () => {
+  it("removing B's copy leaves A's lot intact — and a SELL in A lands BESIDE it (auto-close off)", async () => {
     const hash = tradeRowsOf(BOOK_A)[0].dedupHash;
     const aRowId = tradeRowsOf(BOOK_A)[0].id;
 
@@ -651,19 +652,18 @@ describe("S8/S9 · one broker record in two books (B3's dedupHash → B4's group
     expect(aRows[0].id).toBe(aRowId);
     expect(aRows[0].isOpen).toBe(true);
 
-    // …and B3's matcher, run afterwards in A, still SEES that lot.
+    // …and a SELL in A afterwards. Auto-close is switched off for 4.3.0
+    // (06-ANSWERS 2026-09-11, row 1), so B3 no longer matches it to A's lot:
+    // the lot is still held and the sale is its own row, as in v4.2.0.
     selectAccount(BOOK_A);
     const sell = sellFile("INFY", 50, 240, "2026-05-01");
-    expect(commit.previewParsedFile(sell, null, BOOK_A).autoClose).toEqual({
-      closes: 1,
-      positions: [{ symbol: "INFY", qty: 50 }],
-    });
-    commit.commitParsedFile(sell, "sell.csv", null, BOOK_A);
-    const closed = tradeRowsOf(BOOK_A);
-    expect(closed).toHaveLength(1);
-    expect(closed[0].id).toBe(aRowId);
-    expect(closed[0].isOpen).toBe(false);
-    expect(closed[0].grossPnl).toBe(2000); // (240 − 200) × 50
+    expect("autoClose" in commit.previewParsedFile(sell, null, BOOK_A)).toBe(false);
+    expect(commit.commitParsedFile(sell, "sell.csv", null, BOOK_A).added).toBe(1);
+    const held = tradeRowsOf(BOOK_A).sort((a, b) => a.id - b.id);
+    expect(held).toHaveLength(2);
+    expect(held[0].id).toBe(aRowId);
+    expect([held[0].buyQty, held[0].sellQty, held[0].isOpen]).toEqual([50, 0, true]);
+    expect([held[1].buyQty, held[1].sellQty, held[1].isOpen]).toEqual([0, 50, true]);
 
     // The group is gone: a sole copy is not a duplicate (the EMPTY case).
     expect(identity.findDuplicateTradeGroup("dhan", hash)).toBeNull();

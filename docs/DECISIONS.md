@@ -5819,3 +5819,120 @@ auto-close in place; rate-card-only older fixes; continuing in this ~510k-token 
 next session re-checks each against the switched-off code, because some (R42, R80, R81, R82) live in the Dhan adapter, not
 in auto-close, and stay 4.3.0 work. The bump drafts must drop every auto-close claim (C-5's close sentence, CC's pull
 wording, the auto-pull closes count) before they are used.
+
+## 2026-09-11 — v4.3.0 fix work (fifth session): the 91 classified, the auto-close switch-off designed, primary sources read, owner rulings, session decisions
+
+**Analysis** (one workflow, 15 Opus agents, ≈3.4 M subagent tokens): a switch-off map, two primary-source researchers,
+six cluster analysts that re-verified every finding at HEAD `4560be7` and designed the fix plus its red-on-revert test, and
+one Opus skeptic per cluster (the global `skeptic` agent run with `model: opus`). The skeptics REFUTED eleven fix designs, and
+their corrected designs are what gets built: R42 (the `after` cutoff must be captured BEFORE `/positions`, not the post-commit
+stamp), R43 (a supersede keyed without a product column can overwrite a held MARGIN row with an INTRADAY one), R19 (leaving
+the stamp unmoved after a landed commit re-creates R42), R81 (its test would pass on zero-charge rows), F-L1-3a (the remedy
+still pointed at the last pull's partly imported day), R98 and R100 (the proposed copy was still false on unequal wings and
+on call-lower variants), R36 (routing the IPO fallback through the engine would ADD allotment STT), R71 (the proposed rule
+did not fix the audit's own example), R35 (R7's design makes it reachable on user DBs), R23 (the STATE §2 heading is still stale).
+
+**What v4.2.0 did with a SELL of a held lot (established from `git show v4.2.0:…`):** there was no auto-close anywhere. The
+SELL landed as its own row and the held lot was never read. A file's unpaired sell became a basis-unknown opening sell ("—"
+P&L, the buy-price note). Angel One / Upstox stored an OPEN SHORT with `sell_date` NULL. Dhan 4.2.0 did the same; 4.3.0's
+M-3 stores `acquisition 'unknown'` dated today.
+
+**Decision — the switch-off is the restore, not a flag.** `lib/import/commit.ts` is restored to v4.2.0 byte-for-byte, and
+the auto-close UI is removed: the preview close plan, the pull-preview plan line and the auto-pull closes count. The pure
+planner `lib/import/close-open-lots.ts` stays, dormant until 4.3.1, because `broker-identity.ts` (Data Quality) and
+`data-fixes.ts` import its identity readers. M-3 stays (06-ANSWERS:269's else-branch does not depend on auto-close); it is
+the one adapter-level difference from v4.2.0. The auto-pull detail keeps `res.added`. Rejected: v4.2.0's preview `newCount`,
+which counts same-pull repeats the commit skips (F-L1-7). Rejected: a switch-off flag, which would leave dormant copy and pins
+on strings no server can produce. No migration and no data fix (STATE §0.2).
+
+**R77 / R78 — primary source read this session:** NSE/FATAX/38737 (30 Aug 2018, Circular 2/2018; no text layer, read by
+rendering). It quotes CBDT F.No.272/M-40/2018-ITJ of 27 Aug 2018: in addition to rows 4(a)/(b)/(c), delivery-equity STT of
+0.10% applies to physically settled stock derivatives, "both Futures and Options". It is effective 26 Jul 2018, payable by
+both the receiver and the giver of the securities. The circular does not state the value base. **Decision:** strike × qty
+(the consideration at which the shares change hands, and the notional the panel prints), recorded as a reading, not a quote.
+Row 4(b) exercise STT is payable by the purchaser only (every dated table, 2013–2026). So a short ITM stock option owes
+delivery STT only, and a long ITM one owes delivery STT plus exercise STT on the intrinsic value, each rounded to the rupee.
+
+**R1 epochs** (FATAX23500 / 27711 / 32385 / 56235 / 63809 / 73524, all fetched):
+- **Futures:** 0.017% → 0.01% from 2013-06-01 → 0.0125% from 2023-04-01 → 0.02% from 2024-10-01 → 0.05% from 2026-04-01.
+- **Option premium:** 0.017% → 0.05% from 2016-06-01 → 0.0625% → 0.1% → 0.15%.
+- **Exercise:** 0.125% on the settlement price → on the intrinsic value from 2019-09-01 → 0.15% from 2026-04-01.
+
+The start of the 0.017% regime (Finance Act 2008) is unverified, because NSE/F&A/10706 returns 404. Per 06-ANSWERS:345 the
+earliest verified schedule is extended back and the gap recorded. Separately, SEBI CIR/DNPD/6/2010 (European-style stock
+options) is dated **27 Oct 2010**; the research note 13 and findings R94/R101 say 27 Nov, which is wrong. The fetched PDFs
+and their SHA-256 are in `LIVE-DESK-RESEARCH/_data/stt-primary-sources-2026-09-11/MANIFEST.md`.
+
+**Decisions taken without a question (each settled by a ruling or by the project's own rules; overrule here):**
+- **R11:** the free tier keeps "Custom (n legs)" for books that the underlying or a second expiry turns into Pro shapes, and
+  the copy is corrected. Ruling 06-ANSWERS:258. A free fallback that re-prints the v4.2.0 names would print "Unlimited" on
+  covered books, which invariant 6 forbids.
+- **R43:** separable from 4.3.1 using the skeptic's fix. The earlier row is replaced in place only on an unambiguous match
+  (exactly one stored row and one incoming row for the same account + broker + source_file + today + symbol + segment +
+  exchange). Otherwise the same-day snapshot stops being hidden from the collision check, so the user is asked. The trades
+  table has no product column, so a product-keyed snapshot identity is 4.3.1 work.
+- **R26 semantics** (ruling 06-ANSWERS:224 ordered the list and the one-click close but not what the close uses):
+  - The lot L closes at the stored sale S's price, quantity and date; the user confirms a null date.
+  - `chargesTotal` = L's stored charges + S's stored charges. Charges come from `charge_config` only for a side that states
+    none, never both.
+  - S is found by its buy-only / sell-only shape whatever its `is_open`, because 4.2.0 stored sell-only rows as open shorts.
+  - `eq_mtf` lots are included.
+  - S's notes, tags and attachments are carried over, or the pair is refused.
+  - A partial quantity is listed but gets no one-click close.
+  - S is soft-deleted, with `dedup-alias:<S hash>` written on L. Import dedup (preview and commit) reads dedup-alias
+    entries: a deliberate deviation from the byte-identical v4.2.0 file, and it changes nothing on a database with no
+    alias rows.
+- **Five product defects introduced in 4.3.0 that the skeptics found** are fixed in 4.3.0, by the stopping rule:
+  - Dhan history rows store Dhan's stated total beside engine DP / IPFT heads that do not add up to it, so the per-head
+    columns on `/reports/charges` do not sum to Total.
+  - Dhan mixed-venue legs are keyed by the first fill's exchange.
+  - The `total > 0` guard falls to the rate card when a take's stated share rounds to 0 (fixed with R81 / R84).
+  - Opening-sell equity rows become a phantom SHORT underlying leg on `/strategies`.
+  - `strategy-card.tsx:99` has a hand-rolled sign (fixed with R28).
+- **Recorded, not built:**
+  - A covered call is recognised only at an exact 1:1 underlying-to-call ratio. This is a recognition limit: the card reads
+    "Custom", and no figure is wrong.
+  - GST at 18% and uniform stamp duty are applied back to 1970, although service tax applied before 2017-07-01 and
+    state-wise stamp duty before 2020-07-01. These are unverified candidates, named in the release note's
+    not-in-this-release line.
+  - The Sizing Lab reference row's DP GST (unverified).
+  - The low / cosmetic test-only findings, per the stopping rule: R17 (already fixed at HEAD), R18, R20, R29, R30, R32, R34,
+    R63, R64, R65, R70, R86 and R87. The skeptic flags R87's grade as possibly medium (a `symbol`-only key flips
+    `eq_mtf` / `eq_delivery`), but no mutation run was done. R35's pin rides inside R7's restore test.
+- **Moved to 4.3.1** (auto-close, by ruling 06-ANSWERS:353): R3, R4, R8, R72, R75, R76, R2, R14, R31, R6, R39, R41, R62, R15,
+  R40, the delete / restore undo (R38 / R74), and tests R16 and R58–R60. Also moved: the name mismatch under F-L1-3 and the
+  second-sale drop under F-L1-7. With auto-close off, the owner's stale Dhan rows (Marksans / BEL / VBL / SBIN) stay open
+  until R26's one-click close or 4.3.1, so STATE §0.3 V6(c) is rewritten to the R26 check.
+
+**Owner rulings this session:** 06-ANSWERS "v4.3.0 fix-work rulings".
+- R90 gets a bundled ETF list from NSE's published list, classed by its stated underlying, with no database upgrade.
+- All four pre-existing defects found outside the 91 go into 4.3.0: the IPO allotment STT, delivery STT before 2012-07-01,
+  the Angel One / Upstox open shorts plus their re-pull duplicate, and the split-card "Unlimited".
+- R13 gets the inline notice. The user's mark keeps priority. When a newer official close differs, the chip says so, and
+  the editor offers "Use official close" or "Keep my mark", remembered in `panel_dismissals`.
+
+**The switch-off, built and checked** (one Opus builder, one Opus skeptic):
+- `git diff v4.2.0 -- lib/import/commit.ts` is empty (same blob `d3631af9`).
+- The auto-close UI is gone from `import-client.tsx`, `broker-connect.tsx` and `auto-pull.ts`. The comments in
+  `close-open-lots.ts` now say the planner is dormant.
+- New `tests/auto-close-off.test.ts` (32). Red on the whole-file swap back to d0eda00's `commit.ts`: 25 of 32 fail, among
+  them "an import never reduces a held lot in 4.3.0: expected 60 to be 100" (:159).
+- No test was deleted without a replacement. 22 database tests moved from `auto-close-fifo` to `auto-close-off`, rewritten
+  to v4.2.0's outcome for the same inputs. `auto-close-fifo` keeps its pure planner tests plus 5 new pure cases.
+  `auto-close-identity`, `seams-v43`, `seams-v43-fix1` and `seams-v43-release` now plant the frozen / merged rows that
+  wave 1 used to write, and still assert what Data Quality and the restore re-key do with them.
+- The 8 test files go from 130 to 145 tests (+15 net).
+- **Recorded (low, test-only, stopping rule):** the `auto-pull.ts` hunk is guarded only by `tsc`. Restoring HEAD's
+  version in memory leaves every suite green, because v4.2.0's preview has no `autoClose`, so the clause it removed cannot
+  fire.
+- The skeptic's one blocking item, fixed in the same commit: README's tests/ file count (`readme-claims`) moves to 384.
+
+**Decision — Q-LOOP (the planner's question, decided, not asked):** a Dhan catch-up pull that brings a SELL of a whole
+held lot hits the cross-source `same-quantity` check against the held BUY, answers 409 / collision, and never moves the
+stamp. With auto-close off, that repeats on every pull until "Commit anyway". **Cross-source becomes side-aware:** buy side
+against buy side and sell side against sell side, for quantity AND value. An execution on the opposite side of a held lot
+is never same-quantity, same-value or partial-quantity. Same-side echoes and round-trips are unchanged, and the existing
+same-side pins stay green.
+- Rejected: keeping the 409, which leaves a permanent loop on a routine exit.
+- Rejected: auto-pull stamping past a collision, which loses the fill under R42's `after` filter.
+- R42 closes only with this (wave 2, R42b).
