@@ -604,15 +604,19 @@ describe("the page is wired the way the estate requires", () => {
   };
 
   /**
-   * The POST's reply callback down to the ok path's fold: every statement that
-   * runs before the screen takes the route's answer. R7-T-2/T-3/T-4 count over
-   * this slice.
+   * The POST's reply callback WHOLE — from the `then` to the end of `run`,
+   * the same `const rows = picker` bound the R6-T-4 shadow pin uses. R8-T-1:
+   * this slice used to stop at the ok path's fold, two lines short of the
+   * callback's own end, so a statement placed after the ok path's
+   * `router.refresh()` — a second `committed.current = …`, a renumbered
+   * `latest` — ran on every accepted reply while sitting outside every count
+   * below. R7-T-2/T-3/T-4 count over this slice.
    */
   const replyCallback = (src: string): string => {
     const from = src.indexOf("void postShelf(body).then((r) => {");
-    const to = src.indexOf(OK_FOLD);
+    const to = src.indexOf("const rows = picker");
     expect(from, "the POST's reply handler is not where this test expects it").toBeGreaterThan(-1);
-    expect(to, "the ok path's fold is not where this test expects it").toBeGreaterThan(from);
+    expect(to, "`run` no longer ends before the render").toBeGreaterThan(from);
     return src.slice(from, to);
   };
 
@@ -847,15 +851,21 @@ describe("the page is wired the way the estate requires", () => {
     // (`const { committed } = …`) walks straight past it. Counting every
     // declaration keyword in the slice is the form that cannot be written
     // around: the callback is two declarations long, and anything else in it is
-    // a name the pins below do not know about.
+    // a name the pins below do not know about — but only if the keyword
+    // list is COMPLETE, which R8-T-2 found it was not. `using` (TS 5 explicit
+    // resource management) declares a binding like any other and is lowered to
+    // a `const` by both SWC and vite, so `using next = null;` as the callback's
+    // first line shadowed the revert's own name through every gate in this
+    // repo. `enum` is pinned beside it for completeness — tsc already
+    // refuses `enum next` in a function body, so it is belt to that brace.
     const reply = replyCallback(client);
     expect(
-      reply.match(/\b(const|let|var|function|class)\b/g) ?? [],
+      reply.match(/\b(const|let|var|using|function|class|enum)\b/g) ?? [],
       "the reply callback declares something other than `before` and `advanced` — every pin below reads the outer names",
     ).toHaveLength(2);
     expect(
       reply.match(
-        /\b(const|let|var)\b[^=;]*\b(history|committed|next|before|advanced|latest|committedAt|action|router)\b/g,
+        /\b(const|let|var|using)\b[^=;]*\b(history|committed|next|before|advanced|latest|committedAt|action|router)\b/g,
       ) ?? [],
       "a declaration inside the reply callback binds one of the island's own names — destructuring counts (R7-T-3)",
     ).toEqual(["const before", "const advanced"]);

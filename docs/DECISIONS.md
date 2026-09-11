@@ -5434,3 +5434,40 @@ round 8 (test-integrity on Fable + skeptic). Rejected: a jsdom/RTL harness now (
   quoted in the ledger; restored tree 48/48; `readme-claims` + `seams-v43-wave2` 72/72; eslint and `tsc --noEmit` clean. The
   count pins read the RAW slice, comments included — a future comment inside the callback containing a whole-word
   `const`/`let`/`var`/`function`/`class` would redden them (deliberate). Gate line, sha and CI: STATE §2 / the ledger.
+
+## 2026-09-11 — v4.3.0 audit round 8 (scoped, test-integrity only) over fix wave 7 `5bbed43..5015f65` → micro fix wave 8 (test file only)
+
+**CI on fix wave 7** (34562338623): attempt 1 red on the Ubuntu Playwright e2e job only (`toBeDisabled() failed` / `element(s)
+not found` on a spec unrelated to the diff; the component's code lines were byte-identical to fix wave 6, whose run was 6/6, and
+the macOS e2e job was green) → V1 FAIL-B, the job re-run, **attempt 2 SUCCESS 6/6**; no code touched for it.
+
+**The audit** (scoped by the round-7 ruling to test-integrity only — the component diff was comments only, verified by a
+programmatic non-comment-line filter over both `32cef9f..5015f65` and `5bbed43..5015f65`): 16 → **2** → Fable **skeptic 2 → 2**
+(both plants reproduced in memory under its read-only guard by re-executing every region-reading assertion over a planted
+source; the `using` plant also pushed through Next's own SWC loader options and vitest's vite/oxc pipeline — both LOWER `using`
+to a `const`, so the shadow survives every gate; `enum next` is refused by tsc TS2367). Both are genuine PIN DEFECTS, not re-files
+of the widened caveat: the pinned statement placed where the pin's own window stops short, and a declaration-keyword list that
+claimed totality. Ruling: `06-ANSWERS.md` "v4.3.0 audit-round-8 ruling" — micro fix wave 8, then round 9 as ONE Fable auditor +
+skeptic. Rejected: record both under the widened caveat and close row 1 now.
+
+- **R8-T-1 (pin defect, low plausibility)** `tests/strategies-page.test.ts`: the `replyCallback` slice ended at the ok-path fold,
+  two lines before the callback's own end, so an assignment placed after the ok path's `router.refresh()` (the R7-T-4 plant five
+  lines lower — every accepted latest reply resetting the confirmed history) escaped the "once per reply" counts while the
+  `it` title and messages claimed the whole reply. Fix: the slice ends at `const rows = picker` — the bound the R6-T-4 shadow pin
+  already used — with the slice ending AT the anchor so `const rows` stays outside; red on the plant `the confirmed history is
+  assigned more than once per reply … expected 2 to be 1`.
+- **R8-T-2 (pin defect, adversarial only)**: the keyword regex `/\b(const|let|var|function|class)\b/g` omitted `using` (TS 5
+  explicit resource management) — `using next = null;` as the callback's first line made `cur === next` always false (refusals
+  never revert) and passed vitest, tsc, eslint, SWC and vite. Fix: `using` and `enum` added to the keyword count and `using` to
+  the shadow regex; the comment no longer claims the old list was total; red on the plant `expected [ 'using', 'const', 'const'
+  ] to have a length of 2 but got 3`. The `enum` half is pinned but not plant-provable (tsc refuses it first).
+- **Recorded, not defects (round 8):** `latest.current++` / `+= 1` is invisible to the `latest.current =` zero-count — an
+  unpinned live statement, the widened caveat; a harness-side fold that pushes `present` onto `future` is never observed by
+  `redoStackOf` because every harness test ends on a state derived from `committed` (harness-only; the shape it hunts arises in
+  `committed`, which a plant proved IS observed); a comment inside the callback containing a whole-word declaration keyword
+  reddens the count (deliberate); `occurrences(reply, "committed.current =")` also counts a comparison (false red only).
+- **Micro fix wave 8 (one Opus builder, 67k; `tests/strategies-page.test.ts` +18/−8, no `it(` added — 48 stays 48, README
+  untouched at 7646; the component byte-identical to HEAD):** the two fixes above; both plants red; the two round-7 controls (a
+  duplicate `const before` inside the stale guard; the stale block moved past its guard's `return;`) still red under the wider
+  slice; scoped `strategies-page` + `readme-claims` + `seams-v43-wave2` 120/120; eslint clean. Gate line, sha and CI: STATE §2 /
+  the ledger.
