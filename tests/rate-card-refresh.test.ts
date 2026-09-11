@@ -47,13 +47,13 @@ function userCopy(from = TEMPLATE): Database.Database {
 }
 
 /** Every column but the surrogate id and the write stamp, in identity order. */
-function snapshot(db: Database.Database): unknown[] {
+function snapshot(db: Database.Database, where = "1"): unknown[] {
   const cols = (db.prepare("PRAGMA table_info(charge_config)").all() as { name: string }[])
     .map((c) => c.name)
     .filter((c) => c !== "id" && c !== "updated_at");
   return db
     .prepare(
-      `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM charge_config
+      `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM charge_config WHERE ${where}
        ORDER BY broker, plan, segment, exchange, effective_from`,
     )
     .all();
@@ -92,7 +92,7 @@ function plantOwnerState(db: Database.Database): number {
 let tpl: Database.Database;
 
 beforeAll(() => {
-  const t = new Database(TEMPLATE);
+  const t = open(TEMPLATE);
   migrate(drizzle(t), { migrationsFolder: path.resolve(__dirname, "../drizzle") });
   const d = drizzle(t);
   for (const row of buildChargeConfigSeed()) d.insert(chargeConfig).values(row).run();
@@ -203,6 +203,24 @@ describe("refreshRateCards over epoch-dated rate cards", () => {
     expect(u.prepare(`SELECT * FROM charge_config WHERE ${key} ORDER BY effective_from`).all()).toEqual(before);
   });
 
+  it("(e3) a CLOSED user-edited window is exclusive-to: the seed epoch starting on its effective_to is added", () => {
+    const u = userCopy();
+    const key = `broker = 'dhan' AND plan = 'default' AND segment = 'index_option' AND exchange = 'NSE'`;
+    u.prepare(`DELETE FROM charge_config WHERE ${key} AND effective_from = ?`).run(STT_EPOCH_2026);
+    const closed = u
+      .prepare(`UPDATE charge_config SET user_edited = 1, effective_to = ? WHERE ${key} AND effective_from = '1970-01-01'`)
+      .run(STT_EPOCH_2026).changes;
+    expect(closed).toBe(1);
+    const edited = () => u.prepare(`SELECT * FROM charge_config WHERE ${key} AND effective_from = '1970-01-01'`).all();
+    const before = edited();
+
+    expect(refresh(u)).toEqual({ added: 1, refreshed: 0 });
+    expect(edited()).toEqual(before);
+    const epoch = `${key} AND effective_from = '${STT_EPOCH_2026}'`;
+    expect(snapshot(u, epoch)).toHaveLength(1);
+    expect(snapshot(u, epoch)).toEqual(snapshot(tpl, epoch));
+  });
+
   it("(f) a correction inside one epoch refreshes exactly that row", () => {
     const corrected = path.join(dir, "template-corrected.sqlite");
     fs.copyFileSync(TEMPLATE, corrected);
@@ -271,11 +289,81 @@ describe("refreshRateCards over epoch-dated rate cards", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The launcher and the bundle, read as source (the sidecar cannot run here).
+// The launcher and the bundle, read as source (the sidecar cannot run here) —
+// with comments stripped, so a commented-out call or copy line cannot satisfy a pin.
 
 const root = path.resolve(__dirname, "..");
-const launcher = fs.readFileSync(path.join(root, "scripts", "desktop-server.mjs"), "utf8");
-const builder = fs.readFileSync(path.join(root, "scripts", "build-desktop.mjs"), "utf8");
+
+/**
+ * `src` with its comments removed. String-aware: '…', "…" and `…` are copied
+ * whole (escapes honoured), so the `//` in "file://x" or `http://${host}` is not
+ * a comment. A line comment is dropped up to its newline; a block comment
+ * becomes one space plus its newlines. Not modelled: regex literals, and a
+ * backtick nested inside a `${}` hole — the launcher's only regex is /[:.]/g,
+ * the builder has none, and the last stripper test fails if a real line is eaten.
+ */
+function stripComments(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && src[i + 1] === "*") {
+      const close = src.indexOf("*/", i + 2);
+      const stop = close === -1 ? src.length : close + 2;
+      out += " " + src.slice(i, stop).replace(/[^\n]/g, "");
+      i = stop;
+    } else if (c === "'" || c === '"' || c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+const launcher = stripComments(fs.readFileSync(path.join(root, "scripts", "desktop-server.mjs"), "utf8"));
+const builder = stripComments(fs.readFileSync(path.join(root, "scripts", "build-desktop.mjs"), "utf8"));
+
+describe("the comment stripper the (h) and (i) pins read through", () => {
+  it("drops a commented-out call and keeps the live code and the line count around it", () => {
+    const s = stripComments("a();\n// refreshRateCards(sqlite, seedTemplate);\nb(); // tail\n");
+    expect(s).not.toMatch(/refreshRateCards|tail/);
+    expect(s).toContain("a();");
+    expect(s).toContain("b();");
+    expect(s.split("\n")).toHaveLength(4);
+  });
+
+  it("keeps // and /* inside strings and template literals, escapes included", () => {
+    const src = [
+      `const u = "file://x";`,
+      `const h = \`http://\${host}:\${port}/*not*/\`;`,
+      `const e = 'it\\'s // still a string';`,
+      `const q = "a \\" // b";`,
+    ].join("\n");
+    expect(stripComments(src)).toBe(src);
+  });
+
+  it("drops a block comment, keeping its newlines", () => {
+    const s = stripComments("x = 1; /* one\n refreshRateCards(sqlite) */ y = 2;");
+    expect(s).not.toMatch(/one|refreshRateCards/);
+    expect(s).toMatch(/x = 1;\s+y = 2;/);
+    expect(s.split("\n")).toHaveLength(2);
+  });
+
+  it("the stripped launcher and builder still hold the real call and the real copy line", () => {
+    expect(launcher).toContain("refreshRateCards(sqlite, seedTemplate);");
+    expect(launcher).toMatch(/console\.log\(`\[vyuha\] starting on http:\/\/\$\{process\.env\.HOSTNAME\}/);
+    expect(builder).toContain(
+      'fs.copyFileSync(path.join(root, "scripts", "rate-card-refresh.mjs"), path.join(dist, "rate-card-refresh.mjs"));',
+    );
+  });
+});
 
 function closeOf(src: string, open: number): number {
   let depth = 0;

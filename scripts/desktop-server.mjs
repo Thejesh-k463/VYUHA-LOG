@@ -1,10 +1,13 @@
 // Sidecar entrypoint for the Tauri desktop app.
 // Runs under plain Node (no tsx). It:
 //   1. resolves the per-user data dir (passed by Tauri via VYUHA_DATA_DIR),
-//   2. seeds the SQLite file from the bundled template on first run, and
-//      refreshes its rate cards on every launch (new brokers / corrected rates),
-//   3. applies any pending Drizzle migrations (handles schema upgrades on update),
-//   4. starts the Next.js standalone server bound to localhost.
+//   2. seeds the SQLite file from the bundled template on first run (and stamps
+//      the journal's go-live date),
+//   3. applies any pending Drizzle migrations (schema upgrades on update; a
+//      pre-migration backup is written only when a migration is pending),
+//   4. refreshes the rate cards on every launch (new brokers / corrected rates —
+//      scripts/rate-card-refresh.mjs, in its own error handler),
+//   5. starts the Next.js standalone server bound to localhost.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -53,50 +56,50 @@ if (fs.existsSync(migrationsDir)) {
     sqlite = new Database(dbPath);
 
     try {
-    const { drizzle } = await import("drizzle-orm/better-sqlite3");
-    const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
+      const { drizzle } = await import("drizzle-orm/better-sqlite3");
+      const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
 
-    // Back up ONLY when this launch will actually migrate. The old code copied
-    // the whole DB on EVERY launch — 30-150 ms of blocking I/O and up to ten
-    // retained copies (70-350 MB at a large book) protecting against nothing
-    // on the 99% of launches with no pending migration. The journal table is
-    // the same source drizzle's migrator reads, so the check and the migration
-    // cannot disagree about what "pending" means.
-    let appliedCount = 0;
-    try {
-      appliedCount = sqlite
-        .prepare("SELECT count(*) AS n FROM __drizzle_migrations")
-        .get().n;
-    } catch {
-      appliedCount = 0; // fresh database — everything is pending
-    }
-    const journal = JSON.parse(
-      fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"),
-    );
-    const pending = journal.entries.length > appliedCount;
+      // Back up ONLY when this launch will actually migrate. The old code copied
+      // the whole DB on EVERY launch — 30-150 ms of blocking I/O and up to ten
+      // retained copies (70-350 MB at a large book) protecting against nothing
+      // on the 99% of launches with no pending migration. The journal table is
+      // the same source drizzle's migrator reads, so the check and the migration
+      // cannot disagree about what "pending" means.
+      let appliedCount = 0;
+      try {
+        appliedCount = sqlite
+          .prepare("SELECT count(*) AS n FROM __drizzle_migrations")
+          .get().n;
+      } catch {
+        appliedCount = 0; // fresh database — everything is pending
+      }
+      const journal = JSON.parse(
+        fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"),
+      );
+      const pending = journal.entries.length > appliedCount;
 
-    if (pending && fs.existsSync(dbPath)) {
-      const backupsDir = path.join(dataDir, "backups");
-      fs.mkdirSync(backupsDir, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      // The connection's own backup API, NOT copyFileSync: with WAL on, a raw
-      // file copy misses whatever still lives in the -wal sidecar — a backup
-      // taken after an unclean shutdown could silently lack committed trades.
-      // backup() checkpoints through the connection and is correct by
-      // construction.
-      await sqlite.backup(path.join(backupsDir, `pre-migrate-${stamp}.sqlite`));
-      // Keep only the newest 10 pre-migrate backups.
-      const old = fs
-        .readdirSync(backupsDir)
-        .filter((f) => f.startsWith("pre-migrate-") && f.endsWith(".sqlite"))
-        .sort()
-        .slice(0, -10);
-      for (const f of old) fs.rmSync(path.join(backupsDir, f), { force: true });
-      console.log("[vyuha] pre-migration backup →", backupsDir);
-    }
+      if (pending && fs.existsSync(dbPath)) {
+        const backupsDir = path.join(dataDir, "backups");
+        fs.mkdirSync(backupsDir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        // The connection's own backup API, NOT copyFileSync: with WAL on, a raw
+        // file copy misses whatever still lives in the -wal sidecar — a backup
+        // taken after an unclean shutdown could silently lack committed trades.
+        // backup() checkpoints through the connection and is correct by
+        // construction.
+        await sqlite.backup(path.join(backupsDir, `pre-migrate-${stamp}.sqlite`));
+        // Keep only the newest 10 pre-migrate backups.
+        const old = fs
+          .readdirSync(backupsDir)
+          .filter((f) => f.startsWith("pre-migrate-") && f.endsWith(".sqlite"))
+          .sort()
+          .slice(0, -10);
+        for (const f of old) fs.rmSync(path.join(backupsDir, f), { force: true });
+        console.log("[vyuha] pre-migration backup →", backupsDir);
+      }
 
-    migrate(drizzle(sqlite), { migrationsFolder: migrationsDir });
-    console.log(pending ? "[vyuha] migrations applied" : "[vyuha] schema current — no migration, no backup");
+      migrate(drizzle(sqlite), { migrationsFolder: migrationsDir });
+      console.log(pending ? "[vyuha] migrations applied" : "[vyuha] schema current — no migration, no backup");
     } catch (e) {
       console.error("[vyuha] migration step failed:", e?.message ?? e);
     }
