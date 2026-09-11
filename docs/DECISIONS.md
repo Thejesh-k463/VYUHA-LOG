@@ -5480,7 +5480,8 @@ not `data/smoke-0071.sqlite`, because `lib/db/index.ts:74-84` puts `attachments/
 file, and a copy loose in `data/` shares them with the dev DB (a restore renames the attachments dir — invariant 10).
 **STATE's V3 procedure cannot work as written:** `next dev` never migrates (no instrumentation file; `lib/db/index.ts` runs
 data fixes only). Migrations run in `lib/db/migrate.ts` (`npm run db:migrate`) and in the desktop sidecar
-(`scripts/desktop-server.mjs:40-97`) — nowhere else. So V3 ran BOTH: (a) `db:migrate` twice on the copy; (b) the REAL sidecar
+(`scripts/desktop-server.mjs:40-97` before fix wave F1) — plus `scripts/seed-perf-db.mjs`, which migrates only the perf file it
+has just created; the app itself never migrates. So V3 ran BOTH: (a) `db:migrate` twice on the copy; (b) the REAL sidecar
 code staged at `data/sidecar-stage/` (desktop-server.mjs + the repo's `drizzle/` + the v4.2.0 seed template) started twice
 with `VYUHA_DATA_DIR` on a second copy (it dies on the missing `server.js` after the migration block — expected). STATE's
 V3 FAIL-C also names the wrong list: a shelf survives backup/restore because `SETTINGS_MACHINE_COLUMNS`
@@ -5496,8 +5497,8 @@ dumped === stored, "Restored 2480 rows across 34 tables", after === stored, trad
 entitlement override — FREE is the copy's own state (trial began 2026-08-30; the licence ciphertext cannot decrypt with the
 folder's fresh `vault.key`), PRO is `trial_started_at` = now. Seeded in the selected account: a 1×2 call ratio spread and a
 call calendar (non-legacy) and a long straddle (legacy control). FREE document HTML + decoded inline flight + the `RSC: 1`
-response: **0 hits across all 34 non-legacy names and variants** (the list built at run time from the catalogue by
-`legacyFree`), 2 × "Custom (2 legs)" + ProLock, `picker: null`, the locked strip; "Long Straddle" stays named by design.
+response: **0 hits across all 34 non-legacy display names** — the 24 non-legacy rows plus the 10 variant names inside
+their patterns (the list built at run time from every `name`/`displayName` string on a catalogue row, split by `legacyFree`), 2 × "Custom (2 legs)" + ProLock, `picker: null`, the locked strip; "Long Straddle" stays named by design.
 PRO: both names, no ProLock, the drawer's 40 `aria-pressed` tiles (8 pressed); tick / Undo / Redo / Restore defaults each
 `POST` 200 and persisted (Restore stores the explicit 8-id envelope). **V5**, in headless Chromium because the Browser pane
 is hidden and lays nothing out (its rects read 0): 40 anchors set-equal to `STRATEGY_IDS` (DOM order grouped by style, by
@@ -5546,3 +5547,22 @@ copy of the owner DB with the v4.2.0 template: start 1 "migrations applied" + "r
 "schema current" + "0 added, 0 refreshed"; 0 UNIQUE lines, 0 "migration step failed", 0 overlapping open epochs in 162
 rows. Gate: `npm run verify` EXIT 0 — 379 files / 7,661 passed / 35 skipped; lint 0 errors (the 3 old warnings). **Not
 proven:** the dynamic-import fallback with the module actually missing (static pins only).
+
+**Scoped audit round 1 over `d7d17c3..5f7f098`** (4 Fable auditors + a Fable skeptic, 524k): money **0** (26 checks,
+including a parity harness that ran the same 11 planted states through `seedDatabase()` and through `refreshRateCards()` —
+identical counts and byte-identical `charge_config` in all 11 — and 810 `findRates` lookups on the refreshed owner copy, 0
+mismatches); schema-migrations 3, test-integrity 3, docs-claims 2 → **skeptic 8 → 8** (T-2 re-graded medium → low, T-3 low →
+cosmetic). Survivors: **T-1 (medium)** the (h)/(i) source pins are satisfied by COMMENTED-OUT code —
+`// refreshRateCards(sqlite, seedTemplate);` or a commented build copy line leaves 15/15 green (outright deletion is caught);
+**T-2 (low)** the guard's exclusive-to boundary is untested — `>` → `>=` at `scripts/rate-card-refresh.mjs:106` passes all 15
+(only OPEN user-edited windows are planted); **T-3 (cosmetic)** the template connection is not on `opened`, so a throwing
+`beforeAll` leaks a 0-byte temp file; **S-2 / S-3 (cosmetic)** the migration try body is not re-indented, and the launcher's
+header comment still lists the refresh before migrations; **S-1 (low, PRE-EXISTING since the first-run seed)** a corrupt
+bundled template is copied as the user DB on first run and is then permanent; **D-1 / D-2 (cosmetic)** this entry said
+"nowhere else" and "34 names" without the 24 + 10 split — both corrected above in the hand-off commit. **Decided
+(orchestrator; the round-8 precedent, where the owner chose to fix two low-plausibility pin defects rather than record
+them):** micro fix wave F1-2 fixes T-1, T-2, T-3, S-2, S-3 (the test file + the launcher's comments and indentation only;
+the commented-out plants and the `>=` mutant proven red), then round 2 = test-integrity + schema-migrations on Fable + a
+skeptic. **S-1 is recorded, not fixed:** pre-existing, outside the F1 rulings, and a first-run header check only trades one
+broken start for another (no template → no usable DB either). Rejected: fixing S-1 in 4.3.0 (new first-run behaviour
+nobody asked for); recording T-1 / T-2 without a fix (the (h)/(i) pins would not catch the likeliest slip, a commented line).
