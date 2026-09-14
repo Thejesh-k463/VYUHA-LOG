@@ -1,6 +1,8 @@
 # Decisions
 
-Append-only. Newest first.
+Append-only. **Newest entries are at the END** — every entry from the 2026-09-04 v3.8 reconciliation (≈ line 2351) on is
+appended at the bottom, except the v3.9 W2 entry directly below this header. The file is large: `grep -n '^## 2026-'`
+for the index, never read it whole. (This header said "Newest first" until 2026-09-11, R25.)
 
 Facts that cost something to learn: measured numbers, choices where the obvious
 option loses, surprising bug causes, deliberate deviations from a spec or
@@ -6057,3 +6059,83 @@ Reverting only the card hunk turns 10 tests red. Three of its departures are rec
 - `npx playwright test e2e/z-live-desk.spec.ts` — 9 passed (55.7 s), owed because `components/live/position-chart-panel.tsx`
   changed (W1-STRAT). Nothing was left listening on :3100 afterwards.
 - The README counts moved to 8083 / 389.
+- Committed `e0e6d90`. **CI 34631349449 SUCCESS 6/6 on attempt 1**, the Windows job included.
+
+## 2026-09-14 — v4.3.0 fix wave 1: the scoped re-check → 43 CONFIRMED, 3 REFUTED (partial), 6 UNVERIFIABLE; what reopens work
+
+**The re-check.** Ten Opus skeptics ran over `e0e6d90`, one per builder plus the follow-up. The full verdicts are in
+`LIVE-DESK-RESEARCH/18-FIX-WORK-4.3.0/wave1-recheck.json`.
+- **REFUTED as partial:**
+  - **R26:** the finding's own reproduce is fixed, but its "Should" (list EVERY stale lot) is not; see P1–P4.
+  - **R49:** the writer half is fixed, but the long-leg entries are not; see P7.
+  - **R71:** the Paytm and pair-legs halves are fixed. Dhan's adapter still discards the per-row venue (seam D1, wave 2
+    W2-DHAN), and Zerodha's parser has the same first-fill mechanism (P9).
+- **UNVERIFIABLE:** red-on-revert for R19, R27, R10 and R9, the R26 MTF charges, and the follow-up's gate claim. The global
+  `skeptic` agent is read-only, and its guard refused every probe file. **Lesson:** a scoped re-check that must re-prove
+  red-on-revert needs a probe-capable verifier, not the read-only skeptic. The builders quoted their reds, and a verifier
+  re-proves them before wave 2 edits those files. The follow-up's gate claim is the orchestrator's own run (389 / 8083).
+
+**Product defects that reopen work** (stopping rule: any severity), all in 4.3.0 wave 2:
+
+| # | Grade | From | Defect |
+|---|---|---|---|
+| P1 | medium | W1-DQ | A sale covering two open lots lists only the oldest lot. L1 100 + L2 100 + S 200 gives a partial L1 pair and never lists L2, so L2 keeps showing exposure on stock already sold. |
+| P2 | medium | W1-DQ | On the partial path, the manual close on `/risk` leaves the sale rows open, and nothing flags them afterwards. |
+| P3 | medium | W1-DQ | A sell-only row with a user-confirmed basis (e.g. `acquisition 'esop'` at 50) pairs with a held market lot as a CRITICAL stale_open. One click would delete the ESOP sale and its basis, moving realised P&L from (250−50)×100 to (250−200)×100. |
+| P4 | medium | W1-DQ | The join writes `dedup-alias`, so `isLotIdentityFrozen` reads true. Once both books are joined, DuplicateFix offers no plain copy. That is the owner's own two-account case. |
+| P5 | medium | W1-STRAT, K3-M1 | Excluding `acquisition='unknown'` rows makes a partly sold holding cover naked calls. 550 bought, 200 sold and 550 short calls read as a bounded "Covered Call". |
+| P6 | medium | W1-PREVIEW | The manual Add-trade preview of a written (sell-direction) F&O trade prices charges and P&L on the wrong sides: still not the figure saved. |
+| P7 | low | W1-HELP / W1-SETTLE | 29 long-leg Options Help entries state exercise STT only. A stock option settled by delivery also pays delivery STT on the strike value (the Risk panel's 763 = 725 + 38). `long-call` :125 still says "order of magnitude". |
+| P8 | low | pre-existing | The split-strike combo's `whoUses` line, "a band of indifference between the strikes", is false for the call-lower variants. |
+| P9 | low | pre-existing | Zerodha tradebook legs merge a day-side's fills and stamp the FIRST fill's exchange (`zerodha.ts:627-643`), the R71 class. |
+| P10 | low | W1-PULL | R9 locks out BOTH accounts of an existing duplicate Zerodha pair at every token exchange. |
+| P11 | low | W1-PULL | R19's spans-first order keeps a span after a commit that then fails. A retry writes an overlapping second notice (range-cap) or keeps naming days a successful retry imported (page-cap). |
+| P12 | low | W1-RATES | "Restore my defaults" still promises "all three rate tables back to the snapshot". After R7, unedited charge rows follow this build's card. |
+| P13 | low | W1-STRAT | R105 resolves a holding's symbol through its ISIN FIRST, splitting the holding from its option legs when the listing's ticker differs from the stored symbol. |
+| P14 | low | residual of R104 | A future stored without an expiry (compact `NIFTY26SEPFUT`) is treated as never expiring and bounds a later short call. |
+| P15 | low | follow-up | The card's `rowSpans` inference misreads a page-cap span once its range-cap sibling is cleared, calling the unimported floor day "already imported". |
+| P16 | low | follow-up | The card says page-cap fills "may be missing" while the server says they "were not read" (C-6 "say it plainly"). |
+| P17 | investigate | W1-PAYTM | The five-month Paytm exchange line moved from a −4,857.87 to a −5,524.88 gap against Paytm's stated ETT (builder-reported; only August is pinned). Measure `9e0e16f` vs `e0e6d90` on the golden fixtures. If R71 moved the book further from Paytm's billed figure, the venue rule is wrong for Paytm and is fixed so the gap does not grow. |
+
+**Decisions (no owner question: each follows a ruling or an invariant; overrule here):**
+- **Scope:** newly found product defects, whether introduced or pre-existing, are fixed in 4.3.0. This follows the stopping
+  rule and the owner's "all four" precedent (06-ANSWERS "v4.3.0 fix-work rulings").
+- **P1 / P2:** every open lot with a later sale row in the same account + broker + segment + exchange + symbol is LISTED.
+  - One-click stays only where whole sale rows cover whole lots exactly, allocated oldest lot first, and never with a sale
+    dated before its lot.
+  - A sale row left after its lot was closed elsewhere is LISTED as a sale with no open lot (a warning), never removed
+    automatically.
+- **P3:** a sale whose basis the user recorded (`acquisition` set and not `'unknown'`, or an acquisition price) is never a
+  stale-close candidate.
+- **P4:** a lot joined with its recorded sale stays a plain cross-account copy of its twin when both copies carry the same
+  identity set. A stale-close alias never reads as a frozen auto-close merge.
+- **P5:** basis-unknown sale rows net against the same symbol's long in the underlying join, and the net is floored at
+  zero. They never fabricate a short (invariant 6) and never leave calls falsely covered.
+- **P10:** at the token exchange only the NEWER connection of a duplicate Kite pair is refused, matching R4a (refuse the
+  second connection). The original keeps working, and Data Quality flags the pair (R4b).
+- **P11:** a span write supersedes the connection's own outstanding span with the same reason and start day. A successful,
+  untruncated read of a page-cap window clears its span.
+- **P14:** an unknown future expiry reads "Not computed" unless the compact symbol states the expiry (invariant 6).
+- **P15 / P16:** GET carries the server's own fact and remedy sentences, and the card renders them without inference.
+
+**Test-only findings graded LOW — RECORDED, not fixed (stopping rule):**
+- The R42 cutoff's position inside `fetchTrades` is unpinned.
+- R26's `eq_mtf` join has no pin on `chargesTotal` / `gst` / `netPnl`. It gets pinned only if P1–P4's builder touches that
+  file anyway.
+- R54's seed-core DELETE survives a `>` → `>=` mutant for a closed user window.
+- Settlement's per-term rupee rounding is unpinned.
+- R79's rendered cell and tile are unpinned.
+- The R94 regex misses two rewrites.
+- R53's pin reads source text.
+- The INE0ATZ01017 Paytm test label overstates coverage: the real case is a mixed-venue minority priced at the majority
+  venue (the one-row limit).
+- The manual-form and edit-dialog charge-preview source pins are weak; P6's builder re-pins the form.
+- R28's `SIGN_SITES` regex shape.
+- The R12 / R48 pins are source-shape only, because the repo has no jsdom.
+- The sizing-charges marker rule matches only a capitalised "NOT verified"; W2-EQ2012 tightens it when it fixes the 2012
+  epoch.
+- The weakened card seam pins; P15 / P16's builder re-pins them.
+
+**W1-PAYTM's measurements that never reached the wave-1 entry:** the brief's per-exchange-legs design moved August gross by
+−20,420.87 (rows 146 → 149, opening sells 38 → 39) and reddened the v3.8 guard, so `rowVenue` (the majority of the row's
+own turnover) was chosen instead.
