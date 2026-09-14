@@ -22,6 +22,14 @@
 export interface ManualPreviewInput {
   broker: string;
   tradingsymbol: string;
+  /**
+   * The form's Equity / F&O toggle. Absent means "equity" (the overrides are
+   * sent). For "fno" the three Equity overrides below are DROPPED (N24): the
+   * F&O form renders none of those inputs, so the save's FormData carries none
+   * and createManualTrade classifies the contract itself — while the form's
+   * state still holds whatever was picked under Equity before the switch.
+   */
+  kind?: "equity" | "fno";
   productHint: string | null;
   segment: string | null;
   exchange: string | null;
@@ -77,12 +85,15 @@ export function buildManualPreviewBody(i: ManualPreviewInput): ManualPreviewBody
   const buyValue = round2(buyQty * avgBuyPrice);
   const sellValue = round2(sellQty * avgSellPrice);
 
+  // N24: an F&O trade is saved with no product / segment / exchange override.
+  const fno = i.kind === "fno";
+
   return {
     broker: i.broker,
     tradingsymbol: i.tradingsymbol,
-    productHint: i.productHint,
-    segment: i.segment,
-    exchange: i.exchange,
+    productHint: fno ? null : i.productHint,
+    segment: fno ? null : i.segment,
+    exchange: fno ? null : i.exchange,
     buyValue,
     sellValue,
     buyQty,

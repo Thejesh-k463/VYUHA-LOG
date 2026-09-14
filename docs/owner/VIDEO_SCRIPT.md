@@ -181,7 +181,7 @@ Binding, not stylistic — `MONETIZATION_PLAN.md` §5 and
 - "Recomputes every charge from your own rate card"
 - "Runs entirely on your computer — no account, no cloud, no telemetry"
 - "Six brokers auto-detected; any other CSV through the column mapper"
-- "Three live broker API pulls — Zerodha Kite, Dhan, Angel One SmartAPI"
+- "Four live broker API pulls — Zerodha Kite, Dhan, Angel One SmartAPI, Upstox"
 - "The core journal is free forever"
 - "Seven-day full trial, no signup, no card"
 

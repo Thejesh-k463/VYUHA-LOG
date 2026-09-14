@@ -1346,7 +1346,7 @@ export function toParsedFile(
       const u = range.unfetched;
       const restFrom = addDaysIso(u.from, 1);
       const remedy = restFrom <= u.to ? { from: restFrom, to: u.to } : null;
-      const fact = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so this one started at ${range.from}. ${partialDay(u.from)}`;
+      const fact = `Not fetched: fills from ${u.from} to ${u.to}. The last pull ran on ${u.from}, and a pull reads at most ${DHAN_MAX_PULL_RANGE_DAYS} days of Dhan's trade history, so the pull on ${range.to} started at ${range.from}. ${partialDay(u.from)}`;
       const remedyText = remedy ? `To bring the rest in, import a Dhan tradebook for ${remedy.from} to ${remedy.to}.` : null;
       const message = remedyText ? `${fact} ${remedyText}` : fact;
       warnings.push(message);
@@ -1362,8 +1362,11 @@ export function toParsedFile(
       const onLastPullDay = !range.unfetched;
       const restFrom = onLastPullDay ? addDaysIso(range.from, 1) : range.from;
       const remedy = restFrom <= yesterday ? { from: restFrom, to: yesterday } : null;
+      // N6 (v4.3.0 fix wave 2R): the fact is KEPT and printed on the card days
+      // later, so it names the pull by its own IST day (`range.to`), never
+      // "this pull" / "today".
       const fact = [
-        `Truncated: this pull stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history and kept none of what it read, so fills from ${range.from} to ${yesterday} were not read. Today's book came from /v2/positions.`,
+        `Truncated: the pull on ${range.to} stopped at the ${DHAN_TRADES_MAX_PAGES}-page limit of Dhan's trade history and kept none of what it read, so fills from ${range.from} to ${yesterday} were not read. The book for ${range.to} came from /v2/positions.`,
         onLastPullDay ? partialDay(range.from) : null,
       ]
         .filter(Boolean)
@@ -1391,7 +1394,7 @@ export function toParsedFile(
   const refused = read?.refused ?? 0;
   if (refused > 0) {
     warnings.push(
-      `${refused} fill${refused === 1 ? "" : "s"} from Dhan's trade history had no readable side, quantity, price or date and were refused rather than guessed.`,
+      `${refused} fill${refused === 1 ? "" : "s"} from Dhan's trade history had no readable side, quantity, price or date and ${refused === 1 ? "was" : "were"} refused rather than guessed.`,
     );
   }
   if (trades.length === 0) {

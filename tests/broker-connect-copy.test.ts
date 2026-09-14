@@ -11,6 +11,9 @@ import {
   PICK_ACCOUNT_PLACEHOLDER,
   TOKEN_EXPIRED_TITLE,
   TOKEN_EXPIRY_SEEN_KEY,
+  PULL_FORCE_ROUTE_TAIL,
+  collisionBadge,
+  collisionDialogCopy,
   formatTs,
   pullGapLines,
   pullGapNotice,
@@ -20,6 +23,7 @@ import {
   type UnfetchedSpan,
 } from "@/components/import/broker-connect";
 import { catchUpRange, toParsedFile, type DhanUnfetchedSpan } from "@/lib/import/api/dhan";
+import { detectCrossSourceDuplicates, type ExistingRow, type IncomingRow } from "@/lib/import/cross-source";
 
 /**
  * Consent / explainer copy pins (v3.6.0 WS3). Both live as ONE exported const
@@ -344,7 +348,7 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
   it("range cap: the card line IS the pull's warning — the dates, why, the last pull's own day, and the day-after remedy", () => {
     const span = spanOf(pulled("2026-05-01T05:00:00.000Z", false), "range-cap");
     expect(unfetchedNotice(asGet(span))).toBe(
-      "Not fetched: fills from 2026-05-01 to 2026-06-12. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-12.",
+      "Not fetched: fills from 2026-05-01 to 2026-06-12. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-12.",
     );
     expect(unfetchedNotice(asGet(span))).toBe(span.message);
   });
@@ -353,7 +357,7 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     const span = spanOf(pulled("2026-09-07T05:00:00.000Z", true), "page-cap");
     const line = unfetchedNotice(asGet(span));
     expect(line).toBe(
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.",
+      "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.",
     );
     expect(line).toContain("were not read");
     expect(line).not.toContain("may be missing");
@@ -366,7 +370,7 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     // The row as GET lists it after the user cleared the range-cap notice.
     const line = unfetchedNotice(asGet(page));
     expect(line).toBe(
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. Today's book came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.",
+      "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.",
     );
     expect(line).not.toContain("would repeat the fills already imported");
   });
@@ -377,10 +381,10 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     expect(asGet(range).remedy).toBeNull();
     expect(asGet(page).remedy).toBeNull();
     expect(unfetchedNotice(asGet(range))).toBe(
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 10:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 10:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.",
     );
     expect(unfetchedNotice(asGet(page))).toBe(
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-10 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-10 after 10:30 IST were not fetched; a tradebook for 2026-09-10 would repeat the fills already imported from it.",
+      "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-10 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. Fills on 2026-09-10 after 10:30 IST were not fetched; a tradebook for 2026-09-10 would repeat the fills already imported from it.",
     );
     for (const s of [range, page]) expect(unfetchedNotice(asGet(s))).not.toMatch(/import a Dhan tradebook/i);
   });
@@ -390,11 +394,113 @@ describe("unfetchedNotice — the kept line for fills a pull never read", () => 
     expect(unfetchedNotice({ from: "2026-05-01", to: "2026-06-12", reason: "range-cap", fact: summary, remedy: null })).toBe(summary);
   });
 
+  /**
+   * N6 (fix wave 2R): the line is printed on the card days after the pull that
+   * kept it, so it names that pull's own IST day. Re-pinned above (P16, P15,
+   * D2) from "Truncated: this pull stopped … Today's book came from
+   * /v2/positions." to "Truncated: the pull on 2026-09-11 stopped … The book
+   * for 2026-09-11 came from /v2/positions."
+   */
+  it("N6: a kept line names the pull's own day — never 'this pull' or 'today'", () => {
+    const page = spanOf(pulled("2026-09-07T05:00:00.000Z", true), "page-cap");
+    expect(unfetchedNotice(asGet(page))).toContain(`the pull on ${TODAY} stopped`);
+    expect(unfetchedNotice(asGet(page))).toContain(`The book for ${TODAY} came from /v2/positions.`);
+    for (const stamp of ["2026-05-01T05:00:00.000Z", "2026-06-01T05:00:00.000Z", "2026-09-07T05:00:00.000Z", "2026-09-10T05:00:00.000Z"]) {
+      for (const s of pulled(stamp, true).unfetched) expect(unfetchedNotice(asGet(s))).not.toMatch(/\bthis pull\b|\btoday\b/i);
+    }
+  });
+
   it("carries no SEBI-forbidden verb", () => {
     for (const stamp of ["2026-05-01T05:00:00.000Z", "2026-06-01T05:00:00.000Z", "2026-09-07T05:00:00.000Z", "2026-09-10T05:00:00.000Z"]) {
       for (const truncated of [false, true]) {
         for (const s of pulled(stamp, truncated).unfetched) expect(unfetchedNotice(asGet(s))).not.toMatch(SEBI);
       }
+    }
+  });
+});
+
+/**
+ * Seam D1 (v4.3.0 fix wave 2F). R2-IDENTITY's N2 made the pull route answer 409
+ * with collisions of kind 'earlier-snapshot' and its own sentence ("restates a
+ * position today's earlier pull already recorded … committing anyway adds this
+ * pull's row beside the earlier one"). The dialog badged every such row
+ * "partial overlap", said "Different sources state the same trade slightly
+ * differently … can differ by a paisa", told the user to cancel "if this pull
+ * is the same trades from another source", and never showed the route's
+ * sentence. The report below is the REAL cross-source report the route wraps.
+ */
+describe("Seam D1 · the pull dialog's words for a collision with today's earlier pull", () => {
+  const FILE = "angelone-api-2026-09-09.json";
+  const SEBI = /\b(recommend|suggest|should|consider|buy|sell)\b/i;
+  const stored = (over: Partial<ExistingRow> = {}): ExistingRow => ({
+    id: 1, broker: "angelone", symbol: "LADDER", tradingsymbol: "LADDER-EQ", buyQty: 20, sellQty: 0, buyValue: 2010, sellValue: 0,
+    buyDate: "2026-09-09", sellDate: null, sourceFile: FILE, dedupHash: "morning", ...over,
+  });
+  const incoming = (over: Partial<IncomingRow> = {}): IncomingRow => ({
+    broker: "angelone", symbol: "LADDER", tradingsymbol: "LADDER-EQ", buyQty: 25, sellQty: 0, buyValue: 2520, sellValue: 0,
+    buyDate: "2026-09-09", sellDate: null, dedupHash: "evening", snapshotIds: [1], ...over,
+  });
+  /** The 409 body's `message`, as app/api/import/broker/route.ts composes it. */
+  const routeMessage = (m: string | null) => `${m}${PULL_FORCE_ROUTE_TAIL}`;
+  const GENERIC_ONE =
+    "Nothing has been committed. Different sources state the same trade slightly differently — a position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check cannot vouch for this row.";
+
+  it("the badge names today's earlier pull for 'earlier-snapshot'; the three older kinds keep their labels", () => {
+    // THE assertion (red on revert: "partial overlap").
+    expect(collisionBadge("earlier-snapshot")).toBe("today's earlier pull");
+    expect(collisionBadge("same-quantity")).toBe("same quantity");
+    expect(collisionBadge("same-value")).toBe("same value");
+    expect(collisionBadge("partial-quantity")).toBe("partial overlap");
+  });
+
+  it("an earlier-snapshot-only 409: the route's sentence is shown, and no other-source text or footer", () => {
+    const report = detectCrossSourceDuplicates([incoming()], [stored()], FILE);
+    expect(report.collisions.map((c) => c.kind)).toEqual(["earlier-snapshot"]); // the N2 shape the route sends
+    const copy = collisionDialogCopy({ collisions: report.collisions, message: routeMessage(report.message) });
+    // THE assertions (red on revert: the generic "Different sources …" lead, no
+    // server message, and the "same trades from another source" footer shown).
+    expect(copy).toEqual({ description: "Nothing has been committed.", serverMessage: report.message, otherSourceFooter: false });
+    expect(copy.serverMessage).toContain("1 row in this pull (LADDER) restates a position today's earlier pull already recorded");
+    expect(copy.serverMessage).toContain("committing anyway adds this pull's row beside the earlier one.");
+    // The route's old-client tail names a button the dialog does not have.
+    expect(copy.serverMessage).not.toContain("click Pull & commit again");
+  });
+
+  it("a cross-file 409 keeps the other-source lead and footer, and shows the route's sentence too", () => {
+    const report = detectCrossSourceDuplicates([incoming({ snapshotIds: undefined, buyQty: 20, buyValue: 2010 })], [stored({ sourceFile: "dhan-pnl.csv" })], FILE);
+    expect(report.collisions.map((c) => c.kind)).toEqual(["same-quantity"]);
+    const copy = collisionDialogCopy({ collisions: report.collisions, message: routeMessage(report.message) });
+    expect(copy).toEqual({ description: GENERIC_ONE, serverMessage: report.message, otherSourceFooter: true });
+    // Two rows read "these rows" (the JSX used to print "these this row" for one).
+    expect(collisionDialogCopy({ collisions: [...report.collisions, ...report.collisions], message: null }).description).toMatch(
+      /cannot vouch for these rows\.$/,
+    );
+  });
+
+  it("a mixed 409 (earlier snapshot AND another file) keeps the other-source words — only an earlier-snapshot-ONLY one drops them", () => {
+    const report = detectCrossSourceDuplicates(
+      [incoming(), incoming({ symbol: "RELIANCE", tradingsymbol: "RELIANCE-EQ", snapshotIds: undefined, buyQty: 10, buyValue: 29000, dedupHash: "r" })],
+      [stored(), stored({ id: 2, symbol: "RELIANCE", tradingsymbol: "RELIANCE-EQ", buyQty: 10, buyValue: 29000, sourceFile: "dhan-pnl.csv", dedupHash: "r0" })],
+      FILE,
+    );
+    expect(report.collisions.map((c) => c.kind).sort()).toEqual(["earlier-snapshot", "same-quantity"]);
+    const copy = collisionDialogCopy({ collisions: report.collisions, message: routeMessage(report.message) });
+    expect(copy.otherSourceFooter).toBe(true);
+    expect(copy.description).toContain("Different sources state the same trade slightly differently");
+    expect(copy.serverMessage).toBe(report.message);
+  });
+
+  it("with no message the dialog shows none, and a message without the route's tail is shown verbatim", () => {
+    const kinds = [{ kind: "earlier-snapshot" }];
+    expect(collisionDialogCopy({ collisions: kinds })).toEqual({ description: "Nothing has been committed.", serverMessage: null, otherSourceFooter: false });
+    expect(collisionDialogCopy({ collisions: kinds, message: "  " }).serverMessage).toBeNull();
+    expect(collisionDialogCopy({ collisions: kinds, message: "A sentence." }).serverMessage).toBe("A sentence.");
+  });
+
+  it("the dialog's own words carry no SEBI-forbidden verb", () => {
+    for (const kind of ["same-quantity", "same-value", "partial-quantity", "earlier-snapshot"]) {
+      expect(collisionBadge(kind)).not.toMatch(SEBI);
+      expect(collisionDialogCopy({ collisions: [{ kind }] }).description).not.toMatch(SEBI);
     }
   });
 });

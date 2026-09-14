@@ -277,15 +277,20 @@ export const PRO_FEATURES: { href: string; label: string; partial?: true }[] = [
   // Options seller
   // v4.3 — the 40-shape catalogue (owner ruling, wave 2). `partial` for the
   // same reason /live is: the sixteen shapes the pre-v4.3 if-chain already
-  // named stay free — they are the journal NAMING what the user already
+  // named stay free as NAMES — the journal naming what the user already
   // traded, which invariant 7 protects — and what is sold is the other
   // twenty-four plus the shelf and the picker. The boundary is the SHAPE, not
-  // the legs (R11, ruling 06-ANSWERS:258): a holding of the underlying or a
-  // second expiry turns legs 4.2 named into a covered call, protective put,
-  // collar, calendar or diagonal, and a free build reads that book as
-  // "Custom (n legs)". So app/strategies/page.tsx must
-  // check `getEntitlement()` and gate the CAPABILITY; a whole-page <ProGate>
-  // there would take away a name the free build has always printed.
+  // the legs (R11, ruling 06-ANSWERS:258), so the sixteen names do not survive
+  // every book they once described: a position in the underlying, long or
+  // short, or a second expiry can turn legs once named a long call, a short
+  // call, a long put or a short put into a covered call, a covered put, a
+  // protective put, a protective call, a collar, a calendar or a diagonal
+  // (N19; the list is derived from the engine in tests/strategies-copy.test.ts),
+  // and a free build reads that book as "Custom (n legs)". So
+  // app/strategies/page.tsx must check `getEntitlement()` and gate the
+  // CAPABILITY; a whole-page <ProGate> there would take away the free record —
+  // the legs, the grouping, the payoff curve, the gross figures and the sixteen names
+  // wherever the legs still form one of them.
   { href: "/strategies", label: "Option Strategies — 40-shape catalogue, strategy shelf and picker", partial: true },
   { href: "/options-journal", label: "Options Seller Journal — IV, DTE, hedge and expiry outcomes" },
   { href: "/reports/expiry", label: "Expiry Analytics — expiry-day vs other-day edge" },

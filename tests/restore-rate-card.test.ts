@@ -179,7 +179,8 @@ describe("restoreBaseline brings a stale snapshot's rate card onto this version'
 
     const res = baseline.restoreBaseline();
     expect(res.ok, res.message).toBe(true);
-    expect(res.message).toMatch(/Rate rows you never edited follow this version's rate card\./);
+    // Re-pinned for SEAM D2 / N25 (2026-09-15): the toast now states the card's rule, dated to the save. Before: /Rate rows you never edited follow this version's rate card\./
+    expect(res.message).toMatch(/Charge rows you had edited when these defaults were saved return to those values; rows unedited then follow this version's rate card\./);
     expectRefreshedCard(card);
   });
 });

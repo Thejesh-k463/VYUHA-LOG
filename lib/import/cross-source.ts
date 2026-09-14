@@ -55,16 +55,26 @@ export interface IncomingRow {
   /**
    * R43 (4.3.0): set on a broker pull's SNAPSHOT row (a today's-book row dated
    * this IST day) whose hash is new and which the commit will NOT replace in
-   * place, because the match was ambiguous. Stored rows from this very file
-   * dated this day are then no longer hidden as "a second trade in the same
-   * file": they are the earlier snapshot of the same book, so an overlap with
-   * one is reported — and reported as risky whatever its kind — and the user
-   * is asked instead of the pull silently adding a second row.
+   * place — the match was ambiguous, or the stored row carries a ladder, an
+   * alias or something the user recorded. The ids are the stored rows of
+   * today's earlier snapshot on the SUPERSEDE KEY (account + broker + file +
+   * day + tradingsymbol + symbol + segment + exchange), as the commit's plan
+   * found them, plus any row of that snapshot and tradingsymbol whose segment
+   * or exchange the user re-classified (W2F OVERRIDE-DOUBLE). Only those rows
+   * stop being hidden as "a second trade in the same file" (W2R N3: a same-file row of another segment is another
+   * position), and each one is reported — risky whatever its kind, and even
+   * when no quantity or value relation exists (W2R N2) — so the user is asked
+   * instead of the pull silently adding a second row.
    */
-  snapshotDay?: string | null;
+  snapshotIds?: readonly number[];
 }
 
-export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity";
+/**
+ * `earlier-snapshot` (W2R N2): the row restates a position today's earlier
+ * pull recorded on the same key, with no quantity or value relation to it — a
+ * position that grew, or one of two positions the key cannot tell apart.
+ */
+export type OverlapKind = "same-quantity" | "same-value" | "partial-quantity" | "earlier-snapshot";
 
 export interface CrossSourceCollision {
   symbol: string;
@@ -99,9 +109,9 @@ type Sides = { buyQty: number; sellQty: number; buyValue: number; sellValue: num
 const statesBuy = (r: Sides) => r.buyQty > 0 || r.buyValue !== 0;
 const statesSell = (r: Sides) => r.sellQty > 0 || r.sellValue !== 0;
 
-/** R43: is `e` the earlier snapshot of `inc`'s own pull — same day, same book? */
-const snapshotOf = (inc: IncomingRow, e: ExistingRow) =>
-  inc.snapshotDay != null && (e.buyDate === inc.snapshotDay || e.sellDate === inc.snapshotDay);
+/** R43: is `e` the earlier snapshot of `inc`'s own position — this very pull file, on its key? */
+const snapshotOf = (inc: IncomingRow, e: ExistingRow, fileName: string) =>
+  inc.snapshotIds?.includes(e.id) === true && (e.sourceFile ?? "") === fileName;
 
 /** Likely a double count. Any overlap with today's earlier snapshot of the same
  *  pull is: a snapshot is cumulative, so "part of" it is the same position grown. */
@@ -201,7 +211,7 @@ export function detectCrossSourceDuplicates(
         // A row from the SAME file is a genuine second trade in that scrip, not
         // a cross-source echo of the first — except (R43) today's earlier
         // snapshot of the same pull, which is the same book stated earlier.
-        ((e.sourceFile ?? "") !== incomingFileName || snapshotOf(inc, e)),
+        ((e.sourceFile ?? "") !== incomingFileName || snapshotOf(inc, e, incomingFileName)),
     );
 
     let softer: CrossSourceCollision | null = null;
@@ -217,7 +227,10 @@ export function detectCrossSourceDuplicates(
       // it; two round trips share both sides and compare exactly as before.
       const buy = statesBuy(inc) && statesBuy(e);
       const sell = statesSell(inc) && statesSell(e);
-      if (!buy && !sell) continue;
+      // A snapshot candidate with no shared side still goes on: no relation
+      // below can fire for it (both quantities read 0), and it is reported.
+      const snapshot = snapshotOf(inc, e, incomingFileName);
+      if (!buy && !sell && !snapshot) continue;
       const incQty = Math.max(buy ? inc.buyQty : 0, sell ? inc.sellQty : 0);
       const exQty = Math.max(buy ? e.buyQty : 0, sell ? e.sellQty : 0);
 
@@ -231,9 +244,15 @@ export function detectCrossSourceDuplicates(
         kind = "partial-quantity";
         detail = `${incQty} shares here against ${exQty} already recorded from ${e.sourceFile ?? "an earlier import"} — one may be part of the other.`;
       }
+      // W2R N2: the commit's plan asked about this row, so today's earlier
+      // snapshot on its key is reported whether or not a relation was found.
+      if (!kind && snapshot) {
+        kind = "earlier-snapshot";
+        detail = `Today's earlier pull recorded ${e.buyQty} bought and ${e.sellQty} sold in ${e.sourceFile ?? "this pull"}; this pull states ${inc.buyQty} bought and ${inc.sellQty} sold.`;
+      }
 
       if (kind) {
-        const sameSnapshot = (e.sourceFile ?? "") === incomingFileName;
+        const sameSnapshot = snapshot;
         const c: CrossSourceCollision = {
           symbol: inc.symbol,
           incoming: { buyQty: inc.buyQty, sellQty: inc.sellQty, buyValue: inc.buyValue, sellValue: inc.sellValue },
@@ -258,16 +277,37 @@ export function detectCrossSourceDuplicates(
 
   const symbols = [...new Set(collisions.map((c) => c.symbol))].sort();
   const risky = collisions.some(isRisky);
+  const listOf = (cs: CrossSourceCollision[]) => {
+    const syms = [...new Set(cs.map((c) => c.symbol))].sort();
+    return `${syms.slice(0, 5).join(", ")}${syms.length > 5 ? `, +${syms.length - 5} more` : ""}`;
+  };
+  // Two different questions get two different sentences. A row that meets
+  // today's earlier snapshot of this same pull is NOT from a different file,
+  // and deleting that earlier import would delete the recorded position with
+  // whatever the user wrote on it (W2R N3) — so it never reads the advice below.
+  const crossFile = collisions.filter((c) => !c.sameSnapshot);
+  const earlier = collisions.filter((c) => c.sameSnapshot);
+  const parts: string[] = [];
+  if (crossFile.length > 0) {
+    parts.push(
+      `${crossFile.length} row${crossFile.length === 1 ? "" : "s"} in this file (${listOf(crossFile)}) look like trades already recorded from a different file. ` +
+        "The two file kinds state different facts — a transaction report has dates and both legs, a P&L export has neither — so the duplicate check cannot match them and importing both would record the same trade twice. " +
+        "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.",
+    );
+  }
+  if (earlier.length > 0) {
+    const one = earlier.length === 1;
+    parts.push(
+      `${earlier.length} row${one ? "" : "s"} in this pull (${listOf(earlier)}) restate${one ? "s" : ""} a position today's earlier pull already recorded, and ${one ? "is" : "are"} not written over it: ` +
+        "the recorded row carries detail a replacement would lose (a ladder of fills, a Data Quality join, a segment or exchange you set, or a cost basis or journal entry you recorded), or more than one position shares its instrument. " +
+        "Nothing is merged or overwritten automatically; committing anyway adds this pull's row beside the earlier one.",
+    );
+  }
 
   return {
     collisions,
     symbols,
     risky,
-    message:
-      collisions.length === 0
-        ? null
-        : `${collisions.length} row${collisions.length === 1 ? "" : "s"} in this file (${symbols.slice(0, 5).join(", ")}${symbols.length > 5 ? `, +${symbols.length - 5} more` : ""}) look like trades already recorded from a different file. ` +
-          "The two file kinds state different facts — a transaction report has dates and both legs, a P&L export has neither — so the duplicate check cannot match them and importing both would record the same trade twice. " +
-          "Nothing is merged automatically: merging means choosing whose numbers to keep, and getting that wrong silently corrupts cost basis and holding period. Delete the earlier import first if these are the same trades.",
+    message: parts.length === 0 ? null : parts.join(" "),
   };
 }

@@ -28,6 +28,10 @@ const STATUS: Record<StaleCloseCode, number> = {
   PARTIAL: 409,
   // W2-FIXD2 — a staged lot: listed on Data Quality, closed on its own ladder.
   STAGED: 409,
+  // R2-DQ N7/N8 — a closed lot in the book may already have taken the sale.
+  AMBIGUOUS: 409,
+  // R2-DQ N10 — a sale recorded in several fills is never joined.
+  FILLS: 409,
   JOURNAL: 409,
   DELETE_FAILED: 500,
 };

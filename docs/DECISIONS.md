@@ -6380,3 +6380,183 @@ eslint are clean.
 **Wave-2 GATE:** `npm run verify` exits 0 — Test Files 391 passed (391); Tests 8278 passed | 35 skipped (8313);
 ✓ Compiled successfully. No `components/live/*` file changed, so `e2e/z-live-desk` is not owed (CI runs the full e2e).
 README counts move to 8278 / 391.
+Committed `a7e9288`. **CI 34882117830 SUCCESS 6/6 on attempt 1**, the Windows job included. The scoped re-check follows.
+
+## 2026-09-15 — v4.3.0 fix wave 2: the scoped re-check → 47 CONFIRMED, 1 REFUTED (P2, partial), 0 UNVERIFIABLE; fix wave 2R
+
+**The re-check.** Ten probe-capable Opus reviewers (general-purpose agents: the wave-1 lesson) re-proved every fix
+red-on-revert from probe copies of `654d534`, touched no tracked file and left no probe behind. Full verdicts:
+`18-FIX-WORK-4.3.0/wave2-recheck.json`. **P2 is REFUTED as partial:** a staged sale is never listed, and a sale re-pairs
+after a manual close (N8, N9).
+
+**Product defects that reopen work** (stopping rule), with the decided designs (no owner question: each follows an
+invariant or "a question is always better than a confident wrong answer"; overrule here):
+- **N1 — silent wrong number, wave 2.** R43's supersede half-wipes a basis the user recorded on today's sale row.
+  → A row with a user-recorded basis or annotation is never a supersede candidate; the incoming row is asked.
+- **N2 — silent wrong number, pre-existing.** A planSnapshot "ask" (a laddered or frozen candidate) fell through to a
+  silent second row whenever cross-source found no kind. → The ask is honoured on its own.
+- **N3 — medium, wave 2.** A new position was asked about because it shares a ticker with another segment's snapshot row.
+  → The same-snapshot comparison uses the supersede key (… + segment + exchange); 0 candidates means a new position.
+- **N4 — medium, wave 2.** A merge-carried notice (`connId` null) was cleared by a different Dhan client's pull. → A
+  carried span matches no connection; only the user's Clear removes it.
+- **N5 — low.** A clamped page-cap span was not cleared by a later-day retry. → An untruncated committed read clears every
+  page-cap span that lies wholly inside the window it read.
+- **N6 / N21 — cosmetic.** The kept notice said "today" / "this pull" days later, and "1 fill … were refused". → The notice
+  names the pull's IST date, and the verb follows the count.
+- **N7 / N8 — silent wrong number** (the ladder exit is wave 2; the manual close is earlier). After a lot was closed
+  elsewhere, the leftover sale re-paired FIFO with the next held lot and was offered the one-click join, counting the sale
+  twice. → The one-click is offered only in an UNAMBIGUOUS book: no closed lot in the same book dated on or before the
+  sale. Otherwise the pair is listed for review, with no one-click; `closeStaleLot` and its route refuse it (AMBIGUOUS,
+  409).
+- **N9 — medium.** A staged (multi-fill) sale was never listed by stale_sale. → Staged sales are listed, never joined.
+- **N10 — low.** The refusal copy called a staged sale's imported fills "your own journal entries". → Corrected, with a
+  link to Trades.
+- **N11 — silent wrong number, pre-existing.** `closePosition` (the manual close on `/risk` and `/trades`) closed a staged
+  position's parent row with no exit leg; the next ladder action re-opened it and erased realised P&L. → `closePosition`
+  refuses a staged position (409 STAGED), and every close entry point routes a staged row to the ladder's own exit
+  (invariants 4 and 5).
+- **N12 — low, wave 2.** A same-day write-and-cover read as a closed long, producing a false stale_sale for option writers.
+  → A closed row with equal buy and sell dates has no knowable direction.
+- **N13 — broken, wave 2.** The IPO charger threw eagerly for any exit date before 1970, including a half-typed year or a
+  non-ISO string. → Rates resolve lazily and only for an exited IPO. An invalid date is not priced ("—"); a date before
+  the first epoch takes the earliest verified schedule.
+- **N14 — low, pre-existing.** The allottee is charged 0.015% stamp duty on the allotment, whereas since 2020-07-01 the
+  issuer bears the 0.005% issue duty. → Changed ONLY if a primary source is fetched; otherwise recorded.
+- **N15 — cosmetic.** The IPO label named DP where none is charged, and the preview omitted the broker's DP. → The label
+  names only non-zero heads; the preview matches the save or says "before broker charges".
+- **N16 — medium, wave 2.** In the All-accounts view, P5 / D3 netting subtracted account B's sales from account A's lots.
+  → Net per account, then aggregate.
+- **N17 — low.** A company-name holding whose ISIN listing ticker differs from the option ticker drew a stray card. → The
+  leg takes the admitting option symbol.
+- **N18 — low, wave 2.** QS-SPLIT refused a split against a whole card whose figure reads "Not computed". → The split is
+  compared with the whole card's LABELLED figure.
+- **N19 / N20 — low / cosmetic, wave 2.** The R11 copy omitted the short-underlying routes, and the `proWithheldNote`
+  grammar was broken. → Both corrected.
+- **N23 — low, wave 2.** A later close at the SAME price said "differs from your mark ₹X". → The notice needs a price
+  difference at the paisa, per the owner's own R13 intent ("if the user marks a different price"). This narrows the
+  worked design's literal "newer" clause.
+- **N24 — medium, pre-existing.** The F&O manual preview carried the equity form's segment / exchange override. → The F&O
+  preview never carries it.
+- **N25 — low, wave 2.** The P12 copy blurred "edited" (it means edited when the defaults were captured). → Corrected, and
+  the pin reads the rendered constant.
+- **N26 — low, pre-existing.** `docs/owner/VIDEO_SCRIPT.md` gives the stale API-pull count. → The registry's true count and
+  names.
+- **T1 — TEST, MEDIUM.** The prune proof covered one unchanged symbol, so a first-fingerprint-only mutant survived. →
+  Multi-symbol case added.
+
+**Accepted, recorded (not a defect):**
+- **N22.** A same-day multi-venue leg's open remainder carries the leg's majority venue, while its executions come from
+  specific fills. This is the documented one-row limit, identical at `654d534`, a candidate for the 4.3.1 identity work
+  (a venue per row).
+
+**Low / cosmetic test-only findings, recorded:**
+- The P12 pin matched a comment.
+- The manual-form `open` pin is a bare word.
+- The sizing-charges "unverified" phrase list.
+- The golden-books Zerodha note still quotes 152,143.88 after P9 re-pinned 152,156.16.
+
+**Fix wave 2R:**
+- **Phase A:** seven builders — R2-IDENTITY, R2-PULLNOTICE, R2-RATES, R2-STRAT, R2-COPY, R2-SPOT, R2-UI.
+- **Phase B:** R2-DQ, alone, because it shares `commit.ts` with R2-IDENTITY.
+- **Checks and seams:** a phase check between phases, then the seam tester (`tests/seams-v43-fixC.test.ts`).
+
+## 2026-09-15 — v4.3.0 fix wave 2R built → phase checks green; builders' calls decided; fix wave 2F
+
+**Wave 2R.** Reports are in `18-FIX-WORK-4.3.0/wave2r.json`.
+- **Phase A** (R2-IDENTITY N1–N3, R2-PULLNOTICE N4–N6 + N21, R2-RATES N13–N15, R2-STRAT N16–N17, R2-COPY N19–N20,
+  R2-SPOT N23 + T1, R2-UI N24–N26): the check passed — tsc 0; Tests 8341 passed, with the only red the non-blocking README
+  count.
+- **Phase B** (R2-DQ N7–N12 + P2): the check passed — Tests 8365 passed | 35 skipped, the only red again the README count.
+- **Seam tester** (`tests/seams-v43-fixC.test.ts`, 22 tests: 21 passed, 1 pinned `it.fails`). A revert sweep of all 21
+  changed files reddened at least one test each. Two seam defects: D1 and D2 below.
+
+**Decisions on what the builders raised** (no owner question; overrule here):
+- **N18 → RECORDED, no change.** The decided guard ("compare with the whole card's labelled figure") re-opens R102.
+  R102's covered book (500 RELIANCE under a Sep short 3000 CE and an Oct short 3100 CE) is multi-expiry with a short far
+  leg, so the whole card labels both figures "Not computed". The guard would let the split stand and print "Short Call ·
+  Max loss Unlimited" on a call that shares covering it never expire. For the reverse diagonal the whole card reads "Not
+  computed", which is truthful: the refused split loses information, not accuracy. QS-SPLIT stays as built.
+- **N19 → accepted as built.** The decided wording ("a position in the underlying, long or short, or a second expiry") plus
+  one example clause, "a short call over a holding of the underlying, for instance, is a covered call", which keeps
+  fixB :578 green. The full affected list comes from an engine probe: covered call / covered put / protective put /
+  protective call / collar / calendar / diagonal, all from the four single-leg legacy names.
+- **OVERRIDE-DOUBLE — silent wrong number, introduced by N3's narrowing, measured by R2-IDENTITY.** A same-day
+  classification override on the morning snapshot row (Angel One DELIVERY → eq_mtf), followed by an evening pull, landed
+  as a new position with no ask: 20 bought against the broker's 10. At `a7e9288` it asked.
+  → Remedy (b): a same-file, same-day, same-account, same-broker, same-tradingsymbol snapshot row with a
+  `classification_overrides` entry counts as a key candidate. It is never superseded, always asked (R2F-IDENTITY).
+- **The N7 / N8 one-click rule, NARROWED.** As built literally ("no closed lot dated on or before the sale"), it removed
+  the one-click from a legitimate pair whenever the scrip had any older closed round trip, e.g. MARKSANS closed in 2025
+  and bought again in 2026.
+  → A closed lot makes the book ambiguous ONLY if its exit is on or after the open lot's entry. Both the N7 and N8
+  reproductions still refuse (R2F-DQ).
+- **Seam D1 — medium.** The pull dialog labelled the new `earlier-snapshot` collision "partial overlap", kept the
+  "different sources … a paisa" text, and never showed the route's own sentence. → Its own badge naming today's earlier
+  pull, the route's message shown, and no other-source text for an earlier-snapshot-only collision (R2F-PULLCOPY).
+- **Range-cap fact (cosmetic).** "so this one started at X" → "so the pull on <date> started at X", consistent with N6
+  (R2F-PULLCOPY).
+- **Seam D2 — low.** The restore toast ("all three rate tables … rows you never edited follow …") contradicts N25's card
+  rule. → The same rule as the card (R2F-MISC).
+- **IPO-KPI (low).** "Across N exited IPOs" counted unpriced exits. → The count and sentence cover priced exits only, and
+  the unpriced ones are named (R2F-MISC).
+- **IPO-EXITDATE (low).** The IPO route stored an unvalidated exit date, and the AIS route passed an unreadable one to
+  `fyOf`. → The route refuses a non-ISO date with a 400; AIS skips an unreadable one (R2F-MISC).
+- **LICENSE-COMMENT (cosmetic).** The stale `lib/license.ts` comment is corrected (R2F-MISC).
+
+**Recorded, not built:**
+- **Pre-existing residuals R2-IDENTITY lists.** An incoming duplicate row still counts toward "more than one candidate" and
+  asks, erring toward asking. Money hand-edits via `updateTradeAction` are still overwritten by a supersede (wave 2's
+  record). The supersede keep-rule for a user acquisition is now unreachable and left in place.
+- **IPO allottee stamp duty (N14).**
+  - The India Code footnotes disagree on the start: s.9A and Schedule I say w.e.f. 1-7-2020, while s.8A and s.29 say
+    1-4-2020. The commencement notification was not found; the code uses 2020-07-01 as decided.
+  - The pre-2019 s.8A(a) text (the issuer charged on an issue to depositories) was not fetched or verified. It is flagged
+    for the owner and not acted on.
+  - The sources are archived in `_data/stt-primary-sources-2026-09-11/` (MANIFEST appended by R2-RATES).
+
+**Wave 2F as built** (`18-FIX-WORK-4.3.0/wave2f.json`):
+- **R2F-IDENTITY — OVERRIDE-DOUBLE FIXED.**
+  - `reclassifiedBy(overrides)` reads `classification_overrides` on the row's dedup hash. `planSnapshot` adds today's
+    re-classified same-file rows of the incoming tradingsymbol to the candidates.
+  - A re-classified row is never superseded. The pull asks with an `earlier-snapshot` collision whose sentence adds "a
+    segment or exchange you set".
+  - Pinned through the real `overrideTrade`: 51 / 51, with six mutants red on revert, including "expected [ +0, +0, 1 ] to
+    deeply equal [ 1, +0, +0 ]".
+- **R2F-PULLCOPY — SEAM D1 FIXED.** The collision dialog badges `earlier-snapshot` as today's earlier pull, shows the
+  route's message, and drops the other-source text. The RANGE-CAP sentence was stopped, because `tests/dhan-api.test.ts`
+  :1217 / :1221 (outside its set) pins it verbatim.
+- **R2F-DQ — the narrowed one-click rule FIXED.** A closed lot is ambiguous only if its exit is on or after the open lot's
+  entry. MARKSANS-style older round trips keep the one-click, and the N7 / N8 reproductions still refuse.
+- **R2F-MISC.**
+  - SEAM D2 (the toast states the card's rule), IPO-EXITDATE (the route refuses a non-ISO date; AIS skips an unreadable
+    one) and LICENSE-COMMENT are FIXED.
+  - IPO-KPI is partial: `summariseIpos` gains `pricedExitCount` / `unpricedExitCount`, and realised net and estimated tax
+    add priced exits only, but the popup sentence lives in `ipo-client.tsx`.
+
+**The 2F check:** tsc 0; Tests 2 failed | 8411 passed | 35 skipped (8448).
+- `restore-rate-card.test.ts:182` pins the toast wording that D2 retired. It is a deliberate re-pin, not a regression.
+- The README count red is non-blocking.
+
+**R2F-FOLLOWUP (a micro builder) takes the three leftovers:**
+- that re-pin;
+- the dated range-cap sentence with its pins in `dhan-api`, `fix-wave-c-import` and `seams-v43-release`;
+- the IPO popup reading "Across N priced exits", with the unpriced ones named.
+
+**R2F-FOLLOWUP, as built:**
+- **The restore toast pin.** `restore-rate-card.test.ts:182` pins the RULE sentence the toast shares with the card: "Charge
+  rows you had edited when these defaults were saved return to those values; rows unedited then follow this version's
+  rate card." A rule-swapped string reddens it.
+- **The IPO popup.** A new pure `realisedNetScope(summary)` says "Across N priced exit(s)." and, when some exist, "M
+  exit(s) has/have no readable exit date and is/are not in this figure." A count, never an amount. Red on revert:
+  "expected 'Across 2 exited IPOs.' to be 'Across 1 priced exit. 1 exit has no r…'".
+  - The KPI card's own "N exited" sub-label is a truthful status count, left as it is.
+- **The range-cap sentence.** It stopped at `tests/broker-connect-copy.test.ts`, outside its set, and left a proven patch.
+  The orchestrator applied the patch and re-pinned that file's two verbatim lines (:351, :384) itself.
+  - The kept fact now reads "… so the pull on <range.to> started at <range.from>", naming the pull by its ISO IST day,
+    the one date format card and server share. Rejected: "dd Mon yyyy" on one sentence, which would give the card two
+    date formats.
+  - The pins in `dhan-api` :1217 / :1221, `fix-wave-c-import` :239 and `seams-v43-release` :433 were re-pinned with
+    before / after comments. Measured: sentence alone 8 failed; with the re-pins 229 / 229 across the seven owning files.
+
+**Wave 2R + 2F GATE:** `npm run verify` exits 0 — Test Files 397 passed (397); Tests 8416 passed | 35 skipped (8451);
+✓ Compiled successfully. README counts move to 8416 / 397.

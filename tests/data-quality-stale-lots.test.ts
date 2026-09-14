@@ -319,6 +319,145 @@ describe("W2-DQ P2 — a closing-trade row left open after its position closed i
   });
 });
 
+// ─────────── R2-DQ N7–N12 (v4.3.0 fix wave 2R) — the pure half ─────────
+
+const reviewIssues = (trades: QualityTrade[]) => assessDataQuality(inputs(trades)).issues.filter((i) => i.code === "stale_review");
+
+describe("R2-DQ N7/N8 — after a lot was closed elsewhere, a re-paired sale is listed for review, never one-click", () => {
+  it("N7: a staged lot exited on its ladder, a held lot and the recorded sale: the held lot is not critical, the pair is a review warning", () => {
+    const L1 = lot({ staged: true, isOpen: false, sellQty: 100, avgSellPrice: 250, buyDate: "2026-08-20", sellDate: "2026-08-28" });
+    const L2 = lot({ avgBuyPrice: 210, buyDate: "2026-08-22" });
+    const S = sale({ sellDate: "2026-08-28" });
+    expect(staleOpenPairs([L1, L2, S]).map((p) => [p.lotId, p.saleId, p.matchedQty, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L2.id, S.id, 100, true, false, [L1.id]],
+    ]);
+    expect(staleIssues([L1, L2, S]), "a held lot is never a CRITICAL stale_open here").toEqual([]);
+    const [review] = reviewIssues([L1, L2, S]);
+    expect(review).toMatchObject({ severity: "warning", count: 1, ids: [S.id], href: "/data-quality#stale-open" });
+    expect(`${review.title} ${review.detail}`).not.toMatch(/\b(delete|should|must|recommend|consider|suggest)\b/i);
+    // Listed once, as a pair: not also a stale_sale.
+    expect(saleIssues([L1, L2, S])).toEqual([]);
+  });
+
+  it("N8: the manual close of the partial lot — S1 re-pairs with the later lot for review only, S2 is a stale_sale", () => {
+    const L1 = lot({ isOpen: false, sellQty: 100, avgSellPrice: 250, buyDate: "2026-08-20", sellDate: "2026-08-26" });
+    const L2 = lot({ buyQty: 40, avgBuyPrice: 210, buyDate: "2026-08-22" });
+    const S1 = sale({ sellQty: 40, sellDate: "2026-08-25" });
+    const S2 = sale({ sellQty: 60, sellDate: "2026-08-26" });
+    expect(staleOpenPairs([L1, L2, S1, S2]).map((p) => [p.lotId, p.saleId, p.matchedQty, p.ambiguous, p.oneClick])).toEqual([
+      [L2.id, S1.id, 40, true, false],
+    ]);
+    expect(staleIssues([L1, L2, S1, S2])).toEqual([]);
+    expect(reviewIssues([L1, L2, S1, S2])[0].ids).toEqual([S1.id]);
+    expect(staleSaleRows([L1, L2, S1, S2]).map((s) => [s.saleId, s.closedLotIds])).toEqual([[S2.id, [L1.id]]]);
+  });
+
+  it("unambiguous stays one-click: a closed lot entered AFTER the sale, or in another book, changes nothing", () => {
+    const L = lot({ buyDate: "2026-08-20" });
+    const S = sale({ sellDate: "2026-08-28" });
+    const later = lot({ isOpen: false, sellQty: 100, buyDate: "2026-09-01", sellDate: "2026-09-02" });
+    const otherBook = lot({ isOpen: false, sellQty: 100, buyDate: "2026-08-01", sellDate: "2026-08-02", accountId: 2 });
+    expect(staleOpenPairs([L, S, later, otherBook]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L.id, false, true, []]]);
+    expect(staleIssues([L, S, later, otherBook])[0].ids).toEqual([L.id]);
+    expect(reviewIssues([L, S, later, otherBook])).toEqual([]);
+  });
+
+  it("a same-day round trip of a contract has no knowable direction, so it CAN have taken the sale: review, not one-click", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const sameDay = q({ ...F, isOpen: false, buyQty: 50, sellQty: 50, buyDate: "2026-09-01", sellDate: "2026-09-01" });
+    // Re-pinned (R2F-DQ, the narrowed rule): L was entered 09-02, after the round trip's 09-01 exit, which now reads
+    // unambiguous (measured: ambiguous true before, false after). L entered the SAME day keeps this pinning the N12 "possible" mode.
+    const L = q({ ...F, buyQty: 50, avgBuyPrice: 100, buyDate: "2026-09-01" });
+    const S = q({ ...F, sellQty: 50, avgSellPrice: 110, sellDate: "2026-09-03" });
+    expect(staleOpenPairs([sameDay, L, S]).map((p) => [p.lotId, p.ambiguous, p.oneClick])).toEqual([[L.id, true, false]]);
+  });
+});
+
+describe("R2F-DQ — a closed lot makes the book ambiguous ONLY if its exit is on or after the open lot's entry", () => {
+  it("MARKSANS: a round trip closed in 2025, bought again in 2026, v4.2.0's sale row beside it — one-click, critical stale_open, no review", () => {
+    const older = lot({ isOpen: false, sellQty: 100, avgSellPrice: 180, buyDate: "2025-03-10", sellDate: "2025-06-02" });
+    const L = lot({ buyDate: "2026-08-20" });
+    const S = sale({ sellDate: "2026-08-28" });
+    expect(staleOpenPairs([older, L, S]).map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L.id, S.id, false, true, []],
+    ]);
+    expect(staleIssues([older, L, S])[0].ids).toEqual([L.id]);
+    expect(reviewIssues([older, L, S])).toEqual([]);
+  });
+
+  it("the boundary is inclusive: a closed lot exited ON the open lot's entry day overlapped it — review, not one-click", () => {
+    const older = lot({ isOpen: false, sellQty: 100, buyDate: "2026-08-10", sellDate: "2026-08-20" });
+    const L = lot({ buyDate: "2026-08-20" });
+    const S = sale({ sellDate: "2026-08-28" });
+    expect(staleOpenPairs([older, L, S]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L.id, true, false, [older.id]]]);
+  });
+
+  it("a closed lot with no stated exit date cannot be shown to precede the open lot, so it still counts", () => {
+    const noExit = lot({ isOpen: false, sellQty: 100, buyDate: "2025-03-10", sellDate: null });
+    const L = lot({ buyDate: "2026-08-20" });
+    const S = sale({ sellDate: "2026-08-28" });
+    expect(staleOpenPairs([noExit, L, S]).map((p) => [p.lotId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L.id, true, false, [noExit.id]]]);
+  });
+
+  it("short side: a closed short's exit is its COVER (buy) date — covered before the new write is one-click, covered after it is review", () => {
+    const F = { segment: "future", instrumentType: "future", symbol: "NIFTY", tradingsymbol: "NIFTY26SEPFUT" };
+    const L = q({ ...F, sellQty: 50, avgSellPrice: 120, sellDate: "2026-09-02" });
+    const S = q({ ...F, buyQty: 50, avgBuyPrice: 110, buyDate: "2026-09-04" });
+    const coveredBefore = q({ ...F, isOpen: false, sellQty: 50, buyQty: 50, sellDate: "2026-07-01", buyDate: "2026-07-05" });
+    expect(staleOpenPairs([coveredBefore, L, S]).map((p) => [p.lotId, p.side, p.ambiguous, p.oneClick])).toEqual([[L.id, "short", false, true]]);
+    const coveredAfter = q({ ...F, isOpen: false, sellQty: 50, buyQty: 50, sellDate: "2026-08-25", buyDate: "2026-09-03" });
+    expect(staleOpenPairs([coveredAfter, L, S]).map((p) => [p.lotId, p.side, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L.id, "short", true, false, [coveredAfter.id]],
+    ]);
+  });
+});
+
+describe("R2-DQ N9/N10 — a sale recorded in several fills (staged)", () => {
+  it("N9: left open after its lot closed, a staged sale IS listed by stale_sale", () => {
+    const L = lot({ isOpen: false, sellQty: 100, avgSellPrice: 250, buyDate: "2026-08-20", sellDate: "2026-08-28" });
+    const S = sale({ staged: true, sellDate: "2026-08-28" });
+    expect(staleSaleRows([L, S]).map((s) => [s.saleId, s.side, s.closedLotIds])).toEqual([[S.id, "long", [L.id]]]);
+    expect(saleIssues([L, S])[0]).toMatchObject({ severity: "warning", ids: [S.id] });
+  });
+
+  it("N10: beside an open lot, a staged sale is listed with no one-click (never joined)", () => {
+    const L = lot();
+    const S = sale({ staged: true, sellDate: "2026-08-28" });
+    expect(staleOpenPairs([L, S]).map((p) => [p.lotId, p.saleId, p.saleStaged, p.staged, p.oneClick])).toEqual([[L.id, S.id, true, false, false]]);
+  });
+});
+
+describe("R2-DQ N12 — a same-day write-and-cover is not a closed long", () => {
+  const OPT = {
+    broker: "zerodha",
+    segment: "option",
+    instrumentType: "option",
+    exchange: "NFO",
+    symbol: "NIFTY",
+    tradingsymbol: "NIFTY26SEP25000CE",
+    expiry: "2026-09-29",
+    strike: 25000,
+    optionType: "CE",
+  };
+
+  it("a later genuine write of the same contract is not called a closing trade with no open position", () => {
+    const coveredSameDay = q({ ...OPT, isOpen: false, sellQty: 75, buyQty: 75, avgSellPrice: 100, avgBuyPrice: 90, buyDate: "2026-09-01", sellDate: "2026-09-01" });
+    const write = q({ ...OPT, sellQty: 75, avgSellPrice: 120, sellDate: "2026-09-03" });
+    expect(staleSaleRows([coveredSameDay, write])).toEqual([]);
+    expect(saleIssues([coveredSameDay, write])).toEqual([]);
+  });
+
+  it("controls: a genuine closed long (bought, sold the next day) still counts, and so does a same-day DELIVERY round trip (no short exists there)", () => {
+    const closedLong = q({ ...OPT, isOpen: false, sellQty: 75, buyQty: 75, buyDate: "2026-09-01", sellDate: "2026-09-02" });
+    const write = q({ ...OPT, sellQty: 75, avgSellPrice: 120, sellDate: "2026-09-03" });
+    expect(staleSaleRows([closedLong, write]).map((s) => [s.saleId, s.side, s.closedLotIds])).toEqual([[write.id, "long", [closedLong.id]]]);
+
+    const roundTrip = lot({ isOpen: false, sellQty: 100, buyDate: "2026-09-01", sellDate: "2026-09-01" });
+    const S = sale({ sellDate: "2026-09-03" });
+    expect(staleSaleRows([roundTrip, S]).map((s) => [s.saleId, s.closedLotIds])).toEqual([[S.id, [roundTrip.id]]]);
+  });
+});
+
 // ──────────────────────────────── the DB half ───────────────────────────────
 
 let t: TempDb;
@@ -734,5 +873,180 @@ describe("W2-FIXD2 — a staged lot (bought in two fills) and its recorded sale:
     expect(text).toContain("staged position");
     expect(html).toContain(`href="/trades?symbol=${SYM}&amp;view=open"`);
     expect(text).not.toMatch(/\b(should|must|recommend|consider|suggest)\b/i);
+  });
+});
+
+// ─────────── R2-DQ N7 / N8 / N9 / N10 (v4.3.0 fix wave 2R) — the DB half ─────────
+
+const textOf = (html: string) => html.replace(/<!-- -->/g, "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+const legsOfTrade = (tradeId: number) =>
+  t.db.select().from(t.schema.tradeLegs).where(eq(t.schema.tradeLegs.tradeId, tradeId)).all().sort((a, b) => a.seq - b.seq);
+
+describe("R2-DQ N7 — the ladder exit the staged card points to, then a held lot: listed for review, and the join refuses it", () => {
+  const ACC = 813;
+  const SYM = "HDFCBANK";
+  let L1: NonNullable<ReturnType<typeof row>>;
+  let L2: NonNullable<ReturnType<typeof row>>;
+  let S: NonNullable<ReturnType<typeof row>>;
+
+  it("L1 staged 10+90 (08-20), L2 100 @210 (08-22), sale 100 @250 (08-28): the staged pair first, then the ladder exit", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-n7" }).run();
+    const exec = (qty: number, time: string) => ({ side: "buy" as const, qty, price: 200, date: "2026-08-20", time });
+    const b1 = parsed([trade({ tradingsymbol: SYM, buyQty: 100, avgBuyPrice: 200, buyValue: 20000, buyDate: "2026-08-20", executions: [exec(10, "10:00:00"), exec(90, "10:05:00")] })]);
+    const b2 = parsed([trade({ tradingsymbol: SYM, buyQty: 100, avgBuyPrice: 210, buyValue: 21000, buyDate: "2026-08-22" })]);
+    expect(commit.commitParsedFile(b1, "n7-b1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(b2, "n7-b2", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(saleFile(SYM), "n7-sale", null, ACC).added).toBe(1);
+    [L1, L2, S] = rowsOf(ACC);
+    expect([L1.staged, L2.staged, S.sellQty, S.isOpen]).toEqual([true, false, 100, true]);
+    selectAccount(ACC);
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.staged, p.ambiguous, p.oneClick])).toEqual([[L1.id, S.id, true, false, false]]);
+    // The staged card no longer promises where the sale row is listed after the
+    // exit: with L2 held, it is a review pair, not a sale with no open position.
+    const stagedText = textOf(renderToStaticMarkup(React.createElement(StaleLotFix, { pairs: dq.getStaleOpenPairs() })));
+    expect(stagedText).toContain("booked on its own ladder in Trades");
+    expect(stagedText).not.toContain("listed here as a closing trade with no open position");
+
+    // As the staged card says: the exit is booked on L1's own ladder.
+    const staged = await import("@/lib/queries/staged");
+    expect(staged.addLeg({ tradeId: L1.id, kind: "exit", tradeDate: "2026-08-28", qty: 100, price: 250 }).ok).toBe(true);
+    expect([row(L1.id)!.isOpen, row(L1.id)!.sellQty]).toEqual([false, 100]);
+  });
+
+  it("after the exit, L2 + the same sale is ambiguous: no one-click, no critical stale_open, a stale_review warning", () => {
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([
+      [L2.id, S.id, true, false, [L1.id]],
+    ]);
+    const report = dq.getDataQualityReport();
+    expect(report.issues.filter((i) => i.code === "stale_open"), "a holding still held is never a critical stale lot here").toEqual([]);
+    expect(report.issues.find((i) => i.code === "stale_review")).toMatchObject({ severity: "warning", ids: [S.id] });
+  });
+
+  it("POST close-stale refuses it with AMBIGUOUS (409) and changes nothing; closeStaleLot itself refuses it too", async () => {
+    const before = rowsOf(ACC);
+    const { status, json } = await post({ lotId: L2.id, saleId: S.id, exitDate: "2026-08-28" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "AMBIGUOUS"]);
+    expect(json.message).toMatch(/Nothing was changed/);
+    expect(json.message).toContain(`trade #${L1.id}`);
+    expect(rowsOf(ACC)).toEqual(before);
+    expect(commit.closeStaleLot(L2.id, S.id, "2026-08-28").code).toBe("AMBIGUOUS");
+    expect(rowsOf(ACC)).toEqual(before);
+  });
+
+  it("the card lists the pair for review with no join button and a link to Trades", () => {
+    const html = renderToStaticMarkup(React.createElement(StaleLotFix, dq.getStaleOpenSection()));
+    const text = textOf(html);
+    expect(html).toContain("data-stale-review");
+    expect(html).not.toContain("Close with the recorded sale");
+    expect(text).toContain(`already closed (trade #${L1.id})`);
+    expect(html).toContain(`href="/trades?symbol=${SYM}"`);
+    expect(text).not.toMatch(/\b(should|must|recommend|consider|suggest)\b/i);
+  });
+});
+
+describe("R2-DQ N8 — the manual close the partial card points to: the leftover sale re-pairs for review only", () => {
+  const ACC = 814;
+  const SYM = "ITC";
+
+  it("L1 100 (08-20), L2 40 (08-22), S1 40 (08-25), S2 60 (08-26): after closePosition(L1), POST {L2, S1} is AMBIGUOUS and S2 is a stale_sale", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-n8" }).run();
+    const buy = (qty: number, price: number, day: string) =>
+      parsed([trade({ tradingsymbol: SYM, buyQty: qty, avgBuyPrice: price, buyValue: qty * price, buyDate: day })]);
+    const sell = (qty: number, day: string) => parsed([trade({ tradingsymbol: SYM, sellQty: qty, avgSellPrice: 250, sellValue: 250 * qty, sellDate: day })]);
+    expect(commit.commitParsedFile(buy(100, 200, "2026-08-20"), "n8-l1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(buy(40, 210, "2026-08-22"), "n8-l2", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(40, "2026-08-25"), "n8-s1", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sell(60, "2026-08-26"), "n8-s2", null, ACC).added).toBe(1);
+    const [L1, L2, S1, S2] = rowsOf(ACC);
+    selectAccount(ACC);
+    const partial = dq.getStaleOpenPairs();
+    expect(partial.map((p) => [p.lotId, p.saleId, p.matchedQty, p.oneClick])).toEqual([
+      [L1.id, S1.id, 40, false],
+      [L1.id, S2.id, 60, false],
+    ]);
+    // The partial card no longer promises where the sale rows are listed next.
+    const partialText = textOf(renderToStaticMarkup(React.createElement(StaleLotFix, { pairs: partial })));
+    expect(partialText).toContain("Open the manual close");
+    expect(partialText).not.toContain("listed here as a closing trade with no open position");
+
+    expect(commit.closePosition(L1.id, 250, "2026-08-26").ok).toBe(true);
+
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.matchedQty, p.ambiguous, p.oneClick])).toEqual([[L2.id, S1.id, 40, true, false]]);
+    const before = rowsOf(ACC);
+    const { status, json } = await post({ lotId: L2.id, saleId: S1.id, exitDate: "2026-08-25" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "AMBIGUOUS"]);
+    expect(rowsOf(ACC), "nothing written: the sale is not counted twice").toEqual(before);
+    const report = dq.getDataQualityReport();
+    expect(report.issues.filter((i) => i.code === "stale_open")).toEqual([]);
+    expect(report.issues.find((i) => i.code === "stale_review")?.ids).toEqual([S1.id]);
+    expect(dq.getStaleOpenSection().sales.map((s) => [s.saleId, s.closedLotIds])).toEqual([[S2.id, [L1.id]]]);
+  });
+});
+
+describe("R2F-DQ — MARKSANS: an older round trip closed before the new lot was bought leaves the join one-click, and the route joins it", () => {
+  const ACC = 816;
+  const SYM = "MARKSANS";
+
+  it("closed 2025 round trip + 2026 lot + v4.2.0's sale row: listed one-click, POST joins it, the round trip is untouched", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-marksans-older" }).run();
+    const roundTrip = parsed([
+      trade({ tradingsymbol: SYM, buyQty: 100, avgBuyPrice: 150, buyValue: 15000, sellQty: 100, avgSellPrice: 180, sellValue: 18000, grossPnl: 3000, buyDate: "2025-03-10", sellDate: "2025-06-02" }),
+    ]);
+    expect(commit.commitParsedFile(roundTrip, "marksans-2025", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(buyFile(SYM), "marksans-b", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(saleFile(SYM), "marksans-s", null, ACC).added).toBe(1);
+    const [R, L, S] = rowsOf(ACC);
+    expect([R.isOpen, L.isOpen, S.isOpen, S.sellQty]).toEqual([false, true, true, 100]);
+    selectAccount(ACC);
+    expect(dq.getStaleOpenPairs().map((p) => [p.lotId, p.saleId, p.ambiguous, p.oneClick, p.closedLotIds])).toEqual([[L.id, S.id, false, true, []]]);
+    const report = dq.getDataQualityReport();
+    expect(report.issues.find((i) => i.code === "stale_open")?.ids).toEqual([L.id]);
+    expect(report.issues.find((i) => i.code === "stale_review")).toBeUndefined();
+
+    const roundTripBefore = row(R.id);
+    const { status, json } = await post({ lotId: L.id, saleId: S.id, exitDate: "2026-08-28" });
+    expect([status, json.ok, json.code ?? null], json.message).toEqual([200, true, null]);
+    expect(row(L.id)).toMatchObject({ isOpen: false, sellQty: 100, avgSellPrice: 250, sellDate: "2026-08-28" });
+    expect(row(S.id)).toBeUndefined();
+    expect(row(R.id), "the older round trip is not touched").toEqual(roundTripBefore);
+  });
+});
+
+describe("R2-DQ N9 / N10 — a sale recorded in two fills: named as its fills, refused (FILLS), and listed after the manual close", () => {
+  const ACC = 815;
+  const SYM = "INFY";
+
+  it("the pair names the sale's recorded fills, links to Trades, POST refuses it with FILLS; after closePosition the sale is a stale_sale", async () => {
+    t.db.insert(t.schema.accounts).values({ id: ACC, name: "stale-n9" }).run();
+    const exec = (qty: number, time: string) => ({ side: "sell" as const, qty, price: 250, date: "2026-08-28", time });
+    const sale2 = parsed([trade({ tradingsymbol: SYM, sellQty: 100, avgSellPrice: 250, sellValue: 25000, sellDate: "2026-08-28", executions: [exec(40, "10:00:00"), exec(60, "10:05:00")] })]);
+    expect(commit.commitParsedFile(buyFile(SYM), "n9-buy", null, ACC).added).toBe(1);
+    expect(commit.commitParsedFile(sale2, "n9-sale", null, ACC).added).toBe(1);
+    const [L, S] = rowsOf(ACC);
+    expect([L.staged, S.staged, S.isOpen, legsOfTrade(S.id).length]).toEqual([false, true, true, 2]);
+    selectAccount(ACC);
+
+    const [pair] = dq.getStaleOpenPairs();
+    expect([pair.lotId, pair.saleId, pair.saleStaged, pair.oneClick]).toEqual([L.id, S.id, true, false]);
+    expect(pair.blocked).toMatch(/recorded in several fills/);
+    expect(pair.blocked).not.toMatch(/your own journal entries|moved onto the position/);
+    const html = renderToStaticMarkup(React.createElement(StaleLotFix, { pairs: [pair] }));
+    expect(html).toContain("data-stale-blocked");
+    expect(html).toContain(`href="/trades?symbol=${SYM}&amp;view=open"`);
+    expect(html).not.toContain("Close with the recorded sale");
+
+    const before = rowsOf(ACC);
+    const { status, json } = await post({ lotId: L.id, saleId: S.id, exitDate: "2026-08-28" });
+    expect([status, json.ok, json.code]).toEqual([409, false, "FILLS"]);
+    expect(json.message).toMatch(/recorded in several fills/);
+    expect(json.message).not.toMatch(/your own journal entries/);
+    expect(rowsOf(ACC)).toEqual(before);
+
+    // The only remedy left — the manual close — and the sale is then listed.
+    expect(commit.closePosition(L.id, 250, "2026-08-28").ok).toBe(true);
+    const report = dq.getDataQualityReport();
+    expect(report.issues.filter((i) => i.code === "stale_open")).toEqual([]);
+    expect(report.issues.find((i) => i.code === "stale_sale")).toMatchObject({ severity: "warning", ids: [S.id] });
+    expect(dq.getStaleOpenSection().sales.map((s) => [s.saleId, s.closedLotIds])).toEqual([[S.id, [L.id]]]);
   });
 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTrades } from "@/lib/queries/trades";
 import { getIposComputed } from "@/lib/queries/ipos";
+import { isPriceableExitDate } from "@/lib/analytics/ipo";
 import { getLedgerEntries } from "@/lib/queries/ledger";
 import { getSettings } from "@/lib/queries/settings";
 import { getAliasMap } from "@/lib/queries/aliases";
@@ -65,7 +66,13 @@ export async function POST(req: Request) {
   for (const ipo of getIposComputed().rows) {
     if (ipo.allotted && ipo.allottedQty > 0) {
       bump(fyOf(ipo.allotmentDate ?? ipo.listingDate ?? ipo.appliedDate ?? null), "purchase", ipo.investedAllotted);
-      if (ipo.exitPrice != null && ipo.exitDate) bump(fyOf(ipo.exitDate), "sale", ipo.exitPrice * ipo.allottedQty);
+      // IPO-EXITDATE (v4.3.0): fyOfDate never throws on a string but invents a
+      // year for an unreadable one ('0202-06-15' → "202-03", '2026-02-30' →
+      // "2025-26"). A sale is counted only on a date computeIpo can read (N13);
+      // otherwise it is skipped rather than filed under a year nobody stated.
+      if (ipo.exitPrice != null && ipo.exitDate && isPriceableExitDate(ipo.exitDate)) {
+        bump(fyOf(ipo.exitDate), "sale", ipo.exitPrice * ipo.allottedQty);
+      }
     }
   }
 

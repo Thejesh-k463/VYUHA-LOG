@@ -271,6 +271,10 @@ export const getOpenOptionPositions = cache((): StrategyLegRow[] => {
  * (acquisition NULL or 'unknown', no price) nets the holding; a sale WITH one
  * (bonus, ESOP, gift, or a price) is a complete trade of shares acquired outside
  * the book and is left out of the join. A future's sale stays a short.
+ *
+ * N16 (v4.3.0 fix wave 2R): every row carries its `accountId`. A sale can only
+ * come out of its own account's demat, so the page nets per account, floors
+ * each account at zero, and only then lets "All accounts" add the books up.
  */
 const UNDERLYING_LEG_FIELDS = [
   "symbol", "instrumentType", "buyQty", "sellQty", "avgBuyPrice", "avgSellPrice", "expiry", "isin",
@@ -278,6 +282,8 @@ const UNDERLYING_LEG_FIELDS = [
   "acquisition", "tradingsymbol",
   // D3: only a delivery-segment sell-only row nets or is left out; a recorded basis price.
   "segment", "acquisitionPrice",
+  // N16: a sale nets only its OWN account's lots, so All accounts keys the netting by account.
+  "accountId",
 ] as const satisfies readonly (keyof Trade)[];
 
 export type UnderlyingLegRow = Pick<Trade, (typeof UNDERLYING_LEG_FIELDS)[number]>;

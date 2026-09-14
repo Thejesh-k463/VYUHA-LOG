@@ -885,14 +885,17 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
 
     // F-L1-3a (fix wave 1): the walk is dropped whole, so the span runs to
     // YESTERDAY, and the remedy starts the day after the last pull's own day.
+    // N6 (fix wave 2R) re-pin: "Truncated: this pull stopped … Today's book came
+    // from /v2/positions." → "the pull on 2026-09-09 stopped … The book for
+    // 2026-09-09 came …" — the kept fact is read days later, so it dates the pull.
     const pf = toParsedFile([], { from: "2026-06-11", to: "2026-09-09" }, reads[0], "2026-06-11T05:00:00.000Z");
     const line =
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. Today's book came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
+      "Truncated: the pull on 2026-09-09 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. The book for 2026-09-09 came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
     expect(pf.warnings).toContain(line);
     // P15 / P16 (fix wave 2): the span also carries the warning's own two
     // sentences, split at the remedy — what GET hands the card verbatim.
     const fact =
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. Today's book came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it.";
+      "Truncated: the pull on 2026-09-09 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-11 to 2026-09-08 were not read. The book for 2026-09-09 came from /v2/positions. Fills on 2026-06-11 after 10:30 IST were not fetched; a tradebook for 2026-06-11 would repeat the fills already imported from it.";
     const remedyText = "To bring the rest in, import a Dhan tradebook for 2026-06-12 to 2026-09-08.";
     expect(`${fact} ${remedyText}`).toBe(line);
     expect(pf.unfetched).toEqual([
@@ -940,7 +943,12 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     const [span] = toParsedFile(out, { from: "2026-09-07", to: "2026-09-11" }, reads[0], "2026-09-07T05:00:00.000Z").unfetched;
     expect(span!.to, "the span ends yesterday — today came from /v2/positions").toBe("2026-09-10");
     expect(span!.remedy).toEqual({ from: "2026-09-08", to: "2026-09-10" });
-    expect(span!.message).not.toContain("2026-09-11");
+    // N6 (fix wave 2R) re-pin: the message now DATES the pull by today
+    // ("the pull on 2026-09-11 stopped", "The book for 2026-09-11 came from
+    // /v2/positions") — measured before: no 2026-09-11 anywhere; after: those two
+    // only. Today is still never named as an unread or remedy day.
+    expect(span!.message).toContain("Truncated: the pull on 2026-09-11 stopped");
+    expect(span!.message.replace("the pull on 2026-09-11", "").replace("The book for 2026-09-11", "")).not.toContain("2026-09-11");
     // The last pull's own day is never a remedy start; it is stated as a fact.
     expect(span!.message).not.toMatch(/tradebook for 2026-09-07 to/);
     expect(span!.message).toContain(
@@ -1138,6 +1146,11 @@ describe("fetchTrades({from,to}) — the paged trade history", () => {
     expect(toParsedFile(out, { from: "2026-09-05", to: "2026-09-09" }, { ...reads[0]!, refused: 0 }).warnings.join(" ")).not.toMatch(
       /refused/,
     );
+    // N21 (fix wave 2R): the verb follows the count — ONE fill "was" refused.
+    // Measured before: "1 fill from Dhan's trade history … and were refused rather than guessed."
+    expect(toParsedFile(out, { from: "2026-09-05", to: "2026-09-09" }, { ...reads[0]!, refused: 1 }).warnings).toContain(
+      "1 fill from Dhan's trade history had no readable side, quantity, price or date and was refused rather than guessed.",
+    );
   });
 });
 
@@ -1200,12 +1213,13 @@ describe("C-6 — a clamped pull names the dates it did not fetch, and the remed
     const pf = toParsedFile([], dhan.catchUpRange("2026-05-01T05:00:00Z", TODAY), null, "2026-05-01T05:00:00Z");
     // F-L1-3a (fix wave 1): the remedy starts the day AFTER the last pull's own
     // day, which is stated as a fact and never named as something to import.
+    // RANGE-CAP COPY (wave 2F, as N6): the kept fact names the pull by its IST day. Before: "so this one started at 2026-06-11".
     const line =
-      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(pf.warnings[1]).toBe(line);
     // P15 / P16 (fix wave 2): the warning's own sentences ride on the span.
     const fact =
-      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it.";
+      "Not fetched: fills from 2026-05-01 to 2026-06-10. The last pull ran on 2026-05-01, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-09 started at 2026-06-11. Fills on 2026-05-01 after 10:30 IST were not fetched; a tradebook for 2026-05-01 would repeat the fills already imported from it.";
     const remedyText = "To bring the rest in, import a Dhan tradebook for 2026-05-02 to 2026-06-10.";
     expect(`${fact} ${remedyText}`).toBe(line);
     expect(pf.unfetched).toEqual([

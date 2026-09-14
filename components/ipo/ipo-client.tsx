@@ -12,7 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toaster";
-import { computeIpo, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
+import { computeIpo, ipoChargeHeads, IPO_CATEGORY_LABELS, type IpoComputed, type IpoStatus, type IpoCategory } from "@/lib/analytics/ipo";
 import { inr, num } from "@/lib/format";
 import { BROKERS, BROKER_LABELS, type Broker } from "@/lib/domain/constants";
 import { ExportButtons } from "@/components/ui/export-button";
@@ -154,8 +154,8 @@ export function IpoClient({ rows, summary }: { rows: IpoComputed[]; summary: Par
                         <td className="px-2.5 py-2 text-right tabular-nums">{r.listingPrice == null ? "—" : num(r.listingPrice, 2)}</td>
                         <td className="px-2.5 py-2 text-right tabular-nums">{r.exitPrice == null ? "—" : num(r.exitPrice, 2)}</td>
                         <td className={`px-2.5 py-2 text-right tabular-nums ${r.listingGain == null ? "" : pnl(r.listingGain)}`}>{r.listingGain == null ? "—" : num(r.listingGain, 0)}</td>
-                        <td className={`px-2.5 py-2 text-right tabular-nums font-medium ${pnl(pl)}`}>
-                          {r.status === "not_allotted" ? "—" : num(pl, 0)}
+                        <td className={`px-2.5 py-2 text-right tabular-nums font-medium ${r.unpriced ? "" : pnl(pl)}`}>
+                          {r.status === "not_allotted" || r.unpriced ? "—" : num(pl, 0)}
                           {!r.realised && r.status === "listed" && <span className="ml-1 text-[9px] text-muted-foreground">unrl</span>}
                         </td>
                         <td className="px-2.5 py-2 text-right tabular-nums text-warning">
@@ -225,8 +225,11 @@ function Sep() {
 }
 
 /** Full lifecycle P&L statement for one IPO. */
-function IpoStatement({ r }: { r: IpoComputed }) {
+export function IpoStatement({ r }: { r: IpoComputed }) {
   const lotsAllotted = r.lotSize > 0 ? Math.round(r.allottedQty / r.lotSize) : 0;
+  // N15: name only the heads this IPO's charges carry (no DP without a broker's row).
+  const heads = ipoChargeHeads(r.chargeBreakdown);
+  const chargesLabel = heads.length > 0 ? `Sell charges (${heads.join(", ")})` : "Sell charges";
 
   return (
     <div className="space-y-1 text-xs">
@@ -255,8 +258,9 @@ function IpoStatement({ r }: { r: IpoComputed }) {
           <Sep />
           <Row k={`Exit @ ${num(r.exitPrice, 2)}${r.exitDate ? ` (${r.exitDate})` : ""}`} v={inr(r.exitPrice * r.allottedQty)} />
           <Row k="Gross P&L" v={inr(r.grossPnl)} cls={pnl(r.grossPnl)} strong />
-          <Row k="Sell charges (STT, exch, stamp, DP, GST)" v={`− ${inr(r.charges)}`} indent />
-          <Row k="Net P&L" v={inr(r.netPnl)} cls={pnl(r.netPnl)} strong />
+          <Row k={chargesLabel} v={r.unpriced ? "—" : `− ${inr(r.charges)}`} indent />
+          <Row k="Net P&L" v={r.unpriced ? "—" : inr(r.netPnl)} cls={r.unpriced ? "" : pnl(r.netPnl)} strong />
+          {r.unpriced && <Row k="Exit date is not a valid date" v="charges not computed" cls="text-muted-foreground" indent />}
           {r.tax && (
             <>
               <Sep />
@@ -285,6 +289,20 @@ function IpoStatement({ r }: { r: IpoComputed }) {
       )}
     </div>
   );
+}
+
+/**
+ * IPO-KPI (v4.3.0 wave 2F): the 'Realised net' popup's sentence. realisedNet
+ * and estTax add PRICED exits only, so the count it names is pricedExitCount,
+ * not the status count exitedCount. An exit with no readable exit date (N13) is
+ * named by count and kept out of the figure — never folded in (invariant 6).
+ */
+export function realisedNetScope(summary: import("@/lib/analytics/ipo").IpoSummary): string {
+  const priced = summary.pricedExitCount;
+  const unpriced = summary.unpricedExitCount;
+  const lead = `Across ${priced} priced exit${priced === 1 ? "" : "s"}.`;
+  if (unpriced <= 0) return lead;
+  return `${lead} ${unpriced} exit${unpriced === 1 ? " has" : "s have"} no readable exit date and ${unpriced === 1 ? "is" : "are"} not in this figure.`;
 }
 
 function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary }) {
@@ -324,7 +342,7 @@ function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary
     summary.exitedCount > 0
       ? {
           title: "Realised net — after charges and tax",
-          summary: `Across ${summary.exitedCount} exited IPO${summary.exitedCount === 1 ? "" : "s"}.`,
+          summary: realisedNetScope(summary),
           rows: [
             { label: "Realised net P&L", value: i0(summary.realisedNet), tone: tone(summary.realisedNet), hint: "after sell charges" },
             { label: "Est. tax (STCG/LTCG)", value: summary.estTax > 0 ? `− ${i0(summary.estTax)}` : "—", hint: summary.estTax > 0 ? "informational estimate" : "no taxable gain estimated" },
@@ -352,7 +370,7 @@ function KpiRow({ summary }: { summary: import("@/lib/analytics/ipo").IpoSummary
   );
 }
 
-function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => void }) {
+export function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => void }) {
   const [name, setName] = React.useState(existing?.name ?? "");
   const [broker, setBroker] = React.useState(existing?.broker ?? "");
   const [exchange, setExchange] = React.useState(existing?.exchange ?? "NSE");
@@ -469,11 +487,13 @@ function IpoForm({ existing, onDone }: { existing?: IpoComputed; onDone: () => v
           <Cell k="Invested" v={inr(preview.investedAllotted)} />
           <Cell k="Refund" v={inr(preview.refundAmount)} />
           <Cell k="Listing gain" v={preview.listingGain == null ? "—" : inr(preview.listingGain)} cls={preview.listingGain == null ? "" : pnl(preview.listingGain)} />
-          {preview.realised ? (
+          {preview.realised || preview.unpriced ? (
             <>
               <Cell k="Gross P&L" v={inr(preview.grossPnl)} cls={pnl(preview.grossPnl)} />
-              <Cell k="Charges" v={inr(preview.charges)} />
-              <Cell k="Net P&L" v={inr(preview.netPnl)} cls={pnl(preview.netPnl)} strong />
+              {/* N15: the preview prices from the bundled statutory rates only; the saved
+                  figure adds the broker's brokerage and DP from charge_config. */}
+              <Cell k={broker ? "Charges before broker charges" : "Charges"} v={preview.unpriced ? "—" : inr(preview.charges)} />
+              <Cell k="Net P&L" v={preview.unpriced ? "—" : inr(preview.netPnl)} cls={preview.unpriced ? "" : pnl(preview.netPnl)} strong />
               {preview.tax && !preview.tax.isLoss && (
                 <>
                   <Cell k={`${preview.tax.term === "ST" ? "STCG" : "LTCG"} @${preview.tax.ratePct}%`} v={inr(preview.tax.estTax)} cls="text-warning" />

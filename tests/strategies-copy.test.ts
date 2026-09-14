@@ -519,6 +519,96 @@ describe("a holding or a second expiry turns a legacy name into a withheld Pro s
     expect(STRATEGY_COPY.proWithheldNote).toMatch(/holding of the underlying/);
     expect(STRATEGY_COPY.proWithheldNote).toMatch(/second expiry/);
   });
+
+  /**
+   * N19 (wave-2 re-check). The R11 copy named only the LONG-underlying routes.
+   * A short future or short shares under a short put is a covered put, and
+   * under a long call a protective call — both Pro, both withheld, and neither
+   * named by either sentence. The list is DERIVED here from the engine: every
+   * pre-4.3 single-leg name, joined by a long or short underlying or by a leg
+   * at a second expiry, and whatever withheld shape comes out must be named by
+   * the note beside the lock AND by the /strategies help sentence.
+   */
+  const ul = (side: "long" | "short") => leg({ kind: "UL", optionType: undefined, strike: 0, side, premium: 1450, expiry: null });
+  const single = (kind: "CE" | "PE", side: "long" | "short") => leg({ kind, optionType: kind, side });
+  const LEGACY_SINGLES: Array<[string, PositionedLeg]> = [
+    ["long-call", single("CE", "long")],
+    ["short-call", single("CE", "short")],
+    ["long-put", single("PE", "long")],
+    ["short-put", single("PE", "short")],
+  ];
+  const ROUTES: Array<(l: PositionedLeg) => PositionedLeg[]> = [
+    (l) => [ul("long"), l],
+    (l) => [ul("short"), l],
+    (l) => [l, { ...l, side: "long", expiry: "2026-10-29" }],
+    (l) => [l, { ...l, side: "short", expiry: "2026-10-29" }],
+    (l) => [l, { ...l, side: "long", strike: l.strike + 100, expiry: "2026-10-29" }],
+    (l) => [l, { ...l, side: "short", strike: l.strike + 100, expiry: "2026-10-29" }],
+  ];
+  /** The copy's word for a catalogue name: "Call Calendar Spread" reads "calendar". */
+  const copyWord = (name: string) =>
+    /calendar/i.test(name) ? "calendar" : /diagonal/i.test(name) ? "diagonal" : name.toLowerCase();
+
+  function reachable(): { from: Set<string>; to: Set<string> } {
+    const from = new Set<string>();
+    const to = new Set<string>();
+    for (const [id, l] of LEGACY_SINGLES) {
+      const [alone] = buildStrategies([l]);
+      expect(alone.strategyId, `the ${id} fixture must be the legacy shape`).toBe(id);
+      expect(CATALOGUE.find((d) => d.id === id)?.legacyFree, `${id} is no longer legacyFree`).toBe(true);
+      for (const route of ROUTES) {
+        const built = buildStrategies(route(l));
+        withholdForFree(built, false).forEach((g, i) => {
+          if (!g.proWithheld) return;
+          from.add(CATALOGUE.find((d) => d.id === id)!.name.toLowerCase());
+          to.add(copyWord(CATALOGUE.find((d) => d.id === built[i].strategyId)!.name));
+        });
+      }
+    }
+    // The collar is a holding plus TWO options, so no single route above reaches it.
+    const [collar] = buildStrategies([ul("long"), single("PE", "long"), leg({ side: "short", strike: 1600 })]);
+    expect(collar.strategyId, "the collar fixture must be the Pro shape").toBe("collar");
+    expect(withholdForFree([collar], false)[0].proWithheld).toBe(true);
+    to.add("collar");
+    return { from, to };
+  }
+
+  it("a short underlying turns a short put into a covered put and a long call into a protective call, both withheld (N19)", () => {
+    const [cp] = buildStrategies([ul("short"), single("PE", "short")]);
+    expect(cp.strategyId).toBe("covered-put");
+    expect(withholdForFree([cp], false)[0].displayName).toBe(customName(2));
+    const [pc] = buildStrategies([ul("short"), single("CE", "long")]);
+    expect(pc.strategyId).toBe("protective-call");
+    expect(withholdForFree([pc], false)[0].displayName).toBe(customName(2));
+    // The derivation is not vacuous: it reaches the two shapes the finding named.
+    const { from, to } = reachable();
+    expect([...to]).toEqual(expect.arrayContaining(["covered put", "protective call", "covered call", "protective put", "calendar", "diagonal"]));
+    expect([...from].sort()).toEqual(["long call", "long put", "short call", "short put"]);
+  });
+
+  it("the note beside the lock and the help sentence name both directions and every reachable shape (N19)", () => {
+    const { from, to } = reachable();
+    const help = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    const sentence = help.split(/(?<=\.)\s+/).find((s) => /\bsixteen\b/.test(s))!;
+    for (const [label, copy] of [["proWithheldNote", STRATEGY_COPY.proWithheldNote], ["/strategies help", sentence]] as const) {
+      expect(copy, `${label}: a short underlying is not named`).toMatch(/\ba position in the underlying, long or short, or a second expiry/i);
+      for (const shape of to) expect(copy, `${label} omits the ${shape}`).toMatch(new RegExp(`\\ba ${shape}\\b`));
+      for (const name of from) expect(copy, `${label} omits the pre-4.3 name ${name}`).toMatch(new RegExp(`\\ba ${name}\\b`));
+    }
+  });
+
+  /**
+   * N20 (wave-2 re-check). The note read "can turn legs one of the sixteen once
+   * named into one of those shapes" — the relative clause had lost its pronoun.
+   */
+  it("the note beside the lock is grammatical — the broken relative clause is gone (N20)", () => {
+    expect(STRATEGY_COPY.proWithheldNote).not.toMatch(/turn legs one of the sixteen once named/);
+    expect(STRATEGY_COPY.proWithheldNote).toMatch(/can turn legs once named a long call, [^.]* into a covered call, /);
+    // Three sentences, each opening with a capital: the tier, the routes, what stays free.
+    const sentences = STRATEGY_COPY.proWithheldNote.split(/(?<=[a-z]\.)\s+/);
+    expect(sentences).toHaveLength(3);
+    for (const s of sentences) expect(s).toMatch(/^[A-Z]/);
+  });
 });
 
 /**

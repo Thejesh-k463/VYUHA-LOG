@@ -143,7 +143,10 @@ describe("the manual form previews a written F&O trade on the sides the save sto
   const input = (leg: Leg): ManualPreviewInput => ({
     broker: "zerodha",
     tradingsymbol: SYM,
-    // The F&O form renders no product / segment / exchange inputs.
+    kind: "fno",
+    // Untouched Equity overrides. The form hands the builder its product /
+    // segment / exchange STATE whatever the kind, and switching to F&O resets
+    // none of it — the N24 test below feeds the stale values the switch leaves.
     productHint: null,
     segment: null,
     exchange: null,
@@ -231,6 +234,43 @@ describe("the manual form previews a written F&O trade on the sides the save sto
       sellQty: 75, sellDate: DAY, buyQty: 0, buyValue: 0, buyDate: null, grossPnl: 0, isOpen: true,
     });
   });
+
+  /**
+   * N24 (v4.3.0 wave-2 re-check): pick Segment "Equity delivery" and Exchange
+   * "BSE" under Equity, then switch to F&O. The F&O form renders none of those
+   * inputs, so the save's FormData carries none and createManualTrade
+   * classifies the contract itself — but the preview effect still sent the
+   * stale state, and priced the short as an equity delivery on BSE (57.05
+   * previewed against 83.37 saved).
+   */
+  it("switching Equity-with-override → F&O: the preview carries none of the Equity overrides, and prices what the save stores (N24)", async () => {
+    // Bought back @ 210, not 200: the P6 test above already saved the @ 200
+    // short, and the save refuses a duplicate.
+    const leg: Leg = {
+      direction: "sell", open: false,
+      entryQty: 75, entryPrice: 300, entryDate: DAY,
+      exitQty: 75, exitPrice: 210, exitDate: "2024-10-03",
+    };
+    const OVERRIDES = { productHint: "delivery", segment: "eq_delivery", exchange: "BSE" };
+    const stale = { ...input(leg), ...OVERRIDES };
+    const body = buildManualPreviewBody(stale);
+
+    const got = await preview({ ...body });
+    const row = await savedRow(leg); // the F&O FormData: no product / segment / exchange field
+    expect(got.breakdown.total).toBe(row.chargesTotal);
+    expect(got.netPnl).toBe(row.netPnl);
+    expect(got.classification).toMatchObject({ segment: row.segment, exchange: row.exchange });
+    expect([row.segment, row.exchange]).toEqual(["index_option", "NSE"]);
+    expect(body).toMatchObject({ productHint: null, segment: null, exchange: null });
+    // Floor: the route prices the leaked overrides differently, so the
+    // equalities above can tell a stale body from a clean one.
+    expect((await preview({ ...body, ...OVERRIDES })).breakdown.total).not.toBe(row.chargesTotal);
+
+    // The Equity form still sends its overrides, untouched.
+    expect(buildManualPreviewBody({ ...stale, kind: "equity" })).toMatchObject({
+      productHint: "delivery", segment: "eq_delivery", exchange: "BSE",
+    });
+  });
 });
 
 /**
@@ -264,7 +304,10 @@ describe("every preview caller sends the dates its save prices at", () => {
     expect(at).toBeGreaterThan(-1);
     const call = src.slice(at, src.indexOf("});", at));
     expect(call).toMatch(/direction: kind === "fno" \? direction : "buy"/);
-    expect(call).toMatch(/\bopen\b/);
+    // Shorthand properties, not bare words: `open: false` or `kind: "equity"`
+    // in the call would stay green under /\bopen\b/ (wave-2 re-check).
+    expect(call).toMatch(/(?:^|[\s{,])open,/);
+    expect(call).toMatch(/(?:^|[\s{,])kind,/);
     expect(call).toMatch(/entryQty: bq, entryPrice: bp, entryDate: buyDate \|\| null/);
     expect(call).toMatch(/exitQty: sq, exitPrice: sp, exitDate: sellDate \|\| null/);
 

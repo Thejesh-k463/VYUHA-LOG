@@ -91,6 +91,9 @@ const RATES_AFTER = 80;
 const PAGE_FLOOR = 81;
 const DELIVERY_2011_BEFORE = 82;
 const DELIVERY_2011_AFTER = 83;
+const PAGE_RETRY = 84;
+const MERGE_X = 85;
+const MERGE_Y = 86;
 const CLIENT = "1000000009";
 
 beforeAll(async () => {
@@ -106,7 +109,7 @@ beforeAll(async () => {
   t.db
     .insert(t.schema.accounts)
     .values(
-      [PAGE_ROUTE, PAGE_AUTO, EDGE_IN, EDGE_OUT, KITE, ANGEL, UPSTOX, OPENALGO, RATES_BEFORE, RATES_AFTER, PAGE_FLOOR, DELIVERY_2011_BEFORE, DELIVERY_2011_AFTER].map((id) => ({
+      [PAGE_ROUTE, PAGE_AUTO, EDGE_IN, EDGE_OUT, KITE, ANGEL, UPSTOX, OPENALGO, RATES_BEFORE, RATES_AFTER, PAGE_FLOOR, DELIVERY_2011_BEFORE, DELIVERY_2011_AFTER, PAGE_RETRY, MERGE_X, MERGE_Y].map((id) => ({
         id,
         name: `seam ${id}`,
         isDefault: false,
@@ -220,15 +223,19 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
   // ends YESTERDAY (today came from /v2/positions), and the tradebook remedy
   // starts the day after the last pull's own day.
   const STAMP = "2026-09-07T05:00:00.000Z";
+  // N6 (fix wave 2R) re-pin, here and in PAGE_LINE below: "Truncated: this pull
+  // stopped … Today's book came from /v2/positions." → "Truncated: the pull on
+  // 2026-09-11 stopped … The book for 2026-09-11 came from /v2/positions." — the
+  // kept line is read on the card days later, so it dates the pull.
   const TRUNCATED =
-    "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
+    "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it. To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
   // P15 / P16 (fix wave 2): the card's line (components/import/broker-connect.tsx)
   // is the server's own two sentences, carried by GET and printed VERBATIM — so
   // it is TRUNCATED, character for character. Re-pinned from two toContain
   // fragments of the card's re-derived "may be missing … 08 Sep 2026" line
   // (the weakened seam pin DECISIONS 2026-09-14 assigns to this builder).
   const NOTICE_FACT =
-    "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. Today's book came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it.";
+    "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-09-07 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. Fills on 2026-09-07 after 10:30 IST were not fetched; a tradebook for 2026-09-07 would repeat the fills already imported from it.";
   const NOTICE_REMEDY = "To bring the rest in, import a Dhan tradebook for 2026-09-08 to 2026-09-10.";
   const SPAN = [{ from: "2026-09-07", to: "2026-09-10", reason: "page-cap", fact: NOTICE_FACT, remedy: NOTICE_REMEDY }];
 
@@ -297,7 +304,7 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
     const res = await post({ action: "pull", broker: "dhan", accountId: PAGE_FLOOR, mode: "commit" });
     expect(res.status).toBe(200);
     const PAGE_LINE =
-      "Truncated: this pull stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. Today's book came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.";
+      "Truncated: the pull on 2026-09-11 stopped at the 50-page limit of Dhan's trade history and kept none of what it read, so fills from 2026-06-13 to 2026-09-10 were not read. The book for 2026-09-11 came from /v2/positions. To bring those fills in, import a Dhan tradebook for 2026-06-13 to 2026-09-10.";
     expect((await res.json()).warnings as string[]).toContain(PAGE_LINE);
     expect((await connOf(PAGE_FLOOR)).unfetched!.map((s) => s.reason)).toEqual(["range-cap", "page-cap"]);
 
@@ -316,6 +323,69 @@ describe("S1 · a Dhan history walk that hits the 50-page cap is kept and shown 
     // THE assertion ("… for 14 Jun 2026 to 10 Sep 2026 …" on revert of the card).
     expect(bc.unfetchedNotice(conn.unfetched![0]!)).toBe(PAGE_LINE);
     expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain("import a Dhan tradebook for 2026-06-13 to");
+  });
+
+  /**
+   * N5 (fix wave 2R), route → lib/import/dhan-unfetched.ts → GET: a clamped,
+   * truncated pull keeps range-cap [06-01, 06-12] and page-cap [06-13, 09-10];
+   * its stamp stays where it was (as when the commit throws). The retry a DAY
+   * later is untruncated and commits: the route keeps range-cap [06-01, 06-13]
+   * BEFORE the commit, then clears with the stamp. The page-cap span starts on
+   * the old floor, a day before the new read — and that day is the one the
+   * range-cap notice now names. Measured before: both spans still listed.
+   */
+  it("N5 route: an untruncated retry on a later day clears the clamped page-cap span; the range-cap notice names the day before the read", async () => {
+    const OLD = "2026-06-01T05:00:00.000Z";
+    addDhan(PAGE_RETRY, OLD);
+    stubDhan([dhanFill("PR-1", "2026-09-08 10:00:00")], true);
+    expect((await post({ action: "pull", broker: "dhan", accountId: PAGE_RETRY, mode: "commit" })).status).toBe(200);
+    expect((await connOf(PAGE_RETRY)).unfetched!.map((s) => [s.from, s.to, s.reason])).toEqual([
+      ["2026-06-01", "2026-06-12", "range-cap"],
+      ["2026-06-13", "2026-09-10", "page-cap"],
+    ]);
+    t.sqlite.prepare("UPDATE broker_connections SET last_pull_at = ? WHERE account_id = ?").run(OLD, PAGE_RETRY);
+
+    vi.setSystemTime(AT_IST_BOUNDARY.getTime() + 86_400_000); // 00:30 IST on 12 Sep
+    const paths = stubDhan([dhanFill("PR-2", "2026-09-08 10:00:00")]);
+    const res = await post({ action: "pull", broker: "dhan", accountId: PAGE_RETRY, mode: "commit" });
+    expect(res.status).toBe(200);
+    expect(paths).toContain("/v2/trades/2026-06-14/2026-09-12/1"); // page 1 empty: the walk is NOT truncated
+    expect((await res.json()).result.added).toBe(1);
+
+    // THE assertion (the page-cap span [06-13, 09-10] still listed on revert).
+    const conn = await connOf(PAGE_RETRY);
+    expect(conn.unfetched!.map((s) => [s.from, s.to, s.reason])).toEqual([["2026-06-01", "2026-06-13", "range-cap"]]);
+    expect(bc.unfetchedNotice(conn.unfetched![0]!)).toContain("import a Dhan tradebook for 2026-06-02 to 2026-06-13.");
+  });
+
+  /**
+   * N4 (fix wave 2R), merge → route → GET: X's truncated pull keeps page-cap
+   * [09-07, 09-10]. X merges into Y, which has its OWN Dhan client (the merge
+   * keeps the target's credentials and removes X's). Y's untruncated pull reads
+   * 09-07..09-11 of Y's client — nothing of X's — so X's carried notice stays.
+   * Measured before: Y's GET listed [] and the audit trail said the fills "were read".
+   */
+  it("N4 route: a notice carried by a merge is not cleared by the target's own Dhan client's pull", async () => {
+    addDhan(MERGE_X, STAMP);
+    stubDhan([dhanFill("N4-X", "2026-09-08 10:00:00")], true);
+    expect((await post({ action: "pull", broker: "dhan", accountId: MERGE_X, mode: "commit" })).status).toBe(200);
+    expect((await connOf(MERGE_X)).unfetched).toEqual(SPAN);
+    t.sqlite
+      .prepare("INSERT INTO broker_connections (account_id, broker, api_key, access_token, last_pull_at) VALUES (?, 'dhan', '1000000077', ?, ?)")
+      .run(MERGE_Y, alive(), STAMP);
+
+    const del = await import("@/lib/queries/account-delete");
+    const merged = del.deleteAccount({ accountId: MERGE_X, mode: "merge", targetId: MERGE_Y, connections: "move" });
+    expect(merged.ok, merged.message).toBe(true);
+    expect((await connOf(MERGE_Y)).unfetched).toEqual(SPAN);
+
+    stubDhan([dhanFill("N4-Y", "2026-09-08 11:00:00")]); // Y's client: page 0 answers, page 1 is empty
+    const res = await post({ action: "pull", broker: "dhan", accountId: MERGE_Y, mode: "commit" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).result.added).toBe(1);
+
+    // THE assertion ([] on revert: Y's read "cleared" fills of X's client).
+    expect((await connOf(MERGE_Y)).unfetched).toEqual(SPAN);
   });
 });
 
@@ -359,8 +429,9 @@ describe("S4 · catchUpFrom crosses to pullGapNotice at the exact 90-day edge, 0
     expect(paths).toContain("/v2/trades/2026-06-13/2026-09-11/0");
     // F-L1-3a: the one-day span is the last pull's own day — stated as a
     // fact, with no tradebook remedy (there is no day left to name).
+    // RANGE-CAP COPY (wave 2F, as N6): the kept fact names the pull by its IST day. Before: "so this one started at 2026-06-13".
     const ONE_DAY =
-      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so this one started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.";
+      "Not fetched: fills from 2026-06-12 to 2026-06-12. The last pull ran on 2026-06-12, and a pull reads at most 90 days of Dhan's trade history, so the pull on 2026-09-11 started at 2026-06-13. Fills on 2026-06-12 after 00:30 IST were not fetched; a tradebook for 2026-06-12 would repeat the fills already imported from it.";
     expect(json.warnings as string[]).toContain(ONE_DAY);
 
     const after = await connOf(EDGE_OUT);

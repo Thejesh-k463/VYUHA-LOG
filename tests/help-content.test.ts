@@ -956,4 +956,22 @@ describe("the /strategies entry says which books lose a pre-4.3 name on the free
     expect(sixteen[0], "the free-name sentence ignores a holding of the underlying").toMatch(/underlying/);
     expect(sixteen[0], "the free-name sentence ignores a second expiry").toMatch(/second expiry|calendar/);
   });
+
+  /**
+   * N19 (wave-2 re-check). "A holding of the underlying" describes long shares
+   * only; a short future or short shares turns a short put into a covered put
+   * and a long call into a protective call, and the sentence named neither. The
+   * engine-derived list is pinned in tests/strategies-copy.test.ts; this pins the
+   * help entry's own sentence.
+   */
+  it("the free-name sentence names a short underlying, the covered put and the protective call (N19)", () => {
+    const body = HELP_ENTRIES.find((e) => e.href === "/strategies")!.body.join(" ");
+    const [sentence] = body.split(/(?<=\.)\s+/).filter((s) => /\bsixteen\b/.test(s));
+    expect(sentence, "only long shares are named").toMatch(/a position in the underlying, long or short, or a second expiry/);
+    expect(sentence, "the covered put is not named").toMatch(/\ba covered put\b/);
+    expect(sentence, "the protective call is not named").toMatch(/\ba protective call\b/);
+    expect(sentence, "the pre-4.3 names that lose their name are not listed").toMatch(
+      /a long call, a short call, a long put or a short put/,
+    );
+  });
 });

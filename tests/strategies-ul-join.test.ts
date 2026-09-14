@@ -35,6 +35,10 @@ import type { StrategyGroup } from "@/lib/analytics/strategies";
  *    is only R105's fallback (TATAMOTORS' ISIN is listed as TMPV).
  *  - P14 (page half): a compact future stored without an expiry is marked, and
  *    only a stated month strictly before or after the call's month places it.
+ *  - N16 (fix wave 2R): the P5 / D3 netting is per ACCOUNT, floored per account,
+ *    then aggregated — All accounts is the sum of the single-account nettings.
+ *  - N17 (fix wave 2R): a company-name holding takes the option-side symbol that
+ *    admitted it, never the listing's other ticker for the ISIN.
  *
  * ONE temp database for this file (AGENTS.md Testing). The server page and
  * the query are imported DYNAMICALLY after `openTempDb()` sets VYUHA_DB_PATH.
@@ -70,6 +74,13 @@ const SWING = 2;
 const ALL = 0;
 /** D3 (W2-FIXB): the basis predicate's fixtures, in a book of their own so no PRIMARY assertion moves. */
 const BASIS = 3;
+/** N16 (fix wave 2R): two books of their own for the per-account netting, so no PRIMARY or SWING assertion moves. */
+const NET_A = 4;
+const NET_B = 5;
+/** N17 (fix wave 2R): company-name holdings whose ISIN is listed under a different ticker, in a book of their own. */
+const NAMES = 6;
+/** N17: both tickers of one ISIN carry an option leg — the listing's own ticker takes the holding. */
+const NAMES_BOTH = 7;
 
 let t: TempDb;
 let trades: typeof import("@/lib/queries/trades");
@@ -129,10 +140,52 @@ beforeAll(async () => {
   trades = await import("@/lib/queries/trades");
   page = await import("@/app/strategies/page");
 
-  t.db.insert(t.schema.accounts).values([{ id: SWING, name: "Swing", isDefault: false }, { id: BASIS, name: "Basis", isDefault: false }]).run();
+  t.db
+    .insert(t.schema.accounts)
+    .values([
+      { id: SWING, name: "Swing", isDefault: false },
+      { id: BASIS, name: "Basis", isDefault: false },
+      { id: NET_A, name: "Net A", isDefault: false },
+      { id: NET_B, name: "Net B", isDefault: false },
+      { id: NAMES, name: "Names", isDefault: false },
+      { id: NAMES_BOTH, name: "Names both", isDefault: false },
+    ])
+    .run();
   t.db
     .insert(t.schema.trades)
     .values([
+      // N16 — AXISBANK: A holds 100 under 100 short calls; B sold 100 with the basis unknown and holds none.
+      shortCall(NET_A, "AXISBANK", 1200, 100, 18),
+      tradeRow({ accountId: NET_A, symbol: "AXISBANK", tradingsymbol: "AXISBANK", isOpen: true, buyQty: 100, avgBuyPrice: 1150 }),
+      unknownSale(NET_B, "AXISBANK", 100, 1180),
+      // N16 — KOTAKBANK: A holds 100 and sold 150 basis-unknown (A floors at 0); B holds 100 and sold nothing.
+      shortCall(NET_A, "KOTAKBANK", 2000, 100, 25),
+      tradeRow({ accountId: NET_A, symbol: "KOTAKBANK", tradingsymbol: "KOTAKBANK", isOpen: true, buyQty: 100, avgBuyPrice: 1900 }),
+      unknownSale(NET_A, "KOTAKBANK", 150, 1950),
+      tradeRow({ accountId: NET_B, symbol: "KOTAKBANK", tradingsymbol: "KOTAKBANK", isOpen: true, buyQty: 100, avgBuyPrice: 1880 }),
+      // N17 — a company-name holding whose ISIN the listing names under ANOTHER ticker than the option's.
+      shortCall(NAMES, "TATAMOTORS", 1000, 550, 15),
+      tradeRow({
+        accountId: NAMES,
+        symbol: "Tata Motors Ltd",
+        tradingsymbol: "Tata Motors Ltd",
+        isin: "INE155A01022",
+        isOpen: true,
+        buyQty: 550,
+        avgBuyPrice: 950,
+      }),
+      // N17 — the old and the new ticker of ONE ISIN both carry a call; the holding is stored under the company name.
+      shortCall(NAMES_BOTH, "AMARAJABAT", 1100, 100, 10),
+      shortCall(NAMES_BOTH, "ARE&M", 1100, 100, 10),
+      tradeRow({
+        accountId: NAMES_BOTH,
+        symbol: "Amara Raja Energy & Mobility Ltd",
+        tradingsymbol: "Amara Raja Energy & Mobility Ltd",
+        isin: bundledIsinBySymbol("ARE&M"),
+        isOpen: true,
+        buyQty: 100,
+        avgBuyPrice: 1000,
+      }),
       // D3 (W2-FIXB) — one delivery holding of 100 under 100 short calls per symbol, and a sale beside it.
       // ITC: a v4.2.0 Angel One / Upstox sale, acquisition NULL, no price — basis NOT recorded: nets.
       shortCall(BASIS, "ITC", 450, 100, 5),
@@ -372,6 +425,50 @@ describe("K3-M1 + P5 — a basis-unknown sale is never a short underlying, and n
 });
 
 /**
+ * N16 (v4.3.0 fix wave 2R, orchestrator decision). A sale only ever reduces the
+ * lots of its OWN account: the page nets per account, floors each account at
+ * zero, THEN aggregates. P5 / D3 keyed the netting by instrument alone, so in the
+ * All-accounts view (0 is a view, invariant 9) account B's basis-unknown sale
+ * came out of account A's demat and a covered call read as a naked short call.
+ */
+describe("N16 — in All accounts, a basis-unknown sale nets only its own account's lots", () => {
+  const ulOf = (id: number, symbol: string) => {
+    select(id);
+    const gs = groupsFor(symbol);
+    select(PRIMARY);
+    return gs.flatMap((g) => g.ulLegs.map((l) => [l.side, l.qty, l.premium]));
+  };
+
+  it("A holds 100 under 100 short calls, B sold 100 basis-unknown: All accounts still reads a bounded Covered Call", () => {
+    expect(ulOf(NET_A, "AXISBANK"), "A alone").toEqual([["long", 100, 1150]]);
+    select(ALL);
+    const [g, ...rest] = groupsFor("AXISBANK");
+    select(PRIMARY);
+    expect(rest).toEqual([]);
+    // Measured before (pooled netting): ulLegs [] — B's 100 sold netted A's 100 away, and the calls read uncovered.
+    expect(g.ulLegs.map((l) => [l.side, l.qty, l.premium]), "B's sale never comes out of A's lot").toEqual([["long", 100, 1150]]);
+    expect(g.strategyId).toBe("covered-call");
+    expect(g.capLabel.maxLoss).not.toBe("Unlimited");
+  });
+
+  it("each account floors at zero BEFORE the aggregate: A sold more than it held, B's 100 still stands", () => {
+    select(ALL);
+    const [g] = groupsFor("KOTAKBANK");
+    select(PRIMARY);
+    // Measured before: [["long", 50, 1890]] — A's 150 sold netted against A's 100 AND B's 100 pooled.
+    expect(g.ulLegs.map((l) => [l.side, l.qty, l.premium])).toEqual([["long", 100, 1880]]);
+    expect(ulOf(NET_A, "KOTAKBANK"), "A alone floors at zero").toEqual([]);
+  });
+
+  it("the aggregate HDFCBANK holding equals the sum of the single-account nettings (350 + 0)", () => {
+    const perAccount = [PRIMARY, SWING].flatMap((id) => ulOf(id, "HDFCBANK"));
+    expect(perAccount).toEqual([["long", 350, 1600]]);
+    // Measured before: [["long", 50, 1600]] — SWING's 300 sold came out of PRIMARY's 550.
+    expect(ulOf(ALL, "HDFCBANK")).toEqual(perAccount);
+  });
+});
+
+/**
  * D3 (v4.3.0 fix wave 2, W2-FIXB — seam defect, orchestrator decision). One
  * basis predicate for the underlying join, the one Data Quality reads
  * (`hasRecordedBasis`): acquisition NULL or 'unknown' with no acquisition price
@@ -446,6 +543,43 @@ describe("P13 — the stored ticker wins when an option leg already wears it", (
     const [g] = groupsFor("TATAMOTORS");
     expect(g.ulLegs.map((l) => l.qty)).toEqual([550]);
     expect(g.maxLoss).not.toBeNull();
+  });
+
+  // N17 (fix wave 2R, orchestrator decision): the leg takes the option-side
+  // symbol that ADMITTED it. A holding stored under the company name is admitted
+  // by bundledIsinBySymbol(optionSymbol); resolving it back through
+  // bundledSymbolByIsin named the listing's newer ticker and split it off.
+  it("the bundled listing names each of the four ISINs under a DIFFERENT ticker — asserted, not skipped", () => {
+    for (const [option, listed] of [["TATAMOTORS", "TMPV"], ["AMARAJABAT", "ARE&M"], ["IBULHSGFIN", "SAMMAANCAP"], ["MINDAIND", "UNOMINDA"]]) {
+      const isin = bundledIsinBySymbol(option);
+      expect(isin, option).toMatch(/^INE/);
+      expect(bundledSymbolByIsin(isin as string), option).toBe(listed);
+    }
+  });
+
+  it("N17: 'Tata Motors Ltd' with TATAMOTORS' ISIN joins the TATAMOTORS calls as a Covered Call — no stray TMPV card", () => {
+    select(NAMES);
+    const text = renderPage();
+    const [g, ...rest] = groupsFor("TATAMOTORS");
+    const tmpv = seen.groups.filter((x) => x.symbol === "TMPV");
+    select(PRIMARY);
+    // Measured before: a "TMPV · Custom (1 legs)" card, and TATAMOTORS read "Short Call · Unlimited".
+    expect(tmpv).toEqual([]);
+    expect(text).not.toContain("|TMPV|");
+    expect(text).toContain("|TATAMOTORS|Covered Call|");
+    expect(rest).toEqual([]);
+    expect(g.ulLegs.map((l) => [l.side, l.qty, l.premium])).toEqual([["long", 550, 950]]);
+    expect(g.capLabel.maxLoss).not.toBe("Unlimited");
+  });
+
+  it("N17: when BOTH tickers of one ISIN carry a call, the listing's own ticker (ARE&M) takes the holding, once", () => {
+    expect(bundledIsinBySymbol("AMARAJABAT")).toBe(bundledIsinBySymbol("ARE&M"));
+    select(NAMES_BOTH);
+    renderPage();
+    const ul = seen.groups.filter((g) => g.ulLegs.length).map((g) => [g.symbol, g.ulLegs.map((l) => l.qty)]);
+    select(PRIMARY);
+    // Alphabetical first alone would hand it to AMARAJABAT.
+    expect(ul).toEqual([["ARE&M", [100]]]);
   });
 });
 

@@ -247,7 +247,9 @@ export async function closeTradeAction(_prev: ActionState, formData: FormData): 
   if (!(exitPrice > 0)) return { ok: false, message: "Enter a valid exit price." };
   const res = closePosition(id, exitPrice, exitDate);
   if (res.ok) revalidateAfterTradeChange();
-  return res;
+  // R2-DQ N11 — a staged position's refusal (code STAGED) reaches the dialog
+  // as its sentence; the table routes a staged row to its ladder before this.
+  return { ok: res.ok, message: res.message };
 }
 
 /**

@@ -106,9 +106,17 @@ export function restoreBaseline(): { ok: boolean; message: string } {
   }
 
   recordAudit({ entity: "settings", action: "update", summary: `restored default-settings baseline from ${b.capturedAt}`, source: "ui" });
+  // Seam D2 (v4.3.0): the toast after the click states the SAME charge-row rule
+  // the card states before it (CHARGE_ROWS_RULE in
+  // components/settings/default-settings-card.tsx, a client file this
+  // server-only module cannot import). Each snapshot row keeps the user_edited
+  // flag it had WHEN THE DEFAULTS WERE SAVED, so a row edited only since comes
+  // back unedited and follows the card — "never edited" and "all three rate
+  // tables back" both promised otherwise. tests/settings-baseline.test.ts pins
+  // this message against the card's constant.
   return {
     ok: true,
     message:
-      "Your default settings are back — preferences and all three rate tables. Rate rows you never edited follow this version's rate card.",
+      "Your default settings are back — preferences and the margin and risk tables. Charge rows you had edited when these defaults were saved return to those values; rows unedited then follow this version's rate card.",
   };
 }

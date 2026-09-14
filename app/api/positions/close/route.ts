@@ -16,5 +16,6 @@ export async function POST(req: Request) {
   if (res.ok) {
     for (const p of ["/risk", "/equity", "/active", "/", "/trades"]) revalidatePath(p);
   }
-  return NextResponse.json(res);
+  // R2-DQ N11 — a staged position is closed on its own ladder, never here.
+  return NextResponse.json(res, res.code === "STAGED" ? { status: 409 } : undefined);
 }

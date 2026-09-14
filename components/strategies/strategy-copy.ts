@@ -92,9 +92,9 @@ export const STRATEGY_COPY = {
    * SIXTEEN, not eight (owner ruling 2026-09-11). Eight is `DEFAULT_SHELF` —
    * the tiles a new shelf starts with — and it is not this boundary. The
    * boundary `withholdForFree` applies is `legacyFree`: the sixteen names this
-   * screen printed before 4.3, which invariant 7 does not let a release take
-   * away. `tests/strategies-copy.test.ts` counts those rows in the catalogue
-   * and asserts this sentence spells that number.
+   * screen printed before 4.3. They stay free as NAMES, not for every book they
+   * once described (R11, below). `tests/strategies-copy.test.ts` counts those
+   * rows in the catalogue and asserts this sentence spells that number.
    *
    * R11 (ruling 06-ANSWERS:258, Option A): the boundary is the SHAPE, not the
    * legs. A short call that 4.2 named reads as a covered call once a holding of
@@ -102,9 +102,15 @@ export const STRATEGY_COPY = {
    * diagonal once a second expiry does — Pro shapes, so a free build prints
    * "Custom (n legs)" for that book. The sentence says so rather than implying
    * the sixteen names survive every book they once described.
+   *
+   * N19 (wave-2 re-check): the underlying can be SHORT too — a short future or
+   * short shares under a short put is a covered put, under a long call a
+   * protective call. The route clause names both directions and the list is
+   * every withheld shape a pre-4.3 single-leg name reaches, derived from the
+   * engine in the test. N20: the relative clause had lost its pronoun.
    */
   proWithheldNote:
-    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro, and a holding of the underlying or a second expiry can turn legs one of the sixteen once named into one of those shapes. Your legs, the four figures and the payoff curve stay free.",
+    "Named shapes beyond the sixteen Vyuha already named before 4.3 are part of Vyuha Pro. A position in the underlying, long or short, or a second expiry can turn legs once named a long call, a short call, a long put or a short put into a covered call, a covered put, a protective put, a protective call, a collar, a calendar or a diagonal — a short call over a holding of the underlying, for instance, is a covered call. Your legs, the four figures and the payoff curve stay free.",
 
   /**
    * The shelf, for a free build: a locked strip and one line. The picker's

@@ -206,7 +206,51 @@ describe("the restore copy promises only what restoreBaseline does (P12)", () =>
     expect(card).toContain(CLAUSE);
     // The same clause the restore's own toast carries (settings-baseline.ts).
     expect(read("lib", "queries", "settings-baseline.ts")).toContain(CLAUSE);
+  });
+
+  /**
+   * N25 (wave-2 re-check): restoreBaseline re-inserts each snapshot row WITH
+   * its user_edited flag, and refreshChargeConfig keys on that flag — so
+   * "edited" means edited WHEN THE DEFAULTS WERE SAVED. A row edited since then
+   * comes back unedited and follows this version's card. The copy said "the
+   * charge rows you edited" (now) and "you never edited" (ever).
+   *
+   * The pin reads the RENDERED constant: the P12 pin matched the clause
+   * anywhere in the file, so a comment kept it green while the constant made a
+   * different promise. The declaration is matched at the start of a line (a
+   * `//` line cannot match) and both JSX surfaces must render it.
+   */
+  it("the rendered charge-row rule says edited WHEN THE DEFAULTS WERE SAVED, not edited now (N25)", () => {
+    const card = read("components", "settings", "default-settings-card.tsx");
+    const decl = card.match(/^const CHARGE_ROWS_RULE =\s*"([^"]+)";\s*$/m);
+    expect(decl, "the rule is one top-level string constant").not.toBeNull();
+    expect(decl![1]).toBe(
+      "Charge rows you had edited when these defaults were saved return to those values; rows unedited then follow this version's rate card.",
+    );
     // Both pre-action surfaces render it: the header and the confirm line.
-    expect(card.match(/\{UNEDITED_CHARGE_ROWS\}/g)?.length).toBe(2);
+    expect(card.match(/\{CHARGE_ROWS_RULE\}/g)?.length).toBe(2);
+    // No surface keeps the edited-now wording beside it.
+    for (const stale of ["charge rows you edited", "your edited charge rows", "you never edited", "UNEDITED_CHARGE_ROWS"]) {
+      expect(card, stale).not.toContain(stale);
+    }
+  });
+
+  /**
+   * Seam D2 (wave 2R): the toast AFTER the click is restoreBaseline's own
+   * message, printed verbatim by the card. It still promised "all three rate
+   * tables" back and said "Rate rows you never edited follow this version's
+   * rate card" — while a row edited only SINCE the save comes back unedited and
+   * follows the card. The toast now carries the card's rule word for word, read
+   * from the rendered constant, so the two sentences cannot drift apart again.
+   */
+  it("the restore toast states the card's charge-row rule, with no 'all three rate tables' promise (D2)", () => {
+    const card = read("components", "settings", "default-settings-card.tsx");
+    const rule = card.match(/^const CHARGE_ROWS_RULE =\s*"([^"]+)";\s*$/m)![1];
+    const res = q.restoreBaseline();
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain(rule);
+    for (const stale of ["all three rate tables", "you never edited"]) {
+      expect(res.message, stale).not.toContain(stale);
+    }
   });
 });

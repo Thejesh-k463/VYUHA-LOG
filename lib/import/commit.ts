@@ -34,7 +34,7 @@ import { defaultMtfFundedAmount } from "@/lib/risk/margin";
 import { RECONCILE_SOURCE_IDS } from "@/lib/analytics/reconcile";
 import { deleteTradesByIds } from "@/lib/queries/delete";
 import { isLotIdentityFrozen, lotIdentityHashes, withStaleCloseNote } from "./close-open-lots";
-import { saleJournalFields, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
+import { saleJournalFields, staleAmbiguousNote, staleFillsNote, staleJournalNote, staleOpenPairs } from "@/lib/analytics/data-quality";
 
 /** eq_mtf own-margin % for THIS trade's broker (from margin_config — real
  * leverage varies by broker), falling back to the seeded default if missing. */
@@ -331,9 +331,15 @@ function supersededByBookNow(tx: TxLike, parsed: ParsedFile, accountId: number):
  * exchange). The trades table has no product column, so an INTRADAY and a
  * MARGIN position in one contract share that key; overwriting one with the
  * other would erase a held position. In that case — and when the stored row
- * carries a ladder (trade_legs) or an identity alias — nothing is replaced and
- * the earlier snapshot stops being hidden from the collision check, so the user
- * is asked. A product-keyed snapshot identity is 4.3.1 work.
+ * carries a ladder (trade_legs), an identity alias, or a basis or journal entry
+ * the user recorded (W2R N1) — nothing is replaced and the earlier snapshot ON
+ * THAT KEY stops being hidden from the collision check, so the user is asked,
+ * whether or not the two rows relate by quantity or value (W2R N2). A row with
+ * nothing stored on its key is a new position (W2R N3) — except that a row of
+ * today's snapshot the user re-classified (a classification_overrides row on
+ * its hash) counts as on the key of every incoming row of its tradingsymbol,
+ * and is asked about, never replaced (W2F OVERRIDE-DOUBLE). A product-keyed
+ * snapshot identity is 4.3.1 work.
  */
 export interface SupersedeSnapshot {
   fileName: string;
@@ -344,8 +350,12 @@ interface SnapshotPlan {
   day: string;
   /** incoming row index → the stored row it replaces */
   supersede: Map<number, { id: number }>;
-  /** incoming row indices that are snapshot rows with a new hash, NOT replaced */
-  ask: Set<number>;
+  /**
+   * incoming row index → the ids of today's earlier snapshot rows on its key,
+   * for a snapshot row with a new hash that is NOT replaced. Never empty: a row
+   * with no stored row on its key is a new position, not a question (W2R N3).
+   */
+  ask: Map<number, number[]>;
 }
 
 interface SnapshotStoredRow {
@@ -359,6 +369,45 @@ interface SnapshotStoredRow {
   sourceFile: string | null;
   dedupHash: string;
   importNotes: string | null;
+  // W2R N1: what setAcquisitionAction and the journal route write.
+  acquisition: string | null;
+  acquisitionPrice: number | null;
+  acquisitionDate: string | null;
+  notes: string | null;
+  playbookId: number | null;
+  emotionTag: string | null;
+  mistakeTags: string[] | null;
+  exitTrigger: string | null;
+  ruleViolations: string[] | null;
+  reviewedAt: string | null;
+}
+
+/**
+ * W2R N1 (4.3.0): has the USER recorded something on this row?
+ *
+ * A cost basis (setAcquisitionAction: an acquisition other than the import's
+ * own 'unknown' flag, an acquisition price or date — the price also writes
+ * buy_qty, buy_value, gross and buy_date) or anything the journal writes
+ * (playbook, emotion, mistakes, notes, exit trigger, rule violations, the
+ * review stamp). The supersede patch restates the broker's columns, so it
+ * would half-wipe a recorded basis — buy_qty back to 0 while the row still
+ * reads as priced — and a note describes a position the broker has since
+ * restated. Such a row is never replaced in place; the incoming row is asked.
+ */
+function carriesUserRecord(r: SnapshotStoredRow): boolean {
+  const said = (s: string | null) => s != null && s.trim() !== "";
+  return (
+    (said(r.acquisition) && r.acquisition !== "unknown") ||
+    r.acquisitionPrice != null ||
+    said(r.acquisitionDate) ||
+    said(r.notes) ||
+    r.playbookId != null ||
+    said(r.emotionTag) ||
+    (r.mistakeTags?.length ?? 0) > 0 ||
+    said(r.exitTrigger) ||
+    (r.ruleViolations?.length ?? 0) > 0 ||
+    said(r.reviewedAt)
+  );
 }
 
 /** The IST day the pull's file name carries; today when it carries none. */
@@ -375,8 +424,21 @@ function isSnapshotRow(t: NormalizedTrade, day: string): boolean {
   return (t.executions ?? []).every((e) => normalizeDate(e.date) === day);
 }
 
+const tradingsymbolKey = (tradingsymbol: string) => tradingsymbol.trim().toUpperCase();
 const snapshotKey = (tradingsymbol: string, symbol: string, segment: string, exchange: string) =>
-  `${tradingsymbol.trim().toUpperCase()}|${symbol}|${segment}|${exchange}`;
+  `${tradingsymbolKey(tradingsymbol)}|${symbol}|${segment}|${exchange}`;
+
+/**
+ * W2F OVERRIDE-DOUBLE (4.3.0): does the row carry a classification the USER
+ * set — a classification_overrides row (applyOverride / the Re-tag dialog) on
+ * its dedup hash, stating a segment or an exchange? The override moves the row
+ * off the key an evening pull classifies to, so the key alone would call the
+ * evening row a new position and the book would hold the position twice.
+ */
+const reclassifiedBy = (overrides: ReadonlyMap<string, Override>) => (hash: string) => {
+  const o = overrides.get(hash);
+  return o != null && (o.segment != null || o.exchange != null);
+};
 
 function planSnapshot(
   snap: SupersedeSnapshot | null | undefined,
@@ -384,14 +446,22 @@ function planSnapshot(
   isKnown: (hash: string) => boolean,
   stored: readonly SnapshotStoredRow[],
   hasLegs: (tradeIds: number[]) => Set<number>,
+  isReclassified: (hash: string) => boolean,
 ): SnapshotPlan | null {
   if (!snap) return null;
   const day = snapshotDayOf(snap);
   const storedByKey = new Map<string, SnapshotStoredRow[]>();
+  // W2F: today's snapshot rows the user re-classified, by tradingsymbol alone —
+  // a key candidate for any incoming row of that tradingsymbol.
+  const reclassifiedBySymbol = new Map<string, SnapshotStoredRow[]>();
   for (const r of stored) {
     if (r.sourceFile !== snap.fileName || (r.buyDate !== day && r.sellDate !== day)) continue;
     const k = snapshotKey(r.tradingsymbol, r.symbol, r.segment, r.exchange);
     storedByKey.set(k, [...(storedByKey.get(k) ?? []), r]);
+    if (isReclassified(r.dedupHash)) {
+      const s = tradingsymbolKey(r.tradingsymbol);
+      reclassifiedBySymbol.set(s, [...(reclassifiedBySymbol.get(s) ?? []), r]);
+    }
   }
   const keyOf = ({ t, b }: { t: NormalizedTrade; b: BuiltRow }) =>
     snapshotKey(t.tradingsymbol, b.classification.symbol, b.classification.segment, b.classification.exchange);
@@ -404,17 +474,33 @@ function planSnapshot(
   });
 
   const supersede = new Map<number, { id: number }>();
-  const ask = new Set<number>();
+  const ask = new Map<number, number[]>();
   const single = new Map<number, SnapshotStoredRow>();
   for (const i of snapshotRows) {
     const row = incoming[i]!;
     if (isKnown(row.b.dedup)) continue; // a duplicate: nothing to replace, nothing to ask
     const k = keyOf(row);
-    const candidates = storedByKey.get(k) ?? [];
-    if (candidates.length === 1 && incomingPerKey.get(k) === 1 && !isLotIdentityFrozen(candidates[0]!)) {
+    const onKey = storedByKey.get(k) ?? [];
+    // W2F: a re-classified row of this tradingsymbol counts as on the key, so a
+    // user's correction never turns the evening row into a silent second position.
+    const reclassified = (reclassifiedBySymbol.get(tradingsymbolKey(row.t.tradingsymbol)) ?? []).filter(
+      (r) => !onKey.includes(r),
+    );
+    const candidates = [...onKey, ...reclassified];
+    // W2R N3: nothing stored on the key is a NEW position — no question, even
+    // when today's snapshot holds the same tradingsymbol in another segment.
+    if (candidates.length === 0) continue;
+    if (
+      candidates.length === 1 &&
+      incomingPerKey.get(k) === 1 &&
+      !isLotIdentityFrozen(candidates[0]!) &&
+      !carriesUserRecord(candidates[0]!) &&
+      // W2F: a classification the user set is a user record (like N1) — asked, never replaced in place.
+      !isReclassified(candidates[0]!.dedupHash)
+    ) {
       single.set(i, candidates[0]!);
     } else {
-      ask.add(i);
+      ask.set(i, candidates.map((r) => r.id));
     }
   }
   // A stored row with a ladder is never rewritten: its legs would describe a
@@ -422,7 +508,7 @@ function planSnapshot(
   // user's per-tranche stops.
   const laddered = single.size ? hasLegs([...single.values()].map((r) => r.id)) : new Set<number>();
   for (const [i, r] of single) {
-    if (laddered.has(r.id)) ask.add(i);
+    if (laddered.has(r.id)) ask.set(i, [r.id]);
     else supersede.set(i, { id: r.id });
   }
   return { day, supersede, ask };
@@ -590,8 +676,13 @@ export function previewParsedFile(
 
   const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
   // R43: the same plan the commit makes, against the same rows.
-  const snapshot = planSnapshot(options.supersedeSnapshot, built, (h) => existing.has(h), existingRows, (ids) =>
-    tradeIdsWithLegs(db, ids),
+  const snapshot = planSnapshot(
+    options.supersedeSnapshot,
+    built,
+    (h) => existing.has(h),
+    existingRows,
+    (ids) => tradeIdsWithLegs(db, ids),
+    reclassifiedBy(overrides),
   );
 
   for (const [i, { t, b }] of built.entries()) {
@@ -668,8 +759,9 @@ export function previewParsedFile(
         sellDate: t.sellDate ?? null,
         dedupHash: dedupHash({ ...t, broker: parsed.broker } as never),
         // R43: a snapshot row that will NOT replace today's earlier one meets
-        // that earlier one here, so the pull asks instead of adding a second row.
-        ...(snapshot?.ask.has(i) ? { snapshotDay: snapshot.day } : {}),
+        // that earlier one — on its own key only — here, and is reported
+        // whatever the relation, so the pull asks instead of adding a second row.
+        ...(snapshot?.ask.has(i) ? { snapshotIds: snapshot.ask.get(i) } : {}),
       })),
       existingRows.map((r) => ({
         id: r.id,
@@ -1170,6 +1262,17 @@ export function commitParsedFile(
         buyDate: tradesTable.buyDate,
         sellDate: tradesTable.sellDate,
         sourceFile: tradesTable.sourceFile,
+        // W2R N1: what the user may have recorded on the row (carriesUserRecord).
+        acquisition: tradesTable.acquisition,
+        acquisitionPrice: tradesTable.acquisitionPrice,
+        acquisitionDate: tradesTable.acquisitionDate,
+        notes: tradesTable.notes,
+        playbookId: tradesTable.playbookId,
+        emotionTag: tradesTable.emotionTag,
+        mistakeTags: tradesTable.mistakeTags,
+        exitTrigger: tradesTable.exitTrigger,
+        ruleViolations: tradesTable.ruleViolations,
+        reviewedAt: tradesTable.reviewedAt,
       })
       .from(tradesTable)
       .where(and(eq(tradesTable.accountId, accountId), eq(tradesTable.broker, parsed.broker)))
@@ -1177,8 +1280,13 @@ export function commitParsedFile(
     const existing = new Set(heldRows.flatMap((r) => lotIdentityHashes(r)));
     const built = parsed.trades.map((t) => ({ t, b: buildRow(t, rates, overrides, defaults) }));
     // R43: decided ONCE, against the account as it stands before any write.
-    const snapshot = planSnapshot(options.supersedeSnapshot, built, (h) => existing.has(h), heldRows, (ids) =>
-      tradeIdsWithLegs(tx as unknown as TxLike, ids),
+    const snapshot = planSnapshot(
+      options.supersedeSnapshot,
+      built,
+      (h) => existing.has(h),
+      heldRows,
+      (ids) => tradeIdsWithLegs(tx as unknown as TxLike, ids),
+      reclassifiedBy(overrides),
     );
     let superseded = 0;
 
@@ -1693,10 +1801,27 @@ export function closePosition(
   tradeId: number,
   exitPrice: number,
   exitDate: string | null,
-): { ok: boolean; message: string } {
+): { ok: boolean; message: string; code?: "STAGED" } {
   const t = db.select().from(tradesTable).where(eq(tradesTable.id, tradeId)).get();
   if (!t) return { ok: false, message: "Trade not found" };
   if (!t.isOpen) return { ok: false, message: "Position is already closed" };
+
+  // R2-DQ N11 — a STAGED position (or any row holding trade_legs) is never
+  // closed here. This writes the parent row only: no exit leg lands in
+  // trade_legs, so the ladder still reads the position open beside a closed
+  // parent (invariant 5), and the next ladder action rebuilds the parent from
+  // its legs — re-opening it and erasing the realised P&L (measured
+  // 2026-09-15). The ladder's own exit records the leg, prices each tranche
+  // and keeps R frozen at the first entry (invariant 4). Nothing is written.
+  const legCount = db.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, tradeId)).all().length;
+  if (t.staged || legCount > 0) {
+    return {
+      ok: false,
+      code: "STAGED",
+      message:
+        "This is a staged position built from more than one fill, so the manual close is not used for it: its exit is booked on its own ladder in Trades, which records the exit fill and prices each tranche. Nothing was changed.",
+    };
+  }
 
   // Short (sell-to-open) has the open leg on sellQty with buyQty still 0 — closing
   // means BUYING to cover, not selling. Long (the common case) closes by selling.
@@ -1812,7 +1937,17 @@ export function closePosition(
  * Why `closeStaleLot` refused — the stable wire value the route maps to an HTTP
  * status. Every refusal changes nothing.
  */
-export type StaleCloseCode = "BAD_DATE" | "NOT_FOUND" | "OTHER_ACCOUNT" | "NO_PAIR" | "PARTIAL" | "STAGED" | "JOURNAL" | "DELETE_FAILED";
+export type StaleCloseCode =
+  | "BAD_DATE"
+  | "NOT_FOUND"
+  | "OTHER_ACCOUNT"
+  | "NO_PAIR"
+  | "PARTIAL"
+  | "STAGED"
+  | "AMBIGUOUS"
+  | "FILLS"
+  | "JOURNAL"
+  | "DELETE_FAILED";
 
 export interface StaleCloseResult {
   ok: boolean;
@@ -1845,9 +1980,12 @@ class StaleCloseAbort extends Error {}
  * In ONE transaction:
  *  1. the pair is RE-DERIVED from the book (`staleOpenPairs`, the same pure
  *     rule the screen used) and refused unless it still holds one-to-one;
- *     a staged lot (or any lot with `trade_legs`) is refused (STAGED);
+ *     a staged lot (or any lot with `trade_legs`) is refused (STAGED); a pair
+ *     in a book holding a closed lot entered on or before the sale is refused
+ *     (AMBIGUOUS, R2-DQ N7/N8); a sale recorded in several fills (staged, or
+ *     with `trade_legs`) is refused (FILLS, R2-DQ N10);
  *  2. S is refused when it carries the user's own journal fields (notes,
- *     tags, a playbook, an exit reason, attachments, legs) — removing it would
+ *     tags, a playbook, an exit reason, attachments) — removing it would
  *     remove them, and merging two rows' journals is not what the user wrote;
  *  3. CHARGES: each side keeps the bill it STATES — L's stored charges plus
  *     S's stored charges. A side that states none is priced from
@@ -1920,6 +2058,19 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
           message: `This is a staged position built from more than one fill, so it is not joined with the recorded ${what} in one step: its exit is booked on its own ladder in Trades, which prices each tranche. Nothing was changed.`,
         };
       }
+      // R2-DQ N7/N8 — a closed lot in this book, entered on or before the sale,
+      // may already have taken it (a ladder exit, the manual close): joining
+      // would count the sale twice. Listed for review, never joined here.
+      if (pair.ambiguous) {
+        return { ok: false, code: "AMBIGUOUS", message: `${staleAmbiguousNote(pair)} Nothing was changed.` };
+      }
+      // R2-DQ N10 — a sale recorded in several fills (staged, or holding
+      // trade_legs) is never joined: the join removes the row with its fills.
+      // Read from the stored row, not only the pure rule (defence in depth).
+      const saleLegs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, sale.id)).all().length;
+      if (sale.staged || saleLegs > 0) {
+        return { ok: false, code: "FILLS", message: `Nothing was changed. ${staleFillsNote(pair.side)}` };
+      }
       if (!pair.oneClick) {
         return { ok: false, code: "PARTIAL", message: `The recorded sale is ${pair.saleQty} and the position holds ${pair.lotQty}, so they are not joined in one step. Nothing was changed.` };
       }
@@ -1929,8 +2080,7 @@ export function closeStaleLot(lotId: number, saleId: number, exitDateIn: string 
 
       // 2 — the user's own record on S is never deleted by a data fix.
       const attachments = tx.select({ id: tradeAttachments.id }).from(tradeAttachments).where(eq(tradeAttachments.tradeId, sale.id)).all().length;
-      const legs = tx.select({ id: tradeLegs.id }).from(tradeLegs).where(eq(tradeLegs.tradeId, sale.id)).all().length;
-      const journal = saleJournalFields(sale, { attachments, legs });
+      const journal = saleJournalFields(sale, { attachments });
       if (journal.length > 0) {
         return { ok: false, code: "JOURNAL", message: `Nothing was changed. ${staleJournalNote(journal, pair.side)}` };
       }

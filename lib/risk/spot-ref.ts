@@ -124,16 +124,21 @@ export function resolveSpotRef(
 /**
  * Does the official close say something the mark does not? (R13)
  *
- *  - a close on a LATER day than the mark → true;
- *  - the SAME day at a different price, compared at the paisa → true;
  *  - a mark NEWER than the close → false: today's mark (typed or live) is the
- *    fresher number, and an older close has nothing to add to it.
+ *    fresher number, and an older close has nothing to add to it;
+ *  - otherwise (a LATER close, or one on the SAME day) → true ONLY when the two
+ *    prices differ at the paisa.
+ *
+ * N23 (fix wave 2R): a later close at the SAME price used to return true, and
+ * the row then printed "differs from your mark ₹800.00" over ₹800.00 — a false
+ * sentence. The owner's own R13 intent is "if the user marks a different price
+ * than the closing price", so equal prices never raise the notice, whatever the
+ * days (docs/DECISIONS.md 2026-09-15, N23).
  *
  * ISO days compare correctly as strings. Prices are REAL rupees per unit; the
  * `× 100` is a comparison at the paisa, not a stored conversion (invariant 1).
  */
 export function closeDiffers(mark: DatedPrice, close: DatedPrice): boolean {
-  if (close.asOf > mark.asOf) return true;
   if (close.asOf < mark.asOf) return false;
   return Math.round(mark.price * 100) !== Math.round(close.price * 100);
 }
@@ -159,8 +164,8 @@ export interface SpotCloseNotice {
 }
 
 /**
- * The line the row and the editor print when a newer (or same-day, different)
- * official close disagrees with the stored mark — or null when there is nothing
+ * The line the row and the editor print when a newer (or same-day) official
+ * close disagrees with the stored mark at the paisa — or null when there is nothing
  * to say, or when the user kept the mark against THIS close.
  */
 export function spotCloseNotice(

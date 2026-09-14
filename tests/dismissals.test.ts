@@ -102,6 +102,29 @@ describe("pruneDismissals — a per-subject panel (spot-close-diff)", () => {
     expect(pruneDismissals(ds, current).map((x) => x.fingerprint)).toEqual([SBIN, "abc"]);
   });
 
+  /**
+   * T1 (wave 2R). The case above hands ONE unchanged symbol, so `fps[0] ===
+   * d.fingerprint` passed it while dropping every other unchanged symbol. The
+   * moved close sits in the MIDDLE of the list: a first-only and a last-only
+   * check both fail here.
+   */
+  it("T1: several unchanged symbols all survive; only the moved close is dropped", () => {
+    const INFY = "INFY|2026-09-11|150025";
+    const RELIANCE = "RELIANCE|2026-09-11|295000";
+    const many = [
+      d("spot-close-diff", SBIN),
+      d("spot-close-diff", INFY),
+      d("spot-close-diff", TCS_OLD),
+      d("spot-close-diff", RELIANCE),
+      d("unmarked-holdings", "abc"),
+    ];
+    const current = new Map<DismissiblePanel, string | readonly string[]>([
+      ["spot-close-diff", [SBIN, TCS_NEW, INFY, RELIANCE]],
+      ["unmarked-holdings", "abc"],
+    ]);
+    expect(pruneDismissals(many, current).map((x) => x.fingerprint)).toEqual([SBIN, INFY, RELIANCE, "abc"]);
+  });
+
   it("a prune that does not name the panel leaves every spot dismissal alone", () => {
     const current = new Map<DismissiblePanel, string>([["unmarked-holdings", "abc"]]);
     expect(pruneDismissals(ds, current).map((x) => x.fingerprint)).toEqual([SBIN, TCS_OLD, "abc"]);

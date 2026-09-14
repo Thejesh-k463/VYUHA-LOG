@@ -19,6 +19,12 @@
  * A STAGED lot (W2-FIXD2 — e.g. a holding bought in two fills on one day) is
  * listed with no button and links to Trades, where its ladder books the exit:
  * the join writes no exit leg, and the server refuses it (STAGED).
+ * R2-DQ N7/N8 — an AMBIGUOUS pair (a closed lot in the book entered on or
+ * before the sale may already have taken it) is listed for review with no
+ * button and a link to Trades; the server refuses it (AMBIGUOUS). N10 — a sale
+ * recorded in several fills is stated as such, with a link to Trades (FILLS).
+ * Neither the staged nor the partial copy promises where the recorded sale is
+ * listed afterwards: that depends on the rest of the book.
  * The server re-derives every pair before it writes.
  *
  * W2-DQ P2 — the manual close leaves the recorded sale rows in the journal,
@@ -51,6 +57,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
 import { num } from "@/lib/format";
 import { serializeTradesQuery } from "@/lib/domain/trades-query";
+import { staleAmbiguousNote } from "@/lib/analytics/data-quality";
 
 /** Structurally `StaleOpenView` (lib/queries/data-quality.ts), restated for the client. */
 export interface StaleLotFixPair {
@@ -71,6 +78,11 @@ export interface StaleLotFixPair {
   oneClick: boolean;
   /** The lot is a staged position (W2-FIXD2): listed, closed on its own ladder. */
   staged: boolean;
+  /** R2-DQ N7/N8 — a closed lot in the book may already have taken the sale: review only. */
+  ambiguous: boolean;
+  closedLotIds: number[];
+  /** R2-DQ N10 — the sale was recorded in several fills. */
+  saleStaged: boolean;
   blocked: string | null;
 }
 
@@ -149,15 +161,27 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
                 {p.saleDateStated ? p.saleDate : `pulled ${p.saleDate}, no date stated`}
               </span>
             </div>
-            {p.blocked ? (
-              <p className="mt-2 text-muted-foreground">{p.blocked}</p>
+            {p.ambiguous ? (
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-stale-review="">
+                <p className="text-muted-foreground">{staleAmbiguousNote(p)}</p>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/trades${serializeTradesQuery({ symbol: p.symbol })}`}>Open in Trades</Link>
+                </Button>
+              </div>
+            ) : p.blocked ? (
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-stale-blocked="">
+                <p className="text-muted-foreground">{p.blocked}</p>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/trades${serializeTradesQuery({ symbol: p.symbol, view: "open" })}`}>Open in Trades</Link>
+                </Button>
+              </div>
             ) : p.staged ? (
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-stale-staged="">
                 <p className="text-muted-foreground">
                   This is a staged position built from more than one fill, so it is not joined with the recorded {what(p)}{" "}
                   in one step. Its exit is booked on its own ladder in Trades, which prices each tranche and keeps R at the
-                  first entry. The recorded {what(p)} row stays in the journal, and once no open position is left for it,
-                  it is listed here as a closing trade with no open position.
+                  first entry. That exit does not change the recorded {what(p)} row, which stays in the journal as a row of
+                  its own.
                 </p>
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/trades${serializeTradesQuery({ symbol: p.symbol, view: "open" })}`}>Open in Trades</Link>
@@ -173,9 +197,8 @@ export function StaleLotFix({ pairs, sales = [] }: { pairs: StaleLotFixPair[]; s
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-muted-foreground">
                   The recorded {what(p)} is {num(p.saleQty, 0)} and the position holds {num(p.lotQty, 0)}, so they are not
-                  joined in one step. The manual close records the price you enter; the recorded {what(p)} row stays in
-                  the journal, and once no open position is left for it, it is listed here as a closing trade with no
-                  open position.
+                  joined in one step. The manual close records the price you enter; it does not change the recorded{" "}
+                  {what(p)} row, which stays in the journal as a row of its own.
                 </p>
                 <Button asChild size="sm" variant="outline">
                   <Link href="/risk">Open the manual close</Link>

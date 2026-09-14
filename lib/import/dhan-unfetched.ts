@@ -115,9 +115,15 @@ interface SpanOwner {
 
 type SpanWrite = { from: string; to: string; reason: string; summary: string; fact: string; remedy: string | null };
 
-/** The span's own connection, when both rows name one (P11). A row with no
- *  connection (an account merge's carry) belongs to the account's book. */
-const sameConnection = (a: number | null, b: number | null) => a == null || b == null || a === b;
+/** The span's own connection (P11). N4 (v4.3.0 fix wave 2R): a row with no
+ *  connection — an account merge's carry — matches NO connection. The merge
+ *  keeps the target's own Dhan client (R4a: a different client), whose read
+ *  says nothing about the source client's fills; only the user's Clear removes
+ *  a carried notice. */
+const sameConnection = (a: number | null, b: number | null) => a != null && b != null && a === b;
+
+/** The ISO day before `day` (UTC arithmetic on a calendar date — no clock). */
+const dayBefore = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 /** The row that CLEARS an outstanding span — the same keys, `clearedAt` set,
  *  appended (the record it clears is never rewritten). */
@@ -147,8 +153,8 @@ function clearRow(o: OpenSpan, owner: SpanOwner, summary: string) {
  * unmoved. A retry on a later day recomputes the range-cap span with a later
  * `to` (catchUpRange's floor moved), which the from|to|reason key would list as
  * a SECOND, overlapping notice. So a new span supersedes the outstanding span
- * with the same account + reason + `from` (and the same connection when both
- * rows name one): its clear row and the new row are appended together, in the
+ * with the same account + reason + `from` and the same connection (N4: a
+ * merge-carried row names none, so no pull supersedes it): its clear row and the new row are appended together, in the
  * caller's transaction. An account merge's carry does not supersede — two books'
  * spans that happen to start on one day are two facts.
  */
@@ -205,14 +211,34 @@ const asRows = (spans: readonly DhanUnfetchedSpan[]): SpanWrite[] =>
  * this time (its first day's fills after the last stamp too: the same stamp
  * gave the same `after`), so its notice no longer names a gap. Range-cap spans
  * sit before the window by construction and are never cleared here.
+ *
+ * N5 (v4.3.0 fix wave 2R): a CLAMPED page-cap span starts on the floor of the
+ * pull that kept it. A retry on a later day (its commit threw, so the stamp
+ * never moved) reads from a later floor, and keeps — before this clear runs
+ * (R19) — the range-cap span [stamp day, its floor − 1] that names the days in
+ * between. The window the pull accounted for is therefore [that range-cap
+ * span's from, read.to]: a page-cap span wholly inside it is cleared, whatever
+ * its from. Only a range-cap span of the SAME connection ending the day before
+ * the read counts; with none, a span starting before the read stays listed
+ * (its first days were neither read nor named — e.g. a committed truncated
+ * pull, whose stamp moved past them).
  */
 function clearCoveredPageCaps(exec: Exec, owner: SpanOwner, read: { from: string; to: string } | null): void {
   if (!read) return;
-  const values = outstandingVia(exec, owner.accountId)
-    .filter((o) => o.reason === "page-cap" && read.from <= o.from && o.to <= read.to && sameConnection(o.connId, owner.connId))
-    .map((o) =>
-      clearRow(o, owner, `Dhan notice cleared by a later pull that read Dhan's trade history from ${read.from} to ${read.to} in full: fills from ${o.from} to ${o.to} were read.`),
-    );
+  const outstanding = outstandingVia(exec, owner.accountId).filter((o) => sameConnection(o.connId, owner.connId));
+  const beforeRead = dayBefore(read.from);
+  const named = outstanding.find((o) => o.reason === "range-cap" && o.to === beforeRead) ?? null;
+  const coveredFrom = named && named.from < read.from ? named.from : read.from;
+  const values = outstanding
+    .filter((o) => o.reason === "page-cap" && coveredFrom <= o.from && o.to <= read.to)
+    .map((o) => {
+      const parts: string[] = [];
+      if (o.to >= read.from) parts.push(`fills from ${o.from < read.from ? read.from : o.from} to ${o.to} were read`);
+      if (named && o.from < read.from) {
+        parts.push(`fills from ${o.from} to ${o.to < beforeRead ? o.to : beforeRead} are named by the notice for fills from ${named.from} to ${named.to}`);
+      }
+      return clearRow(o, owner, `Dhan notice cleared by a later pull that read Dhan's trade history from ${read.from} to ${read.to} in full: ${parts.join("; ")}.`);
+    });
   if (values.length > 0) exec.insert(auditLog).values(values).run();
 }
 

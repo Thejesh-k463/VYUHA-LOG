@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { StrategiesClient } from "@/components/strategies/strategies-client";
 import { STRATEGY_COPY, withholdForFree, type PickerRow } from "@/components/strategies/strategy-copy";
 import { getOpenOptionPositions, getOpenUnderlyingPositions } from "@/lib/queries/trades";
-import { bundledSymbolByIsin } from "@/lib/import/isin-symbol";
+import { bundledIsinBySymbol, bundledSymbolByIsin } from "@/lib/import/isin-symbol";
 import { getSpotMap } from "@/lib/queries/mtm";
 import { getSettings } from "@/lib/queries/settings";
 import { getEntitlement } from "@/lib/queries/license";
@@ -81,10 +81,20 @@ export default function StrategiesPage() {
   // leg already wears it — a listing that names the ISIN under a newer ticker
   // (TATAMOTORS → TMPV) must not pull a holding off its own calls. The ISIN is
   // only the fallback, for a row stored under the company name.
+  // N17 (fix wave 2R): that fallback names the option-side symbol that ADMITTED
+  // the row — the one whose bundled ISIN the query matched — never the listing's
+  // own ticker for the ISIN, which for TATAMOTORS is TMPV and split a
+  // "Tata Motors Ltd" holding off its calls. Two option symbols with one ISIN:
+  // the listing's ticker if it is one of them, else the first alphabetically.
   const optionSymbols = new Set(optionLegs.map((l) => l.symbol.toUpperCase()));
+  const optionSymbolByIsin = new Map<string, string>();
+  for (const s of [...optionSymbols].sort()) {
+    const isin = bundledIsinBySymbol(s);
+    if (isin && (!optionSymbolByIsin.has(isin) || bundledSymbolByIsin(isin) === s)) optionSymbolByIsin.set(isin, s);
+  }
   const legSymbol = (stored: string, isin: string | null): string => {
     const upper = stored.toUpperCase();
-    return optionSymbols.has(upper) ? upper : (isin && bundledSymbolByIsin(isin)) || upper;
+    return optionSymbols.has(upper) ? upper : (isin && optionSymbolByIsin.get(isin.trim().toUpperCase())) || upper;
   };
 
   // P5: a basis-unknown sale is never a leg. It NETS against the same
@@ -98,12 +108,16 @@ export default function StrategiesPage() {
   // ESOP, gift, a price) makes it a complete trade of shares acquired outside
   // the book: left out, never a short and never a reduction of a held lot. A
   // futures sell-only row is a genuine short and is read by its net side.
+  // N16 (fix wave 2R): the key leads with the ACCOUNT. A sale only ever reduces
+  // its own account's lots, each account floors at zero, and the All-accounts
+  // view (0 is a view, invariant 9) is then the sum of those per-account nets —
+  // never account B's sale taken out of account A's demat.
   const unknownSold = new Map<string, number>();
   const held: { key: string; leg: PositionedLeg }[] = [];
   for (const t of getOpenUnderlyingPositions()) {
     const symbol = legSymbol(t.symbol, t.isin);
     const isFuture = t.instrumentType === "future";
-    const key = `${symbol}|${t.instrumentType}|${isFuture ? (t.expiry ?? t.tradingsymbol.toUpperCase()) : ""}`;
+    const key = `${t.accountId}|${symbol}|${t.instrumentType}|${isFuture ? (t.expiry ?? t.tradingsymbol.toUpperCase()) : ""}`;
     const deliverySale = DELIVERY_SEGMENTS.has(t.segment) && t.buyQty === 0 && t.sellQty > 0;
     if (deliverySale && hasRecordedBasis(t)) continue;
     if (deliverySale || (!isFuture && t.acquisition === "unknown")) {

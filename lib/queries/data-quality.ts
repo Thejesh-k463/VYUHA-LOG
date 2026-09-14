@@ -7,6 +7,7 @@ import { instruments, ipos, mtmPrices, tradeAttachments, tradeLegs } from "@/lib
 import {
   assessDataQuality,
   saleJournalFields,
+  staleFillsNote,
   staleJournalNote,
   staleOpenPairs,
   staleSaleRows,
@@ -18,7 +19,11 @@ import { collectIdChunks } from "./delete";
 
 /** A stale pair as the screen shows it: `blocked` is why it gets no button. */
 export interface StaleOpenView extends StaleOpenPair {
-  /** Set when the sale row carries the user's own journal fields (R26 decision). */
+  /**
+   * Set when the sale row carries the user's own journal fields (R26
+   * decision), or was recorded in several fills — staged, or holding
+   * `trade_legs` (R2-DQ N10).
+   */
   blocked: string | null;
 }
 
@@ -60,10 +65,11 @@ function staleViewsOf(all: ReturnType<typeof getTrades>): StaleOpenView[] {
   const byId = new Map(all.map((t) => [t.id, t]));
   return pairs.map((p) => {
     const sale = byId.get(p.saleId);
-    const fields = sale
-      ? saleJournalFields(sale, { attachments: attachments.get(p.saleId) ?? 0, legs: legs.get(p.saleId) ?? 0 })
-      : [];
-    return { ...p, blocked: fields.length ? staleJournalNote(fields, p.side) : null };
+    const fields = sale ? saleJournalFields(sale, { attachments: attachments.get(p.saleId) ?? 0 }) : [];
+    const notes: string[] = [];
+    if (p.saleStaged || (legs.get(p.saleId) ?? 0) > 0) notes.push(staleFillsNote(p.side));
+    if (fields.length) notes.push(staleJournalNote(fields, p.side));
+    return { ...p, blocked: notes.length ? notes.join(" ") : null };
   });
 }
 

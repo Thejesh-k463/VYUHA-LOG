@@ -196,8 +196,11 @@ export function ManualTradeForm({
     // builder puts them on the sides createManualTrade stores — for a written
     // (sell-direction) F&O trade the entry is the SELL side — so the preview
     // prices the quantities, values, gross and dates the save will (P6, R56).
+    // `kind` drops the Equity overrides for an F&O trade: switching kind resets
+    // none of that state, and the F&O save submits none of it (N24).
     const body = buildManualPreviewBody({
       broker, tradingsymbol,
+      kind,
       productHint: productHint || null,
       segment: segment || null,
       exchange: exchange || null,

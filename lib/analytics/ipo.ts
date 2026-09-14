@@ -81,6 +81,14 @@ export interface IpoComputed extends IpoInput {
   realised: boolean;
   returnPct: number | null;
   tax: IpoTaxEstimate | null; // present only when exited with an allotment
+  /**
+   * Exited, but the exit date is not a priceable day (`isPriceableExitDate`,
+   * N13): no charges, no net, no tax are computed, `realised` is false (so it
+   * stays out of realised net, capital and the tax pack) and the UI shows "—".
+   */
+  unpriced: boolean;
+  /** Per-head exit charges when the charger stated them (the server path), else null. */
+  chargeBreakdown: ChargeBreakdown | null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -98,8 +106,13 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * IPO's net P&L was computed from rates the user could not edit, and that
  * number flowed into realised-net and capital compounding (defect D4,
  * 2026-08-12).
+ *
+ * `allottedValue` is the STAMP BASE of the allotment: `computeIpo` passes 0
+ * when the allottee owes no stamp (`ipoAllotmentStampBase`, N14). A charger
+ * returns the total, or the per-head breakdown (the server path, which the
+ * statement label reads), or null when the exit cannot be priced yet (N13).
  */
-export type IpoSellCharger = (sellValue: number, allottedValue: number) => number;
+export type IpoSellCharger = (sellValue: number, allottedValue: number) => number | ChargeBreakdown | null;
 
 /**
  * IPO exit charges over a charge_config row — a thin wrapper over the engine;
@@ -112,7 +125,8 @@ export type IpoSellCharger = (sellValue: number, allottedValue: number) => numbe
  *    GST-bearing DP when the row has them);
  *  • the allotment is not bought on an exchange, so it carries no purchase STT
  *    (FATAX56235 row 1) and no exchange levies (W2-IPO2 for the broker path)
- *    — only stamp duty on its value;
+ *    — only stamp duty on `allottedValue`, the stamp base `computeIpo` passes
+ *    (0 for an allotment from 1 Jul 2020, when the issuer bears it — N14);
  *  • brokerage and DP come from the row, on the sale: a broker's row carries
  *    them; the statutory row neutralises both (no broker is recorded, and DP
  *    is a broker tariff).
@@ -171,6 +185,91 @@ export function ipoVenue(exchange: string): "NSE" | "BSE" {
   return exchange === "BSE" ? "BSE" : "NSE";
 }
 
+/**
+ * The earliest year an exit date is read as a day at all. BSE, India's first
+ * stock exchange, dates from 1875, so no exit on an Indian exchange precedes
+ * it; a smaller year is a typo or a date input's half-typed year ('0002-06-15'
+ * while "2011" is being typed), not a trade.
+ */
+const EXIT_YEAR_FLOOR = 1875;
+
+/**
+ * Can this exit date be priced (N13)? A real `YYYY-MM-DD` calendar day with a
+ * year from `EXIT_YEAR_FLOOR`. Anything else — '15-03-2011', '2026-02-30',
+ * '0202-06-15' — leaves the exit NOT YET PRICED: no charges are computed and
+ * the UI shows "—" (invariant 6), rather than throwing (which took down every
+ * page reading IPOs) or guessing a day.
+ */
+export function isPriceableExitDate(d: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const [y, m, day] = d.split("-").map(Number);
+  if (y < EXIT_YEAR_FLOOR) return false;
+  const t = new Date(Date.UTC(y, m - 1, day));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === day;
+}
+
+/**
+ * The date charge_config is read at for an IPO exit priced on `onDate`: that
+ * date, unless it precedes EVERY eq_delivery epoch at the venue — then the
+ * earliest epoch's start, i.e. the earliest verified schedule (06-ANSWERS
+ * C-8 ruling: dates before the earliest verified boundary use the earliest
+ * schedule). A gap between epochs is a charge_config defect, not a date, and
+ * still throws where the rates are resolved.
+ */
+export function ipoRatesDate(map: RatesMap, venue: "NSE" | "BSE", onDate: string): string {
+  let earliest: string | null = null;
+  for (const list of map.values()) {
+    for (const r of list) {
+      if (r.segment !== "eq_delivery" || r.exchange !== venue) continue;
+      const from = r.effectiveFrom ?? "1970-01-01"; // `covers` reads a missing start the same way
+      if (earliest == null || from < earliest) earliest = from;
+    }
+  }
+  return earliest != null && onDate < earliest ? earliest : onDate;
+}
+
+/**
+ * From this day the ISSUER bears the stamp duty on an issue of securities:
+ * Indian Stamp Act s.9A(1)(c) (collected by the depository from the issuer on
+ * the allotment list), s.29(l) and Sch. I Art. 56A(a), inserted by Act 7 of
+ * 2019 w.e.f. 1-7-2020 (India Code; primary sources and sha256 in
+ * LIVE-DESK-RESEARCH/_data/stt-primary-sources-2026-09-11/MANIFEST.md). This
+ * is who bears the duty, not a rate — the rate stays in charge_config.
+ */
+export const ISSUER_BEARS_ISSUE_STAMP_FROM = "2020-07-01";
+
+/**
+ * The allotment's stamp base for the ALLOTTEE (N14): its value for an
+ * allotment before `ISSUER_BEARS_ISSUE_STAMP_FROM` (unchanged), 0 from then.
+ * The allotment day is the first readable of allotment → listing → applied
+ * date (the tax estimate's chain), then the exit date, then today IST.
+ */
+export function ipoAllotmentStampBase(i: IpoInput, investedAllotted: number): number {
+  const day =
+    [i.allotmentDate, i.listingDate, i.appliedDate, i.exitDate].find(
+      (d): d is string => typeof d === "string" && isPriceableExitDate(d),
+    ) ?? todayIstIso();
+  return day < ISSUER_BEARS_ISSUE_STAMP_FROM ? investedAllotted : 0;
+}
+
+/**
+ * The heads an IPO's exit charges actually carry, for its label (N15):
+ * brokerage, STT, exch (exchange txn + SEBI + IPFT), stamp, DP, GST — a head
+ * that is 0 for this IPO is not named. Empty with no breakdown.
+ */
+export function ipoChargeHeads(b: ChargeBreakdown | null): string[] {
+  if (!b) return [];
+  const heads: [string, number][] = [
+    ["brokerage", b.brokerage],
+    ["STT", b.sttCtt],
+    ["exch", b.exchangeTxn + b.sebi + b.ipft],
+    ["stamp", b.stampDuty],
+    ["DP", b.dpCharges],
+    ["GST", b.gst],
+  ];
+  return heads.filter(([, v]) => v > 0).map(([k]) => k);
+}
+
 let seedMap: RatesMap | null = null;
 
 /**
@@ -178,12 +277,16 @@ let seedMap: RatesMap | null = null;
  * form's live preview, which has no DB. It prices from the canonical seed's
  * statutory row at (venue, exit date or today IST) through the same fallback,
  * so no rate is frozen in this module. The saved IPO is priced server-side
- * from charge_config (`lib/queries/ipos.ts`).
+ * from charge_config (`lib/queries/ipos.ts`), which adds the broker's
+ * brokerage and DP — the form labels its figure accordingly (N15). Rates are
+ * resolved only when called, and an unpriceable exit date returns null.
  */
 function seedFallbackCharger(i: IpoInput): IpoSellCharger {
   return (sellValue, allottedValue) => {
+    if (i.exitDate && !isPriceableExitDate(i.exitDate)) return null;
     seedMap ??= seedRatesMap();
-    const stat = statutoryRatesFor(seedMap, "eq_delivery", ipoVenue(i.exchange), i.exitDate || todayIstIso());
+    const venue = ipoVenue(i.exchange);
+    const stat = statutoryRatesFor(seedMap, "eq_delivery", venue, ipoRatesDate(seedMap, venue, i.exitDate || todayIstIso()));
     return ipoSellCharges(sellValue, allottedValue, stat);
   };
 }
@@ -231,14 +334,26 @@ export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallba
 
   let grossPnl = 0, charges = 0, netPnl = 0, unrealised = 0, realised = false, returnPct: number | null = null;
   let tax: IpoTaxEstimate | null = null;
+  let unpriced = false;
+  let chargeBreakdown: ChargeBreakdown | null = null;
 
   if (status === "exited" && i.exitPrice != null) {
     grossPnl = r2((i.exitPrice - effectiveCost) * allottedQty);
-    charges = sellCharger(i.exitPrice * allottedQty, investedAllotted);
-    netPnl = r2(grossPnl - charges);
-    realised = true;
-    returnPct = investedAllotted > 0 ? r2((netPnl / investedAllotted) * 100) : null;
-    tax = ipoTaxEstimate(netPnl, i.allotmentDate ?? i.listingDate ?? i.appliedDate ?? null, i.exitDate ?? null);
+    // N13: an unreadable exit date is never handed to a charger — not yet priced.
+    const priced =
+      !i.exitDate || isPriceableExitDate(i.exitDate)
+        ? sellCharger(i.exitPrice * allottedQty, ipoAllotmentStampBase(i, investedAllotted))
+        : null;
+    if (priced == null) {
+      unpriced = true;
+    } else {
+      chargeBreakdown = typeof priced === "number" ? null : priced;
+      charges = typeof priced === "number" ? priced : priced.total;
+      netPnl = r2(grossPnl - charges);
+      realised = true;
+      returnPct = investedAllotted > 0 ? r2((netPnl / investedAllotted) * 100) : null;
+      tax = ipoTaxEstimate(netPnl, i.allotmentDate ?? i.listingDate ?? i.appliedDate ?? null, i.exitDate ?? null);
+    }
   } else if (status === "listed" && i.listingPrice != null) {
     unrealised = r2((i.listingPrice - effectiveCost) * allottedQty);
     returnPct = investedAllotted > 0 ? r2((unrealised / investedAllotted) * 100) : null;
@@ -262,6 +377,8 @@ export function computeIpo(i: IpoInput, sellCharger: IpoSellCharger = seedFallba
     realised,
     returnPct,
     tax,
+    unpriced,
+    chargeBreakdown,
   };
 }
 
@@ -271,13 +388,17 @@ export interface IpoSummary {
   allottedCount: number;
   notAllottedCount: number;
   listedCount: number;
-  exitedCount: number;
+  exitedCount: number; // by STATUS — every exit, priced or not
+  /** Exits realisedNet and estTax are made of (IPO-KPI, v4.3.0). */
+  pricedExitCount: number;
+  /** Exits whose date cannot be priced (N13): in exitedCount, in no realised figure. */
+  unpricedExitCount: number;
   applicationAmount: number;
   investedAllotted: number;
   listingGains: number; // realised+unrealised listing gains across allotted
-  realisedNet: number; // exited net
+  realisedNet: number; // net across PRICED exits
   unrealised: number; // listed (holding) mark-to-listing
-  estTax: number; // Σ estimated tax across exited IPOs (informational)
+  estTax: number; // Σ estimated tax across priced exits (informational)
   postTaxNet: number; // realisedNet − estTax
 }
 
@@ -286,6 +407,7 @@ export function summariseIpos(list: IpoComputed[]): IpoSummary {
     count: list.length,
     appliedCount: list.length,
     allottedCount: 0, notAllottedCount: 0, listedCount: 0, exitedCount: 0,
+    pricedExitCount: 0, unpricedExitCount: 0,
     applicationAmount: 0, investedAllotted: 0, listingGains: 0, realisedNet: 0, unrealised: 0,
     estTax: 0, postTaxNet: 0,
   };
@@ -298,8 +420,15 @@ export function summariseIpos(list: IpoComputed[]): IpoSummary {
     if (i.status === "listed") s.listedCount++;
     if (i.status === "exited") {
       s.exitedCount++;
-      s.realisedNet += i.netPnl;
-      if (i.tax) s.estTax += i.tax.estTax;
+      // IPO-KPI: an unpriced exit (N13) carries no net and no tax, so it is
+      // counted apart — never folded into the realised figures' scope.
+      if (i.realised) {
+        s.pricedExitCount++;
+        s.realisedNet += i.netPnl;
+        if (i.tax) s.estTax += i.tax.estTax;
+      } else {
+        s.unpricedExitCount++;
+      }
     }
     if (i.status === "listed") s.unrealised += i.unrealised;
   }

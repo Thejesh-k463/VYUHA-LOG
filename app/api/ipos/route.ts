@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ipos, trades } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { tradePatchFromIpo } from "@/lib/analytics/ipo-link";
+import { isPriceableExitDate } from "@/lib/analytics/ipo";
 import { getSelectedAccountId, getWriteAccountId } from "@/lib/queries/accounts";
 
 export const runtime = "nodejs";
@@ -99,6 +100,19 @@ export async function POST(req: Request) {
   const name = strOrNull(body.name);
   if (!name) return NextResponse.json({ ok: false, message: "IPO name is required." }, { status: 400 });
 
+  // IPO-EXITDATE (v4.3.0): an exit date is stored only if it is a real
+  // YYYY-MM-DD day from 1875 on — the same rule computeIpo reads it by (N13).
+  // A half-typed date input ('0002-06-15') or a day-first date ('15-03-2011')
+  // used to be saved as typed and then read as "not yet priced"; it is refused
+  // here, on both the create and the edit path, while the user can still fix it.
+  const exitDate = strOrNull(body.exitDate);
+  if (exitDate != null && !isPriceableExitDate(exitDate)) {
+    return NextResponse.json(
+      { ok: false, message: "The exit date must be a real calendar day written year-month-day, such as 2026-06-15, with a year from 1875 on. Nothing was saved." },
+      { status: 400 },
+    );
+  }
+
   const allotted = Boolean(body.allotted);
   const values = {
     name,
@@ -117,7 +131,7 @@ export async function POST(req: Request) {
     appliedDate: strOrNull(body.appliedDate),
     allotmentDate: strOrNull(body.allotmentDate),
     listingDate: strOrNull(body.listingDate),
-    exitDate: strOrNull(body.exitDate),
+    exitDate,
     notes: strOrNull(body.notes),
   };
 

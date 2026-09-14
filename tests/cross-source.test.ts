@@ -223,26 +223,80 @@ describe("R43 · today's earlier snapshot of the same pull is not 'a second trad
       tradingsymbol: "OPT NIFTY 29 Sep 2026 24000 CE", symbol: "NIFTY", ...over,
     });
 
+  // W2R N3: the commit's plan names the stored rows on the supersede key
+  // (`snapshotIds`); wave 2 passed only the day (`snapshotDay`), and every
+  // same-file row of that day and tradingsymbol was compared. The inputs are
+  // re-pinned to the ids; the assertions are unchanged.
   it("a snapshot row the commit will not replace meets the morning row: reported, risky, marked as the same snapshot", () => {
-    const r = detectCrossSourceDuplicates([evening({ snapshotDay: DAY })], [morning()], FILE);
+    const r = detectCrossSourceDuplicates([evening({ snapshotIds: [1] })], [morning()], FILE);
     expect(r.collisions).toHaveLength(1);
     expect(r.collisions[0]).toMatchObject({ kind: "same-quantity", sameSnapshot: true });
     expect(r.risky).toBe(true);
   });
 
-  it("without snapshotDay the same-file row stays hidden, and a same-file row of another day stays hidden too", () => {
+  it("without snapshotIds the same-file row stays hidden, and a same-file row NOT on the key stays hidden too (W2R N3)", () => {
     expect(detectCrossSourceDuplicates([evening()], [morning()], FILE).collisions).toEqual([]);
-    const yesterday = morning({ buyDate: "2026-09-09" });
-    expect(detectCrossSourceDuplicates([evening({ snapshotDay: DAY })], [yesterday], FILE).collisions).toEqual([]);
+    // Today's row of the same tradingsymbol in another segment, while the plan named only the key's row 7.
+    expect(detectCrossSourceDuplicates([evening({ snapshotIds: [7] })], [morning({ id: 1 })], FILE).collisions).toEqual([]);
   });
 
   it("a PARTIAL overlap with the earlier snapshot is risky: the book grew, it did not gain a second position", () => {
-    const grown = evening({ buyQty: 150, buyValue: 15000, sellQty: 0, sellValue: 0, sellDate: null, snapshotDay: DAY });
+    const grown = evening({ buyQty: 150, buyValue: 15000, sellQty: 0, sellValue: 0, sellDate: null, snapshotIds: [1] });
     const r = detectCrossSourceDuplicates([grown], [morning()], FILE);
     expect(r.collisions.map((c) => c.kind)).toEqual(["partial-quantity"]);
     expect(r.risky).toBe(true);
     // The same partial overlap from ANOTHER file stays the soft note it always was.
     expect(detectCrossSourceDuplicates([grown], [morning({ sourceFile: "other.csv" })], FILE).risky).toBe(false);
+  });
+
+  it("W2R N2: a snapshot row with NO quantity or value relation to the key's row is still reported — 'earlier-snapshot', risky", () => {
+    // 20 → 25: not the same quantity, not within 1% in value, not a whole multiple.
+    const stored = morning({ buyQty: 20, buyValue: 3010 });
+    const grown = evening({ buyQty: 25, buyValue: 3770, sellQty: 0, sellValue: 0, sellDate: null, snapshotIds: [1] });
+    const r = detectCrossSourceDuplicates([grown], [stored], FILE);
+    // THE assertions (no collision and risky false on revert).
+    expect(r.collisions).toEqual([
+      {
+        symbol: "NIFTY",
+        incoming: { buyQty: 25, sellQty: 0, buyValue: 3770, sellValue: 0 },
+        existing: { id: 1, buyQty: 20, sellQty: 0, sourceFile: FILE },
+        kind: "earlier-snapshot",
+        detail: `Today's earlier pull recorded 20 bought and 0 sold in ${FILE}; this pull states 25 bought and 0 sold.`,
+        sameSnapshot: true,
+      },
+    ]);
+    expect(r.risky).toBe(true);
+    // The same two rows from ANOTHER file relate by nothing, so nothing is said.
+    expect(
+      detectCrossSourceDuplicates([{ ...grown, snapshotIds: undefined }], [{ ...stored, sourceFile: "other.csv" }], FILE).collisions,
+    ).toEqual([]);
+  });
+
+  it("W2R N2: a snapshot row that shares no side with the key's row is still reported", () => {
+    const soldOnly = evening({ buyQty: 0, buyValue: 0, sellQty: 30, sellValue: 3600, buyDate: null, snapshotIds: [1] });
+    const r = detectCrossSourceDuplicates([soldOnly], [morning()], FILE);
+    // THE assertion (an empty list on revert: the side-aware skip came first).
+    expect(r.collisions.map((c) => [c.kind, c.sameSnapshot])).toEqual([["earlier-snapshot", true]]);
+    expect(r.risky).toBe(true);
+  });
+
+  it("the words for today's earlier snapshot name this pull and never say 'delete the earlier import'; a cross-file collision keeps its words", () => {
+    const same = detectCrossSourceDuplicates([evening({ snapshotIds: [1] })], [morning()], FILE).message!;
+    // THE assertions ("…from a different file … Delete the earlier import first…" on revert).
+    expect(same).toContain("1 row in this pull (NIFTY) restates a position today's earlier pull already recorded");
+    expect(same).not.toContain("different file");
+    expect(same).not.toContain("Delete the earlier import");
+    // W2F OVERRIDE-DOUBLE: a row the user re-classified today is asked about too, so the reasons name it.
+    expect(same).toContain("a segment or exchange you set");
+
+    const other = detectCrossSourceDuplicates([inc()], [ex()], "dhan-pnl.csv").message!;
+    expect(other.startsWith("1 row in this file (RELIANCE) look like trades already recorded from a different file. ")).toBe(true);
+    expect(other.endsWith("Delete the earlier import first if these are the same trades.")).toBe(true);
+
+    const both = detectCrossSourceDuplicates([evening({ snapshotIds: [1] }), inc({ dedupHash: "second" })], [morning(), ex({ id: 2 })], FILE);
+    expect(both.collisions.map((c) => c.sameSnapshot === true)).toEqual([true, false]);
+    expect(both.message!.startsWith("1 row in this file (RELIANCE) look like")).toBe(true);
+    expect(both.message).toContain(" 1 row in this pull (NIFTY) restates");
   });
 
   it("the most severe overlap is reported: a partial candidate met first does not hide a same-quantity one", () => {

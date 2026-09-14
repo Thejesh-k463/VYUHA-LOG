@@ -67,6 +67,40 @@ function daysBetween(a: string, b: string): number | null {
   return Math.round((d2 - d1) / 86400000);
 }
 
+/**
+ * R2-DQ N11 — the row's close action. A STAGED position is closed on its own
+ * ladder (the staged panel's "Book exit"), which records the exit fill, prices
+ * each tranche and keeps R frozen at the first entry (invariants 4 and 5). The
+ * manual close writes the parent row only, so for a staged row it would leave
+ * the ladder open and be undone by the next ladder action; `closePosition`
+ * refuses it (STAGED), and this button never sends a staged row there.
+ */
+export function CloseEntryButton<T extends Pick<Trade, "isOpen" | "staged">>({
+  trade,
+  onManualClose,
+  onLadder,
+}: {
+  trade: T;
+  onManualClose: (t: T) => void;
+  onLadder: (t: T) => void;
+}) {
+  if (!trade.isOpen) return null;
+  const label = trade.staged ? "Close position — its exit is booked on its ladder" : "Close position";
+  return (
+    <Tip label={label}>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7 text-warning"
+        onClick={() => (trade.staged ? onLadder(trade) : onManualClose(trade))}
+        aria-label={label}
+      >
+        <LogOut className="size-3.5" />
+      </Button>
+    </Tip>
+  );
+}
+
 /** Per-device column order. Versioned so a future shape can be discarded
  *  rather than mis-read. */
 const COL_ORDER_KEY = "vyuha-trades-column-order";
@@ -661,13 +695,7 @@ export function TradesClient({
               <Layers className="size-3.5" />
             </Button>
           </Tip>
-          {row.original.isOpen && (
-            <Tip label="Close position">
-              <Button size="icon" variant="ghost" className="size-7 text-warning" onClick={() => setClosingTrade(row.original)} aria-label="Close position">
-                <LogOut className="size-3.5" />
-              </Button>
-            </Tip>
-          )}
+          <CloseEntryButton trade={row.original} onManualClose={setClosingTrade} onLadder={setStaging} />
           <Tip label="Edit trade — qty/prices/dates/SL/target/risk">
             <Button size="icon" variant="ghost" className="size-7" onClick={() => setFullEditing(row.original)} aria-label="Edit trade — qty/prices/dates/SL/target/risk">
               <SquarePen className="size-3.5" />

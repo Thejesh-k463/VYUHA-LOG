@@ -126,10 +126,17 @@ describe("resolveSpotRef — stored mark ▸ newest EOD close ▸ unknown", () =
 describe("closeDiffers — the matrix", () => {
   const mark = (price: number, asOf: string): DatedPrice => ({ price, asOf });
   it.each([
-    ["older mark, newer close", mark(800, "2026-09-08"), mark(800, "2026-09-11"), true],
+    // N23 (wave 2R), re-pinned deliberately: this row was 800 vs 800 → true, a
+    // later close at the SAME price, which printed "differs from your mark ₹800.00"
+    // over ₹800.00. It now reads a different price (820); the equal-price case is
+    // its own row below and is false (the owner's R13 intent: a DIFFERENT price).
+    ["older mark, newer close, different price", mark(800, "2026-09-08"), mark(820, "2026-09-11"), true],
+    ["N23: older mark, newer close, equal at the paisa", mark(800, "2026-09-08"), mark(800.004, "2026-09-11"), false],
+    ["older mark, newer close, one paisa apart", mark(800, "2026-09-08"), mark(800.01, "2026-09-11"), true],
     ["same day, different price", mark(800, "2026-09-11"), mark(800.05, "2026-09-11"), true],
     ["same day, equal at the paisa", mark(800.001, "2026-09-11"), mark(800.004, "2026-09-11"), false],
     ["newer mark, older close", mark(800, "2026-09-14"), mark(820, "2026-09-11"), false],
+    ["newer mark, older close, equal price", mark(800, "2026-09-14"), mark(800, "2026-09-11"), false],
   ] as const)("%s → %s", (_name, m, c, want) => {
     expect(closeDiffers(m, c)).toBe(want);
   });
@@ -151,6 +158,15 @@ describe("spotCloseNotice — the row's line, and what hides it", () => {
     expect(spotCloseNotice("SBIN", { value: 820.5, source: "eod", asOf: "2026-09-11" })).toBeNull();
     expect(spotCloseNotice("SBIN", { value: 800, source: "mark", asOf: "2026-09-08" })).toBeNull();
     expect(spotCloseNotice("SBIN", older, ["SBIN|2026-09-11|82050"])).toBeNull();
+  });
+
+  it("N23: a LATER close at the SAME price says nothing — 'differs from your mark ₹800.00' over ₹800.00 is false", () => {
+    // The recheck's reproduction, verbatim.
+    const sameLater: SpotRef = { value: 800, source: "mark", asOf: "2026-09-08", close: { price: 800, asOf: "2026-09-11" } };
+    expect(spotCloseNotice("SBIN", sameLater)?.text).toBeUndefined();
+    // …and the moment the later close differs by a paisa, the line is back.
+    const paisaLater: SpotRef = { ...sameLater, close: { price: 800.01, asOf: "2026-09-11" } };
+    expect(spotCloseNotice("SBIN", paisaLater)?.text).toBe("Official close 2026-09-11: ₹800.01 — differs from your mark ₹800.00");
   });
 
   it("comes back when the close moves: a kept fingerprint for an OLDER close hides nothing", () => {
@@ -496,6 +512,28 @@ describe("the editor component", () => {
     // a fourth close path added later cannot quietly skip the restore.
     expect(code.match(/setEditing\(false\)/g)).toHaveLength(1);
     expect(code).toMatch(/function closeEditor\(\) \{\r?\n\s*restoreFocus\.current = true;\r?\n\s*setEditing\(false\);/);
+  });
+
+  /**
+   * R13 (wave 2R) — "Use official close" must post the CLOSE's day. Dropping the
+   * 4th argument stored yesterday's close dated TODAY: the chip then read
+   * "mark · <today>" for a number that belongs to the close's day, with every
+   * other test green (submitSpotMark's own tests call it directly, and the seam
+   * B8c too). No renderer is installed (vitest runs `environment: "node"`), so
+   * this pins the handler's call — the same shape as Save's pin above — while
+   * submitSpotMark's behaviour tests pin that the 4th argument becomes asOfDate.
+   */
+  it("R13 — 'Use official close' posts the close's value ON the close's day; 'Keep my mark' posts that close", () => {
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/[^\r\n]*$/gm, "");
+    const apply = code.slice(code.indexOf("async function applyOfficialClose"), code.indexOf("async function keepMark"));
+    const keep = code.slice(code.indexOf("async function keepMark"), code.indexOf("if (!editing)"));
+    expect(apply).toMatch(/^async function applyOfficialClose\(close: DatedPrice\)/);
+    expect(apply).toMatch(/await submitSpotMark\(symbol, close\.price, \(\) => router\.refresh\(\), close\.asOf\);/);
+    expect(keep).toMatch(/^async function keepMark\(close: DatedPrice\)/);
+    expect(keep).toMatch(/await submitKeepMark\(symbol, close, \(\) => router\.refresh\(\)\);/);
+    // …and each button hands its handler the close the row SHOWED.
+    expect(code).toMatch(/onClick=\{\(\) => void applyOfficialClose\(closeNotice\.close\)\}[\s\S]{0,40}?Use official close/);
+    expect(code).toMatch(/onClick=\{\(\) => void keepMark\(closeNotice\.close\)\}[\s\S]{0,40}?Keep my mark/);
   });
 
   it("calls no effect at all (AGENTS.md: derive, never set state in one)", () => {

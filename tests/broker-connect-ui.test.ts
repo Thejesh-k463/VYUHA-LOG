@@ -5,6 +5,7 @@ import {
   AUTH_REENROL_CTA,
   KEY_KEPT_PLACEHOLDER,
   PICK_ACCOUNT_FIRST,
+  PULL_FORCE_ROUTE_TAIL,
   TOKEN_EXPIRY_SEEN_KEY,
 } from "@/components/import/broker-connect";
 
@@ -211,5 +212,39 @@ describe("every 'last pull' stamp is the one IST formatter (R48)", () => {
   it("all three sites — OpenAlgo rows, per-account rows, the single row — go through formatTs", () => {
     expect(SRC.match(/last pull \{formatTs\(c\.lastPullAt\)\}/g) ?? []).toHaveLength(2);
     expect(SRC.match(/last pull \{formatTs\(conn\.lastPullAt\)\}/g) ?? []).toHaveLength(1);
+  });
+});
+
+/**
+ * Seam D1 (v4.3.0 fix wave 2F) — the call sites of the pure copy pinned in
+ * broker-connect-copy.test.ts. Before: the 409 kept only `collisions` (the
+ * route's `message` was dropped), the badge was an inline ternary ending in
+ * "partial overlap", and the "Different sources …" lead and the "same trades
+ * from another source" footer rendered for every collision.
+ */
+describe("the collision dialog renders the pure copy (seam D1)", () => {
+  it("a needsForce 409 keeps the route's message beside the collisions", () => {
+    const branch = between("if (res?.status === 409 && data.needsForce) {", "await fail(res, data");
+    expect(branch).toContain("setCollisionPrompt({ brokerId, accountId, collisions: (data.collisions ?? []) as CollisionLite[], message: data.message });");
+  });
+
+  it("the badge is collisionBadge(c.kind), and 'partial overlap' is written once — inside it", () => {
+    const dialog = between("{/* Blocked-commit dialog", "{/* Zerodha daily-login dialog");
+    expect(dialog).toContain("{collisionBadge(c.kind)}");
+    expect(SRC.match(/"partial overlap"/g) ?? []).toHaveLength(1);
+    expect(SRC.match(/Different sources state the same trade/g) ?? []).toHaveLength(1);
+  });
+
+  it("the lead, the route's sentence and the other-source footer all come from collisionDialogCopy", () => {
+    expect(SRC).toContain("const collisionCopy = collisionPrompt && !collisionPrompt.nothingNew ? collisionDialogCopy(collisionPrompt) : null;");
+    const dialog = between("{/* Blocked-commit dialog", "{/* Zerodha daily-login dialog");
+    expect(dialog).toContain(": collisionCopy?.description}");
+    expect(dialog).toMatch(/\{collisionCopy\?\.serverMessage && \(\s*<p[^>]*>\{collisionCopy\.serverMessage\}<\/p>/);
+    expect(dialog).toMatch(/\{collisionCopy\?\.otherSourceFooter && \(\s*<p[^>]*>\s*If this pull is the <b>same trades from another source<\/b>/);
+  });
+
+  it("the tail the card strips is the one the route appends", () => {
+    const route = fs.readFileSync(path.join(process.cwd(), "app", "api", "import", "broker", "route.ts"), "utf8");
+    expect(route).toContain(`\`\${pre.crossSource.message}${PULL_FORCE_ROUTE_TAIL}\``);
   });
 });

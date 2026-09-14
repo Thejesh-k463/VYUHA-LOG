@@ -1120,7 +1120,7 @@ describe("getOpenUnderlyingPositions (Q4) — account-scoped, and only where an 
     ]);
   });
 
-  it("projects the twelve columns the page feeds into a UL leg, and nothing else", () => {
+  it("projects the thirteen columns the page feeds into a UL leg, and nothing else", () => {
     select(PRIMARY);
     const [row] = trades.getOpenUnderlyingPositions();
     // `expiry` (R104: a future's own expiry) and `isin` (R105: the join key a
@@ -1132,9 +1132,12 @@ describe("getOpenUnderlyingPositions (Q4) — account-scoped, and only where an 
     // delivery-segment sell-only row nets or is excluded; a future's stays a
     // short) and `acquisitionPrice` (a recorded basis, Data Quality's own
     // `hasRecordedBasis`). Measured before: 10 keys; after: 12.
+    // Re-pinned from twelve (fix wave 2R, N16): `accountId` — a basis-unknown
+    // sale nets only its OWN account's lots, so in All accounts the page keys
+    // its netting by account. Measured before: 12 keys; after: 13.
     expect(Object.keys(row).sort()).toEqual(
       [
-        "acquisition", "acquisitionPrice", "avgBuyPrice", "avgSellPrice", "buyQty", "expiry", "instrumentType", "isin",
+        "accountId", "acquisition", "acquisitionPrice", "avgBuyPrice", "avgSellPrice", "buyQty", "expiry", "instrumentType", "isin",
         "segment", "sellQty", "symbol", "tradingsymbol",
       ].sort(),
     );

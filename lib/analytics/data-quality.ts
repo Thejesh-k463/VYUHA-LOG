@@ -338,9 +338,32 @@ export interface StaleOpenPair {
    * nothing else. A sale split across lots, or a lot covered by part of a sale
    * (or by several sales), is listed, never offered the one-step close —
    * `closeStaleLot` joins one lot to one sale and refuses the rest (PARTIAL).
-   * Never true for a staged lot.
+   * Never true for a staged lot, a staged sale (`saleStaged`), or an
+   * `ambiguous` pair.
    */
   oneClick: boolean;
+  /**
+   * R2-DQ N7/N8 — the book is NOT unambiguous: it holds a CLOSED lot of this
+   * side entered on or before the sale AND exited on or after this lot's entry
+   * (or with no stated exit) — it overlapped the lot being joined
+   * (`closedLotIds`; R2F-DQ narrowed it so a round trip closed before this lot
+   * was bought, e.g. a year earlier, leaves the pair one-click). A lot closed some
+   * other way (its ladder exit, the manual close on /risk) may already have
+   * taken this sale's quantity, and FIFO re-pairs the leftover sale row with
+   * the next held lot — joining the two would count the sale twice. Such a
+   * pair is listed for review (the `stale_review` warning, not the critical
+   * `stale_open`), never one-click, and `closeStaleLot` refuses it
+   * (AMBIGUOUS). A question is better than a confident wrong answer.
+   */
+  ambiguous: boolean;
+  /** The closed lots of this side in the book entered on or before the sale and exited on or after this lot's entry (or with no stated exit). */
+  closedLotIds: number[];
+  /**
+   * R2-DQ N9/N10 — the SALE row is staged: it was recorded in several fills
+   * (its executions live in `trade_legs`). The one-step join deletes the sale
+   * row, fills and all, so it is never offered for such a sale.
+   */
+  saleStaged: boolean;
   /**
    * W2-FIXD2 — the LOT is a staged position: its fills live in `trade_legs`
    * and the parent row is their aggregate (invariants 4 and 5). The one-step
@@ -440,19 +463,42 @@ const byDateThenId = (a: { date: string; row: BookRow }, b: { date: string; row:
  * A CLOSED row read as a lot of `side`, with its entry date — or null.
  *
  * A closed round trip states both legs, so its direction is read from their
- * dates: a long was bought on or before it was sold (a same-day round trip is
- * a long, as a same-day pair is in `staleOpenPairs`), and a short was sold
- * strictly before it was covered. A short exists only where a short can
- * (`NO_SHORT_SEGMENTS`), and a lot with no entry date is not evidence of
- * anything.
+ * dates: a long was bought before it was sold, and a short was sold before it
+ * was covered. A short exists only where a short can (`NO_SHORT_SEGMENTS`),
+ * and a lot with no entry date is not evidence of anything.
+ *
+ * R2-DQ N12 — a row whose buy and sell dates are EQUAL has no knowable
+ * direction where a short can exist: a same-day write-and-cover of an option
+ * reads exactly like a same-day buy-and-sell. `sameDay` says what to do with
+ * it:
+ *  - "evidence" (the `stale_sale` warning): it is not counted as a closed lot
+ *    of either side, so a later genuine sell-to-open write of the contract is
+ *    never called a closing trade with no open position;
+ *  - "possible" (the N7/N8 ambiguity test): it MAY have been a lot of this
+ *    side, so it counts — it cannot be ruled out as the position that already
+ *    took the sale.
+ * In a segment that cannot hold a short (delivery, MTF), a closed row is a
+ * long whatever its dates, so its direction is known and it counts either way.
  */
-function closedLotEntry(r: BookRow, side: "long" | "short"): string | null {
+function closedLotEntry(r: BookRow, side: "long" | "short", sameDay: "evidence" | "possible"): string | null {
   if (r.isOpen) return null;
   const buy = isoDay(r.buyDate);
   const sell = isoDay(r.sellDate);
-  if (side === "long") return r.buyQty > 0 && buy && (!sell || buy <= sell) ? buy : null;
-  if (NO_SHORT_SEGMENTS.has(r.segment)) return null;
-  return r.sellQty > 0 && sell && (!buy || sell < buy) ? sell : null;
+  const noShort = NO_SHORT_SEGMENTS.has(r.segment);
+  const sameDayCounts = sameDay === "possible" || noShort;
+  if (side === "long") return r.buyQty > 0 && buy && (!sell || buy < sell || (buy === sell && sameDayCounts)) ? buy : null;
+  if (noShort) return null;
+  return r.sellQty > 0 && sell && (!buy || sell < buy || (sell === buy && sameDay === "possible")) ? sell : null;
+}
+
+/**
+ * R2F-DQ — the EXIT date of a closed row read as a lot of `side` (a long exits
+ * on its sell date, a short on its cover date), or null when the row states
+ * none. Null is not evidence that the lot closed before anything, so the
+ * ambiguity test counts such a lot.
+ */
+function closedLotExit(r: BookRow, side: "long" | "short"): string | null {
+  return isoDay(side === "long" ? r.sellDate : r.buyDate);
 }
 
 /** Group rows into books: accountId + broker + tradingsymbol + segment + exchange. */
@@ -495,6 +541,14 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
     }
     sales.sort(byDateThenId);
 
+    // R2-DQ N7/N8: the closed lots of this side, for the ambiguity test.
+    const closed: { row: BookRow; date: string; exit: string | null }[] = [];
+    for (const r of rows) {
+      const date = closedLotEntry(r, side, "possible");
+      if (date) closed.push({ row: r, date, exit: closedLotExit(r, side) });
+    }
+    closed.sort(byDateThenId);
+
     // P1: FIFO allocation. Each sale, in date order, takes from the oldest lot
     // that still has quantity and is dated on or before it; what is left of
     // the sale carries to the next such lot.
@@ -515,6 +569,12 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
     }
 
     for (const { lot, sale: s, take } of links) {
+      // R2F-DQ: only a closed lot that OVERLAPPED this lot — exited on or after
+      // its entry, or with no stated exit — can have taken the sale.
+      const closedLotIds = closed
+        .filter((c) => c.row.id !== s.row.id && c.date <= s.date && (c.exit == null || c.exit >= lot.date))
+        .map((c) => c.row.id);
+      const ambiguous = closedLotIds.length > 0;
       out.push({
         lotId: lot.row.id,
         saleId: s.row.id,
@@ -534,9 +594,14 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
         saleDate: s.date,
         saleDateStated: s.stated,
         // One whole sale row on one whole lot: the link took all of both — and
-        // never a staged lot, whose ladder the join would leave open (W2-FIXD2).
-        oneClick: sameQty(take, lot.open) && sameQty(take, s.qty) && !lot.row.staged,
+        // never a staged lot, whose ladder the join would leave open (W2-FIXD2),
+        // never a sale recorded in several fills (R2-DQ N10), and never in a
+        // book where a closed lot may already have taken the sale (N7/N8).
+        oneClick: sameQty(take, lot.open) && sameQty(take, s.qty) && !lot.row.staged && !s.row.staged && !ambiguous,
         staged: !!lot.row.staged,
+        ambiguous,
+        closedLotIds,
+        saleStaged: !!s.row.staged,
       });
     }
   }
@@ -561,6 +626,11 @@ function pairsOfBook(rows: readonly BookRow[]): StaleOpenPair[] {
  *    sale covering two lots lists BOTH. Every lot a sale reaches is listed,
  *    one entry per (lot, sale) link. A lot no sale quantity reaches is a
  *    position still held, and is not listed.
+ *  - AMBIGUITY (R2-DQ N7/N8, narrowed by R2F-DQ): a link whose book holds a
+ *    CLOSED lot of the same side entered on or before the sale and exited on
+ *    or after the linked lot's entry (or with no stated exit) is `ambiguous` —
+ *    listed for review, never one-click. A lot closed before the linked lot
+ *    was entered cannot have taken the sale, and does not count.
  *
  * Linear in the book: rows are grouped once, and only a group holding both a
  * lot and a sale does any work.
@@ -579,14 +649,17 @@ export function staleOpenPairs(trades: readonly QualityTrade[]): StaleOpenPair[]
  * in a book holding a CLOSED opposite-side lot entered on or before them.
  *
  * Narrow by construction — every clause must hold:
- *  - the row is open, not staged, and of sale SHAPE for the side (sell-only
- *    against a long; buy-only against a short, only where a short can exist);
+ *  - the row is open and of sale SHAPE for the side (sell-only against a
+ *    long; buy-only against a short, only where a short can exist). A STAGED
+ *    sale — recorded in several fills — is listed like any other (R2-DQ N9):
+ *    after the manual close it is otherwise listed nowhere;
  *  - its basis is not recorded by the user (`hasRecordedBasis`, P3);
  *  - it takes no part in any stale pair (`staleOpenPairs`): an open lot is
  *    still there to pair it, and that is the stale_open check's job;
  *  - it has a date (its own, or the IST day it was pulled);
  *  - the same book holds a CLOSED lot of the opposite side entered on or
- *    before that date (`closedLotEntry`).
+ *    before that date (`closedLotEntry`, "evidence": a same-day round trip of
+ *    a contract has no knowable direction and is not counted — R2-DQ N12).
  *
  * It is a WARNING, and nothing here or anywhere offers to change the row.
  */
@@ -602,13 +675,13 @@ export function staleSaleRows(trades: readonly QualityTrade[]): StaleSaleRow[] {
     for (const side of ["long", "short"] as const) {
       const closed: { row: BookRow; date: string }[] = [];
       for (const r of rows) {
-        const date = closedLotEntry(r, side);
+        const date = closedLotEntry(r, side, "evidence");
         if (date) closed.push({ row: r, date });
       }
       if (closed.length === 0) continue;
       closed.sort(byDateThenId);
       for (const r of rows) {
-        if (!r.isOpen || r.staged || paired.has(r.id) || !saleShaped(r, side) || hasRecordedBasis(r)) continue;
+        if (!r.isOpen || paired.has(r.id) || !saleShaped(r, side) || hasRecordedBasis(r)) continue;
         const when = saleDay(r, side);
         if (!when) continue;
         const before = closed.filter((c) => c.row.id !== r.id && c.date <= when.date);
@@ -651,7 +724,7 @@ export interface SaleJournalRow {
  * than carry the fields onto the lot — two rows' notes, tags and screenshots
  * merged by a machine are no longer what the user wrote about either trade.
  */
-export function saleJournalFields(row: SaleJournalRow, counts: { attachments: number; legs: number }): string[] {
+export function saleJournalFields(row: SaleJournalRow, counts: { attachments: number }): string[] {
   const out: string[] = [];
   if (row.notes?.trim()) out.push("notes");
   if (row.setupTag?.trim()) out.push("a setup tag");
@@ -660,7 +733,10 @@ export function saleJournalFields(row: SaleJournalRow, counts: { attachments: nu
   if (row.playbookId != null) out.push("a playbook");
   if (row.exitTrigger?.trim()) out.push("an exit reason");
   if (counts.attachments > 0) out.push("attachments");
-  if (counts.legs > 0) out.push("legs");
+  // R2-DQ N10 — `trade_legs` on a sale row are NOT listed here: they are the
+  // sale's recorded fills (an import writes one "Imported execution" leg per
+  // fill), not the user's journal, and they cannot be "moved onto the
+  // position". `staleFillsNote` states them.
   return out;
 }
 
@@ -668,6 +744,28 @@ export function saleJournalFields(row: SaleJournalRow, counts: { attachments: nu
 export function staleJournalNote(fields: string[], side: "long" | "short"): string {
   const what = side === "long" ? "sale" : "purchase";
   return `The recorded ${what} row carries your own journal entries (${nameList(fields)}), and joining it would delete them with the row, so it is not joined here. Once they are moved onto the position, the join is offered.`;
+}
+
+/**
+ * R2-DQ N10 — why a pair whose SALE was recorded in several fills gets no
+ * button. The fills are the sale's own record, so the sentence names them as
+ * that and says the one-step join is not offered for such a sale; the card
+ * links to Trades, where the row and its fills are. Descriptive only.
+ */
+export function staleFillsNote(side: "long" | "short"): string {
+  const what = side === "long" ? "sale" : "purchase";
+  return `The recorded ${what} was recorded in several fills, stored on its row as the ${what}'s recorded fills. The one-step join is not offered for a ${what} recorded in several fills, because joining removes the row together with its fills. The row and its fills are in Trades.`;
+}
+
+/**
+ * R2-DQ N7/N8 — why an `ambiguous` pair gets no button. Descriptive only: it
+ * states which closed position makes the pairing uncertain, and that nothing
+ * is joined in one step.
+ */
+export function staleAmbiguousNote(p: Pick<StaleOpenPair, "side" | "tradingsymbol" | "closedLotIds">): string {
+  const what = p.side === "long" ? "sale" : "purchase";
+  const ids = p.closedLotIds.map((id) => `#${id}`).join(", ");
+  return `A position in ${p.tradingsymbol} entered on or before this ${what} is already closed (trade ${ids}), so the recorded ${what} may already be counted in that close. The two rows are listed here for review and are not joined in one step.`;
 }
 
 const ISSUE_WEIGHT = { critical: 12, warning: 6, info: 2 } as const;
@@ -688,13 +786,20 @@ export function assessDataQuality(i: QualityInputs): QualityReport {
 
   // R26 — critical: the book counts the position as open AND the sale as a
   // second position, so holdings, unrealised P&L and tax are all wrong today.
-  const staleLots = [...new Set(staleOpenPairs(i.trades).map((p) => p.lotId))];
+  const stalePairs = staleOpenPairs(i.trades);
+  const staleLots = [...new Set(stalePairs.filter((p) => !p.ambiguous).map((p) => p.lotId))];
   add({ code: "stale_open", severity: "critical", title: "Open positions with their closing trade stored beside them", detail: "A later opposite-side row in the same account, broker and scrip was stored as its own row, so the position still reads open and the sale reads as a second position. Holdings, unrealised P&L and tax count both until the two are joined.", count: staleLots.length, href: STALE_OPEN_HREF }, staleLots);
 
   // W2-DQ P2 — a WARNING, deliberately below stale_open: the position itself is
   // already closed, and the row left beside it is listed, never changed here.
   const staleSales = staleSaleRows(i.trades).map((s) => s.saleId);
   add({ code: "stale_sale", severity: "warning", title: "Closing trades still open with no open position left to close", detail: "An open sale row (or, against a short, purchase row) in the same account, broker and scrip has no open position left to pair with, and a position in that scrip entered on or before it is already closed. Holdings, unrealised P&L and tax read the row as a position of its own. It is listed here and never changed automatically.", count: staleSales.length, href: STALE_OPEN_HREF }, staleSales);
+
+  // R2-DQ N7/N8 — a WARNING, not the critical stale_open: the sale pairs by
+  // date with a held position, but a position closed some other way may
+  // already have taken it, so the pair is listed for review and never joined.
+  const reviewSales = [...new Set(stalePairs.filter((p) => p.ambiguous).map((p) => p.saleId))];
+  add({ code: "stale_review", severity: "warning", title: "Closing trades beside an open position and an already-closed one", detail: "An open sale row (or, against a short, purchase row) pairs by date with an open position in the same account, broker and scrip, but a position in that scrip entered on or before it is already closed, so the row may already be counted in that close. The rows are listed here for review and are not joined in one step.", count: reviewSales.length, href: STALE_OPEN_HREF }, reviewSales);
 
   // EQUITY ONLY, and the exclusion is the fix for a real dead end (v4.2).
   //

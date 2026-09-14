@@ -72,7 +72,7 @@ describe("IPO exit charges — effective-dated rates (B7)", () => {
     const after = chargerFor("zerodha", "NSE", "2026-04-15", m)(100000, 90000);
     // Same sale, same size — only the epoch differs. Old STT 0.1% = ₹100,
     // new 0.2% = ₹200 on a ₹1,00,000 sell (STT rounds to the rupee).
-    expect(after - before).toBeCloseTo(100, 2);
+    expect(after! - before!).toBeCloseTo(100, 2);
     expect(before).toBeCloseTo(100, 2);
   });
 
@@ -82,14 +82,18 @@ describe("IPO exit charges — effective-dated rates (B7)", () => {
     expect(chargerFor("zerodha", "NSE", null, m)(100000, 90000)).toBeCloseTo(200, 2);
   });
 
-  it("throws when no charge_config row covers the exit date — never a frozen estimate", () => {
+  it("a date before every epoch prices at the earliest one; only a missing row throws, and only when priced — never a frozen estimate", () => {
     // Only an epoch from 2026-04-01 — nothing covers a 2025 exit, for this
     // broker or any other. Re-pinned (R36): before, this returned the frozen
     // ipoSellCharges(100000, 90000) = 131.96 (measured at 654d534); a substituted rate is a wrong
-    // number in a right number's typeface, so it now throws as findRates does.
+    // number in a right number's typeface, so it threw as findRates does.
+    // Re-pinned (N13, measured: threw at charger BUILD → 100): a date before the
+    // earliest epoch prices at the earliest schedule, and rates resolve on the first
+    // call, not at build. A map with no row at all still throws, when priced.
     const m = ratesMapOf([base({ effectiveFrom: "2026-04-01", effectiveTo: null })]);
-    expect(() => chargerFor("zerodha", "NSE", "2025-06-01", m)).toThrow(/No charge_config/);
-    expect(() => chargerFor(null, "NSE", "2026-06-15", new Map())).toThrow(/No charge_config/);
+    expect(chargerFor("zerodha", "NSE", "2025-06-01", m)(100000, 90000)).toBe(100);
+    const none = chargerFor(null, "NSE", "2026-06-15", new Map());
+    expect(() => none(100000, 90000)).toThrow(/No charge_config/);
   });
 
   it("the no-broker fallback prices through the statutory row of charge_config", () => {
@@ -108,7 +112,10 @@ describe("IPO no-broker fallback — statutory columns from charge_config (R36)"
   it("pins the WHOLE fallback total: ₹1 cr exit on a ₹1 cr allotment, NSE 2026-06-15", () => {
     // STT 0.1% of the SALE 10000 · exchange 306.99 + IPFT 0.01 + SEBI 10 on the
     // sale · GST 18% over those 57.06 · stamp 0.015% on the allotment 1500 ·
-    // no brokerage, no DP. Frozen constants gave 11877.60.
+    // no brokerage, no DP. Frozen constants gave 11877.60. The second argument is
+    // the allotment's STAMP BASE: computeIpo passes it only for an allotment before
+    // 1 Jul 2020 and 0 from then, when the issuer bears the stamp (N14,
+    // tests/ipo-charger-dates.test.ts).
     expect(chargerFor(null, "NSE", "2026-06-15", seed)(CRORE, CRORE)).toBe(11874.06);
   });
 
@@ -119,7 +126,7 @@ describe("IPO no-broker fallback — statutory columns from charge_config (R36)"
 
   it("exchange txn + IPFT come from the (exchange, exit-date) row", () => {
     const leg = (exchange: string, on: string) => {
-      const b = chargeBreakdownFor(null, exchange, on, seed)(CRORE, CRORE);
+      const b = chargeBreakdownFor(null, exchange, on, seed)(CRORE, CRORE)!;
       return Math.round((b.exchangeTxn + b.ipft) * 100) / 100;
     };
     expect(leg("NSE", "2026-06-15")).toBe(307);
@@ -128,11 +135,11 @@ describe("IPO no-broker fallback — statutory columns from charge_config (R36)"
   });
 
   it("charges no DP and no brokerage (no broker is recorded)", () => {
-    const b = chargeBreakdownFor(null, "NSE", "2026-06-15", seed)(CRORE, CRORE);
+    const b = chargeBreakdownFor(null, "NSE", "2026-06-15", seed)(CRORE, CRORE)!;
     expect(b.dpCharges).toBe(0);
     expect(b.brokerage).toBe(0);
     expect(b.sttCtt).toBe(10000); // the sale only — an allotment is not an exchange purchase
-    expect(b.stampDuty).toBe(1500); // on the allotment
+    expect(b.stampDuty).toBe(1500); // on the stamp base passed (a pre-1-Jul-2020 allotment's value, N14)
   });
 });
 
@@ -170,7 +177,7 @@ describe("IPO broker path — no purchase STT on the allotment (QS-IPO, FATAX562
   it("a real seed row (sttSide 'both'): ₹1 cr allotment + ₹1 cr sale owes STT on the sale only", () => {
     const seed = seedRatesMap();
     expect(findRates(seed, "zerodha", "eq_delivery", "NSE", "2026-06-15").sttSide).toBe("both");
-    const b = chargeBreakdownFor("zerodha", "NSE", "2026-06-15", seed)(CRORE, CRORE);
+    const b = chargeBreakdownFor("zerodha", "NSE", "2026-06-15", seed)(CRORE, CRORE)!;
     expect(b.sttCtt).toBe(10000);
     // Computed on a COPY: the map's row still says 'both'.
     expect(findRates(seed, "zerodha", "eq_delivery", "NSE", "2026-06-15").sttSide).toBe("both");

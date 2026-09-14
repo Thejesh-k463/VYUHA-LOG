@@ -357,7 +357,8 @@ describe("B1 · Dhan's stated charges land as ten heads that add up to the total
   it("R82: the refused fill's sentence rides the route's JSON into the card's commit line", () => {
     expect(json).not.toBeNull();
     const line = bc.pullResultMessage("commit", json!);
-    expect(line).toContain("1 fill from Dhan's trade history had no readable side, quantity, price or date and were refused rather than guessed.");
+    // N21 (fix wave 2R) re-pin: "… and were refused rather than guessed." → "… and was refused …" — the verb follows the count of 1.
+    expect(line).toContain("1 fill from Dhan's trade history had no readable side, quantity, price or date and was refused rather than guessed.");
   });
 });
 

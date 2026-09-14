@@ -213,4 +213,33 @@ describe("R13: spot-close-diff — the prune can never wipe a symbol whose close
     selectAccount(SWING);
     expect(spotRows()).toEqual([SBIN]);
   });
+
+  /**
+   * T1 (wave 2R). The case above hands ONE unchanged symbol, so a prune that
+   * kept only the FIRST fingerprint of the list (`[...fp].slice(0, 1)`) passed
+   * it — while wiping every other symbol whose close did not move, which is the
+   * whole reason the panel is per-subject. Three unchanged symbols, the moved one
+   * in the MIDDLE of the list, so a first-only AND a last-only keep both fail.
+   */
+  it("T1: several unchanged symbols ALL keep their dismissal; only the moved close loses its row", () => {
+    selectAccount(SWING);
+    const INFY = "INFY|2026-09-11|150025";
+    const RELIANCE = "RELIANCE|2026-09-11|295000";
+    for (const fp of [INFY, TCS_OLD, RELIANCE]) expect(q.dismissPanel(SPOT, fp).ok).toBe(true);
+    expect(spotRows()).toEqual([INFY, RELIANCE, SBIN, TCS_OLD]);
+    // A neighbouring book's row for the same symbol is out of reach of this prune.
+    selectAccount(PRIMARY);
+    expect(q.dismissPanel(SPOT, TCS_OLD).ok).toBe(true);
+
+    selectAccount(SWING);
+    const current = new Map<DismissiblePanel, readonly string[]>([[SPOT, [SBIN, TCS_NEW, INFY, RELIANCE]]]);
+    expect(q.pruneStaleDismissals(current).ok).toBe(true);
+    expect(
+      rows()
+        .filter((r) => r.panel === SPOT && r.accountId === SWING)
+        .map((r) => r.fingerprint)
+        .sort(),
+    ).toEqual([INFY, RELIANCE, SBIN]);
+    expect(rows().filter((r) => r.panel === SPOT && r.accountId === PRIMARY).map((r) => r.fingerprint)).toEqual([TCS_OLD]);
+  });
 });

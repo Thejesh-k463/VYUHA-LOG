@@ -133,6 +133,59 @@ export function pullResultMessage(mode: "preview" | "commit", data: PullResponse
   return [`Preview: ${rows} normalized trade${rows === 1 ? "" : "s"}.`, ...warn].join(" ").trim();
 }
 
+/**
+ * The sentence app/api/import/broker/route.ts appends to a needsForce 409's
+ * `message` for a client that prints only text. The dialog has its own
+ * "Commit anyway" button, and a second "Pull & commit" would 409 again, so the
+ * dialog drops this tail (tests/broker-connect-ui.test.ts pins it to the route).
+ */
+export const PULL_FORCE_ROUTE_TAIL =
+  " Nothing was committed. If these really are different trades, click Pull & commit again to commit anyway.";
+
+/**
+ * One suspected duplicate's badge in the blocked-commit dialog. Seam D1 (v4.3.0
+ * fix wave 2F): 'earlier-snapshot' (lib/import/cross-source.ts) states no
+ * quantity or value relation, so it names what it met — today's earlier pull —
+ * instead of falling through to the partial-overlap label.
+ */
+export function collisionBadge(kind: string): string {
+  if (kind === "same-quantity") return "same quantity";
+  if (kind === "same-value") return "same value";
+  if (kind === "earlier-snapshot") return "today's earlier pull";
+  return "partial overlap";
+}
+
+export interface CollisionDialogCopy {
+  /** The dialog description under its title. */
+  description: string;
+  /** The route's own sentences, without its text-only tail; null when it sent none. */
+  serverMessage: string | null;
+  /** Whether the "same trades from another source … cancel" footer applies. */
+  otherSourceFooter: boolean;
+}
+
+/**
+ * The blocked-commit dialog's words for a needsForce 409 (seam D1). A report
+ * whose every collision is 'earlier-snapshot' met today's earlier pull of this
+ * same pull, not another source: the "Different sources … a paisa" lead and the
+ * other-source footer do not apply to it, and the route's sentence says what
+ * committing anyway does. Any other report keeps both, and the route's
+ * sentence is shown too.
+ */
+export function collisionDialogCopy(p: { collisions: readonly { kind: string }[]; message?: string | null }): CollisionDialogCopy {
+  const earlierOnly = p.collisions.length > 0 && p.collisions.every((c) => c.kind === "earlier-snapshot");
+  const raw = p.message ?? "";
+  const kept = (raw.endsWith(PULL_FORCE_ROUTE_TAIL) ? raw.slice(0, -PULL_FORCE_ROUTE_TAIL.length) : raw).trim();
+  const serverMessage = kept === "" ? null : kept;
+  if (earlierOnly) return { description: "Nothing has been committed.", serverMessage, otherSourceFooter: false };
+  const rows = p.collisions.length === 1 ? "this row" : "these rows";
+  return {
+    description: `Nothing has been committed. Different sources state the same trade slightly differently — a position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check cannot vouch for ${rows}.`,
+    serverMessage,
+    otherSourceFooter: true,
+  };
+}
+
 type BrokerId = "zerodha" | "dhan" | "angelone" | "upstox" | "openalgo";
 
 /**
@@ -586,6 +639,8 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
   // effect keyed on other state.)
   const active: BrokerId = broker === "openalgo" && !openalgoAvailable ? "zerodha" : broker;
   const spec = BROKERS[active];
+  // Seam D1: the blocked-commit dialog's words, derived from the 409 it holds.
+  const collisionCopy = collisionPrompt && !collisionPrompt.nothingNew ? collisionDialogCopy(collisionPrompt) : null;
   /** Every row for the active broker — the All-accounts view can hold one per
    *  account. Sorted by accountId so `conn` (the single-row fallback) is
    *  deterministic, never dependent on listing order. */
@@ -810,7 +865,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         return;
       }
       if (res?.status === 409 && data.needsForce) {
-        setCollisionPrompt({ brokerId, accountId, collisions: (data.collisions ?? []) as CollisionLite[] });
+        setCollisionPrompt({ brokerId, accountId, collisions: (data.collisions ?? []) as CollisionLite[], message: data.message });
         setMsg(null);
         return;
       }
@@ -1358,9 +1413,10 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
         {msg && <p className={`text-xs ${msg.ok ? "text-profit" : "text-loss"}`}>{msg.text}</p>}
 
         {/* Blocked-commit dialog: the server refused (409) because these rows
-            look like trades already in the journal from another source. The
-            details are laid out per trade so the decision is informed, and
-            committing anyway is a button press INSIDE this dialog only. */}
+            look like trades already in the journal — from another source, or
+            today's earlier pull of this same pull (seam D1). The details are
+            laid out per trade so the decision is informed, and committing
+            anyway is a button press INSIDE this dialog only. */}
         <Dialog
           open={collisionPrompt != null}
           onOpenChange={(open) => {
@@ -1388,13 +1444,12 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 {collisionPrompt?.nothingNew
                   ? collisionPrompt.message ??
                     "Every trade in this pull matched one already recorded, so there is nothing new to commit. The journal is unchanged."
-                  : <>
-                      Nothing has been committed. Different sources state the same trade slightly differently — a
-                      position aggregate and a fill-by-fill pull can differ by a paisa — so the exact duplicate check
-                      cannot vouch for these {collisionPrompt?.collisions.length === 1 ? "this row" : "rows"}.
-                    </>}
+                  : collisionCopy?.description}
               </DialogDescription>
             </DialogHeader>
+            {collisionCopy?.serverMessage && (
+              <p className="text-xs text-muted-foreground">{collisionCopy.serverMessage}</p>
+            )}
             {collisionPrompt?.nothingNew && (collisionPrompt.duplicates?.length ?? 0) > 0 && (
               <div className="space-y-2">
                 {collisionPrompt.duplicates!.map((d, i) => (
@@ -1418,7 +1473,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-medium">{c.symbol}</span>
                     <Badge variant="secondary" className="text-[10px]">
-                      {c.kind === "same-quantity" ? "same quantity" : c.kind === "same-value" ? "same value" : "partial overlap"}
+                      {collisionBadge(c.kind)}
                     </Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{c.detail}</p>
@@ -1430,7 +1485,7 @@ export function BrokerConnect({ writeAccounts = [] }: { writeAccounts?: WriteAcc
                 </div>
               ))}
             </div>
-            {!collisionPrompt?.nothingNew && (
+            {collisionCopy?.otherSourceFooter && (
               <p className="text-xs text-muted-foreground">
                 If this pull is the <b>same trades from another source</b>, cancel — the journal already has them.
                 Commit anyway only if you are sure these are <b>different trades</b> (nothing is ever merged

@@ -2,7 +2,9 @@
 
 import { todayIstIso } from "@/lib/domain/trading-day";
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { serializeTradesQuery } from "@/lib/domain/trades-query";
 import {
   computeExposure,
   sectorConcentration,
@@ -557,13 +559,37 @@ function PositionRow({
             <Button size="sm" variant="secondary" onClick={onEdit}>
               <SlidersHorizontal className="size-3.5" /> Set SL / TSL / target / price
             </Button>
-            <Button size="sm" variant="destructive" onClick={onClose}>
-              <CircleX className="size-3.5" /> Close position
-            </Button>
+            <PositionCloseControl p={p} onClose={onClose} />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * R2-DQ N11 — the position's close action. A STAGED position (the page hands
+ * its open tranches in `tranches`) is closed on its own ladder in Trades, which
+ * records the exit fill, prices each tranche and keeps R frozen at the first
+ * entry (invariants 4 and 5). The manual close writes the parent row only, so
+ * for a staged position it would leave the ladder open and be undone by the
+ * next ladder action; `closePosition` refuses it (409 STAGED), and this control
+ * never opens it for a staged position.
+ */
+export function PositionCloseControl({ p, onClose }: { p: Pick<ExposurePosition, "symbol" | "tranches">; onClose: () => void }) {
+  if (p.tranches != null) {
+    return (
+      <Button asChild size="sm" variant="outline" data-staged-close="">
+        <Link href={`/trades${serializeTradesQuery({ symbol: p.symbol, view: "open" })}`}>
+          <CircleX className="size-3.5" /> Book the exit on its ladder in Trades
+        </Link>
+      </Button>
+    );
+  }
+  return (
+    <Button size="sm" variant="destructive" onClick={onClose}>
+      <CircleX className="size-3.5" /> Close position
+    </Button>
   );
 }
 
